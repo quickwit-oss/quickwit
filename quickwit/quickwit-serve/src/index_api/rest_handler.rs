@@ -20,8 +20,11 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use bytes::Bytes;
+use quickwit_config::SourceConfig;
 use quickwit_core::IndexService;
 use quickwit_search::SearchError;
+use serde::de::DeserializeOwned;
 use tracing::info;
 use warp::{Filter, Rejection};
 
@@ -33,11 +36,11 @@ pub fn index_management_handlers(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     get_index_metadata_handler(index_service.clone())
         .or(get_indexes_metadatas_handler(index_service.clone()))
-        .or(get_all_splits_handler(index_service))
-    // TODO: comment create/delete handlers and reactivate/update them once we implemented the logic
-    // of routing these requests to the right node, see https://github.com/quickwit-oss/quickwit/issues/1481.
-    //.or(create_index_handler(index_service.clone()))
-    //.or(delete_index_handler(index_service))
+        .or(get_all_splits_handler(index_service.clone()))
+        .or(create_index_handler(index_service.clone()))
+        .or(delete_index_handler(index_service.clone()))
+        .or(create_source_handler(index_service.clone()))
+        .or(delete_source_handler(index_service))
 }
 
 fn get_index_metadata_handler(
@@ -96,60 +99,122 @@ async fn get_indexes_metadatas(
     Ok(Format::default().make_rest_reply_non_serializable_error(index_metadata))
 }
 
-// TODO: comment create/delete handlers and reactivate/update them once we implemented the logic of
-// routing these requests to the right node, see https://github.com/quickwit-oss/quickwit/issues/1481.
-// fn create_index_handler(
-//     index_service: Arc<IndexService>,
-// ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-//     warp::path!("indexes")
-//         .and(warp::post())
-//         .and(json_body())
-//         .and(warp::path::end().map(move || index_service.clone()))
-//         .and_then(create_index)
-// }
+fn create_index_handler(
+    index_service: Arc<IndexService>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    warp::path!("indexes")
+        // TODO: add a filter on the content type, we support only json.
+        .and(warp::post())
+        .and(warp::filters::body::bytes())
+        .and(warp::path::end().map(move || index_service.clone()))
+        .and_then(create_index)
+}
 
-// fn json_body<T: DeserializeOwned + Send>(
-// ) -> impl Filter<Extract = (T,), Error = warp::Rejection> + Clone {
-//     warp::body::content_length_limit(1024 * 1024).and(warp::body::json())
-// }
+fn json_body<T: DeserializeOwned + Send>(
+) -> impl Filter<Extract = (T,), Error = warp::Rejection> + Clone {
+    warp::body::content_length_limit(1024 * 1024).and(warp::body::json())
+}
 
-// async fn create_index(
-//     index_config: IndexConfig,
-//     index_service: Arc<IndexService>,
-// ) -> Result<impl warp::Reply, Infallible> {
-//     info!(index_id = %index_config.index_id, "create-index");
-//     let index_metadata = index_service.create_index(index_config).await;
-//     Ok(Format::default().make_rest_reply_non_serializable_error(index_metadata))
-// }
+async fn create_index(
+    index_config_bytes: Bytes,
+    index_service: Arc<IndexService>,
+) -> Result<impl warp::Reply, Infallible> {
+    let index_metadata = index_service
+        .load_config_and_create_index(
+            &index_config_bytes,
+            quickwit_config::ConfigFormat::Json,
+            false,
+        )
+        .await;
+    Ok(Format::default().make_rest_reply_non_serializable_error(index_metadata))
+}
 
-// fn delete_index_handler(
-//     index_service: Arc<IndexService>,
-// ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-//     warp::path!("indexes" / String)
-//         .and(warp::delete())
-//         .and(warp::path::end().map(move || index_service.clone()))
-//         .and_then(delete_index)
-// }
+fn delete_index_handler(
+    index_service: Arc<IndexService>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    warp::path!("indexes" / String)
+        .and(warp::delete())
+        .and(warp::path::end().map(move || index_service.clone()))
+        .and_then(delete_index)
+}
 
-// async fn delete_index(
-//     index_id: String,
-//     index_service: Arc<IndexService>,
-// ) -> Result<impl warp::Reply, Infallible> {
-//     info!(index_id = %index_id, "delete-index");
-//     let file_entries_res = index_service.delete_index(&index_id, false).await;
-//     Ok(Format::default().make_rest_reply_non_serializable_error(file_entries_res))
-// }
+async fn delete_index(
+    index_id: String,
+    index_service: Arc<IndexService>,
+) -> Result<impl warp::Reply, Infallible> {
+    info!(index_id = %index_id, "delete-index");
+    let file_entries_res = index_service.delete_index(&index_id, false).await;
+    Ok(Format::default().make_rest_reply_non_serializable_error(file_entries_res))
+}
+
+fn create_source_handler(
+    index_service: Arc<IndexService>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    warp::path!("indexes" / String / "sources")
+        .and(warp::post())
+        .and(json_body())
+        .and(warp::path::end().map(move || index_service.clone()))
+        .and_then(create_source)
+}
+
+async fn create_source(
+    index_id: String,
+    source_config: SourceConfig,
+    index_service: Arc<IndexService>,
+) -> Result<impl warp::Reply, Infallible> {
+    info!(index_id = %index_id, source_id = %source_config.source_id, "create-source");
+    let create_result = index_service.create_source(&index_id, source_config).await;
+    Ok(Format::default().make_rest_reply_non_serializable_error(create_result))
+}
+
+fn delete_source_handler(
+    index_service: Arc<IndexService>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    warp::path!("indexes" / String / "sources" / String)
+        .and(warp::delete())
+        .and(warp::path::end().map(move || index_service.clone()))
+        .and_then(delete_source)
+}
+
+async fn delete_source(
+    index_id: String,
+    source_id: String,
+    index_service: Arc<IndexService>,
+) -> Result<impl warp::Reply, Infallible> {
+    info!(index_id = %index_id, source_id = %source_id, "delete-source");
+    let delete_result = index_service.delete_source(&index_id, &source_id).await;
+    Ok(Format::default().make_rest_reply_non_serializable_error(delete_result))
+}
 
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_include;
+    use quickwit_common::uri::{Protocol, Uri};
+    use quickwit_config::{FileSourceParams, SourceParams};
     use quickwit_indexing::mock_split;
-    use quickwit_metastore::{IndexMetadata, MockMetastore};
+    use quickwit_metastore::file_backed_metastore::FileBackedMetastoreFactory;
+    use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver, MockMetastore};
     use quickwit_storage::StorageUriResolver;
+    use serde::__private::from_utf8_lossy;
     use serde_json::Value as JsonValue;
+    use tempfile::NamedTempFile;
 
     use super::*;
     use crate::recover_fn;
+
+    async fn build_metastore_for_test() -> Arc<dyn Metastore> {
+        let storage_resolver = StorageUriResolver::for_test();
+        let metastore_uri_resolver = MetastoreUriResolver::builder()
+            .register(
+                Protocol::Ram,
+                FileBackedMetastoreFactory::new(storage_resolver.clone()),
+            )
+            .build();
+        metastore_uri_resolver
+            .resolve(&Uri::from_well_formed("ram://quickwit-test-indexes"))
+            .await
+            .unwrap()
+    }
 
     #[tokio::test]
     async fn test_rest_get_index() -> anyhow::Result<()> {
@@ -162,7 +227,11 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(
+            Arc::new(metastore),
+            Uri::from_well_formed("file:///default-index-root-uri"),
+            StorageUriResolver::for_test(),
+        );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
         let resp = warp::test::request()
@@ -188,7 +257,11 @@ mod tests {
         metastore
             .expect_list_all_splits()
             .returning(|_index_id: &str| Ok(vec![mock_split("split_1")]));
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(
+            Arc::new(metastore),
+            Uri::from_well_formed("file:///default-index-root-uri"),
+            StorageUriResolver::for_test(),
+        );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
         let resp = warp::test::request()
@@ -217,7 +290,11 @@ mod tests {
                 "ram:///indexes/test-index",
             )])
         });
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(
+            Arc::new(metastore),
+            Uri::from_well_formed("file:///default-index-root-uri"),
+            StorageUriResolver::for_test(),
+        );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
         let resp = warp::test::request()
@@ -240,111 +317,174 @@ mod tests {
         Ok(())
     }
 
-    // TODO: comment create/delete handlers and reactivate/update them once we implemented the logic
-    // of routing these requests to the right node, see https://github.com/quickwit-oss/quickwit/issues/1481.
-    // #[tokio::test]
-    // async fn test_rest_delete_index() -> anyhow::Result<()> {
-    //     let mut metastore = MockMetastore::new();
-    //     metastore
-    //         .expect_index_metadata()
-    //         .returning(|_index_id: &str| {
-    //             Ok(IndexMetadata::for_test(
-    //                 "quickwit-demo-index",
-    //                 "file:///path/to/index/quickwit-demo-index",
-    //             ))
-    //         });
-    //     metastore.expect_list_splits().returning(
-    //         |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-    //             Ok(vec![mock_split("split_1")])
-    //         },
-    //     );
-    //     metastore
-    //         .expect_mark_splits_for_deletion()
-    //         .returning(|_index_id: &str, _splits: &[&str]| Ok(()));
-    //     metastore
-    //         .expect_delete_splits()
-    //         .returning(|_index_id: &str, _splits: &[&str]| Ok(()));
-    //     metastore
-    //         .expect_delete_index()
-    //         .returning(|_index_id: &str| Ok(()));
-    //     let index_service = IndexService::new(
-    //         Arc::new(metastore),
-    //         StorageUriResolver::for_test(),
-    //         Uri::new("file:///default-index-uri".to_string()),
-    //     );
-    //     let index_management_handler =
-    //         super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
-    //     let resp = warp::test::request()
-    //         .path("/indexes/quickwit-demo-index")
-    //         .method("DELETE")
-    //         .reply(&index_management_handler)
-    //         .await;
-    //     assert_eq!(resp.status(), 200);
-    //     let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
-    //     let expected_response_json = serde_json::json!([{
-    //         "file_name": "split_1.split",
-    //         "file_size_in_bytes": 800,
-    //     }]);
-    //     assert_json_include!(actual: resp_json, expected: expected_response_json);
-    //     Ok(())
-    // }
-    //
-    // #[tokio::test]
-    // async fn test_rest_create_index() -> anyhow::Result<()> {
-    //     let mut metastore = MockMetastore::new();
-    //     metastore
-    //         .expect_create_index()
-    //         .returning(|_index_metadata: IndexMetadata| Ok(()));
-    //     metastore
-    //         .expect_index_metadata()
-    //         .returning(|_index_id: &str| {
-    //             Ok(IndexMetadata::for_test(
-    //                 "hdfs-log",
-    //                 "file:///default-index-uri/hdfs-logs",
-    //             ))
-    //         });
-    //     let index_service = IndexService::new(
-    //         Arc::new(metastore),
-    //         StorageUriResolver::for_test(),
-    //         Uri::new("file:///default-index-uri".to_string()),
-    //     );
-    //     let index_management_handler = super::index_management_handlers(Arc::new(index_service));
-    //     let resp = warp::test::request()
-    //         .path("/indexes")
-    //         .method("POST")
-    //         .json(&true)
-    //         .body(r#"{"version": 0, "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
-    //         .reply(&index_management_handler)
-    //         .await;
-    //     assert_eq!(resp.status(), 200);
-    //     let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
-    //     let expected_response_json = serde_json::json!({
-    //         "index_id": "hdfs-log",
-    //         "index_uri": "file:///default-index-uri/hdfs-logs",
-    //     });
-    //     assert_json_include!(actual: resp_json, expected: expected_response_json);
-    //     Ok(())
-    // }
+    #[tokio::test]
+    async fn test_rest_delete_index() -> anyhow::Result<()> {
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "quickwit-demo-index",
+                    "file:///path/to/index/quickwit-demo-index",
+                ))
+            });
+        metastore
+            .expect_list_splits()
+            .returning(|_| Ok(vec![mock_split("split_1")]));
+        metastore
+            .expect_mark_splits_for_deletion()
+            .returning(|_index_id: &str, _splits: &[&str]| Ok(()));
+        metastore
+            .expect_delete_splits()
+            .returning(|_index_id: &str, _splits: &[&str]| Ok(()));
+        metastore
+            .expect_delete_index()
+            .returning(|_index_id: &str| Ok(()));
+        let index_service = IndexService::new(
+            Arc::new(metastore),
+            Uri::from_well_formed("file:///default-index-root-uri"),
+            StorageUriResolver::for_test(),
+        );
+        let index_management_handler =
+            super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes/quickwit-demo-index")
+            .method("DELETE")
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let expected_response_json = serde_json::json!([{
+            "file_name": "split_1.split",
+            "file_size_in_bytes": 800,
+        }]);
+        assert_json_include!(actual: resp_json, expected: expected_response_json);
+        Ok(())
+    }
 
-    // #[tokio::test]
-    // async fn test_rest_create_index_with_bad_config() -> anyhow::Result<()> {
-    //     let metastore = MockMetastore::new();
-    //     let index_service = IndexService::new(
-    //         Arc::new(metastore),
-    //         StorageUriResolver::for_test(),
-    //         Uri::new("file:///default-index-uri".to_string()),
-    //     );
-    //     let index_management_handler =
-    //         super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
-    //     let resp = warp::test::request()
-    //         .path("/indexes")
-    //         .method("POST")
-    //         .json(&true)
-    //         .body(r#"{"version": 0, "index_id": "hdfs-log", "doc_mapping":
-    // {"field_mappings":[{"name": "timestamp", "type": "unknown", "fast": true, "indexed":
-    // true}]}}"#)         .reply(&index_management_handler)
-    //         .await;
-    //     assert_eq!(resp.status(), 400);
-    //     Ok(())
-    // }
+    #[tokio::test]
+    async fn test_rest_create_delete_index_and_source() {
+        let metastore = build_metastore_for_test().await;
+        let index_service = IndexService::new(
+            metastore.clone(),
+            Uri::from_well_formed("file:///default-index-root-uri"),
+            StorageUriResolver::for_test(),
+        );
+        let index_management_handler = super::index_management_handlers(Arc::new(index_service));
+        let resp = warp::test::request()
+            .path("/indexes")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"version": "0.4", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+        let expected_response_json = serde_json::json!({
+            "index_config": {
+                "index_id": "hdfs-logs",
+                "index_uri": "file:///default-index-root-uri/hdfs-logs",
+            }
+        });
+        assert_json_include!(actual: resp_json, expected: expected_response_json);
+
+        // Create source.
+        let source_temp_file = NamedTempFile::new().unwrap();
+        let source_temp_path_string = source_temp_file.path().to_string_lossy().to_string();
+        let source_config_body = r#"{"version": "0.4", "source_id": "file-source", "source_type": "file", "params": {"filepath": "FILEPATH"}}"#
+            .replace("FILEPATH", &source_temp_path_string);
+        let resp = warp::test::request()
+            .path("/indexes/hdfs-logs/sources")
+            .method("POST")
+            .json(&true)
+            .body(&source_config_body)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+
+        // Check that the source has been added to index metadata.
+        let index_metadata = metastore.index_metadata("hdfs-logs").await.unwrap();
+        assert!(index_metadata.sources.contains_key("file-source"));
+        let source_config = index_metadata.sources.get("file-source").unwrap();
+        assert_eq!(source_config.source_type(), "file");
+        assert_eq!(
+            source_config.source_params,
+            SourceParams::File(FileSourceParams {
+                filepath: Some(source_temp_file.path().to_path_buf())
+            })
+        );
+
+        // Check delete source.
+        let resp = warp::test::request()
+            .path("/indexes/hdfs-logs/sources/file-source")
+            .method("DELETE")
+            .body(&source_config_body)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let index_metadata = metastore.index_metadata("hdfs-logs").await.unwrap();
+        assert!(!index_metadata.sources.contains_key("file-source"));
+
+        // Check delete index.
+        let resp = warp::test::request()
+            .path("/indexes/hdfs-logs")
+            .method("DELETE")
+            .body(&source_config_body)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let indexes = metastore.list_indexes_metadatas().await.unwrap();
+        assert!(indexes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_rest_create_index_with_bad_config() -> anyhow::Result<()> {
+        let metastore = MockMetastore::new();
+        let index_service = IndexService::new(
+            Arc::new(metastore),
+            Uri::from_well_formed("file:///default-index-root-uri"),
+            StorageUriResolver::for_test(),
+        );
+        let index_management_handler =
+            super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes")
+            .method("POST")
+            .json(&true)
+            .body(
+                r#"{"version": "0.4", "index_id": "hdfs-log", "doc_mapping":
+    {"field_mappings":[{"name": "timestamp", "type": "unknown", "fast": true, "indexed":
+    true}]}}"#,
+            )
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 400);
+        let body = from_utf8_lossy(resp.body());
+        assert!(body.contains("Field `timestamp` has an unknown type"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rest_create_source_with_bad_config() -> anyhow::Result<()> {
+        let metastore = build_metastore_for_test().await;
+        let index_service = IndexService::new(
+            metastore,
+            Uri::from_well_formed("file:///default-index-root-uri"),
+            StorageUriResolver::for_test(),
+        );
+        let index_management_handler =
+            super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes/my-index/sources")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"version": 0.4, "source_id": "file-source""#)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 400);
+        let body = from_utf8_lossy(resp.body());
+        println!("{}", body);
+        assert!(body.contains("invalid type: floating point `0.4`"));
+        Ok(())
+    }
 }
