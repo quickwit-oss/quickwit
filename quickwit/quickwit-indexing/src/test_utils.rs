@@ -29,9 +29,7 @@ use quickwit_config::{
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::file_backed_metastore::FileBackedMetastoreFactory;
-use quickwit_metastore::{
-    IndexMetadata, Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState,
-};
+use quickwit_metastore::{Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState};
 use quickwit_storage::{Storage, StorageUriResolver};
 use serde_json::Value as JsonValue;
 
@@ -96,8 +94,7 @@ impl TestSandbox {
         let metastore = metastore_uri_resolver
             .resolve(&Uri::from_well_formed(METASTORE_URI))
             .await?;
-        let index_metadata = IndexMetadata::new(index_config);
-        metastore.create_index(index_metadata.clone()).await?;
+        metastore.create_index(index_config.clone()).await?;
         let storage = storage_resolver.resolve(&index_uri)?;
         let universe = Universe::new();
         let indexing_service_actor = IndexingService::new(

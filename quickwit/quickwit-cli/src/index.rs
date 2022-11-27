@@ -586,6 +586,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     // On overwrite and index present and `assume_yes` if false, ask the user to confirm the
     // destructive operation.
     let index_exists = metastore.index_exists(&index_id).await?;
+
     if args.overwrite && index_exists && !args.assume_yes {
         // Stop if user answers no.
         let prompt = format!(

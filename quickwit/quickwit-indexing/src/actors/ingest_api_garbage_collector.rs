@@ -179,9 +179,9 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
-    use quickwit_config::IndexerConfig;
+    use quickwit_config::{IndexConfig, IndexerConfig};
     use quickwit_ingest_api::{init_ingest_api, QUEUES_DIR_NAME};
-    use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
+    use quickwit_metastore::quickwit_metastore_uri_resolver;
     use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
     use quickwit_storage::StorageUriResolver;
 
@@ -191,14 +191,14 @@ mod tests {
     async fn test_ingest_api_garbage_collector() -> anyhow::Result<()> {
         let index_id = "test-ingest-api-gc-index".to_string();
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
             .await
             .unwrap();
-        metastore.create_index(index_metadata).await.unwrap();
+        metastore.create_index(index_config).await.unwrap();
 
         // Setup ingest api objects
         let universe = Universe::new();
