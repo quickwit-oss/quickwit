@@ -443,11 +443,8 @@ mod tests {
             .map(|split| split.split_metadata)
             .collect_vec();
         assert_eq!(split_metas.len(), 3);
-        let doc_mapper = build_doc_mapper(
-            &index_config.doc_mapping,
-            &index_config.search_settings,
-            &index_config.indexing_settings,
-        )?;
+        let doc_mapper =
+            build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
         let doc_mapper_str = serde_json::to_string(&doc_mapper)?;
 
         // Creates 2 delete tasks, one that will match 1 document,

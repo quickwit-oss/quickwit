@@ -333,10 +333,9 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
               - name: owner
                 type: text
                 tokenizer: raw
+            timestamp_field: ts
         "#;
-    let indexing_settings_json = r#"{
-            "timestamp_field": "ts",
-        }"#;
+    let indexing_settings_json = r#"{}"#;
     let test_sandbox = TestSandbox::create(
         index_id,
         doc_mapping_yaml,
@@ -447,6 +446,7 @@ async fn single_node_search_sort_by_field(
               - name: temperature
                 type: i64
                 fast: true
+            timestamp_field: ts
             "#;
 
     let doc_mapping_without_fieldnorms = r#"
@@ -459,6 +459,7 @@ async fn single_node_search_sort_by_field(
               - name: temperature
                 type: i64
                 fast: true
+            timestamp_field: ts
             "#;
 
     let doc_mapping_yaml = if fieldnorms_enabled {
@@ -467,9 +468,7 @@ async fn single_node_search_sort_by_field(
         doc_mapping_without_fieldnorms
     };
 
-    let indexing_settings_json = r#"{
-            "timestamp_field": "ts",
-        }"#;
+    let indexing_settings_json = r#"{}"#;
     let test_sandbox = TestSandbox::create(
         &index_id,
         doc_mapping_yaml,
@@ -549,15 +548,8 @@ async fn test_single_node_invalid_sorting_with_query() -> anyhow::Result<()> {
               - name: temperature
                 type: i64
         "#;
-    let indexing_settings_json = r#"{
-        }"#;
-    let test_sandbox = TestSandbox::create(
-        index_id,
-        doc_mapping_yaml,
-        indexing_settings_json,
-        &["description"],
-    )
-    .await?;
+    let test_sandbox =
+        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["description"]).await?;
 
     let mut docs = vec![];
     for i in 0..30 {

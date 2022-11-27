@@ -12,13 +12,13 @@ field_mappings = [
 ]
 tag_fields = [ "tenant_id" ]
 store_source = true
+timestamp_field = "timestamp"
 
 [retention]
 period = "90 days"
 schedule = "daily"
 
 [indexing_settings]
-timestamp_field = "timestamp"
 commit_timeout_secs = 61
 split_num_docs_target = 10_000_001
 

@@ -553,7 +553,6 @@ mod tests {
         let indexing_directory = IndexingDirectory::for_test().await;
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
-        indexing_settings.timestamp_field = Some("timestamp".to_string());
         let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
