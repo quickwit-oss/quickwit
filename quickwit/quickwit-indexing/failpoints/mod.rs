@@ -161,7 +161,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
           - name: body
             type: text
           - name: ts
-            type: i64
+            type: datetime
             fast: true
         timestamp_field: ts
         "#;
@@ -221,7 +221,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
           - name: body
             type: text
           - name: ts
-            type: i64
+            type: datetime
             fast: true
         timestamp_field: ts
         "#;
