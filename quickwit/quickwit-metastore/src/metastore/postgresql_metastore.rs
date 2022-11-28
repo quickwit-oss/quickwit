@@ -29,7 +29,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_common::PrettySample;
-use quickwit_config::SourceConfig;
+use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use sqlx::migrate::Migrator;
@@ -539,8 +539,9 @@ impl Metastore for PostgresqlMetastore {
             .collect()
     }
 
-    #[instrument(skip(self), fields(index_id=index_metadata.index_id()))]
-    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
+    #[instrument(skip(self), fields(index_id=&index_config.index_id))]
+    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()> {
+        let index_metadata = IndexMetadata::new(index_config);
         let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
             MetastoreError::JsonSerializeError {
                 struct_name: "IndexMetadata".to_string(),
@@ -548,7 +549,7 @@ impl Metastore for PostgresqlMetastore {
             }
         })?;
         sqlx::query("INSERT INTO indexes (index_id, index_metadata_json) VALUES ($1, $2)")
-            .bind(index_metadata.index_id())
+            .bind(&index_metadata.index_id())
             .bind(&index_metadata_json)
             .execute(&self.connection_pool)
             .await

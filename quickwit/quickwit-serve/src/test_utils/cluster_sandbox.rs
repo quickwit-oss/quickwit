@@ -29,8 +29,8 @@ use quickwit_common::new_coolid;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{QuickwitConfig, SourceConfig};
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
+use quickwit_config::{IndexConfig, QuickwitConfig, SourceConfig};
+use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_proto::tonic::transport::Endpoint;
 use quickwit_search::{create_search_service_client, SearchServiceClient};
 use rand::seq::IteratorRandom;
@@ -176,12 +176,12 @@ async fn create_index_for_test(
         .default_index_root_uri
         .join(index_id_for_test)
         .unwrap();
-    let index_meta = IndexMetadata::for_test(index_id_for_test, index_uri.as_str());
+    let index_config = IndexConfig::for_test(index_id_for_test, index_uri.as_str());
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
-    metastore.create_index(index_meta.clone()).await?;
+    metastore.create_index(index_config.clone()).await?;
     metastore
         .add_source(index_id_for_test, SourceConfig::ingest_api_default())
         .await?;

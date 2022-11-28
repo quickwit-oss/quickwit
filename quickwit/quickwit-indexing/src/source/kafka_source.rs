@@ -901,8 +901,8 @@ mod kafka_broker_tests {
         partition_deltas: &[(u64, i64, i64)],
     ) {
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
-        metastore.create_index(index_metadata).await.unwrap();
+        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        metastore.create_index(index_config).await.unwrap();
 
         if partition_deltas.is_empty() {
             return;

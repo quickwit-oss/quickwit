@@ -669,9 +669,9 @@ mod tests {
 
         let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        metastore.create_index(index_metadata).await.unwrap();
+        metastore.create_index(index_config).await.unwrap();
         metastore
             .add_source(&index_id, SourceConfig::ingest_api_default())
             .await
@@ -915,7 +915,7 @@ mod tests {
 
         let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
@@ -923,7 +923,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
         };
-        metastore.create_index(index_metadata).await.unwrap();
+        metastore.create_index(index_config).await.unwrap();
         metastore
             .add_source(&index_id, source_config.clone())
             .await
