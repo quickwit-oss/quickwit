@@ -184,7 +184,7 @@ impl IndexingPipeline {
         let mut failure_or_unhealthy_actors: Vec<&str> = Default::default();
         let mut success_actors: Vec<&str> = Default::default();
         for supervisable in self.supervisables() {
-            match supervisable.health() {
+            match supervisable.harvest_health() {
                 Health::Healthy => {
                     // At least one other actor is running.
                     healthy_actors.push(supervisable.name());
@@ -357,8 +357,8 @@ impl IndexingPipeline {
             .source_checkpoint(source_id)
             .cloned()
             .unwrap_or_default(); // TODO Have a stricter check.
-        let source = quickwit_supported_sources()
-            .load_source(
+        let source = ctx
+            .protect_future(quickwit_supported_sources().load_source(
                 Arc::new(SourceExecutionContext {
                     metastore: self.params.metastore.clone(),
                     index_id: self.params.pipeline_id.index_id.clone(),
@@ -366,7 +366,7 @@ impl IndexingPipeline {
                     source_config: self.params.source_config.clone(),
                 }),
                 source_checkpoint,
-            )
+            ))
             .await?;
         let actor_source = SourceActor {
             source,
@@ -787,16 +787,22 @@ mod tests {
         let indexing_pipeline = IndexingPipeline::new(indexing_pipeline_params);
         let (_indexing_pipeline_mailbox, indexing_pipeline_handler) =
             universe.spawn_builder().spawn(indexing_pipeline);
-        assert_eq!(indexing_pipeline_handler.observe().await.generation, 1);
+        let obs = indexing_pipeline_handler
+            .process_pending_and_observe()
+            .await;
+        assert_eq!(obs.generation, 1);
         // Let's shutdown the indexer, this will trigger the the indexing pipeline failure and the
         // restart.
         let indexer = universe.get::<Indexer>().into_iter().next().unwrap();
         indexer.send_message(Command::Quit).await.unwrap();
         tokio::time::sleep(Duration::from_secs(2)).await;
         // Check indexing pipeline has restarted.
-        assert_eq!(indexing_pipeline_handler.observe().await.generation, 2);
+        let obs = indexing_pipeline_handler
+            .process_pending_and_observe()
+            .await;
+        assert_eq!(obs.generation, 2);
         // Check that the merge pipeline is still up.
-        assert_eq!(merge_pipeline_handler.health(), Health::Healthy);
+        assert_eq!(merge_pipeline_handler.harvest_health(), Health::Healthy);
         Ok(())
     }
 }

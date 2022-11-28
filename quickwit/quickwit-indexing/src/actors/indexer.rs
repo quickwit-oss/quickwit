@@ -39,7 +39,7 @@ use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{IndexBuilder, IndexSettings, IndexSortByField};
 use tokio::runtime::Handle;
-use tracing::{info, info_span, Instrument, Span};
+use tracing::{info, info_span, Span};
 use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
@@ -240,7 +240,7 @@ impl IndexerState {
     }
 }
 
-/// A workbench hosts the set of `IndexedSplit` that will are being built.
+/// A workbench hosts the set of `IndexedSplit` that are being built.
 struct IndexingWorkbench {
     workbench_id: Ulid,
     // This span is used for the entire lifetime of the splits batch creations
@@ -498,9 +498,7 @@ impl Indexer {
         }
         let num_splits = splits.len() as u64;
         let split_ids = splits.iter().map(|split| split.split_id()).join(",");
-
         info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-index-serializer");
-        let span_id = batch_parent_span.id();
         ctx.send_message(
             &self.index_serializer_mailbox,
             IndexedSplitBatchBuilder {
@@ -511,7 +509,6 @@ impl Indexer {
                 commit_trigger,
             },
         )
-        .instrument(info_span!(parent: span_id, "send_to_serializer"))
         .await?;
         self.counters.num_docs_in_workbench = 0;
         self.counters.num_splits_emitted += num_splits;

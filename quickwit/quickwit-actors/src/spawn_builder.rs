@@ -223,7 +223,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
             return Err(ActorExitStatus::Killed);
         }
         if self.actor.yield_after_each_message() {
-            self.ctx.protect_future(tokio::task::yield_now()).await;
+            self.ctx.yield_now().await;
             if self.ctx.kill_switch().is_dead() {
                 return Err(ActorExitStatus::Killed);
             }

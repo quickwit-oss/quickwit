@@ -67,7 +67,7 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
     #[instrument(
         name="serialize_split_batch"
         parent=batch_builder.batch_parent_span.id(),
-        skip(self, ctx)
+        skip_all,
     )]
     async fn handle(
         &mut self,

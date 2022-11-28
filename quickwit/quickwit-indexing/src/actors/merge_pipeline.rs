@@ -133,7 +133,7 @@ impl MergePipeline {
         let mut failure_or_unhealthy_actors: Vec<&str> = Default::default();
         let mut success_actors: Vec<&str> = Default::default();
         for supervisable in self.supervisables() {
-            match supervisable.health() {
+            match supervisable.harvest_health() {
                 Health::Healthy => {
                     // At least one other actor is running.
                     healthy_actors.push(supervisable.name());
@@ -184,7 +184,7 @@ impl MergePipeline {
     }
 
     // TODO: Should return an error saying whether we can retry or not.
-    #[instrument(name="", level="info", skip_all, fields(index=%self.params.pipeline_id.index_id, gen=self.generation()))]
+    #[instrument(name="spawn_merge_pipeline", level="info", skip_all, fields(index=%self.params.pipeline_id.index_id, gen=self.generation()))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         self.statistics.num_spawn_attempts += 1;
         self.kill_switch = ctx.kill_switch().child();
@@ -345,7 +345,8 @@ impl Handler<Observe> for MergePipeline {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Some(handles) = &self.handles {
-            let (merge_uploader_counters, merge_publisher_counters) = join!(
+            let (merge_planner_state, merge_uploader_counters, merge_publisher_counters) = join!(
+                handles.merge_planner.observe(),
                 handles.merge_uploader.observe(),
                 handles.merge_publisher.observe(),
             );
@@ -354,7 +355,8 @@ impl Handler<Observe> for MergePipeline {
                 .clone()
                 .add_actor_counters(&merge_uploader_counters, &merge_publisher_counters)
                 .set_generation(self.statistics.generation)
-                .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
+                .set_num_spawn_attempts(self.statistics.num_spawn_attempts)
+                .set_ongoing_merges(merge_planner_state.ongoing_merge_operations.len());
         }
         ctx.schedule_self_msg(Duration::from_secs(1), Observe).await;
         Ok(())

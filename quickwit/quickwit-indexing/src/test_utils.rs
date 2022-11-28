@@ -22,19 +22,19 @@ use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::rand::append_random_suffix;
-use quickwit_common::uri::Uri;
+use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{
     build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams,
     VecSourceParams,
 };
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{
-    quickwit_metastore_uri_resolver, IndexMetadata, Metastore, Split, SplitMetadata, SplitState,
-};
+use quickwit_metastore::file_backed_metastore::FileBackedMetastoreFactory;
+use quickwit_metastore::{Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState};
 use quickwit_storage::{Storage, StorageUriResolver};
+use serde_json::Value as JsonValue;
 
 use crate::actors::IndexingService;
-use crate::models::{DetachPipeline, IndexingStatistics, SpawnPipeline};
+use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
 
 /// Creates a Test environment.
 ///
@@ -56,7 +56,7 @@ pub struct TestSandbox {
 const METASTORE_URI: &str = "ram://quickwit-test-indexes";
 
 fn index_uri(index_id: &str) -> Uri {
-    Uri::from_well_formed(format!("{}/{}", METASTORE_URI, index_id))
+    Uri::from_well_formed(format!("{METASTORE_URI}/{index_id}"))
 }
 
 impl TestSandbox {
@@ -66,7 +66,6 @@ impl TestSandbox {
         doc_mapping_yaml: &str,
         indexing_settings_yaml: &str,
         search_fields: &[&str],
-        metastore_uri: Option<&str>,
     ) -> anyhow::Result<Self> {
         let node_id = append_random_suffix("test-node");
         let index_uri = index_uri(index_id);
@@ -85,14 +84,17 @@ impl TestSandbox {
         )?;
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig::for_test()?;
-        let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-        let metastore_uri = metastore_uri.unwrap_or(METASTORE_URI);
-        let metastore = metastore_uri_resolver
-            .resolve(&Uri::from_well_formed(metastore_uri.to_string()))
-            .await?;
-        let index_metadata = IndexMetadata::new(index_config);
-        metastore.create_index(index_metadata.clone()).await?;
         let storage_resolver = StorageUriResolver::for_test();
+        let metastore_uri_resolver = MetastoreUriResolver::builder()
+            .register(
+                Protocol::Ram,
+                FileBackedMetastoreFactory::new(storage_resolver.clone()),
+            )
+            .build();
+        let metastore = metastore_uri_resolver
+            .resolve(&Uri::from_well_formed(METASTORE_URI))
+            .await?;
+        metastore.create_index(index_config.clone()).await?;
         let storage = storage_resolver.resolve(&index_uri)?;
         let universe = Universe::new();
         let indexing_service_actor = IndexingService::new(
@@ -120,11 +122,11 @@ impl TestSandbox {
 
     /// Adds documents.
     ///
-    /// The documents are expected to be `serde_json::Value`.
+    /// The documents are expected to be `JsonValue`.
     /// They can be created using the `serde_json::json!` macro.
     pub async fn add_documents<I>(&self, split_docs: I) -> anyhow::Result<IndexingStatistics>
     where
-        I: IntoIterator<Item = serde_json::Value> + 'static,
+        I: IntoIterator<Item = JsonValue> + 'static,
         I::IntoIter: Send,
     {
         let docs: Vec<String> = split_docs
@@ -152,7 +154,7 @@ impl TestSandbox {
             .await?;
         let pipeline_handle = self
             .indexing_service
-            .ask_for_res(DetachPipeline { pipeline_id })
+            .ask_for_res(DetachIndexingPipeline { pipeline_id })
             .await?;
         let (_pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
         Ok(pipeline_statistics)
@@ -180,6 +182,11 @@ impl TestSandbox {
     /// Returns the doc mapper of the TestSandbox.
     pub fn doc_mapper(&self) -> Arc<dyn DocMapper> {
         self.doc_mapper.clone()
+    }
+
+    /// Returns the index ID.
+    pub fn index_id(&self) -> &str {
+        &self.index_id
     }
 }
 
@@ -224,7 +231,7 @@ mod tests {
                 type: text
         "#;
         let test_sandbox =
-            TestSandbox::create("test_index", doc_mapping_yaml, "{}", &["body"], None).await?;
+            TestSandbox::create("test_index", doc_mapping_yaml, "{}", &["body"]).await?;
         let statistics = test_sandbox.add_documents(vec![
             serde_json::json!({"title": "Hurricane Fay", "body": "...", "url": "http://hurricane-fay"}),
             serde_json::json!({"title": "Ganimede", "body": "...", "url": "http://ganimede"}),

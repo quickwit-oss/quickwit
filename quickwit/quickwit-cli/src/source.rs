@@ -23,12 +23,12 @@ use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::{validate_identifier, SourceConfig, SourceParams, INGEST_API_SOURCE_ID};
-use quickwit_indexing::check_source_connectivity;
+use quickwit_config::{validate_identifier, ConfigFormat, SourceConfig, INGEST_API_SOURCE_ID};
+use quickwit_core::IndexService;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use quickwit_storage::load_file;
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use tabled::{Table, Tabled};
 
 use crate::{load_quickwit_config, make_table};
@@ -314,34 +314,20 @@ impl SourceCliCommand {
 }
 
 async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
-    let qw_config = load_quickwit_config(&args.config_uri).await?;
-    let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&qw_config.metastore_uri)
-        .await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let source_config_content = load_file(&args.source_config_uri).await?;
-    let source_config =
-        SourceConfig::load(&args.source_config_uri, source_config_content.as_slice())?;
-    // This is a bit redundant, as SourceConfig deserialization also checks
-    // that the indentifier is valid. However it authorizes the special
-    // private names internal to quickwit, so we do an extra check.
-    validate_identifier("Source ID", &source_config.source_id)?;
-    if let SourceParams::IngestApi = source_config.source_params {
-        bail!(
-            "Failed to create Ingest API source `{}` for index `{}`. Ingest API sources are \
-             created and managed by Quickwit and cannot be created via the `source create` CLI \
-             command.",
-            source_config.source_id,
-            args.index_id,
-        );
-    };
-
-    let source_id = source_config.source_id.clone();
-    check_source_connectivity(&source_config).await?;
-
-    metastore.add_source(&args.index_id, source_config).await?;
+    let index_service = IndexService::from_config(quickwit_config).await?;
+    let config_format = ConfigFormat::sniff_from_uri(&args.source_config_uri)?;
+    let source_config = index_service
+        .load_and_create_source(
+            &args.index_id,
+            config_format,
+            source_config_content.as_slice(),
+        )
+        .await?;
     println!(
         "Source `{}` successfully created for index `{}`.",
-        source_id, args.index_id
+        source_config.source_id, args.index_id
     );
     Ok(())
 }
@@ -485,7 +471,7 @@ struct ParamsRow {
     #[tabled(rename = "Key")]
     key: String,
     #[tabled(rename = "Value")]
-    value: Value,
+    value: JsonValue,
 }
 
 #[derive(Tabled)]
@@ -507,12 +493,12 @@ fn display_tables(tables: &[Table]) {
 /// represents the full path of each property in the original object. For instance, `{"root": true,
 /// "parent": {"child": 0}}` yields `[("root", true), ("parent.child", 0)]`. Arrays are not
 /// flattened.
-fn flatten_json(value: Value) -> Vec<(String, Value)> {
+fn flatten_json(value: JsonValue) -> Vec<(String, JsonValue)> {
     let mut acc = Vec::new();
     let mut values = vec![(String::new(), value)];
 
     while let Some((root, value)) = values.pop() {
-        if let Value::Object(obj) = value {
+        if let JsonValue::Object(obj) = value {
             for (key, val) in obj {
                 values.push((
                     if root.is_empty() {
@@ -568,14 +554,16 @@ mod tests {
         assert!(flatten_json(json!({})).is_empty());
 
         assert_eq!(
-            flatten_json(json!(Value::Null)),
-            vec![("".to_string(), Value::Null)]
+            flatten_json(json!(JsonValue::Null)),
+            vec![("".to_string(), JsonValue::Null)]
         );
         assert_eq!(
-            flatten_json(json!({"foo": {"bar": Value::Bool(true)}, "baz": Value::Bool(false)})),
+            flatten_json(
+                json!({"foo": {"bar": JsonValue::Bool(true)}, "baz": JsonValue::Bool(false)})
+            ),
             vec![
-                ("foo.bar".to_string(), Value::Bool(true)),
-                ("baz".to_string(), Value::Bool(false)),
+                ("foo.bar".to_string(), JsonValue::Bool(true)),
+                ("baz".to_string(), JsonValue::Bool(false)),
             ]
         );
     }
@@ -758,7 +746,7 @@ mod tests {
         }];
         let expected_params = vec![ParamsRow {
             key: "filepath".to_string(),
-            value: Value::String("path/to/file".to_string()),
+            value: JsonValue::String("path/to/file".to_string()),
         }];
         let expected_checkpoint = vec![
             CheckpointRow {

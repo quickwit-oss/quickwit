@@ -39,7 +39,6 @@ const IndexesTable = ({ indexesMetadata }: Readonly<{indexesMetadata: IndexMetad
             <TableCell align="left">ID</TableCell>
             <TableCell align="left">URI</TableCell>
             <TableCell align="left">Created on</TableCell>
-            <TableCell align="left">Updated on</TableCell>
             <TableCell align="left">Sources</TableCell>
           </TableRow>
         </TableHead>
@@ -56,7 +55,6 @@ const IndexesTable = ({ indexesMetadata }: Readonly<{indexesMetadata: IndexMetad
               </TableCell>
               <TableCell align="left">{indexMetadata.index_config.index_uri}</TableCell>
               <TableCell align="left">{ dayjs.unix(indexMetadata.create_timestamp).utc().format("YYYY/MM/DD HH:MM") }</TableCell>
-              <TableCell align="left">{ dayjs.unix(indexMetadata.update_timestamp).utc().format("YYYY/MM/DD HH:MM") }</TableCell>
               <TableCell align="left">{ indexMetadata.sources?.length || 'None'}</TableCell>
             </TableRow>
           ))}

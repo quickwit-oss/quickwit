@@ -13,6 +13,7 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 byte-unit = { workspace = true }
+bytes = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 rand = { workspace = true }

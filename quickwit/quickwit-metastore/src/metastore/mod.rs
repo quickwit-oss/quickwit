@@ -25,13 +25,14 @@ mod instrumented_metastore;
 pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
 mod postgresql_model;
+pub mod retrying_metastore;
 
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
-use quickwit_config::SourceConfig;
+use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 
@@ -99,7 +100,7 @@ pub trait Metastore: Send + Sync + 'static {
     ///
     /// This API creates a new index in the metastore.
     /// An error will occur if an index that already exists in the storage is specified.
-    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()>;
+    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()>;
 
     /// Returns whether the index `index_id` exists in the metastore.
     async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {

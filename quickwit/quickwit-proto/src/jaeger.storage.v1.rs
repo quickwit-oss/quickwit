@@ -1,118 +1,116 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDependenciesRequest {
-    #[prost(message, optional, tag="1")]
+    #[prost(message, optional, tag = "1")]
     pub start_time: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub end_time: ::core::option::Option<::prost_types::Timestamp>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDependenciesResponse {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub dependencies: ::prost::alloc::vec::Vec<super::super::api_v2::DependencyLink>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WriteSpanRequest {
-    #[prost(message, optional, tag="1")]
+    #[prost(message, optional, tag = "1")]
     pub span: ::core::option::Option<super::super::api_v2::Span>,
 }
 /// empty; extensible in the future
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct WriteSpanResponse {
-}
+pub struct WriteSpanResponse {}
 /// empty; extensible in the future
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CloseWriterRequest {
-}
+pub struct CloseWriterRequest {}
 /// empty; extensible in the future
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CloseWriterResponse {
-}
+pub struct CloseWriterResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetTraceRequest {
-    #[prost(bytes="vec", tag="1")]
+    #[prost(bytes = "vec", tag = "1")]
     pub trace_id: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetServicesRequest {
-}
+pub struct GetServicesRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetServicesResponse {
-    #[prost(string, repeated, tag="1")]
+    #[prost(string, repeated, tag = "1")]
     pub services: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetOperationsRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub service: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub span_kind: ::prost::alloc::string::String,
 }
 #[derive(Eq, Ord, PartialOrd)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Operation {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub span_kind: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetOperationsResponse {
     /// deprecated
-    #[prost(string, repeated, tag="1")]
+    #[prost(string, repeated, tag = "1")]
     pub operation_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(message, repeated, tag="2")]
+    #[prost(message, repeated, tag = "2")]
     pub operations: ::prost::alloc::vec::Vec<Operation>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TraceQueryParameters {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub service_name: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub operation_name: ::prost::alloc::string::String,
-    #[prost(map="string, string", tag="3")]
-    pub tags: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
-    #[prost(message, optional, tag="4")]
+    #[prost(map = "string, string", tag = "3")]
+    pub tags: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    #[prost(message, optional, tag = "4")]
     pub start_time_min: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(message, optional, tag="5")]
+    #[prost(message, optional, tag = "5")]
     pub start_time_max: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(message, optional, tag="6")]
+    #[prost(message, optional, tag = "6")]
     pub duration_min: ::core::option::Option<::prost_types::Duration>,
-    #[prost(message, optional, tag="7")]
+    #[prost(message, optional, tag = "7")]
     pub duration_max: ::core::option::Option<::prost_types::Duration>,
-    #[prost(int32, tag="8")]
+    #[prost(int32, tag = "8")]
     pub num_traces: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FindTracesRequest {
-    #[prost(message, optional, tag="1")]
+    #[prost(message, optional, tag = "1")]
     pub query: ::core::option::Option<TraceQueryParameters>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SpansResponseChunk {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub spans: ::prost::alloc::vec::Vec<super::super::api_v2::Span>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FindTraceIDsRequest {
-    #[prost(message, optional, tag="1")]
+    #[prost(message, optional, tag = "1")]
     pub query: ::core::option::Option<TraceQueryParameters>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FindTraceIDsResponse {
-    #[prost(bytes="vec", repeated, tag="1")]
+    #[prost(bytes = "vec", repeated, tag = "1")]
     pub trace_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 /// empty; extensible in the future
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CapabilitiesRequest {
-}
+pub struct CapabilitiesRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CapabilitiesResponse {
-    #[prost(bool, tag="1")]
+    #[prost(bool, tag = "1")]
     pub archive_span_reader: bool,
-    #[prost(bool, tag="2")]
+    #[prost(bool, tag = "2")]
     pub archive_span_writer: bool,
-    #[prost(bool, tag="3")]
+    #[prost(bool, tag = "3")]
     pub streaming_span_writer: bool,
 }
 /// Generated client implementations.

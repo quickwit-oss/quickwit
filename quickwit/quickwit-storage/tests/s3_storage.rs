@@ -32,7 +32,7 @@ use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
 // Weirdly this does not work for localstack. The error messages seem off.
 async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
-    let storage_uri = Uri::from_well_formed("s3://quickwit-integration-tests".to_string());
+    let storage_uri = Uri::from_well_formed("s3://quickwit-integration-tests");
     let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?;
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
 

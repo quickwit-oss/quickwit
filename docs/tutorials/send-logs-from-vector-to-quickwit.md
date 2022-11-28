@@ -23,7 +23,7 @@ Let's embrace the OpenTelemetry standard and create an index compatible with its
 # Link: https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md
 #
 
-version: 0
+version: 0.4
 
 index_id: otel-logs
 
@@ -103,7 +103,7 @@ Then we start Quickwit server that will be ready so receive logs on `/api/v1/ote
 
 Our sink here will be Quickwit ingest API `http://127.0.0.1:7280/api/v1/otel-logs/ingest`.
 To keep it simple in this tutorial, we will use a log source called `demo_logs` that generates logs in a given format. Let's choose the common `syslog` format
-(Vector does not generate logs in the OpenTelemetry format directly!) and use the transform feature to map the `syslog` format into the OpenTelemetry format.  
+(Vector does not generate logs in the OpenTelemetry format directly!) and use the transform feature to map the `syslog` format into the OpenTelemetry format.
 
 
 ```toml title=vector.toml

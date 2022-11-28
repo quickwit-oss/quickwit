@@ -1,4 +1,4 @@
-version = "3"
+version = "0.4"
 index_id = "hdfs-logs"
 index_uri = "s3://quickwit-indexes/hdfs-logs"
 
@@ -15,7 +15,6 @@ store_source = true
 
 [retention]
 period = "90 days"
-cutoff_reference = "split_timestamp_field"
 schedule = "daily"
 
 [indexing_settings]
@@ -29,6 +28,7 @@ split_num_docs_target = 10_000_001
 type = "stable_log"
 merge_factor = 9
 max_merge_factor = 11
+maturation_period = "48 hours"
 
 [indexing_settings.resources]
 heap_size = "3G"

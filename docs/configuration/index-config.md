@@ -20,7 +20,7 @@ The index configuration format is YAML. When a key is absent from the configurat
 Here is a complete example suited for the HDFS logs dataset:
 
 ```yaml
-version: 3 # File format version.
+version: 0.4 # File format version.
 
 index_id: "hdfs"
 
@@ -166,19 +166,21 @@ fast: true
 
 #### `datetime` type
 
-The `datetime` type handles dates and datetimes. Quickwit supports multiple input formats configured independently for each field. The following formats are natively supported:
+The `datetime` type handles dates and datetimes. Each `datetime` field can be configured to support multiple input formats.
+When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared. The following formats are natively supported:
 - `iso8601`, `rfc2822`, `rfc3339`: parse dates using standard ISO and RFC formats.
 - `strptime`: parse dates using the Unix [strptime](https://man7.org/linux/man-pages/man3/strptime.3.html) format with few changes:
   - `strptime` format specifiers: `%C`, `%d`, `%D`, `%e`, `%F`, `%g`, `%G`, `%h`, `%H`, `%I`, `%j`, `%k`, `%l`, `%m`, `%M`, `%n`, `%R`, `%S`, `%t`, `%T`, `%u`, `%U`, `%V`, `%w`, `%W`, `%y`, `%Y`, `%%`.
   - `%f` for milliseconds precision support.
   - `%z` timezone offsets can be specified as `(+|-)hhmm` or `(+|-)hh:mm`.
 
-- `unix_timestamp`: parse Unix timestamp values. Timestamp values come in different precision, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is capable of inferring the precision from the value. Because of this feature, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
+- `unix_timestamp`: parse Unix timestamp values. Timestamp values can be provided in different precision, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is capable of inferring the precision from the value. Because of this feature, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
 
-The `precision` parameter indicates the precision used to truncate the values before encoding and compressing them. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field. 
+When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding which improves compression. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field.
+Truncation here means zeroing. Operations on the `datetime` fastfield, e.g. via aggregations, need to be done on the microseconds level.
 
 :::info
-When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared.
+Internally `datetime` is stored as `microseconds` in the fastfield and docstore, and as `seconds` in the term dictionary.
 :::
 
 :::warning
@@ -299,6 +301,7 @@ type: json
 stored: true
 indexed: true
 tokenizer: "default"
+expand_dots: false
 ```
 
 **Parameters for JSON field**
@@ -310,6 +313,7 @@ tokenizer: "default"
 | `indexed`   | Whether value is indexed | `true` |
 | `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `default` |
 | `record`    | **Only affects strings in the json object**. Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
+| `expand_dots`    | If true, json keys containing a `.` should be expanded. For instance, if `expand_dots` is set to true, `{"k8s.node.id": "node-2"}` will be indexed as if it was `{"k8s": {"node": {"id": "node2"}}}`. The benefit is that escaping the `.` will not be required at query time. In other words, `k8s.node.id:node2` will match the document. This does not impact the way the document is stored.  | `true` |
 
 Note that the `tokenizer` and the `record` have the same definition and the same effect as for the text field.
 
@@ -372,6 +376,7 @@ Quickwit offers you three different modes:
 - stored: true
 - tokenizer: raw
 - record: basic
+- expand_dots: true
 ```
 
 The `dynamic` mode makes it possible to operate Quickwit in a schemaless manner, or with a partial schema.
@@ -383,7 +388,7 @@ targeting the path required to reach them from the root of the json object.
 For instance, in a entirely schemaless settings, a minimal index configuration could be:
 
 ```yaml
-version: 0
+version: 0.4
 index_id: my-dynamic-index
 # note we did not map anything.
 doc_mapping:
@@ -475,7 +480,7 @@ Quickwit's default merge policy is the `stable_log` merge policy
 with the following parameters:
 
 ```yaml
-version: 0
+version: 0.4
 index_id: "hdfs"
 # ...
 indexing_settings:
@@ -503,7 +508,7 @@ of the number of merge operation a split should undergo.
 
 
 ```yaml
-version: 0
+version: 0.4
 index_id: "hdfs"
 # ...
 indexing_settings:
@@ -531,7 +536,7 @@ This setting is not recommended. Merges are necessary to reduce the number of sp
 :::
 
 ```yaml
-version: 0
+version: 0.4
 index_id: "hdfs"
 indexing_settings:
     merge_policy:
@@ -555,26 +560,24 @@ This section describes search settings for a given index.
 
 ## Retention policy
 
-This section describes how Quickwit manages data retention. In Quickwit, the retention policy manager drops data on a split basis as opposed to individually dropping documents.
+This section describes how Quickwit manages data retention. In Quickwit, the retention policy manager drops data on a split basis as opposed to individually dropping documents. Splits are evaluated based on their `time_range` which is derived from the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings. Using this setting, the retention policy will delete a split when `now() - split.time_range.end >= retention_policy.period`
 
 ```yaml
-version: 0
+version: 0.4
 index_id: hdfs
 # ...
 retention:
   period: 90 days
-  cutoff_reference: split_timestamp_field
   schedule: daily
 ```
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `period`      | Duration after which splits are dropped, expressed in a human-readable way (`1 day`, `2 hours`, `a week`, ...). (1) | required |
-| `cutoff_reference`      | Split attribute from which the retention policy is applied relatively, possible values are: `publish_timestamp`, and `split_timestamp_field`. (2) | required |
-| `schedule`      | Frequency at which the retention policy is evaluated and applied, expressed as a cron expression (`0 0 * * * *`) or human-readable form (`hourly`, `daily`, `weekly`, `monthly`, `yearly`). | `hourly` |
+| `period`      | Duration after which splits are dropped, expressed in a human-readable way (`1 day`, `2 hours`, `a week`, ...). | required |
+| `schedule`    | Frequency at which the retention policy is evaluated and applied, expressed as a cron expression (`0 0 * * * *`) or human-readable form (`hourly`, `daily`, `weekly`, `monthly`, `yearly`). | `hourly` |
 
 
-(1) `period` is specified as set of time spans. Each time span is an integer followed by a unit suffix like: `2 days 3h 24min`. The supported units are:
+`period` is specified as set of time spans. Each time span is an integer followed by a unit suffix like: `2 days 3h 24min`. The supported units are:
   - `nsec`, `ns` -- nanoseconds
   - `usec`, `us` -- microseconds
   - `msec`, `ms` -- milliseconds
@@ -585,7 +588,3 @@ retention:
   - `weeks`, `week`, `w`
   - `months`, `month`, `M` -- a month is defined as `30.44 days`
   - `years`, `year`, `y` -- a year is defined as `365.25 days`
-
-(2) `cutoff_reference` possible values:
-  - `publish_timestamp` will evaluate based on the timestamp the split was published at.
-  - `split_timestamp_field` will evaluate based on the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings.

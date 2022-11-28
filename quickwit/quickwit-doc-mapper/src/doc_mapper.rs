@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 
 use anyhow::Context;
@@ -26,7 +26,7 @@ use quickwit_proto::SearchRequest;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, Schema, Value};
-use tantivy::Document;
+use tantivy::{Document, Term};
 
 pub type Partition = u64;
 
@@ -136,8 +136,7 @@ clone_trait_object!(DocMapper);
 
 /// Informations about what a DocMapper think should be warmed up before
 /// running the query.
-#[derive(Debug, Default, Clone)]
-#[non_exhaustive]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct WarmupInfo {
     /// Name of fields from the term dictionnary which needs to be entirely
     /// loaded
@@ -145,15 +144,46 @@ pub struct WarmupInfo {
     /// Name of fields from the posting lists which needs to be entirely
     /// loaded
     pub posting_field_names: HashSet<String>,
+    /// Name of fast fields which needs to be loaded
+    pub fast_field_names: HashSet<String>,
+    /// Whether to warmup field norms. Used mostly for scoring.
+    pub field_norms: bool,
+    /// Terms to warmup, and, whether their position is needed too.
+    pub terms_grouped_by_field: HashMap<Field, HashMap<Term, bool>>,
+}
+
+impl WarmupInfo {
+    /// Merge other WarmupInfo into self.
+    pub fn merge(&mut self, other: WarmupInfo) {
+        self.term_dict_field_names
+            .extend(other.term_dict_field_names.into_iter());
+        self.posting_field_names
+            .extend(other.posting_field_names.into_iter());
+        self.fast_field_names
+            .extend(other.fast_field_names.into_iter());
+        self.field_norms |= other.field_norms;
+
+        for (field, term_and_pos) in other.terms_grouped_by_field.into_iter() {
+            let sub_map = self.terms_grouped_by_field.entry(field).or_default();
+
+            for (term, include_position) in term_and_pos.into_iter() {
+                *sub_map.entry(term).or_default() |= include_position;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{HashMap, HashSet};
+
     use quickwit_proto::SearchRequest;
-    use tantivy::schema::{Cardinality, FieldType};
+    use tantivy::schema::{Cardinality, Field, FieldType, Term};
 
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions};
-    use crate::{DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, DYNAMIC_FIELD_NAME};
+    use crate::{
+        DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, WarmupInfo, DYNAMIC_FIELD_NAME,
+    };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
         {
@@ -361,5 +391,84 @@ mod tests {
             format!("{:?}", query),
             r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(type=Json, field=0, path=toto, vtype=U64, 5))), (Should, TermQuery(Term(type=Json, field=0, path=toto, vtype=Str, "5")))] }"#
         );
+    }
+
+    fn hashset(elements: &[&str]) -> HashSet<String> {
+        elements.iter().map(|elem| elem.to_string()).collect()
+    }
+
+    fn hashmap(elements: &[(u32, &str, bool)]) -> HashMap<Field, HashMap<Term, bool>> {
+        let mut result: HashMap<Field, HashMap<Term, bool>> = HashMap::new();
+        for (field, term, pos) in elements {
+            let field = Field::from_field_id(*field);
+            *result
+                .entry(field)
+                .or_default()
+                .entry(Term::from_field_text(field, term))
+                .or_default() |= pos;
+        }
+
+        result
+    }
+
+    #[test]
+    fn test_warmup_info_merge() {
+        let wi_base = WarmupInfo {
+            term_dict_field_names: hashset(&["termdict1", "termdict2"]),
+            posting_field_names: hashset(&["posting1", "posting2"]),
+            fast_field_names: hashset(&["fast1", "fast2"]),
+            field_norms: false,
+            terms_grouped_by_field: hashmap(&[(1, "term1", false), (1, "term2", false)]),
+        };
+
+        // merging with default has no impact
+        let mut wi_cloned = wi_base.clone();
+        wi_cloned.merge(WarmupInfo::default());
+        assert_eq!(wi_cloned, wi_base);
+
+        let mut wi_base = wi_base;
+        let wi_2 = WarmupInfo {
+            term_dict_field_names: hashset(&["termdict2", "termdict3"]),
+            posting_field_names: hashset(&["posting2", "posting3"]),
+            fast_field_names: hashset(&["fast2", "fast3"]),
+            field_norms: true,
+            terms_grouped_by_field: hashmap(&[(2, "term1", false), (1, "term2", true)]),
+        };
+        wi_base.merge(wi_2.clone());
+
+        assert_eq!(
+            wi_base.term_dict_field_names,
+            hashset(&["termdict1", "termdict2", "termdict3"])
+        );
+        assert_eq!(
+            wi_base.posting_field_names,
+            hashset(&["posting1", "posting2", "posting3"])
+        );
+        assert_eq!(
+            wi_base.fast_field_names,
+            hashset(&["fast1", "fast2", "fast3"])
+        );
+        assert!(wi_base.field_norms);
+
+        let expected = [(1, "term1", false), (1, "term2", true), (2, "term1", false)];
+        for (field, term, pos) in expected {
+            let field = Field::from_field_id(field);
+            let term = Term::from_field_text(field, term);
+
+            assert_eq!(
+                *wi_base
+                    .terms_grouped_by_field
+                    .get(&field)
+                    .unwrap()
+                    .get(&term)
+                    .unwrap(),
+                pos
+            );
+        }
+
+        // merge is idempotent
+        let mut wi_cloned = wi_base.clone();
+        wi_cloned.merge(wi_2);
+        assert_eq!(wi_cloned, wi_base);
     }
 }

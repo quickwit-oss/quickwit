@@ -112,7 +112,12 @@ impl<A: Actor> Supervisor<A> {
         &mut self,
         ctx: &ActorContext<Supervisor<A>>,
     ) -> Result<(), ActorExitStatus> {
-        match self.handle_opt.as_ref().unwrap().health() {
+        match self
+            .handle_opt
+            .as_ref()
+            .expect("The actor handle should always be set.")
+            .harvest_health()
+        {
             Health::Healthy => {
                 return Ok(());
             }

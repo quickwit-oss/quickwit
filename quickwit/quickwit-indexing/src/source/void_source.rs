@@ -24,6 +24,7 @@ use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
 use quickwit_config::VoidSourceParams;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
+use serde_json::Value as JsonValue;
 
 use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
@@ -45,8 +46,8 @@ impl Source for VoidSource {
         "VoidSource".to_string()
     }
 
-    fn observable_state(&self) -> serde_json::Value {
-        serde_json::Value::Object(Default::default())
+    fn observable_state(&self) -> JsonValue {
+        JsonValue::Object(Default::default())
     }
 }
 
@@ -129,7 +130,7 @@ mod tests {
         };
         let universe = Universe::new();
         let (_, void_source_handle) = universe.spawn_builder().spawn(void_source_actor);
-        matches!(void_source_handle.health(), Health::Healthy);
+        matches!(void_source_handle.harvest_health(), Health::Healthy);
         let (actor_termination, observed_state) = void_source_handle.quit().await;
         assert_eq!(observed_state, json!({}));
         matches!(actor_termination, ActorExitStatus::Quit);

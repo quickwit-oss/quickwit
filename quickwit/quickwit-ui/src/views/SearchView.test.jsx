@@ -67,6 +67,7 @@ test('renders SearchView', async () => {
     splits: []
   };
   Client.prototype.getIndex.mockImplementation(() => Promise.resolve(index));
+  Client.prototype.listIndexes.mockImplementation(() => Promise.resolve([index.metadata]));
 
   const searchResponse = {
     num_hits: 2,

@@ -1,6 +1,6 @@
 # Comments are supported.
 {
-    "version": "3",
+    "version": "0.4",
     "index_id": "hdfs-logs",
     "index_uri": "s3://quickwit-indexes/hdfs-logs",
     "doc_mapping": {
@@ -43,7 +43,6 @@
     },
     "retention": {
         "period": "90 days",
-        "cutoff_reference": "split_timestamp_field",
         "schedule": "daily"
     },
     "indexing_settings": {
@@ -55,7 +54,8 @@
         "merge_policy": {
             "type": "stable_log",
             "merge_factor": 9,
-            "max_merge_factor": 11
+            "max_merge_factor": 11,
+            "maturation_period": "48 hours"
         },
         "resources": {
             "heap_size": "3G"

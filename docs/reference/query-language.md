@@ -29,8 +29,14 @@ Quickwit is designed to index structured data.
 If you search into some object nested into your document, whether it is an `object`, a `json` object, or whether it was caught through the `dynamic` mode, the query language is the same. You simply need to chain the different steps to reach your value from the root of the document.
 
 For instance, the document `{"product": {"attributes": {color": "red"}}}` is returned if you query `product.attributes.color:red`.
-If a dot `.` exists in one of the key of your object, you need to escape it.
-For instance, the document `{"attributes": {"server.name": "elephant"}}` is returned if you query `attributes:server\.name:elephant`.
+
+If a dot `.` exists in one of the key of your object, the above syntax has some ambiguity.
+For instance, by default, `{"k8s.component.name": "quickwit"}` will be matched by `k8s.component.name:quickwit`.
+
+It is possible to remove the ambiguity by setting `expand_dots` in the json field configuration.
+In that case, it will be necessary to escape the `.` in the query to match this document.
+
+For instance, the above document will match the query `k8s\.component\.name:quickwit`.
 
 ### Boolean Operators
 
@@ -51,6 +57,10 @@ Quickwit also supports phrase queries with a slop parameter using the slop opera
 :::caution
 Slop queries can only be used on field indexed with the [record option](./../configuration/index-config.md#text-type) set to `position` value.
 :::
+
+### Set Operator
+
+Quickwit supports `IN [value1 value2 ...]` as a set membership operator. This is more cpu efficient than the equivalent `OR`ing of many terms, but may download more of the split than `OR`ing, especially when only a few terms are searched. You must specify a field being searched for Set queries.
 
 #### Examples:
 
@@ -73,6 +83,7 @@ The following queries will output:
 - `body:"small bike"~1`: matches [2, 4]
 - `body:"small bike"~2`: matches [2, 4]
 - `body:"small bike"~3`: matches [2, 3, 4]
+- `body: IN [small tiny]`: matches [2, 3, 4, 5]
 
 ### Escaping Special Characters
 

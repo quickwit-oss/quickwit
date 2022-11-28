@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -28,18 +27,54 @@ use quickwit_proto::ingest_api::{
     FetchResponse, IngestRequest, IngestResponse, ListQueuesRequest, ListQueuesResponse,
     QueueExistsRequest, SuggestTruncateRequest, TailRequest,
 };
+use rocksdb::DB;
+use tracing::info;
+use ulid::Ulid;
 
 use crate::metrics::INGEST_METRICS;
+use crate::queue::{list_cf, open_db};
 use crate::{iter_doc_payloads, IngestApiError, Position, Queues};
 
 pub struct IngestApiService {
+    partition_id: String,
     queues: Queues,
+}
+
+/// When we create our queue storage, we also generate and store
+/// a random partition id associated to it.
+///
+/// That partition_id is used in the source checkpoint.
+///
+/// The idea is to make sure that if the entire queue storage is lost,
+/// the old source checkpoint (stored in the metastore) do not apply.
+/// (See #2310)
+const PARTITION_ID: &str = "PARTITION_ID";
+
+fn get_or_initialize_partition_id(db: &DB) -> crate::Result<String> {
+    if let Some(partition_id_bytes) = db.get(PARTITION_ID)? {
+        let partition_id: &str = std::str::from_utf8(&partition_id_bytes).map_err(|_| {
+            let msg = format!("Partition key ({partition_id_bytes:?}) is not utf8");
+            IngestApiError::Corruption { msg }
+        })?;
+        return Ok(partition_id.to_string());
+    }
+    // We add a prefix here to make sure we don't mistake it for a split id when reading logs.
+    let partition_id = format!("ingest_partition_{}", Ulid::new());
+    db.put(PARTITION_ID, partition_id.as_bytes())?;
+    Ok(partition_id)
 }
 
 impl IngestApiService {
     pub fn with_queues_dir(queues_dir_path: &Path) -> crate::Result<Self> {
-        let queues = Queues::open(queues_dir_path)?;
-        Ok(IngestApiService { queues })
+        let cf_names = list_cf(queues_dir_path)?;
+        let db = open_db(queues_dir_path, &cf_names)?;
+        let partition_id = get_or_initialize_partition_id(&db)?;
+        info!(ingest_partition_id=%partition_id, "Ingest API partition id");
+        let queues = Queues::open_db(db, &cf_names[..])?;
+        Ok(IngestApiService {
+            partition_id,
+            queues,
+        })
     }
 
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
@@ -47,13 +82,13 @@ impl IngestApiService {
         let first_non_existing_queue_opt = request
             .doc_batches
             .iter()
-            .map(|batch| batch.index_id.clone())
-            .collect::<HashSet<_>>()
-            .into_iter()
+            .map(|batch| batch.index_id.as_str())
             .find(|index_id| !self.queues.queue_exists(index_id));
 
         if let Some(index_id) = first_non_existing_queue_opt {
-            return Err(IngestApiError::IndexDoesNotExist { index_id });
+            return Err(IngestApiError::IndexDoesNotExist {
+                index_id: index_id.to_string(),
+            });
         }
 
         let mut num_docs = 0usize;
@@ -116,6 +151,21 @@ impl Handler<QueueExistsRequest> for IngestApiService {
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(Ok(self.queues.queue_exists(&queue_exists_req.queue_id)))
+    }
+}
+
+#[derive(Debug)]
+pub struct GetPartitionId;
+
+#[async_trait]
+impl Handler<GetPartitionId> for IngestApiService {
+    type Reply = String;
+    async fn handle(
+        &mut self,
+        _: GetPartitionId,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.partition_id.clone())
     }
 }
 

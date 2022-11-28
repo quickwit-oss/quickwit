@@ -33,13 +33,13 @@ use quickwit_metastore::checkpoint::{
 };
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
-    BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance, RebalanceProtocol,
+    BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
 };
 use rdkafka::error::KafkaError;
 use rdkafka::message::BorrowedMessage;
 use rdkafka::util::Timeout;
 use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
-use serde_json::json;
+use serde_json::{json, Value as JsonValue};
 use tokio::sync::mpsc;
 use tokio::task::{spawn_blocking, JoinHandle};
 use tokio::time;
@@ -219,7 +219,6 @@ pub struct KafkaSource {
     state: KafkaSourceState,
     backfill_mode_enabled: bool,
     events_rx: mpsc::Receiver<KafkaEvent>,
-    consumer: Arc<RdKafkaConsumer>,
     poll_loop_jh: JoinHandle<()>,
     publish_lock: PublishLock,
 }
@@ -261,7 +260,7 @@ impl KafkaSource {
             .get("max.poll.interval.ms")?
             .parse::<u64>()?;
 
-        let poll_loop_jh = spawn_consumer_poll_loop(consumer.clone(), topic.clone(), events_tx);
+        let poll_loop_jh = spawn_consumer_poll_loop(consumer, topic.clone(), events_tx);
         let publish_lock = PublishLock::default();
 
         info!(
@@ -286,18 +285,9 @@ impl KafkaSource {
             state: KafkaSourceState::default(),
             backfill_mode_enabled,
             events_rx,
-            consumer,
             poll_loop_jh,
             publish_lock,
         })
-    }
-
-    fn rebalance_protocol(&self) -> &str {
-        match self.consumer.rebalance_protocol() {
-            RebalanceProtocol::None => "unknown", // The consumer has not joined the group yet.
-            RebalanceProtocol::Eager => "eager",
-            RebalanceProtocol::Cooperative => "cooperative",
-        }
     }
 
     async fn process_message(
@@ -400,7 +390,6 @@ impl KafkaSource {
             source_id=%self.ctx.source_config.source_id,
             topic=%self.topic,
             partitions=?partitions,
-            rebalance_protocol=%self.rebalance_protocol(),
             "New partition assignment after rebalance.",
         );
         assignment_tx
@@ -545,11 +534,6 @@ impl Source for KafkaSource {
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         self.poll_loop_jh.abort();
-
-        let consumer = self.consumer.clone();
-        spawn_blocking(move || {
-            consumer.unsubscribe();
-        });
         Ok(())
     }
 
@@ -560,7 +544,7 @@ impl Source for KafkaSource {
         )
     }
 
-    fn observable_state(&self) -> serde_json::Value {
+    fn observable_state(&self) -> JsonValue {
         let assigned_partitions: Vec<&i32> =
             self.state.assigned_partitions.keys().sorted().collect();
         let current_positions: Vec<(&i32, &str)> = self
@@ -591,7 +575,7 @@ impl Source for KafkaSource {
 // blocking tokio task and handle the rebalance events via message passing between the rebalance
 // callback and the source.
 fn spawn_consumer_poll_loop(
-    consumer: Arc<RdKafkaConsumer>,
+    consumer: RdKafkaConsumer,
     topic: String,
     events_tx: mpsc::Sender<KafkaEvent>,
 ) -> JoinHandle<()> {
@@ -675,7 +659,7 @@ fn create_consumer(
     source_id: &str,
     params: KafkaSourceParams,
     events_tx: mpsc::Sender<KafkaEvent>,
-) -> anyhow::Result<(ClientConfig, Arc<RdKafkaConsumer>)> {
+) -> anyhow::Result<(ClientConfig, RdKafkaConsumer)> {
     let mut client_config = parse_client_params(params.client_params)?;
 
     // Group ID is limited to 255 characters.
@@ -697,7 +681,7 @@ fn create_consumer(
         })
         .context("Failed to create Kafka consumer.")?;
 
-    Ok((client_config, Arc::new(consumer)))
+    Ok((client_config, consumer))
 }
 
 fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RDKafkaLogLevel> {
@@ -717,8 +701,8 @@ fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RD
     Ok(log_level)
 }
 
-fn parse_client_params(client_params: serde_json::Value) -> anyhow::Result<ClientConfig> {
-    let params = if let serde_json::Value::Object(params) = client_params {
+fn parse_client_params(client_params: JsonValue) -> anyhow::Result<ClientConfig> {
+    let params = if let JsonValue::Object(params) = client_params {
         params
     } else {
         bail!("Failed to parse Kafka client parameters. `client_params` must be a JSON object.");
@@ -726,11 +710,11 @@ fn parse_client_params(client_params: serde_json::Value) -> anyhow::Result<Clien
     let mut client_config = ClientConfig::new();
     for (key, value_json) in params {
         let value = match value_json {
-            serde_json::Value::Bool(value_bool) => value_bool.to_string(),
-            serde_json::Value::Number(value_number) => value_number.to_string(),
-            serde_json::Value::String(value_string) => value_string,
-            serde_json::Value::Null => continue,
-            serde_json::Value::Array(_) | serde_json::Value::Object(_) => bail!(
+            JsonValue::Bool(value_bool) => value_bool.to_string(),
+            JsonValue::Number(value_number) => value_number.to_string(),
+            JsonValue::String(value_string) => value_string,
+            JsonValue::Null => continue,
+            JsonValue::Array(_) | JsonValue::Object(_) => bail!(
                 "Failed to parse Kafka client parameters. `client_params.{}` must be a boolean, \
                  number, or string.",
                 key
@@ -917,8 +901,8 @@ mod kafka_broker_tests {
         partition_deltas: &[(u64, i64, i64)],
     ) {
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
-        metastore.create_index(index_metadata).await.unwrap();
+        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        metastore.create_index(index_config).await.unwrap();
 
         if partition_deltas.is_empty() {
             return;

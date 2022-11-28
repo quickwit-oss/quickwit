@@ -19,6 +19,7 @@
 
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
+#![deny(clippy::disallowed_methods)]
 
 //! Index config defines how to configure an index and especially how
 //! to convert a json like documents to a document indexable by tantivy

@@ -36,7 +36,7 @@ jobs:
             command: cargo doc --no-deps --all-features --document-private-items
             cache: true
           - name: cargo nextest
-            command: cargo nextest run --features=postgres --profile ci
+            command: cargo nextest run --features=postgres --profile ci --retries 1
             cache: true
           - name: License headers check
             command: bash scripts/check_license_headers.sh

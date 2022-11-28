@@ -24,6 +24,7 @@ mod stable_log_merge_policy;
 use std::fmt;
 use std::sync::Arc;
 
+pub(crate) use const_write_amplification::ConstWriteAmplificationMergePolicy;
 use itertools::Itertools;
 pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
@@ -33,7 +34,6 @@ use serde::Serialize;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
 use tracing::{info_span, Span};
 
-use crate::merge_policy::const_write_amplification::ConstWriteAmplificationMergePolicy;
 use crate::new_split_id;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -166,6 +166,7 @@ pub mod tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use rand::seq::SliceRandom;
     use tantivy::TrackedObject;
+    use time::OffsetDateTime;
 
     use super::*;
     use crate::actors::{merge_split_attrs, MergePlanner, MergeSplitDownloader};
@@ -225,6 +226,7 @@ pub mod tests {
                 split_id: format!("split_{:02}", split_ord),
                 num_docs,
                 time_range: Some(time_range),
+                create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                 ..Default::default()
             })
             .collect()
@@ -394,9 +396,12 @@ pub mod tests {
             num_docs: num_docs as usize,
             uncompressed_docs_size_in_bytes: 256u64 * num_docs,
             time_range: Some(time_range),
-            create_timestamp: 0,
+            create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
             tags: BTreeSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
             footer_offsets: 0..100,
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
             ..Default::default()
         }
     }

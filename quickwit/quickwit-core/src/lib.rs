@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 mod index;
 
 pub use index::{
@@ -28,6 +30,7 @@ pub use index::{
 mod tests {
     use std::path::Path;
 
+    use quickwit_common::uri::Uri;
     use quickwit_indexing::TestSandbox;
     use quickwit_janitor::FileEntry;
     use quickwit_storage::StorageUriResolver;
@@ -47,7 +50,7 @@ mod tests {
                 type: text
         "#;
         let test_sandbox =
-            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title", "body"], None).await?;
+            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title", "body"]).await?;
         test_sandbox.add_documents(vec![
             serde_json::json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
         ]).await?;
@@ -68,8 +71,11 @@ mod tests {
             assert_eq!(split_num_bytes, file_entry.file_size_in_bytes);
         }
         // Now delete the index.
-        let index_service =
-            IndexService::new(test_sandbox.metastore(), StorageUriResolver::for_test());
+        let index_service = IndexService::new(
+            test_sandbox.metastore(),
+            Uri::from_well_formed("file:///default-index-root-uri"),
+            StorageUriResolver::for_test(),
+        );
         let deleted_file_entries = index_service.delete_index(index_id, false).await?;
         assert_eq!(deleted_file_entries.len(), 1);
         Ok(())
