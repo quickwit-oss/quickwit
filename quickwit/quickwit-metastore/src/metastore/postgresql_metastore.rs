@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::{Display, Write};
 use std::ops::Bound;
 #[cfg(test)]
@@ -41,7 +41,9 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::instrumented_metastore::InstrumentedMetastore;
-use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
+use crate::metastore::postgresql_model::{
+    DeleteTask as PgDeleteTask, Index as PgIndex, Split as PgSplit,
+};
 use crate::metastore::FilterRange;
 use crate::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreFactory,
@@ -115,9 +117,9 @@ impl PostgresqlMetastore {
 }
 
 /// Returns an Index object given an index_id or None if it does not exists.
-async fn index_opt<'a, E>(executor: E, index_id: &str) -> MetastoreResult<Option<Index>>
+async fn index_opt<'a, E>(executor: E, index_id: &str) -> MetastoreResult<Option<PgIndex>>
 where E: sqlx::Executor<'a, Database = Postgres> {
-    let index_opt: Option<Index> = sqlx::query_as::<_, Index>(
+    let index_opt: Option<PgIndex> = sqlx::query_as::<_, PgIndex>(
         r#"
         SELECT *
         FROM indexes
@@ -144,83 +146,6 @@ async fn index_metadata(
             index_id: index_id.to_string(),
         })?
         .index_metadata()
-}
-
-/// Publishes mutiple splits.
-/// Returns the IDs of the splits successfully published.
-#[instrument(skip(tx))]
-async fn mark_splits_as_published_helper(
-    tx: &mut Transaction<'_, Postgres>,
-    index_id: &str,
-    split_ids: &[&str],
-) -> MetastoreResult<Vec<String>> {
-    if split_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    let published_split_ids: Vec<String> = sqlx::query_scalar(
-        r#"
-        UPDATE splits
-        SET
-            split_state = 'Published',
-            -- The values we compare with are *before* the modification:
-            update_timestamp = CASE
-                WHEN split_state = 'Staged' THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-                ELSE update_timestamp
-            END,
-            publish_timestamp = CASE
-                WHEN split_state = 'Staged' THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-                ELSE publish_timestamp
-            END
-        WHERE
-                index_id = $1
-            AND split_id = ANY($2)
-            AND split_state IN ('Published', 'Staged')
-        RETURNING split_id
-    "#,
-    )
-    .bind(index_id)
-    .bind(split_ids)
-    .fetch_all(tx)
-    .await?;
-    Ok(published_split_ids)
-}
-
-/// Marks multiple splits for deletion.
-/// Returns the IDs of the splits successfully marked for deletion.
-#[instrument(skip(tx))]
-async fn mark_splits_for_deletion(
-    tx: &mut Transaction<'_, Postgres>,
-    index_id: &str,
-    split_ids: &[&str],
-    deletable_states: &[&str],
-) -> MetastoreResult<Vec<String>> {
-    if split_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    let marked_split_ids: Vec<String> = sqlx::query_scalar(
-        r#"
-        UPDATE splits
-        SET
-            split_state = 'MarkedForDeletion',
-            -- The values we compare with are *before* the modification:
-            update_timestamp = CASE
-                WHEN split_state != 'MarkedForDeletion' THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-                ELSE update_timestamp
-            END
-        WHERE
-                index_id = $1
-            AND split_id = ANY($2)
-            AND split_state = ANY($3)
-        RETURNING split_id
-    "#,
-    )
-    .bind(index_id)
-    .bind(split_ids)
-    .bind(deletable_states)
-    .fetch_all(tx)
-    .await?;
-
-    Ok(marked_split_ids)
 }
 
 /// Extends an existing SQL string with the generated filter range appended to the query.
@@ -335,93 +260,6 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
     sql
 }
 
-/// Query the database to find out if:
-/// - index exists?
-/// - splits exist?
-/// Returns split that are not in valid state.
-async fn get_splits_with_invalid_state<'a>(
-    tx: &mut Transaction<'_, Postgres>,
-    index_id: &str,
-    split_ids: &[&'a str],
-    affected_split_ids: &[String],
-) -> MetastoreResult<Vec<String>> {
-    let affected_ids_set: HashSet<&str> = affected_split_ids
-        .iter()
-        .map(|split_id| split_id.as_str())
-        .collect();
-    let unaffected_ids_set: HashSet<&str> = split_ids
-        .iter()
-        .copied()
-        .filter(|&split_id| !affected_ids_set.contains(split_id))
-        .collect();
-
-    // SQL query that helps figure out if index exist, non-existent
-    // splits and not deletable splits.
-    const SELECT_SPLITS_FOR_INDEX: &str = r#"
-        SELECT i.index_id, s.split_id
-        FROM indexes AS i
-        LEFT JOIN (
-            SELECT index_id, split_id
-            FROM splits
-            WHERE split_id = ANY ($1)
-        ) AS s
-        ON i.index_id = s.index_id
-        WHERE i.index_id = $2"#;
-
-    let index_split_rows: Vec<IndexIdSplitIdRow> =
-        sqlx::query_as::<_, IndexIdSplitIdRow>(SELECT_SPLITS_FOR_INDEX)
-            .bind(
-                unaffected_ids_set
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<String>>(),
-            )
-            .bind(index_id)
-            .fetch_all(tx)
-            .await?;
-
-    // Index does not exist if empty.
-    if index_split_rows.is_empty() {
-        return Err(MetastoreError::IndexDoesNotExist {
-            index_id: index_id.to_string(),
-        });
-    }
-
-    // None of the unaffected splits exist if we have a single row
-    // with the split_id being `null`
-    if index_split_rows.len() == 1 && index_split_rows[0].split_id.is_none() {
-        error!("none of the unaffected split exists");
-        return Err(MetastoreError::SplitsDoNotExist {
-            split_ids: unaffected_ids_set
-                .iter()
-                .map(|split_id| split_id.to_string())
-                .collect(),
-        });
-    }
-
-    // The unaffected splits might be a mix of non-existant splits and splits in non valid
-    // state.
-    let not_in_correct_state_ids_set: HashSet<&str> = index_split_rows
-        .iter()
-        .flat_map(|item| item.split_id.as_deref())
-        .collect();
-    let not_found_ids_set: HashSet<&str> = &unaffected_ids_set - &not_in_correct_state_ids_set;
-
-    if !not_found_ids_set.is_empty() {
-        return Err(MetastoreError::SplitsDoNotExist {
-            split_ids: not_found_ids_set
-                .iter()
-                .map(|split_id| split_id.to_string())
-                .collect(),
-        });
-    }
-
-    Ok(not_in_correct_state_ids_set
-        .iter()
-        .map(|split_id| split_id.to_string())
-        .collect())
-}
-
 fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
     match &sqlx_err {
         sqlx::Error::Database(boxed_db_err) => {
@@ -530,7 +368,7 @@ impl Metastore for PostgresqlMetastore {
 
     #[instrument(skip(self))]
     async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
-        let pg_indexes = sqlx::query_as::<_, postgresql_model::Index>("SELECT * FROM indexes")
+        let pg_indexes = sqlx::query_as::<_, PgIndex>("SELECT * FROM indexes")
             .fetch_all(&self.connection_pool)
             .await?;
         pg_indexes
@@ -617,65 +455,129 @@ impl Metastore for PostgresqlMetastore {
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
-        new_split_ids: &[&'a str],
+        staged_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     ) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
+            let mut index_metadata = index_metadata(tx, index_id).await?;
+
             if let Some(checkpoint_delta) = checkpoint_delta_opt {
-                mutate_index_metadata(tx, index_id, |index_metadata| {
-                    index_metadata.checkpoint.try_apply_delta(checkpoint_delta)
-                })
-                .await?;
+                index_metadata
+                    .checkpoint
+                    .try_apply_delta(checkpoint_delta)?;
             }
-            let published_split_ids: Vec<String> =
-                mark_splits_as_published_helper(tx, index_id, new_split_ids).await?;
+            let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
+                MetastoreError::JsonSerializeError {
+                    struct_name: "IndexMetadata".to_string(),
+                    message: error.to_string(),
+                }
+            })?;
 
-            // Mark splits for deletion
-            let marked_split_ids = mark_splits_for_deletion(
-                tx,
-                index_id,
-                replaced_split_ids,
-                &[SplitState::Published.as_str()],
+            const PUBLISH_SPLITS_QUERY: &str = r#"
+            -- Select the splits to update, regardless of their state.
+            -- The left join make it possible to identify the splits that do not exist.
+            WITH input_splits AS (
+                SELECT input_splits.split_id, input_splits.expected_split_state, splits.actual_split_state
+                FROM (
+                    SELECT split_id, 'Staged' AS expected_split_state
+                    FROM UNNEST($3) AS staged_splits(split_id)
+                    UNION
+                    SELECT split_id, 'Published' AS expected_split_state
+                    FROM UNNEST($4) AS published_splits(split_id)
+                ) input_splits
+                LEFT JOIN (
+                    SELECT split_id, split_state AS actual_split_state
+                    FROM splits
+                    WHERE
+                        index_id = $1
+                        AND (split_id = ANY($3) OR split_id = ANY($4))
+                    FOR UPDATE
+                    ) AS splits
+                USING (split_id)
+            ),
+            -- Update the index metadata with the new checkpoint.
+            updated_index_metadata AS (
+                UPDATE indexes
+                SET
+                    index_metadata_json = $2
+                WHERE
+                    index_id = $1
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM input_splits
+                        WHERE
+                            actual_split_state != expected_split_state
+                        )
+            ),
+            -- Publish the staged splits and mark the published splits for deletion.
+            updated_splits AS (
+                UPDATE splits
+                SET
+                    split_state = CASE split_state
+                        WHEN 'Staged' THEN 'Published'
+                        ELSE 'MarkedForDeletion'
+                    END,
+                    update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+                    publish_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                FROM input_splits
+                WHERE
+                    splits.index_id = $1
+                    AND splits.split_id = input_splits.split_id
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM input_splits
+                        WHERE
+                            actual_split_state != expected_split_state
+                    )
             )
-            .await?;
+            -- Report the outcome of the update query.
+            SELECT
+                COUNT(1) FILTER (WHERE actual_split_state = 'Staged' AND expected_split_state = 'Staged'),
+                COUNT(1) FILTER (WHERE actual_split_state = 'Published' AND expected_split_state = 'Published'),
+                COALESCE(ARRAY_AGG(split_id) FILTER (WHERE actual_split_state IS NULL), ARRAY[]::TEXT[]),
+                COALESCE(ARRAY_AGG(split_id) FILTER (WHERE actual_split_state != 'Staged' AND expected_split_state = 'Staged'), ARRAY[]::TEXT[]),
+                COALESCE(ARRAY_AGG(split_id) FILTER (WHERE actual_split_state != 'Published' AND expected_split_state = 'Published'), ARRAY[]::TEXT[])
+                FROM input_splits
+        "#;
+            let (
+                num_published_splits,
+                num_marked_splits,
+                not_found_split_ids,
+                not_staged_split_ids,
+                not_marked_split_ids,
+            ): (i64, i64, Vec<String>, Vec<String>, Vec<String>) =
+                sqlx::query_as(PUBLISH_SPLITS_QUERY)
+                    .bind(index_id)
+                    .bind(index_metadata_json)
+                    .bind(staged_split_ids)
+                    .bind(replaced_split_ids)
+                    .fetch_one(tx)
+                    .await
+                    .map_err(|error| convert_sqlx_err(index_id, error))?;
 
-            if published_split_ids.len() != new_split_ids.len() {
-                let affected_split_ids: Vec<String> = published_split_ids
-                    .into_iter()
-                    .chain(marked_split_ids.into_iter())
-                    .collect();
-                let split_ids: Vec<&str> = new_split_ids
-                    .iter()
-                    .chain(replaced_split_ids.iter())
-                    .copied()
-                    .collect();
-
-                let not_staged_ids =
-                    get_splits_with_invalid_state(tx, index_id, &split_ids, &affected_split_ids)
-                        .await?;
-
+            if !not_found_split_ids.is_empty() {
+                return Err(MetastoreError::SplitsDoNotExist {
+                    split_ids: not_found_split_ids,
+                });
+            }
+            if !not_staged_split_ids.is_empty() {
                 return Err(MetastoreError::SplitsNotStaged {
-                    split_ids: not_staged_ids,
+                    split_ids: not_staged_split_ids,
                 });
             }
-            if marked_split_ids.len() != replaced_split_ids.len() {
-                let non_deletable_split_ids = replaced_split_ids
-                    .iter()
-                    .filter(|replaced_split_id| {
-                        marked_split_ids
-                            .iter()
-                            .all(|marked_split_id| &marked_split_id != replaced_split_id)
-                    })
-                    .map(|split_id| split_id.to_string())
-                    .collect();
+            if !not_marked_split_ids.is_empty() {
                 return Err(MetastoreError::SplitsNotDeletable {
-                    split_ids: non_deletable_split_ids,
+                    split_ids: not_marked_split_ids,
                 });
             }
+            info!(
+                index_id=%index_id,
+                "Published {} splits and marked {} splits for deletion successfully.",
+                num_published_splits, num_marked_splits
+            );
             Ok(())
-        })?;
-        Ok(())
+        })
     }
 
     #[instrument(skip(self), fields(index_id=query.index_id))]
@@ -683,7 +585,7 @@ impl Metastore for PostgresqlMetastore {
         let sql_base = "SELECT * FROM splits".to_string();
         let sql = build_query_filter(sql_base, &query);
 
-        let pg_splits = sqlx::query_as::<_, postgresql_model::Split>(&sql)
+        let pg_splits = sqlx::query_as::<_, PgSplit>(&sql)
             .bind(query.index_id)
             .fetch_all(&self.connection_pool)
             .await?;
@@ -1025,19 +927,18 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>> {
-        let pg_delete_tasks: Vec<postgresql_model::DeleteTask> =
-            sqlx::query_as::<_, postgresql_model::DeleteTask>(
-                r#"
+        let pg_delete_tasks: Vec<PgDeleteTask> = sqlx::query_as::<_, PgDeleteTask>(
+            r#"
                 SELECT * FROM delete_tasks
                 WHERE
                     index_id = $1
                     AND opstamp > $2
                 "#,
-            )
-            .bind(index_id)
-            .bind(opstamp_start as i64)
-            .fetch_all(&self.connection_pool)
-            .await?;
+        )
+        .bind(index_id)
+        .bind(opstamp_start as i64)
+        .fetch_all(&self.connection_pool)
+        .await?;
 
         pg_delete_tasks
             .into_iter()
@@ -1055,9 +956,8 @@ impl Metastore for PostgresqlMetastore {
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
-        let pg_stale_splits: Vec<postgresql_model::Split> =
-            sqlx::query_as::<_, postgresql_model::Split>(
-                r#"
+        let pg_stale_splits: Vec<PgSplit> = sqlx::query_as::<_, PgSplit>(
+            r#"
                 SELECT *
                 FROM splits
                 WHERE
@@ -1067,13 +967,13 @@ impl Metastore for PostgresqlMetastore {
                 ORDER BY delete_opstamp ASC, publish_timestamp ASC
                 LIMIT $4
                 "#,
-            )
-            .bind(index_id)
-            .bind(delete_opstamp as i64)
-            .bind(SplitState::Published.as_str())
-            .bind(num_splits as i64)
-            .fetch_all(&self.connection_pool)
-            .await?;
+        )
+        .bind(index_id)
+        .bind(delete_opstamp as i64)
+        .bind(SplitState::Published.as_str())
+        .bind(num_splits as i64)
+        .fetch_all(&self.connection_pool)
+        .await?;
 
         // If no splits were returned, maybe the index does not exist in the first place?
         if pg_stale_splits.is_empty() && index_opt(&self.connection_pool, index_id).await?.is_none()
