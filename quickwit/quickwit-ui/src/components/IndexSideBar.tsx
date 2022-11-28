@@ -134,7 +134,7 @@ function fieldTypeLabel(fieldMapping: FieldMapping): string {
 
 export function IndexSideBar(props: IndexMetadataProps) {
   const [open, setOpen] = useState(true);
-  const fields = (props.indexMetadata === null) ? [] : getAllFields(props.indexMetadata.index_config.doc_mapping);
+  const fields = (props.indexMetadata === null) ? [] : getAllFields(props.indexMetadata.index_config.doc_mapping.field_mappings);
   return (
     <IndexBarWrapper>
       <Box sx={{ px: 3, py: 2}}>
@@ -155,16 +155,16 @@ export function IndexSideBar(props: IndexMetadataProps) {
         { open && <List dense={true} sx={{paddingTop: '0'}}>
           { fields.map(function(field) {
             return <ListItem
-              key={ field.name }
+              key={ field.json_path }
               secondaryAction={
                 <IconButton edge="end" aria-label="add"></IconButton>
               }
               sx={{paddingLeft: '10px'}}
             >
-              <Tooltip title={field.type} arrow placement="left">
-                <Chip label={fieldTypeLabel(field)} size="small" sx={{marginRight: '10px', borderRadius: '3px', fontSize: '0.6rem'}}/>
+              <Tooltip title={field.field_mapping.type} arrow placement="left">
+                <Chip label={fieldTypeLabel(field.field_mapping)} size="small" sx={{marginRight: '10px', borderRadius: '3px', fontSize: '0.6rem'}}/>
               </Tooltip>
-              <ListItemText primary={ field.name }/>
+              <ListItemText primary={ field.json_path }/>
             </ListItem>
           })}
         </List>
