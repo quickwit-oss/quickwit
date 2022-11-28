@@ -17,8 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 mod errors;
 mod ingest_api_service;
+mod metrics;
 mod position;
 mod queue;
 
@@ -28,7 +31,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 pub use errors::IngestApiError;
 use errors::Result;
-pub use ingest_api_service::IngestApiService;
+pub use ingest_api_service::{GetPartitionId, IngestApiService};
+use metrics::INGEST_METRICS;
 use once_cell::sync::OnceCell;
 pub use position::Position;
 pub use queue::Queues;
@@ -97,6 +101,9 @@ pub async fn start_ingest_api_service(
 pub fn add_doc(payload: &[u8], fetch_resp: &mut DocBatch) -> usize {
     fetch_resp.concat_docs.extend_from_slice(payload);
     fetch_resp.doc_lens.push(payload.len() as u64);
+    INGEST_METRICS
+        .ingested_num_bytes
+        .inc_by(payload.len() as u64);
     payload.len()
 }
 

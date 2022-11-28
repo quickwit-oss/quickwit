@@ -24,11 +24,8 @@
 use std::path::Path;
 
 use anyhow::Context;
-use azure_storage::core::prelude::StorageClient;
-use azure_storage_blobs::prelude::AsContainerClient;
-#[cfg(feature = "azure")]
-use quickwit_storage::AzureBlobStorage;
-use quickwit_storage::MultiPartPolicy;
+use azure_storage_blobs::prelude::ClientBuilder;
+use quickwit_storage::{AzureBlobStorage, MultiPartPolicy};
 
 #[cfg(feature = "testsuite")]
 #[tokio::test]
@@ -38,7 +35,7 @@ async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
 
     // Setup container.
     const CONTAINER: &str = "quickwit";
-    let container_client = StorageClient::new_emulator_default().container_client(CONTAINER);
+    let container_client = ClientBuilder::emulator().container_client(CONTAINER);
     container_client.create().into_future().await?;
 
     let mut object_storage = AzureBlobStorage::new_emulated(CONTAINER);

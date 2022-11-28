@@ -31,7 +31,7 @@ First, let's create a new index. Here is the index config and doc mapping corres
 #
 # Index config file for gh-archive dataset.
 #
-version: 0
+version: 0.4
 
 index_id: gh-archive
 
@@ -64,10 +64,10 @@ doc_mapping:
       tokenizer: default
     - name: created_at
       type: datetime
-      input_formats:
-        - "rfc3339"
-      precision: "seconds"
       fast: true
+      input_formats:
+        - rfc3339
+      precision: seconds
 
 indexing_settings:
   timestamp_field: created_at
@@ -115,6 +115,7 @@ aws kinesis put-records --cli-input-json file://records-{%}.json --cli-binary-fo
 #
 # Kinesis source config file.
 #
+version: 0.4
 source_id: kinesis-source
 source_type: kinesis
 params:

@@ -5,6 +5,20 @@ QUICKWIT_SRC = quickwit
 help:
 	@grep '^[^\.#[:space:]].*:' Makefile
 
+
+IMAGE_TAG := $(shell git branch --show-current | tr '\#/' '-')
+
+QW_COMMIT_DATE := $(shell TZ=UTC0 git log -1 --format=%cd --date=format-local:'%Y-%m-%dT%H:%M:%SZ')
+QW_COMMIT_HASH := $(shell git rev-parse HEAD)
+QW_COMMIT_TAGS := $(shell git tag --points-at HEAD | tr '\n' ',')
+
+docker-build:
+	@docker build \
+		--build-arg QW_COMMIT_DATE=$(QW_COMMIT_DATE) \
+		--build-arg QW_COMMIT_HASH=$(QW_COMMIT_HASH) \
+		--build-arg QW_COMMIT_TAGS=$(QW_COMMIT_TAGS) \
+		-t quickwit/quickwit:$(IMAGE_TAG) .
+
 # Usage:
 # `make docker-compose-up` starts all the services.
 # `make docker-compose-up DOCKER_SERVICES='jaeger,localstack'` starts the subset of services matching the profiles.
@@ -19,16 +33,19 @@ docker-compose-logs:
 	docker compose logs -f -t
 
 fmt:
-	$(MAKE) -C $(QUICKWIT_SRC) fmt
+	@$(MAKE) -C $(QUICKWIT_SRC) fmt
 
-fix: fmt
-	$(MAKE) -C $(QUICKWIT_SRC) fix
+fix:
+	@$(MAKE) -C $(QUICKWIT_SRC) fix
 
 # Usage:
 # `make test-all` starts the Docker services and runs all the tests.
 # `make -k test-all docker-compose-down`, tears down the Docker services after running all the tests.
 test-all: docker-compose-up
-	$(MAKE) -C $(QUICKWIT_SRC) test-all
+	@$(MAKE) -C $(QUICKWIT_SRC) test-all
+
+test-failpoints:
+	@$(MAKE) -C $(QUICKWIT_SRC) test-failpoints
 
 # This will build and push all custom cross images for cross-compilation.
 # You will need to login into Docker Hub with the `quickwit` account.

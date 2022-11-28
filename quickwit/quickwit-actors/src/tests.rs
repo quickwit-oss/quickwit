@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use serde::Serialize;
 
 use crate::observation::ObservationType;
 use crate::{
@@ -70,7 +71,7 @@ pub struct PingerSenderActor {
     peers: HashMap<String, Mailbox<PingReceiverActor>>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SenderState {
     pub count: usize,
     pub num_peers: usize,
@@ -274,15 +275,15 @@ async fn test_timeouting_actor() {
     );
     assert!(buggy_mailbox.send_message(Block).await.is_ok());
 
-    assert_eq!(buggy_handle.health(), Health::Healthy);
+    assert_eq!(buggy_handle.harvest_health(), Health::Healthy);
     assert_eq!(
         buggy_handle.process_pending_and_observe().await.obs_type,
         ObservationType::Timeout
     );
-    assert_eq!(buggy_handle.health(), Health::Healthy);
+    assert_eq!(buggy_handle.harvest_health(), Health::Healthy);
     tokio::time::sleep(crate::HEARTBEAT).await;
     tokio::time::sleep(crate::HEARTBEAT).await;
-    assert_eq!(buggy_handle.health(), Health::FailureOrUnhealthy);
+    assert_eq!(buggy_handle.harvest_health(), Health::FailureOrUnhealthy);
 }
 
 #[tokio::test]
@@ -321,7 +322,7 @@ async fn test_actor_running_states() {
     assert_eq!(ping_handle.state(), ActorState::Idle);
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 struct LoopingActor {
     pub loop_count: usize,
     pub single_shot_count: usize,
@@ -339,6 +340,10 @@ impl Actor for LoopingActor {
 
     fn observable_state(&self) -> Self::ObservableState {
         self.clone()
+    }
+
+    fn yield_after_each_message(&self) -> bool {
+        false
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
@@ -374,7 +379,7 @@ impl Handler<SingleShot> for LoopingActor {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_looping() -> anyhow::Result<()> {
     let universe = Universe::new();
     let looping_actor = LoopingActor::default();
@@ -590,7 +595,7 @@ async fn test_actor_sleep_and_resume() -> anyhow::Result<()> {
     mailbox.send_message(Sleep(Duration::from_secs(3))).await?;
     handle.process_pending_and_observe().await;
     mailbox.send_message(AddOperand(3)).await?;
-    mailbox.send_message(Command::Resume).await?;
+    handle.resume();
     let total = *handle.process_pending_and_observe().await;
     assert_eq!(total, 5);
     Ok(())
@@ -624,7 +629,7 @@ struct TestActorWithDrain {
     counts: ProcessAndDrainCounts,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 struct ProcessAndDrainCounts {
     process_calls_count: usize,
     drain_calls_count: usize,

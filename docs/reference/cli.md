@@ -160,6 +160,33 @@ quickwit index ingest --index wikipedia --config=./config/quickwit.yaml --input-
 cat hdfs-log.json | quickwit index ingest --index wikipedia --config=./config/quickwit.yaml
 ```
 
+### enable/disable ingest API
+
+Enable or disable the ingest API for an index.
+`quickwit index ingest-api [args]`
+
+*Synopsis*
+
+```bash
+quickwit index ingest-api
+    --index <index>
+    --config <config>
+    --enable
+```
+
+*Options*
+
+`--index` ID of the target index. \
+`--config` Quickwit config file. \
+`--enable` or `--disable` Enable or disable the ingest API.
+
+*Examples*
+
+*Disable the ingest API of your index*
+```bash
+quickwit index ingest-api --index wikipedia --config ./config/quickwit.yaml --disable 
+```
+
 ### index describe
 
 Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.
@@ -240,9 +267,13 @@ quickwit index search
 `--start-offset` Offset in the global result set of the first hit returned. (default: 0) \
 `--search-fields` List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2". \
 `--snippet-fields` List of fields that Quickwit will extract snippet on. Space-separated list, e.g. "field1 field2". \
-`--start-timestamp` Filters out documents before that timestamp (time-series indexes only). \
-`--end-timestamp` Filters out documents after that timestamp (time-series indexes only). \
+`--start-timestamp` Filters out documents before that timestamp in seconds (time-series indexes only). \
+`--end-timestamp` Filters out documents after that timestamp in seconds (time-series indexes only). \
 `--sort-by-score` Setting this flag calculates and sorts documents by their BM25 score.
+
+:::warning
+The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
+:::
 
 *Examples*
 
@@ -362,8 +393,8 @@ quickwit split list
 
 `--index` ID of the target index. \
 `--states` Comma-separated list of split states to filter on. Possible values are `staged`, `published`, and `marked`. \
-`--start-date` Filters out splits containing documents from this timestamp onwards (time-series indexes only).  \
-`--end-date` Filters out splits containing documents before this timestamp (time-series indexes only).  \
+`--start-date` Filters out splits containing documents from this timestamp in seconds onwards (time-series indexes only). \
+`--end-date` Filters out splits containing documents before this timestamp in seconds (time-series indexes only). \
 `--tags` Comma-separated list of tags, only splits that contain all of the tags will be returned.  \
 `--config` Quickwit config file.  \
 `--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.  \
@@ -505,6 +536,60 @@ EOF
 quickwit source add --index wikipedia --source wikipedia-source --type kafka --params wikipedia-kafka-source.json --config ./config/quickwit.yaml
 ```
 
+### source enable
+
+Enables a source.
+`quickwit source enable [args]`
+
+*Synopsis*
+
+```bash
+quickwit source enable
+    --index <index>
+    --source <source>
+    --config <config>
+```
+
+*Options*
+
+`--index` ID of the target index. \
+`--source` ID of the target source. \
+`--config` Quickwit config file.
+
+*Examples*
+
+*Enable a `wikipedia-source` source*
+```bash
+quickwit source enable --index wikipedia --source wikipedia-source --config ./config/quickwit.yaml
+```
+
+### source disable
+
+Disables a source.
+`quickwit source disable [args]`
+
+*Synopsis*
+
+```bash
+quickwit source disable
+    --index <index>
+    --source <source_id>
+    --config <config>
+```
+
+*Options*
+
+`--index` ID of the target index. \
+`--source` ID of the target source. \
+`--config` Quickwit config file.
+
+*Examples*
+
+*Disable a `wikipedia-source` source*
+```bash
+quickwit source disable --index wikipedia --source wikipedia-source --config ./config/quickwit.yaml
+```
+
 ### source delete
 
 Deletes a source.
@@ -523,7 +608,7 @@ quickwit source delete
 
 `--index` ID of the target index. \
 `--source` ID of the target source. \
-`--config` Quickwit config file. \
+`--config` Quickwit config file.
 
 *Examples*
 
@@ -550,7 +635,7 @@ quickwit source describe
 
 `--index` ID of the target index. \
 `--source` ID of the target source. \
-`--config` Quickwit config file. \
+`--config` Quickwit config file.
 
 *Examples*
 
@@ -575,7 +660,7 @@ quickwit source list
 *Options*
 
 `--index` ID of the target index. \
-`--config` Quickwit config file. \
+`--config` Quickwit config file.
 
 *Examples*
 

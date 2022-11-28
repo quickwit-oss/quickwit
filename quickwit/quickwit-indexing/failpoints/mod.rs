@@ -41,14 +41,16 @@ use std::time::{Duration, Instant};
 
 use fail::FailScenario;
 use quickwit_actors::{create_test_mailbox, ActorExitStatus, Universe};
+use quickwit_common::io::IoControls;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::split_file;
 use quickwit_indexing::actors::MergeExecutor;
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::{IndexingPipelineId, MergeScratch, ScratchDirectory};
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
-use quickwit_metastore::{Split, SplitMetadata, SplitState};
-use tantivy::Directory;
+use quickwit_metastore::{ListSplitsQuery, Split, SplitMetadata, SplitState};
+use serde_json::Value as JsonValue;
+use tantivy::{Directory, Inventory};
 
 #[tokio::test]
 async fn test_failpoint_no_failure() -> anyhow::Result<()> {
@@ -159,7 +161,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
           - name: body
             type: text
           - name: ts
-            type: i64
+            type: datetime
             fast: true
         "#;
     let indexing_setting_yaml = r#"
@@ -172,23 +174,20 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
         doc_mapper_yaml,
         indexing_setting_yaml,
         &search_fields,
-        None,
     )
     .await?;
-    let batch_1: Vec<serde_json::Value> = vec![
+    let batch_1: Vec<JsonValue> = vec![
         serde_json::json!({"body ": "1", "ts": 1629889530 }),
         serde_json::json!({"body ": "2", "ts": 1629889531 }),
     ];
-    let batch_2: Vec<serde_json::Value> = vec![
+    let batch_2: Vec<JsonValue> = vec![
         serde_json::json!({"body ": "3", "ts": 1629889532 }),
         serde_json::json!({"body ": "4", "ts": 1629889533 }),
     ];
     test_index_builder.add_documents(batch_1).await?;
     test_index_builder.add_documents(batch_2).await?;
-    let mut splits = test_index_builder
-        .metastore()
-        .list_splits(&index_id, SplitState::Published, None, None)
-        .await?;
+    let query = ListSplitsQuery::for_index(&index_id).with_split_state(SplitState::Published);
+    let mut splits = test_index_builder.metastore().list_splits(query).await?;
     splits.sort_by_key(|split| *split.split_metadata.time_range.clone().unwrap().start());
     assert_eq!(splits.len(), 2);
     assert_eq!(
@@ -229,7 +228,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
           - name: body
             type: text
           - name: ts
-            type: i64
+            type: datetime
             fast: true
         "#;
     let indexing_setting_yaml = r#"
@@ -243,11 +242,11 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         doc_mapper_yaml,
         indexing_setting_yaml,
         &search_fields,
-        None,
     )
     .await?;
 
-    let batch: Vec<serde_json::Value> =
+    let doc_mapper = test_index_builder.doc_mapper();
+    let batch: Vec<JsonValue> =
         std::iter::repeat_with(|| serde_json::json!({"body ": TEST_TEXT, "ts": 1631072713 }))
             .take(500)
             .collect();
@@ -276,9 +275,11 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
 
         tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap());
     }
-
+    let merge_ops_inventory = Inventory::new();
+    let merge_operation =
+        merge_ops_inventory.track(MergeOperation::new_merge_operation(split_metadatas));
     let merge_scratch = MergeScratch {
-        merge_operation: MergeOperation::new_merge_operation(split_metadatas),
+        merge_operation,
         merge_scratch_directory,
         downloaded_splits_directory,
         tantivy_dirs,
@@ -290,7 +291,14 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         pipeline_ord: 0,
     };
     let (merge_packager_mailbox, _merge_packager_inbox) = create_test_mailbox();
-    let merge_executor = MergeExecutor::new(pipeline_id, metastore, merge_packager_mailbox);
+    let io_controls = IoControls::default();
+    let merge_executor = MergeExecutor::new(
+        pipeline_id,
+        metastore,
+        doc_mapper,
+        io_controls,
+        merge_packager_mailbox,
+    );
     let universe = Universe::new();
     let (merge_executor_mailbox, merge_executor_handle) =
         universe.spawn_builder().spawn(merge_executor);

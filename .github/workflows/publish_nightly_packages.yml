@@ -19,4 +19,3 @@ jobs:
           target: ${{ matrix.target }}
           version: nightly
           token: ${{ secrets.GITHUB_TOKEN }}
-        working-directory: ./quickwit

@@ -1,6 +1,6 @@
 ---
 title: Schemaless
-sidebar_position: 1
+sidebar_position: 2
 ---
 
 # Strict schema or schemaless?
@@ -15,7 +15,7 @@ As a user, you need to precisely define the list of fields to be ingested by Qui
 For instance, a reasonable mapping for an application log could be:
 
 ```yaml
-version: 0
+version: 0.4
 
 index_id: my_app
 
@@ -54,7 +54,7 @@ By default, this catch-all configuration indexes and stores all of these fields,
 A minimalist, yet perfectly valid and useful index configuration is then:
 
 ```yaml
-version: 0
+version: 0.4
 index_id: "my_dynamic_index"
 doc_mapping:
   mode: dynamic
@@ -98,9 +98,8 @@ Each event type comes with its own set of attributes. Declaring our mapping as t
 
 Instead, we can cherry-pick the fields that are common to all of the logs, and rely on dynamic mode to handle the rest.
 
-
 ```yaml
-version: 0
+version: 0.4
 index_id: "my_dynamic_index"
 doc_mapping:
   mode: dynamic
@@ -124,7 +123,6 @@ Our index is now ready to handle queries like this:
 event_type:order AND cart.product_id:120391
 ```
 
-
 ## A schema with schemaless pockets
 
 Some logs are isolating these event-specific attributes in a
@@ -134,11 +132,11 @@ sub-field. For instance, let's have a look at an OpenTelemetry JSON log.
 {
   "Timestamp": 1653028151,
   "Attributes": {
-      "split_id": "28f897f2-0419-4d88-8abc-ada72b4b5256"
+    "split_id": "28f897f2-0419-4d88-8abc-ada72b4b5256"
   },
   "Resource": {
     "service": "donut_shop",
-    "k8s_pod_uid": "27413708-876b-4652-8ca4-50e8b4a5caa2",
+    "k8s_pod_uid": "27413708-876b-4652-8ca4-50e8b4a5caa2"
   },
   "TraceId": "f4dbb3edd765f620",
   "SpanId": "43222c2d51a7abe3",
@@ -154,7 +152,7 @@ Quickwit 0.3 introduced a JSON field type to handle this use case.
 A good index configuration here could be:
 
 ```yaml
-version: 0
+version: 0.4
 index_id: "otel_logs"
 mode: lenient
 doc_mapping:
@@ -187,5 +185,4 @@ search_settings:
 
 We can now naturally search our logs with the following query:
 
-```donuts AND service:donuts_shop```
-
+`donuts AND service:donuts_shop`

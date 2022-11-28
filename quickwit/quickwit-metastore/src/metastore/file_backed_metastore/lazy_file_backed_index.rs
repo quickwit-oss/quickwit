@@ -87,10 +87,14 @@ async fn poll_index_metadata_once(
     index_id: &str,
     metadata_mutex: &Mutex<FileBackedIndex>,
 ) {
+    let mut metadata_lock = metadata_mutex.lock().await;
+    if metadata_lock.flip_recently_modified_down() {
+        return;
+    }
     let index_fetch_res = fetch_index(storage, index_id).await;
     match index_fetch_res {
         Ok(index) => {
-            *metadata_mutex.lock().await = index;
+            *metadata_lock = index;
         }
         Err(fetch_error) => {
             error!(error=?fetch_error, "fetch-metadata-error");
@@ -109,7 +113,7 @@ fn spawn_index_metadata_polling_task(
         interval.tick().await; //< this is to prevent fetch right after the first population of the data.
         while let Some(metadata_mutex) = metastore_weak.upgrade() {
             interval.tick().await;
-            poll_index_metadata_once(&*storage, &index_id, &*metadata_mutex).await;
+            poll_index_metadata_once(&*storage, &index_id, &metadata_mutex).await;
         }
     });
 }

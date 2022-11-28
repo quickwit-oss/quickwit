@@ -21,19 +21,22 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::io::IoControls;
 use quickwit_metastore::SplitMetadata;
-use tantivy::Directory;
-use tracing::{info, info_span, warn, Span};
+use tantivy::{Directory, TrackedObject};
+use tracing::{debug, info, instrument};
 
 use super::MergeExecutor;
 use crate::merge_policy::MergeOperation;
 use crate::models::{MergeScratch, ScratchDirectory};
 use crate::split_store::IndexingSplitStore;
 
+#[derive(Clone)]
 pub struct MergeSplitDownloader {
     pub scratch_directory: ScratchDirectory,
     pub split_store: IndexingSplitStore,
     pub executor_mailbox: Mailbox<MergeExecutor>,
+    pub io_controls: IoControls,
 }
 
 impl Actor for MergeSplitDownloader {
@@ -50,25 +53,17 @@ impl Actor for MergeSplitDownloader {
 }
 
 #[async_trait]
-impl Handler<MergeOperation> for MergeSplitDownloader {
+impl Handler<TrackedObject<MergeOperation>> for MergeSplitDownloader {
     type Reply = ();
 
-    fn message_span(&self, msg_id: u64, merge_operation: &MergeOperation) -> Span {
-        let num_docs: usize = merge_operation
-            .splits_as_slice()
-            .iter()
-            .map(|split| split.num_docs)
-            .sum();
-        info_span!("merge",
-                    msg_id=&msg_id,
-                    merge_split_id=%merge_operation.merge_split_id,
-                    num_docs=num_docs,
-                    num_splits=merge_operation.splits_as_slice().len())
-    }
-
+    #[instrument(
+        name = "merge_split_downloader",
+        parent = merge_operation.merge_parent_span.id(),
+        skip_all,
+    )]
     async fn handle(
         &mut self,
-        merge_operation: MergeOperation,
+        merge_operation: TrackedObject<MergeOperation>,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         let merge_scratch_directory = self
@@ -108,13 +103,21 @@ impl MergeSplitDownloader {
         let mut tantivy_dirs = vec![];
         for split in splits {
             if ctx.kill_switch().is_dead() {
-                warn!(split_id=?split.split_id(), "Kill switch was activated. Cancelling download.");
+                debug!(
+                    split_id = split.split_id(),
+                    "Kill switch was activated. Cancelling download."
+                );
                 return Err(ActorExitStatus::Killed);
             }
+            let io_controls = self
+                .io_controls
+                .clone()
+                .set_progress(ctx.progress().clone())
+                .set_kill_switch(ctx.kill_switch().clone());
             let _protect_guard = ctx.protect_zone();
             let tantivy_dir = self
                 .split_store
-                .fetch_split(split.split_id(), download_directory)
+                .fetch_and_open_split(split.split_id(), download_directory, &io_controls)
                 .await
                 .map_err(|error| {
                     let split_id = split.split_id();
@@ -134,6 +137,7 @@ mod tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::split_file;
     use quickwit_storage::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
+    use tantivy::Inventory;
 
     use super::*;
     use crate::new_split_id;
@@ -169,10 +173,12 @@ mod tests {
             scratch_directory,
             split_store,
             executor_mailbox: merge_executor_mailbox,
+            io_controls: IoControls::default(),
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) =
             universe.spawn_builder().spawn(merge_split_downloader);
-        let merge_operation = MergeOperation::new_merge_operation(splits_to_merge);
+        let inventory = Inventory::new();
+        let merge_operation = inventory.track(MergeOperation::new_merge_operation(splits_to_merge));
         merge_split_downloader_mailbox
             .send_message(merge_operation)
             .await?;
@@ -194,7 +200,7 @@ mod tests {
                 .downloaded_splits_directory
                 .path()
                 .join(&split_filename);
-            assert!(split_filepath.exists());
+            assert!(split_filepath.try_exists().unwrap());
         }
         Ok(())
     }

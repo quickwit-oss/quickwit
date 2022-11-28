@@ -20,6 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 
 use hyper::Uri;
@@ -28,8 +29,8 @@ use quickwit_common::new_coolid;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::QuickwitConfig;
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
+use quickwit_config::{IndexConfig, QuickwitConfig, SourceConfig};
+use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_proto::tonic::transport::Endpoint;
 use quickwit_search::{create_search_service_client, SearchServiceClient};
 use rand::seq::IteratorRandom;
@@ -77,11 +78,7 @@ impl ClusterSandbox {
         let index_for_test = append_random_suffix("test-standalone-node-index");
         create_index_for_test(&index_for_test, &node_config.quickwit_config).await?;
         tokio::spawn(async move {
-            let result = serve_quickwit(
-                node_config_clone.quickwit_config,
-                &node_config_clone.services,
-            )
-            .await;
+            let result = serve_quickwit(node_config_clone.quickwit_config).await;
             println!("Quickwit server terminated: {:?}", result);
             Result::<_, anyhow::Error>::Ok(())
         });
@@ -112,11 +109,7 @@ impl ClusterSandbox {
         for node_config in node_configs.iter() {
             let node_config_clone = node_config.clone();
             tokio::spawn(async move {
-                let result = serve_quickwit(
-                    node_config_clone.quickwit_config,
-                    &node_config_clone.services,
-                )
-                .await;
+                let result = serve_quickwit(node_config_clone.quickwit_config).await;
                 info!("Quickwit server terminated: {:?}", result);
                 Result::<_, anyhow::Error>::Ok(())
             });
@@ -147,7 +140,7 @@ impl ClusterSandbox {
         })
     }
 
-    pub async fn wait_for_cluster_num_live_nodes(
+    pub async fn wait_for_cluster_num_ready_nodes(
         &self,
         expected_num_alive_nodes: usize,
     ) -> anyhow::Result<()> {
@@ -155,8 +148,8 @@ impl ClusterSandbox {
         let max_num_attempts = 3;
         while num_attempts < max_num_attempts {
             tokio::time::sleep(Duration::from_millis(100 * (num_attempts + 1))).await;
-            let cluster_state = self.rest_client.cluster_state().await?;
-            if cluster_state.live_nodes.len() == expected_num_alive_nodes {
+            let cluster_snapshot = self.rest_client.cluster_snapshot().await?;
+            if cluster_snapshot.ready_nodes.len() == expected_num_alive_nodes {
                 return Ok(());
             }
             num_attempts += 1;
@@ -183,12 +176,15 @@ async fn create_index_for_test(
         .default_index_root_uri
         .join(index_id_for_test)
         .unwrap();
-    let index_meta = IndexMetadata::for_test(index_id_for_test, index_uri.as_str());
+    let index_config = IndexConfig::for_test(index_id_for_test, index_uri.as_str());
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
-    metastore.create_index(index_meta.clone()).await?;
+    metastore.create_index(index_config.clone()).await?;
+    metastore
+        .add_source(index_id_for_test, SourceConfig::ingest_api_default())
+        .await?;
     Ok(())
 }
 
@@ -212,12 +208,13 @@ pub fn build_node_configs(
     let unique_dir_name = new_coolid("test-dir");
     for node_services in nodes_services.iter() {
         let mut config = QuickwitConfig::for_test();
+        config.enabled_services = node_services.clone();
         config.cluster_id = cluster_id.clone();
         config.data_dir_path = root_data_dir.join(&config.node_id);
         config.metastore_uri =
-            QuickwitUri::try_new(&format!("ram:///{}/metastore", unique_dir_name)).unwrap();
+            QuickwitUri::from_str(&format!("ram:///{}/metastore", unique_dir_name)).unwrap();
         config.default_index_root_uri =
-            QuickwitUri::try_new(&format!("ram:///{}/indexes", unique_dir_name)).unwrap();
+            QuickwitUri::from_str(&format!("ram:///{}/indexes", unique_dir_name)).unwrap();
         peers.push(config.gossip_advertise_addr.to_string());
         node_configs.push(NodeConfig {
             quickwit_config: config,

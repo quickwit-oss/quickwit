@@ -18,6 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #![allow(clippy::bool_assert_comparison)]
+#![deny(clippy::disallowed_methods)]
+
 pub mod payload;
 /// This crate contains  the code responsible for sending usage data to Quickwit inc's server.
 mod sender;

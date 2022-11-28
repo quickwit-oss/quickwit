@@ -2,6 +2,14 @@ FROM rust:bullseye AS builder
 
 ARG CARGO_FEATURES=release-feature-set
 ARG CARGO_PROFILE=release
+ARG QW_COMMIT_DATE
+ARG QW_COMMIT_HASH
+ARG QW_COMMIT_TAGS
+
+ENV QW_COMMIT_DATE=$QW_COMMIT_DATE
+ENV QW_COMMIT_HASH=$QW_COMMIT_HASH
+ENV QW_COMMIT_TAGS=$QW_COMMIT_TAGS
+
 
 RUN echo "Adding Node.js PPA" \
     && curl -s https://deb.nodesource.com/setup_16.x | bash
@@ -11,6 +19,7 @@ RUN apt-get -y update \
                           clang \
                           cmake \
                           libssl-dev \
+                          libsasl2-dev \
                           llvm \
                           nodejs \
                           protobuf-compiler \
@@ -42,10 +51,7 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && mkdir -p /quickwit/bin \
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
-# Change the default configuration file in order to make the REST,
-# gRPC, and gossip services accessible outside of Docker container.
 COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
-RUN sed -i 's/#[ ]*listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' config/quickwit.yaml
 
 
 FROM debian:bullseye-slim AS quickwit
@@ -57,6 +63,7 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
+                          libsasl2-2 \
                           libssl1.1 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -67,5 +74,8 @@ COPY --from=builder /quickwit/config/quickwit.yaml /quickwit/config/quickwit.yam
 
 ENV QW_CONFIG=/quickwit/config/quickwit.yaml
 ENV QW_DATA_DIR=/quickwit/qwdata
+ENV QW_LISTEN_ADDRESS=0.0.0.0
 
-ENTRYPOINT ["/usr/local/bin/quickwit"]
+RUN quickwit --version
+
+ENTRYPOINT ["quickwit"]

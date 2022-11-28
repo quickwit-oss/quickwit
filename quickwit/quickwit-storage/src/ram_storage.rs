@@ -25,11 +25,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::{Protocol, Uri};
-use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
 use crate::prefix_storage::add_prefix_to_storage;
+use crate::storage::{BulkDeleteError, SendableAsync};
 use crate::{
     OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
@@ -55,7 +55,7 @@ impl fmt::Debug for RamStorage {
 impl Default for RamStorage {
     fn default() -> Self {
         Self {
-            uri: Uri::new("ram:///".to_string()),
+            uri: Uri::from_well_formed("ram:///"),
             files: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -97,14 +97,13 @@ impl Storage for RamStorage {
         Ok(())
     }
 
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
             StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
         })?;
-        let mut file = File::create(output_path).await?;
-        file.write_all(&payload_bytes).await?;
-        file.flush().await?;
+        output.write_all(&payload_bytes).await?;
+        output.flush().await?;
         Ok(())
     }
 
@@ -118,6 +117,14 @@ impl Storage for RamStorage {
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         self.files.write().await.remove(path);
+        Ok(())
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        let mut files = self.files.write().await;
+        for &path in paths {
+            files.remove(path);
+        }
         Ok(())
     }
 
@@ -160,7 +167,7 @@ impl RamStorageBuilder {
     /// Finalizes the [`RamStorage`] creation.
     pub fn build(self) -> RamStorage {
         RamStorage {
-            uri: Uri::new("ram:///".to_string()),
+            uri: Uri::from_well_formed("ram:///"),
             files: Arc::new(RwLock::new(self.files)),
         }
     }
@@ -216,13 +223,13 @@ mod tests {
     #[test]
     fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
-        let ram_uri = Uri::new("s3:///foo".to_string());
+        let ram_uri = Uri::from_well_formed("s3:///foo");
         let err = ram_storage_factory.resolve(&ram_uri).err().unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
-        let data_uri = Uri::new("ram:///data".to_string());
+        let data_uri = Uri::from_well_formed("ram:///data");
         let data_storage = ram_storage_factory.resolve(&data_uri).ok().unwrap();
-        let home_uri = Uri::new("ram:///home".to_string());
+        let home_uri = Uri::from_well_formed("ram:///home");
         let home_storage = ram_storage_factory.resolve(&home_uri).ok().unwrap();
         assert_ne!(data_storage.uri(), home_storage.uri());
 

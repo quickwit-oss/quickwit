@@ -27,7 +27,7 @@ use futures::future::try_join_all;
 use futures::Future;
 use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_doc_mapper::{DocMapper, WarmupInfo, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_proto::{
     LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError,
 };
@@ -37,7 +37,6 @@ use quickwit_storage::{
 use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::error::AsyncIoError;
-use tantivy::query::Query;
 use tantivy::schema::{Cardinality, Field, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
@@ -136,32 +135,37 @@ pub(crate) async fn open_index_with_caches(
 /// * `term_dict_field_names` - A list of fields, where the whole dictionary needs to be loaded.
 /// This is e.g. required for term aggregation, since we don't know in advance which terms are going
 /// to be hit.
-#[instrument(skip(searcher, query, fast_field_names))]
-pub(crate) async fn warmup(
-    searcher: &Searcher,
-    query: &dyn Query,
-    fast_field_names: &HashSet<String>,
-    term_dict_field_names: &HashSet<String>,
-    requires_scoring: bool,
-) -> anyhow::Result<()> {
-    let warm_up_terms_future =
-        warm_up_terms(searcher, query).instrument(debug_span!("warm_up_terms"));
-    let warm_up_term_dict_future = warm_up_term_dict_fields(searcher, term_dict_field_names)
-        .instrument(debug_span!("warm_up_term_dicts"));
-    let warm_up_fastfields_future = warm_up_fastfields(searcher, fast_field_names)
+#[instrument(skip(searcher))]
+pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> anyhow::Result<()> {
+    let warm_up_terms_future = warm_up_terms(searcher, &warmup_info.terms_grouped_by_field)
+        .instrument(debug_span!("warm_up_terms"));
+    let warm_up_term_dict_future =
+        warm_up_term_dict_fields(searcher, &warmup_info.term_dict_field_names)
+            .instrument(debug_span!("warm_up_term_dicts"));
+    let warm_up_fastfields_future = warm_up_fastfields(searcher, &warmup_info.fast_field_names)
         .instrument(debug_span!("warm_up_fastfields"));
-    let warm_up_fieldnorms_future = warm_up_fieldnorms(searcher, requires_scoring)
+    let warm_up_fieldnorms_future = warm_up_fieldnorms(searcher, warmup_info.field_norms)
         .instrument(debug_span!("warm_up_fieldnorms"));
-    let (warm_up_terms_res, warm_up_fastfields_res, warm_up_term_dict_res, warm_up_fieldnorms_res) = tokio::join!(
+    let warm_up_postings_future = warm_up_postings(searcher, &warmup_info.posting_field_names)
+        .instrument(debug_span!("warm_up_postings"));
+    let (
+        warm_up_terms_res,
+        warm_up_fastfields_res,
+        warm_up_term_dict_res,
+        warm_up_fieldnorms_res,
+        warm_up_postings_res,
+    ) = tokio::join!(
         warm_up_terms_future,
         warm_up_fastfields_future,
         warm_up_term_dict_future,
         warm_up_fieldnorms_future,
+        warm_up_postings_future,
     );
     warm_up_terms_res?;
     warm_up_fastfields_res?;
     warm_up_term_dict_res?;
     warm_up_fieldnorms_res?;
+    warm_up_postings_res?;
     Ok(())
 }
 
@@ -198,6 +202,31 @@ async fn warm_up_term_dict_fields(
     Ok(())
 }
 
+async fn warm_up_postings(
+    searcher: &Searcher,
+    field_names: &HashSet<String>,
+) -> anyhow::Result<()> {
+    let mut fields = Vec::new();
+    for field_name in field_names.iter() {
+        let field = searcher
+            .schema()
+            .get_field(field_name)
+            .with_context(|| format!("Couldn't get field named {:?} from schema.", field_name))?;
+
+        fields.push(field);
+    }
+
+    let mut warm_up_futures = Vec::new();
+    for field in fields {
+        for segment_reader in searcher.segment_readers() {
+            let inverted_index = segment_reader.inverted_index(field)?.clone();
+            warm_up_futures.push(async move { inverted_index.warm_postings_full(false).await });
+        }
+    }
+    try_join_all(warm_up_futures).await?;
+    Ok(())
+}
+
 // The field cardinality is not the same as the fast field cardinality.
 //
 // E.g. a single valued bytes field has a multivalued fast field cardinality.
@@ -209,9 +238,22 @@ fn get_fastfield_cardinality(field_type: &FieldType) -> Option<Cardinality> {
         | FieldType::Bool(options) => options.get_fastfield_cardinality(),
         FieldType::Date(options) => options.get_fastfield_cardinality(),
         FieldType::Facet(_) => Some(Cardinality::MultiValues),
-        FieldType::Bytes(options) if options.is_fast() => Some(Cardinality::MultiValues),
-        FieldType::Str(options) if options.is_fast() => Some(Cardinality::MultiValues),
-        _ => None,
+        FieldType::Bytes(options) => {
+            if options.is_fast() {
+                Some(Cardinality::MultiValues)
+            } else {
+                None
+            }
+        }
+        FieldType::Str(options) => {
+            if options.is_fast() {
+                Some(Cardinality::MultiValues)
+            } else {
+                None
+            }
+        }
+        FieldType::IpAddr(options) => options.get_fastfield_cardinality(),
+        FieldType::JsonObject(_options) => None,
     }
 }
 
@@ -271,23 +313,18 @@ async fn warm_up_fastfields(
     Ok(())
 }
 
-async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result<()> {
-    let mut terms_grouped_by_field: HashMap<Field, Vec<(&Term, bool)>> = Default::default();
-    query.query_terms(&mut |term, need_position| {
-        let field = term.field();
-        terms_grouped_by_field
-            .entry(field)
-            .or_default()
-            .push((term, need_position));
-    });
+async fn warm_up_terms(
+    searcher: &Searcher,
+    terms_grouped_by_field: &HashMap<Field, HashMap<Term, bool>>,
+) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
     for (field, terms) in terms_grouped_by_field {
         for segment_reader in searcher.segment_readers() {
-            let inv_idx = segment_reader.inverted_index(field)?;
-            for (term, position_needed) in terms.iter().cloned() {
+            let inv_idx = segment_reader.inverted_index(*field)?;
+            for (term, position_needed) in terms.iter() {
                 let inv_idx_clone = inv_idx.clone();
                 warm_up_futures
-                    .push(async move { inv_idx_clone.warm_postings(term, position_needed).await });
+                    .push(async move { inv_idx_clone.warm_postings(term, *position_needed).await });
             }
         }
     }
@@ -331,22 +368,19 @@ async fn leaf_search_single_split(
         search_request,
         &split_schema,
     )?;
-    let query = doc_mapper.query(split_schema, search_request)?;
+    let (query, mut warmup_info) = doc_mapper.query(split_schema, search_request)?;
     let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
-    warmup(
-        &searcher,
-        &query,
-        &quickwit_collector.fast_field_names(),
-        &quickwit_collector.term_dict_field_names(),
-        quickwit_collector.requires_scoring(),
-    )
-    .await?;
+
+    let collector_warmup_info = quickwit_collector.warmup_info();
+    warmup_info.merge(collector_warmup_info);
+
+    warmup(&searcher, &warmup_info).await?;
+    let span = info_span!( "tantivy_search", split_id = %split.split_id);
     let leaf_search_response = crate::run_cpu_intensive(move || {
-        let span = info_span!( "search", split_id = %split.split_id);
         let _span_guard = span.enter();
         searcher.search(&query, &quickwit_collector)
     })

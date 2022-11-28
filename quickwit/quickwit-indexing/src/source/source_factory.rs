@@ -98,7 +98,6 @@ impl SourceLoader {
     ) -> Result<Box<dyn Source>, SourceLoaderError> {
         let source_type = ctx.source_config.source_type().to_string();
         let source_id = ctx.source_config.source_id.clone();
-
         let source_factory = self
             .type_to_factory
             .get(ctx.source_config.source_type())
@@ -120,6 +119,8 @@ impl SourceLoader {
 #[cfg(test)]
 mod tests {
 
+    use std::path::PathBuf;
+
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::metastore_for_test;
 
@@ -133,11 +134,17 @@ mod tests {
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::void(),
         };
         source_loader
             .load_source(
-                SourceExecutionContext::for_test(metastore, "test-index", source_config),
+                SourceExecutionContext::for_test(
+                    metastore,
+                    "test-index",
+                    PathBuf::from("./queues"),
+                    source_config,
+                ),
                 SourceCheckpoint::default(),
             )
             .await?;

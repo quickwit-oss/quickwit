@@ -19,6 +19,7 @@
 
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
+#![deny(clippy::disallowed_methods)]
 
 //! `quickwit-metastore` is the abstraction used in quickwit to interface itself to different
 //! metastore:
@@ -27,14 +28,14 @@
 
 #[macro_use]
 mod tests;
-mod split_metadata;
-mod split_metadata_version;
-
 #[allow(missing_docs)]
 pub mod checkpoint;
 mod error;
 mod metastore;
 mod metastore_resolver;
+mod metrics;
+mod split_metadata;
+mod split_metadata_version;
 
 use std::ops::Range;
 
@@ -43,9 +44,10 @@ pub use metastore::file_backed_metastore::FileBackedMetastore;
 pub use metastore::grpc_metastore::{GrpcMetastoreAdapter, MetastoreGrpcClient};
 #[cfg(feature = "postgres")]
 pub use metastore::postgresql_metastore::PostgresqlMetastore;
+pub use metastore::retrying_metastore::RetryingMetastore;
 #[cfg(any(test, feature = "testsuite"))]
 pub use metastore::MockMetastore;
-pub use metastore::{file_backed_metastore, IndexMetadata, Metastore};
+pub use metastore::{file_backed_metastore, IndexMetadata, ListSplitsQuery, Metastore};
 pub use metastore_resolver::{
     quickwit_metastore_uri_resolver, MetastoreFactory, MetastoreUriResolver,
 };

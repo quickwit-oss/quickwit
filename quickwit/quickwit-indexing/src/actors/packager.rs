@@ -34,7 +34,7 @@ use quickwit_doc_mapper::NamedField;
 use tantivy::schema::FieldType;
 use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
 use tokio::runtime::Handle;
-use tracing::{debug, info, info_span, warn, Span};
+use tracing::{debug, info, instrument, warn};
 
 /// Maximum distinct values allowed for a tag field within a split.
 const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")) {
@@ -59,6 +59,7 @@ use crate::models::{
 /// - appending it to the split file.
 ///
 /// The split format is described in `internals/split-format.md`
+#[derive(Clone)]
 pub struct Packager {
     actor_name: &'static str,
     uploader_mailbox: Mailbox<Uploader>,
@@ -118,10 +119,7 @@ impl Actor for Packager {
 impl Handler<IndexedSplitBatch> for Packager {
     type Reply = ();
 
-    fn message_span(&self, msg_id: u64, batch: &IndexedSplitBatch) -> Span {
-        info_span!("", msg_id=&msg_id, num_splits=%batch.splits.len())
-    }
-
+    #[instrument(level = "info", name = "packager", parent=batch.batch_parent_span.id(), skip_all)]
     async fn handle(
         &mut self,
         batch: IndexedSplitBatch,
@@ -136,14 +134,6 @@ impl Handler<IndexedSplitBatch> for Packager {
             split_ids=?split_ids,
             "start-packaging-splits"
         );
-        for split in &batch.splits {
-            if let Some(controlled_directory) = &split.controlled_directory_opt {
-                controlled_directory.set_progress_and_kill_switch(
-                    ctx.progress().clone(),
-                    ctx.kill_switch().clone(),
-                );
-            }
-        }
         fail_point!("packager:before");
         let mut packaged_splits = Vec::new();
         for split in batch.splits {
@@ -164,7 +154,8 @@ impl Handler<IndexedSplitBatch> for Packager {
                 packaged_splits,
                 batch.checkpoint_delta,
                 batch.publish_lock,
-                batch.date_of_birth,
+                batch.merge_operation,
+                batch.batch_parent_span,
             ),
         )
         .await?;
@@ -177,14 +168,14 @@ impl Handler<IndexedSplitBatch> for Packager {
 fn list_split_files(
     segment_metas: &[SegmentMeta],
     scratch_directory: &ScratchDirectory,
-) -> Vec<PathBuf> {
+) -> io::Result<Vec<PathBuf>> {
     let mut index_files = vec![scratch_directory.path().join("meta.json")];
 
     // list the segment files
     for segment_meta in segment_metas {
         for relative_path in segment_meta.list_files() {
             let filepath = scratch_directory.path().join(&relative_path);
-            if filepath.exists() {
+            if filepath.try_exists()? {
                 // If the file is missing, this is fine.
                 // segment_meta.list_files() may actually returns files that
                 // may not exist.
@@ -193,7 +184,7 @@ fn list_split_files(
         }
     }
     index_files.sort();
-    index_files
+    Ok(index_files)
 }
 
 fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Result<()> {
@@ -264,7 +255,7 @@ fn create_packaged_split(
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<PackagedSplit> {
     info!(split_id = split.split_id(), "create-packaged-split");
-    let split_files = list_split_files(segment_metas, &split.split_scratch_directory);
+    let split_files = list_split_files(segment_metas, &split.split_scratch_directory)?;
 
     // Extracts tag values from inverted indexes only when a field cardinality is less
     // than `MAX_VALUES_PER_TAG_FIELD`.
@@ -321,13 +312,13 @@ fn u64_from_term_data(data: &[u8]) -> anyhow::Result<u64> {
 #[cfg(test)]
 mod tests {
     use std::ops::RangeInclusive;
-    use std::time::Instant;
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, Index};
+    use tracing::Span;
 
     use super::*;
     use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
@@ -398,6 +389,7 @@ mod tests {
                 time_range: timerange_opt,
                 replaced_split_ids: Vec::new(),
                 delete_opstamp: 0,
+                num_merge_ops: 0,
             },
             index,
             split_scratch_directory,
@@ -440,7 +432,8 @@ mod tests {
                 splits: vec![indexed_split],
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
                 publish_lock: PublishLock::default(),
-                date_of_birth: Instant::now(),
+                batch_parent_span: Span::none(),
+                merge_operation: None,
             })
             .await?;
         assert_eq!(

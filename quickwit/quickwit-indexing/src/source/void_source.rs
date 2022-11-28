@@ -24,6 +24,7 @@ use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
 use quickwit_config::VoidSourceParams;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
+use serde_json::Value as JsonValue;
 
 use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
@@ -45,8 +46,8 @@ impl Source for VoidSource {
         "VoidSource".to_string()
     }
 
-    fn observable_state(&self) -> serde_json::Value {
-        serde_json::Value::Object(Default::default())
+    fn observable_state(&self) -> JsonValue {
+        JsonValue::Object(Default::default())
     }
 }
 
@@ -70,6 +71,8 @@ impl TypedSourceFactory for VoidSourceFactory {
 #[cfg(test)]
 mod tests {
 
+    use std::path::PathBuf;
+
     use quickwit_actors::{create_test_mailbox, Health, Supervisable, Universe};
     use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
@@ -84,10 +87,16 @@ mod tests {
         let source_config = SourceConfig {
             source_id: "test-void-source".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::void(),
         };
         let metastore = metastore_for_test();
-        let ctx = SourceExecutionContext::for_test(metastore, "test-index", source_config);
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            "test-index",
+            PathBuf::from("./queues"),
+            source_config,
+        );
         let source = quickwit_supported_sources()
             .load_source(ctx, SourceCheckpoint::default())
             .await
@@ -102,9 +111,11 @@ mod tests {
             SourceExecutionContext::for_test(
                 metastore,
                 "test-index",
+                PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-void-source".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::void(),
                 },
             ),
@@ -119,7 +130,7 @@ mod tests {
         };
         let universe = Universe::new();
         let (_, void_source_handle) = universe.spawn_builder().spawn(void_source_actor);
-        matches!(void_source_handle.health(), Health::Healthy);
+        matches!(void_source_handle.harvest_health(), Health::Healthy);
         let (actor_termination, observed_state) = void_source_handle.quit().await;
         assert_eq!(observed_state, json!({}));
         matches!(actor_termination, ActorExitStatus::Quit);

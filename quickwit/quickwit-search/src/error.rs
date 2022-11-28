@@ -57,6 +57,12 @@ impl ServiceError for SearchError {
     }
 }
 
+impl From<SearchError> for tonic::Status {
+    fn from(error: SearchError) -> Self {
+        error.grpc_error()
+    }
+}
+
 /// Parse tonic error and returns `SearchError`.
 pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
     serde_json::from_str(grpc_error.message())

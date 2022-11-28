@@ -79,7 +79,7 @@ impl PutPayload for Vec<u8> {
 
     async fn range_byte_stream(&self, range: Range<u64>) -> io::Result<ByteStream> {
         Ok(ByteStream::from(
-            (&self[range.start as usize..range.end as usize]).to_vec(),
+            self[range.start as usize..range.end as usize].to_vec(),
         ))
     }
 }

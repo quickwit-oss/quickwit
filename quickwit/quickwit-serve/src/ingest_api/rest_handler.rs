@@ -25,7 +25,7 @@ use quickwit_actors::Mailbox;
 use quickwit_ingest_api::{add_doc, IngestApiService};
 use quickwit_proto::ingest_api::{DocBatch, IngestRequest, TailRequest};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use thiserror::Error;
 use warp::{reject, Filter, Rejection};
 
@@ -93,7 +93,7 @@ fn ingest_filter() -> impl Filter<Extract = (String, String), Error = Rejection>
         .and(warp::post())
         .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
         .and(warp::body::bytes().and_then(|body: Bytes| async move {
-            if let Ok(body_str) = std::str::from_utf8(&*body) {
+            if let Ok(body_str) = std::str::from_utf8(&body) {
                 Ok(body_str.to_string())
             } else {
                 Err(reject::custom(InvalidUtf8))
@@ -161,7 +161,7 @@ fn elastic_bulk_filter() -> impl Filter<Extract = (String,), Error = Rejection> 
         .and(warp::post())
         .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
         .and(warp::body::bytes().and_then(|body: Bytes| async move {
-            if let Ok(body_str) = std::str::from_utf8(&*body) {
+            if let Ok(body_str) = std::str::from_utf8(&body) {
                 Ok(body_str.to_string())
             } else {
                 Err(reject::custom(InvalidUtf8))
@@ -193,7 +193,7 @@ async fn elastic_ingest(
                 BulkApiError::InvalidSource("Expected source for the action.".to_string())
             })
             .and_then(|source| {
-                serde_json::from_str::<Value>(source)
+                serde_json::from_str::<JsonValue>(source)
                     .map_err(|err| BulkApiError::InvalidSource(err.to_string()))
             })?;
 

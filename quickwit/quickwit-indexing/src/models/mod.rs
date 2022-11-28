@@ -24,6 +24,7 @@ mod indexing_service_message;
 mod indexing_statistics;
 mod merge_planner_message;
 mod merge_scratch;
+mod merge_statistics;
 mod packaged_split;
 mod prepared_doc;
 mod publish_lock;
@@ -35,22 +36,23 @@ mod split_attrs;
 pub use indexed_split::{
     CommitTrigger, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder, IndexedSplitBuilder,
 };
-pub use indexing_directory::{IndexingDirectory, WeakIndexingDirectory, CACHE};
+pub use indexing_directory::{IndexingDirectory, WeakIndexingDirectory};
 pub use indexing_pipeline_id::IndexingPipelineId;
 pub use indexing_service_message::{
-    DetachPipeline, ObservePipeline, ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline,
-    SpawnPipeline, SpawnPipelines,
+    DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, ShutdownPipeline,
+    ShutdownPipelines, SpawnPipeline, SpawnPipelines,
 };
 pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::NewSplits;
 pub use merge_scratch::MergeScratch;
+pub use merge_statistics::MergeStatistics;
 pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
 pub use prepared_doc::{PreparedDoc, PreparedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};
-pub use publisher_message::SplitUpdate;
+pub use publisher_message::SplitsUpdate;
 pub use raw_doc_batch::RawDocBatch;
 pub use scratch_directory::ScratchDirectory;
-pub use split_attrs::SplitAttrs;
+pub use split_attrs::{create_split_metadata, SplitAttrs};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Observe;

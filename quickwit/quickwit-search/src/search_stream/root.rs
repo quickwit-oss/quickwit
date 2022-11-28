@@ -21,7 +21,8 @@ use std::collections::HashSet;
 
 use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
-use quickwit_config::build_doc_mapper;
+use quickwit_common::uri::Uri;
+use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_metastore::Metastore;
 use quickwit_proto::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
 use tokio_stream::StreamMap;
@@ -43,12 +44,15 @@ pub async fn root_search_stream(
     // This needs some refactoring: relevant splits, metadata_map, jobs...
 
     let search_request = SearchRequest::from(search_stream_request.clone());
-    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+    let index_config: IndexConfig = metastore
+        .index_metadata(&search_request.index_id)
+        .await?
+        .into_index_config();
     let split_metadatas = list_relevant_splits(&search_request, metastore).await?;
     let doc_mapper = build_doc_mapper(
-        &index_metadata.doc_mapping,
-        &index_metadata.search_settings,
-        &index_metadata.indexing_settings,
+        &index_config.doc_mapping,
+        &index_config.search_settings,
+        &index_config.indexing_settings,
     )
     .map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
@@ -61,6 +65,7 @@ pub async fn root_search_stream(
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
     })?;
 
+    let index_uri: &Uri = &index_config.index_uri;
     let leaf_search_jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
 
     let assigned_leaf_search_jobs: Vec<(SearchServiceClient, Vec<SearchJob>)> =
@@ -72,7 +77,7 @@ pub async fn root_search_stream(
         let leaf_request: LeafSearchStreamRequest = jobs_to_leaf_request(
             &search_stream_request,
             &doc_mapper_str,
-            index_metadata.index_uri.as_ref(),
+            index_uri.as_ref(),
             client_jobs,
         );
         let leaf_stream = cluster_client
@@ -88,7 +93,7 @@ pub async fn root_search_stream(
 fn jobs_to_leaf_request(
     request: &SearchStreamRequest,
     doc_mapper_str: &str,
-    index_uri: &str,
+    index_uri: &str, // TODO make Uri
     jobs: Vec<SearchJob>,
 ) -> LeafSearchStreamRequest {
     LeafSearchStreamRequest {
@@ -101,11 +106,10 @@ fn jobs_to_leaf_request(
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Range;
     use std::sync::Arc;
 
     use quickwit_indexing::mock_split;
-    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
+    use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::OutputFormat;
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -134,11 +138,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
@@ -192,11 +194,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
@@ -246,11 +246,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1"), mock_split("split2")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
@@ -296,11 +294,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split")]));
 
         let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;

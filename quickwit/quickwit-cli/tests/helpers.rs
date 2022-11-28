@@ -18,24 +18,23 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
-use std::process::{Child, Stdio};
 use std::sync::Arc;
-use std::{fs, io};
+use std::time::Duration;
 
-use assert_cmd::cargo::cargo_bin;
-use assert_cmd::Command;
+use anyhow::bail;
 use predicates::str;
 use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::uri::Uri;
-use quickwit_metastore::{FileBackedMetastore, MetastoreResult};
+use quickwit_metastore::{FileBackedMetastore, IndexMetadata, Metastore, MetastoreResult};
 use quickwit_storage::{LocalFileStorage, S3CompatibleObjectStorage, Storage};
 use tempfile::{tempdir, TempDir};
 
-const PACKAGE_BIN_NAME: &str = "quickwit";
+pub const PACKAGE_BIN_NAME: &str = "quickwit";
 
 const DEFAULT_INDEX_CONFIG: &str = r#"
-    version: 0
+    version: 0.4
 
     index_id: #index_id
     index_uri: #index_uri
@@ -43,7 +42,11 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
     doc_mapping:
       field_mappings:
         - name: ts
-          type: i64
+          type: datetime
+          input_formats:
+            - unix_timestamp
+          output_format: unix_timestamp_secs
+          precision: seconds
           fast: true
         - name: level
           type: text
@@ -71,17 +74,18 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
 "#;
 
 const DEFAULT_QUICKWIT_CONFIG: &str = r#"
-    version: 0
+    version: 0.4
     metastore_uri: #metastore_uri
     data_dir: #data_dir
     rest_listen_port: #rest_listen_port
+    grpc_listen_port: #grpc_listen_port
 "#;
 
-const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 2, "device": "rpi", "city": "tokio"}
-{"event": "bar", "level": "error", "ts": 3, "device": "rpi", "city": "paris"}
-{"event": "baz", "level": "warning", "ts": 9, "device": "fbit", "city": "london"}
-{"event": "buz", "level": "debug", "ts": 12, "device": "rpi", "city": "paris"}
-{"event": "biz", "level": "info", "ts": 13, "device": "fbit", "city": "paris"}"#;
+const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 72057597, "device": "rpi", "city": "tokio"}
+{"event": "bar", "level": "error", "ts": 72057598, "device": "rpi", "city": "paris"}
+{"event": "baz", "level": "warning", "ts": 72057604, "device": "fbit", "city": "london"}
+{"event": "buz", "level": "debug", "ts": 72057607, "device": "rpi", "city": "paris"}
+{"event": "biz", "level": "info", "ts": 72057608, "device": "fbit", "city": "paris"}"#;
 
 const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "https://wiki.com?id=10"}
 {"body": "bar", "title": "shimray", "url": "https://wiki.com?id=12"}
@@ -90,37 +94,25 @@ const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "http
 {"body": "biz", "title": "modern", "url": "https://wiki.com?id=13"}
 "#;
 
-/// Creates a quickwit-cli command with provided list of arguments.
-pub fn make_command(arguments: &str) -> Command {
-    let mut cmd = Command::cargo_bin(PACKAGE_BIN_NAME).unwrap();
-    cmd.env(
-        quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
-        "disable-for-tests",
-    )
-    .args(arguments.split_whitespace());
-    cmd
-}
-
-pub fn make_command_with_list_of_args(arguments: &[&str]) -> Command {
-    let mut cmd = Command::cargo_bin(PACKAGE_BIN_NAME).unwrap();
-    cmd.env(
-        quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
-        "disable-for-tests",
-    )
-    .args(arguments.iter());
-    cmd
-}
-
-/// Creates a quickwit-cli command running as a child process.
-pub fn spawn_command(arguments: &str) -> io::Result<Child> {
-    std::process::Command::new(cargo_bin(PACKAGE_BIN_NAME))
-        .args(arguments.split_whitespace())
-        .env(
-            quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
-            "disable-for-tests",
-        )
-        .stdout(Stdio::piped())
-        .spawn()
+/// Waits until localhost:port is ready. Returns an error if it takes too long.
+pub async fn wait_port_ready(port: u16) -> anyhow::Result<()> {
+    let timer_task = tokio::time::sleep(Duration::from_secs(10));
+    let port_check_task = async {
+        while tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .is_err()
+        {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    };
+    tokio::select! {
+        _ = timer_task => {
+            bail!("Port took too much time to be ready.")
+        }
+        _ = port_check_task => {
+            Ok(())
+        }
+    }
 }
 
 /// A struct to hold few info about the test environement.
@@ -135,6 +127,8 @@ pub struct TestEnv {
     pub resource_files: HashMap<&'static str, PathBuf>,
     /// The metastore URI.
     pub metastore_uri: Uri,
+    pub config_uri: Uri,
+    pub index_config_uri: Uri,
     /// The index ID.
     pub index_id: String,
     pub index_uri: Uri,
@@ -146,6 +140,21 @@ impl TestEnv {
     // For cache reason, it's safer to always create an instance and then make your assertions.
     pub async fn metastore(&self) -> MetastoreResult<FileBackedMetastore> {
         FileBackedMetastore::try_new(self.storage.clone(), None).await
+    }
+
+    pub fn index_config_without_uri(&self) -> String {
+        self.resource_files["index_config_without_uri"]
+            .display()
+            .to_string()
+    }
+
+    pub async fn index_metadata(&self) -> anyhow::Result<IndexMetadata> {
+        let index_metadata = self
+            .metastore()
+            .await?
+            .index_metadata(&self.index_id)
+            .await?;
+        Ok(index_metadata)
     }
 }
 
@@ -168,12 +177,14 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     // TODO: refactor when we have a singleton storage resolver.
     let (metastore_uri, storage) = match storage_type {
         TestStorageType::LocalFileSystem => {
-            let metastore_uri = Uri::new(format!("file://{}", indexes_dir_path.display()));
+            let metastore_uri =
+                Uri::from_well_formed(format!("file://{}", indexes_dir_path.display()));
             let storage: Arc<dyn Storage> = Arc::new(LocalFileStorage::from_uri(&metastore_uri)?);
             (metastore_uri, storage)
         }
         TestStorageType::S3 => {
-            let metastore_uri = Uri::new("s3://quickwit-integration-tests/indexes".to_string());
+            let metastore_uri =
+                Uri::from_well_formed("s3://quickwit-integration-tests/indexes".to_string());
             let storage: Arc<dyn Storage> =
                 Arc::new(S3CompatibleObjectStorage::from_uri(&metastore_uri)?);
             (metastore_uri, storage)
@@ -196,13 +207,15 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     )?;
     let quickwit_config_path = resources_dir_path.join("config.yaml");
     let rest_listen_port = find_available_tcp_port()?;
+    let grpc_listen_port = find_available_tcp_port()?;
     fs::write(
         &quickwit_config_path,
         // A poor's man templating engine reloaded...
         DEFAULT_QUICKWIT_CONFIG
             .replace("#metastore_uri", metastore_uri.as_str())
             .replace("#data_dir", data_dir_path.to_str().unwrap())
-            .replace("#rest_listen_port", &rest_listen_port.to_string()),
+            .replace("#rest_listen_port", &rest_listen_port.to_string())
+            .replace("#grpc_listen_port", &grpc_listen_port.to_string()),
     )?;
     let log_docs_path = resources_dir_path.join("logs.json");
     fs::write(&log_docs_path, LOGS_JSON_DOCS)?;
@@ -216,12 +229,21 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     resource_files.insert("logs", log_docs_path);
     resource_files.insert("wiki", wikipedia_docs_path);
 
+    let config_uri =
+        Uri::from_well_formed(format!("file://{}", resource_files["config"].display()));
+    let index_config_uri = Uri::from_well_formed(format!(
+        "file://{}",
+        resource_files["index_config"].display()
+    ));
+
     Ok(TestEnv {
         _tempdir: tempdir,
         data_dir_path,
         indexes_dir_path,
         resource_files,
         metastore_uri,
+        config_uri,
+        index_config_uri,
         index_id,
         index_uri,
         rest_listen_port,

@@ -18,9 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use anyhow::{bail, Context};
-use clap::{arg, Arg, ArgMatches, Command};
+use clap::{arg, ArgMatches, Command};
 use humansize::{format_size, DECIMAL};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
@@ -28,7 +29,7 @@ use quickwit_directories::{
     get_hotcache_from_split, read_split_footer, BundleDirectory, HotDirectory,
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Split, SplitState};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, ListSplitsQuery, Split, SplitState};
 use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
 use tabled::{Table, Tabled};
 use time::{format_description, Date, OffsetDateTime, PrimitiveDateTime};
@@ -42,6 +43,7 @@ pub fn build_split_command<'a>() -> Command<'a> {
         .subcommand(
             Command::new("list")
                 .about("Lists the splits of an index.")
+                .alias("ls")
                 .args(&[
                     arg!(--index <INDEX> "Target index ID")
                         .display_order(1)
@@ -63,35 +65,33 @@ pub fn build_split_command<'a>() -> Command<'a> {
                         .display_order(6)
                         .required(false)
                         .use_value_delimiter(true),
-                    Arg::new("mark-for-deletion")
-                        .alias("mark")
+                    arg!(--"output-format" <OUTPUT_FORMAT> "Output format. Possible values are `table`, `json`, and `prettyjson`.")
+                        .alias("format")
                         .display_order(7)
-                        .long("mark-for-deletion")
-                        .help("Marks the selected splits for deletion.")
+                        .required(false)
                 ])
             )
         .subcommand(
             Command::new("extract")
                 .about("Downloads and extracts a split to a directory.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--split <SPLIT> "ID of the target split"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
+                    arg!(--split <SPLIT> "ID of the target split")
+                        .display_order(2),
                     arg!(--"target-dir" <TARGET_DIR> "Directory to extract the split to."),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
                 ])
             )
         .subcommand(
             Command::new("describe")
                 .about("Displays metadata about a split.")
+                .alias("desc")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--split <SPLIT> "ID of the target split"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
+                    arg!(--split <SPLIT> "ID of the target split")
+                        .display_order(2),
                     arg!(--verbose "Displays additional metadata about the hotcache."),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
                 ])
             )
         .subcommand(
@@ -100,15 +100,38 @@ pub fn build_split_command<'a>() -> Command<'a> {
                 .alias("mark")
                 .args(&[
                     arg!(--index <INDEX_ID> "Target index ID")
-                        .display_order(2)
+                        .display_order(1)
                         .required(true),
                     arg!(--splits <SPLIT_IDS> "Comma-separated list of split IDs")
-                        .display_order(3)
+                        .display_order(2)
                         .required(true)
                         .use_value_delimiter(true),
                 ])
             )
         .arg_required_else_help(true)
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum OutputFormat {
+    Table, // Default
+    Json,
+    PrettyJson,
+}
+
+impl FromStr for OutputFormat {
+    type Err = anyhow::Error;
+
+    fn from_str(output_format_str: &str) -> anyhow::Result<Self> {
+        match output_format_str {
+            "table" => Ok(OutputFormat::Table),
+            "json" => Ok(OutputFormat::Json),
+            "prettyjson" => Ok(OutputFormat::PrettyJson),
+            _ => bail!(
+                "Failed to parse output format `{output_format_str}`. Supported formats are: \
+                 `table`, `json`, and `prettyjson`."
+            ),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -120,7 +143,7 @@ pub struct ListSplitArgs {
     pub start_date: Option<OffsetDateTime>,
     pub end_date: Option<OffsetDateTime>,
     pub tags: Option<TagFilterAst>,
-    pub mark_for_deletion: bool,
+    output_format: OutputFormat,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -133,7 +156,6 @@ pub struct MarkForDeletionArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeSplitArgs {
     pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub index_id: String,
     pub split_id: String,
     pub verbose: bool,
@@ -142,7 +164,6 @@ pub struct DescribeSplitArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct ExtractSplitArgs {
     pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub index_id: String,
     pub split_id: String,
     pub target_dir: PathBuf,
@@ -173,7 +194,7 @@ impl SplitCliCommand {
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -211,7 +232,11 @@ impl SplitCliCommand {
                     .collect(),
             )
         });
-        let mark_for_deletion = matches.is_present("mark-for-deletion");
+        let output_format = matches
+            .value_of("output-format")
+            .map(OutputFormat::from_str)
+            .transpose()?
+            .unwrap_or(OutputFormat::Table);
 
         Ok(Self::List(ListSplitArgs {
             config_uri,
@@ -221,14 +246,14 @@ impl SplitCliCommand {
             end_date,
             create_date,
             tags,
-            mark_for_deletion,
+            output_format,
         }))
     }
 
     fn parse_mark_for_deletion_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -259,9 +284,8 @@ impl SplitCliCommand {
             .expect("`split` is a required arg.");
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let verbose = matches.is_present("verbose");
 
         Ok(Self::Describe(DescribeSplitArgs {
@@ -269,7 +293,6 @@ impl SplitCliCommand {
             index_id,
             split_id,
             verbose,
-            data_dir,
         }))
     }
 
@@ -284,19 +307,17 @@ impl SplitCliCommand {
             .expect("`split` is a required arg.");
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let target_dir = matches
             .value_of("target-dir")
             .map(PathBuf::from)
             .expect("`target-dir` is a required arg.");
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(Self::Extract(ExtractSplitArgs {
             config_uri,
             index_id,
             split_id,
             target_dir,
-            data_dir,
         }))
     }
 
@@ -313,44 +334,43 @@ impl SplitCliCommand {
 async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "list-split");
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
-    let splits = metastore.list_all_splits(&args.index_id).await?;
 
-    let filtered_splits = filter_splits(
-        splits,
-        args.split_states,
-        args.start_date.map(OffsetDateTime::unix_timestamp),
-        args.end_date.map(OffsetDateTime::unix_timestamp),
-        args.create_date.map(OffsetDateTime::unix_timestamp),
-        args.tags,
-    );
-    let table = make_split_table(&filtered_splits, "Splits");
-    println!("{table}");
+    let mut query = ListSplitsQuery::for_index(&args.index_id)
+        .with_split_states(args.split_states.unwrap_or_default());
 
-    if args.mark_for_deletion {
-        let split_ids = filtered_splits
-            .iter()
-            .map(|split| split.split_id())
-            .collect::<Vec<_>>();
-        println!(
-            "The following splits will be marked for deletion: `{}`.",
-            split_ids.join(", ")
-        );
-        metastore
-            .mark_splits_for_deletion(&args.index_id, &split_ids)
-            .await?;
+    if let Some(start_date) = args.start_date {
+        query = query.with_time_range_start_gte(start_date.unix_timestamp());
     }
+    if let Some(end_date) = args.end_date {
+        query = query.with_time_range_end_lte(end_date.unix_timestamp());
+    }
+    if let Some(create_date) = args.create_date {
+        query = query.with_create_timestamp_lte(create_date.unix_timestamp());
+    }
+    if let Some(tags) = args.tags {
+        query = query.with_tags_filter(tags);
+    }
+
+    let splits = metastore.list_splits(query).await?;
+
+    let output = match args.output_format {
+        OutputFormat::Json => serde_json::to_string(&splits)?,
+        OutputFormat::PrettyJson => serde_json::to_string_pretty(&splits)?,
+        OutputFormat::Table => make_split_table(&splits, "Splits").to_string(),
+    };
+    println!("{output}");
     Ok(())
 }
 
 async fn mark_splits_for_deletion_cli(args: MarkForDeletionArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "mark-splits-for-deletion");
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
@@ -377,21 +397,20 @@ struct FileRow {
 async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe-split");
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
+    let index_storage = storage_uri_resolver.resolve(index_metadata.index_uri())?;
 
     let split_metadata = metastore
         .list_all_splits(&args.index_id)
         .await?
-        .iter()
+        .into_iter()
         .find(|split| split.split_id() == args.split_id)
-        .cloned()
         .with_context(|| {
             format!(
                 "Could not find split metadata in metastore {}",
@@ -436,14 +455,14 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
 async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "extract-split");
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
+    let index_storage = storage_uri_resolver.resolve(index_metadata.index_uri())?;
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
     let split_data = index_storage.get_all(split_file.as_path()).await?;
     let (_hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data_with_owned_bytes(
@@ -460,63 +479,6 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn filter_splits(
-    splits: Vec<Split>,
-    split_states_opt: Option<Vec<SplitState>>,
-    create_ts_opt: Option<i64>,
-    start_ts_opt: Option<i64>,
-    end_ts_opt: Option<i64>,
-    tag_filter_ast_opt: Option<TagFilterAst>,
-) -> Vec<Split> {
-    let split_state_filter = |split: &Split| {
-        split_states_opt
-            .as_ref()
-            .map(|split_states| split_states.contains(&split.split_state))
-            .unwrap_or(true)
-    };
-    let create_ts_filter = |split: &Split| {
-        create_ts_opt
-            .map(|create_ts| create_ts >= split.split_metadata.create_timestamp)
-            .unwrap_or(true)
-    };
-    let start_ts_filter = |split: &Split| {
-        start_ts_opt
-            .and_then(|start_ts| {
-                split
-                    .split_metadata
-                    .time_range
-                    .as_ref()
-                    .map(|time_range| start_ts <= *time_range.end())
-            })
-            .unwrap_or(true)
-    };
-    let end_ts_filter = |split: &Split| {
-        end_ts_opt
-            .and_then(|end_ts| {
-                split
-                    .split_metadata
-                    .time_range
-                    .as_ref()
-                    .map(|time_range| end_ts >= *time_range.start())
-            })
-            .unwrap_or(true)
-    };
-    let tag_filter = |split: &Split| {
-        tag_filter_ast_opt
-            .as_ref()
-            .map(|tag_filter_ast| tag_filter_ast.evaluate(&split.split_metadata.tags))
-            .unwrap_or(true)
-    };
-    splits
-        .into_iter()
-        .filter(split_state_filter)
-        .filter(create_ts_filter)
-        .filter(start_ts_filter)
-        .filter(end_ts_filter)
-        .filter(tag_filter)
-        .collect()
 }
 
 fn make_split_table(splits: &[Split], title: &str) -> Table {
@@ -607,11 +569,9 @@ struct SplitRow {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-    use std::ops::RangeInclusive;
     use std::path::PathBuf;
+    use std::str::FromStr;
 
-    use quickwit_metastore::SplitMetadata;
     use time::macros::datetime;
 
     use super::*;
@@ -637,7 +597,8 @@ mod tests {
             "2020-12-25T12:42",
             "--tags",
             "tenant:a,service:zk",
-            "--mark",
+            "--format",
+            "json",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
 
@@ -655,6 +616,7 @@ mod tests {
                 tag: "service:zk".to_string(),
             },
         ]));
+        let expected_output_format = OutputFormat::Json;
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::List(ListSplitArgs {
@@ -664,7 +626,7 @@ mod tests {
                 start_date,
                 end_date,
                 tags,
-                mark_for_deletion,
+                output_format,
                 ..
             })) if index_id == "hdfs"
                    && split_states == expected_split_states
@@ -672,7 +634,7 @@ mod tests {
                    && start_date == expected_start_date
                    && end_date == expected_end_date
                    && tags == expected_tags
-                   && mark_for_deletion
+                   && output_format == expected_output_format
         ));
         Ok(())
     }
@@ -697,7 +659,7 @@ mod tests {
                 config_uri,
                 index_id,
                 split_ids,
-            })) if config_uri == Uri::try_new("file:///config.yaml").unwrap()
+            })) if config_uri == Uri::from_str("file:///config.yaml").unwrap()
                 && index_id == "wikipedia"
                 && split_ids == vec!["split1".to_string(), "split2".to_string()]
         ));
@@ -756,131 +718,6 @@ mod tests {
             })) if &index_id == "wikipedia" && &split_id == "ABC" && target_dir == PathBuf::from("/datadir")
         ));
         Ok(())
-    }
-
-    fn make_split(
-        split_id: &str,
-        split_state: SplitState,
-        create_timestamp: i64,
-        time_range: Option<RangeInclusive<i64>>,
-        tags: &[&str],
-    ) -> Split {
-        Split {
-            split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
-                footer_offsets: 10..30,
-                time_range,
-                tags: tags
-                    .iter()
-                    .map(|tag| tag.to_string())
-                    .collect::<BTreeSet<_>>(),
-                create_timestamp,
-                ..Default::default()
-            },
-            split_state,
-            update_timestamp: 1639997968,
-            publish_timestamp: None,
-        }
-    }
-
-    #[test]
-    fn test_filter_splits_by_state() {
-        let splits = vec![
-            make_split("one", SplitState::Staged, 0, None, &[]),
-            make_split("two", SplitState::Published, 0, None, &[]),
-            make_split("three", SplitState::MarkedForDeletion, 0, None, &[]),
-        ];
-        assert_eq!(
-            filter_splits(
-                splits,
-                Some(vec![SplitState::Staged, SplitState::Published]),
-                None,
-                None,
-                None,
-                None
-            )
-            .into_iter()
-            .map(|split| split.split_metadata.split_id)
-            .collect::<Vec<_>>(),
-            ["one", "two"]
-        );
-    }
-
-    #[test]
-    fn test_filter_splits_by_creation_ts() {
-        let splits = vec![
-            make_split("one", SplitState::Staged, 0, None, &[]),
-            make_split("two", SplitState::Staged, 5, None, &[]),
-            make_split("three", SplitState::Staged, 10, None, &[]),
-        ];
-        assert_eq!(
-            filter_splits(splits, None, Some(5), None, None, None)
-                .into_iter()
-                .map(|split| split.split_metadata.split_id)
-                .collect::<Vec<_>>(),
-            ["one", "two"]
-        );
-    }
-
-    #[test]
-    fn test_filter_splits_by_start_ts() {
-        let splits = vec![
-            make_split("one", SplitState::Staged, 0, Some(0..=5), &[]),
-            make_split("two", SplitState::Staged, 0, Some(0..=10), &[]),
-            make_split("three", SplitState::Staged, 0, Some(5..=15), &[]),
-            make_split("four", SplitState::Staged, 0, Some(10..=20), &[]),
-            make_split("five", SplitState::Staged, 0, Some(15..=20), &[]),
-        ];
-        assert_eq!(
-            filter_splits(splits, None, None, Some(10), None, None)
-                .into_iter()
-                .map(|split| split.split_metadata.split_id)
-                .collect::<Vec<_>>(),
-            ["two", "three", "four", "five"]
-        );
-    }
-
-    #[test]
-    fn test_filter_splits_by_end_ts() {
-        let splits = vec![
-            make_split("one", SplitState::Staged, 0, Some(0..=5), &[]),
-            make_split("two", SplitState::Staged, 0, Some(0..=10), &[]),
-            make_split("three", SplitState::Staged, 0, Some(5..=15), &[]),
-            make_split("four", SplitState::Staged, 0, Some(10..=20), &[]),
-            make_split("five", SplitState::Staged, 0, Some(15..=20), &[]),
-        ];
-        assert_eq!(
-            filter_splits(splits, None, None, None, Some(10), None)
-                .into_iter()
-                .map(|split| split.split_metadata.split_id)
-                .collect::<Vec<_>>(),
-            ["one", "two", "three", "four"]
-        );
-    }
-
-    #[test]
-    fn test_filter_splits_by_tags() {
-        let splits = vec![
-            make_split("one", SplitState::Staged, 0, None, &[]),
-            make_split("two", SplitState::Staged, 0, None, &["tenant:a"]),
-        ];
-        assert_eq!(
-            filter_splits(
-                splits,
-                None,
-                None,
-                None,
-                None,
-                Some(TagFilterAst::Tag {
-                    is_present: true,
-                    tag: "tenant:a".to_string()
-                })
-            )
-            .into_iter()
-            .map(|split| split.split_metadata.split_id)
-            .collect::<Vec<_>>(),
-            ["two"]
-        );
     }
 
     #[test]

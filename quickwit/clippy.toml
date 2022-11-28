@@ -1,0 +1,3 @@
+disallowed-methods = [
+    "std::path::Path::exists"
+]

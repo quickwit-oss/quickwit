@@ -22,8 +22,8 @@ use std::collections::{BinaryHeap, HashSet};
 use std::sync::Arc;
 
 use itertools::Itertools;
-use quickwit_doc_mapper::{DocMapper, SortBy, SortOrder};
-use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest};
+use quickwit_doc_mapper::{DocMapper, WarmupInfo};
+use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest, SortOrder};
 use tantivy::aggregation::agg_req::{
     get_fast_field_names, get_term_dict_field_names, Aggregations,
 };
@@ -37,15 +37,27 @@ use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 use crate::filters::{TimestampFilter, TimestampFilterBuilder};
 use crate::partial_hit_sorting_key;
 
+#[derive(Clone, Debug)]
+pub(crate) enum SortBy {
+    DocId,
+    FastField {
+        field_name: String,
+        order: SortOrder,
+    },
+    Score {
+        order: SortOrder,
+    },
+}
+
 /// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific
 /// `SegmentReader`. Its role is to compute the sorting field given a `DocId`.
 enum SortingFieldComputer {
+    /// If undefined, we simply sort by DocIds.
+    DocId,
     FastField {
         fast_field_reader: Arc<dyn Column<u64>>,
         order: SortOrder,
     },
-    /// If undefined, we simply sort by DocIds.
-    DocId,
     Score {
         order: SortOrder,
     },
@@ -59,7 +71,7 @@ impl SortingFieldComputer {
                 fast_field_reader,
                 order,
             } => {
-                let field_val = fast_field_reader.get_val(doc_id as u64);
+                let field_val = fast_field_reader.get_val(doc_id);
                 match order {
                     // Descending is our most common case.
                     SortOrder::Desc => field_val,
@@ -96,6 +108,7 @@ fn resolve_sort_by(
     segment_reader: &SegmentReader,
 ) -> tantivy::Result<SortingFieldComputer> {
     match sort_by {
+        SortBy::DocId => Ok(SortingFieldComputer::DocId),
         SortBy::FastField { field_name, order } => {
             if let Some(field) = segment_reader.schema().get_field(field_name) {
                 let fast_field_reader = segment_reader.fast_fields().u64_lenient(field)?;
@@ -107,7 +120,6 @@ fn resolve_sort_by(
                 Ok(SortingFieldComputer::DocId)
             }
         }
-        SortBy::DocId => Ok(SortingFieldComputer::DocId),
         SortBy::Score { order } => Ok(SortingFieldComputer::Score { order: *order }),
     }
 }
@@ -256,7 +268,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
 /// It defines the data that should be accumulated about the documents matching
 /// the query.
 #[derive(Clone)]
-pub struct QuickwitCollector {
+pub(crate) struct QuickwitCollector {
     pub split_id: String,
     pub start_offset: usize,
     pub max_hits: usize,
@@ -288,6 +300,14 @@ impl QuickwitCollector {
             term_dict_field_names.extend(get_term_dict_field_names(aggregate));
         }
         term_dict_field_names
+    }
+    pub fn warmup_info(&self) -> WarmupInfo {
+        WarmupInfo {
+            term_dict_field_names: self.term_dict_field_names(),
+            fast_field_names: self.fast_field_names(),
+            field_norms: self.requires_scoring(),
+            ..WarmupInfo::default()
+        }
     }
 }
 
@@ -443,13 +463,13 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
 }
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
-pub fn make_collector_for_split(
+pub(crate) fn make_collector_for_split(
     split_id: String,
     doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
     split_schema: &Schema,
 ) -> crate::Result<QuickwitCollector> {
-    let aggregation = if let Some(agg) = search_request.aggregation_request.as_ref() {
+    let aggregation = if let Some(agg) = &search_request.aggregation_request {
         Some(serde_json::from_str(agg)?)
     } else {
         None
@@ -462,12 +482,30 @@ pub fn make_collector_for_split(
         search_request.start_timestamp,
         search_request.end_timestamp,
     );
+    let sort_order = search_request
+        .sort_order
+        .and_then(SortOrder::from_i32)
+        .unwrap_or(SortOrder::Desc);
+    let sort_by = search_request
+        .sort_by_field
+        .as_ref()
+        .map(|field_name| {
+            if field_name == "_score" {
+                SortBy::Score { order: sort_order }
+            } else {
+                SortBy::FastField {
+                    field_name: field_name.clone(),
+                    order: sort_order,
+                }
+            }
+        })
+        .unwrap_or(SortBy::DocId);
 
     Ok(QuickwitCollector {
         split_id,
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
-        sort_by: search_request.into(),
+        sort_by,
         timestamp_filter_builder_opt,
         aggregation,
     })
@@ -477,7 +515,9 @@ pub fn make_collector_for_split(
 ///
 /// This collector only needs `start_offset` & `max_hit` so the other attributes
 /// can be set to default.
-pub fn make_merge_collector(search_request: &SearchRequest) -> crate::Result<QuickwitCollector> {
+pub(crate) fn make_merge_collector(
+    search_request: &SearchRequest,
+) -> crate::Result<QuickwitCollector> {
     let aggregation = if let Some(agg) = search_request.aggregation_request.as_ref() {
         Some(serde_json::from_str(agg)?)
     } else {

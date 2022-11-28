@@ -11,9 +11,8 @@ In addition to the `index_id`, the index configuration lets you define five item
 - The **doc mapping**: it defines how a document and the fields it contains are stored and indexed for a given index.
 - The **indexing settings**: it defines the timestamp field used for sharding, and some more advanced parameters like the merge policy.
 - The **search settings**: it defines the default search fields `default_search_fields`, a list of fields that Quickwit will search into if the user query does not explicitly target a field.
-- The (data) **sources**: it defines a list of sources of types like file or Kafka source.
 
-Configuration is set at index creation and cannot be modified except for the sources using the CLI ``quickwit source``  commands.
+Configuration is set at index creation and cannot be modified with the current version of Quickwit.
 
 ## Config file format
 
@@ -21,7 +20,7 @@ The index configuration format is YAML. When a key is absent from the configurat
 Here is a complete example suited for the HDFS logs dataset:
 
 ```yaml
-version: 0 # File format version.
+version: 0.4 # File format version.
 
 index_id: "hdfs"
 
@@ -53,16 +52,6 @@ indexing_settings:
 
 search_settings:
   default_search_fields: [severity_text, body]
-
-sources:
- - hdfs: hdfs-log-kafka
-   source_type: kafka
-   params:
-     topic: hdfs-logs
-     client_params:
-       bootstrap.servers: localhost:9092
-       group.id: quickwit-consumer-group
-       security.protocol: SSL
 ```
 
 ## Index uri
@@ -125,9 +114,9 @@ fieldnorms: true
 | ------------- | ------------- | ------------- |
 | `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
-| `tokenizer` | Name of the `Tokenizer`, choices between `raw`, `default` and `en_stem` | `default` |
+| `tokenizer` | Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
-| `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |  
+| `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |
 | `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids. The effective cardinality depends on the tokenizer. When creating fast fields on text fields it is recommended to use the "raw" tokenizer, since it will store the original text unchanged. The "default" tokenizer will store the terms as lower case and this will be reflected in the dictionary ([see tokenizers](#description-of-available-tokenizers)). | `false` |
 
 #### **Description of available tokenizers**
@@ -137,6 +126,7 @@ fieldnorms: true
 | `raw`         | Does not process nor tokenize text  |
 | `default`     | Chops the text on according to whitespace and punctuation, removes tokens that are too long, and converts to lowercase |
 | `en_stem`     |  Like `default`, but also applies stemming on the resulting tokens  |
+| `chinese_compatible` |  Chop between each CJK character in addition to what `default` does. Should be used with `record: position` to be able to properly search |
 
 **Description of record options**
 
@@ -154,12 +144,12 @@ Quickwit handles three numeric types: `i64`, `u64`, and `f64`.
 
 Numeric values can be stored in a fast field (the equivalent of Lucene's `DocValues`) which is a column-oriented storage.
 
-Example of a mapping for an i64 field:
+Example of a mapping for an u64 field:
 
 ```yaml
-name: timestamp
-description: UNIX timestamp of the document creation date
-type: i64
+name: rating
+description: Score between 0 and 5
+type: u64
 stored: true
 indexed: true
 fast: true
@@ -170,45 +160,65 @@ fast: true
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `description` | Optional description for the field. | `None` |
-| `stored`    | Whether value is stored in the document store | `true` |
-| `indexed`   | Whether value is indexed | `true` |
-| `fast`      | Whether value is stored in a fast field | `false` |
+| `stored`    | Whether the field values are stored in the document store | `true` |
+| `indexed`   | Whether the field values are indexed | `true` |
+| `fast`      | Whether the field values are stored in a fast field | `false` |
 
 #### `datetime` type
 
-The `datetime` type can accepts multiple formats and a storage precision. The following formats are supported but need to be explicitly requested via configuration.
-- `rfc3339`, `rfc2822`, `iso8601`: Parsing dates using standard specified formats.
-- `strftime`: Parsing dates using the Unix [strftime](https://man7.org/linux/man-pages/man3/strftime.3.html) format.
-- `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`: Parsing dates from numbers (timestamp). Only one can be used in configuration. `unix_ts_secs` is added to the list by default if none is specified. 
+The `datetime` type handles dates and datetimes. Each `datetime` field can be configured to support multiple input formats.
+When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared. The following formats are natively supported:
+- `iso8601`, `rfc2822`, `rfc3339`: parse dates using standard ISO and RFC formats.
+- `strptime`: parse dates using the Unix [strptime](https://man7.org/linux/man-pages/man3/strptime.3.html) format with few changes:
+  - `strptime` format specifiers: `%C`, `%d`, `%D`, `%e`, `%F`, `%g`, `%G`, `%h`, `%H`, `%I`, `%j`, `%k`, `%l`, `%m`, `%M`, `%n`, `%R`, `%S`, `%t`, `%T`, `%u`, `%U`, `%V`, `%w`, `%W`, `%y`, `%Y`, `%%`.
+  - `%f` for milliseconds precision support.
+  - `%z` timezone offsets can be specified as `(+|-)hhmm` or `(+|-)hh:mm`.
+
+- `unix_timestamp`: parse Unix timestamp values. Timestamp values can be provided in different precision, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is capable of inferring the precision from the value. Because of this feature, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
+
+When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding which improves compression. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field.
+Truncation here means zeroing. Operations on the `datetime` fastfield, e.g. via aggregations, need to be done on the microseconds level.
 
 :::info
-When specifying multiple input formats, the corresponding parsers are tried in the order they are declared.
+Internally `datetime` is stored as `microseconds` in the fastfield and docstore, and as `seconds` in the term dictionary.
 :::
+
+:::warning
+The timezone name format specifier (`%Z`) is not currently supported in `strptime` format.
+:::
+
+In addition, Quickwit support the `output_format` field option to specify how datetimes are represented in search result. This options supports the same value as input formats except for `Timestamp` which is replace by the following formats are for finer grained control:
+- `unix_timestamp_secs`: displays timestamps in seconds.
+- `unix_timestamp_millis`: displays timestamps in milliseconds.
+- `unix_timestamp_micros`: displays timestamps in microseconds.
 
 Example of a mapping for a datetime field:
 
 ```yaml
 name: timestamp
 type: datetime
+description: Time at which the event was emitted
 input_formats:
-  - "rfc3339"
-  - "unix_ts_millis"
-  - "%Y %m %d %H:%M:%S %z"
-precision: "milliseconds"
+  - rfc3339
+  - unix_timestamp
+  - "%Y %m %d %H:%M:%S.%f %z"
+output_format: unix_timestamp_secs
 stored: true
 indexed: true
 fast: true
+precision: milliseconds
 ```
 
 **Parameters for datetime field**
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `input_formats` | Formats used to parse input document datetime fields | [`rfc3339`, `unix_ts_secs`] |
-| `precision`     | The precision used to store the underlying fast value | `seconds` |
-| `stored`        | Whether value is stored in the document store | `true` |
-| `indexed`       | Whether value is indexed | `true` |
-| `fast`          | Whether value is stored in a fast field | `false` |
+| `input_formats` | Formats used to parse input dates | [`rfc3339`, `unix_timestamp`] |
+| `output_format` | Format used to display dates in search results | `rfc3339` |
+| `stored`        | Whether the field values are stored in the document store | `true` |
+| `indexed`       | Whether the field values are indexed | `true` |
+| `fast`          | Whether the field values are stored in a fast field | `false` |
+| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values. | `seconds` |
 
 #### `bool` type
 
@@ -233,6 +243,29 @@ fast: true
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`      | Whether value is stored in a fast field | `false` |
+
+#### `ip` type
+
+The `ip` type accepts IP address values, both IpV4 and IpV6 are supported.
+
+Example of a mapping for an IP field:
+
+```yaml
+name: host_ip
+description: Host IP address
+type: ip
+fast: true
+```
+
+**Parameters for IP field**
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `description` | Optional description for the field. | `None` |
+| `stored`    | Whether value is stored in the document store | `true` |
+| `indexed`   | Whether value is indexed | `true` |
+| `fast`      | Whether value is stored in a fast field | `false` |
+
 
 #### `bytes` type
 The `bytes` type accepts a binary value as a `Base64` encoded string.
@@ -268,6 +301,7 @@ type: json
 stored: true
 indexed: true
 tokenizer: "default"
+expand_dots: false
 ```
 
 **Parameters for JSON field**
@@ -277,8 +311,9 @@ tokenizer: "default"
 | `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
-| `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default` and `en_stem` | `default` |
+| `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `default` |
 | `record`    | **Only affects strings in the json object**. Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
+| `expand_dots`    | If true, json keys containing a `.` should be expanded. For instance, if `expand_dots` is set to true, `{"k8s.node.id": "node-2"}` will be indexed as if it was `{"k8s": {"node": {"id": "node2"}}}`. The benefit is that escaping the `.` will not be required at query time. In other words, `k8s.node.id:node2` will match the document. This does not impact the way the document is stored.  | `true` |
 
 Note that the `tokenizer` and the `record` have the same definition and the same effect as for the text field.
 
@@ -330,7 +365,7 @@ field_mappings:
 The `mode` describes how Quickwit should behave when it receives a field that is not defined in the field mapping.
 
 Quickwit offers you three different modes:
-- `lenient`: unmapped fields are dismissed by Quickwit.
+- `lenient` (default value): unmapped fields are dismissed by Quickwit.
 - `strict`: if a document contains a field that is not mapped, quickwit will dismiss it, and count it as an error.
 - `dynamic`: unmapped fields are gathered by Quickwit and handled as defined in the `dynamic_mapping` parameter.
 
@@ -341,6 +376,7 @@ Quickwit offers you three different modes:
 - stored: true
 - tokenizer: raw
 - record: basic
+- expand_dots: true
 ```
 
 The `dynamic` mode makes it possible to operate Quickwit in a schemaless manner, or with a partial schema.
@@ -352,7 +388,7 @@ targeting the path required to reach them from the root of the json object.
 For instance, in a entirely schemaless settings, a minimal index configuration could be:
 
 ```yaml
-version: 0
+version: 0.4
 index_id: my-dynamic-index
 # note we did not map anything.
 doc_mapping:
@@ -423,12 +459,90 @@ This section describes indexing settings for a given index.
 | ------------- | ------------- | ------------- |
 | `timestamp_field`      | Timestamp field used for sharding documents in splits (1).   | None |
 | `commit_timeout_secs`      | Maximum number of seconds before committing a split since its creation.   | 60 |
-| `split_num_docs_target`      | Maximum number of documents in a split. Note that this is not a hard limit.   | 10_000_000 |
-| `merge_policy.merge_factor`      | Number of splits to merge.   | 10 |
-| `merge_policy.max_merge_factor`      | Maximum number of splits to merge.   | 12 |
+| `split_num_docs_target` | Target number of docs per split.   | 10_000_000 |
+| `merge_policy` | Describes the strategy used to trigger split merge operations (see [Merge policies](#merge-policies) section below). |
 | `resources.heap_size`      | Indexer heap size per source per index.   | 2_000_000_000 |
 
 (1) Both `datetime` and `i64` can be referenced. `i64` fields are interpreted as Unix timestamp (seconds). You can learn more about time sharding [here](./../concepts/architecture.md).
+
+### Merge policies
+
+Quickwit makes it possible to define the strategy used to decide which splits should be merged together and when.
+
+Quickwit offers three different merge policies, each with their
+own set of parameters.
+
+#### "Stable log" merge policy
+
+The stable log merge policy attempts to minimize write amplification AND keep time-pruning power as high as possible, by merging splits with a similar size, and with a close time span.
+
+Quickwit's default merge policy is the `stable_log` merge policy
+with the following parameters:
+
+```yaml
+version: 0.4
+index_id: "hdfs"
+# ...
+indexing_settings:
+  merge_policy:
+    type: "stable_log"
+    min_level_num_docs: 100_000
+    merge_factor: 10
+    max_merge_factor: 12
+```
+
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `merge_factor`      | *(advanced)* Number of splits to merge together in a single merge operation.   | 10 |
+| `max_merge_factor` | *(advanced)* Maximum number of splits that can be merged together in a single merge operation.  | 12 |
+| `min_level_num_docs` |  *(advanced)* Number of docs below which all splits are considered as belonging to the same level.   | 100_000 |
+
+
+#### "Limit Merge" merge policy
+
+*The limit merge policy is considered advanced*.
+
+The limit merge policy simply limits write amplification by setting an upperbound
+of the number of merge operation a split should undergo.
+
+
+```yaml
+version: 0.4
+index_id: "hdfs"
+# ...
+indexing_settings:
+  merge_policy:
+    type: "limit_merge"
+    max_merge_ops: 5
+    merge_factor: 10
+    max_merge_factor: 12
+
+```
+
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `max_merge_ops`   |  Maximum number of merges that a given split should undergo. | 4 |
+| `merge_factor`      | *(advanced)* Number of splits to merge together in a single merge operation.   | 10 |
+| `max_merge_factor` | *(advanced)* Maximum number of splits that can be merged together in a single merge operation.  | 12 |
+
+#### No merge
+
+The `no_merge` merge policy entirely disables merging.
+
+:::caution
+This setting is not recommended. Merges are necessary to reduce the number of splits, and hence improve search performances.
+:::
+
+```yaml
+version: 0.4
+index_id: "hdfs"
+indexing_settings:
+    merge_policy:
+        type: "no_merge"
+```
+
 
 
 ### Indexer memory usage
@@ -444,6 +558,33 @@ This section describes search settings for a given index.
 | ------------- | ------------- | ------------- |
 | `search_default_fields`      | Default list of fields that will be used for search.   | None |
 
-## Sources
+## Retention policy
 
-An index can have one or several data sources. [Learn how to configure them](source-config.md).
+This section describes how Quickwit manages data retention. In Quickwit, the retention policy manager drops data on a split basis as opposed to individually dropping documents. Splits are evaluated based on their `time_range` which is derived from the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings. Using this setting, the retention policy will delete a split when `now() - split.time_range.end >= retention_policy.period`
+
+```yaml
+version: 0.4
+index_id: hdfs
+# ...
+retention:
+  period: 90 days
+  schedule: daily
+```
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `period`      | Duration after which splits are dropped, expressed in a human-readable way (`1 day`, `2 hours`, `a week`, ...). | required |
+| `schedule`    | Frequency at which the retention policy is evaluated and applied, expressed as a cron expression (`0 0 * * * *`) or human-readable form (`hourly`, `daily`, `weekly`, `monthly`, `yearly`). | `hourly` |
+
+
+`period` is specified as set of time spans. Each time span is an integer followed by a unit suffix like: `2 days 3h 24min`. The supported units are:
+  - `nsec`, `ns` -- nanoseconds
+  - `usec`, `us` -- microseconds
+  - `msec`, `ms` -- milliseconds
+  - `seconds`, `second`, `sec`, `s`
+  - `minutes`, `minute`, `min`, `m`
+  - `hours`, `hour`, `hr`, `h`
+  - `days`, `day`, `d`
+  - `weeks`, `week`, `w`
+  - `months`, `month`, `M` -- a month is defined as `30.44 days`
+  - `years`, `year`, `y` -- a year is defined as `365.25 days`

@@ -20,7 +20,6 @@
 use std::collections::hash_map::Entry;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
-use std::time::Instant;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -29,16 +28,18 @@ use fail::fail_point;
 use fnv::FnvHashMap;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::io::IoControls;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
-use quickwit_doc_mapper::{DocMapper, SortBy, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
+use serde::Serialize;
 use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
-use tantivy::{IndexBuilder, IndexSettings, IndexSortByField};
+use tantivy::{IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
-use tracing::info;
+use tracing::{info, info_span, Span};
 use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
@@ -52,7 +53,7 @@ struct CommitTimeout {
     workbench_id: Ulid,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct IndexerCounters {
     /// Number of splits that were emitted by the indexer.
     pub num_splits_emitted: u64,
@@ -86,16 +87,25 @@ impl IndexerState {
             .settings(self.index_settings.clone())
             .schema(self.schema.clone())
             .tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+
+        let io_controls = IoControls::default()
+            .set_progress(ctx.progress().clone())
+            .set_kill_switch(ctx.kill_switch().clone())
+            .set_index_and_component(&self.pipeline_id.index_id, "indexer");
+
         let indexed_split = IndexedSplitBuilder::new_in_dir(
             self.pipeline_id.clone(),
             partition_id,
             last_delete_opstamp,
             self.indexing_directory.scratch_directory().clone(),
             index_builder,
-            ctx.progress().clone(),
-            ctx.kill_switch().clone(),
+            io_controls,
         )?;
-        info!(split_id = indexed_split.split_id(), "new-split");
+        info!(
+            split_id = indexed_split.split_id(),
+            partition_id = partition_id,
+            "new-split"
+        );
         Ok(indexed_split)
     }
 
@@ -121,7 +131,15 @@ impl IndexerState {
             .metastore
             .last_delete_opstamp(&self.pipeline_id.index_id)
             .await?;
+        let batch_parent_span = info_span!(target: "quickwit-indexing", "index_batch",
+            index_id=%self.pipeline_id.index_id,
+            source_id=%self.pipeline_id.source_id,
+            pipeline_ord=%self.pipeline_id.pipeline_ord
+        );
+        let indexing_span = info_span!(parent: batch_parent_span.id(), "indexer");
         let workbench = IndexingWorkbench {
+            batch_parent_span,
+            _indexing_span: indexing_span,
             workbench_id: Ulid::new(),
             indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
             checkpoint_delta: IndexCheckpointDelta {
@@ -129,7 +147,6 @@ impl IndexerState {
                 source_delta: SourceCheckpointDelta::default(),
             },
             publish_lock: self.publish_lock.clone(),
-            date_of_birth: Instant::now(),
             last_delete_opstamp,
             memory_usage: Byte::from_bytes(0),
         };
@@ -222,17 +239,17 @@ impl IndexerState {
     }
 }
 
-/// A workbench hosts the set of `IndexedSplit` that will are being built.
+/// A workbench hosts the set of `IndexedSplit` that are being built.
 struct IndexingWorkbench {
     workbench_id: Ulid,
+    // This span is used for the entire lifetime of the splits batch creations
+    // This span is meant to be passed through the pipeline.
+    batch_parent_span: Span,
+    // Span for the in-memory indexing (done in the Indexer actor).
+    _indexing_span: Span,
     indexed_splits: FnvHashMap<u64, IndexedSplitBuilder>,
     checkpoint_delta: IndexCheckpointDelta,
     publish_lock: PublishLock,
-    // TODO create this Instant on the source side to be more accurate.
-    // Right now this instant is used to compute time-to-search, but this
-    // does not include the amount of time a document could have been
-    // staying in the indexer queue or in the push api queue.
-    date_of_birth: Instant,
     // On workbench creation, we fetch from the metastore the last delete task opstamp.
     // We use this value to set the `delete_opstamp` of the workbench splits.
     last_delete_opstamp: u64,
@@ -266,6 +283,11 @@ impl Actor for Indexer {
 
     fn runtime_handle(&self) -> Handle {
         RuntimeType::Blocking.get_runtime_handle()
+    }
+
+    #[inline]
+    fn yield_after_each_message(&self) -> bool {
+        false
     }
 
     async fn finalize(
@@ -356,20 +378,14 @@ impl Indexer {
         index_serializer_mailbox: Mailbox<IndexSerializer>,
     ) -> Self {
         let schema = doc_mapper.schema();
-        let sort_by_field_opt = match indexing_settings.sort_by() {
-            SortBy::DocId | SortBy::Score { .. } => None,
-            SortBy::FastField { field_name, order } => Some(IndexSortByField {
-                field: field_name,
-                order: order.into(),
-            }),
-        };
+        let docstore_compression = Compressor::Zstd(ZstdCompressor {
+            compression_level: Some(indexing_settings.docstore_compression_level),
+        });
         let index_settings = IndexSettings {
-            sort_by_field: sort_by_field_opt,
             docstore_blocksize: indexing_settings.docstore_blocksize,
-            docstore_compression: Compressor::Zstd(ZstdCompressor {
-                compression_level: Some(indexing_settings.docstore_compression_level),
-            }),
+            docstore_compression,
             docstore_compress_dedicated_thread: true,
+            sort_by_field: None,
         };
         let publish_lock = PublishLock::default();
         Self {
@@ -435,7 +451,7 @@ impl Indexer {
             indexed_splits,
             checkpoint_delta,
             publish_lock,
-            date_of_birth,
+            batch_parent_span,
             ..
         } = if let Some(indexing_workbench) = self.indexing_workbench_opt.take() {
             indexing_workbench
@@ -475,15 +491,14 @@ impl Indexer {
         }
         let num_splits = splits.len() as u64;
         let split_ids = splits.iter().map(|split| split.split_id()).join(",");
-
-        info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-packager");
+        info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-index-serializer");
         ctx.send_message(
             &self.index_serializer_mailbox,
             IndexedSplitBatchBuilder {
+                batch_parent_span,
                 splits,
                 checkpoint_delta: Some(checkpoint_delta),
                 publish_lock,
-                date_of_birth,
                 commit_trigger,
             },
         )
@@ -502,10 +517,10 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, Universe};
-    use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper, SortOrder};
+    use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::MockMetastore;
-    use tantivy::doc;
+    use tantivy::{doc, DateTime};
 
     use super::*;
     use crate::actors::indexer::{record_timestamp, IndexerCounters};
@@ -538,8 +553,6 @@ mod tests {
         let indexing_directory = IndexingDirectory::for_test().await;
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
-        indexing_settings.sort_field = Some("timestamp".to_string());
-        indexing_settings.sort_order = Some(SortOrder::Desc);
         indexing_settings.timestamp_field = Some("timestamp".to_string());
         let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
@@ -571,7 +584,7 @@ mod tests {
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document",
-                            timestamp_field=>1_662_529_435_000_001i64
+                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_001i64)
                         ),
                         timestamp_opt: Some(1_662_529_435_000_001i64),
                         partition: 1,
@@ -580,7 +593,7 @@ mod tests {
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 2",
-                            timestamp_field=>1_662_529_435_000_002i64
+                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_002i64)
                         ),
                         timestamp_opt: Some(1_662_529_435_000_002i64),
                         partition: 1,
@@ -596,7 +609,7 @@ mod tests {
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 3",
-                            timestamp_field=>1_662_529_435_000_003i64
+                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_003i64)
                         ),
                         timestamp_opt: Some(1_662_529_435_000_003i64),
                         partition: 1,
@@ -605,7 +618,7 @@ mod tests {
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 4",
-                            timestamp_field=>1_662_529_435_000_004i64
+                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_004i64)
                         ),
                         timestamp_opt: Some(1_662_529_435_000_004i64),
                         partition: 1,
@@ -620,7 +633,7 @@ mod tests {
                 docs: vec![PreparedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
-                        timestamp_field=>1_662_529_435_000_005i64
+                        timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_005i64)
                     ),
                     timestamp_opt: Some(1_662_529_435_000_005i64),
                     partition: 1,
@@ -654,10 +667,7 @@ mod tests {
             SourceCheckpointDelta::from(4..8)
         );
         let first_split = batch.splits.into_iter().next().unwrap().finalize()?;
-        let sort_by_field = first_split.index.settings().sort_by_field.as_ref();
-        assert!(sort_by_field.is_some());
-        assert_eq!(sort_by_field.unwrap().field, "timestamp");
-        assert!(sort_by_field.unwrap().order.is_desc());
+        assert!(first_split.index.settings().sort_by_field.is_none());
         Ok(())
     }
 
@@ -782,7 +792,7 @@ mod tests {
                 docs: vec![PreparedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
-                        timestamp_field=>1_662_529_435_000_005i64
+                        timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_005i64)
                     ),
                     timestamp_opt: Some(1_662_529_435_000_005i64),
                     partition: 1,
@@ -871,7 +881,7 @@ mod tests {
                 docs: vec![PreparedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
-                        timestamp_field=>1_662_529_435_000_005i64
+                        timestamp_field=> DateTime::from_timestamp_micros(1_662_529_435_000_005i64)
                     ),
                     timestamp_opt: Some(1_662_529_435_000_005i64),
                     partition: 1,

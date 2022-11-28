@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 //! quickwit-actors is a simplified actor framework for quickwit.
 //!
 //! It solves the following problem:
@@ -32,42 +34,57 @@ use tokio::time::Duration;
 mod actor;
 mod actor_handle;
 mod actor_state;
-mod channel_with_priority;
+#[doc(hidden)]
+pub mod channel_with_priority;
 mod command;
 mod envelope;
-mod kill_switch;
 mod mailbox;
 mod observation;
-mod progress;
+mod registry;
 mod scheduler;
 mod spawn_builder;
 mod supervisor;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod universe;
 
 pub use actor::{Actor, ActorExitStatus, Handler};
-pub use actor_handle::{ActorHandle, Health, Supervisable};
+pub use actor_handle::{ActorHandle, Health, Healthz, Supervisable};
 pub use command::Command;
-pub use kill_switch::KillSwitch;
 pub use observation::{Observation, ObservationType};
-pub use progress::{Progress, ProtectedZoneGuard};
+use quickwit_common::{KillSwitch, Progress, ProtectedZoneGuard};
 pub(crate) use scheduler::Scheduler;
 use thiserror::Error;
 pub use universe::Universe;
 
 pub use self::actor::ActorContext;
 pub use self::actor_state::ActorState;
-pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
-pub use self::mailbox::{create_mailbox, create_test_mailbox, Mailbox};
+pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError, TrySendError};
+pub use self::mailbox::{create_mailbox, create_test_mailbox, Inbox, Mailbox};
+pub use self::registry::ActorObservation;
+pub use self::supervisor::{Supervisor, SupervisorState};
 
 /// Heartbeat used to verify that actors are progressing.
 ///
 /// If an actor does not advertise a progress within an interval of duration `HEARTBEAT`,
 /// its supervisor will consider it as blocked and will proceed to kill it, as well
 /// as all of the actors all the actors that share the killswitch.
-pub const HEARTBEAT: Duration = Duration::from_secs(3);
+pub const HEARTBEAT: Duration = if cfg!(any(test, feature = "testsuite")) {
+    // Right now some unit test end when we detect that a
+    // pipeline has terminated, which can require waiting
+    // for a heartbeat.
+    //
+    // We use a shorter heartbeat to reduce the time running unit tests.
+    Duration::from_millis(500)
+} else {
+    Duration::from_secs(3)
+};
+
+/// Time we accept to wait for a new observation.
+///
+/// Once this time is elapsed, we just return the last observation.
+const OBSERVE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Error that occured while calling `ActorContext::ask(..)` or `Universe::ask`
 #[derive(Error, Debug)]

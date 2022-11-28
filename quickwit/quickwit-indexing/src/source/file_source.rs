@@ -169,6 +169,7 @@ impl TypedSourceFactory for FileSourceFactory {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
+    use std::path::PathBuf;
 
     use quickwit_actors::{create_test_mailbox, Command, Universe};
     use quickwit_config::{SourceConfig, SourceParams};
@@ -189,9 +190,11 @@ mod tests {
             SourceExecutionContext::for_test(
                 metastore,
                 "test-index",
+                PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::File(params.clone()),
                 },
             ),
@@ -250,9 +253,11 @@ mod tests {
             SourceExecutionContext::for_test(
                 metastore,
                 "test-index",
+                PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::File(params.clone()),
                 },
             ),
@@ -334,9 +339,11 @@ mod tests {
             SourceExecutionContext::for_test(
                 metastore,
                 "test-index",
+                PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::File(params.clone()),
                 },
             ),

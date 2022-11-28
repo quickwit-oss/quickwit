@@ -18,11 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::Context;
+use quickwit_common::metrics::IntCounter;
 use tokio::sync::watch;
-use tracing::{debug, error, info, Instrument};
+use tracing::{debug, error, info};
 
 use crate::envelope::Envelope;
 use crate::mailbox::Inbox;
+use crate::registry::ActorRegistry;
 use crate::scheduler::Scheduler;
 use crate::supervisor::Supervisor;
 use crate::{
@@ -32,17 +34,25 @@ use crate::{
 /// `SpawnBuilder` makes it possible to configure misc parameters before spawning an actor.
 pub struct SpawnBuilder<A: Actor> {
     scheduler_mailbox: Mailbox<Scheduler>,
+    registry: ActorRegistry,
     kill_switch: KillSwitch,
     #[allow(clippy::type_complexity)]
     mailboxes: Option<(Mailbox<A>, Inbox<A>)>,
+    backpressure_micros_counter_opt: Option<IntCounter>,
 }
 
 impl<A: Actor> SpawnBuilder<A> {
-    pub(crate) fn new(scheduler_mailbox: Mailbox<Scheduler>, kill_switch: KillSwitch) -> Self {
+    pub(crate) fn new(
+        scheduler_mailbox: Mailbox<Scheduler>,
+        kill_switch: KillSwitch,
+        registry: ActorRegistry,
+    ) -> Self {
         SpawnBuilder {
             scheduler_mailbox,
+            registry,
             kill_switch,
             mailboxes: None,
+            backpressure_micros_counter_opt: None,
         }
     }
 
@@ -64,6 +74,19 @@ impl<A: Actor> SpawnBuilder<A> {
     /// of actors.
     pub fn set_mailboxes(mut self, mailbox: Mailbox<A>, inbox: Inbox<A>) -> Self {
         self.mailboxes = Some((mailbox, inbox));
+        self
+    }
+
+    /// Adds a counter to track the amount of time the actor is
+    /// spending in "backpressure".
+    ///
+    /// When using `.ask` the amount of time counted may be misleading.
+    /// (See `Mailbox::ask_with_backpressure_counter` for more details)
+    pub fn set_backpressure_micros_counter(
+        mut self,
+        backpressure_micros_counter: IntCounter,
+    ) -> Self {
+        self.backpressure_micros_counter_opt = Some(backpressure_micros_counter);
         self
     }
 
@@ -91,7 +114,9 @@ impl<A: Actor> SpawnBuilder<A> {
             mailbox,
             self.kill_switch.clone(),
             self.scheduler_mailbox.clone(),
+            self.registry.clone(),
             state_tx,
+            self.backpressure_micros_counter_opt,
         );
         (ctx, inbox, state_rx)
     }
@@ -102,10 +127,9 @@ impl<A: Actor> SpawnBuilder<A> {
         let (ctx, inbox, state_rx) = self.create_actor_context_and_inbox(&actor);
         debug!(actor_id = %ctx.actor_instance_id(), "spawn-actor");
         let mailbox = ctx.mailbox().clone();
+        ctx.registry().register(&mailbox);
         let ctx_clone = ctx.clone();
-        let span = actor.span(&ctx);
-        let loop_async_actor_future =
-            async move { actor_loop(actor, inbox, ctx).await }.instrument(span);
+        let loop_async_actor_future = async move { actor_loop(actor, inbox, ctx).await };
         let join_handle = runtime_handle.spawn(loop_async_actor_future);
         let actor_handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
         (mailbox, actor_handle)
@@ -122,16 +146,11 @@ impl<A: Actor> SpawnBuilder<A> {
         let kill_switch = self.kill_switch.clone();
         let child_kill_switch = kill_switch.child();
         let scheduler_mailbox = self.scheduler_mailbox.clone();
+        let registry = self.registry.clone();
         let (mailbox, actor_handle) = self.set_kill_switch(child_kill_switch).spawn(actor);
-        let supervisor = Supervisor::new(
-            actor_name,
-            Box::new(actor_factory),
-            inbox,
-            mailbox.clone(),
-            actor_handle,
-        );
+        let supervisor = Supervisor::new(actor_name, Box::new(actor_factory), inbox, actor_handle);
         let (_superviser_mailbox, supervisor_handle) =
-            SpawnBuilder::new(scheduler_mailbox, kill_switch).spawn(supervisor);
+            SpawnBuilder::new(scheduler_mailbox, kill_switch, registry).spawn(supervisor);
         (mailbox, supervisor_handle)
     }
 }
@@ -175,7 +194,6 @@ struct ActorExecutionEnv<A: Actor> {
     actor: A,
     inbox: Inbox<A>,
     ctx: ActorContext<A>,
-    msg_id: u64,
 }
 
 impl<A: Actor> ActorExecutionEnv<A> {
@@ -196,17 +214,21 @@ impl<A: Actor> ActorExecutionEnv<A> {
         mut envelope: Envelope<A>,
     ) -> Result<(), ActorExitStatus> {
         self.yield_and_check_if_killed().await?;
-        envelope
-            .handle_message(self.msg_id, &mut self.actor, &self.ctx)
-            .await?;
-        self.msg_id += 1u64;
+        envelope.handle_message(&mut self.actor, &self.ctx).await?;
         Ok(())
     }
 
     async fn yield_and_check_if_killed(&self) -> Result<(), ActorExitStatus> {
-        self.ctx.protect_future(tokio::task::yield_now()).await;
         if self.ctx.kill_switch().is_dead() {
             return Err(ActorExitStatus::Killed);
+        }
+        if self.actor.yield_after_each_message() {
+            self.ctx.yield_now().await;
+            if self.ctx.kill_switch().is_dead() {
+                return Err(ActorExitStatus::Killed);
+            }
+        } else {
+            self.ctx.record_progress();
         }
         Ok(())
     }
@@ -271,12 +293,7 @@ impl<A: Actor> Drop for ActorExecutionEnv<A> {
 }
 
 async fn actor_loop<A: Actor>(actor: A, inbox: Inbox<A>, ctx: ActorContext<A>) -> ActorExitStatus {
-    let mut actor_env = ActorExecutionEnv {
-        actor,
-        inbox,
-        ctx,
-        msg_id: 1u64,
-    };
+    let mut actor_env = ActorExecutionEnv { actor, inbox, ctx };
 
     let initialize_exit_status_res: Result<(), ActorExitStatus> = actor_env.initialize().await;
 
@@ -290,6 +307,7 @@ async fn actor_loop<A: Actor>(actor: A, inbox: Inbox<A>, ctx: ActorContext<A>) -
     };
 
     let final_exit_status = actor_env.finalize(after_process_exit_status).await;
+    // The last observation is collected on `ActorExecutionEnv::Drop`.
     actor_env.process_exit_status(&final_exit_status);
     final_exit_status
 }

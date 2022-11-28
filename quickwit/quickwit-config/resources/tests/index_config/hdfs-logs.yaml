@@ -1,4 +1,4 @@
-version: 0
+version: 0.4
 index_id: hdfs-logs
 index_uri: s3://quickwit-indexes/hdfs-logs
 
@@ -8,7 +8,7 @@ doc_mapping:
       type: u64
       fast: true
     - name: timestamp
-      type: i64
+      type: datetime
       fast: true
     - name: severity_text
       type: text
@@ -28,35 +28,19 @@ doc_mapping:
 
 retention:
   period: 90 days
-  cutoff_reference: split_timestamp_field
   schedule: daily
 
 indexing_settings:
-  demux_field: tenant_id
   timestamp_field: timestamp
-  sort_field: timestamp
-  sort_order: asc
   commit_timeout_secs: 61
   split_num_docs_target: 10000001
   merge_policy:
-    demux_factor: 7
+    type: "stable_log"
     merge_factor: 9
     max_merge_factor: 11
+    maturation_period: 48 hours
   resources:
     heap_size: 3G
 
 search_settings:
   default_search_fields: [severity_text, body]
-
-sources:
-  - source_id: hdfs-logs-kafka-source
-    source_type: kafka
-    params:
-      topic: cloudera-cluster-logs
-      client_params:
-        bootstrap.servers: host:9092
-
-  - source_id: hdfs-logs-kinesis-source
-    source_type: kinesis
-    params:
-      stream_name: emr-cluster-logs

@@ -22,22 +22,26 @@ use std::convert::Infallible;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::Future;
+use quickwit_common::metrics::IntCounter;
 use thiserror::Error;
 use tokio::sync::{oneshot, watch};
-use tracing::{debug, error, info_span, Span};
+use tracing::{debug, error};
 
 use crate::actor_state::{ActorState, AtomicState};
-use crate::progress::{Progress, ProtectedZoneGuard};
+use crate::registry::ActorRegistry;
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
 #[cfg(any(test, feature = "testsuite"))]
 use crate::Universe;
-use crate::{AskError, Command, KillSwitch, Mailbox, QueueCapacity, SendError};
+use crate::{
+    AskError, Command, KillSwitch, Mailbox, Progress, ProtectedZoneGuard, QueueCapacity, SendError,
+    TrySendError,
+};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
@@ -119,7 +123,7 @@ impl From<SendError> for ActorExitStatus {
 #[async_trait]
 pub trait Actor: Send + Sync + Sized + 'static {
     /// Piece of state that can be copied for assert in unit test, admin, etc.
-    type ObservableState: Send + Sync + Clone + fmt::Debug;
+    type ObservableState: Send + Sync + Clone + serde::Serialize + fmt::Debug;
     /// A name identifying the type of actor.
     ///
     /// Ideally respect the `CamelCase` convention.
@@ -133,10 +137,19 @@ pub trait Actor: Send + Sync + Sized + 'static {
     /// The runner method makes it possible to decide the environment
     /// of execution of the Actor.
     ///
-    /// Actor with a handler that may block for more than 50microsecs should
-    /// use the `ActorRunner::DedicatedThread`.
+    /// Actor with a handler that may block for more than 50 microseconds
+    /// should use the `ActorRunner::DedicatedThread`.
     fn runtime_handle(&self) -> tokio::runtime::Handle {
         tokio::runtime::Handle::current()
+    }
+
+    /// If set to true, the actor will yield after every single
+    /// message.
+    ///
+    /// For actors that are calling `.await` regularly,
+    /// returning `false` can yield better performance.
+    fn yield_after_each_message(&self) -> bool {
+        true
     }
 
     /// The Actor's incoming mailbox queue capacity. It is set when the actor is spawned.
@@ -148,11 +161,6 @@ pub trait Actor: Send + Sync + Sized + 'static {
     ///
     /// This function should return quickly.
     fn observable_state(&self) -> Self::ObservableState;
-
-    /// Creates a span associated to all logging happening during the lifetime of an actor instance.
-    fn span(&self, _ctx: &ActorContext<Self>) -> Span {
-        info_span!("", actor = %self.name())
-    }
 
     /// Initialize is called before running the actor.
     ///
@@ -227,12 +235,14 @@ pub struct ActorContextInner<A: Actor> {
     progress: Progress,
     kill_switch: KillSwitch,
     scheduler_mailbox: Mailbox<Scheduler>,
+    registry: ActorRegistry,
     actor_state: AtomicState,
     // Count the number of times the actor has slept.
     // This counter is useful to unsure that obsolete WakeUp
     // events do not effect ulterior `sleep`.
     sleep_count: AtomicUsize,
-    observable_state_tx: Mutex<watch::Sender<A::ObservableState>>,
+    backpressure_micros_counter_opt: Option<IntCounter>,
+    observable_state_tx: watch::Sender<A::ObservableState>,
 }
 
 /// Internal command used to resume an actor that was paused using
@@ -266,7 +276,9 @@ impl<A: Actor> ActorContext<A> {
         self_mailbox: Mailbox<A>,
         kill_switch: KillSwitch,
         scheduler_mailbox: Mailbox<Scheduler>,
+        registry: ActorRegistry,
         observable_state_tx: watch::Sender<A::ObservableState>,
+        backpressure_micros_counter_opt: Option<IntCounter>,
     ) -> Self {
         ActorContext {
             inner: ActorContextInner {
@@ -274,9 +286,11 @@ impl<A: Actor> ActorContext<A> {
                 progress: Progress::default(),
                 kill_switch,
                 scheduler_mailbox,
+                registry,
                 actor_state: AtomicState::default(),
                 sleep_count: AtomicUsize::default(),
-                observable_state_tx: Mutex::new(observable_state_tx),
+                observable_state_tx,
+                backpressure_micros_counter_opt,
             }
             .into(),
         }
@@ -292,7 +306,9 @@ impl<A: Actor> ActorContext<A> {
             actor_mailbox,
             universe.kill_switch.clone(),
             universe.scheduler_mailbox.clone(),
+            universe.registry.clone(),
             observable_state_tx,
+            None,
         )
     }
 
@@ -302,6 +318,10 @@ impl<A: Actor> ActorContext<A> {
 
     pub fn mailbox(&self) -> &Mailbox<A> {
         &self.self_mailbox
+    }
+
+    pub(crate) fn registry(&self) -> &ActorRegistry {
+        &self.registry
     }
 
     pub fn actor_instance_id(&self) -> &str {
@@ -326,6 +346,11 @@ impl<A: Actor> ActorContext<A> {
         future.await
     }
 
+    /// Cooperatively yields, while keeping the actor protected.
+    pub async fn yield_now(&self) {
+        self.protect_future(tokio::task::yield_now()).await;
+    }
+
     /// Gets a copy of the actor kill switch.
     /// This should rarely be used.
     ///
@@ -335,12 +360,17 @@ impl<A: Actor> ActorContext<A> {
         &self.kill_switch
     }
 
+    #[must_use]
     pub fn progress(&self) -> &Progress {
         &self.progress
     }
 
     pub fn spawn_actor<SpawnedActor: Actor>(&self) -> SpawnBuilder<SpawnedActor> {
-        SpawnBuilder::new(self.scheduler_mailbox.clone(), self.kill_switch.child())
+        SpawnBuilder::new(
+            self.scheduler_mailbox.clone(),
+            self.kill_switch.child(),
+            self.registry.clone(),
+        )
     }
 
     /// Records some progress.
@@ -389,18 +419,11 @@ impl<A: Actor> ActorContext<A> {
 
     pub(crate) fn observe(&self, actor: &mut A) -> A::ObservableState {
         let obs_state = actor.observable_state();
-        let _ = self
-            .observable_state_tx
-            .lock()
-            .unwrap()
-            .send(obs_state.clone());
+        let _ = self.observable_state_tx.send(obs_state.clone());
         obs_state
     }
 
     pub(crate) fn exit(&self, exit_status: &ActorExitStatus) {
-        if !exit_status.is_success() {
-            error!(actor_name=self.actor_instance_id(), actor_exit_status=?exit_status, "actor-failure");
-        }
         self.actor_state.exit(exit_status.is_success());
         if should_activate_kill_switch(exit_status) {
             error!(actor=%self.actor_instance_id(), exit_status=?exit_status, "exit activating-kill-switch");
@@ -447,14 +470,19 @@ impl<A: Actor> ActorContext<A> {
         &self,
         mailbox: &Mailbox<DestActor>,
         msg: M,
-    ) -> Result<oneshot::Receiver<DestActor::Reply>, crate::SendError>
+    ) -> Result<oneshot::Receiver<DestActor::Reply>, SendError>
     where
         DestActor: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
-        mailbox.send_message(msg).await
+        mailbox
+            .send_message_with_backpressure_counter(
+                msg,
+                self.backpressure_micros_counter_opt.as_ref(),
+            )
+            .await
     }
 
     pub async fn ask<DestActor: Actor, M, T>(
@@ -468,7 +496,9 @@ impl<A: Actor> ActorContext<A> {
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg, "ask");
-        mailbox.ask(msg).await
+        mailbox
+            .ask_with_backpressure_counter(msg, self.backpressure_micros_counter_opt.as_ref())
+            .await
     }
 
     /// Similar to `send_message`, except this method
@@ -494,24 +524,42 @@ impl<A: Actor> ActorContext<A> {
     pub async fn send_exit_with_success<Dest: Actor>(
         &self,
         mailbox: &Mailbox<Dest>,
-    ) -> Result<(), crate::SendError> {
+    ) -> Result<(), SendError> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
         mailbox.send_message(Command::ExitWithSuccess).await?;
         Ok(())
     }
 
-    /// `async` version of `send_self_message`.
+    /// Sends a message to an actor's own mailbox.
+    ///
+    /// Warning: This method is dangerous as it can very easily
+    /// cause a deadlock.
     pub async fn send_self_message<M>(
         &self,
         msg: M,
-    ) -> Result<oneshot::Receiver<A::Reply>, crate::SendError>
+    ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: Handler<M>,
         M: 'static + Sync + Send + fmt::Debug,
     {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
         self.self_mailbox.send_message(msg).await
+    }
+
+    /// Attempts to send a message to itself.
+    ///
+    /// Warning: This method will always fail if
+    /// an actor has a capacity of 0.
+    pub fn try_send_self_message<M>(
+        &self,
+        msg: M,
+    ) -> Result<oneshot::Receiver<A::Reply>, TrySendError<M>>
+    where
+        A: Handler<M>,
+        M: 'static + Sync + Send + fmt::Debug,
+    {
+        self.self_mailbox.try_send_message(msg)
     }
 
     pub async fn schedule_self_msg<M>(&self, after_duration: Duration, message: M)
@@ -536,15 +584,6 @@ impl<A: Actor> ActorContext<A> {
 #[async_trait::async_trait]
 pub trait Handler<M>: Actor {
     type Reply: 'static + Send;
-
-    /// Returns a context span for the processing of a specific
-    /// message.
-    ///
-    /// `msg_id` is an autoincremented message id than can be added to the span.
-    /// The counter starts 0 at the beginning of the life of an actor instance.
-    fn message_span(&self, msg_id: u64, _msg: &M) -> Span {
-        info_span!("", msg_id = &msg_id)
-    }
 
     /// Processes a message.
     ///

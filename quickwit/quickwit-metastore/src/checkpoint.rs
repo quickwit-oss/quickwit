@@ -143,7 +143,7 @@ impl From<BTreeMap<String, SourceCheckpoint>> for IndexCheckpoint {
 }
 
 impl IndexCheckpoint {
-    /// Updates a given source checkpoint.
+    /// Updates a given source checkpoint. Returns whether the checkpoint was modified.
     ///
     /// If the checkpoint delta is not compatible with the
     /// current checkpoint, an error is returned, and the
@@ -153,12 +153,15 @@ impl IndexCheckpoint {
     pub fn try_apply_delta(
         &mut self,
         delta: IndexCheckpointDelta,
-    ) -> Result<(), IncompatibleCheckpointDelta> {
+    ) -> Result<bool, IncompatibleCheckpointDelta> {
+        if delta.is_empty() {
+            return Ok(false);
+        }
         self.per_source
             .entry(delta.source_id)
             .or_default()
             .try_apply_delta(delta.source_delta)?;
-        Ok(())
+        Ok(true)
     }
 
     /// Resets the checkpoint of the source identified by `source_id`. Returns whether a mutation
@@ -180,11 +183,7 @@ impl IndexCheckpoint {
     /// Adds a new source. If the source was already here, this
     /// method returns successfully and does not override the existing checkpoint.
     pub fn add_source(&mut self, source_id: &str) {
-        self.try_apply_delta(IndexCheckpointDelta {
-            source_id: source_id.to_string(),
-            source_delta: SourceCheckpointDelta::default(),
-        })
-        .expect("Applying an empty checkpoint delta should never fail.");
+        self.per_source.entry(source_id.to_string()).or_default();
     }
 
     /// Removes a source.
@@ -267,7 +266,7 @@ impl<'de> Deserialize<'de> for SourceCheckpoint {
 /// Error returned when trying to apply a checkpoint delta to a checkpoint that is not
 /// compatible. ie: the checkpoint delta starts from a point anterior to
 /// the checkpoint.
-#[derive(Debug, Error, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Error, Eq, PartialEq, Serialize, Deserialize)]
 #[error(
     "IncompatibleChkptDelta at partition: {partition_id:?} cur_pos:{current_position:?} \
      delta_pos:{delta_position_from:?}"
@@ -300,9 +299,7 @@ impl SourceCheckpoint {
     ) -> Result<(), IncompatibleCheckpointDelta> {
         info!(delta=?delta, checkpoint=?self);
         for (delta_partition, delta_position) in &delta.per_partition {
-            let position = if let Some(position) = self.per_partition.get(delta_partition) {
-                position
-            } else {
+            let Some(position) = self.per_partition.get(delta_partition) else {
                 continue;
             };
             match position.cmp(&delta_position.from) {
@@ -526,6 +523,11 @@ impl SourceCheckpointDelta {
     /// Returns the number of partitions covered by the checkpoint delta.
     pub fn num_partitions(&self) -> usize {
         self.per_partition.len()
+    }
+
+    /// Returns an iterator over the partition_ids.
+    pub fn partitions(&self) -> impl Iterator<Item = &PartitionId> {
+        self.per_partition.keys()
     }
 
     /// Returns `true` if the checkpoint delta is empty.

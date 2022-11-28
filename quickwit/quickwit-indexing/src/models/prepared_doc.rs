@@ -29,18 +29,26 @@ pub struct PreparedDoc {
     pub num_bytes: usize,
 }
 
-#[derive(Debug)]
-pub struct PreparedDocBatch {
-    pub docs: Vec<PreparedDoc>,
-    pub checkpoint_delta: SourceCheckpointDelta,
-}
-
 impl fmt::Debug for PreparedDoc {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PreparedDoc")
             .field("timestamp_opt", &self.timestamp_opt)
             .field("partition", &self.partition)
             .field("num_bytes", &self.num_bytes)
+            .finish()
+    }
+}
+
+pub struct PreparedDocBatch {
+    pub docs: Vec<PreparedDoc>,
+    pub checkpoint_delta: SourceCheckpointDelta,
+}
+
+impl fmt::Debug for PreparedDocBatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PreparedDocBatch")
+            .field("num_docs", &self.docs.len())
+            .field("checkpoint_delta", &self.checkpoint_delta)
             .finish()
     }
 }

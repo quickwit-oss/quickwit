@@ -17,18 +17,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
 use anyhow::Context;
-use quickwit_common::fs::empty_dir;
+use quickwit_common::ignore_error_kind;
 use tokio::fs;
 
 use super::ScratchDirectory;
 
-pub const CACHE: &str = "cache";
-
-pub const SCRATCH: &str = "scratch";
+const SCRATCH: &str = "scratch";
 
 /// Root of an [`IndexingDirectory`].
 enum Root {
@@ -54,7 +53,6 @@ pub struct IndexingDirectory {
 
 struct InnerIndexingDirectory {
     root: Root,
-    pub cache_directory: PathBuf,
     pub scratch_directory: ScratchDirectory,
 }
 
@@ -73,19 +71,23 @@ impl WeakIndexingDirectory {
 
 impl IndexingDirectory {
     pub async fn create_in_dir<P: AsRef<Path>>(dir_path: P) -> anyhow::Result<IndexingDirectory> {
-        // Create cache directory if does not exist.
-        let cache_directory_path = dir_path.as_ref().join(CACHE);
-        fs::create_dir_all(&cache_directory_path)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to create cache directory `{}`. ",
-                    cache_directory_path.display(),
-                )
-            })?;
-        // Create scratch directory if does not exist.
-        let scratch_directory_path = dir_path.as_ref().join(SCRATCH);
-        fs::create_dir_all(&scratch_directory_path)
+        let root_dir = dir_path.as_ref().to_path_buf();
+
+        // Delete if exists and recreate scratch directory.
+        let scratch_directory_path = root_dir.join(SCRATCH);
+        fs::create_dir_all(&scratch_directory_path).await?;
+
+        ignore_error_kind!(
+            io::ErrorKind::NotFound,
+            fs::remove_dir_all(&scratch_directory_path).await
+        )
+        .with_context(|| {
+            format!(
+                "Failed to empty scratch directory `{}`.",
+                scratch_directory_path.display(),
+            )
+        })?;
+        fs::create_dir(&scratch_directory_path)
             .await
             .with_context(|| {
                 format!(
@@ -93,28 +95,15 @@ impl IndexingDirectory {
                     scratch_directory_path.display(),
                 )
             })?;
-        // Empty scratch directory if already exists.
-        empty_dir(&scratch_directory_path).await.with_context(|| {
-            format!(
-                "Failed to empty scratch directory `{}`.",
-                scratch_directory_path.display(),
-            )
-        })?;
         let scratch_directory = ScratchDirectory::new_in_dir(scratch_directory_path);
-
         let inner = InnerIndexingDirectory {
-            root: Root::Dir(dir_path.as_ref().to_path_buf()),
-            cache_directory: cache_directory_path,
+            root: Root::Dir(root_dir),
             scratch_directory,
         };
         let indexing_directory = IndexingDirectory {
             inner: Arc::new(inner),
         };
         Ok(indexing_directory)
-    }
-
-    pub fn cache_directory(&self) -> &Path {
-        &self.inner.cache_directory
     }
 
     pub fn scratch_directory(&self) -> &ScratchDirectory {
@@ -133,9 +122,6 @@ impl IndexingDirectory {
     pub async fn for_test() -> Self {
         let tempdir = tempfile::tempdir().unwrap();
 
-        let cache_directory_path = tempdir.path().join(CACHE);
-        fs::create_dir_all(&cache_directory_path).await.unwrap();
-
         let scratch_directory_path = tempdir.path().join(SCRATCH);
         fs::create_dir_all(&scratch_directory_path).await.unwrap();
 
@@ -143,7 +129,6 @@ impl IndexingDirectory {
 
         let inner = InnerIndexingDirectory {
             root: Root::TempDir(tempdir),
-            cache_directory: cache_directory_path,
             scratch_directory,
         };
         IndexingDirectory {
@@ -169,23 +154,17 @@ mod tests {
         let indexing_directory_path = indexing_directory.path().to_path_buf();
         assert_eq!(indexing_directory_path, tempdir.path());
 
-        let cache_directory_path = indexing_directory_path.join("cache");
-        assert!(cache_directory_path.exists());
-        assert_eq!(indexing_directory.cache_directory(), cache_directory_path);
-
         let scratch_directory_path = indexing_directory_path.join("scratch");
-        assert!(scratch_directory_path.exists());
+        assert!(scratch_directory_path.try_exists()?);
         assert_eq!(
             indexing_directory.scratch_directory().path(),
             scratch_directory_path
         );
-        {
-            let scratch_file_path = scratch_directory_path.join("file");
-            tokio::fs::File::create(&scratch_file_path).await?;
-            assert!(scratch_file_path.exists());
-            let _indexing_directory = IndexingDirectory::create_in_dir(tempdir.path()).await?;
-            assert!(!scratch_file_path.exists());
-        }
+        let scratch_file_path = scratch_directory_path.join("file");
+        tokio::fs::File::create(&scratch_file_path).await?;
+        assert!(scratch_file_path.try_exists()?);
+        let _indexing_directory = IndexingDirectory::create_in_dir(tempdir.path()).await?;
+        assert!(!scratch_file_path.try_exists()?);
         Ok(())
     }
 
@@ -194,7 +173,7 @@ mod tests {
         let indexing_directory = IndexingDirectory::for_test().await;
         let indexing_directory_path = indexing_directory.path().to_path_buf();
         drop(indexing_directory);
-        assert!(!indexing_directory_path.exists());
+        assert!(!indexing_directory_path.try_exists()?);
         Ok(())
     }
 }

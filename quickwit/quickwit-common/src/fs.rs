@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tokio;
 
@@ -32,6 +32,11 @@ pub async fn empty_dir<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Helper function to get the cache path.
+pub fn get_cache_directory_path(data_dir_path: &Path) -> PathBuf {
+    data_dir_path.join("cache").join("splits")
 }
 
 #[cfg(test)]

@@ -19,6 +19,7 @@
 
 use std::time::Duration;
 
+use crate::registry::{ActorObservation, ActorRegistry};
 use crate::scheduler::{SimulateAdvanceTime, TimeShift};
 use crate::spawn_builder::SpawnBuilder;
 use crate::{Actor, Command, KillSwitch, Mailbox, QueueCapacity, Scheduler};
@@ -33,6 +34,7 @@ pub struct Universe {
     // This killswitch is used for the scheduler, and will be used by default for all spawned
     // actors.
     pub(crate) kill_switch: KillSwitch,
+    pub(crate) registry: ActorRegistry,
 }
 
 impl Universe {
@@ -41,14 +43,28 @@ impl Universe {
     pub fn new() -> Universe {
         let scheduler = Scheduler::default();
         let kill_switch = KillSwitch::default();
-        let (mailbox, _inbox) =
+        let (fake_mailbox, _inbox) =
             crate::create_mailbox("fake-mailbox".to_string(), QueueCapacity::Unbounded);
+        let registry = ActorRegistry::default();
         let (scheduler_mailbox, _scheduler_inbox) =
-            SpawnBuilder::new(mailbox, kill_switch.clone()).spawn(scheduler);
+            SpawnBuilder::new(fake_mailbox, kill_switch.clone(), registry.clone()).spawn(scheduler);
         Universe {
             scheduler_mailbox,
             kill_switch,
+            registry,
         }
+    }
+
+    pub fn get<A: Actor>(&self) -> Vec<Mailbox<A>> {
+        self.registry.get::<A>()
+    }
+
+    pub fn get_one<A: Actor>(&self) -> Option<Mailbox<A>> {
+        self.registry.get_one::<A>()
+    }
+
+    pub async fn observe(&self, timeout: Duration) -> Vec<ActorObservation> {
+        self.registry.observe(timeout).await
     }
 
     pub fn kill(&self) {
@@ -75,7 +91,11 @@ impl Universe {
     }
 
     pub fn spawn_builder<A: Actor>(&self) -> SpawnBuilder<A> {
-        SpawnBuilder::new(self.scheduler_mailbox.clone(), self.kill_switch.child())
+        SpawnBuilder::new(
+            self.scheduler_mailbox.clone(),
+            self.kill_switch.child(),
+            self.registry.clone(),
+        )
     }
 
     /// Inform an actor to process pending message and then stop processing new messages

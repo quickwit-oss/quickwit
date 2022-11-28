@@ -29,6 +29,7 @@ use regex::Regex;
 use tokio::sync::Mutex;
 use tracing::debug;
 
+use crate::metastore::instrumented_metastore::InstrumentedMetastore;
 use crate::{
     FileBackedMetastore, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
 };
@@ -52,8 +53,9 @@ pub struct FileBackedMetastoreFactory {
 
 impl Default for FileBackedMetastoreFactory {
     fn default() -> Self {
+        let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
         FileBackedMetastoreFactory {
-            storage_uri_resolver: quickwit_storage_uri_resolver().clone(),
+            storage_uri_resolver,
             cache: Default::default(),
         }
     }
@@ -78,6 +80,15 @@ fn extract_polling_interval_from_uri(uri: &str) -> (String, Option<Duration>) {
 }
 
 impl FileBackedMetastoreFactory {
+    /// Builds a FileBackedMetastoreFactory wrapping a given storage uri resolver.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn new(storage_uri_resolver: StorageUriResolver) -> FileBackedMetastoreFactory {
+        FileBackedMetastoreFactory {
+            storage_uri_resolver,
+            cache: Default::default(),
+        }
+    }
+
     async fn get_from_cache(&self, uri: &Uri) -> Option<Arc<dyn Metastore>> {
         let cache_lock = self.cache.lock().await;
         cache_lock.get(uri).and_then(Weak::upgrade)
@@ -104,7 +115,7 @@ impl FileBackedMetastoreFactory {
 impl MetastoreFactory for FileBackedMetastoreFactory {
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
         let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri.as_str());
-        let uri = Uri::new(uri_stripped);
+        let uri = Uri::from_well_formed(uri_stripped);
         if let Some(metastore) = self.get_from_cache(&uri).await {
             debug!("using metastore from cache");
             return Ok(metastore);
@@ -130,8 +141,9 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
         let file_backed_metastore = FileBackedMetastore::try_new(storage, polling_interval_opt)
             .await
             .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
+        let instrumented_metastore = InstrumentedMetastore::new(Box::new(file_backed_metastore));
         let unique_metastore_for_uri = self
-            .cache_metastore(uri, Arc::new(file_backed_metastore))
+            .cache_metastore(uri, Arc::new(instrumented_metastore))
             .await;
         Ok(unique_metastore_for_uri)
     }

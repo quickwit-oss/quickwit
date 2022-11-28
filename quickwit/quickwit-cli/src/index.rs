@@ -17,9 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
+use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
@@ -28,32 +30,36 @@ use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
-use quickwit_actors::{ActorHandle, ObservationType, Universe};
+use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
+use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
+    ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
+    CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
-use quickwit_core::{
-    clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
-};
-use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
+use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexService};
+use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
 use quickwit_indexing::models::{
-    DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
+    DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, SplitState};
+use quickwit_indexing::IndexingPipeline;
+use quickwit_metastore::{
+    quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Split, SplitState,
+};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use quickwit_telemetry::payload::TelemetryEvent;
-use tabled::{Table, Tabled};
+use tabled::object::{Columns, Segment};
+use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
 use thousands::Separable;
-use tracing::{debug, warn, Level};
+use tracing::{debug, info, warn, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{
     load_quickwit_config, make_table, parse_duration_with_unit, prompt_confirmation,
-    run_index_checklist, THROUGHPUT_WINDOW_SIZE,
+    run_index_checklist, start_actor_runtimes, THROUGHPUT_WINDOW_SIZE,
 };
 
 pub fn build_index_command<'a>() -> Command<'a> {
@@ -73,9 +79,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .about("Creates an index from an index config file.")
                 .args(&[
                     arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file."),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
                     arg!(--overwrite "Overwrites pre-existing index. This will delete all existing data stored at `index-uri` before creating a new index.")
                         .required(false),
                     arg!(-y --"yes" "Assume \"yes\" as an answer to all prompts and run non-interactively.")
@@ -86,10 +89,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("ingest")
                 .about("Indexes JSON documents read from a file or streamed from stdin.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
                     arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
                         .required(false),
                     arg!(--overwrite "Overwrites pre-existing index.")
@@ -99,23 +100,34 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 ])
             )
         .subcommand(
+            Command::new("ingest-api")
+                .about("Enables/disables the ingest API of an index.")
+                .args(&[
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
+                    arg!(--enable "Enables the ingest API.")
+                        .required(true)
+                        .conflicts_with("disable")
+                        .takes_value(false),
+                    arg!(--disable "Disables the ingest API.")
+                        .takes_value(false)
+                        .required(false),
+                ])
+            )
+        .subcommand(
             Command::new("describe")
                 .about("Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
                 ])
             )
         .subcommand(
             Command::new("search")
                 .about("Searches an index.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
                     arg!(--query <QUERY> "Query expressed in natural query language ((barack AND obama) OR \"president of united states\"). Learn more on https://quickwit.io/docs/reference/search-language."),
                     arg!(--aggregation <AGG> "JSON serialized aggregation request in tantivy/elasticsearch format.")
                         .required(false),
@@ -141,22 +153,19 @@ pub fn build_index_command<'a>() -> Command<'a> {
             )
         .subcommand(
             Command::new("merge")
-                .about("Merges an index.")
+                .about("Merges all the splits of the index pipeline defined by the tuple (index ID, source ID, pipeline ordinal). The pipeline ordinal is 0 by default. If you have a source with `num_pipelines > 0`, you may want to merge splits on ordinals > 0.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
+                    arg!(--index <INDEX> "ID of the target index.")
+                        .display_order(1),
+                    arg!(--source <SOURCE_ID> "ID of the target source."),
                 ])
             )
         .subcommand(
             Command::new("gc")
                 .about("Garbage collects stale staged splits and splits marked for deletion.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
                     arg!(--"grace-period" <GRACE_PERIOD> "Threshold period after which stale staged splits are garbage collected.")
                         .default_value("1h")
                         .required(false),
@@ -169,7 +178,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .alias("clr")
                 .about("Clears and index. Deletes all its splits and resets its checkpoint. This operation is destructive and cannot be undone, proceed with caution.")
                 .args(&[
-                    arg!(--index <INDEX> "Index ID"),
+                    arg!(--index <INDEX> "Index ID")
+                        .display_order(1),
                     arg!(--yes),
                 ])
             )
@@ -178,10 +188,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
             .alias("del")
                 .about("Deletes an index. This operation is destructive and cannot be undone, proceed with caution.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
                     arg!(--"dry-run" "Executes the command in dry run mode and only displays the list of splits candidates for deletion.")
                         .required(false),
                 ])
@@ -200,7 +208,6 @@ pub struct ClearIndexArgs {
 pub struct CreateIndexArgs {
     pub config_uri: Uri,
     pub index_config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub overwrite: bool,
     pub assume_yes: bool,
 }
@@ -208,7 +215,6 @@ pub struct CreateIndexArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
     pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub index_id: String,
 }
 
@@ -217,9 +223,15 @@ pub struct IngestDocsArgs {
     pub config_uri: Uri,
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
-    pub data_dir: Option<PathBuf>,
     pub overwrite: bool,
     pub clear_cache: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct ToggleIngestApiArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
+    pub enable: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -234,7 +246,6 @@ pub struct SearchIndexArgs {
     pub snippet_fields: Option<Vec<String>>,
     pub start_timestamp: Option<i64>,
     pub end_timestamp: Option<i64>,
-    pub data_dir: Option<PathBuf>,
     pub sort_by_score: bool,
 }
 
@@ -243,7 +254,6 @@ pub struct DeleteIndexArgs {
     pub config_uri: Uri,
     pub index_id: String,
     pub dry_run: bool,
-    pub data_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -252,20 +262,18 @@ pub struct GarbageCollectIndexArgs {
     pub index_id: String,
     pub grace_period: Duration,
     pub dry_run: bool,
-    pub data_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct MergeArgs {
     pub config_uri: Uri,
     pub index_id: String,
-    pub data_dir: Option<PathBuf>,
+    pub source_id: String,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ListIndexesArgs {
     pub config_uri: Uri,
-    pub metastore_uri: Option<Uri>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -276,6 +284,7 @@ pub enum IndexCliCommand {
     Describe(DescribeIndexArgs),
     GarbageCollect(GarbageCollectIndexArgs),
     Ingest(IngestDocsArgs),
+    ToggleIngestApi(ToggleIngestApiArgs),
     List(ListIndexesArgs),
     Merge(MergeArgs),
     Search(SearchIndexArgs),
@@ -300,6 +309,7 @@ impl IndexCliCommand {
             "describe" => Self::parse_describe_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "ingest" => Self::parse_ingest_args(submatches),
+            "ingest-api" => Self::parse_toggle_ingest_api_args(submatches),
             "list" => Self::parse_list_args(submatches),
             "merge" => Self::parse_merge_args(submatches),
             "search" => Self::parse_search_args(submatches),
@@ -310,7 +320,7 @@ impl IndexCliCommand {
     fn parse_clear_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -327,19 +337,17 @@ impl IndexCliCommand {
     fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_config_uri = matches
             .value_of("index-config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`index-config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let overwrite = matches.is_present("overwrite");
         let assume_yes = matches.is_present("yes");
 
         Ok(Self::Create(CreateIndexArgs {
             config_uri,
-            data_dir,
             index_config_uri,
             overwrite,
             assume_yes,
@@ -349,53 +357,42 @@ impl IndexCliCommand {
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
             .expect("`index` is a required arg.")
             .to_string();
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(Self::Describe(DescribeIndexArgs {
             config_uri,
             index_id,
-            data_dir,
         }))
     }
 
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
-        let metastore_uri = matches
-            .value_of("metastore-uri")
-            .map(Uri::try_new)
-            .transpose()?;
-
-        Ok(Self::List(ListIndexesArgs {
-            config_uri,
-            metastore_uri,
-        }))
+        Ok(Self::List(ListIndexesArgs { config_uri }))
     }
 
     fn parse_ingest_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::from_str)
+            .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
             .expect("`index` is a required arg.")
             .to_string();
         let input_path_opt = if let Some(input_path) = matches.value_of("input-path") {
-            Uri::try_new(input_path)?
+            Uri::from_str(input_path)?
                 .filepath()
                 .map(|path| path.to_path_buf())
         } else {
             None
         };
-        let config_uri = matches
-            .value_of("config")
-            .map(Uri::try_new)
-            .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let overwrite = matches.is_present("overwrite");
         let clear_cache = !matches.is_present("keep-cache");
 
@@ -404,11 +401,26 @@ impl IndexCliCommand {
             input_path_opt,
             overwrite,
             config_uri,
-            data_dir,
             clear_cache,
         }))
     }
 
+    fn parse_toggle_ingest_api_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::from_str)
+            .expect("`config` is a required arg.")?;
+        let index_id = matches
+            .value_of("index")
+            .expect("`index` is a required arg.")
+            .to_string();
+        let enable = matches.is_present("enable");
+        Ok(Self::ToggleIngestApi(ToggleIngestApiArgs {
+            config_uri,
+            index_id,
+            enable,
+        }))
+    }
     fn parse_search_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .value_of("index")
@@ -441,9 +453,8 @@ impl IndexCliCommand {
         };
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(Self::Search(SearchIndexArgs {
             index_id,
             query,
@@ -455,29 +466,35 @@ impl IndexCliCommand {
             start_timestamp,
             end_timestamp,
             config_uri,
-            data_dir,
             sort_by_score,
         }))
     }
 
     fn parse_merge_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::from_str)
+            .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
             .context("'index-id' is a required arg.")?
             .to_string();
-        let config_uri = matches
-            .value_of("config")
-            .map(Uri::try_new)
-            .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
+        let source_id = matches
+            .value_of("source")
+            .context("'source-id' is a required arg.")?
+            .to_string();
         Ok(Self::Merge(MergeArgs {
             index_id,
+            source_id,
             config_uri,
-            data_dir,
         }))
     }
 
     fn parse_garbage_collect_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::from_str)
+            .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
             .expect("`index` is a required arg.")
@@ -487,36 +504,28 @@ impl IndexCliCommand {
             .map(parse_duration_with_unit)
             .expect("`grace-period` should have a default value.")?;
         let dry_run = matches.is_present("dry-run");
-        let config_uri = matches
-            .value_of("config")
-            .map(Uri::try_new)
-            .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(Self::GarbageCollect(GarbageCollectIndexArgs {
             index_id,
             grace_period,
             dry_run,
             config_uri,
-            data_dir,
         }))
     }
 
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::from_str)
+            .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
             .expect("`index` is a required arg.")
             .to_string();
         let dry_run = matches.is_present("dry-run");
-        let config_uri = matches
-            .value_of("config")
-            .map(Uri::try_new)
-            .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(Self::Delete(DeleteIndexArgs {
             index_id,
             dry_run,
             config_uri,
-            data_dir,
         }))
     }
 
@@ -528,8 +537,9 @@ impl IndexCliCommand {
             Self::Describe(args) => describe_index_cli(args).await,
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::Ingest(args) => ingest_docs_cli(args).await,
+            Self::ToggleIngestApi(args) => toggle_ingest_api_index_cli(args).await,
             Self::List(args) => list_index_cli(args).await,
-            Self::Merge(args) => merge_cli(args, true).await,
+            Self::Merge(args) => merge_cli(args).await,
             Self::Search(args) => search_index_cli(args).await,
         }
     }
@@ -547,7 +557,7 @@ pub async fn clear_index_cli(args: ClearIndexArgs) -> anyhow::Result<()> {
             return Ok(());
         }
     }
-    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let config = load_quickwit_config(&args.config_uri).await?;
     let index_service = IndexService::from_config(config).await?;
     index_service.clear_index(&args.index_id).await?;
     println!("Index `{}` successfully cleared.", args.index_id);
@@ -558,25 +568,25 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "create-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let file_content = load_file(&args.index_config_uri).await?;
-    let index_config = IndexConfig::load(&args.index_config_uri, file_content.as_slice()).await?;
+    let index_config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
+    let index_config = quickwit_config::load_index_config_from_user_config(
+        index_config_format,
+        file_content.as_slice(),
+        &quickwit_config.default_index_root_uri,
+    )
+    .with_context(|| format!("Failed to parse index_config `{}`", &args.index_config_uri))?;
     let index_id = index_config.index_id.clone();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
 
-    validate_storage_uri(
-        quickwit_storage_uri_resolver(),
-        &quickwit_config,
-        &index_config,
-    )
-    .await?;
-
     // On overwrite and index present and `assume_yes` if false, ask the user to confirm the
     // destructive operation.
     let index_exists = metastore.index_exists(&index_id).await?;
+
     if args.overwrite && index_exists && !args.assume_yes {
         // Stop if user answers no.
         let prompt = format!(
@@ -589,11 +599,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         }
     }
 
-    let index_service = IndexService::new(
-        metastore,
-        quickwit_storage_uri_resolver().clone(),
-        quickwit_config.default_index_root_uri,
-    );
+    let index_service = IndexService::from_config(quickwit_config).await?;
     index_service
         .create_index(index_config, args.overwrite)
         .await?;
@@ -603,21 +609,21 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
 
 pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
     debug!(args=?args, "list");
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
-    let metastore_uri = args.metastore_uri.unwrap_or(quickwit_config.metastore_uri);
-    let metastore = metastore_uri_resolver.resolve(&metastore_uri).await?;
+    let metastore = metastore_uri_resolver
+        .resolve(&quickwit_config.metastore_uri)
+        .await?;
     let indexes = metastore.list_indexes_metadatas().await?;
-    let index_table = make_list_indexes_table(indexes);
+    let index_table =
+        make_list_indexes_table(indexes.into_iter().map(IndexMetadata::into_index_config));
 
-    println!();
-    println!("{}", index_table);
-    println!();
+    println!("\n{}\n", index_table);
     Ok(())
 }
 
 fn make_list_indexes_table<I>(indexes: I) -> Table
-where I: IntoIterator<Item = IndexMetadata> {
+where I: IntoIterator<Item = IndexConfig> {
     let rows = indexes
         .into_iter()
         .map(|index| IndexRow {
@@ -639,133 +645,243 @@ struct IndexRow {
 pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "describe");
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
+
+    let query = ListSplitsQuery::for_index(&args.index_id).with_split_state(SplitState::Published);
+    let splits = metastore.list_splits(query).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let splits = metastore
-        .list_splits(&args.index_id, SplitState::Published, None, None)
-        .await?;
-
-    let splits_num_docs = splits
-        .iter()
-        .map(|split| split.split_metadata.num_docs)
-        .sorted()
-        .collect_vec();
-    let total_num_docs = splits_num_docs.iter().sum::<usize>();
-    let splits_bytes = splits
-        .iter()
-        .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
-        .sorted()
-        .collect_vec();
-    let total_bytes = splits_bytes.iter().sum::<usize>();
-
-    println!();
-    println!("1. General information");
-    println!("===============================================================================");
-    println!(
-        "{:<35} {}",
-        "Index ID:".color(GREEN_COLOR),
-        index_metadata.index_id
-    );
-    println!(
-        "{:<35} {}",
-        "Index URI:".color(GREEN_COLOR),
-        index_metadata.index_uri
-    );
-    println!(
-        "{:<35} {}",
-        "Number of published splits:".color(GREEN_COLOR),
-        splits.len()
-    );
-    println!(
-        "{:<35} {}",
-        "Number of published documents:".color(GREEN_COLOR),
-        total_num_docs
-    );
-    println!(
-        "{:<35} {} MB",
-        "Size of published splits:".color(GREEN_COLOR),
-        total_bytes
-    );
-    if let Some(timestamp_field_name) = &index_metadata.indexing_settings.timestamp_field {
-        println!(
-            "{:<35} {}",
-            "Timestamp field:".color(GREEN_COLOR),
-            timestamp_field_name
-        );
-        let time_min = splits
-            .iter()
-            .map(|split| split.split_metadata.time_range.clone())
-            .filter(|time_range| time_range.is_some())
-            .map(|time_range| *time_range.unwrap().start())
-            .min();
-        let time_max = splits
-            .iter()
-            .map(|split| split.split_metadata.time_range.clone())
-            .filter(|time_range| time_range.is_some())
-            .map(|time_range| *time_range.unwrap().start())
-            .max();
-        println!(
-            "{:<35} {:?} -> {:?}",
-            "Timestamp range:".color(GREEN_COLOR),
-            time_min,
-            time_max
-        );
-    }
-
-    if splits.is_empty() {
-        return Ok(());
-    }
-
-    println!();
-    println!("2. Split statistics");
-    println!("===============================================================================");
-    println!("Document count stats:");
-    print_descriptive_stats(&splits_num_docs);
-    println!();
-    println!("Size in MB stats:");
-    print_descriptive_stats(&splits_bytes);
-
-    println!();
+    let index_stats = IndexStats::from_metadata(index_metadata, splits)?;
+    println!("{}", index_stats.display_as_table());
     Ok(())
 }
 
-fn print_descriptive_stats(values: &[usize]) {
-    let mean_val = mean(values);
-    let std_val = std_deviation(values);
-    let min_val = values.iter().min().unwrap();
-    let max_val = values.iter().max().unwrap();
-    println!(
-        "{:<35} {:>2} ± {} in [{} … {}]",
-        "Mean ± σ in [min … max]:".color(GREEN_COLOR),
-        mean_val,
-        std_val,
-        min_val,
-        max_val,
-    );
-    let q1 = percentile(values, 1);
-    let q25 = percentile(values, 50);
-    let q50 = percentile(values, 50);
-    let q75 = percentile(values, 75);
-    let q99 = percentile(values, 75);
-    println!(
-        "{:<35} [{}, {}, {}, {}, {}]",
-        "Quantiles [1%, 25%, 50%, 75%, 99%]:".color(GREEN_COLOR),
-        q1,
-        q25,
-        q50,
-        q75,
-        q99,
-    );
+pub struct IndexStats {
+    pub index_id: String,
+    pub index_uri: Uri,
+    pub num_published_splits: usize,
+    pub num_published_docs: usize,
+    pub size_published_docs: usize,
+    pub timestamp_field_name: Option<String>,
+    pub timestamp_range: Option<(i64, i64)>,
+    pub num_docs_descriptive: Option<DescriptiveStats>,
+    pub num_bytes_descriptive: Option<DescriptiveStats>,
+}
+
+impl Tabled for IndexStats {
+    const LENGTH: usize = 7;
+
+    fn fields(&self) -> Vec<String> {
+        vec![
+            self.index_id.clone(),
+            self.index_uri.to_string(),
+            self.num_published_splits.to_string(),
+            self.num_published_docs.to_string(),
+            format!("{} MB", self.size_published_docs),
+            display_option_in_table(&self.timestamp_field_name),
+            display_timestamp_range(&self.timestamp_range),
+        ]
+    }
+
+    fn headers() -> Vec<String> {
+        vec![
+            "Index ID: ".to_string(),
+            "Index URI: ".to_string(),
+            "Number of published splits: ".to_string(),
+            "Number of published documents: ".to_string(),
+            "Size of published splits: ".to_string(),
+            "Timestamp field: ".to_string(),
+            "Timestamp range: ".to_string(),
+        ]
+    }
+}
+
+fn display_option_in_table(opt: &Option<impl Display>) -> String {
+    match opt {
+        Some(opt_val) => format!("{}", opt_val),
+        None => "Field does not exist for the index.".to_string(),
+    }
+}
+
+fn display_timestamp_range(range: &Option<(i64, i64)>) -> String {
+    match range {
+        Some((timestamp_min, timestamp_max)) => {
+            format!("{} -> {}", timestamp_min, timestamp_max)
+        }
+        _ => "Range does not exist for the index.".to_string(),
+    }
+}
+
+impl IndexStats {
+    pub fn from_metadata(
+        index_metadata: IndexMetadata,
+        splits: Vec<Split>,
+    ) -> anyhow::Result<Self> {
+        let splits_num_docs = splits
+            .iter()
+            .map(|split| split.split_metadata.num_docs)
+            .sorted()
+            .collect_vec();
+
+        let total_num_docs = splits_num_docs.iter().sum::<usize>();
+
+        let splits_bytes = splits
+            .iter()
+            .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
+            .sorted()
+            .collect_vec();
+        let total_bytes = splits_bytes.iter().sum::<usize>();
+
+        let timestamp_range = if index_metadata
+            .index_config()
+            .indexing_settings
+            .timestamp_field
+            .is_some()
+        {
+            let time_min = splits
+                .iter()
+                .flat_map(|split| split.split_metadata.time_range.clone())
+                .map(|time_range| *time_range.start())
+                .min();
+            let time_max = splits
+                .iter()
+                .flat_map(|split| split.split_metadata.time_range.clone())
+                .map(|time_range| *time_range.end())
+                .max();
+            if let (Some(time_min), Some(time_max)) = (time_min, time_max) {
+                Some((time_min, time_max))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let (num_docs_descriptive, num_bytes_descriptive) = if !splits.is_empty() {
+            (
+                DescriptiveStats::maybe_new(&splits_num_docs),
+                DescriptiveStats::maybe_new(&splits_bytes),
+            )
+        } else {
+            (None, None)
+        };
+        let index_config = index_metadata.into_index_config();
+
+        Ok(Self {
+            index_id: index_config.index_id.clone(),
+            index_uri: index_config.index_uri.clone(),
+            num_published_splits: splits.len(),
+            num_published_docs: total_num_docs,
+            size_published_docs: total_bytes,
+            timestamp_field_name: index_config.indexing_settings.timestamp_field,
+            timestamp_range,
+            num_docs_descriptive,
+            num_bytes_descriptive,
+        })
+    }
+
+    pub fn display_as_table(&self) -> String {
+        let index_stats_table = create_table(self, "General Information");
+
+        let index_stats_table = if let Some(docs_stats) = &self.num_docs_descriptive {
+            let doc_stats_table = create_table(docs_stats, "Document count stats");
+            index_stats_table.with(Concat::vertical(doc_stats_table))
+        } else {
+            index_stats_table
+        };
+
+        let index_stats_table = if let Some(size_stats) = &self.num_bytes_descriptive {
+            let size_stats_table = create_table(size_stats, "Size in MB stats");
+            index_stats_table.with(Concat::vertical(size_stats_table))
+        } else {
+            index_stats_table
+        };
+
+        index_stats_table.to_string()
+    }
+}
+
+fn create_table(table: impl Tabled, header: &str) -> Table {
+    Table::new(vec![table])
+        .with(Rotate::Left)
+        .with(Rotate::Bottom)
+        .with(
+            Modify::new(Columns::first())
+                .with(Format::new(|column| column.color(GREEN_COLOR).to_string())),
+        )
+        .with(
+            Modify::new(Segment::all())
+                .with(Alignment::left())
+                .with(Alignment::top()),
+        )
+        .with(Panel(header, 0))
+        .with(Style::psql())
+        .with(Panel("\n", 0))
+}
+
+#[derive(Debug)]
+pub struct DescriptiveStats {
+    mean_val: f32,
+    std_val: f32,
+    min_val: usize,
+    max_val: usize,
+    q1: f32,
+    q25: f32,
+    q50: f32,
+    q75: f32,
+    q99: f32,
+}
+
+impl Tabled for DescriptiveStats {
+    const LENGTH: usize = 2;
+
+    fn fields(&self) -> Vec<String> {
+        vec![
+            format!(
+                "{} ± {} in [{} … {}]",
+                self.mean_val, self.std_val, self.min_val, self.max_val
+            ),
+            format!(
+                "[{}, {}, {}, {}, {}]",
+                self.q1, self.q25, self.q50, self.q75, self.q99,
+            ),
+        ]
+    }
+
+    fn headers() -> Vec<String> {
+        vec![
+            "Mean ± σ in [min … max]:".to_string(),
+            "Quantiles [1%, 25%, 50%, 75%, 99%]:".to_string(),
+        ]
+    }
+}
+
+impl DescriptiveStats {
+    pub fn maybe_new(values: &[usize]) -> Option<DescriptiveStats> {
+        if values.is_empty() {
+            return None;
+        }
+        Some(DescriptiveStats {
+            mean_val: mean(values),
+            std_val: std_deviation(values),
+            min_val: *values.iter().min().expect("Values should not be empty."),
+            max_val: *values.iter().max().expect("Values should not be empty."),
+            q1: percentile(values, 1),
+            q25: percentile(values, 50),
+            q50: percentile(values, 50),
+            q75: percentile(values, 75),
+            q99: percentile(values, 75),
+        })
+    }
 }
 
 pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     debug!(args=?args, "ingest-docs");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
 
-    let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let config = load_quickwit_config(&args.config_uri).await?;
 
     let source_params = if let Some(filepath) = args.input_path_opt.as_ref() {
         SourceParams::file(filepath)
@@ -775,6 +891,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let source_config = SourceConfig {
         source_id: CLI_INGEST_SOURCE_ID.to_string(),
         num_pipelines: 1,
+        enabled: true,
         source_params,
     };
     run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source_config)).await?;
@@ -784,27 +901,24 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .await?;
 
     if args.overwrite {
-        let index_service = IndexService::new(
-            metastore.clone(),
-            quickwit_storage_uri_resolver().clone(),
-            config.default_index_root_uri.clone(),
-        );
+        let index_service = IndexService::from_config(config.clone()).await?;
         index_service.clear_index(&args.index_id).await?;
     }
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
+    start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
     let universe = Universe::new();
-    let enable_ingest_api = false;
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
         indexer_config,
         metastore,
         quickwit_storage_uri_resolver().clone(),
-        enable_ingest_api,
-    );
-    let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
+    )
+    .await?;
+    let (indexing_server_mailbox, indexing_server_handle) =
+        universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
         .ask_for_res(SpawnPipeline {
             index_id: args.index_id.clone(),
@@ -812,8 +926,13 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
             pipeline_ord: 0,
         })
         .await?;
-    let pipeline_handle = indexing_server_mailbox
-        .ask_for_res(DetachPipeline { pipeline_id })
+    let merge_pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachMergePipeline {
+            pipeline_id: MergePipelineId::from(&pipeline_id),
+        })
+        .await?;
+    let indexing_pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
@@ -828,7 +947,14 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         );
     }
     let statistics =
-        start_statistics_reporting_loop(pipeline_handle, args.input_path_opt.is_none()).await?;
+        start_statistics_reporting_loop(indexing_pipeline_handle, args.input_path_opt.is_none())
+            .await?;
+    merge_pipeline_handle.quit().await;
+    // Shutdown the indexing server.
+    universe
+        .send_exit_with_success(&indexing_server_mailbox)
+        .await?;
+    indexing_server_handle.join().await;
     if statistics.num_published_splits > 0 {
         println!(
             "Now, you can query the index with the following command:\nquickwit index search \
@@ -839,12 +965,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
 
     if args.clear_cache {
         println!("Clearing local cache directory...");
-        clear_cache_directory(
-            &config.data_dir_path,
-            args.index_id.clone(),
-            CLI_INGEST_SOURCE_ID.to_string(),
-        )
-        .await?;
+        clear_cache_directory(&config.data_dir_path).await?;
     }
 
     match statistics.num_invalid_docs {
@@ -853,9 +974,25 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     }
 }
 
+pub async fn toggle_ingest_api_index_cli(args: ToggleIngestApiArgs) -> anyhow::Result<()> {
+    let config = load_quickwit_config(&args.config_uri).await?;
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&config.metastore_uri)
+        .await?;
+    metastore
+        .toggle_source(&args.index_id, INGEST_API_SOURCE_ID, args.enable)
+        .await?;
+    let toggled_state_name = if args.enable { "enabled" } else { "disabled" };
+    println!(
+        "Ingest API successfully {} for index `{}`.",
+        toggled_state_name, args.index_id
+    );
+    Ok(())
+}
+
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponse> {
     debug!(args=?args, "search-index");
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
@@ -887,9 +1024,9 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<()> {
-    debug!(args=?args, merge_enabled = merge_enabled, "run-merge-operations");
-    let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "run-merge-operations");
+    let config = load_quickwit_config(&args.config_uri).await?;
     run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
     let indexer_config = IndexerConfig {
         ..Default::default()
@@ -899,28 +1036,59 @@ pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<(
         .resolve(&config.metastore_uri)
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
-    let enable_ingest_api = false;
+    start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
-        enable_ingest_api,
-    );
+    )
+    .await?;
     let universe = Universe::new();
-    let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
-    let pipeline_id = indexing_server_mailbox
-        .ask_for_res(SpawnMergePipeline {
-            index_id: args.index_id.clone(),
-            merge_enabled,
+    let (indexing_service_mailbox, indexing_service_handle) =
+        universe.spawn_builder().spawn(indexing_server);
+    let pipeline_id = indexing_service_mailbox
+        .ask_for_res(SpawnPipeline {
+            index_id: args.index_id,
+            source_config: SourceConfig {
+                source_id: args.source_id,
+                num_pipelines: 1,
+                enabled: true,
+                source_params: SourceParams::Vec(VecSourceParams::default()),
+            },
+            pipeline_ord: 0,
         })
         .await?;
-    let pipeline_handle = indexing_server_mailbox
-        .ask_for_res(DetachPipeline { pipeline_id })
+    let pipeline_handle: ActorHandle<MergePipeline> = indexing_service_mailbox
+        .ask_for_res(DetachMergePipeline {
+            pipeline_id: MergePipelineId::from(&pipeline_id),
+        })
         .await?;
-    let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
-    if !pipeline_exit_status.is_success() {
+
+    let mut check_interval = tokio::time::interval(Duration::from_secs(1));
+    loop {
+        check_interval.tick().await;
+
+        let observation = pipeline_handle.observe().await;
+
+        if observation.num_ongoing_merges == 0 {
+            info!("Merge pipeline has no more ongoing merges, Exiting.");
+            break;
+        }
+
+        if observation.obs_type == ObservationType::PostMortem {
+            info!("Merge pipeline has exited, Exiting.");
+            break;
+        }
+    }
+
+    let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.quit().await;
+    indexing_service_handle.quit().await;
+    if !matches!(
+        pipeline_exit_status,
+        ActorExitStatus::Success | ActorExitStatus::Quit
+    ) {
         bail!(pipeline_exit_status);
     }
     Ok(())
@@ -930,15 +1098,8 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "delete-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
-    let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&quickwit_config.metastore_uri)
-        .await?;
-    let index_service = IndexService::new(
-        metastore,
-        quickwit_storage_uri_resolver().clone(),
-        quickwit_config.default_index_root_uri,
-    );
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
+    let index_service = IndexService::from_config(quickwit_config.clone()).await?;
     let affected_files = index_service
         .delete_index(&args.index_id, args.dry_run)
         .await?;
@@ -969,32 +1130,37 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     debug!(args=?args, "garbage-collect-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
-    let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&quickwit_config.metastore_uri)
-        .await?;
-    let index_service = IndexService::new(
-        metastore,
-        quickwit_storage_uri_resolver().clone(),
-        quickwit_config.default_index_root_uri,
-    );
-    let deleted_files = index_service
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
+    let index_service = IndexService::from_config(quickwit_config.clone()).await?;
+    let removal_info = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;
-    if deleted_files.is_empty() {
+    if removal_info.removed_split_entries.is_empty() && removal_info.failed_split_ids.is_empty() {
         println!("No dangling files to garbage collect.");
         return Ok(());
     }
 
     if args.dry_run {
         println!("The following files will be garbage collected.");
-        for file_entry in deleted_files {
+        for file_entry in removal_info.removed_split_entries {
             println!(" - {}", file_entry.file_name);
         }
         return Ok(());
     }
 
-    let deleted_bytes: u64 = deleted_files
+    if !removal_info.failed_split_ids.is_empty() {
+        println!("The following splits were attempted to be removed, but failed.");
+        for split_id in removal_info.failed_split_ids.iter() {
+            println!(" - {}", split_id);
+        }
+        println!(
+            "{} Splits were unable to be removed.",
+            removal_info.failed_split_ids.len()
+        );
+    }
+
+    let deleted_bytes: u64 = removal_info
+        .removed_split_entries
         .iter()
         .map(|entry| entry.file_size_in_bytes)
         .sum();
@@ -1002,7 +1168,17 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
         "{}MB of storage garbage collected.",
         deleted_bytes / 1_000_000
     );
-    println!("Index `{}` successfully garbage collected.", args.index_id);
+
+    if removal_info.failed_split_ids.is_empty() {
+        println!("Index `{}` successfully garbage collected.", args.index_id);
+    } else if removal_info.removed_split_entries.is_empty()
+        && !removal_info.failed_split_ids.is_empty()
+    {
+        println!("Failed to garbage collect index `{}`.", args.index_id);
+    } else {
+        println!("Index `{}` partially garbage collected.", args.index_id);
+    }
+
     Ok(())
 }
 
@@ -1186,5 +1362,183 @@ impl ThroughputCalculator {
 
     pub fn elapsed_time(&self) -> Duration {
         self.start_time.elapsed()
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use std::ops::RangeInclusive;
+    use std::str::FromStr;
+
+    use quickwit_metastore::SplitMetadata;
+
+    use super::*;
+    use crate::cli::{build_cli, CliCommand};
+
+    pub fn split_metadata_for_test(
+        split_id: &str,
+        num_docs: usize,
+        time_range: RangeInclusive<i64>,
+        size: u64,
+    ) -> SplitMetadata {
+        let mut split_metadata = SplitMetadata::for_test(split_id.to_string());
+        split_metadata.num_docs = num_docs;
+        split_metadata.time_range = Some(time_range);
+        split_metadata.footer_offsets = 0..size;
+        split_metadata
+    }
+
+    #[test]
+    fn test_parse_ingest_api_args() -> anyhow::Result<()> {
+        {
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(vec![
+                "index",
+                "ingest-api",
+                "--config",
+                "/config.yaml",
+                "--index",
+                "foo",
+                "--enable",
+            ])?;
+            let command = CliCommand::parse_cli_args(&matches)?;
+            let expected_command =
+                CliCommand::Index(IndexCliCommand::ToggleIngestApi(ToggleIngestApiArgs {
+                    config_uri: Uri::from_str("file:///config.yaml").unwrap(),
+                    index_id: "foo".to_string(),
+                    enable: true,
+                }));
+            assert_eq!(command, expected_command);
+        }
+        {
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(vec![
+                "index",
+                "ingest-api",
+                "--config",
+                "/config.yaml",
+                "--index",
+                "foo",
+                "--disable",
+            ])?;
+            let command = CliCommand::parse_cli_args(&matches)?;
+            let expected_command =
+                CliCommand::Index(IndexCliCommand::ToggleIngestApi(ToggleIngestApiArgs {
+                    config_uri: Uri::from_str("file:///config.yaml").unwrap(),
+                    index_id: "foo".to_string(),
+                    enable: false,
+                }));
+            assert_eq!(command, expected_command);
+        }
+        {
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(vec![
+                "index",
+                "ingest-api",
+                "--config",
+                "/config.yaml",
+                "--index",
+                "foo",
+                "--enable",
+                "--disable",
+            ]);
+            assert!(matches.is_err());
+        }
+        {
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(vec![
+                "index",
+                "ingest-api",
+                "--config",
+                "/config.yaml",
+                "--index",
+                "foo",
+            ]);
+            assert!(matches.is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_stats() -> anyhow::Result<()> {
+        let index_id = "index-stats-env".to_string();
+        let split_id = "test_split_id".to_string();
+        let index_uri = "s3://some-test-bucket";
+
+        let index_metadata = IndexMetadata::for_test(&index_id, index_uri);
+        let split_metadata = split_metadata_for_test(&split_id, 100_000, 1111..=2222, 15_000_000);
+
+        let split_data = Split {
+            split_metadata,
+            split_state: quickwit_metastore::SplitState::Published,
+            update_timestamp: 0,
+            publish_timestamp: Some(0),
+        };
+
+        let index_stats = IndexStats::from_metadata(index_metadata, vec![split_data])?;
+
+        assert_eq!(index_stats.index_id, index_id);
+        assert_eq!(index_stats.index_uri.as_str(), index_uri);
+        assert_eq!(index_stats.num_published_splits, 1);
+        assert_eq!(index_stats.num_published_docs, 100_000);
+        assert_eq!(index_stats.size_published_docs, 15);
+        assert_eq!(
+            index_stats.timestamp_field_name,
+            Some("timestamp".to_string())
+        );
+        assert_eq!(index_stats.timestamp_range, Some((1111, 2222)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_descriptive_stats() -> anyhow::Result<()> {
+        let split_id = "stat-test-split".to_string();
+        let template_split = Split {
+            split_state: quickwit_metastore::SplitState::Published,
+            update_timestamp: 0,
+            publish_timestamp: Some(0),
+            split_metadata: SplitMetadata::default(),
+        };
+
+        let split_metadata_1 = split_metadata_for_test(&split_id, 70_000, 10..=12, 60_000_000);
+        let split_metadata_2 = split_metadata_for_test(&split_id, 120_000, 11..=15, 145_000_000);
+        let split_metadata_3 = split_metadata_for_test(&split_id, 90_000, 15..=22, 115_000_000);
+        let split_metadata_4 = split_metadata_for_test(&split_id, 40_000, 22..=22, 55_000_000);
+
+        let mut split_1 = template_split.clone();
+        split_1.split_metadata = split_metadata_1;
+        let mut split_2 = template_split.clone();
+        split_2.split_metadata = split_metadata_2;
+        let mut split_3 = template_split.clone();
+        split_3.split_metadata = split_metadata_3;
+        let mut split_4 = template_split;
+        split_4.split_metadata = split_metadata_4;
+
+        let splits = vec![split_1, split_2, split_3, split_4];
+
+        let splits_num_docs = splits
+            .iter()
+            .map(|split| split.split_metadata.num_docs)
+            .sorted()
+            .collect_vec();
+
+        let splits_bytes = splits
+            .iter()
+            .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
+            .sorted()
+            .collect_vec();
+
+        let num_docs_descriptive = DescriptiveStats::maybe_new(&splits_num_docs);
+        let num_bytes_descriptive = DescriptiveStats::maybe_new(&splits_bytes);
+        let desciptive_stats_none = DescriptiveStats::maybe_new(&[]);
+
+        assert!(num_docs_descriptive.is_some());
+        assert!(num_bytes_descriptive.is_some());
+
+        assert!(desciptive_stats_none.is_none());
+
+        Ok(())
     }
 }

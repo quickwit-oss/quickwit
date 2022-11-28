@@ -304,11 +304,7 @@ impl StaticSliceCacheBuilder {
     }
 
     pub fn flush(mut self) -> tantivy::Result<Vec<u8>> {
-        let merged_slices_res = self.merged_slices();
-        if let Err(e) = merged_slices_res {
-            return Err(e);
-        }
-        let merged_slices = merged_slices_res?;
+        let merged_slices = self.merged_slices()?;
         let slices_idx = SliceCacheIndex {
             total_len: self.total_len,
             slices: merged_slices,

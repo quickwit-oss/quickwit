@@ -336,7 +336,8 @@ fn collect_tag_filters(user_input_ast: UserInputAst) -> UnsimplifiedTagFilterAst
                 field_name: None, ..
             })
             | UserInputLeaf::All
-            | UserInputLeaf::Range { .. } => UnsimplifiedTagFilterAst::Uninformative,
+            | UserInputLeaf::Range { .. }
+            | UserInputLeaf::Set { .. } => UnsimplifiedTagFilterAst::Uninformative,
         },
     }
 }

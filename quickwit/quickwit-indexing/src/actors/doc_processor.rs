@@ -23,6 +23,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_doc_mapper::{DocMapper, DocParsingError};
+use serde::Serialize;
 use tantivy::schema::{Field, Value};
 use tokio::runtime::Handle;
 use tracing::warn;
@@ -35,8 +36,10 @@ enum PrepareDocumentError {
     MissingField,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DocProcessorCounters {
+    index_id: String,
+    source_id: String,
     /// Overall number of documents received, partitioned
     /// into 3 categories:
     /// - number docs that did not parse correctly.
@@ -55,6 +58,17 @@ pub struct DocProcessorCounters {
 }
 
 impl DocProcessorCounters {
+    pub fn new(index_id: String, source_id: String) -> Self {
+        Self {
+            index_id,
+            source_id,
+            num_parse_errors: 0,
+            num_docs_with_missing_fields: 0,
+            num_valid_docs: 0,
+            overall_num_bytes: 0,
+        }
+    }
+
     /// Returns the overall number of docs that went through the indexer (valid or not).
     pub fn num_processed_docs(&self) -> u64 {
         self.num_valid_docs + self.num_parse_errors + self.num_docs_with_missing_fields
@@ -71,10 +85,20 @@ impl DocProcessorCounters {
         self.num_parse_errors += 1;
         self.overall_num_bytes += num_bytes;
         crate::metrics::INDEXER_METRICS
-            .parsing_errors_num_docs_total
+            .processed_docs_total
+            .with_label_values([
+                self.index_id.as_str(),
+                self.source_id.as_str(),
+                "parsing_error",
+            ])
             .inc();
         crate::metrics::INDEXER_METRICS
-            .parsing_errors_num_bytes_total
+            .processed_bytes
+            .with_label_values([
+                self.index_id.as_str(),
+                self.source_id.as_str(),
+                "parsing_error",
+            ])
             .inc_by(num_bytes);
     }
 
@@ -82,19 +106,33 @@ impl DocProcessorCounters {
         self.num_docs_with_missing_fields += 1;
         self.overall_num_bytes += num_bytes;
         crate::metrics::INDEXER_METRICS
-            .missing_field_num_docs_total
+            .processed_docs_total
+            .with_label_values([
+                self.index_id.as_str(),
+                self.source_id.as_str(),
+                "missing_field",
+            ])
             .inc();
         crate::metrics::INDEXER_METRICS
-            .missing_field_num_bytes_total
+            .processed_bytes
+            .with_label_values([
+                self.index_id.as_str(),
+                self.source_id.as_str(),
+                "missing_field",
+            ])
             .inc_by(num_bytes);
     }
 
     pub fn record_valid(&mut self, num_bytes: u64) {
         self.num_valid_docs += 1;
         self.overall_num_bytes += num_bytes;
-        crate::metrics::INDEXER_METRICS.valid_num_docs_total.inc();
         crate::metrics::INDEXER_METRICS
-            .valid_num_bytes_total
+            .processed_docs_total
+            .with_label_values([self.index_id.as_str(), self.source_id.as_str(), "valid"])
+            .inc();
+        crate::metrics::INDEXER_METRICS
+            .processed_bytes
+            .with_label_values([self.index_id.as_str(), self.source_id.as_str(), "valid"])
             .inc_by(num_bytes);
     }
 }
@@ -108,14 +146,19 @@ pub struct DocProcessor {
 }
 
 impl DocProcessor {
-    pub fn new(doc_mapper: Arc<dyn DocMapper>, indexer_mailbox: Mailbox<Indexer>) -> Self {
+    pub fn new(
+        index_id: String,
+        source_id: String,
+        doc_mapper: Arc<dyn DocMapper>,
+        indexer_mailbox: Mailbox<Indexer>,
+    ) -> Self {
         let schema = doc_mapper.schema();
         let timestamp_field_opt = doc_mapper.timestamp_field(&schema);
         Self {
             doc_mapper,
             indexer_mailbox,
             timestamp_field_opt,
-            counters: Default::default(),
+            counters: DocProcessorCounters::new(index_id, source_id),
             publish_lock: PublishLock::default(),
         }
     }
@@ -137,9 +180,7 @@ impl DocProcessor {
             }
         })?;
         // Extract timestamp if necessary
-        let timestamp_field = if let Some(timestamp_field) = self.timestamp_field_opt {
-            timestamp_field
-        } else {
+        let Some(timestamp_field) = self.timestamp_field_opt else {
             // No need to check the timestamp, there are no timestamp.
             return Ok(PreparedDoc {
                 doc,
@@ -152,7 +193,7 @@ impl DocProcessor {
             .get_first(timestamp_field)
             .and_then(|value| match value {
                 Value::Date(date_time) => Some(date_time.into_timestamp_secs()),
-                value => value.as_i64(),
+                _ => None,
             })
             .ok_or(PrepareDocumentError::MissingField)?;
         Ok(PreparedDoc {
@@ -169,7 +210,7 @@ impl Actor for DocProcessor {
     type ObservableState = DocProcessorCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
-        self.counters
+        self.counters.clone()
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
@@ -178,6 +219,11 @@ impl Actor for DocProcessor {
 
     fn runtime_handle(&self) -> Handle {
         RuntimeType::Blocking.get_runtime_handle()
+    }
+
+    #[inline]
+    fn yield_after_each_message(&self) -> bool {
+        false
     }
 
     async fn finalize(
@@ -260,15 +306,24 @@ mod tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+    use serde_json::Value as JsonValue;
+    use tantivy::schema::NamedFieldDocument;
 
     use super::*;
     use crate::models::{PublishLock, RawDocBatch};
 
     #[tokio::test]
     async fn test_doc_processor_simple() -> anyhow::Result<()> {
+        let index_id = "my-index";
+        let source_id = "my-source";
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
-        let doc_processor = DocProcessor::new(doc_mapper.clone(), indexer_mailbox);
+        let doc_processor = DocProcessor::new(
+            index_id.to_string(),
+            source_id.to_string(),
+            doc_mapper.clone(),
+            indexer_mailbox,
+        );
         let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
@@ -291,6 +346,8 @@ mod tests {
         assert_eq!(
             doc_processor_counters,
             DocProcessorCounters {
+                index_id: index_id.to_string(),
+                source_id: source_id.to_string(),
                 num_parse_errors: 1,
                 num_docs_with_missing_fields: 1,
                 num_valid_docs: 2,
@@ -309,23 +366,23 @@ mod tests {
         assert_eq!(batch.checkpoint_delta, checkpoint_delta);
 
         let schema = doc_mapper.schema();
-        let doc_json: serde_json::Value =
-            serde_json::from_str(&schema.to_json(&batch.docs[0].doc)).unwrap();
+        let NamedFieldDocument(named_field_doc_map) = schema.to_named_doc(&batch.docs[0].doc);
+        let doc_json = JsonValue::Object(doc_mapper.doc_to_json(named_field_doc_map)?);
         assert_eq!(
             doc_json,
             serde_json::json!({
-                "_source": [{
+                "_source": {
                     "body": "happy",
                     "response_date": "2021-12-19T16:39:59+00:00",
                     "response_payload": "YWJj",
                     "response_time": 2,
                     "timestamp": 1628837062
-                }],
-                "body": ["happy"],
-                "response_date": ["2021-12-19T16:39:59Z"],
-                 "response_payload": [[97, 98, 99]],
-                 "response_time": [2.0],
-                 "timestamp": [1628837062]
+                },
+                "body": "happy",
+                "response_date": "2021-12-19T16:39:59Z",
+                 "response_payload": "YWJj",
+                 "response_time": 2.0,
+                 "timestamp": 1628837062
             })
         );
         Ok(())
@@ -347,7 +404,12 @@ mod tests {
             serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap(),
         );
         let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
-        let doc_processor = DocProcessor::new(doc_mapper, indexer_mailbox);
+        let doc_processor = DocProcessor::new(
+            "my-index".to_string(),
+            "my-source".to_string(),
+            doc_mapper,
+            indexer_mailbox,
+        );
         let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
@@ -386,7 +448,12 @@ mod tests {
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
         let universe = Universe::new();
-        let doc_processor = DocProcessor::new(doc_mapper, indexer_mailbox);
+        let doc_processor = DocProcessor::new(
+            "my-index".to_string(),
+            "my-source".to_string(),
+            doc_mapper,
+            indexer_mailbox,
+        );
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
         let publish_lock = PublishLock::default();
@@ -408,7 +475,12 @@ mod tests {
     async fn test_doc_processor_ignores_messages_when_publish_lock_is_dead() {
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
-        let doc_processor = DocProcessor::new(doc_mapper, indexer_mailbox);
+        let doc_processor = DocProcessor::new(
+            "my-index".to_string(),
+            "my-source".to_string(),
+            doc_mapper,
+            indexer_mailbox,
+        );
         let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);

@@ -23,6 +23,7 @@ use std::num::NonZeroU64;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use serde_json::Value as JsonValue;
 use siphasher::sip::SipHasher;
 
 pub trait RoutingExprContext {
@@ -33,32 +34,32 @@ pub trait RoutingExprContext {
 /// This is a bit overkill but this function has the merit of
 /// ensuring that the data that is sent to the hasher is unique
 /// to the value, so we do not lose injectivity there.
-fn hash_json_val<H: Hasher>(json_val: &serde_json::Value, hasher: &mut H) {
+fn hash_json_val<H: Hasher>(json_val: &JsonValue, hasher: &mut H) {
     match json_val {
-        serde_json::Value::Null => {
+        JsonValue::Null => {
             hasher.write_u8(0u8);
         }
-        serde_json::Value::Bool(bool_val) => {
+        JsonValue::Bool(bool_val) => {
             hasher.write_u8(1u8);
             bool_val.hash(hasher);
         }
-        serde_json::Value::Number(num) => {
+        JsonValue::Number(num) => {
             hasher.write_u8(2u8);
             num.hash(hasher);
         }
-        serde_json::Value::String(s) => {
+        JsonValue::String(s) => {
             hasher.write_u8(3u8);
             hasher.write_usize(s.len());
             hasher.write(s.as_bytes());
         }
-        serde_json::Value::Array(arr) => {
+        JsonValue::Array(arr) => {
             hasher.write_u8(4u8);
             hasher.write_usize(arr.len());
             for el in arr {
                 hash_json_val(el, hasher);
             }
         }
-        serde_json::Value::Object(obj) => {
+        JsonValue::Object(obj) => {
             hasher.write_u8(5u8);
             hasher.write_usize(obj.len());
             for (key, val) in obj.iter() {
@@ -70,7 +71,7 @@ fn hash_json_val<H: Hasher>(json_val: &serde_json::Value, hasher: &mut H) {
     }
 }
 
-impl RoutingExprContext for serde_json::Map<String, serde_json::Value> {
+impl RoutingExprContext for serde_json::Map<String, JsonValue> {
     fn hash_attribute<H: Hasher>(&self, attr_name: &str, hasher: &mut H) {
         if let Some(json_val) = self.get(attr_name) {
             hasher.write_u8(1u8);
@@ -83,7 +84,7 @@ impl RoutingExprContext for serde_json::Map<String, serde_json::Value> {
 
 #[derive(Clone)]
 pub struct RoutingExpr {
-    inner: Arc<InnerRoutingExpr>,
+    inner_opt: Option<Arc<InnerRoutingExpr>>,
     max_num_partitions: NonZeroU64,
     salted_hasher: SipHasher,
 }
@@ -91,7 +92,7 @@ pub struct RoutingExpr {
 impl Default for RoutingExpr {
     fn default() -> Self {
         Self {
-            inner: Default::default(),
+            inner_opt: None,
             max_num_partitions: NonZeroU64::new(1).unwrap(),
             salted_hasher: Default::default(),
         }
@@ -100,11 +101,14 @@ impl Default for RoutingExpr {
 
 impl RoutingExpr {
     pub fn new(expr_dsl_str: &str, max_num_partitions: NonZeroU64) -> anyhow::Result<Self> {
-        if max_num_partitions.get() <= 1 {
+        let expr_dsl_str = expr_dsl_str.trim();
+        if max_num_partitions.get() <= 1 || expr_dsl_str.is_empty() {
             return Ok(RoutingExpr::default());
         }
-        let inner = InnerRoutingExpr::from_str(expr_dsl_str)?;
+
         let mut salted_hasher: SipHasher = SipHasher::new();
+
+        let inner: InnerRoutingExpr = InnerRoutingExpr::from_str(expr_dsl_str)?;
         // We hash the expression tree here instead of hashing the str, or
         // hash the display of the tree, in order to make the partition id less brittle to
         // a minor change in formatting, or a change in the DSL itself.
@@ -112,8 +116,9 @@ impl RoutingExpr {
         // We do not use the standard library DefaultHasher to make sure we
         // get the same hash values.
         inner.hash(&mut salted_hasher);
+
         Ok(RoutingExpr {
-            inner: Arc::new(inner),
+            inner_opt: Some(Arc::new(inner)),
             max_num_partitions,
             salted_hasher,
         })
@@ -126,7 +131,11 @@ impl RoutingExpr {
 
 impl Display for RoutingExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+        if let Some(inner_expr) = self.inner_opt.as_ref() {
+            inner_expr.fmt(f)
+        } else {
+            write!(f, "EmptyRoutingExpr")
+        }
     }
 }
 
@@ -226,9 +235,13 @@ impl RoutingExpr {
     ///
     /// Obviously this function is not perfectly injective.
     pub fn eval_hash<Ctx: RoutingExprContext>(&self, ctx: &Ctx) -> u64 {
-        let mut hasher = self.salted_hasher;
-        self.inner.eval_hash(ctx, &mut hasher);
-        hasher.finish() % self.max_num_partitions.get()
+        if let Some(inner) = self.inner_opt.as_ref() {
+            let mut hasher: SipHasher = self.salted_hasher;
+            inner.eval_hash(ctx, &mut hasher);
+            hasher.finish() % self.max_num_partitions.get()
+        } else {
+            0u64
+        }
     }
 }
 
@@ -254,6 +267,13 @@ mod tests {
     }
 
     #[test]
+    fn test_routing_expr_empty_hashes_to_0() {
+        let expr = RoutingExpr::new("", NonZeroU64::new(10).unwrap()).unwrap();
+        let ctx: serde_json::Map<String, JsonValue> = Default::default();
+        assert_eq!(expr.eval_hash(&ctx), 0u64);
+    }
+
+    #[test]
     fn test_routing_expr_single_field() {
         let routing_expr = deser_util("tenant_id");
         assert!(
@@ -269,9 +289,9 @@ mod tests {
     fn test_routing_expr_depends_on_both_expr_and_value() {
         let routing_expr = RoutingExpr::new("tenant_id", MAX_NUM_PARTITIONS).unwrap();
         let routing_expr2 = RoutingExpr::new("app", MAX_NUM_PARTITIONS).unwrap();
-        let ctx: serde_json::Map<String, serde_json::Value> =
+        let ctx: serde_json::Map<String, JsonValue> =
             serde_json::from_str(r#"{"tenant_id": "happy", "app": "happy"}"#).unwrap();
-        let ctx2: serde_json::Map<String, serde_json::Value> =
+        let ctx2: serde_json::Map<String, JsonValue> =
             serde_json::from_str(r#"{"tenant_id": "happy2"}"#).unwrap();
         // This assert is important.
         assert_ne!(routing_expr.eval_hash(&ctx), routing_expr2.eval_hash(&ctx),);
@@ -283,7 +303,7 @@ mod tests {
     #[test]
     fn test_routing_expr_change_detection() {
         let routing_expr = RoutingExpr::new("tenant_id", MAX_NUM_PARTITIONS).unwrap();
-        let ctx: serde_json::Map<String, serde_json::Value> =
+        let ctx: serde_json::Map<String, JsonValue> =
             serde_json::from_str(r#"{"tenant_id": "happy-tenant", "app": "happy"}"#).unwrap();
         assert_eq!(routing_expr.eval_hash(&ctx), 9u64);
     }

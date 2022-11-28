@@ -23,75 +23,10 @@ use std::ops::{Range, RangeInclusive};
 use serde::{Deserialize, Serialize};
 
 use crate::split_metadata::utc_now_timestamp;
-use crate::{SplitMetadata, SplitState};
-
-#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-struct SplitMetadataV0 {
-    /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
-    /// should be enough to uniquely identify a split.
-    /// In reality, some information may be implicitly configured
-    /// in the storage URI resolver: for instance, the Amazon S3 region.
-    pub split_id: String,
-
-    /// Number of records (or documents) in the split.
-    /// TODO make u64
-    #[serde(alias = "num_records")]
-    pub num_docs: usize,
-
-    /// Sum of the size (in bytes) of the documents in this split.
-    ///
-    /// Note this is not the split file size. It is the size of the original
-    /// JSON payloads.
-    pub size_in_bytes: u64,
-
-    /// If a timestamp field is available, the min / max timestamp in
-    /// the split.
-    pub time_range: Option<RangeInclusive<i64>>,
-
-    /// The state of the split. This is the only mutable attribute of the split.
-    pub split_state: SplitState,
-
-    /// Timestamp for tracking when the split was created.
-    #[serde(default = "utc_now_timestamp")]
-    pub create_timestamp: i64,
-
-    /// Timestamp for tracking when the split was last updated.
-    #[serde(default = "utc_now_timestamp")]
-    pub update_timestamp: i64,
-
-    /// A set of tags for categorizing and searching group of splits.
-    #[serde(default)]
-    pub tags: BTreeSet<String>,
-}
-
-#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub(crate) struct SplitMetadataAndFooterV0 {
-    split_metadata: SplitMetadataV0,
-    footer_offsets: Range<u64>,
-}
-
-impl From<SplitMetadataAndFooterV0> for SplitMetadata {
-    fn from(v0: SplitMetadataAndFooterV0) -> Self {
-        SplitMetadata {
-            footer_offsets: v0.footer_offsets,
-            split_id: v0.split_metadata.split_id,
-            partition_id: 0,
-            source_id: "unknown".to_string(),
-            node_id: "unknown".to_string(),
-            pipeline_ord: 0,
-            delete_opstamp: 0,
-            num_docs: v0.split_metadata.num_docs,
-            uncompressed_docs_size_in_bytes: v0.split_metadata.size_in_bytes,
-            time_range: v0.split_metadata.time_range,
-            create_timestamp: v0.split_metadata.create_timestamp,
-            tags: v0.split_metadata.tags,
-            index_id: "".to_string(),
-        }
-    }
-}
+use crate::SplitMetadata;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SplitMetadataV1 {
+pub(crate) struct SplitMetadataV0_4 {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
     /// In reality, some information may be implicitly configured
@@ -143,51 +78,55 @@ pub(crate) struct SplitMetadataV1 {
     /// Split delete opstamp.
     #[serde(default)]
     pub delete_opstamp: u64,
+
+    #[serde(default)]
+    num_merge_ops: usize,
 }
 
-impl From<SplitMetadataV1> for SplitMetadata {
-    fn from(v1: SplitMetadataV1) -> Self {
-        let source_id = v1.source_id.unwrap_or_else(|| "unknown".to_string());
+impl From<SplitMetadataV0_4> for SplitMetadata {
+    fn from(v3: SplitMetadataV0_4) -> Self {
+        let source_id = v3.source_id.unwrap_or_else(|| "unknown".to_string());
 
-        let (node_id, pipeline_ord) = if let Some(node_id) = v1.node_id {
-            if let Some((node_id, pipeline_ord)) = node_id.rsplit_once('/') {
-                (
-                    node_id.to_string(),
-                    pipeline_ord.parse::<usize>().unwrap_or(0),
-                )
+        let node_id = if let Some(node_id) = v3.node_id {
+            // The previous version encoded `v1.node_id` as `{node_id}/{pipeline_ord}`.
+            // Since pipeline_ord is no longer needed, we only extract the `node_id` portion
+            // to keep backward compatibility.  This has the advantage of avoiding a
+            // brand new version.
+            if let Some((node_id, _)) = node_id.rsplit_once('/') {
+                node_id.to_string()
             } else {
-                (node_id.to_string(), 0)
+                node_id
             }
         } else {
-            ("unknown".to_string(), 0)
+            "unknown".to_string()
         };
 
         SplitMetadata {
-            split_id: v1.split_id,
-            index_id: v1.index_id,
-            partition_id: v1.partition_id,
+            split_id: v3.split_id,
+            index_id: v3.index_id,
+            partition_id: v3.partition_id,
             source_id,
             node_id,
-            pipeline_ord,
-            delete_opstamp: v1.delete_opstamp,
-            num_docs: v1.num_docs,
-            uncompressed_docs_size_in_bytes: v1.uncompressed_docs_size_in_bytes,
-            time_range: v1.time_range,
-            create_timestamp: v1.create_timestamp,
-            tags: v1.tags,
-            footer_offsets: v1.footer_offsets,
+            delete_opstamp: v3.delete_opstamp,
+            num_docs: v3.num_docs,
+            uncompressed_docs_size_in_bytes: v3.uncompressed_docs_size_in_bytes,
+            time_range: v3.time_range,
+            create_timestamp: v3.create_timestamp,
+            tags: v3.tags,
+            footer_offsets: v3.footer_offsets,
+            num_merge_ops: v3.num_merge_ops,
         }
     }
 }
 
-impl From<SplitMetadata> for SplitMetadataV1 {
+impl From<SplitMetadata> for SplitMetadataV0_4 {
     fn from(split: SplitMetadata) -> Self {
-        SplitMetadataV1 {
+        SplitMetadataV0_4 {
             split_id: split.split_id,
             index_id: split.index_id,
             partition_id: split.partition_id,
             source_id: Some(split.source_id),
-            node_id: Some(format!("{}/{}", split.node_id, split.pipeline_ord)),
+            node_id: Some(split.node_id),
             delete_opstamp: split.delete_opstamp,
             num_docs: split.num_docs,
             uncompressed_docs_size_in_bytes: split.uncompressed_docs_size_in_bytes,
@@ -195,6 +134,7 @@ impl From<SplitMetadata> for SplitMetadataV1 {
             create_timestamp: split.create_timestamp,
             tags: split.tags,
             footer_offsets: split.footer_offsets,
+            num_merge_ops: split.num_merge_ops,
         }
     }
 }
@@ -202,50 +142,20 @@ impl From<SplitMetadata> for SplitMetadataV1 {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedSplitMetadata {
-    #[serde(rename = "0")]
-    V0(SplitMetadataAndFooterV0),
-    #[serde(rename = "1")]
-    V1(SplitMetadataV1),
+    #[serde(rename = "0.4")]
+    V0_4(SplitMetadataV0_4),
 }
 
 impl From<VersionedSplitMetadata> for SplitMetadata {
     fn from(versioned_helper: VersionedSplitMetadata) -> Self {
         match versioned_helper {
-            VersionedSplitMetadata::V0(v0) => v0.into(),
-            VersionedSplitMetadata::V1(v1) => v1.into(),
+            VersionedSplitMetadata::V0_4(v0_4) => v0_4.into(),
         }
     }
 }
 
 impl From<SplitMetadata> for VersionedSplitMetadata {
     fn from(split_metadata: SplitMetadata) -> Self {
-        VersionedSplitMetadata::V1(split_metadata.into())
-    }
-}
-
-impl<'de> Deserialize<'de> for SplitMetadata {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
-        let split_metadata_value = serde_json::Value::deserialize(deserializer)?;
-        // Unfortunately, it is not possible to tell serde that in the absence
-        // of a tag, a given tag should be considered as the default.
-        // Old serialized metadata do not contain the version tag and therefore we are required to
-        // handle this corner case manually.
-        let version_is_present = split_metadata_value
-            .as_object()
-            .map(|obj| obj.contains_key("version"))
-            .unwrap_or(false);
-        if !version_is_present {
-            return Ok(
-                serde_json::from_value::<SplitMetadataAndFooterV0>(split_metadata_value)
-                    .map_err(serde::de::Error::custom)?
-                    .into(),
-            );
-        }
-        Ok(
-            serde_json::from_value::<VersionedSplitMetadata>(split_metadata_value)
-                .map_err(serde::de::Error::custom)?
-                .into(),
-        )
+        VersionedSplitMetadata::V0_4(split_metadata.into())
     }
 }

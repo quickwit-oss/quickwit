@@ -28,12 +28,14 @@ use std::str::FromStr;
 use anyhow::{bail, Context};
 use once_cell::sync::OnceCell;
 use regex::Regex;
-use serde::{Serialize, Serializer};
+use serde::de::Error;
+use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Protocol {
     Azure,
     File,
+    Grpc,
     PostgreSQL,
     Ram,
     S3,
@@ -44,6 +46,7 @@ impl Protocol {
         match &self {
             Protocol::Azure => "azure",
             Protocol::File => "file",
+            Protocol::Grpc => "grpc",
             Protocol::PostgreSQL => "postgresql",
             Protocol::Ram => "ram",
             Protocol::S3 => "s3",
@@ -56,6 +59,10 @@ impl Protocol {
 
     pub fn is_file(&self) -> bool {
         matches!(&self, Protocol::File)
+    }
+
+    pub fn is_grpc(&self) -> bool {
+        matches!(&self, Protocol::Grpc)
     }
 
     pub fn is_postgresql(&self) -> bool {
@@ -94,37 +101,18 @@ impl FromStr for Protocol {
 
     fn from_str(protocol: &str) -> anyhow::Result<Self> {
         match protocol {
+            "azure" => Ok(Protocol::Azure),
             "file" => Ok(Protocol::File),
+            "grpc" => Ok(Protocol::Grpc),
             "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
-            "azure" => Ok(Protocol::Azure),
             _ => bail!("Unknown URI protocol `{}`.", protocol),
         }
     }
 }
 
 const PROTOCOL_SEPARATOR: &str = "://";
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum Extension {
-    Json,
-    Toml,
-    Unknown(String),
-    Yaml,
-}
-
-impl Extension {
-    fn maybe_new(extension: &str) -> Option<Self> {
-        match extension {
-            "json" => Some(Self::Json),
-            "toml" => Some(Self::Toml),
-            "yaml" | "yml" => Some(Self::Yaml),
-            "" => None,
-            unknown => Some(Self::Unknown(unknown.to_string())),
-        }
-    }
-}
 
 /// Encapsulates the URI type.
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -134,75 +122,29 @@ pub struct Uri {
 }
 
 impl Uri {
-    /// Attempts to construct a [`Uri`] from a raw string slice.
-    /// A `file://` protocol is assumed if not specified.
-    /// File URIs are resolved (normalized) relative to the current working directory
-    /// unless an absolute path is specified.
-    /// Handles special characters like `~`, `.`, `..`.
-    pub fn try_new(uri: &str) -> anyhow::Result<Self> {
-        if uri.is_empty() {
-            bail!("URI is empty.");
-        }
-        let (protocol, mut path) = match uri.split_once(PROTOCOL_SEPARATOR) {
-            None => (Protocol::File.as_str(), uri.to_string()),
-            Some((protocol, path)) => (protocol, path.to_string()),
-        };
-        if protocol == Protocol::File.as_str() {
-            if path.starts_with('~') {
-                // We only accept `~` (alias to the home directory) and `~/path/to/something`.
-                // If there is something following the `~` that is not `/`, we bail out.
-                if path.len() > 1 && !path.starts_with("~/") {
-                    bail!("Path syntax `{}` is not supported.", uri);
-                }
-
-                let home_dir_path = home::home_dir()
-                    .context("Failed to resolve home directory.")?
-                    .to_string_lossy()
-                    .to_string();
-
-                path.replace_range(0..1, &home_dir_path);
-            }
-            if Path::new(&path).is_relative() {
-                let current_dir = env::current_dir().context(
-                    "Failed to resolve current working directory: dir does not exist or \
-                     insufficient permissions.",
-                )?;
-                path = current_dir.join(path).to_string_lossy().to_string();
-            }
-            path = normalize_path(Path::new(&path))
-                .to_string_lossy()
-                .to_string();
-        }
-        Ok(Self {
-            uri: format!("{}{}{}", protocol, PROTOCOL_SEPARATOR, path),
-            protocol_idx: protocol.len(),
-        })
-    }
-
     /// Constructs a [`Uri`] from a properly formatted string `<protocol>://<path>` where `path` is
     /// normalized. Use this method exclusively for trusted input.
-    pub fn new(uri: String) -> Self {
-        let protocol_idx = uri
-            .find(PROTOCOL_SEPARATOR)
-            .expect("URI lacks protocol separator. Use `Uri::new` exclusively for trusted input.");
+    pub fn from_well_formed<S: ToString>(uri: S) -> Self {
+        let uri = uri.to_string();
+        let protocol_idx = uri.find(PROTOCOL_SEPARATOR).expect(
+            "URI lacks protocol separator. Use `Uri::from_well_formed` exclusively for trusted \
+             input.",
+        );
         let protocol_str = &uri[..protocol_idx];
-        protocol_str
-            .parse::<Protocol>()
-            .expect("URI protocol is invalid. Use `Uri::new` exclusively for trusted input.`");
+        protocol_str.parse::<Protocol>().expect(
+            "URI protocol is invalid. Use `Uri::from_well_formed` exclusively for trusted input.`",
+        );
         Self { uri, protocol_idx }
     }
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(uri: &str) -> Self {
-        Uri::new(uri.to_string())
+        Uri::from_well_formed(uri)
     }
 
     /// Returns the extension of the URI.
-    pub fn extension(&self) -> Option<Extension> {
-        Path::new(&self.uri)
-            .extension()
-            .and_then(OsStr::to_str)
-            .and_then(Extension::maybe_new)
+    pub fn extension(&self) -> Option<&str> {
+        Path::new(&self.uri).extension().and_then(OsStr::to_str)
     }
 
     /// Returns the URI as a string slice.
@@ -257,7 +199,7 @@ impl Uri {
             return None;
         }
         path.parent().map(|parent| {
-            Uri::new(format!(
+            Uri::from_well_formed(format!(
                 "{protocol}{PROTOCOL_SEPARATOR}{}",
                 parent.display()
             ))
@@ -316,6 +258,52 @@ impl Uri {
             protocol_idx: self.protocol_idx,
         })
     }
+
+    /// Attempts to construct a [`Uri`] from a string.
+    /// A `file://` protocol is assumed if not specified.
+    /// File URIs are resolved (normalized) relative to the current working directory
+    /// unless an absolute path is specified.
+    /// Handles special characters such as `~`, `.`, `..`.
+    fn parse_str(uri_str: &str) -> anyhow::Result<Self> {
+        // CAUTION: Do not display the URI in error messages to avoid leaking credentials.
+        if uri_str.is_empty() {
+            bail!("Failed to parse empty URI.");
+        }
+        let (protocol, mut path) = match uri_str.split_once(PROTOCOL_SEPARATOR) {
+            None => (Protocol::File.as_str(), uri_str.to_string()),
+            Some((protocol, path)) => (protocol, path.to_string()),
+        };
+        if protocol == Protocol::File.as_str() {
+            if path.starts_with('~') {
+                // We only accept `~` (alias to the home directory) and `~/path/to/something`.
+                // If there is something following the `~` that is not `/`, we bail.
+                if path.len() > 1 && !path.starts_with("~/") {
+                    bail!("Failed to normalize URI: tilde expansion is only partially supported.");
+                }
+
+                let home_dir_path = home::home_dir()
+                    .context("Failed normalize URI: could not resolve home directory.")?
+                    .to_string_lossy()
+                    .to_string();
+
+                path.replace_range(0..1, &home_dir_path);
+            }
+            if Path::new(&path).is_relative() {
+                let current_dir = env::current_dir().context(
+                    "Failed to normalize URI: could not resolve current working directory. The \
+                     directory does not exist or insufficient permissions.",
+                )?;
+                path = current_dir.join(path).to_string_lossy().to_string();
+            }
+            path = normalize_path(Path::new(&path))
+                .to_string_lossy()
+                .to_string();
+        }
+        Ok(Self {
+            uri: format!("{}{}{}", protocol, PROTOCOL_SEPARATOR, path),
+            protocol_idx: protocol.len(),
+        })
+    }
 }
 
 impl AsRef<str> for Uri {
@@ -339,6 +327,14 @@ impl Display for Uri {
     }
 }
 
+impl FromStr for Uri {
+    type Err = anyhow::Error;
+
+    fn from_str(uri_str: &str) -> anyhow::Result<Self> {
+        Uri::parse_str(uri_str)
+    }
+}
+
 impl PartialEq<&str> for Uri {
     fn eq(&self, other: &&str) -> bool {
         &self.uri == other
@@ -348,6 +344,15 @@ impl PartialEq<&str> for Uri {
 impl PartialEq<String> for Uri {
     fn eq(&self, other: &String) -> bool {
         &self.uri == other
+    }
+}
+
+impl<'de> Deserialize<'de> for Uri {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: serde::Deserializer<'de> {
+        let uri_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let uri = Uri::from_str(&uri_str).map_err(D::Error::custom)?;
+        Ok(uri)
     }
 }
 
@@ -397,83 +402,83 @@ mod tests {
 
     #[test]
     fn test_try_new_uri() {
-        Uri::try_new("").unwrap_err();
+        Uri::from_str("").unwrap_err();
 
         let home_dir = home::home_dir().unwrap();
         let current_dir = env::current_dir().unwrap();
 
-        let uri = Uri::try_new("file:///home/foo/bar").unwrap();
+        let uri = Uri::from_str("file:///home/foo/bar").unwrap();
         assert_eq!(uri.protocol(), Protocol::File);
         assert_eq!(uri.filepath(), Some(Path::new("/home/foo/bar")));
         assert_eq!(uri, "file:///home/foo/bar");
         assert_eq!(uri, "file:///home/foo/bar".to_string());
         assert_eq!(
-            Uri::try_new("file:///foo./bar..").unwrap(),
+            Uri::from_str("file:///foo./bar..").unwrap(),
             "file:///foo./bar.."
         );
         assert_eq!(
-            Uri::try_new("home/homer/docs/dognuts").unwrap(),
+            Uri::from_str("home/homer/docs/dognuts").unwrap(),
             format!("file://{}/home/homer/docs/dognuts", current_dir.display())
         );
         assert_eq!(
-            Uri::try_new("home/homer/docs/../dognuts").unwrap(),
+            Uri::from_str("home/homer/docs/../dognuts").unwrap(),
             format!("file://{}/home/homer/dognuts", current_dir.display())
         );
         assert_eq!(
-            Uri::try_new("home/homer/docs/../../dognuts").unwrap(),
+            Uri::from_str("home/homer/docs/../../dognuts").unwrap(),
             format!("file://{}/home/dognuts", current_dir.display())
         );
         assert_eq!(
-            Uri::try_new("/home/homer/docs/dognuts").unwrap(),
+            Uri::from_str("/home/homer/docs/dognuts").unwrap(),
             "file:///home/homer/docs/dognuts"
         );
         assert_eq!(
-            Uri::try_new("~").unwrap(),
+            Uri::from_str("~").unwrap(),
             format!("file://{}", home_dir.display())
         );
         assert_eq!(
-            Uri::try_new("~/").unwrap(),
+            Uri::from_str("~/").unwrap(),
             format!("file://{}", home_dir.display())
         );
         assert_eq!(
-            Uri::try_new("~anything/bar").unwrap_err().to_string(),
-            "Path syntax `~anything/bar` is not supported."
+            Uri::from_str("~anything/bar").unwrap_err().to_string(),
+            "Failed to normalize URI: tilde expansion is only partially supported."
         );
         assert_eq!(
-            Uri::try_new("~/.").unwrap(),
+            Uri::from_str("~/.").unwrap(),
             format!("file://{}", home_dir.display())
         );
         assert_eq!(
-            Uri::try_new("~/..").unwrap(),
+            Uri::from_str("~/..").unwrap(),
             format!("file://{}", home_dir.parent().unwrap().display())
         );
         assert_eq!(
-            Uri::try_new("file://").unwrap(),
+            Uri::from_str("file://").unwrap(),
             format!("file://{}", current_dir.display())
         );
-        assert_eq!(Uri::try_new("file:///").unwrap(), "file:///");
+        assert_eq!(Uri::from_str("file:///").unwrap(), "file:///");
         assert_eq!(
-            Uri::try_new("file://.").unwrap(),
+            Uri::from_str("file://.").unwrap(),
             format!("file://{}", current_dir.display())
         );
         assert_eq!(
-            Uri::try_new("file://..").unwrap(),
+            Uri::from_str("file://..").unwrap(),
             format!("file://{}", current_dir.parent().unwrap().display())
         );
         assert_eq!(
-            Uri::try_new("s3://home/homer/docs/dognuts").unwrap(),
+            Uri::from_str("s3://home/homer/docs/dognuts").unwrap(),
             "s3://home/homer/docs/dognuts"
         );
         assert_eq!(
-            Uri::try_new("s3://home/homer/docs/../dognuts").unwrap(),
+            Uri::from_str("s3://home/homer/docs/../dognuts").unwrap(),
             "s3://home/homer/docs/../dognuts"
         );
         assert_eq!(
-            Uri::try_new("azure://account/container/docs/dognuts").unwrap(),
+            Uri::from_str("azure://account/container/docs/dognuts").unwrap(),
             "azure://account/container/docs/dognuts"
         );
         assert_eq!(
-            Uri::try_new("azure://account/container/homer/docs/../dognuts").unwrap(),
+            Uri::from_str("azure://account/container/homer/docs/../dognuts").unwrap(),
             "azure://account/container/homer/docs/../dognuts"
         );
     }
@@ -503,11 +508,11 @@ mod tests {
 
         assert_eq!(
             Uri::for_test("s3://config.json").extension().unwrap(),
-            Extension::Json
+            "json"
         );
         assert_eq!(
             Uri::for_test("azure://config.foo").extension().unwrap(),
-            Extension::Unknown("foo".to_string())
+            "foo"
         );
     }
 
@@ -714,7 +719,7 @@ mod tests {
         );
         {
             for protocol in ["postgres", "postgresql"] {
-                let uri = Uri::new(format!(
+                let uri = Uri::from_well_formed(format!(
                     "{}://username:password@localhost:5432/metastore",
                     protocol
                 ));

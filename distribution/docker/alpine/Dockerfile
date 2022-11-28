@@ -5,10 +5,6 @@ RUN tar -xzf quickwit-*-$(cat /etc/apk/arch)-unknown-linux-musl.tar.gz
 RUN mv ./quickwit-*/* ./
 RUN chmod 744 ./quickwit
 
-# Change the default configuration file in order to make the REST,
-# gRPC and gossip services accessible outside of Docker.
-RUN sed -i 's/#listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' ./config/quickwit.yaml
-
 
 FROM alpine:3
 
@@ -24,5 +20,6 @@ COPY --from=builder /config/quickwit.yaml /quickwit/config/quickwit.yaml
 
 ENV QW_CONFIG=/quickwit/config/quickwit.yaml
 ENV QW_DATA_DIR=/quickwit/qwdata
+ENV QW_LISTEN_ADDRESS=0.0.0.0
 
 ENTRYPOINT ["/usr/local/bin/quickwit"]

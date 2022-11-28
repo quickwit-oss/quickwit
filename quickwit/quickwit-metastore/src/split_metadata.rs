@@ -22,6 +22,7 @@ use std::fmt;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
+use quickwit_config::TestableForRegression;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -54,8 +55,9 @@ impl Split {
 /// Carries immutable split metadata.
 /// This struct can deserialize older format automatically
 /// but can only serialize to the last version.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(into = "VersionedSplitMetadata")]
+#[serde(try_from = "VersionedSplitMetadata")]
 pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -79,9 +81,6 @@ pub struct SplitMetadata {
 
     /// Node ID.
     pub node_id: String,
-
-    /// Pipeline ordinal.
-    pub pipeline_ord: usize,
 
     /// Number of records (or documents) in the split.
     /// TODO make u64
@@ -121,6 +120,10 @@ pub struct SplitMetadata {
 
     /// Delete opstamp.
     pub delete_opstamp: u64,
+
+    /// Number of merge operations that was involved to create
+    /// this split.
+    pub num_merge_ops: usize,
 }
 
 impl SplitMetadata {
@@ -131,7 +134,6 @@ impl SplitMetadata {
         partition_id: u64,
         source_id: String,
         node_id: String,
-        pipeline_ord: usize,
     ) -> Self {
         Self {
             split_id,
@@ -139,7 +141,6 @@ impl SplitMetadata {
             partition_id,
             source_id,
             node_id,
-            pipeline_ord,
             create_timestamp: utc_now_timestamp(),
             ..Default::default()
         }
@@ -157,6 +158,30 @@ impl SplitMetadata {
             split_id,
             ..Default::default()
         }
+    }
+}
+
+impl TestableForRegression for SplitMetadata {
+    fn sample_for_regression() -> Self {
+        SplitMetadata {
+            split_id: "split".to_string(),
+            index_id: "my-index".to_string(),
+            source_id: "source".to_string(),
+            node_id: "node".to_string(),
+            delete_opstamp: 10,
+            partition_id: 7u64,
+            num_docs: 12303,
+            uncompressed_docs_size_in_bytes: 234234,
+            time_range: Some(121000..=130198),
+            create_timestamp: 3,
+            tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
+            footer_offsets: 1000..2000,
+            num_merge_ops: 3,
+        }
+    }
+
+    fn test_equality(&self, other: &Self) {
+        assert_eq!(self, other);
     }
 }
 

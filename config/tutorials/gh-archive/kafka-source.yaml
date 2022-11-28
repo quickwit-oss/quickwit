@@ -1,3 +1,4 @@
+version: 0.4
 source_id: kafka-source
 source_type: kafka
 params:

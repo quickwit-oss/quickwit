@@ -17,12 +17,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 mod checklist;
 mod coolid;
 
 pub mod fs;
+pub mod io;
+mod kill_switch;
 pub mod metrics;
 pub mod net;
+mod progress;
 pub mod rand;
 pub mod runtimes;
 pub mod uri;
@@ -31,8 +36,12 @@ use std::fmt::Debug;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
-pub use checklist::{print_checklist, run_checklist, BLUE_COLOR, GREEN_COLOR, RED_COLOR};
+pub use checklist::{
+    print_checklist, run_checklist, ChecklistError, BLUE_COLOR, GREEN_COLOR, RED_COLOR,
+};
 pub use coolid::new_coolid;
+pub use kill_switch::KillSwitch;
+pub use progress::{Progress, ProtectedZoneGuard};
 use tracing::{error, info};
 
 pub fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {
@@ -106,9 +115,50 @@ pub fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
     left.end <= *right.start() || *right.end() < left.start
 }
 
+#[macro_export]
+macro_rules! ignore_error_kind {
+    ($kind:path, $expr:expr) => {
+        match $expr {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == $kind => Ok(()),
+            Err(error) => Err(error),
+        }
+    };
+}
+
+pub struct PrettySample<'a, T>(&'a [T], usize);
+
+impl<'a, T> PrettySample<'a, T> {
+    pub fn new(slice: &'a [T], sample_size: usize) -> Self {
+        Self(slice, sample_size)
+    }
+}
+
+impl<T> Debug for PrettySample<'_, T>
+where T: Debug
+{
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "[")?;
+        for (i, item) in self.0.iter().enumerate() {
+            if i == self.1 {
+                write!(formatter, ", ...")?;
+                break;
+            }
+            if i > 0 {
+                write!(formatter, ", ")?;
+            }
+            write!(formatter, "{:?}", item)?;
+        }
+        write!(formatter, "]")?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::truncate_str;
+    use std::io::ErrorKind;
+
+    use super::*;
 
     #[test]
     fn test_get_from_env() {
@@ -131,5 +181,28 @@ mod tests {
         assert_eq!(truncate_str("hello-world", 6), "hello-");
         assert_eq!(truncate_str("hello🧑‍🔬world", 6), "hello");
         assert_eq!(truncate_str("hello🧑‍🔬world", 7), "hello");
+    }
+
+    #[test]
+    fn test_ignore_io_error_macro() {
+        ignore_error_kind!(
+            ErrorKind::NotFound,
+            std::fs::remove_file("file-does-not-exist")
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_pretty_sample() {
+        assert_eq!(
+            format!("{:?}", PrettySample::<'_, usize>::new(&[], 2)),
+            "[]"
+        );
+        assert_eq!(format!("{:?}", PrettySample::new(&[1], 2)), "[1]");
+        assert_eq!(format!("{:?}", PrettySample::new(&[1, 2], 2)), "[1, 2]");
+        assert_eq!(
+            format!("{:?}", PrettySample::new(&[1, 2, 3], 2)),
+            "[1, 2, ...]"
+        );
     }
 }

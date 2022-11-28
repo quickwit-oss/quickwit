@@ -22,15 +22,16 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
-use quickwit_actors::{Actor, ActorContext, Handler, Mailbox};
+use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::Metastore;
-use tracing::info;
+use serde::Serialize;
+use tracing::{info, instrument};
 
 use crate::actors::MergePlanner;
-use crate::models::{NewSplits, SplitUpdate};
+use crate::models::{NewSplits, SplitsUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct PublisherCounters {
     pub num_published_splits: u64,
     pub num_replace_operations: u64,
@@ -51,6 +52,7 @@ impl PublisherType {
     }
 }
 
+#[derive(Clone)]
 pub struct Publisher {
     publisher_type: PublisherType,
     metastore: Arc<dyn Metastore>,
@@ -88,43 +90,34 @@ impl Actor for Publisher {
         self.publisher_type.actor_name().to_string()
     }
 
-    async fn finalize(
-        &mut self,
-        _exit_status: &quickwit_actors::ActorExitStatus,
-        ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<()> {
-        // The `garbage_collector` actor runs for ever.
-        // Periodically scheduling new messages for itself.
-        //
-        // The publisher actor being the last standing actor of the pipeline,
-        // its end of life should also means the end of life of never stopping actors.
-        // After all, when the publisher is stopped, there shouldn't be anything to process.
-        // It's fine if the merge planner is already dead.
-        if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
-            let _ = ctx.send_exit_with_success(merge_planner_mailbox).await;
+    fn queue_capacity(&self) -> QueueCapacity {
+        match self.publisher_type {
+            PublisherType::MainPublisher => QueueCapacity::Bounded(1),
+            PublisherType::MergePublisher => QueueCapacity::Unbounded,
         }
-        Ok(())
     }
 }
 
 #[async_trait]
-impl Handler<SplitUpdate> for Publisher {
+impl Handler<SplitsUpdate> for Publisher {
     type Reply = ();
 
+    #[instrument(name="publisher", parent=split_update.parent_span.id(),  skip(self, ctx))]
     async fn handle(
         &mut self,
-        split_update: SplitUpdate,
+        split_update: SplitsUpdate,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         fail_point!("publisher:before");
 
-        let SplitUpdate {
+        let SplitsUpdate {
             index_id,
             new_splits,
             replaced_split_ids,
             checkpoint_delta_opt,
             publish_lock,
-            date_of_birth,
+            merge_operation: _,
+            parent_span: _,
         } = split_update;
 
         let split_ids: Vec<&str> = new_splits.iter().map(|split| split.split_id()).collect();
@@ -149,7 +142,7 @@ impl Handler<SplitUpdate> for Publisher {
             );
             return Ok(());
         }
-        info!(new_splits=?split_ids, tts=%date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
+        info!(new_splits=?split_ids, checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
         if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
             if let Some(checkpoint) = checkpoint_delta_opt {
                 // We voluntarily do not log anything here.
@@ -189,13 +182,12 @@ impl Handler<SplitUpdate> for Publisher {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
     use quickwit_metastore::{MockMetastore, SplitMetadata};
+    use tracing::Span;
 
     use super::*;
     use crate::models::PublishLock;
@@ -231,7 +223,7 @@ mod tests {
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
         assert!(publisher_mailbox
-            .send_message(SplitUpdate {
+            .send_message(SplitsUpdate {
                 index_id: "index".to_string(),
                 new_splits: vec![SplitMetadata {
                     split_id: "split".to_string(),
@@ -243,7 +235,8 @@ mod tests {
                     source_delta: SourceCheckpointDelta::from(1..3),
                 }),
                 publish_lock: PublishLock::default(),
-                date_of_birth: Instant::now(),
+                merge_operation: None,
+                parent_span: tracing::Span::none(),
             })
             .await
             .is_ok());
@@ -294,7 +287,7 @@ mod tests {
         );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
-        let publisher_message = SplitUpdate {
+        let publisher_message = SplitsUpdate {
             index_id: "index".to_string(),
             new_splits: vec![SplitMetadata {
                 split_id: "split3".to_string(),
@@ -303,7 +296,8 @@ mod tests {
             replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
             checkpoint_delta_opt: None,
             publish_lock: PublishLock::default(),
-            date_of_birth: Instant::now(),
+            merge_operation: None,
+            parent_span: Span::none(),
         };
         assert!(publisher_mailbox
             .send_message(publisher_message)
@@ -336,13 +330,14 @@ mod tests {
         publish_lock.kill().await;
 
         publisher_mailbox
-            .send_message(SplitUpdate {
+            .send_message(SplitsUpdate {
                 index_id: "test-index".to_string(),
                 new_splits: vec![SplitMetadata::for_test("test-split".to_string())],
                 replaced_split_ids: Vec::new(),
                 checkpoint_delta_opt: None,
                 publish_lock,
-                date_of_birth: Instant::now(),
+                merge_operation: None,
+                parent_span: Span::none(),
             })
             .await
             .unwrap();

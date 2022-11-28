@@ -20,26 +20,32 @@
 use std::env;
 
 use anyhow::Context;
-use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
+use opentelemetry::sdk::{trace, Resource};
+use opentelemetry::{global, KeyValue};
+use opentelemetry_otlp::WithExportConfig;
 use quickwit_cli::cli::{build_cli, CliCommand};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
-use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
-use quickwit_common::runtimes::RuntimesConfiguration;
-use quickwit_config::service::QuickwitService;
-use quickwit_serve::build_quickwit_build_info;
+use quickwit_cli::{
+    QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
+};
+use quickwit_serve::{quickwit_build_info, QuickwitBuildInfo};
 use quickwit_telemetry::payload::TelemetryEvent;
+use tonic::metadata::MetadataMap;
 use tracing::{info, Level};
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
-fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
+fn setup_logging_and_tracing(
+    level: Level,
+    ansi: bool,
+    build_info: &QuickwitBuildInfo,
+) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
     {
-        use quickwit_cli::QW_TOKIO_CONSOLE_ENABLED_ENV_KEY;
-        if std::env::var_os(QW_TOKIO_CONSOLE_ENABLED_ENV_KEY).is_some() {
+        if std::env::var_os(quickwit_cli::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY).is_some() {
             console_subscriber::init();
             return Ok(());
         }
@@ -52,6 +58,7 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     let registry = tracing_subscriber::registry().with(env_filter);
     let event_format = tracing_subscriber::fmt::format()
         .with_target(true)
+        .with_ansi(ansi)
         .with_timer(
             // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
             // See discussion here: https://github.com/time-rs/time/discussions/418
@@ -62,51 +69,44 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
                 .expect("Time format invalid."),
             ),
         );
-    if std::env::var_os(QW_JAEGER_ENABLED_ENV_KEY).is_some() {
-        // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
+    if std::env::var_os(QW_ENABLE_JAEGER_EXPORTER_ENV_KEY).is_some() {
         let tracer = opentelemetry_jaeger::new_agent_pipeline()
             .with_service_name("quickwit")
-            //.install_batch(opentelemetry::runtime::Tokio)
-            .install_simple()
+            .with_auto_split_batch(true)
+            .install_batch(opentelemetry::runtime::Tokio)
             .context("Failed to initialize Jaeger exporter.")?;
         registry
-            .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .with(tracing_opentelemetry::layer().with_tracer(tracer))
+            .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .try_init()
-            .context("Failed to set up tracing.")?
+            .context("Failed to set up tracing.")?;
+    } else if std::env::var_os(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY).is_some() {
+        let mut metadata_map = MetadataMap::with_capacity(2);
+        metadata_map.insert("version", build_info.version.parse()?);
+        metadata_map.insert("commit", build_info.commit_short_hash.parse()?);
+
+        let otlp_exporter = opentelemetry_otlp::new_exporter()
+            .tonic()
+            .with_env()
+            .with_metadata(metadata_map);
+        let trace_config = trace::config()
+            .with_resource(Resource::new([KeyValue::new("service.name", "quickwit")]));
+        let tracer = opentelemetry_otlp::new_pipeline()
+            .tracing()
+            .with_exporter(otlp_exporter)
+            .with_trace_config(trace_config)
+            .install_batch(opentelemetry::runtime::Tokio)
+            .context("Failed to initialize OpenTelemetry OTLP exporter.")?;
+        registry
+            .with(tracing_opentelemetry::layer().with_tracer(tracer))
+            .with(tracing_subscriber::fmt::layer().event_format(event_format))
+            .try_init()
+            .context("Failed to set up tracing.")?;
     } else {
         registry
             .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .try_init()
-            .context("Failed to set up tracing.")?
-    }
-    Ok(())
-}
-
-/// If a bunch of tokio runtimes need to be started for actors,
-/// return the right configuration.
-///
-/// TODO making it configurable could be useful in the future.
-fn runtime_configuration_for_cmd(command: &CliCommand) -> Option<RuntimesConfiguration> {
-    match command {
-        CliCommand::Run(run_cli_command) => {
-            if run_cli_command.services.contains(&QuickwitService::Indexer)
-                || run_cli_command.services.contains(&QuickwitService::Janitor)
-            {
-                Some(RuntimesConfiguration::default())
-            } else {
-                None
-            }
-        }
-        CliCommand::Index(_) => Some(RuntimesConfiguration::default()),
-        CliCommand::Split(_) | CliCommand::Source(_) => None,
-    }
-}
-
-fn start_actor_runtimes(cli_command: &CliCommand) -> anyhow::Result<()> {
-    if let Some(runtime_configuration) = runtime_configuration_for_cmd(cli_command) {
-        quickwit_common::runtimes::initialize_runtimes(runtime_configuration)
-            .context("Failed to start runtimes.")?;
+            .context("Failed to set up tracing.")?;
     }
     Ok(())
 }
@@ -118,11 +118,11 @@ async fn main() -> anyhow::Result<()> {
 
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
-    let build_info = build_quickwit_build_info();
+    let build_info = quickwit_build_info();
 
     let app = build_cli()
         .about(about_text.as_str())
-        .version(build_info.version);
+        .version(build_info.version.as_str());
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
@@ -133,29 +133,27 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    start_actor_runtimes(&command)?;
-
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
-    setup_logging_and_tracing(command.default_log_level())?;
+    setup_logging_and_tracing(
+        command.default_log_level(),
+        !matches.is_present("no-color"),
+        build_info,
+    )?;
     info!(
         version = build_info.version,
         commit = build_info.commit_short_hash,
     );
-
     let return_code: i32 = if let Err(err) = command.execute().await {
         eprintln!("Command failed: {:?}", err);
         1
     } else {
         0
     };
-
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code }).await;
-
     telemetry_handle.terminate_telemetry().await;
     global::shutdown_tracer_provider();
-
     std::process::exit(return_code)
 }
 
@@ -173,6 +171,7 @@ fn about_text() -> String {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::str::FromStr;
     use std::time::Duration;
 
     use quickwit_cli::cli::{build_cli, CliCommand};
@@ -187,7 +186,7 @@ mod tests {
     fn test_parse_clear_args() {
         let app = build_cli().no_binary_name(true);
         let matches = app
-            .try_get_matches_from(&[
+            .try_get_matches_from([
                 "index",
                 "clear",
                 "--index",
@@ -198,7 +197,7 @@ mod tests {
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_id: "wikipedia".to_string(),
             yes: false,
         }));
@@ -206,7 +205,7 @@ mod tests {
 
         let app = build_cli().no_binary_name(true);
         let matches = app
-            .try_get_matches_from(&[
+            .try_get_matches_from([
                 "index",
                 "clear",
                 "--index",
@@ -218,7 +217,7 @@ mod tests {
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_id: "wikipedia".to_string(),
             yes: true,
         }));
@@ -229,11 +228,11 @@ mod tests {
     fn test_parse_create_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
         let _ = app
-            .try_get_matches_from(&["new", "--index-uri", "file:///indexes/wikipedia"])
+            .try_get_matches_from(["new", "--index-uri", "file:///indexes/wikipedia"])
             .unwrap_err();
 
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "create",
             "--index-config",
@@ -242,22 +241,21 @@ mod tests {
             "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_index_config_uri = Uri::try_new(&format!(
+        let expected_index_config_uri = Uri::from_str(&format!(
             "file://{}/index-conf.yaml",
             std::env::current_dir().unwrap().display()
         ))
         .unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri.clone(),
             overwrite: false,
-            data_dir: None,
             assume_yes: false,
         }));
         assert_eq!(command, expected_cmd);
 
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "create",
             "--index-config",
@@ -268,10 +266,9 @@ mod tests {
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri,
             overwrite: true,
-            data_dir: None,
             assume_yes: false,
         }));
         assert_eq!(command, expected_cmd);
@@ -282,7 +279,7 @@ mod tests {
     #[test]
     fn test_parse_ingest_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "ingest",
             "--index",
@@ -299,14 +296,13 @@ mod tests {
                     index_id,
                     input_path_opt: None,
                     overwrite: false,
-                    data_dir: None,
                     clear_cache: true,
                 })) if &index_id == "wikipedia"
-                       && config_uri == Uri::try_new("file:///config.yaml").unwrap()
+                       && config_uri == Uri::from_str("file:///config.yaml").unwrap()
         ));
 
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "ingest",
             "--index",
@@ -325,10 +321,9 @@ mod tests {
                     index_id,
                     input_path_opt: None,
                     overwrite: true,
-                    data_dir: None,
                     clear_cache: false
                 })) if &index_id == "wikipedia"
-                        && config_uri == Uri::try_new("file:///config.yaml").unwrap()
+                        && config_uri == Uri::from_str("file:///config.yaml").unwrap()
         ));
         Ok(())
     }
@@ -336,7 +331,7 @@ mod tests {
     #[test]
     fn test_parse_search_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "search",
             "--index",
@@ -364,7 +359,7 @@ mod tests {
         ));
 
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "search",
             "--index",
@@ -388,7 +383,7 @@ mod tests {
             "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let _config_uri = Uri::try_new("file:///config.yaml").unwrap();
+        let _config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
@@ -402,7 +397,6 @@ mod tests {
                 start_timestamp: Some(0),
                 end_timestamp: Some(1),
                 config_uri: _config_uri,
-                data_dir: None,
                 sort_by_score: false,
             })) if &index_id == "wikipedia"
                   && query == "Barack Obama"
@@ -415,7 +409,7 @@ mod tests {
     #[test]
     fn test_parse_delete_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "delete",
             "--index",
@@ -434,7 +428,7 @@ mod tests {
         ));
 
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "delete",
             "--index",
@@ -458,7 +452,7 @@ mod tests {
     #[test]
     fn test_parse_garbage_collect_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "gc",
             "--index",
@@ -478,7 +472,7 @@ mod tests {
         ));
 
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "gc",
             "--index",
@@ -490,7 +484,7 @@ mod tests {
             "--dry-run",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_config_uri = Uri::try_new("file:///config.yaml").unwrap();
+        let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::GarbageCollect(GarbageCollectIndexArgs {
@@ -498,7 +492,6 @@ mod tests {
                 grace_period,
                 config_uri,
                 dry_run: true,
-                data_dir: None,
             })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && config_uri == expected_config_uri
         ));
         Ok(())
@@ -507,11 +500,13 @@ mod tests {
     #[test]
     fn test_parse_merge_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "merge",
             "--index",
             "wikipedia",
+            "--source",
+            "ingest-source",
             "--config",
             "/config.yaml",
         ])?;
@@ -520,8 +515,9 @@ mod tests {
             command,
             CliCommand::Index(IndexCliCommand::Merge(MergeArgs {
                 index_id,
+                source_id,
                 ..
-            })) if &index_id == "wikipedia"
+            })) if &index_id == "wikipedia" && source_id == "ingest-source"
         ));
         Ok(())
     }
@@ -529,7 +525,7 @@ mod tests {
     #[test]
     fn test_parse_describe_index_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "index",
             "describe",
             "--index",
@@ -551,7 +547,7 @@ mod tests {
     #[test]
     fn test_parse_split_describe_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "split",
             "describe",
             "--index",
@@ -577,7 +573,7 @@ mod tests {
     #[test]
     fn test_parse_split_extract_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
+        let matches = app.try_get_matches_from([
             "split",
             "extract",
             "--index",

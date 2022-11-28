@@ -2,7 +2,12 @@
 
 RESULT=0
 
-for file in $(git ls-files | grep "src\|proto" | grep -e "\.proto\|\.rs\|\.ts" | grep -v "quickwit-proto/otlp" | grep -v "quickwit-proto/src")
+for file in $(git ls-files | \
+    grep "src\|proto" | \
+    grep -e "\.proto\|\.rs\|\.ts" | \
+    grep -v "quickwit-proto/protos/third-party" | \
+    grep -v "quickwit-proto/src" \
+)
 do
     diff <(sed 's/{\\d+}/2022/' .license_header.txt) <(head -n 19 $file)
     DIFFRESULT=$?

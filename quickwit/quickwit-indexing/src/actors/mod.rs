@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod indexing_pipeline;
+mod merge_pipeline;
 
 mod doc_processor;
 mod index_serializer;
@@ -29,9 +30,10 @@ mod publisher;
 mod sequencer;
 mod uploader;
 
-pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandle, IndexingPipelineParams};
+pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandles, IndexingPipelineParams};
 pub use indexing_service::{
-    IndexingService, IndexingServiceError, IndexingServiceState, INDEXING_DIR_NAME,
+    IndexingService, IndexingServiceCounters, IndexingServiceError, MergePipelineId,
+    INDEXING_DIR_NAME,
 };
 pub use sequencer::Sequencer;
 mod merge_executor;
@@ -44,9 +46,10 @@ pub use self::indexer::{Indexer, IndexerCounters};
 pub use self::ingest_api_garbage_collector::{
     IngestApiGarbageCollector, IngestApiGarbageCollectorCounters,
 };
-pub use self::merge_executor::{combine_partition_ids, MergeExecutor};
+pub use self::merge_executor::{combine_partition_ids, merge_split_attrs, MergeExecutor};
+pub use self::merge_pipeline::MergePipeline;
 pub use self::merge_planner::MergePlanner;
 pub use self::merge_split_downloader::MergeSplitDownloader;
 pub use self::packager::Packager;
 pub use self::publisher::{Publisher, PublisherCounters, PublisherType};
-pub use self::uploader::{Uploader, UploaderCounters};
+pub use self::uploader::{SplitsUpdateMailbox, Uploader, UploaderCounters, UploaderType};

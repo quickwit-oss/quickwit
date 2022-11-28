@@ -1,65 +1,65 @@
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueueExistsRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateQueueRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateQueueIfNotExistsRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DropQueueRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestRequest {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub doc_batches: ::prost::alloc::vec::Vec<DocBatch>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestResponse {
-    #[prost(uint64, tag="1")]
+    #[prost(uint64, tag = "1")]
     pub num_docs_for_processing: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(uint64, optional, tag="2")]
+    #[prost(uint64, optional, tag = "2")]
     pub start_after: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag="3")]
+    #[prost(uint64, optional, tag = "3")]
     pub num_bytes_limit: ::core::option::Option<u64>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchResponse {
-    #[prost(uint64, optional, tag="1")]
+    #[prost(uint64, optional, tag = "1")]
     pub first_position: ::core::option::Option<u64>,
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub doc_batch: ::core::option::Option<DocBatch>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DocBatch {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(bytes="vec", tag="2")]
+    #[prost(bytes = "vec", tag = "2")]
     pub concat_docs: ::prost::alloc::vec::Vec<u8>,
-    #[prost(uint64, repeated, tag="3")]
+    #[prost(uint64, repeated, tag = "3")]
     pub doc_lens: ::prost::alloc::vec::Vec<u64>,
 }
 /// / Suggest to truncate the queue.
@@ -78,25 +78,24 @@ pub struct DocBatch {
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SuggestTruncateRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag="2")]
+    #[prost(uint64, tag = "2")]
     pub up_to_position_included: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TailRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListQueuesRequest {
-}
+pub struct ListQueuesRequest {}
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListQueuesResponse {
-    #[prost(string, repeated, tag="1")]
+    #[prost(string, repeated, tag = "1")]
     pub queues: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Generated client implementations.
@@ -168,13 +167,13 @@ pub mod ingest_api_service_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
-        //// Ingests document in a given queue.
-        ////
-        //// Upon any kind of error, the client should
-        //// - retry to get at least once delivery.
-        //// - not retry to get at most once delivery.
-        ////
-        //// Exactly once delivery is not supported yet.
+        #[doc = "/ Ingests document in a given queue."]
+        #[doc = "/"]
+        #[doc = "/ Upon any kind of error, the client should"]
+        #[doc = "/ - retry to get at least once delivery."]
+        #[doc = "/ - not retry to get at most once delivery."]
+        #[doc = "/"]
+        #[doc = "/ Exactly once delivery is not supported yet."]
         pub async fn ingest(
             &mut self,
             request: impl tonic::IntoRequest<super::IngestRequest>,
@@ -194,16 +193,16 @@ pub mod ingest_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        //// Fetches record from a given queue.
-        ////
-        //// Records are returned in order.
-        ////
-        //// The returned `FetchResponse` object is meant to be read with the
-        //// `crate::iter_records` function.
-        ////
-        //// Fetching does not necessarily return all of the available records.
-        //// If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
-        //// the reponse will be partial.
+        #[doc = "/ Fetches record from a given queue."]
+        #[doc = "/"]
+        #[doc = "/ Records are returned in order."]
+        #[doc = "/"]
+        #[doc = "/ The returned `FetchResponse` object is meant to be read with the"]
+        #[doc = "/ `crate::iter_records` function."]
+        #[doc = "/"]
+        #[doc = "/ Fetching does not necessarily return all of the available records."]
+        #[doc = "/ If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),"]
+        #[doc = "/ the reponse will be partial."]
         pub async fn fetch(
             &mut self,
             request: impl tonic::IntoRequest<super::FetchRequest>,
@@ -223,11 +222,11 @@ pub mod ingest_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        //// Returns a batch containing the last records.
-        ////
-        //// It returns the last documents, from the newest
-        //// to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
-        //// is exceeded.
+        #[doc = "/ Returns a batch containing the last records."]
+        #[doc = "/"]
+        #[doc = "/ It returns the last documents, from the newest"]
+        #[doc = "/ to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)"]
+        #[doc = "/ is exceeded."]
         pub async fn tail(
             &mut self,
             request: impl tonic::IntoRequest<super::TailRequest>,
@@ -256,36 +255,36 @@ pub mod ingest_api_service_server {
     ///Generated trait containing gRPC methods that should be implemented for use with IngestApiServiceServer.
     #[async_trait]
     pub trait IngestApiService: Send + Sync + 'static {
-        //// Ingests document in a given queue.
-        ////
-        //// Upon any kind of error, the client should
-        //// - retry to get at least once delivery.
-        //// - not retry to get at most once delivery.
-        ////
-        //// Exactly once delivery is not supported yet.
+        #[doc = "/ Ingests document in a given queue."]
+        #[doc = "/"]
+        #[doc = "/ Upon any kind of error, the client should"]
+        #[doc = "/ - retry to get at least once delivery."]
+        #[doc = "/ - not retry to get at most once delivery."]
+        #[doc = "/"]
+        #[doc = "/ Exactly once delivery is not supported yet."]
         async fn ingest(
             &self,
             request: tonic::Request<super::IngestRequest>,
         ) -> Result<tonic::Response<super::IngestResponse>, tonic::Status>;
-        //// Fetches record from a given queue.
-        ////
-        //// Records are returned in order.
-        ////
-        //// The returned `FetchResponse` object is meant to be read with the
-        //// `crate::iter_records` function.
-        ////
-        //// Fetching does not necessarily return all of the available records.
-        //// If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
-        //// the reponse will be partial.
+        #[doc = "/ Fetches record from a given queue."]
+        #[doc = "/"]
+        #[doc = "/ Records are returned in order."]
+        #[doc = "/"]
+        #[doc = "/ The returned `FetchResponse` object is meant to be read with the"]
+        #[doc = "/ `crate::iter_records` function."]
+        #[doc = "/"]
+        #[doc = "/ Fetching does not necessarily return all of the available records."]
+        #[doc = "/ If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),"]
+        #[doc = "/ the reponse will be partial."]
         async fn fetch(
             &self,
             request: tonic::Request<super::FetchRequest>,
         ) -> Result<tonic::Response<super::FetchResponse>, tonic::Status>;
-        //// Returns a batch containing the last records.
-        ////
-        //// It returns the last documents, from the newest
-        //// to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
-        //// is exceeded.
+        #[doc = "/ Returns a batch containing the last records."]
+        #[doc = "/"]
+        #[doc = "/ It returns the last documents, from the newest"]
+        #[doc = "/ to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)"]
+        #[doc = "/ is exceeded."]
         async fn tail(
             &self,
             request: tonic::Request<super::TailRequest>,

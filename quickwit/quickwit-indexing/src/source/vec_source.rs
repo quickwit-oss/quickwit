@@ -27,6 +27,7 @@ use quickwit_config::VecSourceParams;
 use quickwit_metastore::checkpoint::{
     PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
+use serde_json::Value as JsonValue;
 use tracing::info;
 
 use crate::actors::DocProcessor;
@@ -113,7 +114,7 @@ impl Source for VecSource {
         format!("VecSource {{ source_id={} }}", self.source_id)
     }
 
-    fn observable_state(&self) -> serde_json::Value {
+    fn observable_state(&self) -> JsonValue {
         serde_json::json!({
             "next_item_idx": self.next_item_idx,
         })
@@ -122,6 +123,8 @@ impl Source for VecSource {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use quickwit_actors::{create_test_mailbox, Actor, Command, Universe};
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::metastore_for_test;
@@ -147,9 +150,11 @@ mod tests {
             SourceExecutionContext::for_test(
                 metastore,
                 "test-index",
+                PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                 },
             ),
@@ -202,9 +207,11 @@ mod tests {
             SourceExecutionContext::for_test(
                 metastore,
                 "test-index",
+                PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                 },
             ),
