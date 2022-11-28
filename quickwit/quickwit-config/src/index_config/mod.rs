@@ -35,7 +35,6 @@ use quickwit_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType,
     QuickwitJsonOptions,
 };
-use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 pub use serialize::load_index_config_from_user_config;
 
@@ -70,8 +69,6 @@ pub struct DocMapping {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingResources {
-    #[serde(default, rename = "num_threads", skip_serializing)]
-    pub __num_threads_deprecated: IgnoredAny, // DEPRECATED
     #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: Byte,
     /// Sets the maximum write IO throughput in bytes/sec for the merge and delete pipelines.
@@ -108,7 +105,6 @@ impl Default for IndexingResources {
         Self {
             heap_size: Self::default_heap_size(),
             max_merge_write_throughput: None,
-            __num_threads_deprecated: IgnoredAny,
         }
     }
 }
@@ -649,7 +645,6 @@ mod tests {
                     commit_timeout_secs: 42,
                     merge_policy: MergePolicyConfig::default(),
                     resources: IndexingResources {
-                        __num_threads_deprecated: serde::de::IgnoredAny,
                         ..Default::default()
                     },
                     ..Default::default()
