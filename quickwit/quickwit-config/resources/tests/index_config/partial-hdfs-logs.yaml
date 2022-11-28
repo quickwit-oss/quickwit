@@ -14,7 +14,6 @@ doc_mapping:
       fast: true
 
 indexing_settings:
-  sort_field: timestamp
   commit_timeout_secs: 42
   merge_policy:
     type: "stable_log"

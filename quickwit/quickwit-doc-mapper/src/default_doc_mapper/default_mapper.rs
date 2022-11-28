@@ -35,34 +35,10 @@ pub use crate::default_doc_mapper::QuickwitJsonOptions;
 use crate::doc_mapper::Partition;
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
-use crate::sort_by::{validate_sort_by_field_name, SortBy, SortOrder};
 use crate::{
     DocMapper, DocParsingError, ModeType, QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME,
     SOURCE_FIELD_NAME,
 };
-
-/// Specifies the name of the sort field and the sort order for an index.
-#[derive(Default, Serialize, Deserialize, Clone)]
-pub struct SortByConfig {
-    /// Sort field name in the index schema.
-    pub field_name: String,
-    /// Sort order of the field.
-    pub order: SortOrder,
-}
-
-impl From<SortByConfig> for SortBy {
-    fn from(sort_by_config: SortByConfig) -> Self {
-        if sort_by_config.field_name == "_score" {
-            return SortBy::Score {
-                order: sort_by_config.order,
-            };
-        }
-        SortBy::FastField {
-            field_name: sort_by_config.field_name,
-            order: sort_by_config.order,
-        }
-    }
-}
 
 /// Defines how an unmapped field should be handled.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -108,8 +84,6 @@ pub struct DefaultDocMapper {
     default_search_field_names: Vec<String>,
     /// Timestamp field name.
     timestamp_field_name: Option<String>,
-    /// Sort field name and order.
-    sort_by: SortBy,
     /// Root node of the field mapping tree.
     /// See [`MappingNode`] and [`MappingTree`].
     field_mappings: MappingNode,
@@ -209,15 +183,6 @@ fn resolve_timestamp_field(
             )
         }
         match timestamp_field_entry.field_type() {
-            FieldType::I64(options) => {
-                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
-                    bail!(
-                        "Timestamp field cannot be an array, please change your field `{}` from \
-                         an array to a single value.",
-                        timestamp_field_name
-                    )
-                }
-            }
             FieldType::Date(options) => {
                 if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
                     bail!(
@@ -229,26 +194,14 @@ fn resolve_timestamp_field(
             }
             _ => {
                 bail!(
-                    "Timestamp field must be of type i64, please change your field type `{}` to \
-                     i64.",
+                    "Timestamp field must be of type datetime, please change your field type `{}` \
+                     to datetime.",
                     timestamp_field_name
                 )
             }
         }
     }
     Ok(())
-}
-
-fn resolve_sort_field(
-    sort_by_config_opt: Option<SortByConfig>,
-    schema: &Schema,
-) -> anyhow::Result<SortBy> {
-    if let Some(sort_by_config) = sort_by_config_opt {
-        validate_sort_by_field_name(&sort_by_config.field_name, schema, None)?;
-        let sort_by: SortBy = sort_by_config.into();
-        return Ok(sort_by);
-    }
-    Ok(SortBy::DocId)
 }
 
 impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
@@ -288,7 +241,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         }
 
         resolve_timestamp_field(builder.timestamp_field.as_ref(), &schema)?;
-        let sort_by = resolve_sort_field(builder.sort_by, &schema)?;
 
         // Resolve tag fields
         let mut tag_field_names: BTreeSet<String> = Default::default();
@@ -311,7 +263,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             dynamic_field,
             default_search_field_names,
             timestamp_field_name: builder.timestamp_field,
-            sort_by,
             field_mappings,
             tag_field_names,
             required_fields,
@@ -323,17 +274,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 
 impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
     fn from(default_doc_mapper: DefaultDocMapper) -> Self {
-        let sort_by_config = match &default_doc_mapper.sort_by {
-            SortBy::DocId => None,
-            SortBy::FastField { field_name, order } => Some(SortByConfig {
-                field_name: field_name.clone(),
-                order: *order,
-            }),
-            SortBy::Score { order } => Some(SortByConfig {
-                field_name: "_score".to_string(),
-                order: *order,
-            }),
-        };
         let mode = default_doc_mapper.mode.mode_type();
         let dynamic_mapping = match &default_doc_mapper.mode {
             Mode::Dynamic(mapping_options) => Some(mapping_options.clone()),
@@ -343,7 +283,6 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             store_source: default_doc_mapper.source_field.is_some(),
             timestamp_field: default_doc_mapper.timestamp_field_name(),
             field_mappings: default_doc_mapper.field_mappings.into(),
-            sort_by: sort_by_config,
             tag_fields: default_doc_mapper.tag_field_names.into_iter().collect(),
             default_search_fields: default_doc_mapper.default_search_field_names,
             mode,
@@ -472,10 +411,6 @@ impl DocMapper for DefaultDocMapper {
         self.timestamp_field_name.clone()
     }
 
-    fn sort_by(&self) -> SortBy {
-        self.sort_by.clone()
-    }
-
     fn tag_field_names(&self) -> BTreeSet<String> {
         self.tag_field_names.clone()
     }
@@ -491,13 +426,12 @@ mod tests {
 
     use super::DefaultDocMapper;
     use crate::{
-        DefaultDocMapperBuilder, DocMapper, DocParsingError, SortBy, SortOrder, DYNAMIC_FIELD_NAME,
-        SOURCE_FIELD_NAME,
+        DefaultDocMapperBuilder, DocMapper, DocParsingError, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
     };
 
     fn example_json_doc_value() -> JsonValue {
         serde_json::json!({
-            "timestamp": 1586960586000i64,
+            "timestamp": 1586960586i64,
             "body": "20200415T072306-0700 INFO This is a great log",
             "response_date2": "2021-12-19T16:39:57+00:00",
             "response_date": "2021-12-19T16:39:57Z",
@@ -515,7 +449,7 @@ mod tests {
     }
 
     const EXPECTED_JSON_PATHS_AND_VALUES: &str = r#"{
-            "timestamp": [1586960586000],
+            "timestamp": ["2020-04-15T14:23:06Z"],
             "body": ["20200415T072306-0700 INFO This is a great log"],
             "response_date": ["2021-12-19T16:39:57Z"],
             "response_time": [2.3],
@@ -691,7 +625,7 @@ mod tests {
             "field_mappings": [
                 {
                     "name": "timestamp",
-                    "type": "array<i64>",
+                    "type": "array<datetime>",
                     "fast": true
                 }
             ]
@@ -853,99 +787,6 @@ mod tests {
             "Tags collection is not allowed on `bytes` fields.".to_string(),
         );
         Ok(())
-    }
-
-    #[test]
-    fn test_fail_to_build_doc_mapper_with_non_fast_sort_by_field() -> anyhow::Result<()> {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "sort_by": {
-                "field_name": "timestamp",
-                "order": "asc"
-            },
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "timestamp",
-                    "type": "i64"
-                }
-            ]
-        }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
-        let expected_msg = "Sort by field must be a fast field, please add the fast property to \
-                            your field `timestamp`."
-            .to_string();
-        assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
-        Ok(())
-    }
-
-    #[test]
-    fn test_fail_to_build_doc_mapper_with_text_sort_by_field() -> anyhow::Result<()> {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "sort_by": {
-                "field_name": "title",
-                "order": "asc"
-            },
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "title",
-                    "type": "text",
-                    "fast": true
-                }
-            ]
-        }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
-        let expected_msg =
-            "Sort by field on type text is currently not supported `title`.".to_string();
-        assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
-        Ok(())
-    }
-
-    #[test]
-    fn test_build_doc_mapper_with_sort_by_field_asc() {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "sort_by": {
-                "field_name": "timestamp",
-                "order": "asc"
-            },
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "timestamp",
-                    "type": "u64",
-                    "fast": true
-                }
-            ]
-        }"#;
-        let doc_mapper: DefaultDocMapper =
-            serde_json::from_str::<DefaultDocMapper>(doc_mapper).unwrap();
-        assert_eq!(
-            doc_mapper.sort_by(),
-            SortBy::FastField {
-                field_name: "timestamp".to_string(),
-                order: SortOrder::Asc
-            }
-        );
-    }
-
-    #[test]
-    fn test_build_doc_mapper_with_sort_by_doc_id_when_no_sort_field_is_specified() {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "timestamp",
-                    "type": "u64",
-                    "fast": true
-                }
-            ]
-        }"#;
-        let default_doc_mapper = serde_json::from_str::<DefaultDocMapper>(doc_mapper).unwrap();
-        assert_eq!(default_doc_mapper.sort_by(), SortBy::DocId);
     }
 
     // See #1132

@@ -42,7 +42,11 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
     doc_mapping:
       field_mappings:
         - name: ts
-          type: i64
+          type: datetime
+          input_formats:
+            - unix_timestamp
+          output_format: unix_timestamp_secs
+          precision: seconds
           fast: true
         - name: level
           type: text
@@ -77,11 +81,11 @@ const DEFAULT_QUICKWIT_CONFIG: &str = r#"
     grpc_listen_port: #grpc_listen_port
 "#;
 
-const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 2, "device": "rpi", "city": "tokio"}
-{"event": "bar", "level": "error", "ts": 3, "device": "rpi", "city": "paris"}
-{"event": "baz", "level": "warning", "ts": 9, "device": "fbit", "city": "london"}
-{"event": "buz", "level": "debug", "ts": 12, "device": "rpi", "city": "paris"}
-{"event": "biz", "level": "info", "ts": 13, "device": "fbit", "city": "paris"}"#;
+const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 72057597, "device": "rpi", "city": "tokio"}
+{"event": "bar", "level": "error", "ts": 72057598, "device": "rpi", "city": "paris"}
+{"event": "baz", "level": "warning", "ts": 72057604, "device": "fbit", "city": "london"}
+{"event": "buz", "level": "debug", "ts": 72057607, "device": "rpi", "city": "paris"}
+{"event": "biz", "level": "info", "ts": 72057608, "device": "fbit", "city": "paris"}"#;
 
 const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "https://wiki.com?id=10"}
 {"body": "bar", "title": "shimray", "url": "https://wiki.com?id=12"}

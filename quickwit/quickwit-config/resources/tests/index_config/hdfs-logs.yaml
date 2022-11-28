@@ -8,7 +8,7 @@ doc_mapping:
       type: u64
       fast: true
     - name: timestamp
-      type: i64
+      type: datetime
       fast: true
     - name: severity_text
       type: text
@@ -32,8 +32,6 @@ retention:
 
 indexing_settings:
   timestamp_field: timestamp
-  sort_field: timestamp
-  sort_order: asc
   commit_timeout_secs: 61
   split_num_docs_target: 10000001
   merge_policy:

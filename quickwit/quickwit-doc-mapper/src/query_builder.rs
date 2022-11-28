@@ -25,7 +25,6 @@ use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserE
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
 
-use crate::sort_by::validate_sort_by_field_name;
 use crate::{QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME, QUICKWIT_TOKENIZER_MANAGER};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
@@ -56,8 +55,8 @@ pub(crate) fn build_query(
         resolve_fields(&schema, &request.search_fields)?
     };
 
-    if let Some(sort_by_field) = request.sort_by_field.as_ref() {
-        validate_sort_by_field_name(sort_by_field, &schema, Some(&search_fields))?;
+    if let Some(sort_by_field) = &request.sort_by_field {
+        validate_sort_by_field(sort_by_field, &schema, Some(&search_fields))?;
     }
 
     let mut query_parser =
@@ -245,6 +244,53 @@ fn validate_requested_snippet_fields(
                     field_name,
                     other.value_type().name()
                 ))
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_sort_by_field(
+    field_name: &str,
+    schema: &Schema,
+    search_fields_opt: Option<&Vec<Field>>,
+) -> anyhow::Result<()> {
+    if field_name == "_score" {
+        return validate_sort_by_score(schema, search_fields_opt);
+    }
+    let sort_by_field = schema
+        .get_field(field_name)
+        .with_context(|| format!("Unknown sort by field: `{}`", field_name))?;
+    let sort_by_field_entry = schema.get_field_entry(sort_by_field);
+
+    if matches!(sort_by_field_entry.field_type(), FieldType::Str(_)) {
+        bail!(
+            "Sort by field on type text is currently not supported `{}`.",
+            field_name
+        )
+    }
+    if !sort_by_field_entry.is_fast() {
+        bail!(
+            "Sort by field must be a fast field, please add the fast property to your field `{}`.",
+            field_name
+        )
+    }
+
+    Ok(())
+}
+
+fn validate_sort_by_score(
+    schema: &Schema,
+    search_fields_opt: Option<&Vec<Field>>,
+) -> anyhow::Result<()> {
+    if let Some(fields) = search_fields_opt {
+        for field in fields {
+            if !schema.get_field_entry(*field).has_fieldnorms() {
+                bail!(
+                    "Fieldnorms for field `{}` is missing. Fieldnorms must be stored for the \
+                     field to compute the BM25 score of the documents.",
+                    schema.get_field_name(*field)
+                )
             }
         }
     }
