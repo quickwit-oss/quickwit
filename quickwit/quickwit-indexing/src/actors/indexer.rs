@@ -230,7 +230,6 @@ impl IndexerState {
                 .index_writer
                 .add_document(doc)
                 .context("Failed to add document.")?;
-            println!("EVAN");
             let mem_usage_after = indexed_split.index_writer.mem_usage() as u64;
             memory_usage_delta += mem_usage_after - mem_usage_before;
             ctx.record_progress();

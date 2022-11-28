@@ -255,8 +255,6 @@ async fn test_ingest_docs_cli() {
     assert!(cache_directory_path.read_dir().unwrap().next().is_none());
 }
 
-// TODO: reinstate this test when we aggregation on Date fields is supported.
-#[ignore]
 #[tokio::test]
 async fn test_cmd_search_aggregation() -> Result<()> {
     let index_id = append_random_suffix("test-search-cmd");
@@ -272,8 +270,13 @@ async fn test_cmd_search_aggregation() -> Result<()> {
       "range_buckets": {
         "range": {
           "field": "ts",
-          "ranges": [ { "to": 72057597f64 }, { "from": 72057597f64, "to": 72057600f64 }, {
-    "from": 72057600f64, "to": 72057604f64 }, { "from": 72057604f64 } ]         },
+          "ranges": [
+            { "to": 72057597000000f64 },
+            { "from": 72057597000000f64, "to": 72057600000000f64 },
+            { "from": 72057600000000f64, "to": 72057604000000f64 },
+            { "from": 72057604000000f64 },
+          ]
+        },
         "aggs": {
           "average_ts": {
             "avg": { "field": "ts" }
@@ -308,38 +311,44 @@ async fn test_cmd_search_aggregation() -> Result<()> {
           "range_buckets": {
             "buckets": [
               {
+                "key": "*-1972-04-13T23:59:57Z",
                 "doc_count": 0,
-                "key": "*-2",
                 "average_ts": {
-                  "value": null,
+                    "value": null,
                 },
-                "to": 2.0
+                "to": 72057597000000f64,
+                "to_as_string": "1972-04-13T23:59:57Z"
               },
               {
+                "key": "1972-04-13T23:59:57Z-1972-04-14T00:00:00Z",
                 "doc_count": 2,
-                "from": 2.0,
-                "key": "2-5",
                 "average_ts": {
-                  "value": 2.5,
+                  "value": 72057597500000f64,
                 },
-                "to": 5.0
+                "from": 72057597000000f64,
+                "to": 72057600000000f64,
+                "from_as_string": "1972-04-13T23:59:57Z",
+                "to_as_string": "1972-04-14T00:00:00Z"
               },
               {
+                "key": "1972-04-14T00:00:00Z-1972-04-14T00:00:04Z",
                 "doc_count": 0,
-                "from": 5.0,
-                "key": "5-9",
                 "average_ts": {
                   "value": null,
                 },
-                "to": 9.0
+                "from": 72057600000000f64,
+                "to": 72057604000000f64,
+                "from_as_string": "1972-04-14T00:00:00Z",
+                "to_as_string": "1972-04-14T00:00:04Z"
               },
               {
+                "key": "1972-04-14T00:00:04Z-*",
                 "doc_count": 3,
-                "from": 9.0,
-                "key": "9-*",
                 "average_ts": {
-                  "value": 11.333333333333334
-                }
+                  "value": 72057606333333.33f64,
+                },
+                "from": 72057604000000f64,
+                "from_as_string": "1972-04-14T00:00:04Z"
               }
             ]
           }
