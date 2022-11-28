@@ -12,8 +12,7 @@ Quickwit compiles to a single binary, we provide different methods to install it
 
 Quickwit is officially only supported for Linux. Freebsd and MacOS are not officially supported, but should work as well.
 
-Supported CPU architectures are x86-64 and ARMv7.
-No special instruction set is required, but on x86-64 SSE3 is recommended.
+Quickwit only supplies binaries for x86-64. No special instruction set is required, but on x86-64 SSE3 is recommended. Quickwit compiles on Armv8, but we do not publish binaries for this platform at the moment and its usage is experimental.
 
 ## Download
 
