@@ -673,12 +673,12 @@ impl Metastore for PostgresqlMetastore {
         sqlx::query(r#"
             INSERT INTO splits
                 (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, split_state, index_id)
-            SELECT *, $7, $8 FROM UNNEST ($1, $2, $3, $4, $5, $6);
+            SELECT *, $7, $8 FROM UNNEST ($1, $2, $3, ARRAY(SELECT * FROM json_array_elements_text($4::json)::text[][]), $5, $6);
             "#)
             .bind(split_ids)
             .bind(time_range_start_list)
             .bind(time_range_end_list)
-            .bind(tags_list)
+            .bind(sqlx::types::Json(tags_list))
             .bind(split_metadata_json_list)
             .bind(delete_opstamps)
             .bind(index_id)
