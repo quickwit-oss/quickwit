@@ -255,7 +255,7 @@ async fn test_ingest_docs_cli() {
     assert!(cache_directory_path.read_dir().unwrap().next().is_none());
 }
 
-//TODO: reinstate this test when we aggregation on Date fields is supported.
+// TODO: reinstate this test when we aggregation on Date fields is supported.
 #[ignore]
 #[tokio::test]
 async fn test_cmd_search_aggregation() -> Result<()> {
@@ -273,7 +273,7 @@ async fn test_cmd_search_aggregation() -> Result<()> {
         "range": {
           "field": "ts",
           "ranges": [ { "to": 72057597f64 }, { "from": 72057597f64, "to": 72057600f64 }, {
-"from": 72057600f64, "to": 72057604f64 }, { "from": 72057604f64 } ]         },
+    "from": 72057600f64, "to": 72057604f64 }, { "from": 72057604f64 } ]         },
         "aggs": {
           "average_ts": {
             "avg": { "field": "ts" }
