@@ -344,9 +344,8 @@ pub async fn delete_splits_with_files(
 mod tests {
     use std::time::Duration;
 
-    use quickwit_metastore::{
-        metastore_for_test, IndexMetadata, ListSplitsQuery, SplitMetadata, SplitState,
-    };
+    use quickwit_config::IndexConfig;
+    use quickwit_metastore::{metastore_for_test, ListSplitsQuery, SplitMetadata, SplitState};
     use quickwit_storage::storage_for_test;
 
     use crate::run_garbage_collect;
@@ -358,8 +357,8 @@ mod tests {
 
         let index_id = "test-run-gc--index";
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
-        metastore.create_index(index_metadata).await.unwrap();
+        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        metastore.create_index(index_config).await.unwrap();
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
@@ -416,8 +415,8 @@ mod tests {
 
         let index_id = "test-run-gc--index";
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
-        metastore.create_index(index_metadata).await.unwrap();
+        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        metastore.create_index(index_config).await.unwrap();
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {

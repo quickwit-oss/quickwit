@@ -199,6 +199,7 @@ impl FileBackedIndex {
         &mut self,
         split_ids: &[&str],
         deletable_states: &[SplitState],
+        return_error_on_splits_not_found: bool,
     ) -> MetastoreResult<bool> {
         let mut is_modified = false;
         let mut split_not_found_ids = Vec::new();
@@ -228,9 +229,18 @@ impl FileBackedIndex {
             is_modified = true;
         }
         if !split_not_found_ids.is_empty() {
-            return Err(MetastoreError::SplitsDoNotExist {
-                split_ids: split_not_found_ids,
-            });
+            if return_error_on_splits_not_found {
+                return Err(MetastoreError::SplitsDoNotExist {
+                    split_ids: split_not_found_ids,
+                });
+            } else {
+                warn!(
+                    index_id=%self.index_id(),
+                    split_ids=?PrettySample::new(&split_not_found_ids, 5),
+                    "{} splits were not found and could not be marked for deletion.",
+                    split_not_found_ids.len()
+                );
+            }
         }
         if !non_deletable_split_ids.is_empty() {
             return Err(MetastoreError::SplitsNotDeletable {
@@ -302,7 +312,7 @@ impl FileBackedIndex {
             self.metadata.checkpoint.try_apply_delta(checkpoint_delta)?;
         }
         self.mark_splits_as_published_helper(split_ids)?;
-        self.mark_splits_for_deletion(replaced_split_ids, &[SplitState::Published])?;
+        self.mark_splits_for_deletion(replaced_split_ids, &[SplitState::Published], true)?;
         Ok(())
     }
 

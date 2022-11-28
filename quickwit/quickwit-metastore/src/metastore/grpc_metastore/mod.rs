@@ -32,7 +32,7 @@ use itertools::Itertools;
 use quickwit_cluster::ClusterMember;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::SourceConfig;
+use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
 use quickwit_proto::metastore_api::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
@@ -178,16 +178,16 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     /// Creates an index.
-    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
-        let index_metadata_serialized_json =
-            serde_json::to_string(&index_metadata).map_err(|error| {
+    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()> {
+        let index_config_serialized_json =
+            serde_json::to_string(&index_config).map_err(|error| {
                 MetastoreError::JsonSerializeError {
-                    struct_name: "IndexMetadata".to_string(),
+                    struct_name: "IndexConfig".to_string(),
                     message: error.to_string(),
                 }
             })?;
         let request = CreateIndexRequest {
-            index_metadata_serialized_json,
+            index_config_serialized_json,
         };
         self.underlying
             .clone()

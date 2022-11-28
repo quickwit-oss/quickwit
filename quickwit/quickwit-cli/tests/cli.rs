@@ -54,7 +54,6 @@ async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
         overwrite: false,
         assume_yes: true,
     };
-
     create_index_cli(args).await
 }
 

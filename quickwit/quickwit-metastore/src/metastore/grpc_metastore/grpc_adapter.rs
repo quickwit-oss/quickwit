@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use itertools::Itertools;
+use quickwit_config::IndexConfig;
 use quickwit_proto::metastore_api::metastore_api_service_server::{self as grpc};
 use quickwit_proto::metastore_api::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
@@ -36,7 +37,7 @@ use quickwit_proto::metastore_api::{
 use quickwit_proto::{set_parent_span_from_request_metadata, tonic};
 use tracing::instrument;
 
-use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreError};
+use crate::{ListSplitsQuery, Metastore, MetastoreError};
 
 #[allow(missing_docs)]
 #[derive(Clone)]
@@ -57,16 +58,15 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
     ) -> Result<tonic::Response<CreateIndexResponse>, tonic::Status> {
         set_parent_span_from_request_metadata(request.metadata());
         let create_index_request = request.into_inner();
-        let index_metadata = serde_json::from_str::<IndexMetadata>(
-            &create_index_request.index_metadata_serialized_json,
-        )
-        .map_err(|error| MetastoreError::JsonDeserializeError {
-            struct_name: "IndexMetadata".to_string(),
-            message: error.to_string(),
-        })?;
+        let index_config =
+            serde_json::from_str::<IndexConfig>(&create_index_request.index_config_serialized_json)
+                .map_err(|error| MetastoreError::JsonDeserializeError {
+                    struct_name: "IndexConfig".to_string(),
+                    message: error.to_string(),
+                })?;
         let create_index_reply = self
             .0
-            .create_index(index_metadata)
+            .create_index(index_config)
             .await
             .map(|_| CreateIndexResponse {})?;
         Ok(tonic::Response::new(create_index_reply))

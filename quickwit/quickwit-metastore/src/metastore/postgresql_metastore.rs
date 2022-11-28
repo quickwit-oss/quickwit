@@ -29,7 +29,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_common::PrettySample;
-use quickwit_config::SourceConfig;
+use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use sqlx::migrate::Migrator;
@@ -539,8 +539,9 @@ impl Metastore for PostgresqlMetastore {
             .collect()
     }
 
-    #[instrument(skip(self), fields(index_id=index_metadata.index_id()))]
-    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
+    #[instrument(skip(self), fields(index_id=&index_config.index_id))]
+    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()> {
+        let index_metadata = IndexMetadata::new(index_config);
         let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
             MetastoreError::JsonSerializeError {
                 struct_name: "IndexMetadata".to_string(),
@@ -548,7 +549,7 @@ impl Metastore for PostgresqlMetastore {
             }
         })?;
         sqlx::query("INSERT INTO indexes (index_id, index_metadata_json) VALUES ($1, $2)")
-            .bind(index_metadata.index_id())
+            .bind(&index_metadata.index_id())
             .bind(&index_metadata_json)
             .execute(&self.connection_pool)
             .await
@@ -709,30 +710,68 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        run_with_tx!(self.connection_pool, tx, {
-            let marked_split_ids: Vec<String> = mark_splits_for_deletion(
-                tx,
-                index_id,
-                split_ids,
-                &[
-                    SplitState::Staged.as_str(),
-                    SplitState::Published.as_str(),
-                    SplitState::MarkedForDeletion.as_str(),
-                ],
+        const MARK_SPLITS_FOR_DELETION_QUERY: &str = r#"
+            -- Select the splits to update, regardless of their state.
+            -- The left join make it possible to identify the splits that do not exist.
+            WITH input_splits AS (
+                SELECT input_splits.split_id, splits.split_state
+                FROM UNNEST($2) AS input_splits(split_id)
+                LEFT JOIN (
+                    SELECT split_id, split_state
+                    FROM splits
+                    WHERE
+                        index_id = $1
+                        AND split_id = ANY($2)
+                    FOR UPDATE
+                    ) AS splits
+                USING (split_id)
+            ),
+            -- Mark the staged and published splits for deletion.
+            marked_splits AS (
+                UPDATE splits
+                SET
+                    split_state = 'MarkedForDeletion',
+                    update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                FROM input_splits
+                WHERE
+                    splits.index_id = $1
+                    AND splits.split_id = input_splits.split_id
+                    AND splits.split_state IN ('Staged', 'Published')
             )
-            .await?;
+            -- Report the outcome of the update query.
+            SELECT
+                COUNT(split_state),
+                COUNT(1) FILTER (WHERE split_state IN ('Staged', 'Published')),
+                COALESCE(ARRAY_AGG(split_id) FILTER (WHERE split_state IS NULL), ARRAY[]::TEXT[])
+                FROM input_splits
+        "#;
+        let (num_found_splits, num_marked_splits, not_found_split_ids): (i64, i64, Vec<String>) =
+            sqlx::query_as(MARK_SPLITS_FOR_DELETION_QUERY)
+                .bind(index_id)
+                .bind(split_ids)
+                .fetch_one(&self.connection_pool)
+                .await
+                .map_err(|error| convert_sqlx_err(index_id, error))?;
 
-            if marked_split_ids.len() == split_ids.len() {
-                return Ok(());
-            }
-            get_splits_with_invalid_state(tx, index_id, split_ids, &marked_split_ids).await?;
-
-            let err_msg = format!("Failed to mark splits for deletion for index {index_id}.");
-            Err(MetastoreError::InternalError {
-                message: err_msg,
-                cause: "".to_string(),
-            })
-        })?;
+        if num_found_splits == 0 && index_opt(&self.connection_pool, index_id).await?.is_none() {
+            return Err(MetastoreError::IndexDoesNotExist {
+                index_id: index_id.to_string(),
+            });
+        }
+        info!(
+            index_id=%index_id,
+            "Marked {} splits for deletion, among which {} were newly marked.",
+            split_ids.len() - not_found_split_ids.len(),
+            num_marked_splits
+        );
+        if !not_found_split_ids.is_empty() {
+            warn!(
+                index_id=%index_id,
+                split_ids=?PrettySample::new(&not_found_split_ids, 5),
+                "{} splits were not found and could not be marked for deletion.",
+                not_found_split_ids.len()
+            );
+        }
         Ok(())
     }
 
