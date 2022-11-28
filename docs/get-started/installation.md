@@ -8,6 +8,13 @@ import TabItem from '@theme/TabItem';
 
 Quickwit compiles to a single binary, we provide different methods to install it.
 
+## Prerequisites
+
+Quickwit is officially only supported for Linux. Freebsd and MacOS are not officially supported, but should work as well.
+
+Supported CPU architectures are x86-64 and ARMv7.
+No special instruction set is required, but on x86-64 SSE3 is recommended.
+
 ## Download
 
 Version: 0.3.1 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.3.1)
