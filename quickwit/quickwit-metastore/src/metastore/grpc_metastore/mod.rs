@@ -182,7 +182,7 @@ impl Metastore for MetastoreGrpcClient {
         let index_config_serialized_json =
             serde_json::to_string(&index_config).map_err(|error| {
                 MetastoreError::JsonSerializeError {
-                    struct_name: "IndexMetadata".to_string(),
+                    struct_name: "IndexConfig".to_string(),
                     message: error.to_string(),
                 }
             })?;

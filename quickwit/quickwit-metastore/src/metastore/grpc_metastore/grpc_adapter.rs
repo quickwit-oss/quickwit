@@ -61,7 +61,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let index_config =
             serde_json::from_str::<IndexConfig>(&create_index_request.index_config_serialized_json)
                 .map_err(|error| MetastoreError::JsonDeserializeError {
-                    struct_name: "IndexMetadata".to_string(),
+                    struct_name: "IndexConfig".to_string(),
                     message: error.to_string(),
                 })?;
         let create_index_reply = self
