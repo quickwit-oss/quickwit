@@ -32,10 +32,10 @@ use serialize::VersionedSourceConfig;
 use crate::{is_false, ConfigFormat, TestableForRegression};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
-pub const CLI_INGEST_SOURCE_ID: &str = "_cli-ingest-source";
+pub const CLI_INGEST_SOURCE_ID: &str = "_ingest-cli-source";
 
 /// Reserved source ID used for Quickwit ingest API.
-pub const INGEST_API_SOURCE_ID: &str = "_ingest-api";
+pub const INGEST_API_SOURCE_ID: &str = "_ingest-api-source";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(into = "VersionedSourceConfig")]
@@ -70,6 +70,7 @@ impl SourceConfig {
             SourceParams::Vec(_) => "vec",
             SourceParams::Void(_) => "void",
             SourceParams::IngestApi => "ingest-api",
+            SourceParams::IngestCli => "ingest-cli",
         }
     }
 
@@ -82,6 +83,7 @@ impl SourceConfig {
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
             SourceParams::IngestApi => serde_json::to_value(()),
+            SourceParams::IngestCli => serde_json::to_value(()),
         }
         .unwrap()
     }
@@ -109,7 +111,7 @@ impl SourceConfig {
             source_id: CLI_INGEST_SOURCE_ID.to_string(),
             num_pipelines: 1,
             enabled: true,
-            source_params: SourceParams::void(),
+            source_params: SourceParams::IngestCli,
         }
     }
 }
@@ -149,6 +151,8 @@ pub enum SourceParams {
     Void(VoidSourceParams),
     #[serde(rename = "ingest-api")]
     IngestApi,
+    #[serde(rename = "ingest-cli")]
+    IngestCli,
 }
 
 impl SourceParams {
