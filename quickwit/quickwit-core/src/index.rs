@@ -123,11 +123,11 @@ impl IndexService {
             }
         }
 
-        // Add default ingest-api source config.
-        let ingest_api_source_config = SourceConfig::ingest_api_default();
+        // Add default ingest-api & cli-ingest sources config.
         let index_id = index_config.index_id.clone();
         let mut index_metadata = IndexMetadata::new(index_config);
-        index_metadata.add_source(ingest_api_source_config)?;
+        index_metadata.add_source(SourceConfig::ingest_api_default())?;
+        index_metadata.add_source(SourceConfig::cli_ingest_source())?;
 
         self.metastore.create_index(index_metadata).await?;
         let index_metadata = self.metastore.index_metadata(&index_id).await?;

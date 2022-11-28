@@ -102,6 +102,16 @@ impl SourceConfig {
             source_params: SourceParams::IngestApi,
         }
     }
+
+    /// Creates the default cli-ingest source config.
+    pub fn cli_ingest_source() -> SourceConfig {
+        SourceConfig {
+            source_id: CLI_INGEST_SOURCE_ID.to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::stdin(),
+        }
+    }
 }
 
 impl TestableForRegression for SourceConfig {

@@ -27,7 +27,9 @@ use quickwit_actors::{
     Observation,
 };
 use quickwit_common::fs::get_cache_directory_path;
-use quickwit_config::{build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig};
+use quickwit_config::{
+    build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, CLI_INGEST_SOURCE_ID,
+};
 use quickwit_ingest_api::QUEUES_DIR_NAME;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -238,6 +240,11 @@ impl IndexingService {
         for source_config in sources.values() {
             // Skip disabled source
             if !source_config.enabled {
+                continue;
+            }
+
+            // Skip cli source
+            if source_config.source_id == CLI_INGEST_SOURCE_ID {
                 continue;
             }
 

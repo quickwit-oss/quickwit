@@ -23,7 +23,9 @@ use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::{validate_identifier, SourceConfig, SourceParams, INGEST_API_SOURCE_ID};
+use quickwit_config::{
+    validate_identifier, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
+};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
@@ -351,7 +353,7 @@ async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
-    if args.source_id == INGEST_API_SOURCE_ID {
+    if args.source_id == INGEST_API_SOURCE_ID || args.source_id == CLI_INGEST_SOURCE_ID {
         bail!(
             "Source `{}` is managed by Quickwit, you cannot enable or disable a source managed by \
              Quickwit.",
@@ -377,7 +379,7 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
         .resolve(&config.metastore_uri)
         .await?;
 
-    if args.source_id == INGEST_API_SOURCE_ID {
+    if args.source_id == INGEST_API_SOURCE_ID || args.source_id == CLI_INGEST_SOURCE_ID {
         bail!(
             "Source `{}` is managed by Quickwit, you cannot delete a source managed by Quickwit.",
             args.source_id
