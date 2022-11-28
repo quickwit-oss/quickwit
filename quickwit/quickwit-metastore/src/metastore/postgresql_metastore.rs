@@ -657,7 +657,7 @@ impl Metastore for PostgresqlMetastore {
                 split_id,
                 time_range_start,
                 time_range_end,
-                ARRAY(SELECT json_array_elements_text(tags_json)) as tags,
+                ARRAY(SELECT json_array_elements_text(tags_json::json)) as tags,
                 split_metadata_json,
                 delete_opstamp,
                 $7 as split_state,
