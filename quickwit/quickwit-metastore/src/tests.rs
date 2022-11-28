@@ -36,9 +36,7 @@ pub mod test_suite {
     use crate::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
-    use crate::{
-        IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
-    };
+    use crate::{ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState};
 
     #[async_trait]
     pub trait DefaultForTest {
@@ -2701,7 +2699,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let index_id = "stage-splits-bulk";
         let index_uri = format!("ram://indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+        let index_config = IndexConfig::for_test(index_id, &index_uri);
 
         let split_id_1 = "stage-splits-bulk-1";
         let split_metadata_1 = SplitMetadata {
@@ -2731,10 +2729,7 @@ pub mod test_suite {
             .unwrap_err();
         assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
 
-        metastore
-            .create_index(index_metadata.clone())
-            .await
-            .unwrap();
+        metastore.create_index(index_config.clone()).await.unwrap();
 
         // Stage a split on an index
         metastore
