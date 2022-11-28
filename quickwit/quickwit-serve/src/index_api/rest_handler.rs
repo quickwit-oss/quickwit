@@ -371,10 +371,11 @@ mod tests {
     async fn test_rest_create_delete_index_and_source() {
         let metastore = build_metastore_for_test().await;
         let index_service = IndexService::new(metastore.clone(), StorageUriResolver::for_test());
-        let index_management_handler = super::index_management_handlers(
-            Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
-        );
+        let mut quickwit_config = QuickwitConfig::for_test();
+        quickwit_config.default_index_root_uri =
+            Uri::from_well_formed("file:///default-index-root-uri");
+        let index_management_handler =
+            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config));
         let resp = warp::test::request()
             .path("/indexes")
             .method("POST")
