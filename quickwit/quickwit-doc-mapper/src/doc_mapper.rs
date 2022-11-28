@@ -30,7 +30,7 @@ use tantivy::{Document, Term};
 
 pub type Partition = u64;
 
-use crate::{DocParsingError, QueryParserError, SortBy};
+use crate::{DocParsingError, QueryParserError};
 
 /// The `DocMapper` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
@@ -77,11 +77,6 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
         split_schema: Schema,
         request: &SearchRequest,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError>;
-
-    /// Returns the default sort
-    fn sort_by(&self) -> SortBy {
-        SortBy::DocId
-    }
 
     /// Returns the timestamp field.
     /// Considering schema evolution, splits within an index can have different schema

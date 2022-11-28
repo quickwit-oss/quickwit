@@ -270,7 +270,12 @@ async fn test_cmd_search_aggregation() -> Result<()> {
       "range_buckets": {
         "range": {
           "field": "ts",
-          "ranges": [ { "to": 2f64 }, { "from": 2f64, "to": 5f64 }, { "from": 5f64, "to": 9f64 }, { "from": 9f64 } ]
+          "ranges": [
+            { "to": 72057597000000f64 },
+            { "from": 72057597000000f64, "to": 72057600000000f64 },
+            { "from": 72057600000000f64, "to": 72057604000000f64 },
+            { "from": 72057604000000f64 },
+          ]
         },
         "aggs": {
           "average_ts": {
@@ -306,38 +311,44 @@ async fn test_cmd_search_aggregation() -> Result<()> {
           "range_buckets": {
             "buckets": [
               {
+                "key": "*-1972-04-13T23:59:57Z",
                 "doc_count": 0,
-                "key": "*-2",
                 "average_ts": {
-                  "value": null,
+                    "value": null,
                 },
-                "to": 2.0
+                "to": 72057597000000f64,
+                "to_as_string": "1972-04-13T23:59:57Z"
               },
               {
+                "key": "1972-04-13T23:59:57Z-1972-04-14T00:00:00Z",
                 "doc_count": 2,
-                "from": 2.0,
-                "key": "2-5",
                 "average_ts": {
-                  "value": 2.5,
+                  "value": 72057597500000f64,
                 },
-                "to": 5.0
+                "from": 72057597000000f64,
+                "to": 72057600000000f64,
+                "from_as_string": "1972-04-13T23:59:57Z",
+                "to_as_string": "1972-04-14T00:00:00Z"
               },
               {
+                "key": "1972-04-14T00:00:00Z-1972-04-14T00:00:04Z",
                 "doc_count": 0,
-                "from": 5.0,
-                "key": "5-9",
                 "average_ts": {
                   "value": null,
                 },
-                "to": 9.0
+                "from": 72057600000000f64,
+                "to": 72057604000000f64,
+                "from_as_string": "1972-04-14T00:00:00Z",
+                "to_as_string": "1972-04-14T00:00:04Z"
               },
               {
+                "key": "1972-04-14T00:00:04Z-*",
                 "doc_count": 3,
-                "from": 9.0,
-                "key": "9-*",
                 "average_ts": {
-                  "value": 11.333333333333334
-                }
+                  "value": 72057606333333.33f64,
+                },
+                "from": 72057604000000f64,
+                "from_as_string": "1972-04-14T00:00:04Z"
               }
             ]
           }
@@ -377,7 +388,7 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
     let hit = &search_response.hits[0];
     assert_eq!(
         serde_json::from_str::<Value>(&hit.json).unwrap(),
-        json!({"event": "baz", "ts": 9})
+        json!({"event": "baz", "ts": 72057604})
     );
     assert_eq!(
         serde_json::from_str::<Value>(hit.snippet.as_ref().unwrap()).unwrap(),
@@ -767,7 +778,7 @@ async fn test_all_local_index() {
     .text()
     .await
     .unwrap();
-    assert_eq!(search_stream_response, "2\n13\n");
+    assert_eq!(search_stream_response, "72057597000000\n72057608000000\n");
 
     service_task.abort();
 
