@@ -36,7 +36,9 @@ pub mod test_suite {
     use crate::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
-    use crate::{ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState};
+    use crate::{
+        IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
+    };
 
     #[async_trait]
     pub trait DefaultForTest {
