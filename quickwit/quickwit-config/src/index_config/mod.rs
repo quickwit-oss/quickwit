@@ -20,7 +20,7 @@
 mod serialize;
 
 use std::collections::BTreeSet;
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -65,7 +65,7 @@ pub struct DocMapping {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub partition_key: String,
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
-    pub max_num_partitions: NonZeroU64,
+    pub max_num_partitions: NonZeroU32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -413,7 +413,7 @@ impl TestableForRegression for IndexConfig {
             mode: ModeType::Dynamic,
             dynamic_mapping: None,
             partition_key: "tenant".to_string(),
-            max_num_partitions: NonZeroU64::new(20).unwrap(),
+            max_num_partitions: NonZeroU32::new(100).unwrap(),
             timestamp_field: Some("timestamp".to_string()),
         };
         let retention_policy = Some(RetentionPolicy::new(

@@ -48,7 +48,7 @@
           "type": "text"
         }
       ],
-      "max_num_partitions": 20,
+      "max_num_partitions": 100,
       "mode": "dynamic",
       "partition_key": "tenant",
       "store_source": true,

@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
@@ -58,7 +58,7 @@ pub struct DefaultDocMapperBuilder {
     pub partition_key: String,
     /// Maximum number of partitions.
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
-    pub max_num_partitions: NonZeroU64,
+    pub max_num_partitions: NonZeroU32,
     /// Defines the indexing mode.
     #[serde(default)]
     pub mode: ModeType,
