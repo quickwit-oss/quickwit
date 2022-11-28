@@ -24,9 +24,8 @@ use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    validate_identifier, ConfigFormat, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
+    validate_identifier, ConfigFormat, SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
-use quickwit_indexing::check_source_connectivity;
 use quickwit_core::IndexService;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};

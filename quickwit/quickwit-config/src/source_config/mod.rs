@@ -109,7 +109,7 @@ impl SourceConfig {
             source_id: CLI_INGEST_SOURCE_ID.to_string(),
             num_pipelines: 1,
             enabled: true,
-            source_params: SourceParams::stdin(),
+            source_params: SourceParams::void(),
         }
     }
 }
