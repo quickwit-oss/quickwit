@@ -19,8 +19,6 @@ schedule = "daily"
 
 [indexing_settings]
 timestamp_field = "timestamp"
-sort_field = "timestamp"
-sort_order = "asc"
 commit_timeout_secs = 61
 split_num_docs_target = 10_000_001
 

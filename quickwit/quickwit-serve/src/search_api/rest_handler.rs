@@ -23,8 +23,7 @@ use std::sync::Arc;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
-use quickwit_doc_mapper::{SortByField, SortOrder};
-use quickwit_proto::{OutputFormat, ServiceError, SortOrder as ProtoSortOrder};
+use quickwit_proto::{OutputFormat, ServiceError, SortOrder};
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer};
 use serde_json::Value as JsonValue;
@@ -35,10 +34,31 @@ use warp::{reply, Filter, Rejection, Reply};
 
 use crate::{with_arg, Format};
 
+#[derive(Debug, Eq, PartialEq, Deserialize)]
+struct SortByField {
+    /// Name of the field to sort by.
+    pub field_name: String,
+    /// Order to sort by. A usual top-k search implies a descending order.
+    pub order: SortOrder,
+}
+
+impl From<String> for SortByField {
+    fn from(string: String) -> Self {
+        let (field_name, order) = if let Some(rest) = string.strip_prefix('+') {
+            (rest.trim().to_string(), SortOrder::Asc)
+        } else if let Some(rest) = string.strip_prefix('-') {
+            (rest.trim().to_string(), SortOrder::Desc)
+        } else {
+            (string.trim().to_string(), SortOrder::Asc)
+        };
+        SortByField { field_name, order }
+    }
+}
+
 fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
 where D: Deserializer<'de> {
     let string = String::deserialize(deserializer)?;
-    Ok(Some(string.into()))
+    Ok(Some(SortByField::from(string)))
 }
 
 fn default_max_hits() -> u64 {
@@ -78,7 +98,7 @@ where D: Deserializer<'de> {
 
 /// This struct represents the QueryString passed to
 /// the rest API.
-#[derive(Deserialize, Debug, Eq, PartialEq, Default)]
+#[derive(Debug, Default, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
@@ -119,11 +139,10 @@ pub struct SearchRequestQueryString {
 
 fn get_proto_search_by(search_request: &SearchRequestQueryString) -> (Option<i32>, Option<String>) {
     if let Some(sort_by_field) = &search_request.sort_by_field {
-        let sort_order = match sort_by_field.order {
-            SortOrder::Asc => ProtoSortOrder::Asc as i32,
-            SortOrder::Desc => ProtoSortOrder::Desc as i32,
-        };
-        (Some(sort_order), Some(sort_by_field.field_name.to_string()))
+        (
+            Some(sort_by_field.order as i32),
+            Some(sort_by_field.field_name.clone()),
+        )
     } else {
         (None, None)
     }

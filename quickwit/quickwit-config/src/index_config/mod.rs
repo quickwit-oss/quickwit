@@ -33,7 +33,7 @@ use humantime::parse_duration;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType,
-    QuickwitJsonOptions, SortBy, SortByConfig, SortOrder,
+    QuickwitJsonOptions,
 };
 use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
@@ -117,10 +117,6 @@ impl Default for IndexingResources {
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
     pub timestamp_field: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_field: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_order: Option<SortOrder>,
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
     #[serde(default = "IndexingSettings::default_docstore_compression_level")]
@@ -162,14 +158,6 @@ impl IndexingSettings {
         10_000_000
     }
 
-    pub fn sort_by(&self) -> SortBy {
-        if let Some(field_name) = self.sort_field.clone() {
-            let order = self.sort_order.unwrap_or_default();
-            return SortBy::FastField { field_name, order };
-        }
-        SortBy::DocId
-    }
-
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         Self {
@@ -183,8 +171,6 @@ impl Default for IndexingSettings {
     fn default() -> Self {
         Self {
             timestamp_field: None,
-            sort_field: None,
-            sort_order: None,
             commit_timeout_secs: Self::default_commit_timeout_secs(),
             docstore_blocksize: Self::default_docstore_blocksize(),
             docstore_compression_level: Self::default_docstore_compression_level(),
@@ -361,8 +347,6 @@ impl IndexConfig {
         let doc_mapping = serde_json::from_str(doc_mapping_json).unwrap();
         let indexing_settings = IndexingSettings {
             timestamp_field: Some("timestamp".to_string()),
-            sort_field: Some("timestamp".to_string()),
-            sort_order: Some(SortOrder::Desc),
             resources: IndexingResources::for_test(),
             ..Default::default()
         };
@@ -452,8 +436,6 @@ impl TestableForRegression for IndexConfig {
         };
         let indexing_settings = IndexingSettings {
             timestamp_field: Some("timestamp".to_string()),
-            sort_field: Some("timestamp".to_string()),
-            sort_order: Some(SortOrder::Asc),
             commit_timeout_secs: 301,
             split_num_docs_target: 10_000_001,
             merge_policy,
@@ -505,19 +487,10 @@ pub fn build_doc_mapper(
     search_settings: &SearchSettings,
     indexing_settings: &IndexingSettings,
 ) -> anyhow::Result<Arc<dyn DocMapper>> {
-    let sort_by = match indexing_settings.sort_by() {
-        SortBy::DocId => None,
-        SortBy::FastField { field_name, order } => Some(SortByConfig { field_name, order }),
-        SortBy::Score { order } => Some(SortByConfig {
-            field_name: "_score".to_string(),
-            order,
-        }),
-    };
     let builder = DefaultDocMapperBuilder {
         store_source: doc_mapping.store_source,
         default_search_fields: search_settings.default_search_fields.clone(),
         timestamp_field: indexing_settings.timestamp_field.clone(),
-        sort_by,
         field_mappings: doc_mapping.field_mappings.clone(),
         tag_fields: doc_mapping.tag_fields.iter().cloned().collect(),
         mode: doc_mapping.mode,
@@ -587,14 +560,6 @@ mod tests {
         assert_eq!(
             index_config.indexing_settings.timestamp_field.unwrap(),
             "timestamp"
-        );
-        assert_eq!(
-            index_config.indexing_settings.sort_field.unwrap(),
-            "timestamp"
-        );
-        assert_eq!(
-            index_config.indexing_settings.sort_order.unwrap(),
-            SortOrder::Asc
         );
         assert_eq!(index_config.indexing_settings.commit_timeout_secs, 61);
         assert_eq!(
@@ -681,7 +646,6 @@ mod tests {
             assert_eq!(
                 index_config.indexing_settings,
                 IndexingSettings {
-                    sort_field: Some("timestamp".to_string()),
                     commit_timeout_secs: 42,
                     merge_policy: MergePolicyConfig::default(),
                     resources: IndexingResources {

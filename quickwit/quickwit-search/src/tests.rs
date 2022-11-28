@@ -336,8 +336,6 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         "#;
     let indexing_settings_json = r#"{
             "timestamp_field": "ts",
-            "sort_field": "ts",
-            "sort_order": "desc"
         }"#;
     let test_sandbox = TestSandbox::create(
         index_id,
@@ -363,6 +361,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 15,
         start_offset: 0,
+        sort_by_field: Some("ts".to_string()),
+        sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -385,6 +385,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 25,
         start_offset: 0,
+        sort_by_field: Some("ts".to_string()),
+        sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -407,6 +409,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         end_timestamp: None,
         max_hits: 25,
         start_offset: 0,
+        sort_by_field: Some("ts".to_string()),
+        sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -465,8 +469,6 @@ async fn single_node_search_sort_by_field(
 
     let indexing_settings_json = r#"{
             "timestamp_field": "ts",
-            "sort_field": "ts",
-            "sort_order": "desc"
         }"#;
     let test_sandbox = TestSandbox::create(
         &index_id,

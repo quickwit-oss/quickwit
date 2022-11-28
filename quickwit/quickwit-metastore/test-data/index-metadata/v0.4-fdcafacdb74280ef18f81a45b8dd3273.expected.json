@@ -73,8 +73,6 @@
       "resources": {
         "heap_size": 3
       },
-      "sort_field": "timestamp",
-      "sort_order": "asc",
       "split_num_docs_target": 10000001,
       "timestamp_field": "timestamp"
     },

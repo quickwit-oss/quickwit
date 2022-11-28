@@ -31,13 +31,13 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::io::IoControls;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
-use quickwit_doc_mapper::{DocMapper, SortBy, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
 use serde::Serialize;
 use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
-use tantivy::{IndexBuilder, IndexSettings, IndexSortByField};
+use tantivy::{IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
 use tracing::{info, info_span, Span};
 use ulid::Ulid;
@@ -378,20 +378,14 @@ impl Indexer {
         index_serializer_mailbox: Mailbox<IndexSerializer>,
     ) -> Self {
         let schema = doc_mapper.schema();
-        let sort_by_field_opt = match indexing_settings.sort_by() {
-            SortBy::DocId | SortBy::Score { .. } => None,
-            SortBy::FastField { field_name, order } => Some(IndexSortByField {
-                field: field_name,
-                order: order.into(),
-            }),
-        };
+        let docstore_compression = Compressor::Zstd(ZstdCompressor {
+            compression_level: Some(indexing_settings.docstore_compression_level),
+        });
         let index_settings = IndexSettings {
-            sort_by_field: sort_by_field_opt,
             docstore_blocksize: indexing_settings.docstore_blocksize,
-            docstore_compression: Compressor::Zstd(ZstdCompressor {
-                compression_level: Some(indexing_settings.docstore_compression_level),
-            }),
+            docstore_compression,
             docstore_compress_dedicated_thread: true,
+            sort_by_field: None,
         };
         let publish_lock = PublishLock::default();
         Self {
@@ -523,7 +517,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, Universe};
-    use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper, SortOrder};
+    use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::MockMetastore;
     use tantivy::{doc, DateTime};
@@ -559,8 +553,6 @@ mod tests {
         let indexing_directory = IndexingDirectory::for_test().await;
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
-        indexing_settings.sort_field = Some("timestamp".to_string());
-        indexing_settings.sort_order = Some(SortOrder::Desc);
         indexing_settings.timestamp_field = Some("timestamp".to_string());
         let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
@@ -675,10 +667,7 @@ mod tests {
             SourceCheckpointDelta::from(4..8)
         );
         let first_split = batch.splits.into_iter().next().unwrap().finalize()?;
-        let sort_by_field = first_split.index.settings().sort_by_field.as_ref();
-        assert!(sort_by_field.is_some());
-        assert_eq!(sort_by_field.unwrap().field, "timestamp");
-        assert!(sort_by_field.unwrap().order.is_desc());
+        assert!(first_split.index.settings().sort_by_field.is_none());
         Ok(())
     }
 
