@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::hash_map::Entry;
+use std::num::NonZeroU32;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
@@ -39,7 +40,7 @@ use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
-use tracing::{info, info_span, Span};
+use tracing::{info, info_span, warn, Span};
 use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
@@ -47,6 +48,9 @@ use crate::models::{
     CommitTrigger, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingDirectory,
     IndexingPipelineId, NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock,
 };
+
+// Random partition id used to gather partitions exceeding the maximum number of partitions.
+const OTHER_PARTITION_ID: u64 = 3264326757911759461u64;
 
 #[derive(Debug)]
 struct CommitTimeout {
@@ -73,6 +77,7 @@ struct IndexerState {
     indexing_settings: IndexingSettings,
     publish_lock: PublishLock,
     schema: Schema,
+    max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
 }
 
@@ -114,14 +119,36 @@ impl IndexerState {
         partition_id: u64,
         last_delete_opstamp: u64,
         splits: &'a mut FnvHashMap<u64, IndexedSplitBuilder>,
+        other_split_opt: &'a mut Option<IndexedSplitBuilder>,
+        counter: &'a mut IndexerCounters,
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexedSplitBuilder> {
+        let num_splits = splits.len();
         match splits.entry(partition_id) {
             Entry::Occupied(indexed_split) => Ok(indexed_split.into_mut()),
             Entry::Vacant(vacant_entry) => {
-                let indexed_split =
-                    self.create_indexed_split_builder(partition_id, last_delete_opstamp, ctx)?;
-                Ok(vacant_entry.insert(indexed_split))
+                if num_splits as u32 >= self.max_num_partitions.get() {
+                    // In order to avoid exceeding max_num_partitions, we map the document to the
+                    // `OTHER` special partition.
+                    if other_split_opt.is_none() {
+                        warn!(
+                            num_docs_in_workbench = counter.num_docs_in_workbench,
+                            max_num_partition = self.max_num_partitions.get(),
+                            "Exceeding max_num_partition"
+                        );
+                        let new_other_split = self.create_indexed_split_builder(
+                            OTHER_PARTITION_ID,
+                            last_delete_opstamp,
+                            ctx,
+                        )?;
+                        *other_split_opt = Some(new_other_split);
+                    }
+                    Ok(other_split_opt.as_mut().unwrap())
+                } else {
+                    let indexed_split =
+                        self.create_indexed_split_builder(partition_id, last_delete_opstamp, ctx)?;
+                    Ok(vacant_entry.insert(indexed_split))
+                }
             }
         }
     }
@@ -142,6 +169,7 @@ impl IndexerState {
             _indexing_span: indexing_span,
             workbench_id: Ulid::new(),
             indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
+            other_indexed_split_opt: None,
             checkpoint_delta: IndexCheckpointDelta {
                 source_id: self.pipeline_id.source_id.clone(),
                 source_delta: SourceCheckpointDelta::default(),
@@ -190,6 +218,7 @@ impl IndexerState {
         let IndexingWorkbench {
             checkpoint_delta,
             indexed_splits,
+            other_indexed_split_opt,
             publish_lock,
             last_delete_opstamp,
             memory_usage,
@@ -217,6 +246,8 @@ impl IndexerState {
                 partition,
                 *last_delete_opstamp,
                 indexed_splits,
+                other_indexed_split_opt,
+                counters,
                 ctx,
             )?;
             let mem_usage_before = indexed_split.index_writer.mem_usage() as u64;
@@ -247,7 +278,10 @@ struct IndexingWorkbench {
     batch_parent_span: Span,
     // Span for the in-memory indexing (done in the Indexer actor).
     _indexing_span: Span,
+
     indexed_splits: FnvHashMap<u64, IndexedSplitBuilder>,
+    other_indexed_split_opt: Option<IndexedSplitBuilder>,
+
     checkpoint_delta: IndexCheckpointDelta,
     publish_lock: PublishLock,
     // On workbench creation, we fetch from the metastore the last delete task opstamp.
@@ -397,6 +431,7 @@ impl Indexer {
                 publish_lock,
                 schema,
                 index_settings,
+                max_num_partitions: doc_mapper.max_num_partitions(),
             },
             index_serializer_mailbox,
             indexing_workbench_opt: None,
@@ -449,6 +484,7 @@ impl Indexer {
     ) -> anyhow::Result<()> {
         let IndexingWorkbench {
             indexed_splits,
+            other_indexed_split_opt,
             checkpoint_delta,
             publish_lock,
             batch_parent_span,
@@ -459,7 +495,10 @@ impl Indexer {
             return Ok(());
         };
 
-        let splits: Vec<IndexedSplitBuilder> = indexed_splits.into_values().collect();
+        let mut splits: Vec<IndexedSplitBuilder> = indexed_splits.into_values().collect();
+        if let Some(other_split) = other_indexed_split_opt {
+            splits.push(other_split)
+        }
 
         // Avoid producing empty split, but still update the checkpoint to avoid
         // reprocessing the same faulty documents.
@@ -935,7 +974,7 @@ mod tests {
 
         let indexing_directory = IndexingDirectory::for_test().await;
         let indexing_settings = IndexingSettings::for_test();
-        let (packager_mailbox, packager_inbox) = create_test_mailbox();
+        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
@@ -955,7 +994,7 @@ mod tests {
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
-            packager_mailbox,
+            index_serializer_mailbox,
         );
         let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
@@ -1005,15 +1044,86 @@ mod tests {
                 num_split_batches_emitted: 1,
             }
         );
-        let split_batches: Vec<IndexedSplitBatchBuilder> = packager_inbox.drain_for_test_typed();
+        let split_batches: Vec<IndexedSplitBatchBuilder> =
+            index_serializer_inbox.drain_for_test_typed();
         assert_eq!(split_batches.len(), 1);
         assert_eq!(split_batches[0].splits.len(), 2);
         Ok(())
     }
 
     const DOCMAPPER_SIMPLE_JSON: &str = r#"{
-        "field_mappings": [{"name": "body", "type": "text"}]
+        "field_mappings": [{"name": "body", "type": "text"}],
+        "max_num_partitions": 10
     }"#;
+
+    #[tokio::test]
+    async fn test_indexer_exceeding_max_num_partitions() {
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let doc_mapper: Arc<dyn DocMapper> =
+            Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
+        let body_field = doc_mapper.schema().get_field("body").unwrap();
+        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_settings = IndexingSettings::for_test();
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(10)
+            });
+        metastore.expect_publish_splits().never();
+        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            Arc::new(metastore),
+            indexing_directory,
+            indexing_settings,
+            index_serializer_mailbox,
+        );
+        let universe = Universe::new();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+
+        for partition in 0..100 {
+            indexer_mailbox
+                .send_message(PreparedDocBatch {
+                    docs: vec![PreparedDoc {
+                        doc: doc!(body_field=>"doc {i}"),
+                        timestamp_opt: None,
+                        partition,
+                        num_bytes: 30,
+                    }],
+                    checkpoint_delta: SourceCheckpointDelta::from(partition..partition + 1),
+                })
+                .await
+                .unwrap();
+        }
+        universe
+            .send_exit_with_success(&indexer_mailbox)
+            .await
+            .unwrap();
+
+        let (exit_status, _indexer_counters) = indexer_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+
+        let index_serializer_msgs: Vec<IndexedSplitBatchBuilder> =
+            index_serializer_inbox.drain_for_test_typed();
+        assert_eq!(index_serializer_msgs.len(), 1);
+        let msg = index_serializer_msgs.into_iter().next().unwrap();
+        assert_eq!(msg.splits.len(), 11);
+        for split in msg.splits {
+            if split.split_attrs.partition_id == OTHER_PARTITION_ID {
+                assert_eq!(split.split_attrs.num_docs, 90);
+            } else {
+                assert_eq!(split.split_attrs.num_docs, 1);
+            }
+        }
+    }
 
     #[tokio::test]
     async fn test_indexer_propagates_publish_lock() {
@@ -1037,14 +1147,14 @@ mod tests {
                 Ok(10)
             });
         metastore.expect_publish_splits().never();
-        let (packager_mailbox, packager_inbox) = create_test_mailbox();
+        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
-            packager_mailbox,
+            index_serializer_mailbox,
         );
         let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
@@ -1077,13 +1187,13 @@ mod tests {
         let (exit_status, _indexer_counters) = indexer_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Success));
 
-        let packager_messages: Vec<IndexedSplitBatchBuilder> =
-            packager_inbox.drain_for_test_typed();
-        assert_eq!(packager_messages.len(), 2);
-        assert_eq!(packager_messages[0].splits.len(), 1);
-        assert_eq!(packager_messages[0].publish_lock, first_lock);
-        assert_eq!(packager_messages[1].splits.len(), 1);
-        assert_eq!(packager_messages[1].publish_lock, second_lock);
+        let index_serializer_messages: Vec<IndexedSplitBatchBuilder> =
+            index_serializer_inbox.drain_for_test_typed();
+        assert_eq!(index_serializer_messages.len(), 2);
+        assert_eq!(index_serializer_messages[0].splits.len(), 1);
+        assert_eq!(index_serializer_messages[0].publish_lock, first_lock);
+        assert_eq!(index_serializer_messages[1].splits.len(), 1);
+        assert_eq!(index_serializer_messages[1].publish_lock, second_lock);
     }
 
     #[tokio::test]
@@ -1108,14 +1218,14 @@ mod tests {
                 Ok(10)
             });
         metastore.expect_publish_splits().never();
-        let (packager_mailbox, packager_inbox) = create_test_mailbox();
+        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
-            packager_mailbox,
+            index_serializer_mailbox,
         );
         let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
@@ -1146,7 +1256,7 @@ mod tests {
         let (exit_status, _indexer_counters) = indexer_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Success));
 
-        let packager_messages = packager_inbox.drain_for_test();
-        assert!(packager_messages.is_empty());
+        let index_serializer_messages = index_serializer_inbox.drain_for_test();
+        assert!(index_serializer_messages.is_empty());
     }
 }

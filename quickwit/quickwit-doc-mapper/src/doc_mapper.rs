@@ -19,6 +19,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
+use std::num::NonZeroU32;
 
 use anyhow::Context;
 use dyn_clone::{clone_trait_object, DynClone};
@@ -114,6 +115,9 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
             })
             .collect::<Result<Vec<_>, _>>()
     }
+
+    /// Returns the maximum number of partitions.
+    fn max_num_partitions(&self) -> NonZeroU32;
 }
 
 /// A struct to wrap a tantivy field with its name.
