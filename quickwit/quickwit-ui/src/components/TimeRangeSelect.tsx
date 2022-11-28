@@ -30,7 +30,7 @@ import {
   TextField,
 } from "@mui/material";
 import { AccessTime, ChevronRight, DateRange } from "@mui/icons-material";
-import { default as dayjs } from 'dayjs';
+import { Dayjs, default as dayjs } from 'dayjs';
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
 import { DateTimePicker } from "@mui/lab";
@@ -173,12 +173,12 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
 }
 
 function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
-  const [startDate, setStartDate] = useState<dayjs.Dayjs | null>(null);
-  const [endDate, setEndDate] = useState<dayjs.Dayjs | null>(null);
+  const [startDate, setStartDate] = useState<Dayjs | null>(null);
+  const [endDate, setEndDate] = useState<Dayjs | null>(null);
 
   useEffect(() => {
-    setStartDate(props.searchRequest.startTimestamp ? dayjs(props.searchRequest.startTimestamp * 1000).utc() : null);
-    setEndDate(props.searchRequest.endTimestamp ? dayjs(props.searchRequest.endTimestamp * 1000).utc() : null);
+    setStartDate(props.searchRequest.startTimestamp ? convertTimestampSecsIntoDateUtc(props.searchRequest.startTimestamp) : null);
+    setEndDate(props.searchRequest.endTimestamp ? convertTimestampSecsIntoDateUtc(props.searchRequest.endTimestamp) : null);
   }, [props.searchRequest.startTimestamp, props.searchRequest.endTimestamp]);
   const handleReset = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -257,13 +257,13 @@ function DateTimeRangeLabel(props: DateTimeRangeLabelProps): JSX.Element {
   function Label() {
     if (props.startTimestamp !== null && props.endTimestamp !== null) {
       return <>
-        {dayjs(props.startTimestamp * 1000).utc().format(DATE_TIME_WITH_SECONDS_FORMAT)} -{" "}
-        {dayjs(props.endTimestamp * 1000).utc().format(DATE_TIME_WITH_SECONDS_FORMAT)}
+        {convertTimestampSecsIntoDateUtc(props.startTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)} -{" "}
+        {convertTimestampSecsIntoDateUtc(props.startTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)}
       </>
     } else if (props.startTimestamp !== null && props.endTimestamp === null) {
-      return <>Since {dayjs(props.startTimestamp * 1000).utc().fromNow(true)}</>
+      return <>Since {convertTimestampSecsIntoDateUtc(props.startTimestamp).fromNow(true)}</>
     } else if (props.startTimestamp == null && props.endTimestamp != null) {
-      return <>Before {dayjs(props.endTimestamp * 1000).utc().format(DATE_TIME_WITH_SECONDS_FORMAT)}</>
+      return <>Before {convertTimestampSecsIntoDateUtc(props.endTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)}</>
     }
     return <>No date range</>
   }
@@ -273,4 +273,8 @@ function DateTimeRangeLabel(props: DateTimeRangeLabelProps): JSX.Element {
       <Label />
     </span>
   );
+}
+
+function convertTimestampSecsIntoDateUtc(timestamp_secs: number): Dayjs {
+  return dayjs(timestamp_secs * 1000).utc();
 }
