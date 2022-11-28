@@ -1292,7 +1292,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=0b40a7fe#0b40a7fe4350ea4e361486881d27441aa33257f5"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
 dependencies = [
  "fastdivide",
  "itertools",
@@ -2760,7 +2760,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=0b40a7fe#0b40a7fe4350ea4e361486881d27441aa33257f5"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -5096,7 +5096,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.19.0-dev"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=0b40a7fe#0b40a7fe4350ea4e361486881d27441aa33257f5"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -5149,12 +5149,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=0b40a7fe#0b40a7fe4350ea4e361486881d27441aa33257f5"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
 
 [[package]]
 name = "tantivy-common"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=0b40a7fe#0b40a7fe4350ea4e361486881d27441aa33257f5"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -5174,7 +5174,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=0b40a7fe#0b40a7fe4350ea4e361486881d27441aa33257f5"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
 dependencies = [
  "combine",
  "once_cell",
@@ -6429,18 +6429,18 @@ checksum = "c394b5bd0c6f669e7275d9c20aa90ae064cb22e75a1cad54e1b34088034b149f"
 
 [[package]]
 name = "zstd"
-version = "0.11.2+zstd.1.5.2"
+version = "0.12.0+zstd.1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20cc960326ece64f010d2d2107537f26dc589a6573a316bd5b1dba685fa5fde4"
+checksum = "b8148aa921e9d53217ab9322f8553bd130f7ae33489db68b381d76137d2e6374"
 dependencies = [
  "zstd-safe",
 ]
 
 [[package]]
 name = "zstd-safe"
-version = "5.0.2+zstd.1.5.2"
+version = "6.0.2+zstd.1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d2a5585e04f9eea4b2a3d1eca508c4dee9592a89ef6f450c11719da0726f4db"
+checksum = "a6cf39f730b440bab43da8fb5faf5f254574462f73f260f85f7987f32154ff17"
 dependencies = [
  "libc",
  "zstd-sys",
