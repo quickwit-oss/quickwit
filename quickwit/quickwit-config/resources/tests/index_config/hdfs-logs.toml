@@ -5,7 +5,7 @@ index_uri = "s3://quickwit-indexes/hdfs-logs"
 [doc_mapping]
 field_mappings = [
   { name = "tenant_id", type = "u64", fast = true },
-  { name = "timestamp", type = "i64", fast = true },
+  { name = "timestamp", type = "datetime", fast = true },
   { name = "severity_text", type = "text", tokenizer = "raw" },
   { name = "body", type = "text", tokenizer = "default", record = "position" },
   { name = "resource", type = "object", field_mappings = [ { name = "service", type = "text", tokenizer = "raw" } ] },

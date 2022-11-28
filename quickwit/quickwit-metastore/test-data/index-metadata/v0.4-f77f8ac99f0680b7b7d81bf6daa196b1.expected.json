@@ -18,9 +18,15 @@
         {
           "fast": true,
           "indexed": true,
+          "input_formats": [
+            "rfc3339",
+            "unix_timestamp"
+          ],
           "name": "timestamp",
+          "output_format": "rfc3339",
+          "precision": "seconds",
           "stored": true,
-          "type": "i64"
+          "type": "datetime"
         },
         {
           "fast": false,

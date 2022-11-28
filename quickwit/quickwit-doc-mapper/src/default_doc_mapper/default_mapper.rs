@@ -209,15 +209,6 @@ fn resolve_timestamp_field(
             )
         }
         match timestamp_field_entry.field_type() {
-            FieldType::I64(options) => {
-                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
-                    bail!(
-                        "Timestamp field cannot be an array, please change your field `{}` from \
-                         an array to a single value.",
-                        timestamp_field_name
-                    )
-                }
-            }
             FieldType::Date(options) => {
                 if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
                     bail!(
@@ -229,8 +220,8 @@ fn resolve_timestamp_field(
             }
             _ => {
                 bail!(
-                    "Timestamp field must be of type i64, please change your field type `{}` to \
-                     i64.",
+                    "Timestamp field must be of type datetime, please change your field type `{}` \
+                     to datetime.",
                     timestamp_field_name
                 )
             }
@@ -497,7 +488,7 @@ mod tests {
 
     fn example_json_doc_value() -> JsonValue {
         serde_json::json!({
-            "timestamp": 1586960586000i64,
+            "timestamp": 1586960586i64,
             "body": "20200415T072306-0700 INFO This is a great log",
             "response_date2": "2021-12-19T16:39:57+00:00",
             "response_date": "2021-12-19T16:39:57Z",
@@ -515,7 +506,7 @@ mod tests {
     }
 
     const EXPECTED_JSON_PATHS_AND_VALUES: &str = r#"{
-            "timestamp": [1586960586000],
+            "timestamp": ["2020-04-15T14:23:06Z"],
             "body": ["20200415T072306-0700 INFO This is a great log"],
             "response_date": ["2021-12-19T16:39:57Z"],
             "response_time": [2.3],
@@ -691,7 +682,7 @@ mod tests {
             "field_mappings": [
                 {
                     "name": "timestamp",
-                    "type": "array<i64>",
+                    "type": "array<datetime>",
                     "fast": true
                 }
             ]

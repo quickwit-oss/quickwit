@@ -12,7 +12,7 @@
             },
             {
                 "name": "timestamp",
-                "type": "i64",
+                "type": "datetime",
                 "fast": true
             },
             {
