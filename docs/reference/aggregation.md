@@ -89,7 +89,7 @@ Response
 
 #### Limitations
 
-Currently aggregations work only on single value fast fields of type u64, f64, i64 and on string fields.
+Currently aggregations work only on single value fast fields of type u64, f64, i64, date and on string fast fields.
 
 
 ### Supported Aggregations
@@ -136,7 +136,8 @@ Example request, histogram with stats in each bucket:
 
 #### Limitations/Compatibility
 
-Currently aggregations work only on single value fast fields of type `u64`, `f64`, `i64` and `text`.
+Currently aggregations work only on single value fast fields of type `u64`, `f64`, `i64`, `datetime` and on `text` fast fields.
+Aggregation queries on `datetime` need to be expressed in microseconds.
 
 ### Histogram
 
@@ -150,9 +151,6 @@ E.g. if we have a price 18 and an interval of 5, the document will fall into the
 By default buckets are returned between the min and max value of the documents, including empty buckets. Setting min_doc_count to != 0 will filter empty buckets.
 
 The value range of the buckets can bet extended via extended_bounds or limit the range via hard_bounds.
-
-##### 
-
 
 #### Example
 
