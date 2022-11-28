@@ -91,7 +91,7 @@ pub(crate) async fn fetch_and_build_indexes_states(
         .get_all(indexes_list_path)
         .await
         .map_err(|storage_err| MetastoreError::InternalError {
-            message: format!("Failed to get {INDEXES_STATES_FILENAME} file."),
+            message: format!("Failed to get `{INDEXES_STATES_FILENAME}` file."),
             cause: storage_err.to_string(),
         })?;
     let indexes_states_deserialized: HashMap<String, IndexStateValue> =
@@ -138,7 +138,7 @@ pub(crate) async fn put_indexes_states(
         .put(indexes_list_path, Box::new(content))
         .await
         .map_err(|storage_err| MetastoreError::InternalError {
-            message: "Failed to put {INDEXES_STATES_FILENAME} file.".to_string(),
+            message: format!("Failed to put `{INDEXES_STATES_FILENAME}` file."),
             cause: storage_err.to_string(),
         })?;
     Ok(())

@@ -24,7 +24,7 @@ mod test;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
-use quickwit_config::SourceConfig;
+use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 
 use self::retry::{retry, RetryParams};
@@ -63,9 +63,9 @@ impl Metastore for RetryingMetastore {
         self.inner.check_connectivity().await
     }
 
-    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
+    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()> {
         retry(&self.retry_params, || async {
-            self.inner.create_index(index_metadata.clone()).await
+            self.inner.create_index(index_config.clone()).await
         })
         .await
     }

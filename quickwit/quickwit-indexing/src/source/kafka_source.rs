@@ -765,9 +765,9 @@ mod kafka_broker_tests {
 
     use quickwit_actors::{create_test_mailbox, ActorContext, Universe};
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-    use quickwit_metastore::{metastore_for_test, IndexMetadata, Metastore, SplitMetadata};
+    use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
@@ -901,8 +901,8 @@ mod kafka_broker_tests {
         partition_deltas: &[(u64, i64, i64)],
     ) {
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
-        metastore.create_index(index_metadata).await.unwrap();
+        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        metastore.create_index(index_config).await.unwrap();
 
         if partition_deltas.is_empty() {
             return;

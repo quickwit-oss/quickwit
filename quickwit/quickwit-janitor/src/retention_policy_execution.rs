@@ -20,6 +20,7 @@
 use std::sync::Arc;
 
 use quickwit_actors::ActorContext;
+use quickwit_common::PrettySample;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
 use time::OffsetDateTime;
@@ -49,31 +50,40 @@ pub async fn run_execute_retention_policy(
         .with_split_state(SplitState::Published)
         .with_time_range_end_lte(max_retention_timestamp);
 
-    let (expired_splits, splits_to_ignore): (Vec<SplitMetadata>, Vec<SplitMetadata>) = ctx
+    let (expired_splits, ignored_splits): (Vec<SplitMetadata>, Vec<SplitMetadata>) = ctx
         .protect_future(metastore.list_splits(query))
         .await?
         .into_iter()
         .map(|split| split.split_metadata)
         .partition(|split_metadata| split_metadata.time_range.is_some());
 
-    if expired_splits.is_empty() {
-        return Ok(expired_splits);
-    }
-
-    if !splits_to_ignore.is_empty() {
-        let split_to_ignore_ids: Vec<String> = splits_to_ignore
+    if !ignored_splits.is_empty() {
+        let ignored_split_ids: Vec<String> = ignored_splits
             .into_iter()
             .map(|split_metadata| split_metadata.split_id)
             .collect();
-        warn!(index_id=%index_id, split_ids=?split_to_ignore_ids,
-            "The retention policy cannot be applied to the following splits as they don't have `time_range` info.");
+        warn!(
+            index_id=%index_id,
+            split_ids=?PrettySample::new(&ignored_split_ids, 5),
+            "Retention policy could not be applied to {} splits because they lack a timestamp range.",
+            ignored_split_ids.len()
+        );
     }
-
-    info!(index_id=%index_id, num_splits=%expired_splits.len(), "retention-policy-mark-splits-for-deletion");
-    // Change all expired splits state to MarkedForDeletion.
-    let split_ids: Vec<&str> = expired_splits.iter().map(|meta| meta.split_id()).collect();
-    ctx.protect_future(metastore.mark_splits_for_deletion(index_id, &split_ids))
+    if expired_splits.is_empty() {
+        return Ok(expired_splits);
+    }
+    // Mark the expired splits for deletion.
+    let expired_split_ids: Vec<&str> = expired_splits
+        .iter()
+        .map(|split_metadata| split_metadata.split_id())
+        .collect();
+    info!(
+        index_id=%index_id,
+        split_ids=?PrettySample::new(&expired_split_ids, 5),
+        "Marking {} splits for deletion based on retention policy.",
+        expired_split_ids.len()
+    );
+    ctx.protect_future(metastore.mark_splits_for_deletion(index_id, &expired_split_ids))
         .await?;
-
     Ok(expired_splits)
 }

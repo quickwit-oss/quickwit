@@ -238,9 +238,22 @@ fn get_fastfield_cardinality(field_type: &FieldType) -> Option<Cardinality> {
         | FieldType::Bool(options) => options.get_fastfield_cardinality(),
         FieldType::Date(options) => options.get_fastfield_cardinality(),
         FieldType::Facet(_) => Some(Cardinality::MultiValues),
-        FieldType::Bytes(options) if options.is_fast() => Some(Cardinality::MultiValues),
-        FieldType::Str(options) if options.is_fast() => Some(Cardinality::MultiValues),
-        _ => None,
+        FieldType::Bytes(options) => {
+            if options.is_fast() {
+                Some(Cardinality::MultiValues)
+            } else {
+                None
+            }
+        }
+        FieldType::Str(options) => {
+            if options.is_fast() {
+                Some(Cardinality::MultiValues)
+            } else {
+                None
+            }
+        }
+        FieldType::IpAddr(options) => options.get_fastfield_cardinality(),
+        FieldType::JsonObject(_options) => None,
     }
 }
 

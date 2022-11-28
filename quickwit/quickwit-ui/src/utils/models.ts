@@ -155,6 +155,7 @@ export type IndexConfig = {
   doc_mapping: DocMapping;
   indexing_settings: IndexingSettings;
   search_settings: object;
+  retention: object;
 }
 
 export type IndexMetadata = {
@@ -162,7 +163,6 @@ export type IndexMetadata = {
   checkpoint: object;
   sources: object[] | undefined;
   create_timestamp: number;
-  update_timestamp: number;
 }
 
 export type IndexingSettings = {
@@ -184,10 +184,10 @@ export const EMPTY_INDEX_METADATA: IndexMetadata = {
       timestamp_field: null,
     },
     search_settings: {},
+    retention: {},
   },
   checkpoint: {},
   sources: undefined,
-  update_timestamp: 0,
   create_timestamp: 0,
 };
 

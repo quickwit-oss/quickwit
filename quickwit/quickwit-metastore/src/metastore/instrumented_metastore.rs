@@ -19,7 +19,7 @@
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
-use quickwit_config::SourceConfig;
+use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 
 use crate::checkpoint::IndexCheckpointDelta;
@@ -84,10 +84,10 @@ impl Metastore for InstrumentedMetastore {
 
     // Index API
 
-    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
-        let index_id = index_metadata.index_id().to_string();
+    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()> {
+        let index_id = index_config.index_id.to_string();
         instrument!(
-            self.underlying.create_index(index_metadata).await,
+            self.underlying.create_index(index_config).await,
             [create_index, index_id.as_str()]
         );
     }

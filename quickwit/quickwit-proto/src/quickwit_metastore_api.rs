@@ -1,8 +1,8 @@
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateIndexRequest {
-    #[prost(string, tag = "1")]
-    pub index_metadata_serialized_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub index_config_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]

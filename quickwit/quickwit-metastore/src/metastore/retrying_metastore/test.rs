@@ -21,7 +21,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
-use quickwit_config::SourceConfig;
+use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 
 use super::retry::RetryParams;
@@ -80,7 +80,7 @@ impl Metastore for RetryTestMetastore {
         self.try_success().map_err(anyhow::Error::from)
     }
 
-    async fn create_index(&self, _index_metadata: IndexMetadata) -> MetastoreResult<()> {
+    async fn create_index(&self, _index_config: IndexConfig) -> MetastoreResult<()> {
         self.try_success()
     }
 

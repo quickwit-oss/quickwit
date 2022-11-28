@@ -130,6 +130,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
                 )
             })?;
         let grpc_metastore_client = MetastoreGrpcClient::create_and_update_from_members(
+            1,
             cluster.ready_member_change_watcher(),
         )
         .await?;
@@ -193,7 +194,11 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     .await?;
 
     // Always instantiate index management service.
-    let index_service = Arc::new(IndexService::new(metastore.clone(), storage_resolver));
+    let index_service = Arc::new(IndexService::new(
+        metastore.clone(),
+        config.default_index_root_uri.clone(),
+        storage_resolver,
+    ));
 
     let grpc_listen_addr = config.grpc_listen_addr;
     let rest_listen_addr = config.rest_listen_addr;
