@@ -555,7 +555,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "serde",
- "time 0.1.44",
+ "time 0.1.45",
  "wasm-bindgen",
  "winapi 0.3.9",
 ]
@@ -1322,9 +1322,9 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
 name = "flate2"
-version = "1.0.24"
+version = "1.0.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f82b0f4c27ad9f8bfd1f3208d882da2b09c301bc1c828fd3a00d0216d2fbbff6"
+checksum = "a8a2db397cb1c8772f31494cb8917e48cd1e64f0fa7efac59fbd741a0a8ce841"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -2307,9 +2307,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.5.4"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96590ba8f175222643a85693f33d26e9c8a015f599c216509b1a6894af675d34"
+checksum = "b275950c28b37e794e8c55d88aeb5e139d0ce23fdbbeda68f8d7174abdf9e8fa"
 dependencies = [
  "adler",
 ]
@@ -2544,9 +2544,9 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "openssl"
-version = "0.10.42"
+version = "0.10.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12fc0523e3bd51a692c8850d075d74dc062ccf251c0110668cbd921917118a13"
+checksum = "020433887e44c27ff16365eaa2d380547a94544ad509aff6eb5b6e3e0b27b376"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -2585,9 +2585,9 @@ dependencies = [
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.77"
+version = "0.9.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b03b84c3b2d099b81f0953422b4d4ad58761589d0229b5506356afca05a3670a"
+checksum = "07d5c8cb6e57b3a3612064d7b18b117912b4ce70955c2504d4b741c9e244b132"
 dependencies = [
  "autocfg",
  "cc",
@@ -3271,7 +3271,7 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quickwit-actors"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3290,7 +3290,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-aws"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3309,7 +3309,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cli"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3364,7 +3364,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cluster"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3384,7 +3384,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-common"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-speed-limit",
@@ -3410,7 +3410,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-config"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "byte-unit",
@@ -3435,7 +3435,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-core"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3468,7 +3468,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-directories"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3489,7 +3489,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-doc-mapper"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -3519,7 +3519,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-indexing"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -3566,7 +3566,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-ingest-api"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3590,7 +3590,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-jaeger"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3608,7 +3608,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-janitor"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3641,7 +3641,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-metastore"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3690,7 +3690,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-opentelemetry"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3707,7 +3707,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-proto"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "glob",
  "opentelemetry",
@@ -3723,7 +3723,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-search"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -3765,7 +3765,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-serve"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -3815,7 +3815,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-storage"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3852,7 +3852,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-telemetry"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "encoding_rs",
@@ -4552,9 +4552,9 @@ checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
 name = "serde"
-version = "1.0.147"
+version = "1.0.148"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d193d69bae983fc11a79df82342761dfbf28a99fc8d203dca4c3c1b590948965"
+checksum = "e53f64bb4ba0191d6d0676e1b141ca55047d83b74f5607e6d8eb88126c52c2dc"
 dependencies = [
  "serde_derive",
 ]
@@ -4583,9 +4583,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.147"
+version = "1.0.148"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f1d362ca8fc9c3e3a7484440752472d68a6caa98f1ab81d99b5dfe517cec852"
+checksum = "a55492425aa53521babf6137309e7d34c20bbfbbfcfe2c7f3a047fd1f6b92c0c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5052,9 +5052,9 @@ checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
 
 [[package]]
 name = "syn"
-version = "1.0.103"
+version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a864042229133ada95abf3b54fdc62ef5ccabe9515b64717bcb9a1919e59445d"
+checksum = "4ae548ec36cf198c0ef7710d3c230987c2d6d7bd98ad6edc0274462724c585ce"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5336,9 +5336,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.1.44"
+version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6db9e6914ab8b1ae1c260a4ae7a49b6c5611b40328a735b21862567685e73255"
+checksum = "1b797afad3f312d1c66a56d11d0316f916356d11bd158fbc6ca6389ff6bf805a"
 dependencies = [
  "libc",
  "wasi 0.10.0+wasi-snapshot-preview1",
@@ -6447,9 +6447,9 @@ dependencies = [
 
 [[package]]
 name = "zstd-sys"
-version = "2.0.1+zstd.1.5.2"
+version = "2.0.3+zstd.1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fd07cbbc53846d9145dbffdf6dd09a7a0aa52be46741825f5c97bdd4f73f12b"
+checksum = "44ccf97612ac95f3ccb89b2d7346b345e52f1c3019be4984f0455fb4ba991f8a"
 dependencies = [
  "cc",
  "libc",
