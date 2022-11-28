@@ -57,6 +57,8 @@ pub struct DocMapping {
     #[serde(default)]
     pub store_source: bool,
     #[serde(default)]
+    pub timestamp_field: Option<String>,
+    #[serde(default)]
     pub mode: ModeType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic_mapping: Option<QuickwitJsonOptions>,
@@ -112,7 +114,6 @@ impl Default for IndexingResources {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
-    pub timestamp_field: Option<String>,
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
     #[serde(default = "IndexingSettings::default_docstore_compression_level")]
@@ -126,7 +127,6 @@ pub struct IndexingSettings {
     /// `split_num_docs_target` are considered mature and never merged.
     #[serde(default = "IndexingSettings::default_split_num_docs_target")]
     pub split_num_docs_target: usize,
-
     #[serde(default)]
     pub merge_policy: MergePolicyConfig,
     #[serde(default)]
@@ -166,7 +166,6 @@ impl IndexingSettings {
 impl Default for IndexingSettings {
     fn default() -> Self {
         Self {
-            timestamp_field: None,
             commit_timeout_secs: Self::default_commit_timeout_secs(),
             docstore_blocksize: Self::default_docstore_blocksize(),
             docstore_compression_level: Self::default_docstore_compression_level(),
@@ -337,12 +336,12 @@ impl IndexConfig {
                     ]
                 }
             ],
+            "timestamp_field": "timestamp",
             "tag_fields": ["owner"],
             "store_source": true
         }"#;
         let doc_mapping = serde_json::from_str(doc_mapping_json).unwrap();
         let indexing_settings = IndexingSettings {
-            timestamp_field: Some("timestamp".to_string()),
             resources: IndexingResources::for_test(),
             ..Default::default()
         };
@@ -415,6 +414,7 @@ impl TestableForRegression for IndexConfig {
             dynamic_mapping: None,
             partition_key: "tenant".to_string(),
             max_num_partitions: NonZeroU64::new(20).unwrap(),
+            timestamp_field: Some("timestamp".to_string()),
         };
         let retention_policy = Some(RetentionPolicy::new(
             "90 days".to_string(),
@@ -431,7 +431,6 @@ impl TestableForRegression for IndexConfig {
             ..Default::default()
         };
         let indexing_settings = IndexingSettings {
-            timestamp_field: Some("timestamp".to_string()),
             commit_timeout_secs: 301,
             split_num_docs_target: 10_000_001,
             merge_policy,
@@ -481,12 +480,11 @@ impl TestableForRegression for IndexConfig {
 pub fn build_doc_mapper(
     doc_mapping: &DocMapping,
     search_settings: &SearchSettings,
-    indexing_settings: &IndexingSettings,
 ) -> anyhow::Result<Arc<dyn DocMapper>> {
     let builder = DefaultDocMapperBuilder {
         store_source: doc_mapping.store_source,
         default_search_fields: search_settings.default_search_fields.clone(),
-        timestamp_field: indexing_settings.timestamp_field.clone(),
+        timestamp_field: doc_mapping.timestamp_field.clone(),
         field_mappings: doc_mapping.field_mappings.clone(),
         tag_fields: doc_mapping.tag_fields.iter().cloned().collect(),
         mode: doc_mapping.mode,
@@ -554,7 +552,7 @@ mod tests {
         assert!(index_config.doc_mapping.store_source);
 
         assert_eq!(
-            index_config.indexing_settings.timestamp_field.unwrap(),
+            index_config.doc_mapping.timestamp_field.unwrap(),
             "timestamp"
         );
         assert_eq!(index_config.indexing_settings.commit_timeout_secs, 61);

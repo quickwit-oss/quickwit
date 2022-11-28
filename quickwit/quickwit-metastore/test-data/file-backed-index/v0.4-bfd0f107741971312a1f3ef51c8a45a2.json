@@ -67,7 +67,8 @@
         "tag_fields": [
           "log_level",
           "tenant_id"
-        ]
+        ],
+        "timestamp_field": "timestamp"
       },
       "index_id": "my-index",
       "index_uri": "s3://quickwit-indexes/my-index",
@@ -85,8 +86,7 @@
         "resources": {
           "heap_size": 3
         },
-        "split_num_docs_target": 10000001,
-        "timestamp_field": "timestamp"
+        "split_num_docs_target": 10000001
       },
       "retention": {
         "period": "90 days",

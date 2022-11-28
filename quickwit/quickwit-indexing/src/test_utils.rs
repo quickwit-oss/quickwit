@@ -77,11 +77,8 @@ impl TestSandbox {
             .iter()
             .map(|search_field| search_field.to_string())
             .collect();
-        let doc_mapper = build_doc_mapper(
-            &index_config.doc_mapping,
-            &index_config.search_settings,
-            &index_config.indexing_settings,
-        )?;
+        let doc_mapper =
+            build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig::for_test()?;
         let storage_resolver = StorageUriResolver::for_test();

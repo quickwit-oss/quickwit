@@ -295,12 +295,8 @@ impl IndexingService {
             self.local_split_store.clone(),
         );
 
-        let doc_mapper = build_doc_mapper(
-            &index_config.doc_mapping,
-            &index_config.search_settings,
-            &index_config.indexing_settings,
-        )
-        .map_err(IndexingServiceError::InvalidParams)?;
+        let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
+            .map_err(IndexingServiceError::InvalidParams)?;
 
         let merge_pipeline_params = MergePipelineParams {
             pipeline_id: pipeline_id.clone(),
