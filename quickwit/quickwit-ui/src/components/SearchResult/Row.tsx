@@ -73,7 +73,7 @@ function DisplayTimestampValue(row: RawDoc, timestampField: Field | null) {
   for (const path_segment of timestampField.path_segments) {
     field_value = field_value[path_segment]
   }
-  if (field_value === null || field_value === undefined) {
+  if (!field_value) {
     return <></>
   }
   return <TableCell sx={{verticalAlign: 'top', padding: '4px'}}>

@@ -54,8 +54,5 @@ function getTimestampField(index: Index): Field | null {
   const fields = getAllFields(index.metadata.index_config.doc_mapping.field_mappings);
   const timestamp_field_name = index.metadata.index_config.indexing_settings.timestamp_field;
   const timestamp_field = fields.filter(field => field.field_mapping.name === timestamp_field_name)[0];
-  if (timestamp_field === undefined ) {
-    return null;
-  }
-  return timestamp_field;
+  return timestamp_field ?? null;
 }
