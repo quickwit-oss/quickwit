@@ -44,8 +44,6 @@ pub struct IndexMetadata {
     pub checkpoint: IndexCheckpoint,
     /// Time at which the index was created.
     pub create_timestamp: i64,
-    /// Time at which the index was last updated.
-    pub update_timestamp: i64,
     /// Sources
     pub sources: HashMap<String, SourceConfig>,
 }
@@ -57,7 +55,6 @@ impl IndexMetadata {
             index_config,
             checkpoint: Default::default(),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-            update_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
             sources: HashMap::default(),
         }
     }
@@ -144,7 +141,6 @@ impl TestableForRegression for IndexMetadata {
             index_config,
             checkpoint,
             create_timestamp: 1789,
-            update_timestamp: 1789,
             sources: Default::default(),
         };
         index_metadata
@@ -156,7 +152,6 @@ impl TestableForRegression for IndexMetadata {
     fn test_equality(&self, other: &Self) {
         self.index_config().test_equality(other.index_config());
         assert_eq!(self.checkpoint, other.checkpoint);
-        assert_eq!(self.update_timestamp, other.update_timestamp);
         assert_eq!(self.create_timestamp, other.create_timestamp);
         assert_eq!(self.sources, other.sources);
     }

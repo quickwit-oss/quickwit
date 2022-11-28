@@ -57,7 +57,7 @@ service MetastoreApiService {
   rpc add_source(AddSourceRequest) returns (SourceResponse);
 
   // Toggles source.
-  rpc toggle_source(ToggleSourceRequest) returns (SourceResponse); 
+  rpc toggle_source(ToggleSourceRequest) returns (SourceResponse);
 
   // Removes source.
   rpc delete_source(DeleteSourceRequest) returns (SourceResponse);
@@ -82,7 +82,7 @@ service MetastoreApiService {
 }
 
 message CreateIndexRequest {
-  string index_metadata_serialized_json = 1;
+  string index_config_serialized_json = 2;
 }
 
 message CreateIndexResponse {}

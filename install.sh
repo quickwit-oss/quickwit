@@ -62,7 +62,7 @@ install_from_archive() {
     need_cmd head
     need_cmd sed
     need_cmd curl
-    
+
     get_architecture || return 1
     local _arch="$RETVAL"
     assert_nz "$_arch" "arch"
@@ -71,7 +71,7 @@ install_from_archive() {
     case "$_arch" in
         # Add `| aarch64-apple-darwin` when M1 is fully supported.
         # Note that M1 binary can still be built from source.
-        x86_64-apple-darwin)  
+        x86_64-apple-darwin)
             _binary_arch=$_arch
             ;;
         x86_64-*linux*-gnu)
@@ -185,11 +185,11 @@ get_latest_version() {
         | tr -d ',"' | cut -d ':' -f2 | tr -d ' ')
         # Returns a list of [tag_name draft_boolean prerelease_boolean ...]
         # Ex: v0.10.1 false false v0.9.1-rc.1 false true v0.9.0 false false...
-    
+
     # clean up early
     rm -f "$temp_file"
 
-    if [ "$1" = "--allow-any-latest-version" ]; then 
+    if [ "$1" = "--allow-any-latest-version" ]; then
         local first_release=$(echo $releases | { read first rest; echo $first; })
         echo $first_release
         return
@@ -481,7 +481,7 @@ err() {
 
 need_cmd() {
     if ! check_cmd "$1"; then
-        err "need '$1' (command not found)"
+        err "Error: the install script failed because the command '$1' was not found"
     fi
 }
 

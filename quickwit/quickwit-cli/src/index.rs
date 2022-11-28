@@ -30,7 +30,7 @@ use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
-use quickwit_actors::{ActorHandle, ObservationType, Universe};
+use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
@@ -38,10 +38,8 @@ use quickwit_config::{
     ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
     CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
-use quickwit_core::{
-    clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
-};
-use quickwit_indexing::actors::{IndexingService, MergePipelineId};
+use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexService};
+use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
@@ -56,7 +54,7 @@ use quickwit_telemetry::payload::TelemetryEvent;
 use tabled::object::{Columns, Segment};
 use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
 use thousands::Separable;
-use tracing::{debug, warn, Level};
+use tracing::{debug, info, warn, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{
@@ -585,16 +583,10 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         .resolve(&quickwit_config.metastore_uri)
         .await?;
 
-    validate_storage_uri(
-        quickwit_storage_uri_resolver(),
-        &quickwit_config,
-        &index_config,
-    )
-    .await?;
-
     // On overwrite and index present and `assume_yes` if false, ask the user to confirm the
     // destructive operation.
     let index_exists = metastore.index_exists(&index_id).await?;
+
     if args.overwrite && index_exists && !args.assume_yes {
         // Stop if user answers no.
         let prompt = format!(
@@ -607,7 +599,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         }
     }
 
-    let index_service = IndexService::new(metastore, quickwit_storage_uri_resolver().clone());
+    let index_service = IndexService::from_config(quickwit_config).await?;
     index_service
         .create_index(index_config, args.overwrite)
         .await?;
@@ -909,8 +901,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .await?;
 
     if args.overwrite {
-        let index_service =
-            IndexService::new(metastore.clone(), quickwit_storage_uri_resolver().clone());
+        let index_service = IndexService::from_config(config.clone()).await?;
         index_service.clear_index(&args.index_id).await?;
     }
     let indexer_config = IndexerConfig {
@@ -1069,12 +1060,35 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
             pipeline_ord: 0,
         })
         .await?;
-    let pipeline_handle = indexing_service_mailbox
-        .ask_for_res(DetachIndexingPipeline { pipeline_id })
+    let pipeline_handle: ActorHandle<MergePipeline> = indexing_service_mailbox
+        .ask_for_res(DetachMergePipeline {
+            pipeline_id: MergePipelineId::from(&pipeline_id),
+        })
         .await?;
-    let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
+
+    let mut check_interval = tokio::time::interval(Duration::from_secs(1));
+    loop {
+        check_interval.tick().await;
+
+        let observation = pipeline_handle.observe().await;
+
+        if observation.num_ongoing_merges == 0 {
+            info!("Merge pipeline has no more ongoing merges, Exiting.");
+            break;
+        }
+
+        if observation.obs_type == ObservationType::PostMortem {
+            info!("Merge pipeline has exited, Exiting.");
+            break;
+        }
+    }
+
+    let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.quit().await;
     indexing_service_handle.quit().await;
-    if !pipeline_exit_status.is_success() {
+    if !matches!(
+        pipeline_exit_status,
+        ActorExitStatus::Success | ActorExitStatus::Quit
+    ) {
         bail!(pipeline_exit_status);
     }
     Ok(())
@@ -1085,10 +1099,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
     let quickwit_config = load_quickwit_config(&args.config_uri).await?;
-    let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&quickwit_config.metastore_uri)
-        .await?;
-    let index_service = IndexService::new(metastore, quickwit_storage_uri_resolver().clone());
+    let index_service = IndexService::from_config(quickwit_config.clone()).await?;
     let affected_files = index_service
         .delete_index(&args.index_id, args.dry_run)
         .await?;
@@ -1120,10 +1131,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
     let quickwit_config = load_quickwit_config(&args.config_uri).await?;
-    let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&quickwit_config.metastore_uri)
-        .await?;
-    let index_service = IndexService::new(metastore, quickwit_storage_uri_resolver().clone());
+    let index_service = IndexService::from_config(quickwit_config.clone()).await?;
     let removal_info = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;

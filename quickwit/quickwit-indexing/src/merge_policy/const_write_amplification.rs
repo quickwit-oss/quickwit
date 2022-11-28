@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use quickwit_config::merge_policy_config::ConstWriteAmplificationMergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
+use time::OffsetDateTime;
 
 use super::MergeOperation;
 use crate::merge_policy::MergePolicy;
@@ -74,10 +75,13 @@ impl ConstWriteAmplificationMergePolicy {
 
     #[cfg(test)]
     fn for_test() -> ConstWriteAmplificationMergePolicy {
+        use std::time::Duration;
+
         let config = ConstWriteAmplificationMergePolicyConfig {
             max_merge_ops: 3,
             merge_factor: 3,
             max_merge_factor: 5,
+            maturation_period: Duration::from_secs(3600),
         };
         Self::new(config, 10_000_000)
     }
@@ -157,6 +161,11 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
         if split.num_docs >= self.split_num_docs_target {
             return true;
         }
+        if OffsetDateTime::now_utc().unix_timestamp()
+            >= split.create_timestamp + self.config.maturation_period.as_secs() as i64
+        {
+            return true;
+        }
         false
     }
 
@@ -191,10 +200,39 @@ mod tests {
 
     use quickwit_metastore::SplitMetadata;
     use rand::seq::SliceRandom;
+    use time::OffsetDateTime;
 
     use super::ConstWriteAmplificationMergePolicy;
+    use crate::merge_policy::tests::create_splits;
     use crate::merge_policy::MergeOperation;
     use crate::MergePolicy;
+
+    #[test]
+    fn test_split_is_mature() {
+        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
+        let split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
+        // Split under max_merge_docs, num_merge_ops < max_merge_ops and created before now() -
+        // maturation_period is not mature.
+        assert!(!merge_policy.is_mature(&split));
+        {
+            // Split with docs > max_merge_docs is mature.
+            let mut mature_split = split.clone();
+            mature_split.num_docs = merge_policy.split_num_docs_target + 1;
+            assert!(merge_policy.is_mature(&mature_split));
+        }
+        {
+            // Split with create_timestamp >= now + maturity duration is mature
+            let mut mature_split = split.clone();
+            mature_split.create_timestamp -= merge_policy.config.maturation_period.as_secs() as i64;
+            assert!(merge_policy.is_mature(&mature_split));
+        }
+        {
+            // Split with num_merge_ops >= max_merge_ops is mature
+            let mut mature_split = split;
+            mature_split.num_merge_ops = merge_policy.config.max_merge_ops;
+            assert!(merge_policy.is_mature(&mature_split));
+        }
+    }
 
     #[test]
     fn test_const_write_amplification_merge_policy_empty() {
@@ -226,6 +264,7 @@ mod tests {
                 split_id: format!("split-{i}"),
                 num_docs: 1_000,
                 num_merge_ops: 1,
+                create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                 ..Default::default()
             })
             .collect();
@@ -246,6 +285,7 @@ mod tests {
                     split_id: format!("split-{i}"),
                     num_docs: 1_000,
                     num_merge_ops: 1,
+                    create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                     ..Default::default()
                 })
                 .collect();
@@ -260,12 +300,13 @@ mod tests {
     #[test]
     fn test_const_write_merge_policy_older_first() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
+        let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits: Vec<SplitMetadata> = (0..merge_policy.config.max_merge_factor)
             .map(|i| SplitMetadata {
                 split_id: format!("split-{i}"),
                 num_docs: 1_000,
-                create_timestamp: 1_664_000_000i64 + i as i64,
                 num_merge_ops: 1,
+                create_timestamp: now_timestamp + i as i64,
                 ..Default::default()
             })
             .collect();
@@ -295,6 +336,7 @@ mod tests {
                 split_id: format!("split-{i}"),
                 num_docs: (merge_policy.split_num_docs_target + 2) / 3,
                 num_merge_ops: 1,
+                create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                 ..Default::default()
             })
             .collect();

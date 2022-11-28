@@ -113,38 +113,6 @@ impl Default for IndexingResources {
     }
 }
 
-/// Only here for deserialization.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MergePolicyLegacy {
-    #[serde(default, rename = "demux_factor")]
-    pub __demux_factor_deprecated: IgnoredAny, // DEPRECATED
-    #[serde(default = "MergePolicyLegacy::default_merge_factor")]
-    pub merge_factor: usize,
-    #[serde(default = "MergePolicyLegacy::default_max_merge_factor")]
-    pub max_merge_factor: usize,
-}
-
-impl MergePolicyLegacy {
-    fn default_merge_factor() -> usize {
-        10
-    }
-
-    fn default_max_merge_factor() -> usize {
-        12
-    }
-}
-
-impl Default for MergePolicyLegacy {
-    fn default() -> Self {
-        Self {
-            __demux_factor_deprecated: serde::de::IgnoredAny,
-            merge_factor: Self::default_merge_factor(),
-            max_merge_factor: Self::default_max_merge_factor(),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
@@ -173,98 +141,6 @@ pub struct IndexingSettings {
     pub resources: IndexingResources,
 }
 
-/// The IndexingSettingsLegacy struct is just here to deserialize version 0 / version 1
-/// index settings.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct IndexingSettingsLegacy {
-    #[serde(default, rename = "demux_enabled", skip_serializing)]
-    __demux_enabled_deprecated: IgnoredAny,
-    #[serde(default, rename = "demux_field", skip_serializing)]
-    __demux_field_deprecated: IgnoredAny,
-    timestamp_field: Option<String>,
-    sort_field: Option<String>,
-    sort_order: Option<SortOrder>,
-    #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
-    commit_timeout_secs: usize,
-    #[serde(default = "IndexingSettings::default_docstore_compression_level")]
-    docstore_compression_level: i32,
-    #[serde(default = "IndexingSettings::default_docstore_blocksize")]
-    docstore_blocksize: usize,
-    /// A split containing a number of docs greather than or equal to this value is considered
-    /// mature.
-    #[serde(default = "IndexingSettings::default_split_num_docs_target")]
-    split_num_docs_target: usize,
-    #[serde(default = "IndexingSettings::default_merge_enabled")]
-    merge_enabled: bool,
-    #[serde(default)]
-    merge_policy: MergePolicyLegacy,
-    #[serde(default)]
-    resources: IndexingResources,
-}
-
-fn merge_policy_from_legacy(settings: &IndexingSettingsLegacy) -> MergePolicyConfig {
-    if !settings.merge_enabled {
-        return MergePolicyConfig::Nop;
-    }
-    let stable_log_merge_policy = StableLogMergePolicyConfig {
-        merge_factor: settings.merge_policy.merge_factor,
-        max_merge_factor: settings.merge_policy.max_merge_factor,
-        ..Default::default()
-    };
-    MergePolicyConfig::StableLog(stable_log_merge_policy)
-}
-
-impl From<IndexingSettingsLegacy> for IndexingSettings {
-    fn from(settings: IndexingSettingsLegacy) -> IndexingSettings {
-        let merge_policy = merge_policy_from_legacy(&settings);
-        IndexingSettings {
-            timestamp_field: settings.timestamp_field,
-            sort_field: settings.sort_field,
-            sort_order: settings.sort_order,
-            commit_timeout_secs: settings.commit_timeout_secs,
-            docstore_compression_level: settings.docstore_compression_level,
-            docstore_blocksize: settings.docstore_blocksize,
-            split_num_docs_target: settings.split_num_docs_target,
-            merge_policy,
-            resources: settings.resources,
-        }
-    }
-}
-
-impl Default for IndexingSettingsLegacy {
-    fn default() -> Self {
-        Self {
-            __demux_enabled_deprecated: IgnoredAny,
-            __demux_field_deprecated: IgnoredAny,
-            timestamp_field: None,
-            sort_field: None,
-            sort_order: None,
-            commit_timeout_secs: IndexingSettings::default_commit_timeout_secs(),
-            docstore_blocksize: IndexingSettings::default_docstore_blocksize(),
-            docstore_compression_level: IndexingSettings::default_docstore_compression_level(),
-            split_num_docs_target: IndexingSettings::default_split_num_docs_target(),
-            merge_enabled: IndexingSettings::default_merge_enabled(),
-            merge_policy: MergePolicyLegacy::default(),
-            resources: IndexingResources::default(),
-        }
-    }
-}
-
-impl IndexingSettingsLegacy {
-    pub fn commit_timeout(&self) -> Duration {
-        Duration::from_secs(self.commit_timeout_secs as u64)
-    }
-
-    pub fn sort_by(&self) -> SortBy {
-        if let Some(field_name) = self.sort_field.clone() {
-            let order = self.sort_order.unwrap_or_default();
-            return SortBy::FastField { field_name, order };
-        }
-        SortBy::DocId
-    }
-}
-
 impl IndexingSettings {
     pub fn commit_timeout(&self) -> Duration {
         Duration::from_secs(self.commit_timeout_secs as u64)
@@ -284,10 +160,6 @@ impl IndexingSettings {
 
     pub fn default_split_num_docs_target() -> usize {
         10_000_000
-    }
-
-    fn default_merge_enabled() -> bool {
-        true
     }
 
     pub fn sort_by(&self) -> SortBy {
@@ -432,7 +304,7 @@ impl IndexConfig {
             "field_mappings": [
                 {
                     "name": "timestamp",
-                    "type": "i64",
+                    "type": "datetime",
                     "fast": true
                 },
                 {
@@ -525,7 +397,7 @@ impl TestableForRegression for IndexConfig {
         let timestamp_mapping = serde_json::from_str(
             r#"{
                 "name": "timestamp",
-                "type": "i64",
+                "type": "datetime",
                 "fast": true
         }"#,
         )
@@ -730,6 +602,7 @@ mod tests {
             MergePolicyConfig::StableLog(StableLogMergePolicyConfig {
                 merge_factor: 9,
                 max_merge_factor: 11,
+                maturation_period: Duration::from_secs(48 * 3600),
                 ..Default::default()
             })
         );
@@ -854,6 +727,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(minimal_config.doc_mapping.mode, ModeType::Lenient);
+    }
+
+    #[test]
+    fn test_index_config_with_malformed_maturation_duration() {
+        let config_yaml = r#"
+            version: 0.4
+            index_id: hdfs-logs
+            index_uri: "s3://my-index"
+            doc_mapping: {}
+            indexing_settings:
+              merge_policy:
+                type: limit_merge
+                maturation_period: x
+        "#;
+        let parsing_config_error = load_index_config_from_user_config(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Uri::from_well_formed("s3://my-index"),
+        )
+        .unwrap_err();
+        println!("{:?}", parsing_config_error);
+        assert!(parsing_config_error
+            .root_cause()
+            .to_string()
+            .contains("Failed to parse human-readable duration `x`"));
     }
 
     #[test]

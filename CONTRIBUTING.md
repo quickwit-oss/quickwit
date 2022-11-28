@@ -79,6 +79,10 @@ For this to work, we've had to customize the docker images cross uses. These cus
 docker files, you will need to build and push the images on Docker Hub by running `make cross-images`.
 We also have nightly builds that are pushed to Docker Hub. This helps continuously check our binaries are still built even with external dependency update. Successful builds let you accessed the artifacts for the next three days. Release builds always have their artifacts attached to the release.
 
+## Docker images
+
+Each merge on the `main` branch triggers the build of a new Docker image available on DockerHub at `quickwit/quickwit:edge`. Tagging a commit also creates a new image `quickwit/quickwit:<tag name>` if the tag name starts with `v*` or `qw*`. The Docker images are based on Debian.
+
 ### Notes on the embedded UI
 As the react UI is embedded in the rust binary, we need to build the react app before building the binary. Hence `make cross-image` depends on the command `build-ui`.
 

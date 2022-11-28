@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize, Serializer};
 pub enum Protocol {
     Azure,
     File,
+    Grpc,
     PostgreSQL,
     Ram,
     S3,
@@ -45,6 +46,7 @@ impl Protocol {
         match &self {
             Protocol::Azure => "azure",
             Protocol::File => "file",
+            Protocol::Grpc => "grpc",
             Protocol::PostgreSQL => "postgresql",
             Protocol::Ram => "ram",
             Protocol::S3 => "s3",
@@ -57,6 +59,10 @@ impl Protocol {
 
     pub fn is_file(&self) -> bool {
         matches!(&self, Protocol::File)
+    }
+
+    pub fn is_grpc(&self) -> bool {
+        matches!(&self, Protocol::Grpc)
     }
 
     pub fn is_postgresql(&self) -> bool {
@@ -97,6 +103,7 @@ impl FromStr for Protocol {
         match protocol {
             "azure" => Ok(Protocol::Azure),
             "file" => Ok(Protocol::File),
+            "grpc" => Ok(Protocol::Grpc),
             "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),

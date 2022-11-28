@@ -526,7 +526,7 @@ mod tests {
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper, SortOrder};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::MockMetastore;
-    use tantivy::doc;
+    use tantivy::{doc, DateTime};
 
     use super::*;
     use crate::actors::indexer::{record_timestamp, IndexerCounters};
@@ -592,7 +592,7 @@ mod tests {
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document",
-                            timestamp_field=>1_662_529_435_000_001i64
+                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_001i64)
                         ),
                         timestamp_opt: Some(1_662_529_435_000_001i64),
                         partition: 1,
@@ -601,7 +601,7 @@ mod tests {
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 2",
-                            timestamp_field=>1_662_529_435_000_002i64
+                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_002i64)
                         ),
                         timestamp_opt: Some(1_662_529_435_000_002i64),
                         partition: 1,
@@ -617,7 +617,7 @@ mod tests {
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 3",
-                            timestamp_field=>1_662_529_435_000_003i64
+                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_003i64)
                         ),
                         timestamp_opt: Some(1_662_529_435_000_003i64),
                         partition: 1,
@@ -626,7 +626,7 @@ mod tests {
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 4",
-                            timestamp_field=>1_662_529_435_000_004i64
+                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_004i64)
                         ),
                         timestamp_opt: Some(1_662_529_435_000_004i64),
                         partition: 1,
@@ -641,7 +641,7 @@ mod tests {
                 docs: vec![PreparedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
-                        timestamp_field=>1_662_529_435_000_005i64
+                        timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_005i64)
                     ),
                     timestamp_opt: Some(1_662_529_435_000_005i64),
                     partition: 1,
@@ -803,7 +803,7 @@ mod tests {
                 docs: vec![PreparedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
-                        timestamp_field=>1_662_529_435_000_005i64
+                        timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_005i64)
                     ),
                     timestamp_opt: Some(1_662_529_435_000_005i64),
                     partition: 1,
@@ -892,7 +892,7 @@ mod tests {
                 docs: vec![PreparedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
-                        timestamp_field=>1_662_529_435_000_005i64
+                        timestamp_field=> DateTime::from_timestamp_micros(1_662_529_435_000_005i64)
                     ),
                     timestamp_opt: Some(1_662_529_435_000_005i64),
                     partition: 1,

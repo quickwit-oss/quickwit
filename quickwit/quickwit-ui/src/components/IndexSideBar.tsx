@@ -37,22 +37,28 @@ function IndexAutocomplete(props: IndexMetadataProps) {
   const [open, setOpen] = React.useState(false);
   const [options, setOptions] = React.useState<readonly IndexMetadata[]>([]);
   const [value, setValue] = React.useState<IndexMetadata | null>(null);
-  const loading = open && options.length <= 1;
+  const [loading, setLoading] = React.useState(false);
+  // We want to show the circular progress only if we are loading some results and
+  // when there is no option avaiable.
+  const showLoading = loading && options.length === 0;
   const quickwitClient = useMemo(() => new Client(), []);
 
   useEffect(() => {
-    if (!loading) {
+    if (loading) {
       return;
     }
+    setLoading(true);
     quickwitClient.listIndexes().then(
       (indexesMetadata) => {
         setOptions([...indexesMetadata]);
+        setLoading(false);
       },
       (error) => {
         console.log("Index autocomplete error", error);
+        setLoading(false);
       }
     );
-  }, [quickwitClient, loading]);
+  }, [quickwitClient, open]);
 
   useEffect(() => {
     if (!open) {
@@ -86,10 +92,12 @@ function IndexAutocomplete(props: IndexMetadataProps) {
       }}
       onClose={() => {
         setOpen(false);
+        setLoading(false);
       }}
       isOptionEqualToValue={(option, value) => option.index_config.index_id === value.index_config.index_id}
       getOptionLabel={(option) => option.index_config.index_id}
       options={options}
+      noOptionsText="No indexes."
       loading={loading}
       renderInput={(params) => (
         <TextField
@@ -99,7 +107,7 @@ function IndexAutocomplete(props: IndexMetadataProps) {
             ...params.InputProps,
             endAdornment: (
               <React.Fragment>
-                {loading ? <CircularProgress color="inherit" size={20} /> : null}
+                {showLoading ? <CircularProgress color="inherit" size={20} /> : null}
                 {params.InputProps.endAdornment}
               </React.Fragment>
             ),

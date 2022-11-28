@@ -8,7 +8,7 @@ doc_mapping:
       type: u64
       fast: true
     - name: timestamp
-      type: i64
+      type: datetime
       fast: true
     - name: severity_text
       type: text
@@ -40,6 +40,7 @@ indexing_settings:
     type: "stable_log"
     merge_factor: 9
     max_merge_factor: 11
+    maturation_period: 48 hours
   resources:
     heap_size: 3G
 
