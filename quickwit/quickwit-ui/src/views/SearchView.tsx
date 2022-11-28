@@ -30,6 +30,20 @@ import { Client } from '../services/client';
 import { EMPTY_SEARCH_REQUEST, Index, IndexMetadata, ResponseError, SearchRequest, SearchResponse } from '../utils/models';
 import { hasSearchParams, parseSearchUrl, toUrlSearchRequestParams } from '../utils/urls';
 
+// If we have a timestamp field, order by desc on the timestamp field.
+function updateSearchRequestWithIndex(index: Index | null, searchRequest: SearchRequest) {
+  if (index?.metadata.index_config.indexing_settings.timestamp_field) {
+    searchRequest.sortByField = {
+      field_name: index?.metadata.index_config.indexing_settings.timestamp_field,
+      order: 'Desc'
+    };
+  } else {
+    searchRequest.sortByField = null;
+    searchRequest.startTimestamp = null;
+    searchRequest.endTimestamp = null;
+  }
+}
+
 function SearchView() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -48,15 +62,8 @@ function SearchView() {
     }
 
     console.log('Run search...', updatedSearchRequest);
-    // If we have a timestamp field, order by desc on the timestamp field.
-    if (index?.metadata.index_config.indexing_settings.timestamp_field) {
-      updatedSearchRequest.sortByField = {
-        field_name: index?.metadata.index_config.indexing_settings.timestamp_field,
-        order: 'Desc'
-      };
-    } else {
-      updatedSearchRequest.sortByField = null;
-    }
+    updateSearchRequestWithIndex(index, updatedSearchRequest);
+    setSearchRequest(updatedSearchRequest);
     setQueryRunning(true);
     setSearchError(null);
     quickwitClient.search(updatedSearchRequest).then((response) => {
@@ -72,10 +79,12 @@ function SearchView() {
   }
   const onIndexMetadataUpdate = (indexMetadata: IndexMetadata | null) => {
     setSearchRequest(previousRequest => {
+      updateSearchRequestWithIndex(index, previousRequest);
       return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_config.index_id};
     });
   }
   const onSearchRequestUpdate = (searchRequest: SearchRequest) => {
+    console.log("on search request update:", searchRequest);
     setSearchRequest(searchRequest);
   }
   useEffect(() => {
