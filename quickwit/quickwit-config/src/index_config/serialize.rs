@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -87,8 +87,8 @@ impl IndexConfigForSerialization {
         if let Some(retention_policy) = &self.retention_policy {
             retention_policy.validate()?;
 
-            if self.indexing_settings.timestamp_field.is_none() {
-                bail!(
+            if self.doc_mapping.timestamp_field.is_none() {
+                anyhow::bail!(
                     "Failed to validate index config. The retention policy requires a timestamp \
                      field, but the indexing settings do not declare one."
                 );
@@ -98,11 +98,7 @@ impl IndexConfigForSerialization {
         // Note: this needs a deep refactoring to separate the doc mapping configuration,
         // and doc mapper implementations.
         // TODO see if we should store the byproducton the IndexConfig.
-        build_doc_mapper(
-            &self.doc_mapping,
-            &self.search_settings,
-            &self.indexing_settings,
-        )?;
+        build_doc_mapper(&self.doc_mapping, &self.search_settings)?;
 
         self.indexing_settings.merge_policy.validate()?;
 

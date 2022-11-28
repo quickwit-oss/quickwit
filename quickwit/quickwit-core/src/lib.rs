@@ -30,7 +30,6 @@ pub use index::{
 mod tests {
     use std::path::Path;
 
-    use quickwit_common::uri::Uri;
     use quickwit_indexing::TestSandbox;
     use quickwit_janitor::FileEntry;
     use quickwit_storage::StorageUriResolver;
@@ -71,11 +70,8 @@ mod tests {
             assert_eq!(split_num_bytes, file_entry.file_size_in_bytes);
         }
         // Now delete the index.
-        let index_service = IndexService::new(
-            test_sandbox.metastore(),
-            Uri::from_well_formed("file:///default-index-root-uri"),
-            StorageUriResolver::for_test(),
-        );
+        let index_service =
+            IndexService::new(test_sandbox.metastore(), StorageUriResolver::for_test());
         let deleted_file_entries = index_service.delete_index(index_id, false).await?;
         assert_eq!(deleted_file_entries.len(), 1);
         Ok(())

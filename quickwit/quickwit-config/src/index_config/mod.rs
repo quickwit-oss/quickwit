@@ -20,7 +20,7 @@
 mod serialize;
 
 use std::collections::BTreeSet;
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,9 +33,8 @@ use humantime::parse_duration;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType,
-    QuickwitJsonOptions, SortBy, SortByConfig, SortOrder,
+    QuickwitJsonOptions,
 };
-use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 pub use serialize::load_index_config_from_user_config;
 
@@ -58,20 +57,20 @@ pub struct DocMapping {
     #[serde(default)]
     pub store_source: bool,
     #[serde(default)]
+    pub timestamp_field: Option<String>,
+    #[serde(default)]
     pub mode: ModeType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic_mapping: Option<QuickwitJsonOptions>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub partition_key: String,
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
-    pub max_num_partitions: NonZeroU64,
+    pub max_num_partitions: NonZeroU32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingResources {
-    #[serde(default, rename = "num_threads", skip_serializing)]
-    pub __num_threads_deprecated: IgnoredAny, // DEPRECATED
     #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: Byte,
     /// Sets the maximum write IO throughput in bytes/sec for the merge and delete pipelines.
@@ -108,7 +107,6 @@ impl Default for IndexingResources {
         Self {
             heap_size: Self::default_heap_size(),
             max_merge_write_throughput: None,
-            __num_threads_deprecated: IgnoredAny,
         }
     }
 }
@@ -116,11 +114,6 @@ impl Default for IndexingResources {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
-    pub timestamp_field: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_field: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_order: Option<SortOrder>,
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
     #[serde(default = "IndexingSettings::default_docstore_compression_level")]
@@ -134,7 +127,6 @@ pub struct IndexingSettings {
     /// `split_num_docs_target` are considered mature and never merged.
     #[serde(default = "IndexingSettings::default_split_num_docs_target")]
     pub split_num_docs_target: usize,
-
     #[serde(default)]
     pub merge_policy: MergePolicyConfig,
     #[serde(default)]
@@ -162,14 +154,6 @@ impl IndexingSettings {
         10_000_000
     }
 
-    pub fn sort_by(&self) -> SortBy {
-        if let Some(field_name) = self.sort_field.clone() {
-            let order = self.sort_order.unwrap_or_default();
-            return SortBy::FastField { field_name, order };
-        }
-        SortBy::DocId
-    }
-
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         Self {
@@ -182,9 +166,6 @@ impl IndexingSettings {
 impl Default for IndexingSettings {
     fn default() -> Self {
         Self {
-            timestamp_field: None,
-            sort_field: None,
-            sort_order: None,
             commit_timeout_secs: Self::default_commit_timeout_secs(),
             docstore_blocksize: Self::default_docstore_blocksize(),
             docstore_compression_level: Self::default_docstore_compression_level(),
@@ -355,14 +336,12 @@ impl IndexConfig {
                     ]
                 }
             ],
+            "timestamp_field": "timestamp",
             "tag_fields": ["owner"],
             "store_source": true
         }"#;
         let doc_mapping = serde_json::from_str(doc_mapping_json).unwrap();
         let indexing_settings = IndexingSettings {
-            timestamp_field: Some("timestamp".to_string()),
-            sort_field: Some("timestamp".to_string()),
-            sort_order: Some(SortOrder::Desc),
             resources: IndexingResources::for_test(),
             ..Default::default()
         };
@@ -434,7 +413,8 @@ impl TestableForRegression for IndexConfig {
             mode: ModeType::Dynamic,
             dynamic_mapping: None,
             partition_key: "tenant".to_string(),
-            max_num_partitions: NonZeroU64::new(20).unwrap(),
+            max_num_partitions: NonZeroU32::new(100).unwrap(),
+            timestamp_field: Some("timestamp".to_string()),
         };
         let retention_policy = Some(RetentionPolicy::new(
             "90 days".to_string(),
@@ -451,9 +431,6 @@ impl TestableForRegression for IndexConfig {
             ..Default::default()
         };
         let indexing_settings = IndexingSettings {
-            timestamp_field: Some("timestamp".to_string()),
-            sort_field: Some("timestamp".to_string()),
-            sort_order: Some(SortOrder::Asc),
             commit_timeout_secs: 301,
             split_num_docs_target: 10_000_001,
             merge_policy,
@@ -503,21 +480,11 @@ impl TestableForRegression for IndexConfig {
 pub fn build_doc_mapper(
     doc_mapping: &DocMapping,
     search_settings: &SearchSettings,
-    indexing_settings: &IndexingSettings,
 ) -> anyhow::Result<Arc<dyn DocMapper>> {
-    let sort_by = match indexing_settings.sort_by() {
-        SortBy::DocId => None,
-        SortBy::FastField { field_name, order } => Some(SortByConfig { field_name, order }),
-        SortBy::Score { order } => Some(SortByConfig {
-            field_name: "_score".to_string(),
-            order,
-        }),
-    };
     let builder = DefaultDocMapperBuilder {
         store_source: doc_mapping.store_source,
         default_search_fields: search_settings.default_search_fields.clone(),
-        timestamp_field: indexing_settings.timestamp_field.clone(),
-        sort_by,
+        timestamp_field: doc_mapping.timestamp_field.clone(),
         field_mappings: doc_mapping.field_mappings.clone(),
         tag_fields: doc_mapping.tag_fields.iter().cloned().collect(),
         mode: doc_mapping.mode,
@@ -585,16 +552,8 @@ mod tests {
         assert!(index_config.doc_mapping.store_source);
 
         assert_eq!(
-            index_config.indexing_settings.timestamp_field.unwrap(),
+            index_config.doc_mapping.timestamp_field.unwrap(),
             "timestamp"
-        );
-        assert_eq!(
-            index_config.indexing_settings.sort_field.unwrap(),
-            "timestamp"
-        );
-        assert_eq!(
-            index_config.indexing_settings.sort_order.unwrap(),
-            SortOrder::Asc
         );
         assert_eq!(index_config.indexing_settings.commit_timeout_secs, 61);
         assert_eq!(
@@ -681,11 +640,9 @@ mod tests {
             assert_eq!(
                 index_config.indexing_settings,
                 IndexingSettings {
-                    sort_field: Some("timestamp".to_string()),
                     commit_timeout_secs: 42,
                     merge_policy: MergePolicyConfig::default(),
                     resources: IndexingResources {
-                        __num_threads_deprecated: serde::de::IgnoredAny,
                         ..Default::default()
                     },
                     ..Default::default()

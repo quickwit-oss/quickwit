@@ -179,14 +179,10 @@ pub async fn single_node_search(
     let metas = list_relevant_splits(search_request, metastore).await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
-    let doc_mapper = build_doc_mapper(
-        &index_config.doc_mapping,
-        &index_config.search_settings,
-        &index_config.indexing_settings,
-    )
-    .map_err(|err| {
-        SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
-    })?;
+    let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
+        .map_err(|err| {
+            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+        })?;
 
     validate_request(search_request)?;
 

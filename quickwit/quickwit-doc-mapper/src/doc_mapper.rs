@@ -19,6 +19,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
+use std::num::NonZeroU32;
 
 use anyhow::Context;
 use dyn_clone::{clone_trait_object, DynClone};
@@ -30,7 +31,7 @@ use tantivy::{Document, Term};
 
 pub type Partition = u64;
 
-use crate::{DocParsingError, QueryParserError, SortBy};
+use crate::{DocParsingError, QueryParserError};
 
 /// The `DocMapper` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
@@ -78,11 +79,6 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
         request: &SearchRequest,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError>;
 
-    /// Returns the default sort
-    fn sort_by(&self) -> SortBy {
-        SortBy::DocId
-    }
-
     /// Returns the timestamp field.
     /// Considering schema evolution, splits within an index can have different schema
     /// over time. So `split_schema` is the schema of the split being operated on.
@@ -119,6 +115,9 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
             })
             .collect::<Result<Vec<_>, _>>()
     }
+
+    /// Returns the maximum number of partitions.
+    fn max_num_partitions(&self) -> NonZeroU32;
 }
 
 /// A struct to wrap a tantivy field with its name.

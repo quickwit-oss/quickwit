@@ -152,14 +152,10 @@ pub async fn root_search(
         .await?
         .into_index_config();
 
-    let doc_mapper = build_doc_mapper(
-        &index_config.doc_mapping,
-        &index_config.search_settings,
-        &index_config.indexing_settings,
-    )
-    .map_err(|err| {
-        SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
-    })?;
+    let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
+        .map_err(|err| {
+            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+        })?;
 
     validate_request(search_request)?;
 

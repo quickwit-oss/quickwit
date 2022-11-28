@@ -333,12 +333,9 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
               - name: owner
                 type: text
                 tokenizer: raw
+            timestamp_field: ts
         "#;
-    let indexing_settings_json = r#"{
-            "timestamp_field": "ts",
-            "sort_field": "ts",
-            "sort_order": "desc"
-        }"#;
+    let indexing_settings_json = r#"{}"#;
     let test_sandbox = TestSandbox::create(
         index_id,
         doc_mapping_yaml,
@@ -363,6 +360,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 15,
         start_offset: 0,
+        sort_by_field: Some("ts".to_string()),
+        sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -385,6 +384,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 25,
         start_offset: 0,
+        sort_by_field: Some("ts".to_string()),
+        sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -407,6 +408,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         end_timestamp: None,
         max_hits: 25,
         start_offset: 0,
+        sort_by_field: Some("ts".to_string()),
+        sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -443,6 +446,7 @@ async fn single_node_search_sort_by_field(
               - name: temperature
                 type: i64
                 fast: true
+            timestamp_field: ts
             "#;
 
     let doc_mapping_without_fieldnorms = r#"
@@ -455,6 +459,7 @@ async fn single_node_search_sort_by_field(
               - name: temperature
                 type: i64
                 fast: true
+            timestamp_field: ts
             "#;
 
     let doc_mapping_yaml = if fieldnorms_enabled {
@@ -463,11 +468,7 @@ async fn single_node_search_sort_by_field(
         doc_mapping_without_fieldnorms
     };
 
-    let indexing_settings_json = r#"{
-            "timestamp_field": "ts",
-            "sort_field": "ts",
-            "sort_order": "desc"
-        }"#;
+    let indexing_settings_json = r#"{}"#;
     let test_sandbox = TestSandbox::create(
         &index_id,
         doc_mapping_yaml,
@@ -547,15 +548,8 @@ async fn test_single_node_invalid_sorting_with_query() -> anyhow::Result<()> {
               - name: temperature
                 type: i64
         "#;
-    let indexing_settings_json = r#"{
-        }"#;
-    let test_sandbox = TestSandbox::create(
-        index_id,
-        doc_mapping_yaml,
-        indexing_settings_json,
-        &["description"],
-    )
-    .await?;
+    let test_sandbox =
+        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["description"]).await?;
 
     let mut docs = vec![];
     for i in 0..30 {

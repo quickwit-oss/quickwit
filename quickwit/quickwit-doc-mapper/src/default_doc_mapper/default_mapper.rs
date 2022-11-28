@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
@@ -35,34 +35,10 @@ pub use crate::default_doc_mapper::QuickwitJsonOptions;
 use crate::doc_mapper::Partition;
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
-use crate::sort_by::{validate_sort_by_field_name, SortBy, SortOrder};
 use crate::{
     DocMapper, DocParsingError, ModeType, QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME,
     SOURCE_FIELD_NAME,
 };
-
-/// Specifies the name of the sort field and the sort order for an index.
-#[derive(Default, Serialize, Deserialize, Clone)]
-pub struct SortByConfig {
-    /// Sort field name in the index schema.
-    pub field_name: String,
-    /// Sort order of the field.
-    pub order: SortOrder,
-}
-
-impl From<SortByConfig> for SortBy {
-    fn from(sort_by_config: SortByConfig) -> Self {
-        if sort_by_config.field_name == "_score" {
-            return SortBy::Score {
-                order: sort_by_config.order,
-            };
-        }
-        SortBy::FastField {
-            field_name: sort_by_config.field_name,
-            order: sort_by_config.order,
-        }
-    }
-}
 
 /// Defines how an unmapped field should be handled.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -108,8 +84,6 @@ pub struct DefaultDocMapper {
     default_search_field_names: Vec<String>,
     /// Timestamp field name.
     timestamp_field_name: Option<String>,
-    /// Sort field name and order.
-    sort_by: SortBy,
     /// Root node of the field mapping tree.
     /// See [`MappingNode`] and [`MappingTree`].
     field_mappings: MappingNode,
@@ -120,6 +94,8 @@ pub struct DefaultDocMapper {
     /// The partition key is a DSL used to route documents
     /// into specific splits.
     partition_key: RoutingExpr,
+    /// Maximum number of partitions
+    max_num_partitions: NonZeroU32,
     /// List of required fields. Right now this is the list of fast fields.
     required_fields: Vec<Field>,
     /// Defines how unmapped fields should be handle.
@@ -140,8 +116,8 @@ impl DefaultDocMapper {
     }
 
     /// Default maximum number of partitions.
-    pub fn default_max_num_partitions() -> NonZeroU64 {
-        NonZeroU64::new(8).unwrap()
+    pub fn default_max_num_partitions() -> NonZeroU32 {
+        NonZeroU32::new(200).unwrap()
     }
 }
 
@@ -230,18 +206,6 @@ fn resolve_timestamp_field(
     Ok(())
 }
 
-fn resolve_sort_field(
-    sort_by_config_opt: Option<SortByConfig>,
-    schema: &Schema,
-) -> anyhow::Result<SortBy> {
-    if let Some(sort_by_config) = sort_by_config_opt {
-        validate_sort_by_field_name(&sort_by_config.field_name, schema, None)?;
-        let sort_by: SortBy = sort_by_config.into();
-        return Ok(sort_by);
-    }
-    Ok(SortBy::DocId)
-}
-
 impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
     type Error = anyhow::Error;
 
@@ -279,7 +243,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         }
 
         resolve_timestamp_field(builder.timestamp_field.as_ref(), &schema)?;
-        let sort_by = resolve_sort_field(builder.sort_by, &schema)?;
 
         // Resolve tag fields
         let mut tag_field_names: BTreeSet<String> = Default::default();
@@ -294,7 +257,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         }
 
         let required_fields = list_required_fields_for_node(&field_mappings);
-        let partition_key = RoutingExpr::new(&builder.partition_key, builder.max_num_partitions)
+        let partition_key = RoutingExpr::new(&builder.partition_key)
             .context("Failed to interpret the partition key.")?;
         Ok(DefaultDocMapper {
             schema,
@@ -302,11 +265,11 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             dynamic_field,
             default_search_field_names,
             timestamp_field_name: builder.timestamp_field,
-            sort_by,
             field_mappings,
             tag_field_names,
             required_fields,
             partition_key,
+            max_num_partitions: builder.max_num_partitions,
             mode,
         })
     }
@@ -314,17 +277,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 
 impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
     fn from(default_doc_mapper: DefaultDocMapper) -> Self {
-        let sort_by_config = match &default_doc_mapper.sort_by {
-            SortBy::DocId => None,
-            SortBy::FastField { field_name, order } => Some(SortByConfig {
-                field_name: field_name.clone(),
-                order: *order,
-            }),
-            SortBy::Score { order } => Some(SortByConfig {
-                field_name: "_score".to_string(),
-                order: *order,
-            }),
-        };
         let mode = default_doc_mapper.mode.mode_type();
         let dynamic_mapping = match &default_doc_mapper.mode {
             Mode::Dynamic(mapping_options) => Some(mapping_options.clone()),
@@ -334,13 +286,12 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             store_source: default_doc_mapper.source_field.is_some(),
             timestamp_field: default_doc_mapper.timestamp_field_name(),
             field_mappings: default_doc_mapper.field_mappings.into(),
-            sort_by: sort_by_config,
             tag_fields: default_doc_mapper.tag_field_names.into_iter().collect(),
             default_search_fields: default_doc_mapper.default_search_field_names,
             mode,
             dynamic_mapping,
             partition_key: default_doc_mapper.partition_key.to_string(),
-            max_num_partitions: default_doc_mapper.partition_key.max_num_partitions(),
+            max_num_partitions: default_doc_mapper.max_num_partitions,
         }
     }
 }
@@ -463,12 +414,12 @@ impl DocMapper for DefaultDocMapper {
         self.timestamp_field_name.clone()
     }
 
-    fn sort_by(&self) -> SortBy {
-        self.sort_by.clone()
-    }
-
     fn tag_field_names(&self) -> BTreeSet<String> {
         self.tag_field_names.clone()
+    }
+
+    fn max_num_partitions(&self) -> NonZeroU32 {
+        self.max_num_partitions
     }
 }
 
@@ -482,8 +433,7 @@ mod tests {
 
     use super::DefaultDocMapper;
     use crate::{
-        DefaultDocMapperBuilder, DocMapper, DocParsingError, SortBy, SortOrder, DYNAMIC_FIELD_NAME,
-        SOURCE_FIELD_NAME,
+        DefaultDocMapperBuilder, DocMapper, DocParsingError, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
     };
 
     fn example_json_doc_value() -> JsonValue {
@@ -844,99 +794,6 @@ mod tests {
             "Tags collection is not allowed on `bytes` fields.".to_string(),
         );
         Ok(())
-    }
-
-    #[test]
-    fn test_fail_to_build_doc_mapper_with_non_fast_sort_by_field() -> anyhow::Result<()> {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "sort_by": {
-                "field_name": "timestamp",
-                "order": "asc"
-            },
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "timestamp",
-                    "type": "i64"
-                }
-            ]
-        }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
-        let expected_msg = "Sort by field must be a fast field, please add the fast property to \
-                            your field `timestamp`."
-            .to_string();
-        assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
-        Ok(())
-    }
-
-    #[test]
-    fn test_fail_to_build_doc_mapper_with_text_sort_by_field() -> anyhow::Result<()> {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "sort_by": {
-                "field_name": "title",
-                "order": "asc"
-            },
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "title",
-                    "type": "text",
-                    "fast": true
-                }
-            ]
-        }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
-        let expected_msg =
-            "Sort by field on type text is currently not supported `title`.".to_string();
-        assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
-        Ok(())
-    }
-
-    #[test]
-    fn test_build_doc_mapper_with_sort_by_field_asc() {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "sort_by": {
-                "field_name": "timestamp",
-                "order": "asc"
-            },
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "timestamp",
-                    "type": "u64",
-                    "fast": true
-                }
-            ]
-        }"#;
-        let doc_mapper: DefaultDocMapper =
-            serde_json::from_str::<DefaultDocMapper>(doc_mapper).unwrap();
-        assert_eq!(
-            doc_mapper.sort_by(),
-            SortBy::FastField {
-                field_name: "timestamp".to_string(),
-                order: SortOrder::Asc
-            }
-        );
-    }
-
-    #[test]
-    fn test_build_doc_mapper_with_sort_by_doc_id_when_no_sort_field_is_specified() {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "timestamp",
-                    "type": "u64",
-                    "fast": true
-                }
-            ]
-        }"#;
-        let default_doc_mapper = serde_json::from_str::<DefaultDocMapper>(doc_mapper).unwrap();
-        assert_eq!(default_doc_mapper.sort_by(), SortBy::DocId);
     }
 
     // See #1132

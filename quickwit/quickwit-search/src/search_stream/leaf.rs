@@ -453,17 +453,9 @@ mod tests {
               - name: ts
                 type: datetime
                 fast: true
-        "#;
-        let indexing_settings_yaml = r#"
             timestamp_field: ts
         "#;
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            indexing_settings_yaml,
-            &["body"],
-        )
-        .await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
 
         let mut docs = vec![];
         let mut filtered_timestamp_values = vec![];
@@ -534,17 +526,9 @@ mod tests {
                 input_formats:
                   - "unix_timestamp"
                 fast: true
-        "#;
-        let indexing_settings_yaml = r#"
             timestamp_field: ts
         "#;
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            indexing_settings_yaml,
-            &["body"],
-        )
-        .await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
         let mut docs = vec![];
         let mut filtered_timestamp_values = vec![];
         let start_date = OffsetDateTime::now_utc();
@@ -675,17 +659,9 @@ mod tests {
               - name: fast_field
                 type: u64
                 fast: true
-        "#;
-        let indexing_settings_yaml = r#"
             timestamp_field: ts
         "#;
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            indexing_settings_yaml,
-            &["body"],
-        )
-        .await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
 
         let mut docs = vec![];
         let partition_by_fast_field_values = vec![1, 2, 3, 4, 5];

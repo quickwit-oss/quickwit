@@ -30,14 +30,14 @@ import {
   TextField,
 } from "@mui/material";
 import { AccessTime, ChevronRight, DateRange } from "@mui/icons-material";
-import { default as dayjs } from 'dayjs';
+import { Dayjs, default as dayjs } from 'dayjs';
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
 import { DateTimePicker } from "@mui/lab";
-import { getDateTimeFormat, guessTimeUnit, TimeUnit } from "../utils/models";
 import { SearchComponentProps } from "../utils/SearchComponentProps";
 import DateAdapter from '@mui/lab/AdapterDayjs';
 import LocalizationProvider from '@mui/lab/LocalizationProvider';
+import { DATE_TIME_WITH_SECONDS_FORMAT } from "../utils/models";
 
 dayjs.extend(relativeTime);
 dayjs.extend(utc);
@@ -58,37 +58,10 @@ interface TimeRangeSelectState {
   width: number;
 }
 
-function convertFromMilliSecond(value: number | null, targetTimeUnit: TimeUnit): number | null {
-  if (value === null) {
-    return null;
-  }
-  if (targetTimeUnit === TimeUnit.MILLI_SECOND) {
-    return value;
-  } else if (targetTimeUnit === TimeUnit.SECOND) {
-    return Math.round(value / 1000);
-  }
-  // `TimeRangeSelect` should not be displayed with a unknown/unsupported TimeUnit.
-  throw new Error(`Cannot convertFromMilliSecond with a time unit ${targetTimeUnit}.`);
-}
-
-function convertToMilliSecond(value: number | null, valueTimeUnit: TimeUnit): number | null {
-  if (value === null) {
-    return null;
-  }
-  if (valueTimeUnit === TimeUnit.MILLI_SECOND) {
-    return value;
-  } else if (valueTimeUnit === TimeUnit.SECOND) {
-    return value * 1e3;
-  }
-  // `TimeRangeSelect` should not be displayed with a unknown/unsupported TimeUnit.
-  throw new Error(`Cannot convertToMilliSecond with a time unit ${valueTimeUnit}.`);
-}
-
 export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
   const getInitialState = () => {return {width: 220, anchor: null, customDatesPanelOpen: false}};
   const initialState = useMemo(() => {return getInitialState(); }, []);
   const [state, setState] = useState<TimeRangeSelectState>(initialState);
-  const timeUnit = props.index === null ? TimeUnit.MILLI_SECOND : guessTimeUnit(props.index);
 
   const handleOpenClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setState((prevState) => {
@@ -114,10 +87,10 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
     if (secondsBeforeNow === undefined) {
       return;
     }
+    // Ensures that we have a number.
     secondsBeforeNow = +secondsBeforeNow;
     setState(initialState);
-    const startTimestampInMilliSec = Date.now() - secondsBeforeNow * 1000;
-    const startTimestamp = convertFromMilliSecond(startTimestampInMilliSec, timeUnit);
+    const startTimestamp = Math.trunc(Date.now() / 1000) - secondsBeforeNow;
     props.runSearch({...props.searchRequest, startTimestamp: startTimestamp, endTimestamp: null});
   };
 
@@ -137,7 +110,7 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
         startIcon={<AccessTime />}
         disabled={props.queryRunning || props.searchRequest.indexId == null}
       >
-        <DateTimeRangeLabel timeUnit={timeUnit} startTimestamp={props.searchRequest.startTimestamp} endTimestamp={props.searchRequest.endTimestamp} />
+        <DateTimeRangeLabel startTimestamp={props.searchRequest.startTimestamp} endTimestamp={props.searchRequest.endTimestamp} />
       </Button>
       <Popover
         id={id}
@@ -200,17 +173,13 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
 }
 
 function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
-  const [startDate, setStartDate] = useState<dayjs.Dayjs | null>(null);
-  const [endDate, setEndDate] = useState<dayjs.Dayjs | null>(null);
-  const timeUnit = props.index === null ? TimeUnit.MILLI_SECOND : guessTimeUnit(props.index);
-  const dateTimeFormat = getDateTimeFormat(timeUnit);
+  const [startDate, setStartDate] = useState<Dayjs | null>(null);
+  const [endDate, setEndDate] = useState<Dayjs | null>(null);
 
   useEffect(() => {
-    const initStartTimestamp = convertToMilliSecond(props.searchRequest.startTimestamp, timeUnit);
-    const initEndTimeStamp = convertToMilliSecond(props.searchRequest.endTimestamp, timeUnit);
-    setStartDate(initStartTimestamp ? dayjs(initStartTimestamp).utc() : null);
-    setEndDate(initEndTimeStamp ? dayjs(initEndTimeStamp).utc() : null);
-  }, [props.searchRequest, timeUnit]);
+    setStartDate(props.searchRequest.startTimestamp ? convertTimestampSecsIntoDateUtc(props.searchRequest.startTimestamp) : null);
+    setEndDate(props.searchRequest.endTimestamp ? convertTimestampSecsIntoDateUtc(props.searchRequest.endTimestamp) : null);
+  }, [props.searchRequest.startTimestamp, props.searchRequest.endTimestamp]);
   const handleReset = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setStartDate(null);
@@ -219,8 +188,8 @@ function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
   };
   const handleApply = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
-    const startTimestamp = convertFromMilliSecond(startDate ? startDate.valueOf() : null, timeUnit);
-    const endTimestamp = convertFromMilliSecond(endDate ? endDate.valueOf() : null, timeUnit);
+    const startTimestamp = startDate ? startDate.valueOf() / 1000 : null;
+    const endTimestamp = endDate ? endDate.valueOf() / 1000 : null;
     props.runSearch({...props.searchRequest, startTimestamp: startTimestamp, endTimestamp: endTimestamp});
   };
 
@@ -232,7 +201,7 @@ function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
             <DateTimePicker
               label="Start Date"
               value={startDate}
-              inputFormat={dateTimeFormat}
+              inputFormat={DATE_TIME_WITH_SECONDS_FORMAT}
               onChange={(newValue) => {
                 // By default, newValue is a datetime defined on the local time zone and for now we consider
                 // input/output only in UTC.
@@ -245,7 +214,7 @@ function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
             <DateTimePicker
               label="End Date"
               value={endDate}
-              inputFormat={dateTimeFormat}
+              inputFormat={DATE_TIME_WITH_SECONDS_FORMAT}
               onChange={(newValue) => {
                 // By default, newValue is a datetime defined on the local time zone and for now we consider
                 // input/output only in UTC.
@@ -282,29 +251,19 @@ function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
 interface DateTimeRangeLabelProps {
   startTimestamp: number | null;
   endTimestamp: number | null;
-  timeUnit: TimeUnit;
 }
 
 function DateTimeRangeLabel(props: DateTimeRangeLabelProps): JSX.Element {
-  const [startTimestamp, setStartTimestamp] = useState(convertToMilliSecond(props.startTimestamp, props.timeUnit));
-  const [endTimestamp, setEndTimestamp] = useState(convertToMilliSecond(props.endTimestamp, props.timeUnit));
-  const dateTimeFormat = getDateTimeFormat(props.timeUnit);
-
-  useEffect(() => {
-    setStartTimestamp(convertToMilliSecond(props.startTimestamp, props.timeUnit));
-    setEndTimestamp(convertToMilliSecond(props.endTimestamp, props.timeUnit));
-  }, [props.startTimestamp, props.endTimestamp, props.timeUnit])
-
   function Label() {
-    if (startTimestamp !== null && endTimestamp !== null) {
+    if (props.startTimestamp !== null && props.endTimestamp !== null) {
       return <>
-        {dayjs(startTimestamp).utc().format(dateTimeFormat)} -{" "}
-        {dayjs(endTimestamp).utc().format(dateTimeFormat)}
+        {convertTimestampSecsIntoDateUtc(props.startTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)} -{" "}
+        {convertTimestampSecsIntoDateUtc(props.startTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)}
       </>
-    } else if (startTimestamp !== null && endTimestamp === null) {
-      return <>Since {dayjs(startTimestamp).utc().fromNow(true)}</>
-    } else if (startTimestamp == null && endTimestamp != null) {
-      return <>Before {dayjs(endTimestamp).utc().format(dateTimeFormat)}</>
+    } else if (props.startTimestamp !== null && props.endTimestamp === null) {
+      return <>Since {convertTimestampSecsIntoDateUtc(props.startTimestamp).fromNow(true)}</>
+    } else if (props.startTimestamp == null && props.endTimestamp != null) {
+      return <>Before {convertTimestampSecsIntoDateUtc(props.endTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)}</>
     }
     return <>No date range</>
   }
@@ -314,4 +273,8 @@ function DateTimeRangeLabel(props: DateTimeRangeLabelProps): JSX.Element {
       <Label />
     </span>
   );
+}
+
+function convertTimestampSecsIntoDateUtc(timestamp_secs: number): Dayjs {
+  return dayjs(timestamp_secs * 1000).utc();
 }
