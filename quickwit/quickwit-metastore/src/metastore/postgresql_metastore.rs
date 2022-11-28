@@ -653,23 +653,33 @@ impl Metastore for PostgresqlMetastore {
         sqlx::query(r#"
             INSERT INTO splits
                 (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, split_state, index_id)
-            SELECT *, $7, $8 FROM UNNEST ($1, $2, $3, ARRAY(SELECT * FROM json_array_elements_text($4::json)::text[][]), $5, $6);
+            SELECT
+                split_id,
+                time_range_start,
+                time_range_end,
+                ARRAY(SELECT json_array_elements_text(tags_json)) as tags,
+                split_metadata_json,
+                delete_opstamp,
+                $7 as split_state,
+                $8 as index_id
+            FROM
+                unnest($1, $2, $3, $4, $5, $6)
+                as tr(split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp);
             "#)
             .bind(split_ids)
             .bind(time_range_start_list)
             .bind(time_range_end_list)
-            .bind(sqlx::types::Json(tags_list))
+            .bind(tags_list)
             .bind(split_metadata_json_list)
             .bind(delete_opstamps)
-            .bind(index_id)
             .bind(SplitState::Staged.as_str())
+            .bind(index_id)
             .execute(&self.connection_pool)
             .await
             .map_err(|error| convert_sqlx_err(index_id, error))?;
 
         debug!(index_id=%index_id, num_splits=num_splits, "Splits successfully staged.");
 
-        self.update_index_update_timestamp(index_id).await;
         Ok(())
     }
 
