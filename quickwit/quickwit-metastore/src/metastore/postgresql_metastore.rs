@@ -549,7 +549,7 @@ impl Metastore for PostgresqlMetastore {
             }
         })?;
         sqlx::query("INSERT INTO indexes (index_id, index_metadata_json) VALUES ($1, $2)")
-            .bind(&index_metadata.index_id())
+            .bind(index_metadata.index_id())
             .bind(&index_metadata_json)
             .execute(&self.connection_pool)
             .await
