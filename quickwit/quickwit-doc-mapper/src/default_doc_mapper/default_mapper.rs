@@ -283,6 +283,11 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             _ => None,
         };
         let partition_key_str = default_doc_mapper.partition_key.to_string();
+        let partition_key_opt: Option<String> = if partition_key_str.is_empty() {
+            None
+        } else {
+            Some(partition_key_str)
+        };
         Self {
             store_source: default_doc_mapper.source_field.is_some(),
             timestamp_field: default_doc_mapper.timestamp_field_name(),
@@ -291,11 +296,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             default_search_fields: default_doc_mapper.default_search_field_names,
             mode,
             dynamic_mapping,
-            partition_key: if partition_key_str.is_empty() {
-                None
-            } else {
-                Some(partition_key_str)
-            },
+            partition_key: partition_key_opt,
             max_num_partitions: default_doc_mapper.max_num_partitions,
         }
     }

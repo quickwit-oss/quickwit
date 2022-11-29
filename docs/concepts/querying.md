@@ -44,10 +44,10 @@ The `partition_key` attributes (defined in the doc mapping) lets you configure t
 Quickwit will also enforce this isolation during merges. This functionality is, in a sense, similar to sharding.
 
 Currently, quickwit only support partitioning over a single specific field.
-Partition & tags are for instance often used to:
+Partition & tags are often used to:
 
 - separate `tenants` in a multi-tenant application
-- `team` or `application` in an observation logging case.
+- separate `team` or `application` in an observation logging case.
 
 Emitting many splits can heavily stress an `indexer`. For this reason,
 another parameter of the doc mapping called `max_num_partitions` acts as a safety valve. If the number of partitions is
