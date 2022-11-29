@@ -34,7 +34,14 @@ use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
-use quickwit_proto::metastore_api::{AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest, ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, StageSplitsResponse, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest};
+use quickwit_proto::metastore_api::{
+    AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
+    DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
+    ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, StageSplitsResponse, ToggleSourceRequest,
+    UpdateSplitsDeleteOpstampRequest,
+};
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::{Response, Status};
@@ -257,7 +264,8 @@ impl Metastore for MetastoreGrpcClient {
             index_id: index_id.to_string(),
             split_metadata_list_serialized_json,
         };
-        let resp = self.underlying
+        let resp = self
+            .underlying
             .clone()
             .stage_splits(tonic_request)
             .await

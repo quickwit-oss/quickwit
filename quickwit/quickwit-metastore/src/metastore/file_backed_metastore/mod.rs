@@ -800,7 +800,9 @@ mod tests {
             ..Default::default()
         };
         assert!(metastore.list_all_splits("test-index").await?.is_empty());
-        metastore.stage_splits(index_id, vec![split_metadata]).await?;
+        metastore
+            .stage_splits(index_id, vec![split_metadata])
+            .await?;
         assert_eq!(metastore.list_all_splits(index_id).await?.len(), 1);
         Ok(())
     }
@@ -834,7 +836,9 @@ mod tests {
             .list_all_splits("test-index")
             .await?
             .is_empty());
-        metastore_wrt.stage_splits(index_id, vec![split_metadata]).await?;
+        metastore_wrt
+            .stage_splits(index_id, vec![split_metadata])
+            .await?;
         assert!(metastore_read
             .list_all_splits("test-index")
             .await?

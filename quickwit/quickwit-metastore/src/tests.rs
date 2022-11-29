@@ -1501,7 +1501,7 @@ pub mod test_suite {
                         split_metadata_3.clone(),
                         split_metadata_4.clone(),
                         split_metadata_5.clone(),
-                    ]
+                    ],
                 )
                 .await
                 .unwrap();
@@ -1627,7 +1627,7 @@ pub mod test_suite {
                         split_metadata_3.clone(),
                         split_metadata_4.clone(),
                         split_metadata_5.clone(),
-                    ]
+                    ],
                 )
                 .await
                 .unwrap();
@@ -2477,7 +2477,7 @@ pub mod test_suite {
                         split_metadata_1.clone(),
                         split_metadata_2.clone(),
                         split_metadata_3.clone(),
-                    ]
+                    ],
                 )
                 .await
                 .unwrap();
@@ -2593,7 +2593,7 @@ pub mod test_suite {
                         split_metadata_1.clone(),
                         split_metadata_2.clone(),
                         split_metadata_3.clone(),
-                    ]
+                    ],
                 )
                 .await
                 .unwrap();
