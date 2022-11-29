@@ -61,6 +61,44 @@ pacman -S openssl
 
 </Tabs>
 
+Additionally it requires a few more dependencies to compile it. These dependencies are not required on production system:
+- `clang`: used to compile some dependencies.
+- `protobuf-compiler`: used to compile protobuf definitions.
+These dependencies can be installed on your system using the native package manager.
+You can install these dependencies using the following command:
+
+<Tabs>
+
+<TabItem value="ubuntu" label="Ubuntu">
+
+```bash
+apt install -y clang protobuf-compiler
+```
+
+</TabItem>
+
+<TabItem value="aws-linux" label="AWS Linux">
+
+```bash
+yum -y update && yum -y install clang
+# amazonlinux only has protobuf-compiler 2.5, we need something much more up to date.
+wget https://github.com/protocolbuffers/protobuf/releases/download/v21.9/protoc-21.9-linux-x86_64.zip
+sudo unzip protoc-21.9-linux-x86_64.zip -d /usr/local
+```
+
+</TabItem>
+
+<TabItem value="arch-linux" label="Arch Linux">
+
+```bash
+pacman -S clang protobuf
+```
+
+</TabItem>
+
+</Tabs>
+
+
 
 ## Install script
 
