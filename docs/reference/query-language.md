@@ -70,7 +70,8 @@ Range queries can only be executed on fields with a fast field. Currently only f
 
 - Inclusive Range: `ip:[127.0.0.1 TO 127.0.0.50]`
 - Exclusive Range: `ip:{127.0.0.1 TO 127.0.0.50}`
-- Unbounded Range: `ip:[127.0.0.1 TO *]`
+- Unbounded Inclusive Range: `ip:[127.0.0.1 TO *] or ip:>=127.0.0.1` 
+- Unbounded Exclusive Range: `ip:{127.0.0.1 TO *] or ip:>127.0.0.1` 
 
 
 #### Examples:
