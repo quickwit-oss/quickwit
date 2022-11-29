@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::Infallible;
 use std::sync::Arc;
 
 use quickwit_actors::Mailbox;
@@ -63,7 +62,7 @@ pub fn get_delete_tasks_handler(
         .and(warp::get())
         .and(with_arg(metastore))
         .and(require(delete_task_service_mailbox))
-        .and_then(get_delete_tasks)
+        .then(get_delete_tasks)
 }
 
 // Returns delete tasks in json format for a given `index_id`.
@@ -75,9 +74,9 @@ async fn get_delete_tasks(
     index_id: String,
     metastore: Arc<dyn Metastore>,
     _delete_task_service_mailbox: Mailbox<DeleteTaskService>,
-) -> Result<impl warp::Reply, Infallible> {
+) -> impl warp::Reply {
     let delete_tasks = metastore.list_delete_tasks(&index_id, 0).await;
-    Ok(Format::PrettyJson.make_rest_reply(delete_tasks))
+    Format::PrettyJson.make_rest_reply(delete_tasks)
 }
 
 pub fn post_delete_tasks_handler(
@@ -87,14 +86,14 @@ pub fn post_delete_tasks_handler(
         .and(warp::body::json())
         .and(warp::post())
         .and(require(delete_task_service_mailbox))
-        .and_then(post_delete_request)
+        .then(post_delete_request)
 }
 
 async fn post_delete_request(
     index_id: String,
     delete_request: DeleteQueryRequest,
     delete_task_service_mailbox: Mailbox<DeleteTaskService>,
-) -> Result<impl warp::Reply, Infallible> {
+) -> impl warp::Reply {
     let delete_query = DeleteQuery {
         index_id: index_id.clone(),
         start_timestamp: delete_request.start_timestamp,
@@ -106,7 +105,7 @@ async fn post_delete_request(
         .ask_for_res(delete_query)
         .await
         .map_err(FormatError::wrap);
-    Ok(Format::PrettyJson.make_rest_reply(create_delete_task_reply))
+    Format::PrettyJson.make_rest_reply(create_delete_task_reply)
 }
 
 #[cfg(test)]

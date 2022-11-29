@@ -32,7 +32,7 @@ pub fn cluster_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     cluster_state_filter()
         .and(warp::path::end().map(move || cluster.clone()))
-        .and_then(get_cluster)
+        .then(get_cluster)
 }
 
 /// This struct represents the QueryString passed to
@@ -53,13 +53,10 @@ fn cluster_state_filter(
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
-async fn get_cluster(
-    request: ClusterStateQueryString,
-    cluster: Arc<Cluster>,
-) -> Result<impl warp::Reply, Infallible> {
-    Ok(request
+async fn get_cluster(request: ClusterStateQueryString, cluster: Arc<Cluster>) -> impl warp::Reply {
+    request
         .format
-        .make_rest_reply_non_serializable_error(cluster_endpoint(cluster).await))
+        .make_rest_reply_non_serializable_error(cluster_endpoint(cluster).await)
 }
 
 async fn cluster_endpoint(cluster: Arc<Cluster>) -> Result<ClusterSnapshot, Infallible> {

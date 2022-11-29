@@ -38,13 +38,11 @@ fn node_version_handler(
     warp::path("version")
         .and(warp::path::end())
         .and(with_arg(build_info))
-        .and_then(get_version)
+        .then(get_version)
 }
 
-async fn get_version(
-    build_info: &'static QuickwitBuildInfo,
-) -> Result<impl warp::Reply, Rejection> {
-    Ok(warp::reply::json(build_info))
+async fn get_version(build_info: &'static QuickwitBuildInfo) -> impl warp::Reply {
+    warp::reply::json(build_info)
 }
 
 fn node_config_handler(
@@ -53,15 +51,15 @@ fn node_config_handler(
     warp::path("config")
         .and(warp::path::end())
         .and(with_arg(config))
-        .and_then(get_config)
+        .then(get_config)
 }
 
-async fn get_config(config: Arc<QuickwitConfig>) -> Result<impl warp::Reply, Rejection> {
+async fn get_config(config: Arc<QuickwitConfig>) -> impl warp::Reply {
     // We need to hide sensitive information from metastore URI.
     let mut config_to_serialize = (*config).clone();
     let redacted_uri = Uri::from_well_formed(config_to_serialize.metastore_uri.as_redacted_str());
     config_to_serialize.metastore_uri = redacted_uri;
-    Ok(warp::reply::json(&config_to_serialize))
+    warp::reply::json(&config_to_serialize)
 }
 
 #[cfg(test)]
