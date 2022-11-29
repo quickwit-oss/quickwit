@@ -327,13 +327,9 @@ impl MappingNode {
         self.branches.values()
     }
 
-    pub fn insert(&mut self, path: &str, node: MappingTree) -> anyhow::Result<()> {
-        if self.branches.contains_key(path) {
-            bail!("Redundant field definition `{}`", path);
-        }
+    pub fn insert(&mut self, path: &str, node: MappingTree) {
         self.branches_order.push(path.to_string());
         self.branches.insert(path.to_string(), node);
-        Ok(())
     }
 
     pub fn ordered_field_mapping_entries(&self) -> Vec<FieldMappingEntry> {
@@ -496,9 +492,12 @@ fn build_mapping_tree_from_entries<'a>(
     let mut mapping_node = MappingNode::default();
     for entry in entries {
         field_path.push(&entry.name);
+        if mapping_node.branches.contains_key(&entry.name) {
+            bail!("Duplicated field definition `{}`.", entry.name);
+        }
         let child_tree = build_mapping_from_field_type(&entry.mapping_type, field_path, schema)?;
         field_path.pop();
-        mapping_node.insert(&entry.name, child_tree)?;
+        mapping_node.insert(&entry.name, child_tree);
     }
     Ok(mapping_node)
 }

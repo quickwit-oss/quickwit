@@ -68,6 +68,7 @@ export type DocMapping = {
   tag_fields: string[];
   store: boolean;
   dynamic_mapping: boolean;
+  timestamp_field: string | null;
 }
 
 export type SortOrder = 'Asc' | 'Desc';
@@ -112,7 +113,7 @@ export type IndexConfig = {
   index_id: string;
   index_uri: string;
   doc_mapping: DocMapping;
-  indexing_settings: IndexingSettings;
+  indexing_settings: object;
   search_settings: object;
   retention: object;
 }
@@ -122,10 +123,6 @@ export type IndexMetadata = {
   checkpoint: object;
   sources: object[] | undefined;
   create_timestamp: number;
-}
-
-export type IndexingSettings = {
-  timestamp_field: null | string;
 }
 
 export const EMPTY_INDEX_METADATA: IndexMetadata = {
@@ -138,10 +135,9 @@ export const EMPTY_INDEX_METADATA: IndexMetadata = {
       tag_fields: [],
       store: false,
       dynamic_mapping: false,
+      timestamp_field: null
     },
-    indexing_settings: {
-      timestamp_field: null,
-    },
+    indexing_settings: {},
     search_settings: {},
     retention: {},
   },
