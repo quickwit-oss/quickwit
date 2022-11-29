@@ -246,7 +246,7 @@ fast: true
 
 #### `ip` type
 
-The `ip` type accepts IP address values, both IpV4 and IpV6 are supported.
+The `ip` type accepts IP address values, both IpV4 and IpV6 are supported. Internally IpV4 are converted to IpV6.
 
 Example of a mapping for an IP field:
 
