@@ -2731,7 +2731,7 @@ macro_rules! metastore_test_suite {
 
             // Split API tests
             //
-            //  - stage_split
+            //  - stage_splits
             //  - publish_splits
             //  - mark_splits_for_deletion
             //  - delete_splits
