@@ -209,7 +209,7 @@ POST api/v1/<index id>/delete-tasks
 ```
 
 Create a delete task that will delete all documents matching the provided query in the given index `<index id>`.
-This endpoint is available only if the `Janitor` service has started on your Quickwit instance.
+The endpoint simply appends your delete task to the delete task queue in the metastore. The deletion will eventually be executed (provided a janitor service is running on your Quickwit cluster).
 
 #### Path variable
 
