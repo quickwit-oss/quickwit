@@ -318,30 +318,47 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     split_metadata_list.push(split_metadata);
                 }
 
-                metastore
+                let successful_split_ids = metastore
                     .stage_splits(&index_id, split_metadata_list.clone())
                     .instrument(tracing::info_span!("staging_split"))
-                    .await?;
-                counters.num_staged_splits.fetch_add(split_metadata_list.len() as u64, Ordering::SeqCst);
-
-                let packaged_splits_and_metadata = batch.splits
+                    .await?
                     .into_iter()
-                    .zip(split_metadata_list)
-                    .collect::<Vec<_>>();
+                    .collect::<HashSet<_>>();
+                counters.num_staged_splits.fetch_add(successful_split_ids.len() as u64, Ordering::SeqCst);
 
-                for (packaged_split, metadata) in packaged_splits_and_metadata.iter() {
+                let mut failed_to_stage_split_ids = Vec::new();
+                let mut packaged_splits_and_metadata = Vec::new();
+                for (packaged_split, metadata) in batch.splits.into_iter().zip(split_metadata_list) {
+                    if !successful_split_ids.contains(metadata.split_id()) {
+                        failed_to_stage_split_ids.push(metadata.split_id.clone());
+                        continue;
+                    }
+
                     let upload_result = upload_split(
-                        packaged_split,
-                        metadata,
+                        &packaged_split,
+                        &metadata,
                         &split_store,
                         counters.clone(),
                     )
                     .await;
+
                     if let Err(cause) = upload_result {
                         warn!(cause=?cause, split_id=packaged_split.split_id(), "Failed to upload split. Killing!");
                         kill_switch.kill();
                         bail!("Failed to upload split `{}`. Killing!", packaged_split.split_id());
                     }
+
+                    packaged_splits_and_metadata.push((packaged_split, metadata));
+                }
+
+                if !failed_to_stage_split_ids.is_empty() {
+                    let truncated_split_ids = failed_to_stage_split_ids.iter().take(5).collect::<Vec<_>>();
+                    warn!(
+                        num_failed_splits = failed_to_stage_split_ids.len(),
+                        "Failed to stage {:?} and {} other splits.",
+                        truncated_split_ids,
+                        failed_to_stage_split_ids.len(),
+                    );
                 }
 
                 let splits_update = make_publish_operation(
