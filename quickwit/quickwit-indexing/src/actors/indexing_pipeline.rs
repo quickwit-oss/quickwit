@@ -525,7 +525,7 @@ mod tests {
     use quickwit_actors::{Command, Universe};
     use quickwit_config::{IndexingSettings, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::default_doc_mapper_for_test;
-    use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
+    use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore, SplitMetadata};
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
@@ -574,7 +574,13 @@ mod tests {
             .expect_stage_splits()
             .withf(|index_id, _metadata| -> bool { index_id == "test-index" })
             .times(1)
-            .returning(|_, _| Ok(Vec::new()));
+            .returning(|_, metadata: Vec<SplitMetadata>| {
+                let split_ids = metadata
+                    .into_iter()
+                    .map(|split| split.split_id)
+                    .collect::<Vec<_>>();
+                Ok(split_ids)
+            });
         metastore
             .expect_publish_splits()
             .withf(
@@ -665,7 +671,13 @@ mod tests {
             .expect_stage_splits()
             .withf(|index_id, _metadata| index_id == "test-index")
             .times(1)
-            .returning(|_, _| Ok(Vec::new()));
+            .returning(|_, metadata: Vec<SplitMetadata>| {
+                let split_ids = metadata
+                    .into_iter()
+                    .map(|split| split.split_id)
+                    .collect::<Vec<_>>();
+                Ok(split_ids)
+            });
         metastore
             .expect_publish_splits()
             .withf(

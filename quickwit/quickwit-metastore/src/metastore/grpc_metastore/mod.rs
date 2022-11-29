@@ -39,12 +39,12 @@ use quickwit_proto::metastore_api::{
     DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
     ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitsRequest, StageSplitsResponse, ToggleSourceRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest,
 };
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
-use quickwit_proto::tonic::{Response, Status};
+use quickwit_proto::tonic::Status;
 use quickwit_proto::SpanContextInterceptor;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
