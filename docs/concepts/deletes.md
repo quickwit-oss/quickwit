@@ -28,4 +28,4 @@ Delete operations are applied only to “mature” splits, that is splits that d
 
 ### Monitoring and dev XP
 
-It's currently not possible to monitor delete operations. An [issue](https://github.com/quickwit-oss/quickwit/issues/2494) is opened to improve the dev experience, don't hesitate to amend it and follow its progress.
+It's currently not possible to monitor delete operations. An [issue](https://github.com/quickwit-oss/quickwit/issues/2494) is opened to improve the dev experience, don't hesitate to add your comments it and follow its progress.
