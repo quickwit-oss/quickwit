@@ -11,7 +11,7 @@ A delete task on a given index is executed on all splits created after the delet
 
 To track the progress of the execution, each delete task is given a unique and incremental identifier called "operation stamp" or `opstamp`. All existing splits will undergo a delete operation and, after its success, each split metadata will be updated with the corresponding operation stamp.
 
-All splits created after the creation of a delete tasks will have a `opstamp` greater or equal to the `ostamp` of the delete task (greater if other delete tasks have been created at the same moment).
+All splits created after the creation of a delete tasks will have a `opstamp` greater or equal to the `opstamp` of the delete task (greater if other delete tasks have been created at the same moment).
 
 Quickwit batches delete operations on a given split: for example, if a split has it delete `opstamp = n` and the last created delete task has a `opstamp = n + 10`, ten delete queries will be executed at once on the split.
 
