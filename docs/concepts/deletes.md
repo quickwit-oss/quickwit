@@ -23,7 +23,7 @@ Delete tasks are created through the [Delete REST API](../reference/rest-api.md#
 
 ### Immature splits
 
-Delete operations are applied only to “mature” splits, that is splits that do not undergo merges. Whether a split is mature depends on the [merge policy](../configuration/index-config.md#merge-policies). It's possible to define `maturation_period` after which a split will be mature. Thus, a delete request created at `t0` will first apply deletes to mature splits and, in the worst case, will wait the `t0 maturation_period` for immature splits to become mature.
+Delete operations are applied only to “mature” splits, that is splits that do not undergo merges. Whether a split is mature depends on the [merge policy](../configuration/index-config.md#merge-policies). It is possible to define `maturation_period` after which a split will be mature. Thus, a delete request created at `t0` will first apply deletes to mature splits and, in the worst case, will wait the `t0 maturation_period` for immature splits to become mature.
 
 
 ### Monitoring and dev XP
