@@ -55,7 +55,7 @@ pub struct DefaultDocMapperBuilder {
     /// The partition key is a DSL used to route documents
     /// into specific splits.
     #[serde(default)]
-    pub partition_key: String,
+    pub partition_key: Option<String>,
     /// Maximum number of partitions.
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
     pub max_num_partitions: NonZeroU32,
