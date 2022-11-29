@@ -80,10 +80,9 @@ The doc mapping defines how a document and the fields it contains are stored and
 | `field_mappings` | Collection of field mapping, each having its own data type (text, binary, datetime, bool, i64, u64, f64).   | [] |
 | `mode`        | Defines how quickwit should handle document fields that are not present in the `field_mappings`. In particular, the "dynamic" mode makes it possible to use quickwit in a schemaless manner. (See [mode](#mode)) | `lenient`
 | `dynamic_mapping` | This parameter is only allowed when `mode` is set to `dynamic`. It then defines whether dynamically mapped fields should be indexed, stored, etc.  | (See [mode](#mode))
-| `tag_fields` | Collection of fields already defined in `field_mappings` whose values will be stored in a dedicated `tags` (1) | [] |
+| `tag_fields` | Collection of fields already defined in `field_mappings` whose values will be stored as part of the `tags` metadata. [Learn more about tags](../concepts/querying.md#tag-pruning). | [] |
 | `store_source` | Whether or not the original JSON document is stored or not in the index.   | false |
-
-(1) [Learn more on the tags usage](../concepts/querying.md).
+| `timestamp_field`      | Timestamp field used for sharding documents in splits. The field has to be of type `datetime`. [Learn more about time sharding](./../concepts/architecture.md).  | None |
 
 ### Field types
 
@@ -457,13 +456,10 @@ This section describes indexing settings for a given index.
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `timestamp_field`      | Timestamp field used for sharding documents in splits (1).   | None |
 | `commit_timeout_secs`      | Maximum number of seconds before committing a split since its creation.   | 60 |
 | `split_num_docs_target` | Target number of docs per split.   | 10_000_000 |
 | `merge_policy` | Describes the strategy used to trigger split merge operations (see [Merge policies](#merge-policies) section below). |
 | `resources.heap_size`      | Indexer heap size per source per index.   | 2_000_000_000 |
-
-(1) Both `datetime` and `i64` can be referenced. `i64` fields are interpreted as Unix timestamp (seconds). You can learn more about time sharding [here](./../concepts/architecture.md).
 
 ### Merge policies
 
