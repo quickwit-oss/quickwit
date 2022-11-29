@@ -367,8 +367,8 @@ impl IndexingService {
                         false
                     }
                     ActorState::Failure => {
-                        // This should never happen: Indexing Pipeline are not supposed to fail,
-                        // and are themselve in charge of supervising the pipeline actors.
+                        // This should never happen: Indexing Pipelines are not supposed to fail,
+                        // and are themselves in charge of supervising the pipeline actors.
                         error!(
                             index_id=%pipeline_id.index_id,
                             source_id=%pipeline_id.source_id,
