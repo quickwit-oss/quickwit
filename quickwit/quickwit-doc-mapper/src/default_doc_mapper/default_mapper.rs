@@ -624,6 +624,62 @@ mod tests {
     }
 
     #[test]
+    fn test_fail_to_build_doc_mapper_with_duplicate_fields() -> anyhow::Result<()> {
+        {
+            let doc_mapper = r#"{
+                "field_mappings": [
+                    {"name": "body","type": "text"},
+                    {"name": "body","type": "bytes"}
+                ]
+            }"#;
+            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+            let expected_msg = "Duplicated field definition `body`.".to_string();
+            assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
+        }
+
+        {
+            let doc_mapper = r#"{
+                "field_mappings": [
+                    {
+                        "name": "identity",
+                        "type": "object",
+                        "field_mappings": [
+                            {"type": "text", "name": "username"},
+                            {"type": "text", "name": "username"}
+                        ]
+                    },
+                    {"type": "text", "name": "body"}
+                ]
+            }"#;
+            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+            let expected_msg = "Duplicated field definition `username`.".to_string();
+            assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_should_build_doc_mapper_with_duplicate_fields_at_different_level() -> anyhow::Result<()>
+    {
+        let doc_mapper = r#"{
+            "field_mappings": [
+                {
+                    "name": "identity",
+                    "type": "object",
+                    "field_mappings": [
+                        {"type": "text", "name": "body"},
+                        {"type": "text", "name": "username"}
+                    ]
+                },
+                {"type": "text", "name": "body"}
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+        assert!(builder.try_build().is_ok());
+        Ok(())
+    }
+
+    #[test]
     fn test_fail_to_build_doc_mapper_with_multivalued_timestamp_field() -> anyhow::Result<()> {
         let doc_mapper = r#"{
             "default_search_fields": [],
