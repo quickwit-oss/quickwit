@@ -62,8 +62,9 @@ pub struct DocMapping {
     pub mode: ModeType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic_mapping: Option<QuickwitJsonOptions>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub partition_key: String,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partition_key: Option<String>,
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
     pub max_num_partitions: NonZeroU32,
 }
@@ -412,7 +413,7 @@ impl TestableForRegression for IndexConfig {
             store_source: true,
             mode: ModeType::Dynamic,
             dynamic_mapping: None,
-            partition_key: "tenant".to_string(),
+            partition_key: Some("tenant".to_string()),
             max_num_partitions: NonZeroU32::new(100).unwrap(),
             timestamp_field: Some("timestamp".to_string()),
         };
