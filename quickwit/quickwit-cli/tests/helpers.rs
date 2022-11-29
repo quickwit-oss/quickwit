@@ -62,10 +62,10 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
           stored: false
           tokenizer: raw
 
+      timestamp_field: ts
       tag_fields: [city, device]
 
     indexing_settings:
-      timestamp_field: ts
       resources:
         heap_size: 50MB
 

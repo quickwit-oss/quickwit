@@ -19,7 +19,6 @@
 
 use std::fmt::{self, Display};
 use std::hash::{Hash, Hasher};
-use std::num::NonZeroU64;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -82,27 +81,16 @@ impl RoutingExprContext for serde_json::Map<String, JsonValue> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct RoutingExpr {
     inner_opt: Option<Arc<InnerRoutingExpr>>,
-    max_num_partitions: NonZeroU64,
     salted_hasher: SipHasher,
 }
 
-impl Default for RoutingExpr {
-    fn default() -> Self {
-        Self {
-            inner_opt: None,
-            max_num_partitions: NonZeroU64::new(1).unwrap(),
-            salted_hasher: Default::default(),
-        }
-    }
-}
-
 impl RoutingExpr {
-    pub fn new(expr_dsl_str: &str, max_num_partitions: NonZeroU64) -> anyhow::Result<Self> {
+    pub fn new(expr_dsl_str: &str) -> anyhow::Result<Self> {
         let expr_dsl_str = expr_dsl_str.trim();
-        if max_num_partitions.get() <= 1 || expr_dsl_str.is_empty() {
+        if expr_dsl_str.is_empty() {
             return Ok(RoutingExpr::default());
         }
 
@@ -119,13 +107,8 @@ impl RoutingExpr {
 
         Ok(RoutingExpr {
             inner_opt: Some(Arc::new(inner)),
-            max_num_partitions,
             salted_hasher,
         })
-    }
-
-    pub fn max_num_partitions(&self) -> NonZeroU64 {
-        self.max_num_partitions
     }
 }
 
@@ -238,7 +221,7 @@ impl RoutingExpr {
         if let Some(inner) = self.inner_opt.as_ref() {
             let mut hasher: SipHasher = self.salted_hasher;
             inner.eval_hash(ctx, &mut hasher);
-            hasher.finish() % self.max_num_partitions.get()
+            hasher.finish()
         } else {
             0u64
         }
@@ -268,7 +251,7 @@ mod tests {
 
     #[test]
     fn test_routing_expr_empty_hashes_to_0() {
-        let expr = RoutingExpr::new("", NonZeroU64::new(10).unwrap()).unwrap();
+        let expr = RoutingExpr::new("").unwrap();
         let ctx: serde_json::Map<String, JsonValue> = Default::default();
         assert_eq!(expr.eval_hash(&ctx), 0u64);
     }
@@ -281,14 +264,12 @@ mod tests {
         );
     }
 
-    const MAX_NUM_PARTITIONS: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(10) };
-
     // This unit test is here to ensure that the routing expr hash depends on
     // the expression itself as well as the expression value.
     #[test]
     fn test_routing_expr_depends_on_both_expr_and_value() {
-        let routing_expr = RoutingExpr::new("tenant_id", MAX_NUM_PARTITIONS).unwrap();
-        let routing_expr2 = RoutingExpr::new("app", MAX_NUM_PARTITIONS).unwrap();
+        let routing_expr = RoutingExpr::new("tenant_id").unwrap();
+        let routing_expr2 = RoutingExpr::new("app").unwrap();
         let ctx: serde_json::Map<String, JsonValue> =
             serde_json::from_str(r#"{"tenant_id": "happy", "app": "happy"}"#).unwrap();
         let ctx2: serde_json::Map<String, JsonValue> =
@@ -302,9 +283,9 @@ mod tests {
     // Breaking it is not catastrophic but it should not happen too often.
     #[test]
     fn test_routing_expr_change_detection() {
-        let routing_expr = RoutingExpr::new("tenant_id", MAX_NUM_PARTITIONS).unwrap();
+        let routing_expr = RoutingExpr::new("tenant_id").unwrap();
         let ctx: serde_json::Map<String, JsonValue> =
             serde_json::from_str(r#"{"tenant_id": "happy-tenant", "app": "happy"}"#).unwrap();
-        assert_eq!(routing_expr.eval_hash(&ctx), 9u64);
+        assert_eq!(routing_expr.eval_hash(&ctx), 12428134591152806029);
     }
 }

@@ -23,7 +23,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { SearchComponentProps } from "../utils/SearchComponentProps";
 
 export function QueryEditorActionBar(props: SearchComponentProps) {
-  const timestamp_field_name = props.index?.metadata.index_config.indexing_settings.timestamp_field;
+  const timestamp_field_name = props.index?.metadata.index_config.doc_mapping.timestamp_field;
   const shouldDisplayTimeRangeSelect = timestamp_field_name ?? false;
   return (
     <Box sx={{ display: 'flex'}}>

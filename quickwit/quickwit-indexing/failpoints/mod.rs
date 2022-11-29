@@ -163,19 +163,12 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
           - name: ts
             type: datetime
             fast: true
-        "#;
-    let indexing_setting_yaml = r#"
         timestamp_field: ts
-    "#;
+        "#;
     let search_fields = ["body"];
     let index_id = append_random_suffix("test-index");
-    let test_index_builder = TestSandbox::create(
-        &index_id,
-        doc_mapper_yaml,
-        indexing_setting_yaml,
-        &search_fields,
-    )
-    .await?;
+    let test_index_builder =
+        TestSandbox::create(&index_id, doc_mapper_yaml, "", &search_fields).await?;
     let batch_1: Vec<JsonValue> = vec![
         serde_json::json!({"body ": "1", "ts": 1629889530 }),
         serde_json::json!({"body ": "2", "ts": 1629889531 }),
@@ -230,9 +223,9 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
           - name: ts
             type: datetime
             fast: true
+        timestamp_field: ts
         "#;
     let indexing_setting_yaml = r#"
-        timestamp_field: ts
         split_num_docs_target: 1000
     "#;
     let search_fields = ["body"];

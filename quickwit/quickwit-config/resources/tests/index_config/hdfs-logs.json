@@ -39,6 +39,7 @@
             }
         ],
         "tag_fields": ["tenant_id"],
+        "timestamp_field": "timestamp",
         "store_source": true
     },
     "retention": {
@@ -46,7 +47,6 @@
         "schedule": "daily"
     },
     "indexing_settings": {
-        "timestamp_field": "timestamp",
         "commit_timeout_secs": 61,
         "split_num_docs_target": 10000001,
         "merge_policy": {

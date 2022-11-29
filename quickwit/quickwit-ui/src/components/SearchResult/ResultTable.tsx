@@ -52,7 +52,7 @@ export function ResultTable({searchResponse, index}: {searchResponse: SearchResp
 
 function getTimestampField(index: Index): Field | null {
   const fields = getAllFields(index.metadata.index_config.doc_mapping.field_mappings);
-  const timestamp_field_name = index.metadata.index_config.indexing_settings.timestamp_field;
+  const timestamp_field_name = index.metadata.index_config.doc_mapping.timestamp_field;
   const timestamp_field = fields.filter(field => field.field_mapping.name === timestamp_field_name)[0];
   return timestamp_field ?? null;
 }

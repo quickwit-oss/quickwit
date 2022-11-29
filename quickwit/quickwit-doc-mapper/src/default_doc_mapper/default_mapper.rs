@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
@@ -94,6 +94,8 @@ pub struct DefaultDocMapper {
     /// The partition key is a DSL used to route documents
     /// into specific splits.
     partition_key: RoutingExpr,
+    /// Maximum number of partitions
+    max_num_partitions: NonZeroU32,
     /// List of required fields. Right now this is the list of fast fields.
     required_fields: Vec<Field>,
     /// Defines how unmapped fields should be handle.
@@ -114,8 +116,8 @@ impl DefaultDocMapper {
     }
 
     /// Default maximum number of partitions.
-    pub fn default_max_num_partitions() -> NonZeroU64 {
-        NonZeroU64::new(8).unwrap()
+    pub fn default_max_num_partitions() -> NonZeroU32 {
+        NonZeroU32::new(200).unwrap()
     }
 }
 
@@ -255,7 +257,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         }
 
         let required_fields = list_required_fields_for_node(&field_mappings);
-        let partition_key = RoutingExpr::new(&builder.partition_key, builder.max_num_partitions)
+        let partition_key = RoutingExpr::new(&builder.partition_key)
             .context("Failed to interpret the partition key.")?;
         Ok(DefaultDocMapper {
             schema,
@@ -267,6 +269,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             tag_field_names,
             required_fields,
             partition_key,
+            max_num_partitions: builder.max_num_partitions,
             mode,
         })
     }
@@ -288,7 +291,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             mode,
             dynamic_mapping,
             partition_key: default_doc_mapper.partition_key.to_string(),
-            max_num_partitions: default_doc_mapper.partition_key.max_num_partitions(),
+            max_num_partitions: default_doc_mapper.max_num_partitions,
         }
     }
 }
@@ -413,6 +416,10 @@ impl DocMapper for DefaultDocMapper {
 
     fn tag_field_names(&self) -> BTreeSet<String> {
         self.tag_field_names.clone()
+    }
+
+    fn max_num_partitions(&self) -> NonZeroU32 {
+        self.max_num_partitions
     }
 }
 
@@ -613,6 +620,62 @@ mod tests {
                             your field `timestamp`."
             .to_string();
         assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_doc_mapper_with_duplicate_fields() -> anyhow::Result<()> {
+        {
+            let doc_mapper = r#"{
+                "field_mappings": [
+                    {"name": "body","type": "text"},
+                    {"name": "body","type": "bytes"}
+                ]
+            }"#;
+            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+            let expected_msg = "Duplicated field definition `body`.".to_string();
+            assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
+        }
+
+        {
+            let doc_mapper = r#"{
+                "field_mappings": [
+                    {
+                        "name": "identity",
+                        "type": "object",
+                        "field_mappings": [
+                            {"type": "text", "name": "username"},
+                            {"type": "text", "name": "username"}
+                        ]
+                    },
+                    {"type": "text", "name": "body"}
+                ]
+            }"#;
+            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+            let expected_msg = "Duplicated field definition `username`.".to_string();
+            assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_should_build_doc_mapper_with_duplicate_fields_at_different_level() -> anyhow::Result<()>
+    {
+        let doc_mapper = r#"{
+            "field_mappings": [
+                {
+                    "name": "identity",
+                    "type": "object",
+                    "field_mappings": [
+                        {"type": "text", "name": "body"},
+                        {"type": "text", "name": "username"}
+                    ]
+                },
+                {"type": "text", "name": "body"}
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+        assert!(builder.try_build().is_ok());
         Ok(())
     }
 

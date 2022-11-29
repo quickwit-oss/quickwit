@@ -11,6 +11,8 @@ The `query` is parsed into a series of terms and operators. There are two types 
 
 Multiple terms can be combined together with Boolean operators `AND, OR` to form a more complex query. By default, terms will be combined with the `AND` operator.
 
+IP addresses can be provided as IpV4 or IpV6. It is recommended to use the same format as in the indexed documents.
+
 ### Fields
 
 You can specify fields to search in the query by following the syntax `field_name:term`.
@@ -61,6 +63,16 @@ Slop queries can only be used on field indexed with the [record option](./../con
 ### Set Operator
 
 Quickwit supports `IN [value1 value2 ...]` as a set membership operator. This is more cpu efficient than the equivalent `OR`ing of many terms, but may download more of the split than `OR`ing, especially when only a few terms are searched. You must specify a field being searched for Set queries.
+
+### Range queries
+
+Range queries can only be executed on fields with a fast field. Currently only fields of type `ip` are supported.
+
+- Inclusive Range: `ip:[127.0.0.1 TO 127.0.0.50]`
+- Exclusive Range: `ip:{127.0.0.1 TO 127.0.0.50}`
+- Unbounded Inclusive Range: `ip:[127.0.0.1 TO *] or ip:>=127.0.0.1` 
+- Unbounded Exclusive Range: `ip:{127.0.0.1 TO *] or ip:>127.0.0.1` 
+
 
 #### Examples:
 

@@ -126,7 +126,10 @@ impl SourceConfigV0_4 {
             SourceParams::Kafka(_) | SourceParams::Kinesis(_) => {
                 // TODO consider any validation opportunity
             }
-            SourceParams::Vec(_) | SourceParams::Void(_) | SourceParams::IngestApi => {}
+            SourceParams::Vec(_)
+            | SourceParams::Void(_)
+            | SourceParams::IngestApi
+            | SourceParams::IngestCli => {}
         }
         Ok(SourceConfig {
             source_id: self.source_id,

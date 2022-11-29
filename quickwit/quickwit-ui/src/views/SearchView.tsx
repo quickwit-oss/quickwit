@@ -30,11 +30,11 @@ import { Client } from '../services/client';
 import { EMPTY_SEARCH_REQUEST, Index, IndexMetadata, ResponseError, SearchRequest, SearchResponse } from '../utils/models';
 import { hasSearchParams, parseSearchUrl, toUrlSearchRequestParams } from '../utils/urls';
 
-// If we have a timestamp field, order by desc on the timestamp field.
 function updateSearchRequestWithIndex(index: Index | null, searchRequest: SearchRequest) {
-  if (index?.metadata.index_config.indexing_settings.timestamp_field) {
+  // If we have a timestamp field, order by desc on the timestamp field.
+  if (index?.metadata.index_config.doc_mapping.timestamp_field) {
     searchRequest.sortByField = {
-      field_name: index?.metadata.index_config.indexing_settings.timestamp_field,
+      field_name: index?.metadata.index_config.doc_mapping.timestamp_field,
       order: 'Desc'
     };
   } else {

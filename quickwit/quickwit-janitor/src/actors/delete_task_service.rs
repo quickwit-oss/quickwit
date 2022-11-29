@@ -170,12 +170,8 @@ impl DeleteTaskService {
             .index_metadata(&delete_query.index_id)
             .await?
             .into_index_config();
-        let doc_mapper = build_doc_mapper(
-            &index_config.doc_mapping,
-            &index_config.search_settings,
-            &index_config.indexing_settings,
-        )
-        .map_err(|error| JanitorError::InternalError(error.to_string()))?;
+        let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
+            .map_err(|error| JanitorError::InternalError(error.to_string()))?;
         let delete_search_request = SearchRequest::from(delete_query.clone());
         // Validate the delete query.
         doc_mapper

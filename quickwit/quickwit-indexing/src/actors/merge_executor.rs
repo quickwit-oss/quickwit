@@ -546,15 +546,10 @@ mod tests {
                 input_formats:
                 - unix_timestamp
                 fast: true
+            timestamp_field: ts
         "#;
-        let indexing_settings_yaml = "timestamp_field: ts";
-        let test_sandbox = TestSandbox::create(
-            &pipeline_id.index_id,
-            doc_mapping_yaml,
-            indexing_settings_yaml,
-            &["body"],
-        )
-        .await?;
+        let test_sandbox =
+            TestSandbox::create(&pipeline_id.index_id, doc_mapping_yaml, "", &["body"]).await?;
         for split_id in 0..4 {
             let single_doc = std::iter::once(
                 serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713u64 + split_id }),
@@ -671,15 +666,9 @@ mod tests {
                 input_formats:
                 - unix_timestamp
                 fast: true
+            timestamp_field: ts
         "#;
-        let indexing_settings_yaml = "timestamp_field: ts";
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            indexing_settings_yaml,
-            &["body"],
-        )
-        .await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
         test_sandbox.add_documents(docs).await?;
         let metastore = test_sandbox.metastore();
         metastore

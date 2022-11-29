@@ -27,7 +27,9 @@ use quickwit_actors::{
     Observation,
 };
 use quickwit_common::fs::get_cache_directory_path;
-use quickwit_config::{build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig};
+use quickwit_config::{
+    build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, CLI_INGEST_SOURCE_ID,
+};
 use quickwit_ingest_api::QUEUES_DIR_NAME;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -241,6 +243,11 @@ impl IndexingService {
                 continue;
             }
 
+            // Skip cli source
+            if source_config.source_id == CLI_INGEST_SOURCE_ID {
+                continue;
+            }
+
             let pipeline_ords = 0..source_config.num_pipelines().unwrap_or(1);
             for pipeline_ord in pipeline_ords {
                 let pipeline_id = IndexingPipelineId {
@@ -295,12 +302,8 @@ impl IndexingService {
             self.local_split_store.clone(),
         );
 
-        let doc_mapper = build_doc_mapper(
-            &index_config.doc_mapping,
-            &index_config.search_settings,
-            &index_config.indexing_settings,
-        )
-        .map_err(IndexingServiceError::InvalidParams)?;
+        let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
+            .map_err(IndexingServiceError::InvalidParams)?;
 
         let merge_pipeline_params = MergePipelineParams {
             pipeline_id: pipeline_id.clone(),
