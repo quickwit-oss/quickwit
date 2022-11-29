@@ -17,7 +17,7 @@ Quickwit batches delete operations on a given split: for example, if a split has
 
 ## Delete API
 
-Delete tasks are created through the [Delete REST API](../reference/rest-api.md#delete-api), this API is only available if the Janitor service is running on a Quickwit node.
+Delete tasks are created through the [Delete REST API](../reference/rest-api.md#delete-api).
 
 ## Pitfalls
 
