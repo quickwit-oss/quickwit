@@ -3,7 +3,7 @@
 # Link: https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md
 #
 
-version: 3
+version: 0.4
 
 index_id: otel-log-v0
 
@@ -13,6 +13,7 @@ doc_mapping:
       type: datetime
       input_formats:
         - unix_timestamp
+      output_format: unix_timestamp_secs
       fast: true
     - name: severity
       type: text
@@ -26,8 +27,6 @@ doc_mapping:
       type: json
     - name: resource
       type: json
-
-indexing_settings:
   timestamp_field: timestamp
 
 search_settings:
