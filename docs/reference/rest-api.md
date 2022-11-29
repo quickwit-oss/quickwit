@@ -205,7 +205,7 @@ The delete API enables to delete documents matching a query.
 ### Create a delete task
 
 ```
-POST api/v1/<index id>/delete-task
+POST api/v1/<index id>/delete-tasks
 ```
 
 Create a delete task that will delete all documents matching the provided query in the given index `<index id>`.
