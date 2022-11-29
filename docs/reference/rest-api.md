@@ -27,7 +27,7 @@ Failed requests return a 4xx HTTP status code. The response body of failed reque
 }
 ```
 
-## Endpoints
+## Search API
 
 ### Search in an index
 
@@ -154,9 +154,9 @@ The payload size is limited to 10MB as this endpoint is intended to receive docu
 
 The response is a JSON object, and the content type is `application/json; charset=UTF-8.`
 
-| Field                   | Description                        | Type       |
-| --------------------    | ---------------------------------- | :--------: |
-| **num_docs_for_processing**   | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number`   |
+| Field                       | Description                                                                                                                                                              |   Type   |
+|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------:|
+| **num_docs_for_processing** | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
 
 ### Ingest data with Elasticsearch compatible API
 
@@ -191,7 +191,208 @@ The response is a JSON object, and the content type is `application/json; charse
 | **num_docs_for_processing**   | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number`   |
 
 
-### Cluster API
+## Index management API
+
+### Create an index
+
+```
+POST api/v1/indexes
+```
+
+Create an index by posting an `IndexConfig` JSON payload.
+
+#### POST payload
+
+| Variable              | Type               | Description                                                                                                                                                                                                                                                             | Default value                         |
+|-----------------------|--------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------|
+| **version**           | `String`           | Config format version, use the same as your Quickwit version. (mandatory)                                                                                                                                                                                               |                                       |
+| **index_id**          | `String`           | Defines where the index files are stored. This parameter expects a [storage uri](../reference/storage-uri).                                                                                                                                                             |                                       |
+| **index_uri**         | `String`           | Defines where the index files are stored. This parameter expects a [storage uri](../reference/storage-uri). If empty, defaults to the concatenation of `default_index_root_uri` defined in the [Quickwit's config](../configuration/node-config.md) and the `index_id`. | `{default_index_root_uri}/{index_id}` |
+| **doc_mapping**       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping) (mandatory)                                                                                                                                                    |                                       |
+| **indexing_settings** | `IndexingSettings` | Indexing settings object as specified in the [index config docs](../configuration/index-config.md#indexing-settings).                                                                                                                                                   |                                       |
+| **search_settings**   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).                                                                                                                                                       |                                       |
+| **retention**         | `Retention`        | Retention object as specified in the [index config docs](../configuration/index-config.md#retention-policy).                                                                                                                                                            |                                       |
+
+
+**Payload Example**
+
+curl -XPOST http://0.0.0.0:8080/api/v1/indexes --data @index_config.json -H "Content-Type: application/json"
+
+```json title="index_config.json
+{
+    "version": "0.4",
+    "index_id": "hdfs-logs",
+    "doc_mapping": {
+        "field_mappings": [
+            {
+                "name": "tenant_id",
+                "type": "u64",
+                "fast": true
+            },
+            {
+                "name": "app_id",
+                "type": "u64",
+                "fast": true
+            },
+            {
+                "name": "timestamp",
+                "type": "datetime",
+                "input_formats": ["unix_timestamp"],
+                "precision": "seconds",
+                "fast": true
+            },
+            {
+                "name": "body",
+                "type": "text",
+                "record": "position"
+            }
+        ],
+        "partition_key": "tenant_id",
+        "max_num_partitions": 200,
+        "tag_fields": ["tenant_id"],
+        "timestamp_field": "timestamp"
+    },
+    "search_settings": {
+        "default_search_fields": ["body"]
+    },
+    "indexing_settings": {
+        "merge_policy": {
+            "type": "limit_merge",
+            "max_merge_ops": 3,
+            "merge_factor": 10,
+            "max_merge_factor": 12
+        },
+        "resources": {
+            "max_merge_write_throughput": "80mb"
+        }
+    },
+    "retention": {
+        "period": "7 days",
+        "schedule": "@daily"
+    }
+}
+```
+
+#### Response
+
+The response is the `IndexMetadata` of the created index, and the content type is `application/json; charset=UTF-8.`
+
+| Field                | Description                               |         Type          |
+|----------------------|-------------------------------------------|:---------------------:|
+| **index_config**     | The posted index config                   |     `IndexConfig`     |
+| **checkpoint**       | Map of checkpoints by sources             |   `IndexCheckpoint`   |
+| **create_timestamp** | Index create timestamp                    |       `number`        |
+| **sources**          | List of the index sources configurations. | `Array<SourceConfig>` |
+
+
+### Get an index metadata
+
+```
+GET api/v1/indexes/<index id>
+```
+
+Get the index metadata of ID `index id`.
+
+#### Response
+
+The response is the `IndexMetadata` of the requested index, and the content type is `application/json; charset=UTF-8.`
+
+| Field                | Description                               |         Type          |
+|----------------------|-------------------------------------------|:---------------------:|
+| **index_config**     | The posted index config                   |     `IndexConfig`     |
+| **checkpoint**       | Map of checkpoints by sources             |   `IndexCheckpoint`   |
+| **create_timestamp** | Index create timestamp                    |       `number`        |
+| **sources**          | List of the index sources configurations. | `Array<SourceConfig>` |
+
+
+### Delete an index
+
+```
+DELETE api/v1/indexes/<index id>
+```
+
+Delete index of ID `index id`.
+
+#### Response
+
+The response is the list of delete split files, and the content type is `application/json; charset=UTF-8.`
+
+```json
+[
+    {
+        "file_name": "01GK1XNAECH7P14850S9VV6P94.split",
+        "file_size_in_bytes": 2991676
+    }
+]
+```
+
+### Get all indexes metadatas
+
+```
+GET api/v1/indexes
+```
+
+Get the indexes metadatas of all indexes present in the metastore.
+
+#### Response
+
+The response is an array of `IndexMetadata`, and the content type is `application/json; charset=UTF-8.`
+
+
+### Create a source
+
+```
+POST api/v1/indexes/<index id>/sources
+```
+
+Create source by posting a `SourceConfig` JSON payload.
+
+#### POST payload
+
+| Variable              | Type               | Description                                                                                                           | Default value |
+|-----------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------|---------------|
+| **version**           | `String`           | Config format version, put your current Quickwit version. (mandatory)                                                 |               |
+| **source_id**         | `String`           | Source ID. (mandatory)                                                                                                |               |
+| **source_type**       | `String`           | Source type: `kafka`, `kinesis`, `file`. (mandatory)                                                                  |               |
+| **num_pipelines**     | `usize`            | Number of running indexing pipelines per node for this source.                                                        | 1             |
+| **params**            | `object`           | Source parameters as defined in [source config docs](../configuration/source-config.md).                              |               |
+                                                                                 |
+
+
+**Payload Example**
+
+curl -XPOST http://0.0.0.0:8080/api/v1/indexes/my-index/sources --data @source_config.json -H "Content-Type: application/json"
+
+```json title="source_config.json
+{
+    "version": "0.4",
+    "source_id": "kafka-source",
+    "source_type": "kafka",
+    "num_pipelines": 1,
+    "params": {
+        "topic": "quickwit-fts-staging",
+        "client_params": {
+            "bootstrap.servers": "kafka-quickwit-server:9092"
+        }
+    }
+}
+```
+
+#### Response
+
+The response is the created `SourceConfig`, and the content type is `application/json; charset=UTF-8.`
+
+
+### Delete a source
+
+```
+DELETE api/v1/indexes/<index id>/sources/<source id>
+```
+
+Delete source of ID `<source id>`.
+
+
+## Cluster API
 
 This endpoint lets you check the state of the cluster from the point of view of the node handling the request.
 

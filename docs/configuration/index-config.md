@@ -54,6 +54,10 @@ doc_mapping:
 
 search_settings:
   default_search_fields: [severity_text, body]
+
+retention:
+  period: 90 days
+  schedule: daily
 ```
 
 ## Index uri
