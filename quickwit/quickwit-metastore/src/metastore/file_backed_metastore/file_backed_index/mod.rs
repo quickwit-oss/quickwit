@@ -165,14 +165,15 @@ impl FileBackedIndex {
         &self.splits
     }
 
+    /// Stages a single split returning if the split was inserted or not.
     pub(crate) fn stage_split(
         &mut self,
         split_metadata: SplitMetadata,
-    ) -> crate::MetastoreResult<()> {
+    ) -> bool {
         // Check whether the split exists.
         // If the split exists, we simply ignore the operation
         if self.splits.contains_key(split_metadata.split_id()) {
-            return Ok(())
+            return false;
         }
 
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
@@ -185,7 +186,7 @@ impl FileBackedIndex {
 
         self.splits
             .insert(metadata.split_id().to_string(), metadata);
-        Ok(())
+        true
     }
 
     /// Marks the splits for deletion. Returns whether a mutation occurred.

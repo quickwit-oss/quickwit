@@ -34,17 +34,10 @@ use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
-use quickwit_proto::metastore_api::{
-    AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
-    DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
-    ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
-    UpdateSplitsDeleteOpstampRequest,
-};
+use quickwit_proto::metastore_api::{AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest, ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, StageSplitsResponse, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest};
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
-use quickwit_proto::tonic::Status;
+use quickwit_proto::tonic::{Response, Status};
 use quickwit_proto::SpanContextInterceptor;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
@@ -254,7 +247,7 @@ impl Metastore for MetastoreGrpcClient {
         &self,
         index_id: &str,
         split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<()> {
+    ) -> MetastoreResult<Vec<String>> {
         let split_metadata_list_serialized_json = serde_json::to_string(&split_metadata_list)
             .map_err(|error| MetastoreError::JsonSerializeError {
                 struct_name: "Vec<SplitMetadata>".to_string(),
@@ -264,12 +257,13 @@ impl Metastore for MetastoreGrpcClient {
             index_id: index_id.to_string(),
             split_metadata_list_serialized_json,
         };
-        self.underlying
+        let resp = self.underlying
             .clone()
             .stage_splits(tonic_request)
             .await
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
+            .into_inner();
+        Ok(resp.split_ids)
     }
 
     /// Publishes a list of splits.

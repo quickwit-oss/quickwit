@@ -68,6 +68,12 @@ pub struct StageSplitsRequest {
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StageSplitsResponse {
+    #[prost(string, repeated, tag = "1")]
+    pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublishSplitsRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
@@ -413,7 +419,7 @@ pub mod metastore_api_service_client {
         pub async fn stage_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::StageSplitsRequest>,
-        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status> {
+        ) -> Result<tonic::Response<super::StageSplitsResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -715,7 +721,7 @@ pub mod metastore_api_service_server {
         async fn stage_splits(
             &self,
             request: tonic::Request<super::StageSplitsRequest>,
-        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status>;
+        ) -> Result<tonic::Response<super::StageSplitsResponse>, tonic::Status>;
         /// Publishes split.
         async fn publish_splits(
             &self,
@@ -1084,7 +1090,7 @@ pub mod metastore_api_service_server {
                         T: MetastoreApiService,
                     > tonic::server::UnaryService<super::StageSplitsRequest>
                     for stage_splitsSvc<T> {
-                        type Response = super::SplitResponse;
+                        type Response = super::StageSplitsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

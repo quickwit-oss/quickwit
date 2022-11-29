@@ -23,17 +23,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_config::IndexConfig;
 use quickwit_proto::metastore_api::metastore_api_service_server::{self as grpc};
-use quickwit_proto::metastore_api::{
-    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
-    DeleteIndexResponse, DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask,
-    IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
-    LastDeleteOpstampResponse, ListAllSplitsRequest, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexesMetadatasRequest, ListIndexesMetadatasResponse,
-    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, SourceResponse, SplitResponse,
-    StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
-    UpdateSplitsDeleteOpstampResponse,
-};
+use quickwit_proto::metastore_api::{AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse, DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListAllSplitsRequest, ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexesMetadatasRequest, ListIndexesMetadatasResponse, ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest, ResetSourceCheckpointRequest, SourceResponse, SplitResponse, StageSplitsRequest, StageSplitsResponse, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse};
 use quickwit_proto::tonic::{Request, Response, Status};
 use quickwit_proto::{set_parent_span_from_request_metadata, tonic};
 use tracing::instrument;
@@ -181,7 +171,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
     async fn stage_splits(
         &self,
         request: Request<StageSplitsRequest>,
-    ) -> Result<Response<SplitResponse>, Status> {
+    ) -> Result<Response<StageSplitsResponse>, Status> {
         set_parent_span_from_request_metadata(request.metadata());
         let stage_split_request = request.into_inner();
         let split_metadata_list =
@@ -194,7 +184,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             .0
             .stage_splits(&stage_split_request.index_id, split_metadata_list)
             .await
-            .map(|_| SplitResponse {})?;
+            .map(|split_ids| StageSplitsResponse { split_ids })?;
         Ok(tonic::Response::new(stage_split_reply))
     }
 

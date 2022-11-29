@@ -455,7 +455,7 @@ mod tests {
                     && metadata.time_range == Some(1628203589..=1628203640)
             })
             .times(1)
-            .returning(|_, _| Ok(()));
+            .returning(|_, _| Ok(vec!["test-split".to_string()]));
         let ram_storage = RamStorage::default();
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
@@ -558,7 +558,7 @@ mod tests {
                 (index_id == "test-index") && is_metadata_valid
             })
             .times(1)
-            .returning(|_, _| Ok(()));
+            .returning(|_, _| Ok(vec!["test-split-1".to_string(), "test-split-2".to_string()]));
         let ram_storage = RamStorage::default();
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
@@ -685,7 +685,7 @@ mod tests {
             .expect_stage_splits()
             .withf(move |index_id, _| -> bool { index_id == "test-index-no-sequencer" })
             .times(1)
-            .returning(|_, _| Ok(()));
+            .returning(|_, _| Ok(vec!["test-split".to_string()]));
         let ram_storage = RamStorage::default();
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));

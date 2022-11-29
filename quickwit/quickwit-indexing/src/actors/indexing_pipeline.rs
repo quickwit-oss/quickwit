@@ -574,7 +574,7 @@ mod tests {
             .expect_stage_splits()
             .withf(|index_id, _metadata| -> bool { index_id == "test-index" })
             .times(1)
-            .returning(|_, _| Ok(()));
+            .returning(|_, _| Ok(Vec::new()));
         metastore
             .expect_publish_splits()
             .withf(
@@ -665,7 +665,7 @@ mod tests {
             .expect_stage_splits()
             .withf(|index_id, _metadata| index_id == "test-index")
             .times(1)
-            .returning(|_, _| Ok(()));
+            .returning(|_, _| Ok(Vec::new()));
         metastore
             .expect_publish_splits()
             .withf(

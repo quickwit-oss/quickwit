@@ -576,9 +576,7 @@ impl Metastore for PostgresqlMetastore {
         &self,
         index_id: &str,
         split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<()> {
-        let num_splits = split_metadata_list.len();
-
+    ) -> MetastoreResult<Vec<String>> {
         let mut split_ids = Vec::with_capacity(split_metadata_list.len());
         let mut time_range_start_list = Vec::with_capacity(split_metadata_list.len());
         let mut time_range_end_list = Vec::with_capacity(split_metadata_list.len());
@@ -608,7 +606,7 @@ impl Metastore for PostgresqlMetastore {
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
         }
 
-        sqlx::query(r#"
+        let split_ids: Vec<String> = sqlx::query_scalar(r#"
             INSERT INTO splits
                 (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, split_state, index_id)
             SELECT
@@ -623,7 +621,8 @@ impl Metastore for PostgresqlMetastore {
             FROM
                 unnest($1, $2, $3, $4, $5, $6)
                 as tr(split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp)
-            ON CONFLICT(split_id) DO NOTHING;
+            ON CONFLICT(split_id) DO NOTHING
+            RETURNING split_id;
             "#)
             .bind(split_ids)
             .bind(time_range_start_list)
@@ -633,13 +632,13 @@ impl Metastore for PostgresqlMetastore {
             .bind(delete_opstamps)
             .bind(SplitState::Staged.as_str())
             .bind(index_id)
-            .execute(&self.connection_pool)
+            .fetch_all(&self.connection_pool)
             .await
             .map_err(|error| convert_sqlx_err(index_id, error))?;
 
-        debug!(index_id=%index_id, num_splits=num_splits, "Splits successfully staged.");
+        debug!(index_id=%index_id, num_splits=split_ids.len(), "Splits successfully staged.");
 
-        Ok(())
+        Ok(split_ids)
     }
 
     #[instrument(skip(self), fields(index_id=index_id))]

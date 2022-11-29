@@ -381,15 +381,20 @@ impl Metastore for FileBackedMetastore {
         &self,
         index_id: &str,
         split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<()> {
+    ) -> MetastoreResult<Vec<String>> {
+        let mut split_ids = Vec::new();
         self.mutate(index_id, |index| {
             for split_metadata in split_metadata_list {
-                index.stage_split(split_metadata)?;
+                let split_id = split_metadata.split_id.clone();
+
+                if index.stage_split(split_metadata) {
+                    split_ids.push(split_id);
+                }
             }
             Ok(true)
         })
         .await?;
-        Ok(())
+        Ok(split_ids)
     }
 
     async fn publish_splits<'a>(
