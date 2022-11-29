@@ -117,7 +117,9 @@ Example request, histogram with stats in each bucket:
 
 #### Datetime Histogram Example
 
-Histogram with one bucket per day on a `datetime` field. `interval` needs to be provided in microseconds. The returned format is currently fixed at `Rfc3339`.
+Histogram with one bucket per day on a `datetime` field. `interval` needs to be provided in microseconds. 
+In the following example, we grouped documents per day (`1 day = 86400000000 microseconds`).
+The returned format is currently fixed at `Rfc3339`.
 
 ##### Request
 ```json skip
