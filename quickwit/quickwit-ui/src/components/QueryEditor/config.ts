@@ -140,7 +140,7 @@ export const createIndexCompletionProvider = (indexMetadata: IndexMetadata) => {
 
       // We want to auto complete all fields except timestamp that is handled with `TimeRangeSelect` component.
       const fieldSuggestions = fields
-        .filter(field => field.json_path !== indexMetadata.index_config.indexing_settings.timestamp_field)
+        .filter(field => field.json_path !== indexMetadata.index_config.doc_mapping.timestamp_field)
         .map(field => {
           return {
             label: field.json_path,
