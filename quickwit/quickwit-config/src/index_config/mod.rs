@@ -63,6 +63,7 @@ pub struct DocMapping {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic_mapping: Option<QuickwitJsonOptions>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub partition_key: Option<String>,
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
     pub max_num_partitions: NonZeroU32,
