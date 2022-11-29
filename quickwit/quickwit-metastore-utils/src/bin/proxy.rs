@@ -138,16 +138,6 @@ impl MetastoreApiService for MetastoreProxyService {
         let resp = lock.client.list_splits(request).await?;
         Ok(resp)
     }
-    /// Stages split.
-    async fn stage_split(
-        &self,
-        request: tonic::Request<StageSplitRequest>,
-    ) -> Result<tonic::Response<SplitResponse>, tonic::Status> {
-        let mut lock = self.inner.lock().await;
-        lock.record(request.get_ref().clone()).await.unwrap();
-        let resp = lock.client.stage_split(request).await?;
-        Ok(resp)
-    }
     /// Stages several splits.
     async fn stage_splits(
         &self,

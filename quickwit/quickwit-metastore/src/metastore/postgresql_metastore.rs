@@ -571,48 +571,6 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    #[instrument(skip(self, split_metadata), fields(index_id=index_id, split_id=split_metadata.split_id))]
-    async fn stage_split(
-        &self,
-        index_id: &str,
-        split_metadata: SplitMetadata,
-    ) -> MetastoreResult<()> {
-        let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|error| {
-            MetastoreError::JsonSerializeError {
-                struct_name: "SplitMetadata".to_string(),
-                message: error.to_string(),
-            }
-        })?;
-        let time_range_start = split_metadata
-            .time_range
-            .as_ref()
-            .map(|range| *range.start());
-        let time_range_end = split_metadata.time_range.map(|range| *range.end());
-        let tags: Vec<String> = split_metadata.tags.into_iter().collect();
-
-        sqlx::query(r#"
-            INSERT INTO splits
-                (split_id, split_state, time_range_start, time_range_end, tags, split_metadata_json, index_id, delete_opstamp)
-            VALUES
-                ($1, $2, $3, $4, $5, $6, $7, $8)
-            "#)
-            .bind(&split_metadata.split_id)
-            .bind(SplitState::Staged.as_str())
-            .bind(time_range_start)
-            .bind(time_range_end)
-            .bind(tags)
-            .bind(split_metadata_json)
-            .bind(index_id)
-            .bind(split_metadata.delete_opstamp as i64)
-            .execute(&self.connection_pool)
-            .await
-            .map_err(|error| convert_sqlx_err(index_id, error))?;
-
-        debug!(index_id=%index_id, split_id=%split_metadata.split_id, "Split successfully staged.");
-
-        Ok(())
-    }
-
     #[instrument(skip(self, split_metadata_list))]
     async fn stage_splits(
         &self,

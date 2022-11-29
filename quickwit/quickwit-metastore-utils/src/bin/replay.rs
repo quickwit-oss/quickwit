@@ -49,9 +49,6 @@ async fn replay_grpc_request(
         GrpcRequest::ListSplitsRequest(req) => {
             client.list_splits(req).await?;
         }
-        GrpcRequest::StageSplitRequest(req) => {
-            client.stage_split(req).await?;
-        }
         GrpcRequest::StageSplitsRequest(req) => {
             client.stage_splits(req).await?;
         }

@@ -39,7 +39,7 @@ use quickwit_proto::metastore_api::{
     DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
     ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitRequest, StageSplitsRequest, ToggleSourceRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest,
 };
 use quickwit_proto::tonic::codegen::InterceptedService;
@@ -245,31 +245,6 @@ impl Metastore for MetastoreGrpcClient {
             .delete_index(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
-    }
-
-    /// Stages a split.
-    async fn stage_split(
-        &self,
-        index_id: &str,
-        split_metadata: SplitMetadata,
-    ) -> MetastoreResult<()> {
-        let split_metadata_serialized_json =
-            serde_json::to_string(&split_metadata).map_err(|error| {
-                MetastoreError::JsonSerializeError {
-                    struct_name: "SplitMetadata".to_string(),
-                    message: error.to_string(),
-                }
-            })?;
-        let tonic_request = StageSplitRequest {
-            index_id: index_id.to_string(),
-            split_metadata_serialized_json,
-        };
-        self.underlying
-            .clone()
-            .stage_split(tonic_request)
-            .await
             .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
         Ok(())
     }

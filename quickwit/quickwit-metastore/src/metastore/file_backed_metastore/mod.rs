@@ -377,19 +377,6 @@ impl Metastore for FileBackedMetastore {
     /// -------------------------------------------------------------------------------
     /// Mutations over a single index
 
-    async fn stage_split(
-        &self,
-        index_id: &str,
-        split_metadata: SplitMetadata,
-    ) -> MetastoreResult<()> {
-        self.mutate(index_id, |index| {
-            index.stage_split(split_metadata)?;
-            Ok(true)
-        })
-        .await?;
-        Ok(())
-    }
-
     async fn stage_splits(
         &self,
         index_id: &str,
@@ -731,7 +718,7 @@ mod tests {
 
         // stage split
         metastore
-            .stage_split(index_id, split_metadata)
+            .stage_splits(index_id, vec![split_metadata])
             .await
             .unwrap();
 
@@ -808,7 +795,7 @@ mod tests {
             ..Default::default()
         };
         assert!(metastore.list_all_splits("test-index").await?.is_empty());
-        metastore.stage_split(index_id, split_metadata).await?;
+        metastore.stage_splits(index_id, vec![split_metadata]).await?;
         assert_eq!(metastore.list_all_splits(index_id).await?.len(), 1);
         Ok(())
     }
@@ -842,7 +829,7 @@ mod tests {
             .list_all_splits("test-index")
             .await?
             .is_empty());
-        metastore_wrt.stage_split(index_id, split_metadata).await?;
+        metastore_wrt.stage_splits(index_id, vec![split_metadata]).await?;
         assert!(metastore_read
             .list_all_splits("test-index")
             .await?
@@ -889,7 +876,7 @@ mod tests {
                 };
                 // stage split
                 metastore
-                    .stage_split(index_id, split_metadata)
+                    .stage_splits(index_id, vec![split_metadata])
                     .await
                     .unwrap();
 

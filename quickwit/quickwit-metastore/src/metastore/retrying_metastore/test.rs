@@ -104,11 +104,7 @@ impl Metastore for RetryTestMetastore {
         self.try_success()
     }
 
-    async fn stage_split(
-        &self,
-        _index_id: &str,
-        _split_metadata: SplitMetadata,
-    ) -> MetastoreResult<()> {
+    async fn stage_splits(&self, _index_id: &str, _split_metadata_list: Vec<SplitMetadata>) -> MetastoreResult<()> {
         self.try_success()
     }
 

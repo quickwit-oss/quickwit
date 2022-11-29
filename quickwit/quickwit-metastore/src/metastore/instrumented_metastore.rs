@@ -122,17 +122,6 @@ impl Metastore for InstrumentedMetastore {
 
     // Split API
 
-    async fn stage_split(
-        &self,
-        index_id: &str,
-        split_metadata: SplitMetadata,
-    ) -> MetastoreResult<()> {
-        instrument!(
-            self.underlying.stage_split(index_id, split_metadata).await,
-            [stage_split, index_id]
-        );
-    }
-
     async fn stage_splits(
         &self,
         index_id: &str,

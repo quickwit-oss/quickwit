@@ -209,7 +209,7 @@ pub mod test_suite {
         metastore.create_index(index_config).await.unwrap();
 
         metastore
-            .stage_split(&index_id, split_metadata)
+            .stage_splits(&index_id, vec![split_metadata])
             .await
             .unwrap();
 
@@ -402,7 +402,7 @@ pub mod test_suite {
                 ..Default::default()
             };
             metastore
-                .stage_split(&index_id, split_metadata)
+                .stage_splits(&index_id, vec![split_metadata])
                 .await
                 .unwrap();
             metastore
@@ -446,52 +446,6 @@ pub mod test_suite {
             .is_empty());
 
         cleanup_index(&metastore, index_metadata.index_id()).await;
-    }
-
-    pub async fn test_metastore_stage_split<MetastoreToTest: Metastore + DefaultForTest>() {
-        let metastore = MetastoreToTest::default_for_test().await;
-
-        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-
-        let index_id = "stage-split-index";
-        let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
-
-        let split_id = "stage-split-my-index-one";
-        let split_metadata = SplitMetadata {
-            split_id: split_id.to_string(),
-            index_id: index_id.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
-            time_range: Some(0..=99),
-            create_timestamp: current_timestamp,
-            footer_offsets: 1000..2000,
-            ..Default::default()
-        };
-
-        // Stage a split on a non-existent index
-        let result = metastore
-            .stage_split("non-existent-index", split_metadata.clone())
-            .await
-            .unwrap_err();
-        assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
-
-        metastore.create_index(index_config.clone()).await.unwrap();
-
-        // Stage a split on an index
-        metastore
-            .stage_split(index_id, split_metadata.clone())
-            .await
-            .unwrap();
-
-        // Stage a existent-split on an index
-        let result = metastore
-            .stage_split(index_id, split_metadata.clone())
-            .await
-            .unwrap_err();
-        assert!(matches!(result, MetastoreError::InternalError { .. }));
-
-        cleanup_index(&metastore, index_id).await;
     }
 
     pub async fn test_metastore_publish_splits_empty_splits_array_is_allowed<
@@ -627,7 +581,7 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_splits(index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
@@ -644,7 +598,7 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_splits(index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
@@ -688,7 +642,7 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_splits(index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
@@ -734,7 +688,7 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_splits(index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
@@ -761,7 +715,7 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_splits(index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
@@ -802,7 +756,7 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_splits(index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
@@ -848,12 +802,12 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_splits(index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_splits(index_id, vec![split_metadata_2.clone()])
                 .await
                 .unwrap();
 
@@ -879,12 +833,12 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_splits(index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_splits(index_id, vec![split_metadata_2.clone()])
                 .await
                 .unwrap();
 
@@ -924,12 +878,12 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_splits(index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_splits(index_id, vec![split_metadata_2.clone()])
                 .await
                 .unwrap();
 
@@ -989,7 +943,7 @@ pub mod test_suite {
             ..Default::default()
         };
         metastore
-            .stage_split(&index_id, split_metadata)
+            .stage_splits(&index_id, vec![split_metadata])
             .await
             .unwrap();
 
@@ -1114,7 +1068,7 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(&index_id, split_metadata_1.clone())
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
@@ -1138,12 +1092,12 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(&index_id, split_metadata_1.clone())
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(&index_id, split_metadata_2.clone())
+                .stage_splits(&index_id, vec![split_metadata_2.clone()])
                 .await
                 .unwrap();
 
@@ -1172,7 +1126,7 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(&index_id, split_metadata_1.clone())
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
@@ -1182,7 +1136,7 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(&index_id, split_metadata_2.clone())
+                .stage_splits(&index_id, vec![split_metadata_2.clone()])
                 .await
                 .unwrap();
 
@@ -1200,7 +1154,7 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(&index_id, split_metadata_1.clone())
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
@@ -1215,7 +1169,7 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(&index_id, split_metadata_2.clone())
+                .stage_splits(&index_id, vec![split_metadata_2.clone()])
                 .await
                 .unwrap();
 
@@ -1235,7 +1189,7 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(&index_id, split_metadata_1.clone())
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
@@ -1245,12 +1199,12 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(&index_id, split_metadata_2.clone())
+                .stage_splits(&index_id, vec![split_metadata_2.clone()])
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(&index_id, split_metadata_3.clone())
+                .stage_splits(&index_id, vec![split_metadata_3.clone()])
                 .await
                 .unwrap();
 
@@ -1296,7 +1250,7 @@ pub mod test_suite {
             ..Default::default()
         };
         metastore
-            .stage_split(&index_id, split_metadata_1)
+            .stage_splits(&index_id, vec![split_metadata_1])
             .await
             .unwrap();
 
@@ -1308,7 +1262,7 @@ pub mod test_suite {
             ..Default::default()
         };
         metastore
-            .stage_split(&index_id, split_metadata_2)
+            .stage_splits(&index_id, vec![split_metadata_2])
             .await
             .unwrap();
         metastore
@@ -1324,7 +1278,7 @@ pub mod test_suite {
             ..Default::default()
         };
         metastore
-            .stage_split(&index_id, split_metadata_3)
+            .stage_splits(&index_id, vec![split_metadata_3])
             .await
             .unwrap();
         metastore
@@ -1417,7 +1371,7 @@ pub mod test_suite {
             ..Default::default()
         };
         metastore
-            .stage_split(&index_id, split_metadata_1)
+            .stage_splits(&index_id, vec![split_metadata_1])
             .await
             .unwrap();
         metastore
@@ -1432,7 +1386,7 @@ pub mod test_suite {
             ..Default::default()
         };
         metastore
-            .stage_split(&index_id, split_metadata_2)
+            .stage_splits(&index_id, vec![split_metadata_2])
             .await
             .unwrap();
 
@@ -1539,27 +1493,16 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_2.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_3.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_4.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_5.clone())
+                .stage_splits(
+                    index_id,
+                    vec![
+                        split_metadata_1.clone(),
+                        split_metadata_2.clone(),
+                        split_metadata_3.clone(),
+                        split_metadata_4.clone(),
+                        split_metadata_5.clone(),
+                    ]
+                )
                 .await
                 .unwrap();
 
@@ -1676,28 +1619,16 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_2.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_3.clone())
-                .await
-                .unwrap();
-
-            info!("stage split 4");
-            metastore
-                .stage_split(index_id, split_metadata_4.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_5.clone())
+                .stage_splits(
+                    index_id,
+                    vec![
+                        split_metadata_1.clone(),
+                        split_metadata_2.clone(),
+                        split_metadata_3.clone(),
+                        split_metadata_4.clone(),
+                        split_metadata_5.clone(),
+                    ]
+                )
                 .await
                 .unwrap();
 
@@ -2088,7 +2019,7 @@ pub mod test_suite {
                 ..Default::default()
             };
             metastore
-                .stage_split(index_id, split_metadata_6.clone())
+                .stage_splits(index_id, vec![split_metadata_6.clone()])
                 .await
                 .unwrap();
 
@@ -2229,7 +2160,7 @@ pub mod test_suite {
         // wait for 1s, stage split & check `update_timestamp`
         sleep(Duration::from_secs(1)).await;
         metastore
-            .stage_split(index_id, split_metadata.clone())
+            .stage_splits(index_id, vec![split_metadata.clone()])
             .await
             .unwrap();
 
@@ -2540,15 +2471,14 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
-                .await
-                .unwrap();
-            metastore
-                .stage_split(index_id, split_metadata_2.clone())
-                .await
-                .unwrap();
-            metastore
-                .stage_split(index_id, split_metadata_3.clone())
+                .stage_splits(
+                    index_id,
+                    vec![
+                        split_metadata_1.clone(),
+                        split_metadata_2.clone(),
+                        split_metadata_3.clone(),
+                    ]
+                )
                 .await
                 .unwrap();
 
@@ -2556,7 +2486,7 @@ pub mod test_suite {
             sleep(Duration::from_secs(1)).await;
 
             metastore
-                .stage_split(index_id, split_metadata_4.clone())
+                .stage_splits(index_id, vec![split_metadata_4.clone()])
                 .await
                 .unwrap();
             metastore
@@ -2657,16 +2587,14 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_2.clone())
-                .await
-                .unwrap();
-            metastore
-                .stage_split(index_id, split_metadata_3.clone())
+                .stage_splits(
+                    index_id,
+                    vec![
+                        split_metadata_1.clone(),
+                        split_metadata_2.clone(),
+                        split_metadata_3.clone(),
+                    ]
+                )
                 .await
                 .unwrap();
             metastore
@@ -2749,11 +2677,10 @@ pub mod test_suite {
         assert_eq!(split_ids, to_hash_set(&[split_id_1, split_id_2]));
 
         // Stage a existent-split on an index
-        let result = metastore
+        metastore
             .stage_splits(index_id, vec![split_metadata_1.clone()])
             .await
-            .unwrap_err();
-        assert!(matches!(result, MetastoreError::InternalError { .. }));
+            .expect("Pre-existing splits should be ignored.");
 
         cleanup_index(&metastore, index_id).await;
     }
@@ -2808,12 +2735,6 @@ macro_rules! metastore_test_suite {
             //  - publish_splits
             //  - mark_splits_for_deletion
             //  - delete_splits
-
-            #[tokio::test]
-            async fn test_metastore_stage_split() {
-                let _ = tracing_subscriber::fmt::try_init();
-                crate::tests::test_suite::test_metastore_stage_split::<$metastore_type>().await;
-            }
 
             #[tokio::test]
             async fn test_metastore_publish_splits() {

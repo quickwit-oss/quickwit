@@ -170,15 +170,9 @@ impl FileBackedIndex {
         split_metadata: SplitMetadata,
     ) -> crate::MetastoreResult<()> {
         // Check whether the split exists.
-        // If the split exists, return an error to prevent the split from being registered.
+        // If the split exists, we simply ignore the operation
         if self.splits.contains_key(split_metadata.split_id()) {
-            return Err(MetastoreError::InternalError {
-                message: format!(
-                    "Failed to stage split  `{}`: split already exists.",
-                    split_metadata.split_id()
-                ),
-                cause: "".to_string(),
-            });
+            return Ok(())
         }
 
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
