@@ -132,7 +132,17 @@ pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
 }
 
 fn get_status_with_error(rejection: Rejection) -> FormatError {
-    if rejection.is_not_found() {
+    if let Some(error) = rejection.find::<crate::ingest_api::BulkApiError>() {
+        FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<crate::index_api::UnsupportedContentType>() {
+        FormatError {
+            code: ServiceErrorCode::UnsupportedMediaType,
+            error: error.to_string(),
+        }
+    } else if rejection.is_not_found() {
         FormatError {
             code: ServiceErrorCode::NotFound,
             error: "Route not found".to_string(),
@@ -179,11 +189,6 @@ fn get_status_with_error(rejection: Rejection) -> FormatError {
             error: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::PayloadTooLarge>() {
-        FormatError {
-            code: ServiceErrorCode::BadRequest,
-            error: error.to_string(),
-        }
-    } else if let Some(error) = rejection.find::<crate::ingest_api::BulkApiError>() {
         FormatError {
             code: ServiceErrorCode::BadRequest,
             error: error.to_string(),
