@@ -203,15 +203,15 @@ Create an index by posting an `IndexConfig` JSON payload.
 
 #### POST payload
 
-| Variable              | Type               | Description                                                                                                                                                                                                                                                             | Default value                         |
-|-----------------------|--------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------|
-| **version**           | `String`           | Config format version, use the same as your Quickwit version. (mandatory)                                                                                                                                                                                               |                                       |
-| **index_id**          | `String`           | Defines where the index files are stored. This parameter expects a [storage uri](../reference/storage-uri).                                                                                                                                                             |                                       |
-| **index_uri**         | `String`           | Defines where the index files are stored. This parameter expects a [storage uri](../reference/storage-uri). If empty, defaults to the concatenation of `default_index_root_uri` defined in the [Quickwit's config](../configuration/node-config.md) and the `index_id`. | `{default_index_root_uri}/{index_id}` |
-| **doc_mapping**       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping) (mandatory)                                                                                                                                                    |                                       |
-| **indexing_settings** | `IndexingSettings` | Indexing settings object as specified in the [index config docs](../configuration/index-config.md#indexing-settings).                                                                                                                                                   |                                       |
-| **search_settings**   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).                                                                                                                                                       |                                       |
-| **retention**         | `Retention`        | Retention object as specified in the [index config docs](../configuration/index-config.md#retention-policy).                                                                                                                                                            |                                       |
+| Variable              | Type               | Description                                                                                                                | Default value                         |
+|-----------------------|--------------------|----------------------------------------------------------------------------------------------------------------------------|---------------------------------------|
+| **version**           | `String`           | Config format version, use the same as your Quickwit version. (mandatory)                                                  |                                       |
+| **index_id**          | `String`           | Index ID, see its [validation rules](../configuration/index-config.md#index-id) on identifiers. (mandatory) |                                       |
+| **index_uri**         | `String`           | Defines where the index files are stored. This parameter expects a [storage uri](../reference/storage-uri).                | `{default_index_root_uri}/{index_id}` |
+| **doc_mapping**       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping) (mandatory)       |                                       |
+| **indexing_settings** | `IndexingSettings` | Indexing settings object as specified in the [index config docs](../configuration/index-config.md#indexing-settings).      |                                       |
+| **search_settings**   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).          |                                       |
+| **retention**         | `Retention`        | Retention policy object as specified in the [index config docs](../configuration/index-config.md#retention-policy).        |                                       |
 
 
 **Payload Example**
@@ -279,9 +279,9 @@ The response is the `IndexMetadata` of the created index, and the content type i
 
 | Field                | Description                               |         Type          |
 |----------------------|-------------------------------------------|:---------------------:|
-| **index_config**     | The posted index config                   |     `IndexConfig`     |
-| **checkpoint**       | Map of checkpoints by sources             |   `IndexCheckpoint`   |
-| **create_timestamp** | Index create timestamp                    |       `number`        |
+| **index_config**     | The posted index config.                  |     `IndexConfig`     |
+| **checkpoint**       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
+| **create_timestamp** | Index creation timestamp                  |       `number`        |
 | **sources**          | List of the index sources configurations. | `Array<SourceConfig>` |
 
 
@@ -299,9 +299,9 @@ The response is the `IndexMetadata` of the requested index, and the content type
 
 | Field                | Description                               |         Type          |
 |----------------------|-------------------------------------------|:---------------------:|
-| **index_config**     | The posted index config                   |     `IndexConfig`     |
-| **checkpoint**       | Map of checkpoints by sources             |   `IndexCheckpoint`   |
-| **create_timestamp** | Index create timestamp                    |       `number`        |
+| **index_config**     | The posted index config.                  |     `IndexConfig`     |
+| **checkpoint**       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
+| **create_timestamp** | Index creation timestamp.                 |       `number`        |
 | **sources**          | List of the index sources configurations. | `Array<SourceConfig>` |
 
 
@@ -349,13 +349,13 @@ Create source by posting a `SourceConfig` JSON payload.
 
 #### POST payload
 
-| Variable              | Type               | Description                                                                                                           | Default value |
-|-----------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------|---------------|
-| **version**           | `String`           | Config format version, put your current Quickwit version. (mandatory)                                                 |               |
-| **source_id**         | `String`           | Source ID. (mandatory)                                                                                                |               |
-| **source_type**       | `String`           | Source type: `kafka`, `kinesis`, `file`. (mandatory)                                                                  |               |
-| **num_pipelines**     | `usize`            | Number of running indexing pipelines per node for this source.                                                        | 1             |
-| **params**            | `object`           | Source parameters as defined in [source config docs](../configuration/source-config.md).                              |               |
+| Variable          | Type     | Description                                                                                          | Default value |
+|-------------------|----------|------------------------------------------------------------------------------------------------------|---------------|
+| **version**       | `String` | Config format version, put your current Quickwit version. (mandatory)                                |               |
+| **source_id**     | `String` | Source ID. See ID [validation rules](../configuration/source-config.md)(mandatory)                                                                               |               |
+| **source_type**   | `String` | Source type: `kafka`, `kinesis`, `file`. (mandatory)                                                 |               |
+| **num_pipelines** | `usize`  | Number of running indexing pipelines per node for this source.                                       | 1             |
+| **params**        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). (mandatory) |               |
                                                                                  |
 
 
@@ -368,7 +368,6 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes/my-index/sources --data @source_c
     "version": "0.4",
     "source_id": "kafka-source",
     "source_type": "kafka",
-    "num_pipelines": 1,
     "params": {
         "topic": "quickwit-fts-staging",
         "client_params": {

@@ -60,6 +60,10 @@ retention:
   schedule: daily
 ```
 
+## Index ID
+
+The index ID is a string that uniquely identifies the index within the metastore. It may only contain uppercase or lowercase ASCII letters, digits, hyphens (`-`), and underscores (`_`). Finally, it must start with a letter and contain at least 3 characters but no more than 255.
+
 ## Index uri
 
 The index-uri defines where the index files (also called splits) should be stored.
