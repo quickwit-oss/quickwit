@@ -2691,7 +2691,7 @@ pub mod test_suite {
         );
 
         metastore
-            .mark_splits_for_deletion(&index_id, &[&split_id_2])
+            .mark_splits_for_deletion(index_id, &[split_id_2])
             .await
             .unwrap();
         let err = metastore
