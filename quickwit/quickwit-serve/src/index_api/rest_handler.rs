@@ -260,6 +260,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_rest_get_non_existing_index() {
+        let metastore = build_metastore_for_test().await;
+        let index_service = IndexService::new(metastore, StorageUriResolver::for_test());
+        let index_management_handler = super::index_management_handlers(
+            Arc::new(index_service),
+            Arc::new(QuickwitConfig::for_test()),
+        )
+        .recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes/test-index")
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 404);
+    }
+
+    #[tokio::test]
     async fn test_rest_get_all_splits() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::new();
         metastore
@@ -365,6 +381,23 @@ mod tests {
         }]);
         assert_json_include!(actual: resp_json, expected: expected_response_json);
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rest_delete_on_non_existing_index() {
+        let metastore = build_metastore_for_test().await;
+        let index_service = IndexService::new(metastore, StorageUriResolver::for_test());
+        let index_management_handler = super::index_management_handlers(
+            Arc::new(index_service),
+            Arc::new(QuickwitConfig::for_test()),
+        )
+        .recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes/quickwit-demo-index")
+            .method("DELETE")
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 404);
     }
 
     #[tokio::test]
