@@ -91,7 +91,7 @@ wget -O gh-archive.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/
 Now, let's create a Kinesis stream and load some events into it.
 
 :::tip
-This step may be fairly slow depending on how much bandwidth is available. The current command limit the volume of data to ingest by taking the first 10 000 lines of each single file downlaoded from the GH Archive. If you have enough bandwidth, you can remove it to ingest the whole files. You can also speed things up by increasing the number of shards and/or the number of jobs launched by `parallel` (`-j` option).
+This step may be fairly slow depending on how much bandwidth is available. The current command limits the volume of data to ingest by taking the first 10 000 lines of every single file downloaded from the GH Archive. If you have enough bandwidth, you can remove it to ingest the whole set of files. You can also speed things up by increasing the number of shards and/or the number of jobs launched by `parallel` (`-j` option).
 :::
 
 ```bash
