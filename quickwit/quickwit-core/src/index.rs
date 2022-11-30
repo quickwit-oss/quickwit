@@ -58,7 +58,7 @@ impl ServiceError for IndexServiceError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
             Self::StorageError(_) => ServiceErrorCode::Internal,
-            Self::MetastoreError(_) => ServiceErrorCode::Internal,
+            Self::MetastoreError(error) => error.status_code(),
             Self::SplitDeletionError(_) => ServiceErrorCode::Internal,
             Self::InvalidConfig(_) => ServiceErrorCode::BadRequest,
             Self::InvalidIdentifier(_) => ServiceErrorCode::BadRequest,
