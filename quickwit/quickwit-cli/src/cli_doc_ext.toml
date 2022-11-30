@@ -123,15 +123,27 @@ name = "Delete your index"
 command = '''quickwit index delete --index wikipedia --config ./config/quickwit.yaml'''
 
 
-[service.run.searcher]
+[run]
 long_about = """
+### Indexer service
+
+The indexer service will list indexes and their associated sources, and run an indexing pipeline for every single source.
+
+### Janitor service
+
+The Janitor service is a maintenance service in charge of keeping Quickwit cluster clean by running maintenance tasks. Garbage collection, executing delete tasks and applying retention policies to indexes are all the Janitor service duties.
+
+### Metastore service
+
+The metastore service exposes Quickwit metastore over the network. This is a core internal service that is needed to operate Quickwit. As such, at least one running instance of this service is required for other services to work.
+
+### Searcher service 
 Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
 where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
 The node can optionally join a cluster using the `peer_seeds` parameter.
 This list of node addresses is used to discover the remaining peer nodes in the cluster through a gossip protocol (SWIM).
-"""
 
-note = """
+:::note
 Behind the scenes, Quickwit needs to open the following port for cluster formation and workload distribution:
 
     TCP port (default is 7280) for REST API
@@ -139,13 +151,27 @@ Behind the scenes, Quickwit needs to open the following port for cluster formati
     TCP port + 1 (default is 7281) for gRPC address for the distributed search
 
 If ports are already taken, the serve command will fail.
+:::
 """
 
-[[service.run.searcher.examples]]
-name = "Start a Searcher"
+[[run.examples]]
+name = "Starts an indexer service"
+command = "quickwit run --service indexer --config=./config/quickwit.yaml"
+
+[[run.examples]]
+name = "Start a searcher service"
 command = "quickwit run --service searcher --config=./config/quickwit.yaml"
 
-[[service.run.searcher.examples]]
+
+[[run.examples]]
+name = "Start a janitor service"
+command = "quickwit run --service janitor --config=./config/quickwit.yaml"
+
+[[run.examples]]
+name = "Start a metastore service"
+command = "quickwit run --service metastore --config=./config/quickwit.yaml"
+
+[[run.examples]]
 name = "Make a search request on a wikipedia index"
 command = '''
 # To create wikipedia index and ingest data, go to our tutorial https://quickwit.io/docs/get-started/quickstart.
@@ -155,8 +181,7 @@ quickwit run --service searcher --config=./config/quickwit.yaml
 curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+obama"
 '''
 
-
-[[service.run.searcher.examples]]
+[[run.examples]]
 name = "Make a search stream request on a Github archive index"
 command = '''
 # Create gh-archive index.
@@ -172,18 +197,12 @@ curl "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j&fastFiel
 curl --http2-prior-knowledge "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j&fastField=id&outputFormat=csv"
 '''
 
-[service.run.indexer]
-long_about = """
-Starts an indexing service that consumes the sources of index IDs passed in `--indexes` argument.
-"""
-
-[[service.run.indexer.examples]]
+[[run.examples]]
 name = "Add a source to an index and start an Indexer"
 command = '''
 quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}'
 quickwit run --service indexer --indexes wikipedia --config=./config/quickwit.yaml
 '''
-
 
 [[source.add.examples]]
 name = "Add a file source to `wikipedia` index"
