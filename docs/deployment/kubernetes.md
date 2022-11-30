@@ -23,11 +23,16 @@ To install `kubectl` and `helm` locally, follow the [Kubernetes](https://kuberne
 
 2. Add the Quickwit Helm chart repository to Helm
 
+    ```
     helm repo add quickwit https://helm.quickwit.io
+    ```
+
 
 3. Update the repository
 
+    ```
     helm repo update quickwit
+    ```
 
 4. Create and customize your configuration file `values.yaml`
 
@@ -61,10 +66,14 @@ config:
 
 5. Deploy Quickwit
 
+    ```
     helm install <deployment name> quickwit/quickwit -f values.yaml
+    ```
 
-# Uninstall the deployment
+## Uninstall the deployment
 
-1. Run the following Helm command to uninstall the deployment
+Run the following Helm command to uninstall the deployment
 
+    ```
     helm delete <deployment name>
+    ```

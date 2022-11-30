@@ -259,7 +259,6 @@ impl IndexingService {
                 if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
                     continue;
                 }
-
                 self.spawn_pipeline_inner(
                     ctx,
                     pipeline_id.clone(),
@@ -375,11 +374,13 @@ impl IndexingService {
                         false
                     }
                     ActorState::Failure => {
+                        // This should never happen: Indexing Pipelines are not supposed to fail,
+                        // and are themselves in charge of supervising the pipeline actors.
                         error!(
                             index_id=%pipeline_id.index_id,
                             source_id=%pipeline_id.source_id,
                             pipeline_ord=%pipeline_id.pipeline_ord,
-                            "Indexing pipeline exited with failure."
+                            "Indexing pipeline exited with failure. This should never happen."
                         );
                         self.counters.num_failed_pipelines += 1;
                         self.counters.num_running_pipelines -= 1;
