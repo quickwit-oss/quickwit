@@ -40,8 +40,7 @@ After [installing quickwit], let's create an index configured to receive these e
 }
 ```
 
-
-We don't need to index all fields described above as Quickwit. The `title` and `body` are the fields of interest for our full-text search tutorial. 
+We don't need to index all fields described above as `title` and `body` are the fields of interest for our full-text search tutorial. 
 The `id` will be helpful for making the JOINs in ClickHouse, `created_at` and `event_type` may also be beneficial for timestamp pruning and filtering.
 
 ```yaml title="gh-archive-index-config.yaml"
