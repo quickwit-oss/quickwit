@@ -833,12 +833,10 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_splits(index_id, vec![split_metadata_1.clone()])
-                .await
-                .unwrap();
-
-            metastore
-                .stage_splits(index_id, vec![split_metadata_2.clone()])
+                .stage_splits(
+                    index_id,
+                    vec![split_metadata_1.clone(), split_metadata_2.clone()],
+                )
                 .await
                 .unwrap();
 
@@ -878,12 +876,10 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_splits(index_id, vec![split_metadata_1.clone()])
-                .await
-                .unwrap();
-
-            metastore
-                .stage_splits(index_id, vec![split_metadata_2.clone()])
+                .stage_splits(
+                    index_id,
+                    vec![split_metadata_1.clone(), split_metadata_2.clone()],
+                )
                 .await
                 .unwrap();
 
@@ -1092,12 +1088,10 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_splits(&index_id, vec![split_metadata_1.clone()])
-                .await
-                .unwrap();
-
-            metastore
-                .stage_splits(&index_id, vec![split_metadata_2.clone()])
+                .stage_splits(
+                    &index_id,
+                    vec![split_metadata_1.clone(), split_metadata_2.clone()],
+                )
                 .await
                 .unwrap();
 
@@ -1199,12 +1193,10 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_splits(&index_id, vec![split_metadata_2.clone()])
-                .await
-                .unwrap();
-
-            metastore
-                .stage_splits(&index_id, vec![split_metadata_3.clone()])
+                .stage_splits(
+                    &index_id,
+                    vec![split_metadata_2.clone(), split_metadata_3.clone()],
+                )
                 .await
                 .unwrap();
 
