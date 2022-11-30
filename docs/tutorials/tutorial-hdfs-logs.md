@@ -120,7 +120,7 @@ The `ingest` subcommand generates [splits](/docs/concepts/architecture) of 5 mil
 ## Start your server
 
 The command `run --service searcher --service metastore` starts a http server which provides a [REST API](/docs/reference/rest-api) 
-and runs the metastore service which is required by the searcher service..
+and runs the metastore service which is required by the searcher service.
 
 
 ```bash
