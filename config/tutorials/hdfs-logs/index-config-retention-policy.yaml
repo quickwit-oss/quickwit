@@ -1,10 +1,10 @@
 #
-# Index config file for hdfs-logs dataset.
+# Index config file for hdfs-logs dataset with a retention policy configured.
 #
 
 version: 0.4
 
-index_id: hdfs-logs
+index_id: hdfs-logs-retention-policy
 
 doc_mapping:
   field_mappings:
@@ -32,3 +32,11 @@ doc_mapping:
 
 search_settings:
   default_search_fields: [severity_text, body]
+
+retention:
+  period: 90 days
+  schedule: daily
+
+indexing_settings:
+  commit_timeout_secs: 10
+  split_num_docs_target: 10000000
