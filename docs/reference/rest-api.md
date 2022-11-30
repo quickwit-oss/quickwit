@@ -31,11 +31,19 @@ Failed requests return a 4xx HTTP status code. The response body of failed reque
 
 ### Search in an index
 
+Search for documents matching a query in the given index `api/v1/<index id>/search`. This endpoint is available as long as you have at least one node running a searcher service in the cluster.
+The search endpoint accepts `GET` and `POST` requests. The [parameters](#get-parameters) are URL parameters in case of `GET` or JSON key value pairs in case of `POST`.
+
 ```
 GET api/v1/<index id>/search?query=searchterm
 ```
 
-Search for documents matching a query in the given index `<index id>`. This endpoint is available as long as you have at least one node running a searcher service in the cluster.
+```
+POST api/v1/<index id>/search
+{
+  "query": searchterm
+}
+```
 
 #### Path variable
 
@@ -43,7 +51,7 @@ Search for documents matching a query in the given index `<index id>`. This endp
 | ------------- | ------------- |
 | **index id**  | The index id  |
 
-#### Get parameters
+#### Parameters
 
 | Variable                  | Type                 | Description                                                                                                | Default value                                                                                   |
 | ------------------------- | -------------------- | -------------------------------------------------------------------------------------------------          | ----------------------------------------------------------------------------------------------- |
@@ -58,8 +66,8 @@ Search for documents matching a query in the given index `<index id>`. This endp
 | **format**                | `Enum`               | The output format. Allowed values are "json" or "prettyjson"                                               | `prettyjson`                                                                                    |
 | **aggs**               | `JSON`               | The aggregations request. See the [aggregations doc](aggregation.md) for supported aggregations.      |
 
-:::warning
-The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
+:::info
+The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision.
 :::
 
 #### Response
@@ -107,8 +115,8 @@ The endpoint will return 10 million values if 10 million documents match the que
 | **end_timestamp**   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.                                        |                                                    |
 | **output_format**   | `String`   | Response output format. `csv` or `clickHouseRowBinary`                                                           | `csv`                                              |
 
-:::warning
-The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
+:::info
+The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision.
 :::
 
 #### Response
