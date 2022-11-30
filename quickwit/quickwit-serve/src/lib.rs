@@ -212,7 +212,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         services,
     };
     let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
-    let rest_server = rest::start_rest_server(rest_listen_addr, &universe, &quickwit_services);
+    let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
     tokio::try_join!(grpc_server, rest_server)?;
     Ok(())
 }

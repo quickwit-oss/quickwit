@@ -72,7 +72,7 @@ fn get_indexes_metadatas_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("indexes")
         .and(warp::get())
-        .and(warp::path::end().map(move || index_service.clone()))
+        .and(with_arg(index_service))
         .then(get_indexes_metadatas)
         .map(format_response)
 }
@@ -90,7 +90,7 @@ fn get_all_splits_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("indexes" / String / "splits")
         .and(warp::get())
-        .and(warp::path::end().map(move || index_service.clone()))
+        .and(with_arg(index_service))
         .then(get_all_splits)
         .map(format_response)
 }
@@ -113,8 +113,8 @@ fn create_index_handler(
         // TODO: add a filter on the content type, we support only json.
         .and(warp::post())
         .and(warp::filters::body::bytes())
-        .and(warp::path::end().map(move || index_service.clone()))
-        .and(warp::path::end().map(move || quickwit_config.clone()))
+        .and(with_arg(index_service))
+        .and(with_arg(quickwit_config))
         .then(create_index)
         .map(format_response)
 }
@@ -143,7 +143,7 @@ fn delete_index_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("indexes" / String)
         .and(warp::delete())
-        .and(warp::path::end().map(move || index_service.clone()))
+        .and(with_arg(index_service))
         .then(delete_index)
         .map(format_response)
 }
@@ -162,7 +162,7 @@ fn create_source_handler(
     warp::path!("indexes" / String / "sources")
         .and(warp::post())
         .and(json_body())
-        .and(warp::path::end().map(move || index_service.clone()))
+        .and(with_arg(index_service))
         .then(create_source)
         .map(format_response)
 }
@@ -181,7 +181,7 @@ fn delete_source_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("indexes" / String / "sources" / String)
         .and(warp::delete())
-        .and(warp::path::end().map(move || index_service.clone()))
+        .and(with_arg(index_service))
         .then(delete_source)
         .map(format_response)
 }

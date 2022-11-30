@@ -26,7 +26,6 @@ use serde_json::Value as JsonValue;
 use siphasher::sip::SipHasher;
 
 pub trait RoutingExprContext {
-    // TODO see if we can get rid of the alloc in some specific case
     fn hash_attribute<H: Hasher>(&self, attr_name: &str, hasher: &mut H);
 }
 
@@ -287,5 +286,12 @@ mod tests {
         let ctx: serde_json::Map<String, JsonValue> =
             serde_json::from_str(r#"{"tenant_id": "happy-tenant", "app": "happy"}"#).unwrap();
         assert_eq!(routing_expr.eval_hash(&ctx), 12428134591152806029);
+    }
+
+    #[test]
+    fn test_routing_expr_missing_value_does_not_panic() {
+        let routing_expr = RoutingExpr::new("tenant_id").unwrap();
+        let ctx: serde_json::Map<String, JsonValue> = Default::default();
+        assert_eq!(routing_expr.eval_hash(&ctx), 9054185009885066538);
     }
 }
