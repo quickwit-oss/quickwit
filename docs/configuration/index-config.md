@@ -83,6 +83,8 @@ The doc mapping defines how a document and the fields it contains are stored and
 | `tag_fields` | Collection of fields already defined in `field_mappings` whose values will be stored as part of the `tags` metadata. [Learn more about tags](../concepts/querying.md#tag-pruning). | [] |
 | `store_source` | Whether or not the original JSON document is stored or not in the index.   | false |
 | `timestamp_field`      | Timestamp field used for sharding documents in splits. The field has to be of type `datetime`. [Learn more about time sharding](./../concepts/architecture.md).  | None |
+ `partition_key`   |  If set, quickwit will route documents into different splits depending on the field name declared as the `partition_key`. | null |
+| `max_num_partitions`  | Limits the number of splits created through partitioning. (See [Partitioning](../concepts/querying.md#partitioning))  |    200 |
 
 ### Field types
 

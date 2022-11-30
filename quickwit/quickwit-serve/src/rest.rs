@@ -20,9 +20,7 @@
 use std::net::SocketAddr;
 
 use hyper::http;
-use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::metrics;
-use quickwit_janitor::actors::DeleteTaskService;
 use quickwit_proto::ServiceErrorCode;
 use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
@@ -42,7 +40,6 @@ use crate::{Format, QuickwitServices};
 /// Starts REST services.
 pub(crate) async fn start_rest_server(
     rest_listen_addr: SocketAddr,
-    universe: &Universe,
     quickwit_services: &QuickwitServices,
 ) -> anyhow::Result<()> {
     info!(rest_listen_addr = %rest_listen_addr, "Starting REST server.");
@@ -88,10 +85,9 @@ pub(crate) async fn start_rest_server(
             quickwit_services.index_service.clone(),
             quickwit_services.config.clone(),
         ))
-        .or({
-            let delete_task_service_opt: Option<Mailbox<DeleteTaskService>> = universe.get_one();
-            delete_task_api_handlers(quickwit_services.metastore.clone(), delete_task_service_opt)
-        });
+        .or(delete_task_api_handlers(
+            quickwit_services.metastore.clone(),
+        ));
 
     let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
     let redirect_root_to_ui_route =
