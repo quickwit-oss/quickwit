@@ -119,11 +119,12 @@ The `ingest` subcommand generates [splits](/docs/concepts/architecture) of 5 mil
 
 ## Start your server
 
-The command `run --service searcher` starts a http server which provides a [REST API](/docs/reference/rest-api).
+The command `run --service searcher --service metastore` starts a http server which provides a [REST API](/docs/reference/rest-api) 
+and runs the metastore service which is required by the searcher service..
 
 
 ```bash
-./quickwit run --service searcher
+./quickwit run --service searcher --service metastore
 ```
 
 Let's execute the same query on field `severity_text` but with `cURL`:
