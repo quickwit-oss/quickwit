@@ -422,7 +422,7 @@ quickwit split mark-for-deletion
 
 ## run
 
-Starts quickwit services. By default, both `search` and `indexing` will be started.
+ Starts quickwit services. By default, all services namely  `indexer`, `searcher`, `janitor` and `metastore` will be started.
 It is however possible to specifically run only one of these services by adding a `--service` parameter.
 
 :::
@@ -430,9 +430,9 @@ It is however possible to specifically run only one of these services by adding 
 
 *Options*
 
-`--service` Selects a specific service to run. (searcher or indexer) \
+`--service` Selects a specific service to run. (indexer, searcher, janitor or metastore) \
 `--config` Quickwit config file. \
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`. \
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
 
 ### Searcher service
 
@@ -486,6 +486,14 @@ curl --http2-prior-knowledge "http://127.0.0.1:7280/api/v1/gh-archive/search/str
 ### Indexer service
 
 The indexer service will list indexes and their associated sources, and run an indexing pipeline for every single source.
+
+### Janitor service
+
+The Janitor service is a maintenance service in charge of keeping Quickwit cluster clean by running maintenance tasks. Garbage collection, executing delete tasks and applying retention policies to indexes are all the Janitor service duties.
+
+### Metastore service
+
+The metastore service exposes Quickwit metastore over the network. This is a core internal service that is needed to operate Quickwit. As such, at least one running instance of this service is required for other services to work.
 
 ## source
 Manages sources.
