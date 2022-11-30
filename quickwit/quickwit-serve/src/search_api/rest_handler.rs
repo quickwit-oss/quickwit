@@ -339,8 +339,7 @@ async fn search_stream(
     };
     let reply =
         make_streaming_reply(search_stream_endpoint(index_id, request, &*search_service).await);
-    let reply_with_header = reply::with_header(reply, CONTENT_TYPE, content_type);
-    reply_with_header
+    reply::with_header(reply, CONTENT_TYPE, content_type)
 }
 
 fn search_stream_filter(
