@@ -108,12 +108,8 @@ impl Metastore for RetryTestMetastore {
         &self,
         _index_id: &str,
         _split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<Vec<String>> {
-        let result = self.try_success();
-        match result {
-            Ok(_) => Ok(Vec::new()),
-            Err(err) => Err(err),
-        }
+    ) -> MetastoreResult<()> {
+        self.try_success()
     }
 
     async fn publish_splits<'a>(

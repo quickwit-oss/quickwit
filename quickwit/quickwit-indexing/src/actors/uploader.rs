@@ -318,22 +318,14 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     split_metadata_list.push(split_metadata);
                 }
 
-                let successful_split_ids = metastore
+                metastore
                     .stage_splits(&index_id, split_metadata_list.clone())
                     .instrument(tracing::info_span!("staging_split"))
-                    .await?
-                    .into_iter()
-                    .collect::<HashSet<_>>();
-                counters.num_staged_splits.fetch_add(successful_split_ids.len() as u64, Ordering::SeqCst);
+                    .await?;
+                counters.num_staged_splits.fetch_add(split_metadata_list.len() as u64, Ordering::SeqCst);
 
-                let mut failed_to_stage_split_ids = Vec::new();
                 let mut packaged_splits_and_metadata = Vec::new();
                 for (packaged_split, metadata) in batch.splits.into_iter().zip(split_metadata_list) {
-                    if !successful_split_ids.contains(metadata.split_id()) {
-                        failed_to_stage_split_ids.push(metadata.split_id.clone());
-                        continue;
-                    }
-
                     let upload_result = upload_split(
                         &packaged_split,
                         &metadata,
@@ -349,16 +341,6 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     }
 
                     packaged_splits_and_metadata.push((packaged_split, metadata));
-                }
-
-                if !failed_to_stage_split_ids.is_empty() {
-                    let truncated_split_ids = failed_to_stage_split_ids.iter().take(5).collect::<Vec<_>>();
-                    warn!(
-                        num_failed_splits = failed_to_stage_split_ids.len(),
-                        "Failed to stage {:?} and {} other splits.",
-                        truncated_split_ids,
-                        failed_to_stage_split_ids.len(),
-                    );
                 }
 
                 let splits_update = make_publish_operation(
@@ -472,7 +454,7 @@ mod tests {
                     && metadata.time_range == Some(1628203589..=1628203640)
             })
             .times(1)
-            .returning(|_, _| Ok(vec!["test-split".to_string()]));
+            .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
@@ -575,7 +557,7 @@ mod tests {
                 (index_id == "test-index") && is_metadata_valid
             })
             .times(1)
-            .returning(|_, _| Ok(vec!["test-split-1".to_string(), "test-split-2".to_string()]));
+            .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
@@ -702,7 +684,7 @@ mod tests {
             .expect_stage_splits()
             .withf(move |index_id, _| -> bool { index_id == "test-index-no-sequencer" })
             .times(1)
-            .returning(|_, _| Ok(vec!["test-split".to_string()]));
+            .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));

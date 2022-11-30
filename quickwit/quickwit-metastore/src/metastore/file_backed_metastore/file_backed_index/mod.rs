@@ -166,11 +166,18 @@ impl FileBackedIndex {
     }
 
     /// Stages a single split returning if the split was inserted or not.
-    pub(crate) fn stage_split(&mut self, split_metadata: SplitMetadata) -> bool {
+    pub(crate) fn stage_split(&mut self, split_metadata: SplitMetadata) -> MetastoreResult<()> {
         // Check whether the split exists.
-        // If the split exists, we simply ignore the operation
-        if self.splits.contains_key(split_metadata.split_id()) {
-            return false;
+        // If the split exists, we check what state it is in. If it's anything other than `Staged`
+        // something has gone very wrong and we should abort the operation.
+        if let Some(existing_split) = self.splits.get(split_metadata.split_id()) {
+            if existing_split.split_state != SplitState::Staged {
+                return Err(MetastoreError::CorrectnessError {
+                    message: "Cannot stage split as it already exists and has been published or \
+                              marked for deletion."
+                        .to_string(),
+                });
+            }
         }
 
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
@@ -183,7 +190,7 @@ impl FileBackedIndex {
 
         self.splits
             .insert(metadata.split_id().to_string(), metadata);
-        true
+        Ok(())
     }
 
     /// Marks the splits for deletion. Returns whether a mutation occurred.

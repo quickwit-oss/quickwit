@@ -576,7 +576,7 @@ impl Metastore for PostgresqlMetastore {
         &self,
         index_id: &str,
         split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<Vec<String>> {
+    ) -> MetastoreResult<()> {
         let mut split_ids = Vec::with_capacity(split_metadata_list.len());
         let mut time_range_start_list = Vec::with_capacity(split_metadata_list.len());
         let mut time_range_end_list = Vec::with_capacity(split_metadata_list.len());
@@ -606,39 +606,59 @@ impl Metastore for PostgresqlMetastore {
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
         }
 
-        let split_ids: Vec<String> = sqlx::query_scalar(r#"
-            INSERT INTO splits
-                (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, split_state, index_id)
-            SELECT
-                split_id,
-                time_range_start,
-                time_range_end,
-                ARRAY(SELECT json_array_elements_text(tags_json::json)) as tags,
-                split_metadata_json,
-                delete_opstamp,
-                $7 as split_state,
-                $8 as index_id
-            FROM
-                unnest($1, $2, $3, $4, $5, $6)
-                as tr(split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp)
-            ON CONFLICT(split_id) DO NOTHING
-            RETURNING split_id;
-            "#)
-            .bind(split_ids)
-            .bind(time_range_start_list)
-            .bind(time_range_end_list)
-            .bind(tags_list)
-            .bind(split_metadata_json_list)
-            .bind(delete_opstamps)
-            .bind(SplitState::Staged.as_str())
-            .bind(index_id)
-            .fetch_all(&self.connection_pool)
-            .await
-            .map_err(|error| convert_sqlx_err(index_id, error))?;
+        run_with_tx!(self.connection_pool, tx, {
+            let upserted_split_ids: Vec<String> = sqlx::query_scalar(r#"
+                INSERT INTO splits
+                    (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, split_state, index_id)
+                SELECT
+                    split_id,
+                    time_range_start,
+                    time_range_end,
+                    ARRAY(SELECT json_array_elements_text(tags_json::json)) as tags,
+                    split_metadata_json,
+                    delete_opstamp,
+                    $7 as split_state,
+                    $8 as index_id
+                FROM
+                    unnest($1, $2, $3, $4, $5, $6)
+                    as tr(split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp)
+                ON CONFLICT(split_id) DO UPDATE
+                    SET
+                        time_range_start = excluded.time_range_start,
+                        time_range_end = excluded.time_range_end,
+                        tags = excluded.tags,
+                        split_metadata_json = excluded.split_metadata_json,
+                        delete_opstamp = excluded.delete_opstamp,
+                        index_id = excluded.index_id,
+                        update_timestamp = CURRENT_TIMESTAMP,
+                        create_timestamp = CURRENT_TIMESTAMP
+                    WHERE splits.split_id = excluded.split_id AND splits.split_state = 'Staged'
+                RETURNING split_id;
+                "#)
+                .bind(&split_ids)
+                .bind(time_range_start_list)
+                .bind(time_range_end_list)
+                .bind(tags_list)
+                .bind(split_metadata_json_list)
+                .bind(delete_opstamps)
+                .bind(SplitState::Staged.as_str())
+                .bind(index_id)
+                .fetch_all(tx)
+                .await
+                .map_err(|error| convert_sqlx_err(index_id, error))?;
 
-        debug!(index_id=%index_id, num_splits=split_ids.len(), "Splits successfully staged.");
+            if upserted_split_ids.len() != split_ids.len() {
+                return Err(MetastoreError::CorrectnessError {
+                    message: "Cannot stage split as it already exists and has been published or \
+                              marked for deletion."
+                        .to_string(),
+                });
+            }
 
-        Ok(split_ids)
+            debug!(index_id=%index_id, num_splits=split_ids.len(), "Splits successfully staged.");
+
+            Ok(())
+        })
     }
 
     #[instrument(skip(self), fields(index_id=index_id))]

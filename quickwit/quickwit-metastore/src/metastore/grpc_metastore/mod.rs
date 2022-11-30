@@ -254,7 +254,7 @@ impl Metastore for MetastoreGrpcClient {
         &self,
         index_id: &str,
         split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<Vec<String>> {
+    ) -> MetastoreResult<()> {
         let split_metadata_list_serialized_json = serde_json::to_string(&split_metadata_list)
             .map_err(|error| MetastoreError::JsonSerializeError {
                 struct_name: "Vec<SplitMetadata>".to_string(),
@@ -264,14 +264,12 @@ impl Metastore for MetastoreGrpcClient {
             index_id: index_id.to_string(),
             split_metadata_list_serialized_json,
         };
-        let resp = self
-            .underlying
+        self.underlying
             .clone()
             .stage_splits(tonic_request)
             .await
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
-            .into_inner();
-        Ok(resp.split_ids)
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(())
     }
 
     /// Publishes a list of splits.

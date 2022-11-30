@@ -2668,11 +2668,43 @@ pub mod test_suite {
             .collect();
         assert_eq!(split_ids, to_hash_set(&[split_id_1, split_id_2]));
 
-        // Stage a existent-split on an index
+        // Stage a existent-staged-split on an index
         metastore
             .stage_splits(index_id, vec![split_metadata_1.clone()])
             .await
-            .expect("Pre-existing splits should be ignored.");
+            .expect("Pre-existing staged splits should be updated.");
+
+        metastore
+            .publish_splits(index_id, &[split_id_1, split_id_2], &[], None)
+            .await
+            .unwrap();
+        let err = metastore
+            .stage_splits(index_id, vec![split_metadata_1.clone()])
+            .await
+            .expect_err(
+                "Metastore should not allow splits which are not `Staged` to be overwritten.",
+            );
+        assert!(
+            matches!(err, MetastoreError::CorrectnessError { .. }),
+            "Metastore should return a correctness error when attempting to perform an operation \
+             that must not occur.",
+        );
+
+        metastore
+            .mark_splits_for_deletion(&index_id, &[&split_id_2])
+            .await
+            .unwrap();
+        let err = metastore
+            .stage_splits(index_id, vec![split_metadata_2.clone()])
+            .await
+            .expect_err(
+                "Metastore should not allow splits which are not `Staged` to be overwritten.",
+            );
+        assert!(
+            matches!(err, MetastoreError::CorrectnessError { .. }),
+            "Metastore should return a correctness error when attempting to perform an operation \
+             that must not occur.",
+        );
 
         cleanup_index(&metastore, index_id).await;
     }

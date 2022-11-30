@@ -142,7 +142,7 @@ impl MetastoreApiService for MetastoreProxyService {
     async fn stage_splits(
         &self,
         request: Request<StageSplitsRequest>,
-    ) -> Result<Response<StageSplitsResponse>, Status> {
+    ) -> Result<Response<SplitResponse>, Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.stage_splits(request).await?;

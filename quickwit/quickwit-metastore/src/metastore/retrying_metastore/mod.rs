@@ -102,7 +102,7 @@ impl Metastore for RetryingMetastore {
         &self,
         index_id: &str,
         split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<Vec<String>> {
+    ) -> MetastoreResult<()> {
         retry(&self.retry_params, || async {
             self.inner
                 .stage_splits(index_id, split_metadata_list.clone())

@@ -141,7 +141,7 @@ pub trait Metastore: Send + Sync + 'static {
         &self,
         index_id: &str,
         split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<Vec<String>>;
+    ) -> MetastoreResult<()>;
 
     /// Publishes a list of splits.
     ///

@@ -126,7 +126,7 @@ impl Metastore for InstrumentedMetastore {
         &self,
         index_id: &str,
         split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<Vec<String>> {
+    ) -> MetastoreResult<()> {
         instrument!(
             self.underlying
                 .stage_splits(index_id, split_metadata_list)
