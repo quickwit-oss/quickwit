@@ -9,7 +9,7 @@ This page documents all the available commands, related options, and environment
 
 :::caution
 
-Before using Quickwit with object storage, consult our [guidelines](../operations/aws-costs.md) for deploying on AWS S3 to avoid surprises on your next bill.
+Before using Quickwit with object storage, consult our [guidelines](../guides/aws-costs.md) for deploying on AWS S3 to avoid surprises on your next bill.
 
 :::
 
