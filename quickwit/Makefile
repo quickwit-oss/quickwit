@@ -18,6 +18,9 @@ test-all:
 	QW_S3_ENDPOINT=http://localhost:4566 AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features
 	cargo test --test failpoints --features fail/failpoints
 
+test-failpoints:
+	cargo test --test failpoints --features fail/failpoints
+
 # TODO: to be replaced by https://github.com/quickwit-oss/quickwit/issues/237
 TARGET ?= x86_64-unknown-linux-gnu
 .PHONY: build

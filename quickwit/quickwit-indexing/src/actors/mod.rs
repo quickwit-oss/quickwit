@@ -32,7 +32,8 @@ mod uploader;
 
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandles, IndexingPipelineParams};
 pub use indexing_service::{
-    IndexingService, IndexingServiceError, IndexingServiceState, INDEXING_DIR_NAME,
+    IndexingService, IndexingServiceCounters, IndexingServiceError, MergePipelineId,
+    INDEXING_DIR_NAME,
 };
 pub use sequencer::Sequencer;
 mod merge_executor;
@@ -46,6 +47,7 @@ pub use self::ingest_api_garbage_collector::{
     IngestApiGarbageCollector, IngestApiGarbageCollectorCounters,
 };
 pub use self::merge_executor::{combine_partition_ids, merge_split_attrs, MergeExecutor};
+pub use self::merge_pipeline::MergePipeline;
 pub use self::merge_planner::MergePlanner;
 pub use self::merge_split_downloader::MergeSplitDownloader;
 pub use self::packager::Packager;

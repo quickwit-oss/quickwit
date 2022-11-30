@@ -2,7 +2,7 @@
 # Index config file for wikipedia dataset.
 #
 
-version: 0
+version: 0.4
 
 index_id: wikipedia
 

@@ -1,6 +1,6 @@
 {
-  "version": "3",
-  "source_id": "_ingest-api",
+  "version": "0.4",
+  "source_id": "_ingest-api-source",
   "enabled": true,
   "source_type": "ingest-api"
 }

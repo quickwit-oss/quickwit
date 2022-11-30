@@ -49,7 +49,22 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 ## Tracing with Jaeger
 1. Ensure Docker and Docker Compose are correctly installed on your machine (see above)
 2. Start the Jaeger services (UI, collector, agent, ...) running the command `make docker-compose-up DOCKER_SERVICES=jaeger`
-3. Open your browser and visit [localhost:16686](http://localhost:16686/)
+3. Start Quickwit with the following environment variables:
+`QW_ENABLE_JAEGER_EXPORTER=true`
+`OTEL_BSP_MAX_EXPORT_BATCH_SIZE=8`
+
+If you are on MacOS, the default UDP packet size is 9216 bytes which is too low compared to the jaeger exporter max size set by default at 65000 bytes. As a workaround, you can increase the limit at your own risk: `sudo sysctl -w net.inet.udp.maxdgram=65535`.
+
+The `OTEL_BSP_MAX_EXPORT_BATCH_SIZE` is the key parameter, it sets the maximum number of spans sent to Jaeger in one batch. Quickwit tends to produce spans of relatively big size and if the batch size is greater than the maximum UDP packet size, the sending of the batch to Jaeger will fail and the following error will appear in the logs: 
+
+```
+OpenTelemetry trace error occurred. Exporter jaeger encountered the following error(s): thrift agent failed with transport error
+```
+
+Ref: https://github.com/open-telemetry/opentelemetry-rust/issues/851
+
+
+4. Open your browser and visit [localhost:16686](http://localhost:16686/)
 
 ## Using tokio console
 1. Install tokio-console by running `cargo install tokio-console`.
@@ -63,6 +78,10 @@ Currently, we use [cross](https://github.com/rust-embedded/cross) to build Quick
 For this to work, we've had to customize the docker images cross uses. These customizations can be found in docker files located in `./cross-images` folder. To make cross take into account any change on those
 docker files, you will need to build and push the images on Docker Hub by running `make cross-images`.
 We also have nightly builds that are pushed to Docker Hub. This helps continuously check our binaries are still built even with external dependency update. Successful builds let you accessed the artifacts for the next three days. Release builds always have their artifacts attached to the release.
+
+## Docker images
+
+Each merge on the `main` branch triggers the build of a new Docker image available on DockerHub at `quickwit/quickwit:edge`. Tagging a commit also creates a new image `quickwit/quickwit:<tag name>` if the tag name starts with `v*` or `qw*`. The Docker images are based on Debian.
 
 ### Notes on the embedded UI
 As the react UI is embedded in the rust binary, we need to build the react app before building the binary. Hence `make cross-image` depends on the command `build-ui`.

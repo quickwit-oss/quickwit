@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import { Table, TableBody, TableContainer, Box, styled } from "@mui/material";
-import { guessTimeUnit, Index, SearchResponse } from "../../utils/models";
+import { Field as Field, getAllFields, Index, SearchResponse} from "../../utils/models";
 import { Row } from "./Row";
 
 const TableBox = styled(Box)`
@@ -30,7 +30,7 @@ height: 100%;
 `
 
 export function ResultTable({searchResponse, index}: {searchResponse: SearchResponse, index: Index}) {
-  const timeUnit = guessTimeUnit(index);
+  const timestampField = getTimestampField(index);
   return (
     <TableBox>
       <TableContainer>
@@ -40,9 +40,7 @@ export function ResultTable({searchResponse, index}: {searchResponse: SearchResp
                 <Row
                   key={idx}
                   row={hit}
-                  timestampField={index.metadata.indexing_settings.timestamp_field}
-                  docMapping={index.metadata.doc_mapping}
-                  timeUnit={timeUnit}
+                  timestampField={timestampField}
                 />
             )}
           </TableBody>
@@ -50,4 +48,11 @@ export function ResultTable({searchResponse, index}: {searchResponse: SearchResp
       </TableContainer>
     </TableBox>
   );
+}
+
+function getTimestampField(index: Index): Field | null {
+  const fields = getAllFields(index.metadata.index_config.doc_mapping.field_mappings);
+  const timestamp_field_name = index.metadata.index_config.doc_mapping.timestamp_field;
+  const timestamp_field = fields.filter(field => field.field_mapping.name === timestamp_field_name)[0];
+  return timestamp_field ?? null;
 }

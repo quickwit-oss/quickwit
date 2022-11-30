@@ -17,30 +17,79 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_actors::{ActorHandle, Mailbox};
+use async_trait::async_trait;
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Healthz, Supervisable,
+};
+use serde_json::{json, Value as JsonValue};
 
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 
 pub struct JanitorService {
-    _garbage_collector_handle: ActorHandle<GarbageCollector>,
-    _retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
     delete_task_service_handle: ActorHandle<DeleteTaskService>,
+    garbage_collector_handle: ActorHandle<GarbageCollector>,
+    retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
 }
 
 impl JanitorService {
     pub fn new(
+        delete_task_service_handle: ActorHandle<DeleteTaskService>,
         garbage_collector_handle: ActorHandle<GarbageCollector>,
         retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
-        delete_task_service_handle: ActorHandle<DeleteTaskService>,
     ) -> Self {
         Self {
-            _garbage_collector_handle: garbage_collector_handle,
-            _retention_policy_executor_handle: retention_policy_executor_handle,
             delete_task_service_handle,
+            garbage_collector_handle,
+            retention_policy_executor_handle,
         }
     }
 
-    pub fn delete_task_service_mailbox(&self) -> &Mailbox<DeleteTaskService> {
-        self.delete_task_service_handle.mailbox()
+    fn supervisables(&self) -> Vec<&dyn Supervisable> {
+        vec![
+            &self.delete_task_service_handle,
+            &self.garbage_collector_handle,
+            &self.retention_policy_executor_handle,
+        ]
+    }
+
+    // CAUTION: if you ever add a supervisor to this actor, make sure the healthz probe no longer
+    // calls this method and share the health via a watch channel instead.
+    fn harvest_health(&self) -> Health {
+        let mut janitor_health = Health::Healthy;
+
+        for supervisable in self.supervisables() {
+            let actor_health = supervisable.harvest_health();
+
+            if actor_health != Health::Healthy {
+                janitor_health = actor_health;
+            }
+        }
+        janitor_health
+    }
+}
+
+#[async_trait]
+impl Actor for JanitorService {
+    type ObservableState = JsonValue;
+
+    fn name(&self) -> String {
+        "JanitorService".to_string()
+    }
+
+    fn observable_state(&self) -> Self::ObservableState {
+        json!({})
+    }
+}
+
+#[async_trait]
+impl Handler<Healthz> for JanitorService {
+    type Reply = bool;
+
+    async fn handle(
+        &mut self,
+        _message: Healthz,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.harvest_health() == Health::Healthy)
     }
 }

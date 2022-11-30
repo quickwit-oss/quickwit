@@ -1,7 +1,7 @@
 #
 # Index config file for gh-archive dataset.
 #
-version: 0
+version: 0.4
 
 index_id: gh-archive
 
@@ -12,7 +12,11 @@ doc_mapping:
       type: u64
       fast: true
     - name: created_at
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: event_type
       type: text
@@ -25,8 +29,6 @@ doc_mapping:
       type: text
       tokenizer: default
       record: position
-
-indexing_settings:
   timestamp_field: created_at
 
 search_settings:

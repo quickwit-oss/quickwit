@@ -17,28 +17,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
+use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
-use tantivy::schema::{Field, FieldType, Schema};
+use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
 
-use crate::sort_by::validate_sort_by_field_name;
-use crate::{QueryParserError, DYNAMIC_FIELD_NAME, QUICKWIT_TOKENIZER_MANAGER};
+use crate::{QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME, QUICKWIT_TOKENIZER_MANAGER};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
     schema: Schema,
     request: &SearchRequest,
     default_field_names: &[String],
-) -> Result<Box<dyn Query>, QueryParserError> {
+) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
     let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
         .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
 
-    if has_range_clause(&user_input_ast) {
-        return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
-    }
+    let fast_field_names: HashSet<String> = extract_field_with_ranges(&schema, &user_input_ast)?;
 
     if needs_default_search_field(&user_input_ast)
         && request.search_fields.is_empty()
@@ -57,15 +55,38 @@ pub(crate) fn build_query(
         resolve_fields(&schema, &request.search_fields)?
     };
 
-    if let Some(sort_by_field) = request.sort_by_field.as_ref() {
-        validate_sort_by_field_name(sort_by_field, &schema, Some(&search_fields))?;
+    if let Some(sort_by_field) = &request.sort_by_field {
+        validate_sort_by_field(sort_by_field, &schema, Some(&search_fields))?;
     }
 
     let mut query_parser =
         QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
     query_parser.set_conjunction_by_default();
     let query = query_parser.parse_query(&request.query)?;
-    Ok(query)
+
+    let mut term_set_query_fields = HashSet::new();
+    extract_term_set_query_fields(&user_input_ast, &mut term_set_query_fields);
+
+    let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
+
+    query.query_terms(&mut |term, need_position| {
+        let field = term.field();
+        *terms_grouped_by_field
+            .entry(field)
+            .or_default()
+            .entry(term.clone())
+            .or_default() |= need_position;
+    });
+
+    let warmup_info = WarmupInfo {
+        term_dict_field_names: term_set_query_fields.clone(),
+        posting_field_names: term_set_query_fields,
+        terms_grouped_by_field,
+        fast_field_names,
+        ..WarmupInfo::default()
+    };
+
+    Ok((query, warmup_info))
 }
 
 fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec<Field>> {
@@ -98,20 +119,80 @@ fn extract_field_name(leaf: &UserInputLeaf) -> Option<&str> {
     match leaf {
         UserInputLeaf::Literal(UserInputLiteral { field_name, .. }) => field_name.as_deref(),
         UserInputLeaf::Range { field, .. } => field.as_deref(),
+        UserInputLeaf::Set { field, .. } => field.as_deref(),
         UserInputLeaf::All => None,
     }
 }
 
-/// Tells if the query has a range ast node.
-fn has_range_clause(user_input_ast: &UserInputAst) -> bool {
-    collect_leaves(user_input_ast)
-        .into_iter()
-        .any(|leaf| matches!(*leaf, UserInputLeaf::Range { .. }))
+fn is_valid_field_for_range(field_entry: &FieldEntry) -> anyhow::Result<()> {
+    match field_entry.field_type() {
+        FieldType::IpAddr(ip_addr_options) => {
+            if !ip_addr_options.is_fast() {
+                bail!(
+                    "Range queries require having a fast field (Field `{}` is not declared as a \
+                     fast field.)",
+                    field_entry.name()
+                );
+            }
+        }
+        other_type => {
+            anyhow::bail!(
+                "`{}` is of type `{:?}`. Range queries are only supported for IP Field at the \
+                 moment.",
+                field_entry.name(),
+                other_type.value_type()
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Extracts field names with ranges.
+fn extract_field_with_ranges(
+    schema: &Schema,
+    user_input_ast: &UserInputAst,
+) -> anyhow::Result<HashSet<String>> {
+    let mut field_with_ranges: HashSet<String> = Default::default();
+    for leaf in collect_leaves(user_input_ast) {
+        if let UserInputLeaf::Range { field, .. } = leaf {
+            // TODO check the field supports ranges.
+            if let Some(field_name) = field {
+                let field: Field = schema
+                    .get_field(field_name)
+                    .with_context(|| format!("Unknown field `{field_name}`"))?;
+                let field_entry = schema.get_field_entry(field);
+                is_valid_field_for_range(field_entry)?;
+                field_with_ranges.insert(field_name.clone());
+            } else {
+                anyhow::bail!("Range query without targeting a specific field is forbidden.");
+            }
+        }
+    }
+    Ok(field_with_ranges)
+}
+
+fn extract_term_set_query_fields(user_input_ast: &UserInputAst, set: &mut HashSet<String>) {
+    set.extend(
+        collect_leaves(user_input_ast)
+            .into_iter()
+            .filter_map(|leaf| {
+                if let UserInputLeaf::Set { field, .. } = leaf {
+                    field.clone()
+                } else {
+                    None
+                }
+            }),
+    )
 }
 
 /// Tells if the query has a Term or Range node which does not
 /// specify a search field.
 fn needs_default_search_field(user_input_ast: &UserInputAst) -> bool {
+    // `All` query apply to all fields, therefore doesn't need default fields.
+    if matches!(user_input_ast, UserInputAst::Leaf(leaf) if **leaf == UserInputLeaf::All) {
+        return false;
+    }
+
     collect_leaves(user_input_ast)
         .into_iter()
         .any(|leaf| extract_field_name(leaf).is_none())
@@ -169,11 +250,60 @@ fn validate_requested_snippet_fields(
     Ok(())
 }
 
+pub(crate) fn validate_sort_by_field(
+    field_name: &str,
+    schema: &Schema,
+    search_fields_opt: Option<&Vec<Field>>,
+) -> anyhow::Result<()> {
+    if field_name == "_score" {
+        return validate_sort_by_score(schema, search_fields_opt);
+    }
+    let sort_by_field = schema
+        .get_field(field_name)
+        .with_context(|| format!("Unknown sort by field: `{}`", field_name))?;
+    let sort_by_field_entry = schema.get_field_entry(sort_by_field);
+
+    if matches!(sort_by_field_entry.field_type(), FieldType::Str(_)) {
+        bail!(
+            "Sort by field on type text is currently not supported `{}`.",
+            field_name
+        )
+    }
+    if !sort_by_field_entry.is_fast() {
+        bail!(
+            "Sort by field must be a fast field, please add the fast property to your field `{}`.",
+            field_name
+        )
+    }
+
+    Ok(())
+}
+
+fn validate_sort_by_score(
+    schema: &Schema,
+    search_fields_opt: Option<&Vec<Field>>,
+) -> anyhow::Result<()> {
+    if let Some(fields) = search_fields_opt {
+        for field in fields {
+            if !schema.get_field_entry(*field).has_fieldnorms() {
+                bail!(
+                    "Fieldnorms for field `{}` is missing. Fieldnorms must be stored for the \
+                     field to compute the BM25 score of the documents.",
+                    schema.get_field_name(*field)
+                )
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use quickwit_proto::SearchRequest;
     use tantivy::query::QueryParserError;
-    use tantivy::schema::{Schema, FAST, INDEXED, STORED, TEXT};
+    use tantivy::schema::{
+        Cardinality, DateOptions, IpAddrOptions, Schema, FAST, INDEXED, STORED, TEXT,
+    };
 
     use super::{build_query, validate_requested_snippet_fields};
     use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
@@ -192,6 +322,17 @@ mod test {
         schema_builder.add_bool_field("server.running", FAST | STORED | INDEXED);
         schema_builder.add_text_field(SOURCE_FIELD_NAME, TEXT);
         schema_builder.add_json_field(DYNAMIC_FIELD_NAME, TEXT);
+        schema_builder.add_ip_addr_field("ip", FAST | STORED);
+        schema_builder.add_ip_addr_field(
+            "ips",
+            IpAddrOptions::default().set_fast(Cardinality::MultiValues),
+        );
+        schema_builder.add_ip_addr_field("ip_notff", STORED);
+        schema_builder.add_date_field(
+            "dt",
+            DateOptions::default().set_fast(Cardinality::SingleValue),
+        );
+        schema_builder.add_u64_field("int_fast", FAST | STORED);
         schema_builder.build()
     }
 
@@ -239,7 +380,7 @@ mod test {
                     query_result.is_ok(),
                     "Expected a success when parsing {sub_str}, but got error"
                 );
-                let query = query_result.unwrap();
+                let (query, _) = query_result.unwrap();
                 assert!(
                     format!("{query:?}").contains(sub_str),
                     "Error query parsing {:?} should contain {}",
@@ -254,6 +395,7 @@ mod test {
 
     #[test]
     fn test_build_query() {
+        check_build_query("*", vec![], None, TestExpectation::Ok("All")).unwrap();
         check_build_query(
             "foo:bar",
             vec![],
@@ -272,21 +414,26 @@ mod test {
             "title:[a TO b]",
             vec![],
             None,
-            TestExpectation::Err("Range queries are not currently allowed."),
+            TestExpectation::Err(r#"`title` is of type `Str`. Range queries are only supported for IP Field at the moment."#),
         )
         .unwrap();
         check_build_query(
             "title:{a TO b} desc:foo",
             vec![],
             None,
-            TestExpectation::Err("Range queries are not currently allowed."),
+            TestExpectation::Err(
+                "`title` is of type `Str`. Range queries are only supported for IP Field at the \
+                 moment.",
+            ),
         )
         .unwrap();
         check_build_query(
             "title:>foo",
             vec![],
             None,
-            TestExpectation::Err("Range queries are not currently allowed."),
+            TestExpectation::Err(
+                "`title` is of type `Str`. Range queries are only supported for IP Field",
+            ),
         )
         .unwrap();
         check_build_query(
@@ -343,6 +490,71 @@ mod test {
             vec![],
             None,
             TestExpectation::Ok("TermQuery"),
+        )
+        .unwrap();
+        check_build_query(
+            "title: IN [hello]",
+            vec![],
+            None,
+            TestExpectation::Ok("TermSetQuery"),
+        )
+        .unwrap();
+        check_build_query(
+            "IN [hello]",
+            vec![],
+            None,
+            TestExpectation::Err("Unsupported query: Set query need to target a specific field."),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_range_query() {
+        check_build_query(
+            "ip:[127.0.0.1 TO 127.1.1.1]",
+            Vec::new(),
+            None,
+            TestExpectation::Ok(
+                "RangeQuery { field: Field(7), value_type: IpAddr, left_bound: Included([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), right_bound: Included([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 1, 1, 1]) }",
+            ),
+        )
+        .unwrap();
+        check_build_query(
+            "ip:>127.0.0.1",
+            Vec::new(),
+            None,
+            TestExpectation::Ok(
+                "RangeQuery { field: Field(7), value_type: IpAddr, left_bound: Excluded([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), right_bound: Unbounded }",
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_range_query_ip_fields_multivalued() {
+        check_build_query(
+            "ips:[127.0.0.1 TO 127.1.1.1]",
+            Vec::new(),
+            None,
+            TestExpectation::Ok(
+                "RangeQuery { field: Field(8), value_type: IpAddr, left_bound: Included([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), right_bound: Included([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 1, 1, 1]) }",
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_range_query_ip_field_no_fast_field() {
+        check_build_query(
+            "ip_notff:[127.0.0.1 TO 127.1.1.1]",
+            Vec::new(),
+            None,
+            TestExpectation::Err("Field `ip_notff` is not declared as a fast field"),
         )
         .unwrap();
     }
@@ -461,5 +673,50 @@ mod test {
             validation_result.unwrap_err().to_string(),
             "The snippet field `server.running` must be of type `Str`, got `Bool`."
         );
+    }
+
+    #[test]
+    fn test_build_query_warmup_info() -> anyhow::Result<()> {
+        let request_with_set = SearchRequest {
+            aggregation_request: None,
+            index_id: "test_index".to_string(),
+            query: "title: IN [hello]".to_string(),
+            search_fields: vec![],
+            snippet_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 20,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+        };
+        let request_without_set = SearchRequest {
+            aggregation_request: None,
+            index_id: "test_index".to_string(),
+            query: "title:hello".to_string(),
+            search_fields: vec![],
+            snippet_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 20,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+        };
+
+        let default_field_names = vec!["title".to_string(), "desc".to_string()];
+
+        let (_, warmup_info) = build_query(make_schema(), &request_with_set, &default_field_names)?;
+        assert_eq!(warmup_info.term_dict_field_names.len(), 1);
+        assert_eq!(warmup_info.posting_field_names.len(), 1);
+        assert!(warmup_info.term_dict_field_names.contains("title"));
+        assert!(warmup_info.posting_field_names.contains("title"));
+
+        let (_, warmup_info) =
+            build_query(make_schema(), &request_without_set, &default_field_names)?;
+        assert!(warmup_info.term_dict_field_names.is_empty());
+        assert!(warmup_info.posting_field_names.is_empty());
+
+        Ok(())
     }
 }

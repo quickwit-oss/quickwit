@@ -49,6 +49,10 @@ pub enum Health {
     Success,
 }
 
+/// Message received by health probe handlers.
+#[derive(Clone, Debug)]
+pub struct Healthz;
+
 impl<A: Actor> fmt::Debug for ActorHandle<A> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
@@ -60,7 +64,7 @@ impl<A: Actor> fmt::Debug for ActorHandle<A> {
 
 pub trait Supervisable {
     fn name(&self) -> &str;
-    fn health(&self) -> Health;
+    fn harvest_health(&self) -> Health;
 }
 
 impl<A: Actor> Supervisable for ActorHandle<A> {
@@ -68,7 +72,11 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
         self.actor_context.actor_instance_id()
     }
 
-    fn health(&self) -> Health {
+    /// Harvests the health of the actor by checking its state (see [`ActorState`]) and/or progress
+    /// (see `Progress`). When the actor is running, calling this method resets its progress state
+    /// to "no update" (see `ProgressState`). As a consequence, only one supervisor or probe
+    /// should periodically invoke this method during the lifetime of the actor.
+    fn harvest_health(&self) -> Health {
         let actor_state = self.state();
         if actor_state == ActorState::Success {
             Health::Success
@@ -229,7 +237,7 @@ impl<A: Actor> ActorHandle<A> {
         &self,
         rx: oneshot::Receiver<Box<dyn Any + Send>>,
     ) -> Observation<A::ObservableState> {
-        let observable_state_or_timeout = timeout(crate::HEARTBEAT, rx).await;
+        let observable_state_or_timeout = timeout(crate::OBSERVE_TIMEOUT, rx).await;
         match observable_state_or_timeout {
             Ok(Ok(observable_state_any)) => {
                 let state: A::ObservableState = *observable_state_any

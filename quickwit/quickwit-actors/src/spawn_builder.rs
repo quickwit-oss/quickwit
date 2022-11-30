@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::Context;
+use quickwit_common::metrics::IntCounter;
 use tokio::sync::watch;
 use tracing::{debug, error, info};
 
@@ -37,6 +38,7 @@ pub struct SpawnBuilder<A: Actor> {
     kill_switch: KillSwitch,
     #[allow(clippy::type_complexity)]
     mailboxes: Option<(Mailbox<A>, Inbox<A>)>,
+    backpressure_micros_counter_opt: Option<IntCounter>,
 }
 
 impl<A: Actor> SpawnBuilder<A> {
@@ -50,6 +52,7 @@ impl<A: Actor> SpawnBuilder<A> {
             registry,
             kill_switch,
             mailboxes: None,
+            backpressure_micros_counter_opt: None,
         }
     }
 
@@ -71,6 +74,19 @@ impl<A: Actor> SpawnBuilder<A> {
     /// of actors.
     pub fn set_mailboxes(mut self, mailbox: Mailbox<A>, inbox: Inbox<A>) -> Self {
         self.mailboxes = Some((mailbox, inbox));
+        self
+    }
+
+    /// Adds a counter to track the amount of time the actor is
+    /// spending in "backpressure".
+    ///
+    /// When using `.ask` the amount of time counted may be misleading.
+    /// (See `Mailbox::ask_with_backpressure_counter` for more details)
+    pub fn set_backpressure_micros_counter(
+        mut self,
+        backpressure_micros_counter: IntCounter,
+    ) -> Self {
+        self.backpressure_micros_counter_opt = Some(backpressure_micros_counter);
         self
     }
 
@@ -100,6 +116,7 @@ impl<A: Actor> SpawnBuilder<A> {
             self.scheduler_mailbox.clone(),
             self.registry.clone(),
             state_tx,
+            self.backpressure_micros_counter_opt,
         );
         (ctx, inbox, state_rx)
     }
@@ -206,7 +223,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
             return Err(ActorExitStatus::Killed);
         }
         if self.actor.yield_after_each_message() {
-            self.ctx.protect_future(tokio::task::yield_now()).await;
+            self.ctx.yield_now().await;
             if self.ctx.kill_switch().is_dead() {
                 return Err(ActorExitStatus::Killed);
             }

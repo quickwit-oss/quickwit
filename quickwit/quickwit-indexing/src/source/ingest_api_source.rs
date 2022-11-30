@@ -23,12 +23,15 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
-use quickwit_ingest_api::{get_ingest_api_service, iter_doc_payloads, IngestApiService};
+use quickwit_ingest_api::{
+    get_ingest_api_service, iter_doc_payloads, GetPartitionId, IngestApiService,
+};
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use quickwit_proto::ingest_api::{
     CreateQueueIfNotExistsRequest, FetchRequest, FetchResponse, SuggestTruncateRequest,
 };
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 
 use super::{Source, SourceActor, SourceContext, TypedSourceFactory};
 use crate::actors::DocProcessor;
@@ -75,6 +78,7 @@ impl IngestApiSource {
         let source_id = ctx.source_config.source_id.clone();
         let queues_dir_path = ctx.queues_dir_path.as_path();
         let ingest_api_service = get_ingest_api_service(queues_dir_path).await?;
+        let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
 
         // Ensure a queue for this index exists.
         let create_queue_req = CreateQueueIfNotExistsRequest {
@@ -82,7 +86,6 @@ impl IngestApiSource {
         };
         ingest_api_service.ask_for_res(create_queue_req).await?;
 
-        let partition_id = PartitionId::from(ctx.index_id.clone());
         let previous_offset = if let Some(Position::Offset(offset_str)) =
             checkpoint.position_for_partition(&partition_id)
         {
@@ -189,7 +192,7 @@ impl Source for IngestApiSource {
         "IngestApiSource".to_string()
     }
 
-    fn observable_state(&self) -> serde_json::Value {
+    fn observable_state(&self) -> JsonValue {
         serde_json::to_value(&self.counters).unwrap()
     }
 }
@@ -307,6 +310,37 @@ mod tests {
         Ok(())
     }
 
+    /// See #2310
+    #[tokio::test]
+    async fn test_ingest_api_source_partition_id_changes() -> anyhow::Result<()> {
+        let universe = Universe::new();
+        let partition_id_before_lost_queue_dir = {
+            let temp_dir = tempfile::tempdir()?;
+            let queues_dir_path = temp_dir.path();
+            let ingest_api_service = init_ingest_api(&universe, queues_dir_path).await?;
+            let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
+            let partition_id2: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
+            assert_eq!(partition_id, partition_id2);
+            drop(ingest_api_service);
+            let ingest_api_service = init_ingest_api(&universe, queues_dir_path).await?;
+            let partition_id3: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
+            assert_eq!(partition_id, partition_id3);
+            partition_id
+        };
+        let partition_id_after_lost_queue_dir = {
+            let temp_dir = tempfile::tempdir()?;
+            let queues_dir_path = temp_dir.path();
+            let ingest_api_service = init_ingest_api(&universe, queues_dir_path).await?;
+            let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
+            partition_id
+        };
+        assert_ne!(
+            partition_id_before_lost_queue_dir,
+            partition_id_after_lost_queue_dir
+        );
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_ingest_api_source_resume_from_checkpoint() -> anyhow::Result<()> {
         let universe = Universe::new();
@@ -315,12 +349,12 @@ mod tests {
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
         let ingest_api_service = init_ingest_api(&universe, queues_dir_path).await?;
+        let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
 
         let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let mut checkpoint = SourceCheckpoint::default();
-        let partition_id = PartitionId::from(index_id.clone());
         let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
-            partition_id,
+            partition_id.clone(),
             Position::from(0u64),
             Position::from(1200u64),
         );
@@ -362,6 +396,12 @@ mod tests {
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 1);
         assert!(doc_batches[0].docs[0].starts_with("001201"));
+        assert_eq!(doc_batches[0].checkpoint_delta.num_partitions(), 1);
+        assert_eq!(
+            doc_batches[0].checkpoint_delta.partitions().next().unwrap(),
+            &partition_id
+        );
+
         Ok(())
     }
 

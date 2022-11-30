@@ -28,7 +28,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::SourceConfig;
+use quickwit_common::PrettySample;
+use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use sqlx::migrate::Migrator;
@@ -36,7 +37,7 @@ use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
 use sqlx::{ConnectOptions, Pool, Postgres, Transaction};
 use tokio::sync::Mutex;
 use tracing::log::LevelFilter;
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::instrumented_metastore::InstrumentedMetastore;
@@ -86,7 +87,7 @@ async fn run_postgres_migrations(pool: &Pool<Postgres>) -> MetastoreResult<()> {
         tx.rollback().await?;
         error!(err=?migration_err, "Database migrations failed");
         return Err(MetastoreError::InternalError {
-            message: "Failed to run migrator on Postgresql database.".to_string(),
+            message: "Failed to run migration on Postgresql database.".to_string(),
             cause: migration_err.to_string(),
         });
     }
@@ -111,27 +112,6 @@ impl PostgresqlMetastore {
             connection_pool,
         })
     }
-
-    /// This function attempts to update an index update timestamp. Since we call this method after
-    /// a successful update of splits or delete tasks, we never return an error to not mislead the
-    /// clients into believing that the update failed. We log the error instead.
-    #[instrument(skip(self))]
-    async fn update_index_update_timestamp(&self, index_id: &str) {
-        let update_res = sqlx::query(
-            r#"
-            UPDATE indexes
-            SET update_timestamp = current_timestamp
-            WHERE index_id = $1;
-            "#,
-        )
-        .bind(index_id)
-        .execute(&self.connection_pool)
-        .await;
-
-        if let Err(error) = update_res {
-            warn!(error=?error, "Failed to update index update timestamp.");
-        }
-    }
 }
 
 /// Returns an Index object given an index_id or None if it does not exists.
@@ -142,6 +122,7 @@ where E: sqlx::Executor<'a, Database = Postgres> {
         SELECT *
         FROM indexes
         WHERE index_id = $1
+        FOR UPDATE
         "#,
     )
     .bind(index_id)
@@ -445,12 +426,21 @@ fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
     match &sqlx_err {
         sqlx::Error::Database(boxed_db_err) => {
             error!(pg_db_err=?boxed_db_err, "postgresql-error");
-            let pg_error_code = boxed_db_err.downcast_ref::<PgDatabaseError>().code();
-            match pg_error_code {
-                pg_error_code::FOREIGN_KEY_VIOLATION => MetastoreError::IndexDoesNotExist {
+
+            let pg_db_error = boxed_db_err.downcast_ref::<PgDatabaseError>();
+            let pg_error_code = pg_db_error.code();
+            let pg_error_table = pg_db_error.table();
+
+            match (pg_error_code, pg_error_table) {
+                (pg_error_code::FOREIGN_KEY_VIOLATION, _) => MetastoreError::IndexDoesNotExist {
                     index_id: index_id.to_string(),
                 },
-                pg_error_code::UNIQUE_VIOLATION => MetastoreError::InternalError {
+                (pg_error_code::UNIQUE_VIOLATION, Some(table)) if table.starts_with("indexes") => {
+                    MetastoreError::IndexAlreadyExists {
+                        index_id: index_id.to_string(),
+                    }
+                }
+                (pg_error_code::UNIQUE_VIOLATION, _) => MetastoreError::InternalError {
                     message: "Unique key violation.".to_string(),
                     cause: format!("DB error {:?}", boxed_db_err),
                 },
@@ -506,11 +496,12 @@ where
     if !mutation_occurred {
         return Ok(mutation_occurred);
     }
-    let index_metadata_json =
-        serde_json::to_string(&index_metadata).map_err(|err| MetastoreError::InternalError {
-            message: "Failed to serialize index metadata.".to_string(),
-            cause: err.to_string(),
-        })?;
+    let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
+        MetastoreError::JsonSerializeError {
+            struct_name: "IndexMetadata".to_string(),
+            message: error.to_string(),
+        }
+    })?;
     let update_index_res = sqlx::query(
         r#"
         UPDATE indexes
@@ -548,12 +539,13 @@ impl Metastore for PostgresqlMetastore {
             .collect()
     }
 
-    #[instrument(skip(self), fields(index_id=index_metadata.index_id()))]
-    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
-        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to serialize index metadata.".to_string(),
-                cause: err.to_string(),
+    #[instrument(skip(self), fields(index_id=&index_config.index_id))]
+    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()> {
+        let index_metadata = IndexMetadata::new(index_config);
+        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: "IndexMetadata".to_string(),
+                message: error.to_string(),
             }
         })?;
         sqlx::query("INSERT INTO indexes (index_id, index_metadata_json) VALUES ($1, $2)")
@@ -585,10 +577,10 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         split_metadata: SplitMetadata,
     ) -> MetastoreResult<()> {
-        let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to serialize split metadata.".to_string(),
-                cause: err.to_string(),
+        let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: "SplitMetadata".to_string(),
+                message: error.to_string(),
             }
         })?;
         let time_range_start = split_metadata
@@ -618,7 +610,6 @@ impl Metastore for PostgresqlMetastore {
 
         debug!(index_id=%index_id, split_id=%split_metadata.split_id, "Split successfully staged.");
 
-        self.update_index_update_timestamp(index_id).await;
         Ok(())
     }
 
@@ -684,7 +675,6 @@ impl Metastore for PostgresqlMetastore {
             }
             Ok(())
         })?;
-        self.update_index_update_timestamp(index_id).await;
         Ok(())
     }
 
@@ -720,31 +710,68 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        run_with_tx!(self.connection_pool, tx, {
-            let marked_split_ids: Vec<String> = mark_splits_for_deletion(
-                tx,
-                index_id,
-                split_ids,
-                &[
-                    SplitState::Staged.as_str(),
-                    SplitState::Published.as_str(),
-                    SplitState::MarkedForDeletion.as_str(),
-                ],
+        const MARK_SPLITS_FOR_DELETION_QUERY: &str = r#"
+            -- Select the splits to update, regardless of their state.
+            -- The left join make it possible to identify the splits that do not exist.
+            WITH input_splits AS (
+                SELECT input_splits.split_id, splits.split_state
+                FROM UNNEST($2) AS input_splits(split_id)
+                LEFT JOIN (
+                    SELECT split_id, split_state
+                    FROM splits
+                    WHERE
+                        index_id = $1
+                        AND split_id = ANY($2)
+                    FOR UPDATE
+                    ) AS splits
+                USING (split_id)
+            ),
+            -- Mark the staged and published splits for deletion.
+            marked_splits AS (
+                UPDATE splits
+                SET
+                    split_state = 'MarkedForDeletion',
+                    update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                FROM input_splits
+                WHERE
+                    splits.index_id = $1
+                    AND splits.split_id = input_splits.split_id
+                    AND splits.split_state IN ('Staged', 'Published')
             )
-            .await?;
+            -- Report the outcome of the update query.
+            SELECT
+                COUNT(split_state),
+                COUNT(1) FILTER (WHERE split_state IN ('Staged', 'Published')),
+                COALESCE(ARRAY_AGG(split_id) FILTER (WHERE split_state IS NULL), ARRAY[]::TEXT[])
+                FROM input_splits
+        "#;
+        let (num_found_splits, num_marked_splits, not_found_split_ids): (i64, i64, Vec<String>) =
+            sqlx::query_as(MARK_SPLITS_FOR_DELETION_QUERY)
+                .bind(index_id)
+                .bind(split_ids)
+                .fetch_one(&self.connection_pool)
+                .await
+                .map_err(|error| convert_sqlx_err(index_id, error))?;
 
-            if marked_split_ids.len() == split_ids.len() {
-                return Ok(());
-            }
-            get_splits_with_invalid_state(tx, index_id, split_ids, &marked_split_ids).await?;
-
-            let err_msg = format!("Failed to mark splits for deletion for index {index_id}.");
-            Err(MetastoreError::InternalError {
-                message: err_msg,
-                cause: "".to_string(),
-            })
-        })?;
-        self.update_index_update_timestamp(index_id).await;
+        if num_found_splits == 0 && index_opt(&self.connection_pool, index_id).await?.is_none() {
+            return Err(MetastoreError::IndexDoesNotExist {
+                index_id: index_id.to_string(),
+            });
+        }
+        info!(
+            index_id=%index_id,
+            "Marked {} splits for deletion, among which {} were newly marked.",
+            split_ids.len() - not_found_split_ids.len(),
+            num_marked_splits
+        );
+        if !not_found_split_ids.is_empty() {
+            warn!(
+                index_id=%index_id,
+                split_ids=?PrettySample::new(&not_found_split_ids, 5),
+                "{} splits were not found and could not be marked for deletion.",
+                not_found_split_ids.len()
+            );
+        }
         Ok(())
     }
 
@@ -754,38 +781,76 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        run_with_tx!(self.connection_pool, tx, {
-            let deletable_states = [
-                SplitState::Staged.as_str(),
-                SplitState::MarkedForDeletion.as_str(),
-            ];
-            let deleted_split_ids: Vec<String> = sqlx::query_scalar(
-                r#"
+        const DELETE_SPLITS_QUERY: &str = r#"
+            -- Select the splits to delete, regardless of their state.
+            -- The left join make it possible to identify the splits that do not exist.
+            WITH input_splits AS (
+                SELECT input_splits.split_id, splits.split_state
+                FROM UNNEST($2) AS input_splits(split_id)
+                LEFT JOIN (
+                    SELECT split_id, split_state
+                    FROM splits
+                    WHERE
+                        index_id = $1
+                        AND split_id = ANY($2)
+                    FOR UPDATE
+                    ) AS splits
+                USING (split_id)
+            ),
+            -- Delete the splits if and only if all the splits are marked for deletion.
+            deleted_splits AS (
                 DELETE FROM splits
+                USING input_splits
                 WHERE
-                        split_id = ANY($1)
-                    AND split_state = ANY($2)
-                RETURNING split_id
-            "#,
+                    splits.index_id = $1
+                    AND splits.split_id = input_splits.split_id
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM input_splits
+                        WHERE
+                            split_state IN ('Staged', 'Published')
+                    )
             )
+            -- Report the outcome of the delete query.
+            SELECT
+                COUNT(split_state),
+                COUNT(1) FILTER (WHERE split_state = 'MarkedForDeletion'),
+                COALESCE(ARRAY_AGG(split_id) FILTER (WHERE split_state IN ('Staged', 'Published')), ARRAY[]::TEXT[]),
+                COALESCE(ARRAY_AGG(split_id) FILTER (WHERE split_state IS NULL), ARRAY[]::TEXT[])
+                FROM input_splits
+        "#;
+        let (num_found_splits, num_deleted_splits, not_deletable_split_ids, not_found_split_ids): (
+            i64,
+            i64,
+            Vec<String>,
+            Vec<String>,
+        ) = sqlx::query_as(DELETE_SPLITS_QUERY)
+            .bind(index_id)
             .bind(split_ids)
-            .bind(&deletable_states[..])
-            .fetch_all(&mut *tx)
-            .await?;
+            .fetch_one(&self.connection_pool)
+            .await
+            .map_err(|error| convert_sqlx_err(index_id, error))?;
 
-            if deleted_split_ids.len() == split_ids.len() {
-                return Ok(());
-            }
-            // There is an error, but we want to investigate and return a meaningful error.
-            // From this point, we always have to return `Err` to abort the transaction.
-            let not_deletable_ids =
-                get_splits_with_invalid_state(tx, index_id, split_ids, &deleted_split_ids).await?;
+        if num_found_splits == 0 && index_opt(&self.connection_pool, index_id).await?.is_none() {
+            return Err(MetastoreError::IndexDoesNotExist {
+                index_id: index_id.to_string(),
+            });
+        }
+        if !not_deletable_split_ids.is_empty() {
+            return Err(MetastoreError::SplitsNotDeletable {
+                split_ids: not_deletable_split_ids,
+            });
+        }
+        info!(index_id=%index_id, "Deleted {} splits from index.", num_deleted_splits);
 
-            Err(MetastoreError::SplitsNotDeletable {
-                split_ids: not_deletable_ids,
-            })
-        })?;
-        self.update_index_update_timestamp(index_id).await;
+        if !not_found_split_ids.is_empty() {
+            warn!(
+                index_id=%index_id,
+                split_ids=?PrettySample::new(&not_found_split_ids, 5),
+                "{} splits were not found and could not be deleted.",
+                not_found_split_ids.len()
+            );
+        }
         Ok(())
     }
 
@@ -884,11 +949,12 @@ impl Metastore for PostgresqlMetastore {
     /// Creates a delete task from a delete query.
     #[instrument(skip(self), fields(index_id=delete_query.index_id))]
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
-        let delete_query_json =
-            serde_json::to_string(&delete_query).map_err(|err| MetastoreError::InternalError {
-                message: "Failed to serialize delete query.".to_string(),
-                cause: err.to_string(),
-            })?;
+        let delete_query_json = serde_json::to_string(&delete_query).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: "DeleteQuery".to_string(),
+                message: error.to_string(),
+            }
+        })?;
         let (create_timestamp, opstamp): (sqlx::types::time::PrimitiveDateTime, i64) =
             sqlx::query_as(
                 r#"
@@ -949,7 +1015,6 @@ impl Metastore for PostgresqlMetastore {
                 index_id: index_id.to_string(),
             });
         }
-        self.update_index_update_timestamp(index_id).await;
         Ok(())
     }
 

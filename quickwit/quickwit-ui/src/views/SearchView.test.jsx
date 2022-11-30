@@ -52,19 +52,22 @@ afterEach(() => {
 test('renders SearchView', async () => {
   const index = {
     metadata: {
-      index_id: 'my-new-fresh-index-id',
-      index_uri: 'my-new-fresh-index-uri',
-      indexing_settings: {},
-      doc_mapping: {
-        field_mappings: [{
-          name: 'timestamp',
-          type: 'i64'
-        }]
+      index_config: {
+        index_id: 'my-new-fresh-index-id',
+        index_uri: 'my-new-fresh-index-uri',
+        indexing_settings: {},
+        doc_mapping: {
+          field_mappings: [{
+            name: 'timestamp',
+            type: 'i64'
+          }]
+        }
       }
     },
     splits: []
   };
   Client.prototype.getIndex.mockImplementation(() => Promise.resolve(index));
+  Client.prototype.listIndexes.mockImplementation(() => Promise.resolve([index.metadata]));
 
   const searchResponse = {
     num_hits: 2,

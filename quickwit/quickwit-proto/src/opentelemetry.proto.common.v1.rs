@@ -6,7 +6,7 @@
 pub struct AnyValue {
     /// The value is one of the listed fields. It is valid for all values to be unspecified
     /// in which case this AnyValue is considered to be "empty".
-    #[prost(oneof="any_value::Value", tags="1, 2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "any_value::Value", tags = "1, 2, 3, 4, 5, 6, 7")]
     pub value: ::core::option::Option<any_value::Value>,
 }
 /// Nested message and enum types in `AnyValue`.
@@ -16,19 +16,19 @@ pub mod any_value {
     #[derive(Serialize, Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Value {
-        #[prost(string, tag="1")]
+        #[prost(string, tag = "1")]
         StringValue(::prost::alloc::string::String),
-        #[prost(bool, tag="2")]
+        #[prost(bool, tag = "2")]
         BoolValue(bool),
-        #[prost(int64, tag="3")]
+        #[prost(int64, tag = "3")]
         IntValue(i64),
-        #[prost(double, tag="4")]
+        #[prost(double, tag = "4")]
         DoubleValue(f64),
-        #[prost(message, tag="5")]
+        #[prost(message, tag = "5")]
         ArrayValue(super::ArrayValue),
-        #[prost(message, tag="6")]
+        #[prost(message, tag = "6")]
         KvlistValue(super::KeyValueList),
-        #[prost(bytes, tag="7")]
+        #[prost(bytes, tag = "7")]
         BytesValue(::prost::alloc::vec::Vec<u8>),
     }
 }
@@ -38,7 +38,7 @@ pub mod any_value {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ArrayValue {
     /// Array of values. The array may be empty (contain 0 elements).
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub values: ::prost::alloc::vec::Vec<AnyValue>,
 }
 /// KeyValueList is a list of KeyValue messages. We need KeyValueList as a message
@@ -53,7 +53,7 @@ pub struct KeyValueList {
     /// contain 0 elements).
     /// The keys MUST be unique (it is not allowed to have more than one
     /// value with the same key).
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub values: ::prost::alloc::vec::Vec<KeyValue>,
 }
 /// KeyValue is a key-value pair that is used to store Span attributes, Link
@@ -61,23 +61,23 @@ pub struct KeyValueList {
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KeyValue {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub value: ::core::option::Option<AnyValue>,
 }
 /// InstrumentationScope is a message representing the instrumentation scope information
-/// such as the fully qualified name and version. 
+/// such as the fully qualified name and version.
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InstrumentationScope {
     /// An empty instrumentation scope name means the name is unknown.
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub version: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag="3")]
+    #[prost(message, repeated, tag = "3")]
     pub attributes: ::prost::alloc::vec::Vec<KeyValue>,
-    #[prost(uint32, tag="4")]
+    #[prost(uint32, tag = "4")]
     pub dropped_attributes_count: u32,
 }

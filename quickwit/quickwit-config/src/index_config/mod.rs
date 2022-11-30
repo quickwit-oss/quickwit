@@ -20,7 +20,7 @@
 mod serialize;
 
 use std::collections::BTreeSet;
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,9 +33,8 @@ use humantime::parse_duration;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType,
-    QuickwitJsonOptions, SortBy, SortByConfig, SortOrder,
+    QuickwitJsonOptions,
 };
-use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 pub use serialize::load_index_config_from_user_config;
 
@@ -58,34 +57,30 @@ pub struct DocMapping {
     #[serde(default)]
     pub store_source: bool,
     #[serde(default)]
+    pub timestamp_field: Option<String>,
+    #[serde(default)]
     pub mode: ModeType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic_mapping: Option<QuickwitJsonOptions>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub partition_key: String,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partition_key: Option<String>,
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
-    pub max_num_partitions: NonZeroU64,
+    pub max_num_partitions: NonZeroU32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingResources {
-    #[serde(default, rename = "num_threads", skip_serializing)]
-    pub __num_threads_deprecated: IgnoredAny, // DEPRECATED
     #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: Byte,
-    /// Sets the maximum write IO throughput for the merge pipeline,
-    /// in bytes per secs. On hardware where IO is limited, this parameter can help limiting
-    /// the impact of merges on indexing.
+    /// Sets the maximum write IO throughput in bytes/sec for the merge and delete pipelines.
+    /// The IO limit is applied both to the downloader and to the merge executor.
+    /// On hardware where IO is limited, this parameter can help limiting the impact of
+    /// merges/deletes on indexing.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_merge_write_throughput: Option<Byte>,
-    /// Sets the maximum write IO throughput for the janitor, in bytes per secs.
-    /// On hardware where IO is limited, this parameter can help limiting
-    /// the impact on indexing.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_janitor_write_throughput: Option<Byte>,
 }
 
 impl PartialEq for IndexingResources {
@@ -113,40 +108,6 @@ impl Default for IndexingResources {
         Self {
             heap_size: Self::default_heap_size(),
             max_merge_write_throughput: None,
-            max_janitor_write_throughput: None,
-            __num_threads_deprecated: IgnoredAny,
-        }
-    }
-}
-
-/// Only here for deserialization.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MergePolicyLegacy {
-    #[serde(default, rename = "demux_factor")]
-    pub __demux_factor_deprecated: IgnoredAny, // DEPRECATED
-    #[serde(default = "MergePolicyLegacy::default_merge_factor")]
-    pub merge_factor: usize,
-    #[serde(default = "MergePolicyLegacy::default_max_merge_factor")]
-    pub max_merge_factor: usize,
-}
-
-impl MergePolicyLegacy {
-    fn default_merge_factor() -> usize {
-        10
-    }
-
-    fn default_max_merge_factor() -> usize {
-        12
-    }
-}
-
-impl Default for MergePolicyLegacy {
-    fn default() -> Self {
-        Self {
-            __demux_factor_deprecated: serde::de::IgnoredAny,
-            merge_factor: Self::default_merge_factor(),
-            max_merge_factor: Self::default_max_merge_factor(),
         }
     }
 }
@@ -154,11 +115,6 @@ impl Default for MergePolicyLegacy {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
-    pub timestamp_field: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_field: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_order: Option<SortOrder>,
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
     #[serde(default = "IndexingSettings::default_docstore_compression_level")]
@@ -172,103 +128,10 @@ pub struct IndexingSettings {
     /// `split_num_docs_target` are considered mature and never merged.
     #[serde(default = "IndexingSettings::default_split_num_docs_target")]
     pub split_num_docs_target: usize,
-
     #[serde(default)]
     pub merge_policy: MergePolicyConfig,
     #[serde(default)]
     pub resources: IndexingResources,
-}
-
-/// The IndexingSettingsLegacy struct is just here to deserialize version 0 / version 1
-/// index settings.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct IndexingSettingsLegacy {
-    #[serde(default, rename = "demux_enabled", skip_serializing)]
-    __demux_enabled_deprecated: IgnoredAny,
-    #[serde(default, rename = "demux_field", skip_serializing)]
-    __demux_field_deprecated: IgnoredAny,
-    timestamp_field: Option<String>,
-    sort_field: Option<String>,
-    sort_order: Option<SortOrder>,
-    #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
-    commit_timeout_secs: usize,
-    #[serde(default = "IndexingSettings::default_docstore_compression_level")]
-    docstore_compression_level: i32,
-    #[serde(default = "IndexingSettings::default_docstore_blocksize")]
-    docstore_blocksize: usize,
-    /// A split containing a number of docs greather than or equal to this value is considered
-    /// mature.
-    #[serde(default = "IndexingSettings::default_split_num_docs_target")]
-    split_num_docs_target: usize,
-    #[serde(default = "IndexingSettings::default_merge_enabled")]
-    merge_enabled: bool,
-    #[serde(default)]
-    merge_policy: MergePolicyLegacy,
-    #[serde(default)]
-    resources: IndexingResources,
-}
-
-fn merge_policy_from_legacy(settings: &IndexingSettingsLegacy) -> MergePolicyConfig {
-    if !settings.merge_enabled {
-        return MergePolicyConfig::Nop;
-    }
-    let stable_log_merge_policy = StableLogMergePolicyConfig {
-        merge_factor: settings.merge_policy.merge_factor,
-        max_merge_factor: settings.merge_policy.max_merge_factor,
-        ..Default::default()
-    };
-    MergePolicyConfig::StableLog(stable_log_merge_policy)
-}
-
-impl From<IndexingSettingsLegacy> for IndexingSettings {
-    fn from(settings: IndexingSettingsLegacy) -> IndexingSettings {
-        let merge_policy = merge_policy_from_legacy(&settings);
-        IndexingSettings {
-            timestamp_field: settings.timestamp_field,
-            sort_field: settings.sort_field,
-            sort_order: settings.sort_order,
-            commit_timeout_secs: settings.commit_timeout_secs,
-            docstore_compression_level: settings.docstore_compression_level,
-            docstore_blocksize: settings.docstore_blocksize,
-            split_num_docs_target: settings.split_num_docs_target,
-            merge_policy,
-            resources: settings.resources,
-        }
-    }
-}
-
-impl Default for IndexingSettingsLegacy {
-    fn default() -> Self {
-        Self {
-            __demux_enabled_deprecated: IgnoredAny,
-            __demux_field_deprecated: IgnoredAny,
-            timestamp_field: None,
-            sort_field: None,
-            sort_order: None,
-            commit_timeout_secs: IndexingSettings::default_commit_timeout_secs(),
-            docstore_blocksize: IndexingSettings::default_docstore_blocksize(),
-            docstore_compression_level: IndexingSettings::default_docstore_compression_level(),
-            split_num_docs_target: IndexingSettings::default_split_num_docs_target(),
-            merge_enabled: IndexingSettings::default_merge_enabled(),
-            merge_policy: MergePolicyLegacy::default(),
-            resources: IndexingResources::default(),
-        }
-    }
-}
-
-impl IndexingSettingsLegacy {
-    pub fn commit_timeout(&self) -> Duration {
-        Duration::from_secs(self.commit_timeout_secs as u64)
-    }
-
-    pub fn sort_by(&self) -> SortBy {
-        if let Some(field_name) = self.sort_field.clone() {
-            let order = self.sort_order.unwrap_or_default();
-            return SortBy::FastField { field_name, order };
-        }
-        SortBy::DocId
-    }
 }
 
 impl IndexingSettings {
@@ -292,18 +155,6 @@ impl IndexingSettings {
         10_000_000
     }
 
-    fn default_merge_enabled() -> bool {
-        true
-    }
-
-    pub fn sort_by(&self) -> SortBy {
-        if let Some(field_name) = self.sort_field.clone() {
-            let order = self.sort_order.unwrap_or_default();
-            return SortBy::FastField { field_name, order };
-        }
-        SortBy::DocId
-    }
-
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         Self {
@@ -316,9 +167,6 @@ impl IndexingSettings {
 impl Default for IndexingSettings {
     fn default() -> Self {
         Self {
-            timestamp_field: None,
-            sort_field: None,
-            sort_order: None,
             commit_timeout_secs: Self::default_commit_timeout_secs(),
             docstore_blocksize: Self::default_docstore_blocksize(),
             docstore_compression_level: Self::default_docstore_compression_level(),
@@ -336,17 +184,6 @@ pub struct SearchSettings {
     pub default_search_fields: Vec<String>,
 }
 
-/// Defines on which split attribute the retention policy is applied relatively.
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
-pub enum RetentionPolicyCutoffReference {
-    /// The split is deleted when `now() - split.publish_timestamp >= retention_policy.period`
-    PublishTimestamp,
-    /// The split is deleted when `now() - split.time_range.end >= retention_policy.period`
-    SplitTimestampField,
-}
-
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetentionPolicy {
@@ -354,9 +191,6 @@ pub struct RetentionPolicy {
     /// (`1 hour`, `3 days`, `a week`, ...).
     #[serde(rename = "period")]
     retention_period: String,
-    /// Determines on which split attribute the retention policy is applied relatively. See
-    /// [`RetentionPolicyCutoffReference`] for more details.
-    pub cutoff_reference: RetentionPolicyCutoffReference,
 
     /// Defines the frequency at which the retention policy is evaluated and applied, expressed in
     /// a human-friendly way (`hourly`, `daily`, ...) or as a cron expression (`0 0 * * * *`,
@@ -367,14 +201,9 @@ pub struct RetentionPolicy {
 }
 
 impl RetentionPolicy {
-    pub fn new(
-        retention_period: String,
-        cutoff_reference: RetentionPolicyCutoffReference,
-        evaluation_schedule: String,
-    ) -> Self {
+    pub fn new(retention_period: String, evaluation_schedule: String) -> Self {
         Self {
             retention_period,
-            cutoff_reference,
             evaluation_schedule,
         }
     }
@@ -413,13 +242,6 @@ impl RetentionPolicy {
             .to_std()
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
         Ok(duration)
-    }
-
-    fn requires_timestamp_field(&self) -> bool {
-        matches!(
-            self.cutoff_reference,
-            RetentionPolicyCutoffReference::SplitTimestampField
-        )
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -464,7 +286,7 @@ impl IndexConfig {
             "field_mappings": [
                 {
                     "name": "timestamp",
-                    "type": "i64",
+                    "type": "datetime",
                     "fast": true
                 },
                 {
@@ -515,14 +337,12 @@ impl IndexConfig {
                     ]
                 }
             ],
+            "timestamp_field": "timestamp",
             "tag_fields": ["owner"],
             "store_source": true
         }"#;
         let doc_mapping = serde_json::from_str(doc_mapping_json).unwrap();
         let indexing_settings = IndexingSettings {
-            timestamp_field: Some("timestamp".to_string()),
-            sort_field: Some("timestamp".to_string()),
-            sort_order: Some(SortOrder::Desc),
             resources: IndexingResources::for_test(),
             ..Default::default()
         };
@@ -557,7 +377,7 @@ impl TestableForRegression for IndexConfig {
         let timestamp_mapping = serde_json::from_str(
             r#"{
                 "name": "timestamp",
-                "type": "i64",
+                "type": "datetime",
                 "fast": true
         }"#,
         )
@@ -593,12 +413,12 @@ impl TestableForRegression for IndexConfig {
             store_source: true,
             mode: ModeType::Dynamic,
             dynamic_mapping: None,
-            partition_key: "tenant".to_string(),
-            max_num_partitions: NonZeroU64::new(20).unwrap(),
+            partition_key: Some("tenant".to_string()),
+            max_num_partitions: NonZeroU32::new(100).unwrap(),
+            timestamp_field: Some("timestamp".to_string()),
         };
         let retention_policy = Some(RetentionPolicy::new(
             "90 days".to_string(),
-            RetentionPolicyCutoffReference::PublishTimestamp,
             "daily".to_string(),
         ));
         let stable_log_config = StableLogMergePolicyConfig {
@@ -612,9 +432,6 @@ impl TestableForRegression for IndexConfig {
             ..Default::default()
         };
         let indexing_settings = IndexingSettings {
-            timestamp_field: Some("timestamp".to_string()),
-            sort_field: Some("timestamp".to_string()),
-            sort_order: Some(SortOrder::Asc),
             commit_timeout_secs: 301,
             split_num_docs_target: 10_000_001,
             merge_policy,
@@ -626,7 +443,7 @@ impl TestableForRegression for IndexConfig {
         };
         IndexConfig {
             index_id: "my-index".to_string(),
-            index_uri: Uri::from_well_formed("s3://quickwit-indexes/my-index".to_string()),
+            index_uri: Uri::from_well_formed("s3://quickwit-indexes/my-index"),
             doc_mapping,
             indexing_settings,
             retention_policy,
@@ -664,21 +481,11 @@ impl TestableForRegression for IndexConfig {
 pub fn build_doc_mapper(
     doc_mapping: &DocMapping,
     search_settings: &SearchSettings,
-    indexing_settings: &IndexingSettings,
 ) -> anyhow::Result<Arc<dyn DocMapper>> {
-    let sort_by = match indexing_settings.sort_by() {
-        SortBy::DocId => None,
-        SortBy::FastField { field_name, order } => Some(SortByConfig { field_name, order }),
-        SortBy::Score { order } => Some(SortByConfig {
-            field_name: "_score".to_string(),
-            order,
-        }),
-    };
     let builder = DefaultDocMapperBuilder {
         store_source: doc_mapping.store_source,
         default_search_fields: search_settings.default_search_fields.clone(),
-        timestamp_field: indexing_settings.timestamp_field.clone(),
-        sort_by,
+        timestamp_field: doc_mapping.timestamp_field.clone(),
         field_mappings: doc_mapping.field_mappings.clone(),
         tag_fields: doc_mapping.tag_fields.iter().cloned().collect(),
         mode: doc_mapping.mode,
@@ -714,7 +521,7 @@ mod tests {
         let index_config = load_index_config_from_user_config(
             config_format,
             file.as_bytes(),
-            &Uri::from_well_formed("s3://defaultbucket/".to_string()),
+            &Uri::from_well_formed("s3://defaultbucket/"),
         )
         .unwrap();
         assert_eq!(index_config.doc_mapping.field_mappings.len(), 5);
@@ -737,7 +544,6 @@ mod tests {
         );
         let expected_retention_policy = RetentionPolicy {
             retention_period: "90 days".to_string(),
-            cutoff_reference: RetentionPolicyCutoffReference::SplitTimestampField,
             evaluation_schedule: "daily".to_string(),
         };
         assert_eq!(
@@ -747,16 +553,8 @@ mod tests {
         assert!(index_config.doc_mapping.store_source);
 
         assert_eq!(
-            index_config.indexing_settings.timestamp_field.unwrap(),
+            index_config.doc_mapping.timestamp_field.unwrap(),
             "timestamp"
-        );
-        assert_eq!(
-            index_config.indexing_settings.sort_field.unwrap(),
-            "timestamp"
-        );
-        assert_eq!(
-            index_config.indexing_settings.sort_order.unwrap(),
-            SortOrder::Asc
         );
         assert_eq!(index_config.indexing_settings.commit_timeout_secs, 61);
         assert_eq!(
@@ -764,6 +562,7 @@ mod tests {
             MergePolicyConfig::StableLog(StableLogMergePolicyConfig {
                 merge_factor: 9,
                 max_merge_factor: 11,
+                maturation_period: Duration::from_secs(48 * 3600),
                 ..Default::default()
             })
         );
@@ -799,7 +598,7 @@ mod tests {
 
     #[test]
     fn test_index_config_default_values() {
-        let default_index_root_uri = Uri::from_well_formed("s3://defaultbucket/".to_string());
+        let default_index_root_uri = Uri::from_well_formed("s3://defaultbucket/");
         {
             let index_config_filepath = get_index_config_filepath("minimal-hdfs-logs.yaml");
             let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
@@ -842,11 +641,9 @@ mod tests {
             assert_eq!(
                 index_config.indexing_settings,
                 IndexingSettings {
-                    sort_field: Some("timestamp".to_string()),
                     commit_timeout_secs: 42,
                     merge_policy: MergePolicyConfig::default(),
                     resources: IndexingResources {
-                        __num_threads_deprecated: serde::de::IgnoredAny,
                         ..Default::default()
                     },
                     ..Default::default()
@@ -865,7 +662,7 @@ mod tests {
     #[should_panic(expected = "empty URI")]
     fn test_config_validates_uris() {
         let config_yaml = r#"
-            version: 3
+            version: 0.4
             index_id: hdfs-logs
             index_uri: ''
             doc_mapping: {}
@@ -876,7 +673,7 @@ mod tests {
     #[test]
     fn test_minimal_index_config_default_lenient() {
         let config_yaml = r#"
-            version: 3
+            version: 0.4
             index_id: hdfs-logs
             index_uri: "s3://my-index"
             doc_mapping: {}
@@ -884,17 +681,41 @@ mod tests {
         let minimal_config: IndexConfig = load_index_config_from_user_config(
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
-            &Uri::from_well_formed("s3://my-index".to_string()),
+            &Uri::from_well_formed("s3://my-index"),
         )
         .unwrap();
         assert_eq!(minimal_config.doc_mapping.mode, ModeType::Lenient);
     }
 
     #[test]
+    fn test_index_config_with_malformed_maturation_duration() {
+        let config_yaml = r#"
+            version: 0.4
+            index_id: hdfs-logs
+            index_uri: "s3://my-index"
+            doc_mapping: {}
+            indexing_settings:
+              merge_policy:
+                type: limit_merge
+                maturation_period: x
+        "#;
+        let parsing_config_error = load_index_config_from_user_config(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Uri::from_well_formed("s3://my-index"),
+        )
+        .unwrap_err();
+        println!("{:?}", parsing_config_error);
+        assert!(parsing_config_error
+            .root_cause()
+            .to_string()
+            .contains("Failed to parse human-readable duration `x`"));
+    }
+
+    #[test]
     fn test_retention_policy_serialization() {
         let retention_policy = RetentionPolicy {
             retention_period: "90 days".to_string(),
-            cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
             evaluation_schedule: "hourly".to_string(),
         };
         let retention_policy_yaml = serde_yaml::to_string(&retention_policy).unwrap();
@@ -909,14 +730,12 @@ mod tests {
         {
             let retention_policy_yaml = r#"
             period: 90 days
-            cutoff_reference: publish_timestamp
         "#;
             let retention_policy =
                 serde_yaml::from_str::<RetentionPolicy>(retention_policy_yaml).unwrap();
 
             let expected_retention_policy = RetentionPolicy {
                 retention_period: "90 days".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
                 evaluation_schedule: "hourly".to_string(),
             };
             assert_eq!(retention_policy, expected_retention_policy);
@@ -924,7 +743,6 @@ mod tests {
         {
             let retention_policy_yaml = r#"
             period: 90 days
-            cutoff_reference: publish_timestamp
             schedule: daily
         "#;
             let retention_policy =
@@ -932,7 +750,6 @@ mod tests {
 
             let expected_retention_policy = RetentionPolicy {
                 retention_period: "90 days".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
                 evaluation_schedule: "daily".to_string(),
             };
             assert_eq!(retention_policy, expected_retention_policy);
@@ -944,7 +761,6 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
                 evaluation_schedule: "hourly".to_string(),
             };
             assert_eq!(
@@ -954,7 +770,6 @@ mod tests {
             {
                 let retention_policy = RetentionPolicy {
                     retention_period: "foo".to_string(),
-                    cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
                     evaluation_schedule: "hourly".to_string(),
                 };
                 assert_eq!(
@@ -979,7 +794,6 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
                 evaluation_schedule: "@hourly".to_string(),
             };
             assert_eq!(
@@ -990,7 +804,6 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
                 evaluation_schedule: "hourly".to_string(),
             };
             assert_eq!(
@@ -1001,7 +814,6 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
                 evaluation_schedule: "0 * * * * *".to_string(),
             };
             let evaluation_schedule = retention_policy.evaluation_schedule().unwrap();
@@ -1015,7 +827,6 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
                 evaluation_schedule: "hourly".to_string(),
             };
             retention_policy.validate().unwrap();
@@ -1023,7 +834,6 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "foo".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
                 evaluation_schedule: "hourly".to_string(),
             };
             retention_policy.validate().unwrap_err();
@@ -1031,7 +841,6 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
                 evaluation_schedule: "foo".to_string(),
             };
             retention_policy.validate().unwrap_err();
@@ -1044,7 +853,6 @@ mod tests {
             let hourly_schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
                 evaluation_schedule: schedule_str.to_string(),
             };
 

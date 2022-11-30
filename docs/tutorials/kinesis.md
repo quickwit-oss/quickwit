@@ -31,7 +31,7 @@ First, let's create a new index. Here is the index config and doc mapping corres
 #
 # Index config file for gh-archive dataset.
 #
-version: 0
+version: 0.4
 
 index_id: gh-archive
 
@@ -64,16 +64,15 @@ doc_mapping:
       tokenizer: default
     - name: created_at
       type: datetime
-      input_formats:
-        - "rfc3339"
-      precision: "seconds"
       fast: true
-
-indexing_settings:
+      input_formats:
+        - rfc3339
+      precision: seconds
   timestamp_field: created_at
 
-search_settings:
-  default_search_fields: []
+indexing_settings:
+  commit_timeout_secs: 10
+
 ```
 
 Execute these Bash commands to download the index config and create the `gh-archive` index.
@@ -92,7 +91,7 @@ wget -O gh-archive.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/
 Now, let's create a Kinesis stream and load some events into it.
 
 :::tip
-This step may be fairly slow depending on how much bandwidth is available. You can reduce the volume of data to ingest by downloading a single file from the GH Archive and/or place a `| head -n <number of records> \ ` after the `gunzip` command. You can also speed things up by increasing the number of shards and/or the number of jobs launched by `parallel` (`-j` option).
+This step may be fairly slow depending on how much bandwidth is available. The current command limits the volume of data to ingest by taking the first 10 000 lines of every single file downloaded from the GH Archive. If you have enough bandwidth, you can remove it to ingest the whole set of files. You can also speed things up by increasing the number of shards and/or the number of jobs launched by `parallel` (`-j` option).
 :::
 
 ```bash
@@ -104,6 +103,7 @@ wget https://data.gharchive.org/2022-05-12-{10..12}.json.gz
 
 # Load the events into Kinesis stream
 gunzip -c 2022-05-12*.json.gz | \
+head -n 10000 | \
 parallel --gnu -j8 -N 500 --pipe \
 'jq --slurp -c "{\"Records\": [.[] | {\"Data\": (. | tostring), \"PartitionKey\": .id }], \"StreamName\": \"gh-archive\"}" > records-{%}.json && \
 aws kinesis put-records --cli-input-json file://records-{%}.json --cli-binary-format raw-in-base64-out >> out.log'
@@ -115,6 +115,7 @@ aws kinesis put-records --cli-input-json file://records-{%}.json --cli-binary-fo
 #
 # Kinesis source config file.
 #
+version: 0.4
 source_id: kinesis-source
 source_type: kinesis
 params:
@@ -163,13 +164,15 @@ You can run this command (in another shell) to inspect the properties of the ind
 ./quickwit index describe --index gh-archive
 ```
 
+It is also possible to get index information through the [Quickwit UI](http://localhost:7280/ui/indexes/gh-archive).
+
 Once the first split is published, you can start running search queries. For instance, we can find all the events for the Kubernetes [repository](https://github.com/kubernetes/kubernetes):
 
 ```bash
 curl 'http://localhost:7280/api/v1/gh-archive/search?query=org.login:kubernetes%20AND%20repo.name:kubernetes'
 ```
 
-It is also possible to access these results through the [Quickwit UI](http://localhost:7280/ui/search?query=org.login%3Akubernetes+AND+repo.name%3Akubernetes&index_id=gh-archive&max_hits=10).
+It is also possible to access these results through the [UI](http://localhost:7280/ui/search?query=org.login%3Akubernetes+AND+repo.name%3Akubernetes&index_id=gh-archive&max_hits=10).
 
 We can also group these events by type and count them:
 

@@ -55,7 +55,7 @@ impl fmt::Debug for RamStorage {
 impl Default for RamStorage {
     fn default() -> Self {
         Self {
-            uri: Uri::from_well_formed("ram:///".to_string()),
+            uri: Uri::from_well_formed("ram:///"),
             files: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -167,7 +167,7 @@ impl RamStorageBuilder {
     /// Finalizes the [`RamStorage`] creation.
     pub fn build(self) -> RamStorage {
         RamStorage {
-            uri: Uri::from_well_formed("ram:///".to_string()),
+            uri: Uri::from_well_formed("ram:///"),
             files: Arc::new(RwLock::new(self.files)),
         }
     }
@@ -223,13 +223,13 @@ mod tests {
     #[test]
     fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
-        let ram_uri = Uri::from_well_formed("s3:///foo".to_string());
+        let ram_uri = Uri::from_well_formed("s3:///foo");
         let err = ram_storage_factory.resolve(&ram_uri).err().unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
-        let data_uri = Uri::from_well_formed("ram:///data".to_string());
+        let data_uri = Uri::from_well_formed("ram:///data");
         let data_storage = ram_storage_factory.resolve(&data_uri).ok().unwrap();
-        let home_uri = Uri::from_well_formed("ram:///home".to_string());
+        let home_uri = Uri::from_well_formed("ram:///home");
         let home_storage = ram_storage_factory.resolve(&home_uri).ok().unwrap();
         assert_ne!(data_storage.uri(), home_storage.uri());
 

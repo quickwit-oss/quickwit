@@ -142,7 +142,7 @@ async fn leaf_search_stream_single_split(
     }
 
     let search_request = Arc::new(SearchRequest::from(stream_request.clone()));
-    let query = doc_mapper.query(split_schema.clone(), &search_request)?;
+    let (query, mut warmup_info) = doc_mapper.query(split_schema.clone(), &search_request)?;
     let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
@@ -161,14 +161,14 @@ async fn leaf_search_stream_single_split(
     let requires_scoring =
         matches!(&search_request.sort_by_field, Some(field_name) if field_name == "_score");
 
-    warmup(
-        &searcher,
-        query.as_ref(),
-        &request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref()),
-        &Default::default(),
-        requires_scoring,
-    )
-    .await?;
+    // TODO no test fail if this line get removed
+    warmup_info.field_norms |= requires_scoring;
+
+    let fast_field_names =
+        request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref());
+    warmup_info.fast_field_names.extend(fast_field_names);
+
+    warmup(&searcher, &warmup_info).await?;
 
     let span = info_span!(
         "collect_fast_field",
@@ -435,6 +435,7 @@ mod tests {
     use std::convert::TryInto;
     use std::str::from_utf8;
 
+    use itertools::Itertools;
     use quickwit_config::SearcherConfig;
     use quickwit_indexing::TestSandbox;
     use serde_json::json;
@@ -450,29 +451,22 @@ mod tests {
               - name: body
                 type: text
               - name: ts
-                type: i64
+                type: datetime
                 fast: true
-        "#;
-        let indexing_settings_yaml = r#"
             timestamp_field: ts
         "#;
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            indexing_settings_yaml,
-            &["body"],
-            None,
-        )
-        .await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
 
         let mut docs = vec![];
         let mut filtered_timestamp_values = vec![];
-        let end_timestamp = 20;
+        let start_timestamp = 72057595;
+        let end_timestamp = start_timestamp + 20;
         for i in 0..30 {
-            let body = format!("info @ t:{}", i + 1);
-            docs.push(json!({"body": body, "ts": i+1}));
-            if i + 1 < end_timestamp {
-                filtered_timestamp_values.push((i + 1).to_string());
+            let timestamp = start_timestamp + (i + 1) as i64;
+            let body = format!("info @ t:{}", timestamp);
+            docs.push(json!({"body": body, "ts": timestamp}));
+            if timestamp < end_timestamp {
+                filtered_timestamp_values.push(timestamp);
             }
         }
         test_sandbox.add_documents(docs).await?;
@@ -509,7 +503,13 @@ mod tests {
         let res = single_node_stream.next().await.expect("no leaf result")?;
         assert_eq!(
             from_utf8(&res.data)?,
-            format!("{}\n", filtered_timestamp_values.join("\n"))
+            format!(
+                "{}\n",
+                filtered_timestamp_values
+                    .iter()
+                    .map(|timestamp_secs| (timestamp_secs * 1_000_000).to_string())
+                    .join("\n")
+            )
         );
         Ok(())
     }
@@ -526,18 +526,9 @@ mod tests {
                 input_formats:
                   - "unix_timestamp"
                 fast: true
-        "#;
-        let indexing_settings_yaml = r#"
             timestamp_field: ts
         "#;
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            indexing_settings_yaml,
-            &["body"],
-            None,
-        )
-        .await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
         let mut docs = vec![];
         let mut filtered_timestamp_values = vec![];
         let start_date = OffsetDateTime::now_utc();
@@ -607,8 +598,7 @@ mod tests {
                 tokenizer: raw
                 fast: true
         "#;
-        let test_sandbox =
-            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
 
         test_sandbox
             .add_documents(vec![json!({"body": "body", "app": "my-app"})])
@@ -661,7 +651,7 @@ mod tests {
               - name: body
                 type: text
               - name: ts
-                type: i64
+                type: datetime
                 fast: true
               - name: partition_by_fast_field
                 type: u64
@@ -669,34 +659,27 @@ mod tests {
               - name: fast_field
                 type: u64
                 fast: true
-        "#;
-        let indexing_settings_yaml = r#"
             timestamp_field: ts
         "#;
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            indexing_settings_yaml,
-            &["body"],
-            None,
-        )
-        .await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
 
         let mut docs = vec![];
         let partition_by_fast_field_values = vec![1, 2, 3, 4, 5];
         let mut expected_output_tmp: HashMap<u64, Vec<u64>> = HashMap::new();
-        let end_timestamp: i64 = 20;
+        let start_timestamp = 72057595;
+        let end_timestamp: i64 = start_timestamp + 20;
         for i in 0..30 {
-            let body = format!("info @ t:{}", i + 1);
+            let timestamp = start_timestamp + (i + 1) as i64;
+            let body = format!("info @ t:{}", timestamp);
             let partition_number = partition_by_fast_field_values[i % 5];
             let fast_field: u64 = (i * 2).try_into().unwrap();
             docs.push(json!({
                 "body": body,
-                "ts": i + 1,
+                "ts":  timestamp,
                 "partition_by_fast_field": partition_number,
                 "fast_field": fast_field,
             }));
-            if i + 1 < end_timestamp.try_into().unwrap() {
+            if timestamp < end_timestamp {
                 if let Some(values_for_partition) = expected_output_tmp.get_mut(&partition_number) {
                     values_for_partition.push(fast_field)
                 } else {

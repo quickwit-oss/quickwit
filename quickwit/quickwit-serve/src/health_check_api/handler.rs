@@ -17,10 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::Infallible;
 use std::sync::Arc;
 
+use quickwit_actors::{Healthz, Mailbox};
 use quickwit_cluster::Cluster;
+use quickwit_indexing::IndexingService;
+use quickwit_janitor::JanitorService;
+use tracing::error;
 use warp::hyper::StatusCode;
 use warp::reply::with_status;
 use warp::{Filter, Rejection};
@@ -28,41 +31,68 @@ use warp::{Filter, Rejection};
 use crate::with_arg;
 
 /// Health check handlers.
-pub fn health_check_handlers(
+pub(crate) fn health_check_handlers(
     cluster: Arc<Cluster>,
+    indexer_service_opt: Option<Mailbox<IndexingService>>,
+    janitor_service_opt: Option<Mailbox<JanitorService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-    liveness_handler().or(readyness_handler(cluster))
+    liveness_handler(indexer_service_opt, janitor_service_opt).or(readiness_handler(cluster))
 }
 
-pub fn liveness_handler() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+fn liveness_handler(
+    indexer_service_opt: Option<Mailbox<IndexingService>>,
+    janitor_service_opt: Option<Mailbox<JanitorService>>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("health" / "livez")
-        .and(warp::path::end())
         .and(warp::get())
-        .and_then(get_liveness)
+        .and(with_arg(indexer_service_opt))
+        .and(with_arg(janitor_service_opt))
+        .then(get_liveness)
 }
 
-pub fn readyness_handler(
+fn readiness_handler(
     cluster: Arc<Cluster>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("health" / "readyz")
-        .and(warp::path::end())
         .and(warp::get())
         .and(with_arg(cluster))
-        .and_then(get_readyness)
+        .then(get_readiness)
 }
 
-async fn get_liveness() -> Result<impl warp::Reply, Infallible> {
-    Ok(with_status(warp::reply::json(&true), StatusCode::OK))
+async fn get_liveness(
+    indexer_service_opt: Option<Mailbox<IndexingService>>,
+    janitor_service_opt: Option<Mailbox<JanitorService>>,
+) -> impl warp::Reply {
+    let mut is_live = true;
+
+    if let Some(indexer_service) = indexer_service_opt {
+        if !indexer_service.ask(Healthz).await.unwrap_or(false) {
+            error!("The indexer service is unhealthy.");
+            is_live = false;
+        }
+    }
+    if let Some(janitor_service) = janitor_service_opt {
+        if !janitor_service.ask(Healthz).await.unwrap_or(false) {
+            error!("The janitor service is unhealthy.");
+            is_live = false;
+        }
+    }
+    let status_code = if is_live {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    with_status(warp::reply::json(&is_live), status_code)
 }
 
-async fn get_readyness(cluster: Arc<Cluster>) -> Result<impl warp::Reply, Infallible> {
+async fn get_readiness(cluster: Arc<Cluster>) -> impl warp::Reply {
     let is_ready = cluster.is_self_node_ready().await;
     let status_code = if is_ready {
         StatusCode::OK
     } else {
         StatusCode::SERVICE_UNAVAILABLE
     };
-    Ok(with_status(warp::reply::json(&is_ready), status_code))
+    with_status(warp::reply::json(&is_ready), status_code)
 }
 
 #[cfg(test)]
@@ -80,7 +110,7 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let health_check_handler = super::health_check_handlers(cluster.clone());
+        let health_check_handler = super::health_check_handlers(cluster.clone(), None, None);
         let resp = warp::test::request()
             .path("/health/livez")
             .reply(&health_check_handler)

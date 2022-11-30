@@ -24,21 +24,28 @@ use std::time::Duration;
 
 use futures::Future;
 use quickwit_actors::ActorContext;
+use quickwit_common::PrettySample;
 use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState};
 use quickwit_storage::Storage;
 use serde::Serialize;
 use thiserror::Error;
 use time::OffsetDateTime;
-use tracing::error;
+use tracing::{error, instrument};
 
 use crate::actors::GarbageCollector;
+
+/// The maximum number of splits that should be deleted in one go by the GC.
+const DELETE_SPLITS_BATCH_SIZE: usize = 1000;
 
 /// SplitDeletionError denotes error that can happen when deleting split
 /// during garbage collection.
 #[derive(Error, Debug)]
 pub enum SplitDeletionError {
-    #[error("Failed to delete splits from metastore: '{0:?}'.")]
-    MetastoreFailure(MetastoreError),
+    #[error("Failed to delete splits from metastore: '{error:?}'.")]
+    MetastoreFailure {
+        error: MetastoreError,
+        failed_split_ids: Vec<String>,
+    },
 }
 
 #[allow(missing_docs)]
@@ -73,6 +80,14 @@ where
     }
 }
 
+/// Information on what splits have and have not been cleaned up by the GC.
+pub struct SplitRemovalInfo {
+    /// The set of splits that have been removed.
+    pub removed_split_entries: Vec<FileEntry>,
+    /// The set of split ids that were attempted to be removed, but were unsuccessful.
+    pub failed_split_ids: Vec<String>,
+}
+
 /// Detect all dangling splits and associated files from the index and removes them.
 ///
 /// * `index_id` - The target index id.
@@ -92,7 +107,7 @@ pub async fn run_garbage_collect(
     deletion_grace_period: Duration,
     dry_run: bool,
     ctx_opt: Option<&ActorContext<GarbageCollector>>,
-) -> anyhow::Result<Vec<FileEntry>> {
+) -> anyhow::Result<SplitRemovalInfo> {
     // Select staged splits with staging timestamp older than grace period timestamp.
     let grace_period_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
@@ -123,7 +138,10 @@ pub async fn run_garbage_collect(
             .iter()
             .map(FileEntry::from)
             .collect();
-        return Ok(candidate_entries);
+        return Ok(SplitRemovalInfo {
+            removed_split_entries: candidate_entries,
+            failed_split_ids: Vec::new(),
+        });
     }
 
     // Schedule all eligible staged splits for delete
@@ -138,29 +156,98 @@ pub async fn run_garbage_collect(
     .await?;
 
     // We wait another 2 minutes until the split is actually deleted.
-    let grace_period_deletion =
+    let updated_before_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - deletion_grace_period.as_secs() as i64;
 
-    let query = ListSplitsQuery::for_index(index_id)
-        .with_split_state(SplitState::MarkedForDeletion)
-        .with_update_timestamp_lte(grace_period_deletion);
-
-    let splits_to_delete = protect_future(ctx_opt, metastore.list_splits(query))
-        .await?
-        .into_iter()
-        .map(|meta| meta.split_metadata)
-        .collect();
-
-    let deleted_files = delete_splits_with_files(
+    let deleted_files = incrementally_remove_marked_splits(
         index_id,
-        storage.clone(),
-        metastore.clone(),
-        splits_to_delete,
+        updated_before_timestamp,
+        storage,
+        metastore,
         ctx_opt,
     )
-    .await?;
+    .await;
 
     Ok(deleted_files)
+}
+
+#[instrument(skip(storage, metastore, ctx_opt))]
+/// Incrementally removes any splits marked for deletion which haven't been
+/// updated after the given grace period in batches of 1000 splits.
+///
+/// The aim of this is to spread the load out across a longer period
+/// rather than short, heavy bursts on the metastore and storage system itself.
+async fn incrementally_remove_marked_splits(
+    index_id: &str,
+    updated_before_timestamp: i64,
+    storage: Arc<dyn Storage>,
+    metastore: Arc<dyn Metastore>,
+    ctx_opt: Option<&ActorContext<GarbageCollector>>,
+) -> SplitRemovalInfo {
+    let mut failed_split_ids = Vec::new();
+    let mut removed_split_files = Vec::new();
+    loop {
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_split_state(SplitState::MarkedForDeletion)
+            .with_update_timestamp_lte(updated_before_timestamp)
+            .with_limit(DELETE_SPLITS_BATCH_SIZE);
+
+        let list_splits_result = protect_future(ctx_opt, metastore.list_splits(query)).await;
+
+        let splits_to_delete = match list_splits_result {
+            Ok(splits) => splits,
+            Err(error) => {
+                error!(error = ?error, "Failed to fetch deletable splits.");
+                break;
+            }
+        };
+
+        let splits_to_delete = splits_to_delete
+            .into_iter()
+            .map(|split| split.split_metadata)
+            .collect::<Vec<_>>();
+
+        let num_splits_to_delete = splits_to_delete.len();
+        if num_splits_to_delete == 0 {
+            break;
+        }
+
+        let delete_splits_result = delete_splits_with_files(
+            index_id,
+            storage.clone(),
+            metastore.clone(),
+            splits_to_delete,
+            ctx_opt,
+        )
+        .await;
+
+        match delete_splits_result {
+            Ok(entries) => removed_split_files.extend(entries),
+            Err(SplitDeletionError::MetastoreFailure {
+                error,
+                failed_split_ids: failed_split_ids_inner,
+            }) => {
+                error!(
+                    error=?error,
+                    index_id=%index_id,
+                    split_ids=?PrettySample::new(&failed_split_ids_inner, 5),
+                    "Failed to delete {} splits.",
+                    failed_split_ids_inner.len()
+                );
+                failed_split_ids.extend(failed_split_ids_inner);
+                break;
+            }
+        }
+
+        if num_splits_to_delete < DELETE_SPLITS_BATCH_SIZE {
+            break;
+        }
+    }
+
+    SplitRemovalInfo {
+        removed_split_entries: removed_split_files,
+        failed_split_ids,
+    }
 }
 
 /// Delete a list of splits from the storage and the metastore.
@@ -244,7 +331,10 @@ pub async fn delete_splits_with_files(
         let split_ids: Vec<&str> = deleted_split_ids.iter().map(String::as_str).collect();
         protect_future(ctx_opt, metastore.delete_splits(index_id, &split_ids))
             .await
-            .map_err(SplitDeletionError::MetastoreFailure)?;
+            .map_err(|error| SplitDeletionError::MetastoreFailure {
+                error,
+                failed_split_ids: split_ids.into_iter().map(str::to_string).collect(),
+            })?;
     }
 
     Ok(deleted_file_entries)
@@ -254,28 +344,26 @@ pub async fn delete_splits_with_files(
 mod tests {
     use std::time::Duration;
 
-    use quickwit_metastore::{
-        metastore_for_test, IndexMetadata, ListSplitsQuery, SplitMetadata, SplitState,
-    };
+    use quickwit_config::IndexConfig;
+    use quickwit_metastore::{metastore_for_test, ListSplitsQuery, SplitMetadata, SplitState};
     use quickwit_storage::storage_for_test;
 
     use crate::run_garbage_collect;
 
     #[tokio::test]
-    async fn test_run_gc_expires_stale_staged_splits_after_grace_period() {
+    async fn test_run_gc_marks_stale_staged_splits_for_deletion_after_grace_period() {
         let storage = storage_for_test();
         let metastore = metastore_for_test();
 
         let index_id = "test-run-gc--index";
-        let index_uri = format!("ram://indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
-        metastore.create_index(index_metadata).await.unwrap();
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        metastore.create_index(index_config).await.unwrap();
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
-            footer_offsets: 1000..2000,
-            index_id: index_id.to_string(),
             split_id: split_id.to_string(),
+            index_id: index_id.to_string(),
             ..Default::default()
         };
         metastore
@@ -285,13 +373,14 @@ mod tests {
 
         let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
         assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
-        // The graced period hasn't passed yet so the split remains staged.
+
+        // The staging grace period hasn't passed yet so the split remains staged.
         run_garbage_collect(
             index_id,
             storage.clone(),
             metastore.clone(),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
+            Duration::from_secs(30),
+            Duration::from_secs(30),
             false,
             None,
         )
@@ -300,40 +389,39 @@ mod tests {
 
         let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
         assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
-        tokio::time::sleep(Duration::from_secs(1)).await;
 
-        // The graced period has passed so the split is marked for deletion and then deleted.
+        // The staging grace period has passed so the split is marked for deletion.
         run_garbage_collect(
             index_id,
             storage.clone(),
             metastore.clone(),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
+            Duration::from_secs(0),
+            Duration::from_secs(30),
             false,
             None,
         )
         .await
         .unwrap();
 
-        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
-        assert_eq!(metastore.list_splits(query).await.unwrap().len(), 0);
+        let query =
+            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+        assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
     }
 
     #[tokio::test]
-    async fn test_run_gc_deletes_marked_splits_after_grace_period() {
+    async fn test_run_gc_deletes_splits_marked_for_deletion_after_grace_period() {
         let storage = storage_for_test();
         let metastore = metastore_for_test();
 
         let index_id = "test-run-gc--index";
-        let index_uri = format!("ram://indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
-        metastore.create_index(index_metadata).await.unwrap();
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        metastore.create_index(index_config).await.unwrap();
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
-            footer_offsets: 1000..2000,
-            index_id: index_id.to_string(),
             split_id: split_id.to_string(),
+            index_id: index_id.to_string(),
             ..Default::default()
         };
         metastore
@@ -348,13 +436,14 @@ mod tests {
         let query =
             ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
         assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
-        // The graced period hasn't passed yet so the split remains marked for deletion.
+
+        // The delete grace period hasn't passed yet so the split remains marked for deletion.
         run_garbage_collect(
             index_id,
             storage.clone(),
             metastore.clone(),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
+            Duration::from_secs(30),
+            Duration::from_secs(30),
             false,
             None,
         )
@@ -364,23 +453,21 @@ mod tests {
         let query =
             ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
         assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
-        tokio::time::sleep(Duration::from_secs(1)).await;
 
-        // The graced period has passed so the split is deleted.
+        // The delete grace period has passed so the split is deleted.
         run_garbage_collect(
             index_id,
             storage.clone(),
             metastore.clone(),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
+            Duration::from_secs(30),
+            Duration::from_secs(0),
             false,
             None,
         )
         .await
         .unwrap();
 
-        let query =
-            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+        let query = ListSplitsQuery::for_index(index_id);
         assert_eq!(metastore.list_splits(query).await.unwrap().len(), 0);
     }
 }

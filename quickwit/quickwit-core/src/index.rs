@@ -23,10 +23,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
-use quickwit_config::{IndexConfig, QuickwitConfig, SourceConfig};
+use quickwit_config::{validate_identifier, IndexConfig, QuickwitConfig, SourceConfig};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
+use quickwit_indexing::check_source_connectivity;
 use quickwit_janitor::{
-    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
+    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError, SplitRemovalInfo,
 };
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Metastore, MetastoreError,
@@ -45,17 +46,23 @@ pub enum IndexServiceError {
     MetastoreError(#[from] MetastoreError),
     #[error("Split deletion error `{0}`.")]
     SplitDeletionError(#[from] SplitDeletionError),
-    #[error("Invalid index config: {0}.")]
-    InvalidIndexConfig(String),
+    #[error("Invalid config: {0:#}.")]
+    InvalidConfig(anyhow::Error),
+    #[error("Invalid identifier: {0}.")]
+    InvalidIdentifier(String),
+    #[error("Internal error: {0}.")]
+    InternalError(String),
 }
 
 impl ServiceError for IndexServiceError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
             Self::StorageError(_) => ServiceErrorCode::Internal,
-            Self::MetastoreError(_) => ServiceErrorCode::Internal,
+            Self::MetastoreError(error) => error.status_code(),
             Self::SplitDeletionError(_) => ServiceErrorCode::Internal,
-            Self::InvalidIndexConfig(_) => ServiceErrorCode::BadRequest,
+            Self::InvalidConfig(_) => ServiceErrorCode::BadRequest,
+            Self::InvalidIdentifier(_) => ServiceErrorCode::BadRequest,
+            Self::InternalError(_) => ServiceErrorCode::Internal,
         }
     }
 }
@@ -108,6 +115,10 @@ impl IndexService {
         index_config: IndexConfig,
         overwrite: bool,
     ) -> Result<IndexMetadata, IndexServiceError> {
+        validate_storage_uri(quickwit_storage_uri_resolver(), &index_config)
+            .await
+            .map_err(IndexServiceError::InvalidConfig)?;
+
         // Delete existing index if it exists.
         if overwrite {
             match self.delete_index(&index_config.index_id, false).await {
@@ -123,13 +134,15 @@ impl IndexService {
             }
         }
 
-        // Add default ingest-api source config.
-        let ingest_api_source_config = SourceConfig::ingest_api_default();
+        // Add default ingest-api & cli-ingest sources config.
         let index_id = index_config.index_id.clone();
-        let mut index_metadata = IndexMetadata::new(index_config);
-        index_metadata.add_source(ingest_api_source_config)?;
-
-        self.metastore.create_index(index_metadata).await?;
+        self.metastore.create_index(index_config).await?;
+        self.metastore
+            .add_source(&index_id, SourceConfig::ingest_api_default())
+            .await?;
+        self.metastore
+            .add_source(&index_id, SourceConfig::cli_ingest_source())
+            .await?;
         let index_metadata = self.metastore.index_metadata(&index_id).await?;
         Ok(index_metadata)
     }
@@ -213,7 +226,7 @@ impl IndexService {
         index_id: &str,
         grace_period: Duration,
         dry_run: bool,
-    ) -> anyhow::Result<Vec<FileEntry>> {
+    ) -> anyhow::Result<SplitRemovalInfo> {
         let index_config = self
             .metastore
             .index_metadata(index_id)
@@ -272,6 +285,56 @@ impl IndexService {
         }
         Ok(())
     }
+
+    /// Creates a source config for index `index_id`.
+    pub async fn create_source(
+        &self,
+        index_id: &str,
+        source_config: SourceConfig,
+    ) -> Result<SourceConfig, IndexServiceError> {
+        let source_id = source_config.source_id.clone();
+        // This is a bit redundant, as SourceConfig deserialization also checks
+        // that the indentifier is valid. However it authorizes the special
+        // private names internal to quickwit, so we do an extra check.
+        validate_identifier("Source ID", &source_id).map_err(|_| {
+            IndexServiceError::InvalidIdentifier(format!("Invalid source ID: `{}`", source_id))
+        })?;
+        check_source_connectivity(&source_config)
+            .await
+            .map_err(IndexServiceError::InvalidConfig)?;
+        self.metastore.add_source(index_id, source_config).await?;
+        info!(
+            "Source `{}` successfully created for index `{}`.",
+            source_id, index_id
+        );
+        let source = self
+            .metastore
+            .index_metadata(index_id)
+            .await?
+            .sources
+            .get(&source_id)
+            .ok_or_else(|| {
+                IndexServiceError::InternalError(
+                    "Created source is not in index metadata, this should never happen."
+                        .to_string(),
+                )
+            })?
+            .clone();
+        Ok(source)
+    }
+
+    pub async fn delete_source(
+        &self,
+        index_id: &str,
+        source_id: &str,
+    ) -> Result<(), IndexServiceError> {
+        self.metastore.delete_source(index_id, source_id).await?;
+        info!(
+            "Source `{}` successfully deleted for index `{}`.",
+            source_id, index_id
+        );
+        Ok(())
+    }
 }
 
 /// Clears the cache directory of a given source.
@@ -303,10 +366,8 @@ pub async fn remove_indexing_directory(data_dir_path: &Path, index_id: String) -
 /// Resolve storage endpoints to validate.
 pub async fn validate_storage_uri(
     storage_uri_resolver: &StorageUriResolver,
-    quickwit_config: &QuickwitConfig,
     index_config: &IndexConfig,
 ) -> anyhow::Result<()> {
-    storage_uri_resolver.resolve(&quickwit_config.default_index_root_uri)?;
     storage_uri_resolver.resolve(&index_config.index_uri)?;
     Ok(())
 }

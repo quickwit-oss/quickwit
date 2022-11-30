@@ -8,6 +8,12 @@ import TabItem from '@theme/TabItem';
 
 Quickwit compiles to a single binary, we provide different methods to install it.
 
+## Prerequisites
+
+Quickwit is officially only supported for Linux. Freebsd and MacOS are not officially supported, but should work as well.
+
+Quickwit only supplies binaries for x86-64. No special instruction set is required, but on x86-64 SSE3 is recommended. Quickwit compiles on Armv8, but we do not publish binaries for this platform at the moment and its usage is experimental.
+
 ## Download
 
 Version: 0.3.1 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.3.1)
@@ -54,6 +60,50 @@ pacman -S openssl
 </TabItem>
 
 </Tabs>
+
+Additionally it requires a few more dependencies to compile it. These dependencies are not required on production system:
+- `clang`: used to compile some dependencies.
+- `protobuf-compiler`: used to compile protobuf definitions.
+- `libssl-dev`: headers for libssl.
+- `pkg-config`: used to locate libssl.
+- `cmake`: used to build librdkafka, for kafka support.
+- `libsasl2-dev`: required for sasl support in kafka.
+These dependencies can be installed on your system using the native package manager.
+You can install these dependencies using the following command:
+
+<Tabs>
+
+<TabItem value="ubuntu" label="Ubuntu">
+
+```bash
+apt install -y clang protobuf-compiler libssl-dev pkg-config cmake libsasl2-dev
+```
+
+</TabItem>
+
+<TabItem value="aws-linux" label="AWS Linux">
+
+```bash
+yum -y update && yum -y install clang openssl-devel pkgconfig cmake3 cyrus-sasl-devel
+# amazonlinux only has protobuf-compiler 2.5, we need something much more up to date.
+wget https://github.com/protocolbuffers/protobuf/releases/download/v21.9/protoc-21.9-linux-x86_64.zip
+sudo unzip protoc-21.9-linux-x86_64.zip -d /usr/local
+# amazonlinux use cmake2 as cmake, we need cmake3
+ln -s /usr/bin/cmake3 /usr/bin/cmake
+```
+
+</TabItem>
+
+<TabItem value="arch-linux" label="Arch Linux">
+
+```bash
+pacman -S clang protobuf openssl pkg-config cmake make libsasl
+```
+
+</TabItem>
+
+</Tabs>
+
 
 
 ## Install script

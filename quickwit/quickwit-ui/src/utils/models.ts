@@ -20,23 +20,24 @@
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 export type RawDoc = Record<string, any>
 
-export enum TimeUnit {
-  UNKNOWN,
-  UNSUPPORTED,
-  MILLI_SECOND,
-  SECOND,
-}
-
 export type FieldMapping = {
+  description: string | null;
   name: string;
   type: string;
+  stored: boolean | null;
+  fast: boolean | null;
+  indexed: boolean | null;
+  // Specific datetime field attributes.
+  output_format: string | null;
   field_mappings?: FieldMapping[];
 }
 
-export type FlattenField = {
-  path: string[];
-  name: string;
-  type: string;
+export type Field = {
+  // Json path (path segments concatenated as a string with dots between segments).
+  json_path: string;
+  // Json path of the field.
+  path_segments: string[];
+  field_mapping: FieldMapping;
 }
 
 export type Entry = {
@@ -44,64 +45,22 @@ export type Entry = {
   value: any;
 }
 
-function getFlattenFields(field_mappings: FieldMapping[]): FlattenField[] {
-  const fields: FlattenField[] = [];
+export const DATE_TIME_WITH_SECONDS_FORMAT = "YYYY/MM/DD HH:mm:ss";
+
+// Returns a flatten array of fields and nested fields found in the given `FieldMapping` array. 
+export function getAllFields(field_mappings: Array<FieldMapping>): Field[] {
+  const fields: Field[] = [];
   for (const field_mapping of field_mappings) {
     if (field_mapping.type === 'object' && field_mapping.field_mappings !== undefined) {
-      for (const child_field of getFlattenFields(field_mapping.field_mappings)) {
-        fields.push({name: field_mapping.name + '.' + child_field.name, path: [field_mapping.name].concat(child_field.path), type: child_field.type})
+      for (const child_field_mapping of getAllFields(field_mapping.field_mappings)) {
+        fields.push({json_path: field_mapping.name + '.' + child_field_mapping.json_path, path_segments: [field_mapping.name].concat(child_field_mapping.path_segments), field_mapping: child_field_mapping.field_mapping})
       }
     } else {
-      fields.push({name: field_mapping.name, path: [field_mapping.name], type: field_mapping.type});
+      fields.push({json_path: field_mapping.name, path_segments: [field_mapping.name], field_mapping: field_mapping});
     }
   }
 
   return fields;
-}
-
-export function getDateTimeFormat(timeUnit: TimeUnit) {
-  switch (timeUnit) {
-    case TimeUnit.SECOND:
-      return "YYYY/MM/DD HH:mm:ss";
-    default:
-      return "YYYY/MM/DD HH:mm:ss.SSS";
-  }
-}
-
-// Guess time unit of the timestamp field from index splits.
-export function guessTimeUnit(index: Index): TimeUnit {
-  // If we have no split or , we cannot guess the time unit.
-  if (!index.metadata.indexing_settings.timestamp_field) {
-    return TimeUnit.UNKNOWN;
-  }
-  if (index.splits.length === 0) {
-    console.warn(`Index ${index.metadata.index_id} has no split, TimeUnit of timestamp_field set to UNKNOWN.`);
-    return TimeUnit.UNKNOWN;
-  }
-  if (index.splits[0]?.time_range === null) {
-    console.warn(`Index ${index.metadata.index_id} has a split with an undefined time_range, TimeUnit of timestamp_field set to UNKNOWN.`);
-    return TimeUnit.MILLI_SECOND;
-  }
-  const range_start_values = index.splits.map(split => split.time_range === null ? 0 : split.time_range.start);
-  const time_range_start_max = Math.max(...range_start_values);
-  // We expect a split time range to be between year between 1971 and 2070.
-  const seconds_in_one_hundred_years = 3600 * 24 * 365 * 100;
-  if (time_range_start_max < seconds_in_one_hundred_years) {
-    return TimeUnit.SECOND
-  }
-  if (time_range_start_max < seconds_in_one_hundred_years * 1000) {
-    return TimeUnit.MILLI_SECOND
-  }
-  if (time_range_start_max < seconds_in_one_hundred_years * 1000 * 1000) {
-    console.error('Quickwit UI does not support currently timestamp in MICRO_SECOND or NANO_SECOND.')
-    return TimeUnit.UNSUPPORTED
-  }
-  console.warn('Cannot guess correctly time unit, value `time_range_start_max` is too high, set to micro seconds', time_range_start_max);
-  return TimeUnit.UNSUPPORTED
-}
-
-export function getAllFields(doc_mapping: DocMapping) {
-  return getFlattenFields(doc_mapping.field_mappings);
 }
 
 export type DocMapping = {
@@ -109,6 +68,7 @@ export type DocMapping = {
   tag_fields: string[];
   store: boolean;
   dynamic_mapping: boolean;
+  timestamp_field: string | null;
 }
 
 export type SortOrder = 'Asc' | 'Desc';
@@ -148,39 +108,42 @@ export type SearchResponse = {
   errors: Array<any> | undefined;
 }
 
-export type IndexMetadata = {
+export type IndexConfig = {
+  version: string;
   index_id: string;
   index_uri: string;
-  checkpoint: object;
   doc_mapping: DocMapping;
-  indexing_settings: IndexingSettings;
+  indexing_settings: object;
   search_settings: object;
-  sources: object[] | undefined;
-  create_timestamp: number;
-  update_timestamp: number;
+  retention: object;
 }
 
-export type IndexingSettings = {
-  timestamp_field: null | string;
+export type IndexMetadata = {
+  index_config: IndexConfig;
+  checkpoint: object;
+  sources: object[] | undefined;
+  create_timestamp: number;
 }
 
 export const EMPTY_INDEX_METADATA: IndexMetadata = {
-  index_id: '',
-  index_uri: '',
-  checkpoint: {},
-  indexing_settings: {
-    timestamp_field: null
+  index_config: {
+    version: '',
+    index_uri: '',
+    index_id: '',
+    doc_mapping: {
+      field_mappings: [],
+      tag_fields: [],
+      store: false,
+      dynamic_mapping: false,
+      timestamp_field: null
+    },
+    indexing_settings: {},
+    search_settings: {},
+    retention: {},
   },
-  search_settings: {},
-  sources: [],
+  checkpoint: {},
+  sources: undefined,
   create_timestamp: 0,
-  update_timestamp: 0,
-  doc_mapping: {
-    store: false,
-    field_mappings: [],
-    tag_fields: [],
-    dynamic_mapping: false,
-  }
 };
 
 export type SplitMetadata = {
