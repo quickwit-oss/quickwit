@@ -1,6 +1,6 @@
 ---
 title: AWS cluster setup
-sidebar_position: 1
+sidebar_position: 3
 ---
 
 Setting up a Quickwit cluster on AWS requires the configuration of three elements:

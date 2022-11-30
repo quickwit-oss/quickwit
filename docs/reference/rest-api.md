@@ -31,11 +31,19 @@ Failed requests return a 4xx HTTP status code. The response body of failed reque
 
 ### Search in an index
 
+Search for documents matching a query in the given index `api/v1/<index id>/search`. This endpoint is available as long as you have at least one node running a searcher service in the cluster.
+The search endpoint accepts `GET` and `POST` requests. The [parameters](#get-parameters) are URL parameters in case of `GET` or JSON key value pairs in case of `POST`.
+
 ```
 GET api/v1/<index id>/search?query=searchterm
 ```
 
-Search for documents matching a query in the given index `<index id>`. This endpoint is available as long as you have at least one node running a searcher service in the cluster.
+```
+POST api/v1/<index id>/search
+{
+  "query": searchterm
+}
+```
 
 #### Path variable
 
@@ -43,7 +51,7 @@ Search for documents matching a query in the given index `<index id>`. This endp
 | ------------- | ------------- |
 | **index id**  | The index id  |
 
-#### Get parameters
+#### Parameters
 
 | Variable                  | Type                 | Description                                                                                                | Default value                                                                                   |
 | ------------------------- | -------------------- | -------------------------------------------------------------------------------------------------          | ----------------------------------------------------------------------------------------------- |
@@ -58,8 +66,8 @@ Search for documents matching a query in the given index `<index id>`. This endp
 | **format**                | `Enum`               | The output format. Allowed values are "json" or "prettyjson"                                               | `prettyjson`                                                                                    |
 | **aggs**               | `JSON`               | The aggregations request. See the [aggregations doc](aggregation.md) for supported aggregations.      |
 
-:::warning
-The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
+:::info
+The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision.
 :::
 
 #### Response
@@ -107,8 +115,8 @@ The endpoint will return 10 million values if 10 million documents match the que
 | **end_timestamp**   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.                                        |                                                    |
 | **output_format**   | `String`   | Response output format. `csv` or `clickHouseRowBinary`                                                           | `csv`                                              |
 
-:::warning
-The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
+:::info
+The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision.
 :::
 
 #### Response
@@ -196,3 +204,69 @@ GET api/v1/cluster?format=prettyjson
 Name | Type | Description | Default value
 --- | --- | --- | ---
 **format** | `String` | The output format requested for the response: `json` or `prettyjson` | `prettyjson`
+
+
+## Delete API
+
+The delete API enables to delete documents matching a query.
+
+### Create a delete task
+
+```
+POST api/v1/<index id>/delete-tasks
+```
+
+Create a delete task that will delete all documents matching the provided query in the given index `<index id>`.
+The endpoint simply appends your delete task to the delete task queue in the metastore. The deletion will eventually be executed.
+
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| **index id**  | The index id  |
+
+
+#### POST payload `DeleteQuery`
+
+
+| Variable            | Type       | Description                                                                                                      | Default value                                      |
+| ----------          | ------     | -------------                                                                                                    | ---------------                                    |
+| **query**           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                          |                                                    |
+| **search_field**    | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2"                                                  | index_config.search_settings.default_search_fields |
+| **start_timestamp** | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds.                                   |                                                    |
+| **end_timestamp**   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.                                        |                                                    |
+
+
+**Example**
+
+```json
+{
+    "query": "body:trash",
+    "start_timestamp": "1669738645",
+    "end_timestamp": "1669825046",
+}
+```
+
+#### Response
+
+The response is the created delete task represented in JSON, `DeleteTask`, the content type is `application/json; charset=UTF-8.`
+
+| Field                   | Description                    | Type       |
+| --------------------    | ------------------------------ | :--------: |
+| **create_timestamp**    | Create timestamp of the delete query in seconds               | `i64`         |
+| **opstamp**             | Unique operation stamp associated with the delete task        | `u64`         |
+| **delete_query**        | The posted delete query                                       | `DeleteQuery` |
+
+
+### GET a delete query
+
+```
+GET api/v1/<index id>/delete-tasks/<opstamp>
+```
+
+Get the delete task of operation stamp `opstamp` for a given `index_id`.
+
+
+#### Response
+
+The response is a `DeleteTask`.
