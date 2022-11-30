@@ -1,14 +1,14 @@
 ---
-title: Full-text search on Clickhouse
-description: Add full-text search to Clickhouse, using the Quickwit search streaming feature.
+title: Full-text search on ClickHouse
+description: Add full-text search to ClickHouse, using the Quickwit search streaming feature.
 tags: [clickhouse, integration]
 icon_url: /img/tutorials/clickhouse.svg
 ---
 
 
-This guide will help you add full-text search to a well-known OLAP database, Clickhouse, using the Quickwit search streaming feature. Indeed Quickwit exposes a REST endpoint that streams ids or whatever attributes matching a search query **extremely fast** (up to 50 million in 1 second), and Clickhouse can easily use them with joins queries.
+This guide will help you add full-text search to a well-known OLAP database, ClickHouse, using the Quickwit search streaming feature. Indeed Quickwit exposes a REST endpoint that streams ids or whatever attributes matching a search query **extremely fast** (up to 50 million in 1 second), and ClickHouse can easily use them with joins queries.
 
-We will take the [GutHub archive dataset](https://www.gharchive.org/), which gathers more than 3 billion GutHub events: `WatchEvent`, `PullRequestEvent`, `IssuesEvent`... You can dive into this [great analysis](https://ghe.clickhouse.tech/) made by Clickhouse to have a good understanding of the dataset. We also took strong inspiration from this work, and we are very grateful to them for sharing this.
+We will take the [GitHub archive dataset](https://www.gharchive.org/), which gathers more than 3 billion GitHub events: `WatchEvent`, `PullRequestEvent`, `IssuesEvent`... You can dive into this [great analysis](https://ghe.clickhouse.tech/) made by ClickHouse to have a good understanding of the dataset. We also took strong inspiration from this work, and we are very grateful to them for sharing this.
 
 ## Install
 
@@ -42,7 +42,7 @@ After [installing quickwit], let's create an index configured to receive these e
 
 
 We don't need to index all fields described above as Quickwit. The `title` and `body` are the fields of interest for our full-text search tutorial. 
-`id` will be helpful to make the join in Clickhouse, `created_at` and `event_type` may also be beneficial for timestamp pruning and filtering.
+The `id` will be helpful for making the JOINs in ClickHouse, `created_at` and `event_type` may also be beneficial for timestamp pruning and filtering.
 
 ```yaml title="gh-archive-index-config.yaml"
 version: 0.4
@@ -119,9 +119,9 @@ curl "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=tantivy&output
 We will use the `click_house` binary output format in the following sections to speed up queries.
 
 
-## Clickhouse
+## ClickHouse
 
-Let's leave Quickwit for now and [install a Clickhouse server](https://clickhouse.com/docs/en/getting-started/install/).
+Let's leave Quickwit for now and [install a ClickHouse server](https://clickhouse.com/docs/en/getting-started/install/).
 
 ### Create database and table
 
@@ -160,7 +160,7 @@ CREATE TABLE github_events
 ### Import events
 
 We have created a second dataset, `gh-archive-2021-12.json.gz`, which gathers all events, even ones with no
-text. So it's better to insert it into Clickhouse, but if you don't have the time, you can use the dataset
+text. So it's better to insert it into ClickHouse, but if you don't have the time, you can use the dataset
 `gh-archive-2021-12-text-only.json.gz` used for Quickwit.
 
 ```bash
@@ -186,10 +186,10 @@ ORDER BY stars DESC LIMIT 5
 └──────────────────────┴───────┘
 ```
 
-### Use Quickwit search inside Clickhouse
+### Use Quickwit search inside ClickHouse
 
-Clickhouse has an exciting feature called [URL Table Engine](https://clickhouse.com/docs/en/engines/table-engines/special/url/) that queries data from a remote HTTP/HTTPS server.
-This is precisely what we need: by creating a table pointing to Quickwit search stream endpoint, we will fetch ids that match a query from Clickhouse.
+ClickHouse has an exciting feature called [URL Table Engine](https://clickhouse.com/docs/en/engines/table-engines/special/url/) that queries data from a remote HTTP/HTTPS server.
+This is precisely what we need: by creating a table pointing to Quickwit search stream endpoint, we will fetch ids that match a query from ClickHouse.
 
 ```SQL
 SELECT count(*) FROM url('http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j+OR+log4shell&fast_field=id&output_format=click_house_row_binary', RowBinary, 'id UInt64')
@@ -243,11 +243,11 @@ We can see the spike on the 2021-12-10.
 
 ## Wrapping up
 
-We have just scratched the surface of full-text search from Clickhouse with this small subset of GitHub archive. 
+We have just scratched the surface of full-text search from ClickHouse with this small subset of GitHub archive. 
 You can play with the complete dataset that you can download from our public S3 bucket.
 We have made available monthly gzipped ndjson files from 2015 until 2021. Here are `2015-01` links:
 - full JSON dataset https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2015-01.json.gz
 - text-only JSON dataset https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2015-01-text-only.json.gz
 
-The search stream endpoint is powerful enough to stream 100 million ids to Clickhouse in less than 2 seconds on a multi TB dataset.
+The search stream endpoint is powerful enough to stream 100 million ids to ClickHouse in less than 2 seconds on a multi TB dataset.
 And you should be comfortable playing with search stream on even bigger datasets.
