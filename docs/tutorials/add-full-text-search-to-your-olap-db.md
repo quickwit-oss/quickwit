@@ -8,7 +8,7 @@ icon_url: /img/tutorials/clickhouse.svg
 
 This guide will help you add full-text search to a well-known OLAP database, Clickhouse, using the Quickwit search streaming feature. Indeed Quickwit exposes a REST endpoint that streams ids or whatever attributes matching a search query **extremely fast** (up to 50 million in 1 second), and Clickhouse can easily use them with joins queries.
 
-We will take the [Github archive dataset](https://www.gharchive.org/), which gathers more than 3 billion Github events: `WatchEvent`, `PullRequestEvent`, `IssuesEvent`... You can dive into this [great analysis](https://ghe.clickhouse.tech/) made by Clickhouse to have a good understanding of the dataset. We also took strong inspiration from this work, and we are very grateful to them for sharing this.
+We will take the [GutHub archive dataset](https://www.gharchive.org/), which gathers more than 3 billion GutHub events: `WatchEvent`, `PullRequestEvent`, `IssuesEvent`... You can dive into this [great analysis](https://ghe.clickhouse.tech/) made by Clickhouse to have a good understanding of the dataset. We also took strong inspiration from this work, and we are very grateful to them for sharing this.
 
 ## Install
 
@@ -41,8 +41,8 @@ After [installing quickwit], let's create an index configured to receive these e
 ```
 
 
-
-We don't need to index all fields described above as Quickwit. The `title` and `body` are the fields of interest for our full-text search tutorial. `id` will be helpful to make the join in Clickhouse, `created_at` and `event_type` may also be beneficial for timestamp pruning and filtering.
+We don't need to index all fields described above as Quickwit. The `title` and `body` are the fields of interest for our full-text search tutorial. 
+`id` will be helpful to make the join in Clickhouse, `created_at` and `event_type` may also be beneficial for timestamp pruning and filtering.
 
 ```yaml title="gh-archive-index-config.yaml"
 version: 0.4
@@ -52,12 +52,17 @@ index_id: gh-archive
 # index_uri: s3://my-bucket/gh-archive
 # index_uri: file://my-big-ssd-harddrive/
 doc_mapping:
+  store_source: false
   field_mappings:
     - name: id
       type: u64
       fast: true
     - name: created_at
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: event_type
       type: text
@@ -70,6 +75,8 @@ doc_mapping:
       type: text
       tokenizer: default
       record: position
+  timestamp_field: created_at
+
 search_settings:
   default_search_fields: [title, body]
 ```
@@ -98,15 +105,15 @@ You can check it's working by using the `search` command and looking for `tantiv
 ## Start a searcher
 
 ```bash
-./quickwit run --service searcher
+./quickwit run --service searcher --service metastore
 ```
 
-This command will start an HTTP server with a [REST API](/docs/reference/rest-api). We are now
-ready to fetch some ids with the search stream endpoint. Let's start by streaming them on a simple
+This command will start an HTTP server with a [REST API](/docs/reference/rest-api) and run the required metastore service which is used by searcher services.
+We are now ready to fetch some ids with the search stream endpoint. Let's start by streaming them on a simple
 query and with a `csv` output format.
 
 ```bash
-curl "http://0.0.0.0:7280/api/v1/gh-archive/search/stream?query=tantivy&output_format=csv&fast_field=id"
+curl "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=tantivy&output_format=csv&fast_field=id"
 ```
 
 We will use the `click_house` binary output format in the following sections to speed up queries.
@@ -236,8 +243,11 @@ We can see the spike on the 2021-12-10.
 
 ## Wrapping up
 
-We have just scratched the surface of full-text search from Clickhouse with this small subset of Github archive. You can play with the complete dataset that you can download from our public S3 bucket. We have made available monthly gzipped ndjson files from 2015 until 2021. Here are `2015-01` links:
+We have just scratched the surface of full-text search from Clickhouse with this small subset of GitHub archive. 
+You can play with the complete dataset that you can download from our public S3 bucket.
+We have made available monthly gzipped ndjson files from 2015 until 2021. Here are `2015-01` links:
 - full JSON dataset https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2015-01.json.gz
 - text-only JSON dataset https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2015-01-text-only.json.gz
 
-The search stream endpoint is powerful enough to stream 100 million ids to Clickhouse in less than 2 seconds on a multi TB dataset. And you should be comfortable playing with search stream on even bigger datasets.
+The search stream endpoint is powerful enough to stream 100 million ids to Clickhouse in less than 2 seconds on a multi TB dataset.
+And you should be comfortable playing with search stream on even bigger datasets.
