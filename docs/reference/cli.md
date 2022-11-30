@@ -320,9 +320,14 @@ Quantiles [1%, 25%, 50%, 75%, 99%]: [448, 448, 448, 448, 448]
 Searches an index with ID `--index` and returns the documents matching the query specified with `--query`.
 More details on the [query language page](query-language.md).
 The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options.
-It's possible to override the default search fields `search-fields` option to define the list of fields that Quickwit will search into if the user query does not explicitly target a field in the query.
+It's possible to override the default search fields `search-fields` option to define the list of fields that Quickwit will search into if 
+the user query does not explicitly target a field in the query. Quickwit will return snippets of the matching content when requested via the `snippet-fields` options.
 Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options.
 These timestamp options are useful for boosting query performance when using a time series dataset.
+
+:::warning
+The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
+:::
   
 `quickwit index search [args]`
 
@@ -363,6 +368,11 @@ quickwit index search --index wikipedia --query "Barack Obama" --config ./config
 # If you have jq installed.
 quickwit index search --index wikipedia --query "Barack Obama" --config ./config/quickwit.yaml | jq '.hits[].title'
 
+```
+
+*Sorting documents by their BM25 score*
+```bash
+quickwit index search --index wikipedia --query "Barack Obama" --sort-by-score --config ./config/quickwit.yaml
 ```
 
 *Limiting the result set to 50 hits*
