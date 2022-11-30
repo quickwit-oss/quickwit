@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::{Infallible, TryFrom};
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 use futures::stream::StreamExt;
@@ -193,11 +193,11 @@ async fn search(
     index_id: String,
     search_request: SearchRequestQueryString,
     search_service: Arc<dyn SearchService>,
-) -> Result<impl warp::Reply, Infallible> {
+) -> impl warp::Reply {
     info!(index_id = %index_id, request =? search_request, "search");
-    Ok(search_request
+    search_request
         .format
-        .make_rest_reply(search_endpoint(index_id, search_request, &*search_service).await))
+        .make_rest_reply(search_endpoint(index_id, search_request, &*search_service).await)
 }
 
 /// REST GET search handler.
@@ -208,7 +208,7 @@ pub fn search_get_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_get_filter()
         .and(with_arg(search_service))
-        .and_then(search)
+        .then(search)
 }
 
 /// REST POST search handler.
@@ -219,7 +219,7 @@ pub fn search_post_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_post_filter()
         .and(with_arg(search_service))
-        .and_then(search)
+        .then(search)
 }
 
 pub fn search_stream_handler(
@@ -227,7 +227,7 @@ pub fn search_stream_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_stream_filter()
         .and(with_arg(search_service))
-        .and_then(search_stream)
+        .then(search_stream)
 }
 
 /// This struct represents the search stream query passed to
@@ -331,7 +331,7 @@ async fn search_stream(
     index_id: String,
     request: SearchStreamRequestQueryString,
     search_service: Arc<dyn SearchService>,
-) -> Result<impl warp::Reply, Infallible> {
+) -> impl warp::Reply {
     info!(index_id=%index_id,request=?request, "search_stream");
     let content_type = match request.output_format {
         OutputFormat::ClickHouseRowBinary => "application/octet-stream",
@@ -339,8 +339,7 @@ async fn search_stream(
     };
     let reply =
         make_streaming_reply(search_stream_endpoint(index_id, request, &*search_service).await);
-    let reply_with_header = reply::with_header(reply, CONTENT_TYPE, content_type);
-    Ok(reply_with_header)
+    reply::with_header(reply, CONTENT_TYPE, content_type)
 }
 
 fn search_stream_filter(
