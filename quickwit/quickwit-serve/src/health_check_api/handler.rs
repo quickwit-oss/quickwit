@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::Infallible;
 use std::sync::Arc;
 
 use quickwit_actors::{Healthz, Mailbox};
@@ -48,7 +47,7 @@ fn liveness_handler(
         .and(warp::get())
         .and(with_arg(indexer_service_opt))
         .and(with_arg(janitor_service_opt))
-        .and_then(get_liveness)
+        .then(get_liveness)
 }
 
 fn readiness_handler(
@@ -57,13 +56,13 @@ fn readiness_handler(
     warp::path!("health" / "readyz")
         .and(warp::get())
         .and(with_arg(cluster))
-        .and_then(get_readiness)
+        .then(get_readiness)
 }
 
 async fn get_liveness(
     indexer_service_opt: Option<Mailbox<IndexingService>>,
     janitor_service_opt: Option<Mailbox<JanitorService>>,
-) -> Result<impl warp::Reply, Infallible> {
+) -> impl warp::Reply {
     let mut is_live = true;
 
     if let Some(indexer_service) = indexer_service_opt {
@@ -83,17 +82,17 @@ async fn get_liveness(
     } else {
         StatusCode::SERVICE_UNAVAILABLE
     };
-    Ok(with_status(warp::reply::json(&is_live), status_code))
+    with_status(warp::reply::json(&is_live), status_code)
 }
 
-async fn get_readiness(cluster: Arc<Cluster>) -> Result<impl warp::Reply, Infallible> {
+async fn get_readiness(cluster: Arc<Cluster>) -> impl warp::Reply {
     let is_ready = cluster.is_self_node_ready().await;
     let status_code = if is_ready {
         StatusCode::OK
     } else {
         StatusCode::SERVICE_UNAVAILABLE
     };
-    Ok(with_status(warp::reply::json(&is_ready), status_code))
+    with_status(warp::reply::json(&is_ready), status_code)
 }
 
 #[cfg(test)]
