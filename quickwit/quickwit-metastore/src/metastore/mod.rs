@@ -132,8 +132,9 @@ pub trait Metastore: Send + Sync + 'static {
 
     /// Stages multiple splits.
     ///
-    /// Splits which already exist will be implicitly ignored and will not be apart of the return
-    /// split_id set.
+    /// If a split already exists and is not in the `Staged` state, a `CorrectnessError`
+    /// will be returned.
+    /// Attempting to re-stage any split which is not currently `Staged` is incorrect and should not be attempted.
     ///
     /// A split needs to be staged before uploading any of its files to the storage.
     /// An error will occur if an index that does not exist in the storage is specified.
