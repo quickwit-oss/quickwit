@@ -56,14 +56,16 @@ Quickwit is a cloud-native search engine for log management & analytics written 
 - Lightweight Embedded UI
 
 ### 🔮 Roadmap
-- [Quickwit 0.5 - Q1 2023](https://github.com/quickwit-oss/quickwit/projects/6)
+- [Quickwit 0.5 - Q2 2023](https://github.com/quickwit-oss/quickwit/projects/6)
+  - Distributed and replicated ingestion queue
+  - Tiered storage (local drive, block storage, object storage)
+  - Native support for OpenTelemetry exporters (logs and traces)
+  - Jaeger integration
   - Grafana data source
-  - Native support for OpenTelemetry
-  - REST API for managing indexes
 - [Long-term roadmap](ROADMAP.md)
-  - Distributed indexing
   - Pipe-based query language
   - Security (TLS, authentication, RBAC)
+  - Transforms
   - [and more...](ROADMAP.md)
 
 # 🔎 Uses & Limitations
