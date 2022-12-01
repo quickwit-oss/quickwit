@@ -324,7 +324,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     .await?;
                 counters.num_staged_splits.fetch_add(split_metadata_list.len() as u64, Ordering::SeqCst);
 
-                let mut packaged_splits_and_metadata = Vec::new();
+                let mut packaged_splits_and_metadata = Vec::with_capacity(batch.splits.len());
                 for (packaged_split, metadata) in batch.splits.into_iter().zip(split_metadata_list) {
                     let upload_result = upload_split(
                         &packaged_split,
