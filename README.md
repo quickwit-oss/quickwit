@@ -127,7 +127,8 @@ Our business model relies on our commercial license. There is no plan to become 
 
 # 🪄 Third-Party Integration
 
-<img align="left" src="docs/assets/images/third-party-integrations.png" alt="Store logs on AWS S3" width="auto" />
+<img align="left" src="docs/assets/images/integrations.png" alt="Store logs on AWS S3" width="100%" />
+
 
 # 💬 Community
 
