@@ -132,7 +132,7 @@ pub trait Metastore: Send + Sync + 'static {
 
     /// Stages multiple splits.
     ///
-    /// If a split already exists and is not in the `Staged` state, a `CorrectnessError`
+    /// If a split already exists and is not in the `Staged` state, a `SplitsNotStaged` error
     /// will be returned.
     /// Attempting to re-stage any split which is not currently `Staged` is incorrect and should not
     /// be attempted.
