@@ -1,4 +1,6 @@
-build: src/*
+.PHONY: build install start
+
+build:
 	yarn build
 
 install:
