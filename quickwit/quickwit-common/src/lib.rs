@@ -141,7 +141,7 @@ where T: Debug
         write!(formatter, "[")?;
         for (i, item) in self.0.iter().enumerate() {
             if i == self.1 {
-                write!(formatter, ", ...")?;
+                write!(formatter, ", and {} more", self.0.len() - i)?;
                 break;
             }
             if i > 0 {
@@ -194,15 +194,19 @@ mod tests {
 
     #[test]
     fn test_pretty_sample() {
-        assert_eq!(
-            format!("{:?}", PrettySample::<'_, usize>::new(&[], 2)),
-            "[]"
-        );
-        assert_eq!(format!("{:?}", PrettySample::new(&[1], 2)), "[1]");
-        assert_eq!(format!("{:?}", PrettySample::new(&[1, 2], 2)), "[1, 2]");
-        assert_eq!(
-            format!("{:?}", PrettySample::new(&[1, 2, 3], 2)),
-            "[1, 2, ...]"
-        );
+        let pretty_sample = PrettySample::<'_, usize>::new(&[], 2);
+        assert_eq!(format!("{:?}", pretty_sample), "[]");
+
+        let pretty_sample = PrettySample::new(&[1], 2);
+        assert_eq!(format!("{:?}", pretty_sample), "[1]");
+
+        let pretty_sample = PrettySample::new(&[1, 2], 2);
+        assert_eq!(format!("{:?}", pretty_sample), "[1, 2]");
+
+        let pretty_sample = PrettySample::new(&[1, 2, 3], 2);
+        assert_eq!(format!("{:?}", pretty_sample), "[1, 2, and 1 more]");
+
+        let pretty_sample = PrettySample::new(&[1, 2, 3, 4], 2);
+        assert_eq!(format!("{:?}", pretty_sample), "[1, 2, and 2 more]");
     }
 }
