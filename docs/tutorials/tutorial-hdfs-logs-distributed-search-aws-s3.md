@@ -90,6 +90,20 @@ Now let the EC2 instance know the S3 bucket path we will be working with. This w
 export S3_PATH=s3://{path/to/bucket}/indexes
 ```
 
+#### Bucket Authorization
+You'll want to include the necessary authorization for the given bucket, this can be done by setting the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+environment variables, or via the AWS credentials file. Usually located at ~/.aws/credentials.
+
+Easy setup of authorization can be done with the AWS CLI tool:
+```bash
+aws configure
+```
+
+You can altest your authorization by using the AWS CLI tool:
+```bash
+aws s3 ls s3://{path/to/bucket}/
+```
+
 ```bash
 # Create Quickwit config file.
 echo "version: 0.4
