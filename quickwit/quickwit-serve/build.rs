@@ -49,7 +49,7 @@ fn commit_info() {
     let output_bytes = match Command::new("git")
         .arg("log")
         .arg("-1")
-        .arg("--format=%cd %H")
+        .arg("--format='%cd %H'")
         .arg("--date=format-local:%Y-%m-%dT%H:%M:%SZ")
         .env("TZ", "UTC0")
         .output()

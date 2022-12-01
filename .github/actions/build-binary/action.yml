@@ -30,6 +30,9 @@ runs:
     - name: Install cross
       run: cargo install cross
       shell: bash
+    - name: Help cross find the git repo
+      run: cp -r .git/ ./quickwit/.git
+      shell: bash
     - name: Build Quickwit
       run: cross build --release --features release-feature-vendored-set --target ${{ inputs.target }}
       shell: bash
