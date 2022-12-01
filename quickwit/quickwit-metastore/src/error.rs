@@ -48,13 +48,6 @@ pub enum MetastoreError {
     #[error("Failed to deserialize index metadata: `{message}`")]
     InvalidManifest { message: String },
 
-    /// Something has gone very wrong.
-    /// In theory this error should never be returned as doing so
-    /// indicates that the operation is attempting to perform an action
-    /// on the metastore state that would violates the integrity of the metastore.
-    #[error("Cannot complete operation as it is incorrect: `{message}`")]
-    CorrectnessError { message: String },
-
     #[error("IOError `{message}`")]
     Io { message: String },
 
@@ -132,7 +125,6 @@ impl ServiceError for MetastoreError {
             Self::DbError { .. } => ServiceErrorCode::Internal,
             Self::JsonDeserializeError { .. } => ServiceErrorCode::Internal,
             Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
-            Self::CorrectnessError { .. } => ServiceErrorCode::Internal,
         }
     }
 }

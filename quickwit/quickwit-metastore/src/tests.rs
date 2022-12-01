@@ -2685,9 +2685,9 @@ pub mod test_suite {
                 "Metastore should not allow splits which are not `Staged` to be overwritten.",
             );
         assert!(
-            matches!(err, MetastoreError::CorrectnessError { .. }),
-            "Metastore should return a correctness error when attempting to perform an operation \
-             that must not occur.",
+            matches!(err, MetastoreError::SplitsNotStaged { .. }),
+            "Metastore should return a `SplitsNotStaged` error when attempting to perform an \
+             operation that must not occur.",
         );
 
         metastore
@@ -2701,9 +2701,9 @@ pub mod test_suite {
                 "Metastore should not allow splits which are not `Staged` to be overwritten.",
             );
         assert!(
-            matches!(err, MetastoreError::CorrectnessError { .. }),
-            "Metastore should return a correctness error when attempting to perform an operation \
-             that must not occur.",
+            matches!(err, MetastoreError::SplitsNotStaged { .. }),
+            "Metastore should return a `SplitsNotStaged` error when attempting to perform an \
+             operation that must not occur.",
         );
 
         cleanup_index(&metastore, index_id).await;

@@ -648,10 +648,12 @@ impl Metastore for PostgresqlMetastore {
                 .map_err(|error| convert_sqlx_err(index_id, error))?;
 
             if upserted_split_ids.len() != split_ids.len() {
-                return Err(MetastoreError::CorrectnessError {
-                    message: "Cannot stage split as it already exists and has been published or \
-                              marked for deletion."
-                        .to_string(),
+                let failed_split_ids = split_ids
+                    .into_iter()
+                    .filter(|id| !upserted_split_ids.contains(id))
+                    .collect();
+                return Err(MetastoreError::SplitsNotStaged {
+                    split_ids: failed_split_ids,
                 });
             }
 
