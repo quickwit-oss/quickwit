@@ -296,7 +296,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
             async move {
                 fail_point!("uploader:intask:before");
 
-                let mut split_metadata_list = Vec::new();
+                let mut split_metadata_list = Vec::with_capacity(batch.splits.len());
                 for packaged_split in batch.splits.iter() {
                     if batch.publish_lock.is_dead() {
                         // TODO: Remove the junk right away?
