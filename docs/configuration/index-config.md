@@ -30,7 +30,11 @@ doc_mapping:
   mode: lenient
   field_mappings:
     - name: timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: severity_text
       type: text
@@ -46,8 +50,6 @@ doc_mapping:
           type: text
           tokenizer: raw
   tag_fields: ["resource.service"]
-
-indexing_settings:
   timestamp_field: timestamp
 
 search_settings:

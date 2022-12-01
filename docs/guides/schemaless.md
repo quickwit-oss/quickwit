@@ -23,7 +23,11 @@ doc_mapping:
   mode: strict # <--- The mode attribute
   field_mappings:
     - name: timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: server
       tokenizer: raw
@@ -32,8 +36,6 @@ doc_mapping:
       record: position
     - name: severity
       tokenizer: raw
-
-indexing_settings:
   timestamp_field: timestamp
 
 search_settings:
@@ -105,7 +107,11 @@ doc_mapping:
   mode: dynamic
   field_mappings:
     - name: timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: user_id
       type: text
@@ -113,7 +119,6 @@ doc_mapping:
     - name: event_type
       type: text
       tokenizer: raw
-indexing_settings:
   timestamp_field: timestamp
 ```
 
@@ -159,7 +164,11 @@ doc_mapping:
   mode: dynamic
   field_mappings:
     - name: Timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: Attributes
       type: json
@@ -177,8 +186,8 @@ doc_mapping:
       fast: true
     - name: Body
       type: text
-indexing_settings:
   timestamp_field: Timestamp
+  
 search_settings:
   default_search_fields: [SeverityText, Body, Attributes, Resource]
 ```
