@@ -320,7 +320,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
 
                 metastore
                     .stage_splits(&index_id, split_metadata_list.clone())
-                    .instrument(tracing::info_span!("staging_split"))
+                    .instrument(tracing::info_span!("stage_splits"))
                     .await?;
                 counters.num_staged_splits.fetch_add(split_metadata_list.len() as u64, Ordering::SeqCst);
 
