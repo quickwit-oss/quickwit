@@ -24,7 +24,7 @@ Example of a log entry:
 
 :::caution
 
-Before using Quickwit with an object storage, check out our [advice](/docs/operations/aws-costs) for deploying on AWS S3 to avoid some bad surprises at the end of the month.
+Before using Quickwit with an object storage, check out our [advice](/docs/guides/aws-costs) for deploying on AWS S3 to avoid some bad surprises at the end of the month.
 
 :::
 

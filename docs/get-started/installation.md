@@ -12,16 +12,17 @@ Quickwit compiles to a single binary, we provide different methods to install it
 
 Quickwit is officially only supported for Linux. Freebsd and MacOS are not officially supported, but should work as well.
 
-Quickwit only supplies binaries for x86-64. No special instruction set is required, but on x86-64 SSE3 is recommended. Quickwit compiles on Armv8, but we do not publish binaries for this platform at the moment and its usage is experimental.
+Quickwit supplies binaries for x86-64 and aarch64. No special instruction set is required, but on x86-64 SSE3 is recommended.
+Support of aarch64 is currently experimental.
 
 ## Download
 
-Version: 0.3.1 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.3.1)
+Version: 0.4.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.4.0)
 License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
-- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.1/quickwit-v0.3.1-aarch64-unknown-linux-gnu.tar.gz)
-- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.1/quickwit-v0.3.1-x86_64-unknown-linux-gnu.tar.gz)
-- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.1/quickwit-v0.3.1-x86_64-apple-darwin.tar.gz)
+- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.4.0/quickwit-v0.4.0-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.4.0/quickwit-v0.4.0-x86_64-unknown-linux-gnu.tar.gz)
+- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.4.0/quickwit-v0.4.0-x86_64-apple-darwin.tar.gz)
 
 
 Check out the available builds in greater detail on [GitHub](https://github.com/quickwit-oss/quickwit/releases)
