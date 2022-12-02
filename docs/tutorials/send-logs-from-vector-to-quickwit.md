@@ -25,7 +25,7 @@ Let's embrace the OpenTelemetry standard and create an index compatible with its
 
 version: 0.4
 
-index_id: otel-logs
+index_id: otel-log-v0
 
 doc_mapping:
   field_mappings:
