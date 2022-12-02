@@ -9,8 +9,8 @@ ARG PBC_URL="https://github.com/protocolbuffers/protobuf/releases/download/v21.5
 
 RUN dpkg --add-architecture arm64 && \
     apt-get update && \
-    apt-get install -y clang \
-        libclang-dev \
+    apt-get install -y clang-3.9 \
+        libclang-3.9-dev \
         binutils-aarch64-linux-gnu \
         libsasl2-dev:arm64 \
         unzip && \
