@@ -154,7 +154,7 @@ uri = "http://host.docker.internal:7280/api/v1/otel-logs/ingest"
 Now let's start Vector to start send logs to Quickwit.
 
 ```bash
-docker run -v $(pwd)/vector.toml:/etc/vector/vector.toml:ro -p 8383:8383 --add-host=host.docker.internal:host-gateway timberio/vector:0.21.2-distroless-libc
+docker run -v $(pwd)/vector.toml:/etc/vector/vector.toml:ro -p 8383:8383 --add-host=host.docker.internal:host-gateway timberio/vector:0.25.0-distroless-libc
 ```
 
 ## Search logs
