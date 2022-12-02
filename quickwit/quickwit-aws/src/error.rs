@@ -157,48 +157,48 @@ impl Retryable for GetShardIteratorError {
 #[cfg(feature = "kinesis")]
 impl Retryable for ListShardsError {
     fn is_retryable(&self) -> bool {
-        false
+        matches!(self, ListShardsError::LimitExceeded(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for CreateStreamError {
     fn is_retryable(&self) -> bool {
-        false
+        matches!(self, CreateStreamError::LimitExceeded(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for DeleteStreamError {
     fn is_retryable(&self) -> bool {
-        false
+        matches!(self, DeleteStreamError::LimitExceeded(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for DescribeStreamError {
     fn is_retryable(&self) -> bool {
-        false
+        matches!(self, DescribeStreamError::LimitExceeded(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for ListStreamsError {
     fn is_retryable(&self) -> bool {
-        false
+        matches!(self, ListStreamsError::LimitExceeded(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for MergeShardsError {
     fn is_retryable(&self) -> bool {
-        false
+        matches!(self, MergeShardsError::LimitExceeded(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for SplitShardError {
     fn is_retryable(&self) -> bool {
-        false
+        matches!(self, SplitShardError::LimitExceeded(_))
     }
 }
