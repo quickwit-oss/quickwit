@@ -2,7 +2,7 @@
 title: Deploy Quickwit with Helm and search your kubernetes logs
 description: Deploy Quickwit and OTEL collectors with Helm and search your kubernetes logs.
 tags: [k8s, helm, deployment]
-icon_url: /img/tutorials/helm_quickwit_otel.png
+icon_url: /img/tutorials/helm-otel-k8s-tutorial-illustation.jpg
 ---
 
 This guide will help you to unlock log search on your k8s cluster. We will first deploy Quickwit and OTEL collectors with Helm and then see how to index and search them.
@@ -11,7 +11,7 @@ This guide will help you to unlock log search on your k8s cluster. We will first
 ## Prerequisites
 
 You will need the following to complete this tutorial:
-- A k8s cluster like [minikube](https://minikube.sigs.k8s.io/docs/start/).
+- A k8s cluster.
 - The command line tool [kubectl](https://kubernetes.io/docs/reference/kubectl/).
 - The command line tool [Helm](https://helm.sh/).
 - An access to a shared storage like AWS S3, GCS, Azure blob storage, Scaleway, to store index data.
