@@ -19,7 +19,6 @@ RUN apt-get -y update \
                           clang \
                           cmake \
                           libssl-dev \
-                          libsasl2-dev \
                           llvm \
                           nodejs \
                           protobuf-compiler \
@@ -63,7 +62,6 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
-                          libsasl2-2 \
                           libssl1.1 \
     && rm -rf /var/lib/apt/lists/*
 

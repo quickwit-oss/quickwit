@@ -67,7 +67,6 @@ Additionally it requires a few more dependencies to compile it. These dependenci
 - `libssl-dev`: headers for libssl.
 - `pkg-config`: used to locate libssl.
 - `cmake`: used to build librdkafka, for kafka support.
-- `libsasl2-dev`: required for sasl support in kafka.
 These dependencies can be installed on your system using the native package manager.
 You can install these dependencies using the following command:
 
@@ -76,7 +75,7 @@ You can install these dependencies using the following command:
 <TabItem value="ubuntu" label="Ubuntu">
 
 ```bash
-apt install -y clang protobuf-compiler libssl-dev pkg-config cmake libsasl2-dev
+apt install -y clang protobuf-compiler libssl-dev pkg-config cmake
 ```
 
 </TabItem>
@@ -84,7 +83,7 @@ apt install -y clang protobuf-compiler libssl-dev pkg-config cmake libsasl2-dev
 <TabItem value="aws-linux" label="AWS Linux">
 
 ```bash
-yum -y update && yum -y install clang openssl-devel pkgconfig cmake3 cyrus-sasl-devel
+yum -y update && yum -y install clang openssl-devel pkgconfig cmake3
 # amazonlinux only has protobuf-compiler 2.5, we need something much more up to date.
 wget https://github.com/protocolbuffers/protobuf/releases/download/v21.9/protoc-21.9-linux-x86_64.zip
 sudo unzip protoc-21.9-linux-x86_64.zip -d /usr/local
@@ -97,7 +96,7 @@ ln -s /usr/bin/cmake3 /usr/bin/cmake
 <TabItem value="arch-linux" label="Arch Linux">
 
 ```bash
-pacman -S clang protobuf openssl pkg-config cmake make libsasl
+pacman -S clang protobuf openssl pkg-config cmake make
 ```
 
 </TabItem>
