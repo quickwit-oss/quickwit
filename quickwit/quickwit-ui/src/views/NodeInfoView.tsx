@@ -44,7 +44,7 @@ function NodeInfoView() {
 
   const urlByTab: Record<string, string> = {
     '1': 'api/v1/config',
-    '2': 'api/v1/build',
+    '2': 'api/v1/version',
   }
 
   const handleTabIndexChange = (_: React.SyntheticEvent, newValue: string) => {

@@ -119,10 +119,11 @@ async fn main() -> anyhow::Result<()> {
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
     let build_info = quickwit_build_info();
+    let version_text = format!("{} ({} {})", build_info.version, build_info.commit_short_hash, build_info.build_date);
 
     let app = build_cli()
         .about(about_text.as_str())
-        .version(build_info.version.as_str());
+        .version(version_text.as_str());
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
