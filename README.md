@@ -29,7 +29,7 @@ Search more with less
 </h4>
 <br/>
 
-<b> Quickwit 0.4 is now released. </b>
+<b> Quickwit 0.4 is now released. Check out our [blog post](https://quickwit.io/blog/quickwit-0.4/) to discover the new features.</b>
 
 Quickwit is a cloud-native search engine for log management & analytics written in Rust. It is designed to be very cost-effective, easy to operate, and scale to petabytes.
 
