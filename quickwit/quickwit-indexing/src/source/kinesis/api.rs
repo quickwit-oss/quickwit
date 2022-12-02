@@ -467,6 +467,8 @@ mod kinesis_localstack_tests {
         Ok(())
     }
 
+    // Ignoring this test because the localstack implementation of Kinesis is bogus.
+    #[ignore]
     #[tokio::test]
     async fn test_list_streams() -> anyhow::Result<()> {
         let kinesis_client = get_localstack_client()?;
