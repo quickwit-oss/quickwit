@@ -44,14 +44,14 @@ Quickwit is a cloud-native search engine for log management & analytics written 
 - Cloud-scale: K8s-native, decoupled compute & storage
 - Sub-second full-text search on object storage (AWS S3, Azure...)
 - Sleep like a log: all your indexed data is safely stored on object storage
-- Ingest & Aggregation API Elasticsearch compatible
 - Search stream API for full-text search in ClickHouse
 - Multi-tenancy
 - Add and remove nodes in seconds
 - Distributed search
 - Distributed indexing with Kafka
-- Native support for Kafka & Kinesis with exactly-once semantics
+- Index with exactly-once semantics with Kafka / Kinesis
 - Schemaless or strict schema indexing
+- Ingest & Aggregation API Elasticsearch compatible
 - Works out of the box with sensible defaults
 - Lightweight Embedded UI
 
