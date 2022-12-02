@@ -15,7 +15,7 @@
 </p>
 
 <h3 align="center">
-🔍 Search more with less
+Search more with less
 </h3>
 
 <h4 align="center">The new way to manage your logs at any scale.
@@ -44,14 +44,14 @@ Quickwit is a cloud-native search engine for log management & analytics written 
 - Cloud-scale: K8s-native, decoupled compute & storage
 - Sub-second full-text search on object storage (AWS S3, Azure...)
 - Sleep like a log: all your indexed data is safely stored on object storage
-- Search stream API for full-text search in ClickHouse
-- Multi-tenancy
-- Add and remove nodes in seconds
 - Distributed search
 - Distributed indexing with Kafka
-- Index with exactly-once semantics with Kafka / Kinesis
 - Schemaless or strict schema indexing
+- Multi-tenancy
+- Add and remove nodes in seconds
+- Index with exactly-once semantics with Kafka / Kinesis
 - Ingest & Aggregation API Elasticsearch compatible
+- Search stream API for full-text search in ClickHouse
 - Works out of the box with sensible defaults
 - Lightweight Embedded UI
 
@@ -89,7 +89,7 @@ curl -L https://install.quickwit.io | sh
 
 You can now move this executable directory wherever sensible for your environment and possibly add it to your `PATH` environment.
 
-Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstart) to do amazing things, like [Creating your first index](https://quickwit.io/docs/get-started/quickstart#create-your-first-index) or [Adding some documents](https://quickwit.io/docs/get-started/quickstart#lets-add-some-documents), or take a glance at our full [Installation guide](https://quickwit.io/docs/get-started/installation)!
+Take a look at our [Quick Start](https://quickwit.io/docs/get-started/quickstart) to do amazing things, like [Creating your first index](https://quickwit.io/docs/get-started/quickstart#create-your-first-index) or [Adding some documents](https://quickwit.io/docs/get-started/quickstart#lets-add-some-documents), or take a glance at our full [Installation guide](https://quickwit.io/docs/get-started/installation)!
 
 # 📚 Tutorials
 
