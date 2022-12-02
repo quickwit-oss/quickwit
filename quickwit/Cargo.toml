@@ -109,6 +109,7 @@ rdkafka = { version = "0.28", default-features = false, features = [
   "libz",
   "ssl",
   "cmake-build",
+  "gssapi-vendored",
 ] }
 regex = "1.7.0"
 reqwest = { version = "0.11", default-features = false, features = [
@@ -205,3 +206,7 @@ tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.
 encoding_rs = "=0.8.29"
+
+[patch.crates-io]
+sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }
+
