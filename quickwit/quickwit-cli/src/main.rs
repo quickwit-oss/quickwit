@@ -119,7 +119,10 @@ async fn main() -> anyhow::Result<()> {
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
     let build_info = quickwit_build_info();
-    let version_text = format!("{} ({} {})", build_info.version, build_info.commit_short_hash, build_info.build_date);
+    let version_text = format!(
+        "{} ({} {})",
+        build_info.version, build_info.commit_short_hash, build_info.build_date
+    );
 
     let app = build_cli()
         .about(about_text.as_str())

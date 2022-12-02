@@ -103,11 +103,10 @@ fn last_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
     // That's iterating backward
     let mut full_it = db.full_iterator_cf(cf, IteratorMode::End);
     match full_it.next() {
-        Some(Ok((key, _))) => {
+        Some((key, _)) => {
             let position = Position::try_from(&*key)?;
             Ok(Some(position))
         }
-        Some(Err(error)) => Err(error.into()),
         None => Ok(None),
     }
 }
@@ -264,7 +263,7 @@ impl Queues {
         let mut first_key_opt: Option<u64> = None;
         let size_limit = num_bytes_limit.unwrap_or(FETCH_PAYLOAD_LIMIT);
         for kp_res in full_it {
-            let (key, payload) = kp_res?;
+            let (key, payload) = kp_res;
             let position = Position::try_from(&*key)?;
             if first_key_opt.is_none() {
                 first_key_opt = Some(position.into());
@@ -288,7 +287,7 @@ impl Queues {
         let mut num_bytes = 0;
         let mut first_key_opt: Option<u64> = None;
         for kp_res in full_it {
-            let (key, payload) = kp_res?;
+            let (key, payload) = kp_res;
             let position = Position::try_from(&*key)?;
             if first_key_opt.is_none() {
                 first_key_opt = Some(position.into());

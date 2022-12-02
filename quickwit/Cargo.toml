@@ -116,7 +116,7 @@ reqwest = { version = "0.11", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-rocksdb = { version = "0.19", features = [], default-features = false }
+rocksdb = { version = "0.18", features = [], default-features = false }
 rusoto_core = { version = "0.48", default-features = false, features = [
   "rustls",
 ] }
