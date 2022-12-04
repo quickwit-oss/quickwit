@@ -7,6 +7,11 @@ icon_url: /img/tutorials/helm-otel-k8s-tutorial-illustation.jpg
 
 This guide will help you to unlock log search on your k8s cluster. We will first deploy Quickwit and OTEL collectors with Helm and then see how to index and search them.
 
+:::warning
+
+This tutorial uses Quickwit [Ingest API](/docs/reference/rest-api#ingest-data-into-an-index) which is not yet production ready and the OTEL gRPC endpoint which is currently experimental.
+
+:::
 
 ## Prerequisites
 
