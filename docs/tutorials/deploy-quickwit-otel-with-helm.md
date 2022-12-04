@@ -1,7 +1,7 @@
 ---
-title: Deploy Quickwit with Helm and search your kubernetes logs
+title: Deploy Quickwit with Helm and search your k8s logs
 description: Deploy Quickwit and OTEL collectors with Helm and search your kubernetes logs.
-tags: [k8s, helm, deployment]
+tags: [k8s, helm]
 icon_url: /img/tutorials/helm-otel-k8s-tutorial-illustation.jpg
 ---
 
