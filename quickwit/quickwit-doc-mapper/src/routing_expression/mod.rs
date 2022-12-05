@@ -26,7 +26,8 @@ use serde_json::Value as JsonValue;
 use siphasher::sip::SipHasher;
 
 pub trait RoutingExprContext {
-    fn hash_attribute<H: Hasher>(&self, attr_name: &str, hasher: &mut H);
+    fn hash_attribute<H: Hasher, F>(&self, attr_name: &str, hasher: &mut H, tranform: &F)
+    where F: Fn(&JsonValue) -> JsonValue;
 }
 
 /// This is a bit overkill but this function has the merit of
@@ -70,10 +71,11 @@ fn hash_json_val<H: Hasher>(json_val: &JsonValue, hasher: &mut H) {
 }
 
 impl RoutingExprContext for serde_json::Map<String, JsonValue> {
-    fn hash_attribute<H: Hasher>(&self, attr_name: &str, hasher: &mut H) {
+    fn hash_attribute<H: Hasher, F>(&self, attr_name: &str, hasher: &mut H, transform: &F)
+    where F: Fn(&JsonValue) -> JsonValue {
         if let Some(json_val) = self.get(attr_name) {
             hasher.write_u8(1u8);
-            hash_json_val(json_val, hasher);
+            hash_json_val(&transform(json_val), hasher);
         } else {
             hasher.write_u8(0u8);
         }
@@ -139,7 +141,8 @@ impl Display for RoutingExpr {
 enum InnerRoutingExpr {
     Field(String),
     Composite(Vec<InnerRoutingExpr>),
-    // TODO Enrich me! Map / Modulo
+    Modulo(String, u64),
+    // TODO Enrich me! Map / ...
 }
 
 impl InnerRoutingExpr {
@@ -147,13 +150,27 @@ impl InnerRoutingExpr {
         match self {
             InnerRoutingExpr::Field(field_name) => {
                 ExprType::Field.hash(hasher);
-                ctx.hash_attribute(field_name, hasher);
+                ctx.hash_attribute(field_name, hasher, &Clone::clone);
             }
             InnerRoutingExpr::Composite(children) => {
                 ExprType::Composite.hash(hasher);
                 for child in children {
                     child.eval_hash(ctx, hasher);
                 }
+            }
+            InnerRoutingExpr::Modulo(field_name, modulo) => {
+                ExprType::Modulo.hash(hasher);
+                ctx.hash_attribute(field_name, hasher, &|value| {
+                    if let Some(unsigned) = value.as_u64() {
+                        unsigned.rem_euclid(*modulo).into()
+                    } else if let Some(signed) = value.as_i64() {
+                        signed.rem_euclid(*modulo as i64).into()
+                    } else if let Some(float) = value.as_f64() {
+                        float.rem_euclid(*modulo as f64).into()
+                    } else {
+                        value.clone()
+                    }
+                })
             }
         }
     }
@@ -167,6 +184,8 @@ impl Hash for InnerRoutingExpr {
         match self {
             InnerRoutingExpr::Field(field_name) => {
                 ExprType::Field.hash(hasher);
+                // TODO is it okay to write_usize? The result is probably platform dependant, if a
+                // node is 32b, it might not agree with 64b nodes.
                 hasher.write_usize(field_name.len());
                 hasher.write(field_name.as_bytes());
             }
@@ -175,6 +194,14 @@ impl Hash for InnerRoutingExpr {
                 for child in children {
                     child.hash(hasher);
                 }
+            }
+            InnerRoutingExpr::Modulo(field_name, modulo) => {
+                ExprType::Modulo.hash(hasher);
+                // TODO is it okay to write_usize? The result is probably platform dependant, if a
+                // node is 32b, it might not agree with 64b nodes.
+                hasher.write_usize(field_name.len());
+                hasher.write(field_name.as_bytes());
+                hasher.write_u64(*modulo)
             }
         }
     }
@@ -209,20 +236,31 @@ impl FromStr for InnerRoutingExpr {
 }
 
 fn routing_expression_parse_single_elem(expr_dsl_str: &str) -> anyhow::Result<InnerRoutingExpr> {
-    let expr_dsl_str = expr_dsl_str.trim();
+    let validate_field_name = |field_name: &str| {
+        if !field_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            anyhow::bail!("'{field_name}' is not a valid fieldname");
+        }
+        if field_name.is_empty() {
+            anyhow::bail!("empty fieldname");
+        }
+        Ok(())
+    };
 
-    let field_name = expr_dsl_str;
-    if !field_name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
-        anyhow::bail!("'{field_name}' is not a valid fieldname");
-    }
-    if field_name.is_empty() {
-        anyhow::bail!("empty fieldname");
-    }
+    if let Some((field_name, modulo)) = expr_dsl_str.split_once('%') {
+        let field_name = field_name.trim();
+        validate_field_name(field_name)?;
+        let modulo = modulo.trim().parse()?;
 
-    Ok(InnerRoutingExpr::Field(field_name.to_string()))
+        Ok(InnerRoutingExpr::Modulo(field_name.to_string(), modulo))
+    } else {
+        let field_name = expr_dsl_str.trim();
+        validate_field_name(field_name)?;
+
+        Ok(InnerRoutingExpr::Field(field_name.to_string()))
+    }
 }
 
 // The display implementation should be consistent with `FromString`.
@@ -238,9 +276,11 @@ impl Display for InnerRoutingExpr {
                 }
                 children[0].fmt(f)?;
                 for child in &children[1..] {
-                    f.write_str(",")?;
-                    child.fmt(f)?;
+                    write!(f, ",{child}")?;
                 }
+            }
+            InnerRoutingExpr::Modulo(field, modulo) => {
+                write!(f, "{}%{}", field, modulo)?;
             }
         }
         Ok(())
@@ -252,6 +292,7 @@ impl Display for InnerRoutingExpr {
 enum ExprType {
     Field,
     Composite,
+    Modulo,
 }
 
 #[cfg(test)]
@@ -292,14 +333,23 @@ mod tests {
     }
 
     #[test]
+    fn test_routing_expr_single_field_modulo() {
+        let routing_expr = deser_util("tenant_id%16");
+        assert_eq!(
+            routing_expr,
+            InnerRoutingExpr::Modulo("tenant_id".to_owned(), 16)
+        );
+    }
+
+    #[test]
     fn test_routing_expr_multiple_field() {
-        let routing_expr = deser_util("tenant_id,app_id");
+        let routing_expr = deser_util("tenant_id,app_id%4");
 
         assert_eq!(
             routing_expr,
             InnerRoutingExpr::Composite(vec![
                 InnerRoutingExpr::Field("tenant_id".to_owned()),
-                InnerRoutingExpr::Field("app_id".to_owned()),
+                InnerRoutingExpr::Modulo("app_id".to_owned(), 4),
             ])
         );
     }
@@ -334,5 +384,22 @@ mod tests {
         let routing_expr = RoutingExpr::new("tenant_id").unwrap();
         let ctx: serde_json::Map<String, JsonValue> = Default::default();
         assert_eq!(routing_expr.eval_hash(&ctx), 9054185009885066538);
+    }
+
+    #[test]
+    fn test_routing_expr_uses_modulo() {
+        let routing_expr = RoutingExpr::new("tenant_id%4").unwrap();
+        let ctx: serde_json::Map<String, JsonValue> =
+            serde_json::from_str(r#"{"tenant_id": 1}"#).unwrap();
+        let ctx2: serde_json::Map<String, JsonValue> =
+            serde_json::from_str(r#"{"tenant_id": 5}"#).unwrap();
+        let ctx3: serde_json::Map<String, JsonValue> =
+            serde_json::from_str(r#"{"tenant_id": -3}"#).unwrap();
+        let ctx4: serde_json::Map<String, JsonValue> =
+            serde_json::from_str(r#"{"tenant_id": 4}"#).unwrap();
+
+        assert_eq!(routing_expr.eval_hash(&ctx), routing_expr.eval_hash(&ctx2));
+        assert_eq!(routing_expr.eval_hash(&ctx), routing_expr.eval_hash(&ctx3));
+        assert_ne!(routing_expr.eval_hash(&ctx), routing_expr.eval_hash(&ctx4));
     }
 }
