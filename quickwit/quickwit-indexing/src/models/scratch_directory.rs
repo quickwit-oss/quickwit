@@ -19,8 +19,15 @@
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::{fmt, io};
+
+use anyhow::Context;
+use quickwit_common::ignore_error_kind;
+use tokio::fs;
+
+static SCRATCH: &str = "scratch";
+
 enum ScratchDirectoryType {
     Path(PathBuf),
     TempDir(tempfile::TempDir),
@@ -57,6 +64,32 @@ struct InnerScratchDirectory {
 }
 
 impl ScratchDirectory {
+    pub async fn create_in_dir<P: AsRef<Path>>(dir_path: P) -> anyhow::Result<Self> {
+        let root_dir = dir_path.as_ref().to_path_buf();
+
+        // Delete if exists and recreate scratch directory.
+        let directory_path = root_dir.join(SCRATCH);
+        fs::create_dir_all(&directory_path).await?;
+
+        ignore_error_kind!(
+            io::ErrorKind::NotFound,
+            fs::remove_dir_all(&directory_path).await
+        )
+        .with_context(|| {
+            format!(
+                "Failed to empty scratch directory `{}`.",
+                directory_path.display(),
+            )
+        })?;
+        fs::create_dir(&directory_path).await.with_context(|| {
+            format!(
+                "Failed to create scratch directory `{}`. ",
+                directory_path.display(),
+            )
+        })?;
+        Ok(Self::new_in_dir(directory_path))
+    }
+
     /// Creates a new ScratchDirectory in an existing directory.
     pub fn new_in_dir(dir_path: PathBuf) -> ScratchDirectory {
         let inner = InnerScratchDirectory {
@@ -68,17 +101,18 @@ impl ScratchDirectory {
         }
     }
 
+    #[cfg(any(test, feature = "testsuite"))]
     /// Creates a new ScratchDirectory in an existing directory.
     /// The directory location will depend on the OS settings.
-    pub fn for_test() -> io::Result<ScratchDirectory> {
-        let tempdir = tempfile::tempdir()?;
+    pub fn for_test() -> ScratchDirectory {
+        let tempdir = tempfile::tempdir().unwrap();
         let inner = InnerScratchDirectory {
             _parent: None,
             dir: ScratchDirectoryType::TempDir(tempdir),
         };
-        Ok(ScratchDirectory {
+        ScratchDirectory {
             inner: Arc::new(inner),
-        })
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -104,8 +138,24 @@ impl ScratchDirectory {
             inner: Arc::new(inner),
         })
     }
+
+    pub fn downgrade(&self) -> WeakScratchDirectory {
+        WeakScratchDirectory {
+            inner: Arc::downgrade(&self.inner),
+        }
+    }
 }
 
+/// A weak reference to an [`InnerScratchDirectory`].
+pub struct WeakScratchDirectory {
+    inner: Weak<InnerScratchDirectory>,
+}
+
+impl WeakScratchDirectory {
+    pub fn upgrade(&self) -> Option<ScratchDirectory> {
+        self.inner.upgrade().map(|inner| ScratchDirectory { inner })
+    }
+}
 #[cfg(test)]
 mod tests {
     use std::mem;
@@ -114,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_scratch_directory() -> io::Result<()> {
-        let parent = ScratchDirectory::for_test()?;
+        let parent = ScratchDirectory::for_test();
         let parent_path = parent.path().to_path_buf();
 
         let child = parent.named_temp_child("child-")?;
@@ -137,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_scratch_directory_remove_content() -> io::Result<()> {
-        let parent = ScratchDirectory::for_test()?;
+        let parent = ScratchDirectory::for_test();
         let parent_path = parent.path().to_path_buf();
         std::fs::write(parent.path().join("hello.txt"), b"hello")?;
         assert!(parent_path.exists());

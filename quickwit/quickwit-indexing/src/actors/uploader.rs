@@ -442,7 +442,7 @@ mod tests {
             4,
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
-        let split_scratch_directory = ScratchDirectory::for_test()?;
+        let split_scratch_directory = ScratchDirectory::for_test();
         let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
             source_id: "test-source".to_string(),
             source_delta: SourceCheckpointDelta::from(3..15),
@@ -543,8 +543,8 @@ mod tests {
             4,
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
-        let split_scratch_directory_1 = ScratchDirectory::for_test()?;
-        let split_scratch_directory_2 = ScratchDirectory::for_test()?;
+        let split_scratch_directory_1 = ScratchDirectory::for_test();
+        let split_scratch_directory_2 = ScratchDirectory::for_test();
         let packaged_split_1 = PackagedSplit {
             split_attrs: SplitAttrs {
                 split_id: "test-split-1".to_string(),
@@ -670,7 +670,7 @@ mod tests {
             4,
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
-        let split_scratch_directory = ScratchDirectory::for_test()?;
+        let split_scratch_directory = ScratchDirectory::for_test();
         let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
             source_id: "test-source".to_string(),
             source_delta: SourceCheckpointDelta::from(3..15),

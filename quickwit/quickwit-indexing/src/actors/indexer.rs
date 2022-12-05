@@ -44,8 +44,8 @@ use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
 use crate::models::{
-    CommitTrigger, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingDirectory,
-    IndexingPipelineId, NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock,
+    CommitTrigger, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingPipelineId,
+    NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, ScratchDirectory,
 };
 
 #[derive(Debug)]
@@ -69,7 +69,7 @@ pub struct IndexerCounters {
 struct IndexerState {
     pipeline_id: IndexingPipelineId,
     metastore: Arc<dyn Metastore>,
-    indexing_directory: IndexingDirectory,
+    indexing_directory: ScratchDirectory,
     indexing_settings: IndexingSettings,
     publish_lock: PublishLock,
     schema: Schema,
@@ -97,7 +97,7 @@ impl IndexerState {
             self.pipeline_id.clone(),
             partition_id,
             last_delete_opstamp,
-            self.indexing_directory.scratch_directory().clone(),
+            self.indexing_directory.clone(),
             index_builder,
             io_controls,
         )?;
@@ -373,7 +373,7 @@ impl Indexer {
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<dyn DocMapper>,
         metastore: Arc<dyn Metastore>,
-        indexing_directory: IndexingDirectory,
+        indexing_directory: ScratchDirectory,
         indexing_settings: IndexingSettings,
         index_serializer_mailbox: Mailbox<IndexSerializer>,
     ) -> Self {
@@ -533,7 +533,7 @@ mod tests {
 
     use super::*;
     use crate::actors::indexer::{record_timestamp, IndexerCounters};
-    use crate::models::IndexingDirectory;
+    use crate::models::ScratchDirectory;
 
     #[test]
     fn test_record_timestamp() {
@@ -559,7 +559,7 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
         indexing_settings.sort_field = Some("timestamp".to_string());
@@ -697,7 +697,7 @@ mod tests {
         let last_delete_opstamp = 10;
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.resources.heap_size = Byte::from_bytes(5_000_000);
         let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
@@ -775,7 +775,7 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
@@ -864,7 +864,7 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
@@ -948,7 +948,7 @@ mod tests {
         let tenant_field = schema.get_field("tenant").unwrap();
         let body_field = schema.get_field("body").unwrap();
 
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (packager_mailbox, packager_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
@@ -1041,7 +1041,7 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MockMetastore::default();
@@ -1112,7 +1112,7 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MockMetastore::default();
