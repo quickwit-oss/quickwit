@@ -1067,7 +1067,7 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let mut metastore = MockMetastore::default();
         metastore
