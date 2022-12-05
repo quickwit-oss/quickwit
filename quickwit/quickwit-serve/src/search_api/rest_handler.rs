@@ -17,16 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::{Infallible, TryFrom};
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
-use quickwit_doc_mapper::{SortByField, SortOrder};
-use quickwit_proto::{OutputFormat, ServiceError, SortOrder as ProtoSortOrder};
+use quickwit_proto::{OutputFormat, ServiceError, SortOrder};
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer};
+use serde_json::Value as JsonValue;
 use tracing::info;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
@@ -34,10 +34,31 @@ use warp::{reply, Filter, Rejection, Reply};
 
 use crate::{with_arg, Format};
 
+#[derive(Debug, Eq, PartialEq, Deserialize)]
+struct SortByField {
+    /// Name of the field to sort by.
+    pub field_name: String,
+    /// Order to sort by. A usual top-k search implies a descending order.
+    pub order: SortOrder,
+}
+
+impl From<String> for SortByField {
+    fn from(string: String) -> Self {
+        let (field_name, order) = if let Some(rest) = string.strip_prefix('+') {
+            (rest.trim().to_string(), SortOrder::Asc)
+        } else if let Some(rest) = string.strip_prefix('-') {
+            (rest.trim().to_string(), SortOrder::Desc)
+        } else {
+            (string.trim().to_string(), SortOrder::Asc)
+        };
+        SortByField { field_name, order }
+    }
+}
+
 fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
 where D: Deserializer<'de> {
     let string = String::deserialize(deserializer)?;
-    Ok(Some(string.into()))
+    Ok(Some(SortByField::from(string)))
 }
 
 fn default_max_hits() -> u64 {
@@ -77,13 +98,13 @@ where D: Deserializer<'de> {
 
 /// This struct represents the QueryString passed to
 /// the rest API.
-#[derive(Deserialize, Debug, Eq, PartialEq, Default)]
+#[derive(Debug, Default, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
     /// The aggregation JSON string.
-    pub aggs: Option<serde_json::Value>,
+    pub aggs: Option<JsonValue>,
     // Fields to search on
     #[serde(default)]
     #[serde(rename(deserialize = "search_field"))]
@@ -118,11 +139,10 @@ pub struct SearchRequestQueryString {
 
 fn get_proto_search_by(search_request: &SearchRequestQueryString) -> (Option<i32>, Option<String>) {
     if let Some(sort_by_field) = &search_request.sort_by_field {
-        let sort_order = match sort_by_field.order {
-            SortOrder::Asc => ProtoSortOrder::Asc as i32,
-            SortOrder::Desc => ProtoSortOrder::Desc as i32,
-        };
-        (Some(sort_order), Some(sort_by_field.field_name.to_string()))
+        (
+            Some(sort_by_field.order as i32),
+            Some(sort_by_field.field_name.clone()),
+        )
     } else {
         (None, None)
     }
@@ -145,7 +165,7 @@ async fn search_endpoint(
         start_offset: search_request.start_offset,
         aggregation_request: search_request
             .aggs
-            .map(|agg| serde_json::to_string(&agg).expect("could not serialize serde_json::Value")),
+            .map(|agg| serde_json::to_string(&agg).expect("could not serialize JsonValue")),
         sort_order,
         sort_by_field,
     };
@@ -173,11 +193,11 @@ async fn search(
     index_id: String,
     search_request: SearchRequestQueryString,
     search_service: Arc<dyn SearchService>,
-) -> Result<impl warp::Reply, Infallible> {
+) -> impl warp::Reply {
     info!(index_id = %index_id, request =? search_request, "search");
-    Ok(search_request
+    search_request
         .format
-        .make_rest_reply(search_endpoint(index_id, search_request, &*search_service).await))
+        .make_rest_reply(search_endpoint(index_id, search_request, &*search_service).await)
 }
 
 /// REST GET search handler.
@@ -188,7 +208,7 @@ pub fn search_get_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_get_filter()
         .and(with_arg(search_service))
-        .and_then(search)
+        .then(search)
 }
 
 /// REST POST search handler.
@@ -199,7 +219,7 @@ pub fn search_post_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_post_filter()
         .and(with_arg(search_service))
-        .and_then(search)
+        .then(search)
 }
 
 pub fn search_stream_handler(
@@ -207,7 +227,7 @@ pub fn search_stream_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_stream_filter()
         .and(with_arg(search_service))
-        .and_then(search_stream)
+        .then(search_stream)
 }
 
 /// This struct represents the search stream query passed to
@@ -311,7 +331,7 @@ async fn search_stream(
     index_id: String,
     request: SearchStreamRequestQueryString,
     search_service: Arc<dyn SearchService>,
-) -> Result<impl warp::Reply, Infallible> {
+) -> impl warp::Reply {
     info!(index_id=%index_id,request=?request, "search_stream");
     let content_type = match request.output_format {
         OutputFormat::ClickHouseRowBinary => "application/octet-stream",
@@ -319,8 +339,7 @@ async fn search_stream(
     };
     let reply =
         make_streaming_reply(search_stream_endpoint(index_id, request, &*search_service).await);
-    let reply_with_header = reply::with_header(reply, CONTENT_TYPE, content_type);
-    Ok(reply_with_header)
+    reply::with_header(reply, CONTENT_TYPE, content_type)
 }
 
 fn search_stream_filter(
@@ -336,7 +355,7 @@ mod tests {
     use bytes::Bytes;
     use mockall::predicate;
     use quickwit_search::{MockSearchService, SearchError};
-    use serde_json::json;
+    use serde_json::{json, Value as JsonValue};
 
     use super::*;
     use crate::recover_fn;
@@ -361,8 +380,8 @@ mod tests {
             errors: Vec::new(),
             aggregations: None,
         };
-        let search_response_json: serde_json::Value = serde_json::to_value(&search_response)?;
-        let expected_search_response_json: serde_json::Value = json!({
+        let search_response_json: JsonValue = serde_json::to_value(&search_response)?;
+        let expected_search_response_json: JsonValue = json!({
             "num_hits": 55,
             "hits": [],
             "elapsed_time_micros": 0,
@@ -564,7 +583,7 @@ mod tests {
             .reply(&search_handler(MockSearchService::new()))
             .await;
         assert_eq!(resp.status(), 400);
-        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let resp_json: JsonValue = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
             "error": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `snippet_fields`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
         });
@@ -605,7 +624,7 @@ mod tests {
             .reply(&rest_search_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let resp_json: JsonValue = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!({
             "num_hits": 10,
             "hits": [],
@@ -822,7 +841,7 @@ mod tests {
             .await;
 
         assert_eq!(resp.status(), 200);
-        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let resp_json: JsonValue = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!({
             "num_hits": 1,
             "hits": [{"title": "foo", "body": "foo bar baz"}],

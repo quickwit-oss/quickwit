@@ -165,11 +165,8 @@ impl DeleteTaskPipeline {
         );
         let (uploader_mailbox, uploader_supervisor_handler) = ctx.spawn_actor().supervise(uploader);
 
-        let doc_mapper = build_doc_mapper(
-            &index_config.doc_mapping,
-            &index_config.search_settings,
-            &index_config.indexing_settings,
-        )?;
+        let doc_mapper =
+            build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
         let tag_fields = doc_mapper.tag_named_fields()?;
         let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_supervisor_handler) = ctx.spawn_actor().supervise(packager);

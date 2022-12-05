@@ -167,6 +167,34 @@ impl<A: Actor> Mailbox<A> {
             .await
     }
 
+    /// Attempts to queue a message in the low priority channel of the mailbox.
+    ///
+    /// If sending the message would block, the method simply returns `TrySendError::Full(message)`.
+    pub fn try_send_message<M>(
+        &self,
+        message: M,
+    ) -> Result<oneshot::Receiver<A::Reply>, TrySendError<M>>
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let (envelope, response_rx) = wrap_in_envelope(message);
+        self.inner
+            .tx
+            .try_send_low_priority(envelope)
+            .map_err(|err| {
+                match err {
+                    TrySendError::Disconnected => TrySendError::Disconnected,
+                    TrySendError::Full(mut envelope) => {
+                        // We need to un pack the envelope.
+                        let message: M = envelope.message_typed().unwrap();
+                        TrySendError::Full(message)
+                    }
+                }
+            })?;
+        Ok(response_rx)
+    }
+
     /// Sends a message to the actor owning the associated inbox.
     ///
     /// If the actor experiences some backpressure, then
@@ -361,10 +389,11 @@ impl<A: Actor> WeakMailbox<A> {
 
 #[cfg(test)]
 mod tests {
+    use std::mem;
     use std::time::Duration;
 
     use super::*;
-    use crate::tests::PingReceiverActor;
+    use crate::tests::{Ping, PingReceiverActor};
     use crate::Universe;
 
     #[test]
@@ -491,5 +520,32 @@ mod tests {
         let elapsed = start.elapsed();
         assert!(elapsed.as_micros() > 1000);
         assert_eq!(backpressure_micros_counter.get(), 0);
+    }
+
+    #[test]
+    fn test_try_send() {
+        let (mailbox, _inbox) = super::create_mailbox::<PingReceiverActor>(
+            "hello".to_string(),
+            QueueCapacity::Bounded(1),
+        );
+        assert!(mailbox.try_send_message(Ping).is_ok());
+        assert!(matches!(
+            mailbox.try_send_message(Ping).unwrap_err(),
+            TrySendError::Full(Ping)
+        ));
+    }
+
+    #[test]
+    fn test_try_send_disconnect() {
+        let (mailbox, inbox) = super::create_mailbox::<PingReceiverActor>(
+            "hello".to_string(),
+            QueueCapacity::Bounded(1),
+        );
+        assert!(mailbox.try_send_message(Ping).is_ok());
+        mem::drop(inbox);
+        assert!(matches!(
+            mailbox.try_send_message(Ping).unwrap_err(),
+            TrySendError::Disconnected
+        ));
     }
 }

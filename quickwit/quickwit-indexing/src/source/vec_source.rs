@@ -27,6 +27,7 @@ use quickwit_config::VecSourceParams;
 use quickwit_metastore::checkpoint::{
     PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
+use serde_json::Value as JsonValue;
 use tracing::info;
 
 use crate::actors::DocProcessor;
@@ -113,7 +114,7 @@ impl Source for VecSource {
         format!("VecSource {{ source_id={} }}", self.source_id)
     }
 
-    fn observable_state(&self) -> serde_json::Value {
+    fn observable_state(&self) -> JsonValue {
         serde_json::json!({
             "next_item_idx": self.next_item_idx,
         })

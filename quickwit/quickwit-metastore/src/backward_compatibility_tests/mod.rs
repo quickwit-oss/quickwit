@@ -23,6 +23,7 @@ use std::path::Path;
 use anyhow::{bail, Context};
 use quickwit_config::TestableForRegression;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 
 use crate::file_backed_metastore::file_backed_index::FileBackedIndex;
 use crate::{IndexMetadata, SplitMetadata};
@@ -39,12 +40,12 @@ use crate::{IndexMetadata, SplitMetadata};
 /// You can just reuse the same versioned object in that case.
 /// ```
 /// enum MyResource {
-///     #[serde(rename="v1")]
-///     V1(MyResourceV1),
-///     #[serde(rename="v2")]
-///     V2(MyResourceV1) //< there was no change in this version.
+///     #[serde(rename="0.1")]
+///     V0_1(MyResourceV1),
+///     #[serde(rename="0.2")]
+///     V0_2(MyResourceV1) //< there was no change in this version.
 /// }
-const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "3";
+const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "0.4";
 
 /// This test makes sure that the resource is using the current `GLOBAL_QUICKWIT_RESOURCE_VERSION`.
 fn test_global_version<T: Serialize>(serializable: &T) -> anyhow::Result<()> {
@@ -96,9 +97,8 @@ where T: TestableForRegression {
 fn test_and_update_expected_files_single_case<T>(expected_path: &Path) -> anyhow::Result<bool>
 where for<'a> T: Serialize + Deserialize<'a> {
     let expected: T = deserialize_json_file(Path::new(&expected_path))?;
-    let expected_old_json_value: serde_json::Value =
-        deserialize_json_file(Path::new(&expected_path))?;
-    let expected_new_json_value: serde_json::Value = serde_json::to_value(&expected)?;
+    let expected_old_json_value: JsonValue = deserialize_json_file(Path::new(&expected_path))?;
+    let expected_new_json_value: JsonValue = serde_json::to_value(&expected)?;
     // We compare json Value, so we don't detect format change like a change in the field order.
     if expected_old_json_value == expected_new_json_value {
         // No modification

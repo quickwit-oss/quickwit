@@ -18,14 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::convert::Infallible;
 
 use bytes::Bytes;
 use quickwit_actors::Mailbox;
 use quickwit_ingest_api::{add_doc, IngestApiService};
 use quickwit_proto::ingest_api::{DocBatch, IngestRequest, TailRequest};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use thiserror::Error;
 use warp::{reject, Filter, Rejection};
 
@@ -85,7 +84,7 @@ pub fn ingest_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     ingest_filter()
         .and(require(ingest_api_mailbox_opt))
-        .and_then(ingest)
+        .then(ingest)
 }
 
 fn ingest_filter() -> impl Filter<Extract = (String, String), Error = Rejection> + Clone {
@@ -115,7 +114,7 @@ async fn ingest(
     index_id: String,
     payload: String,
     ingest_api_mailbox: Mailbox<IngestApiService>,
-) -> Result<impl warp::Reply, Infallible> {
+) -> impl warp::Reply {
     let mut doc_batch = DocBatch {
         index_id,
         ..Default::default()
@@ -130,7 +129,7 @@ async fn ingest(
         .ask_for_res(ingest_req)
         .await
         .map_err(FormatError::wrap);
-    Ok(Format::PrettyJson.make_rest_reply(ingest_resp))
+    Format::PrettyJson.make_rest_reply(ingest_resp)
 }
 
 pub fn tail_handler(
@@ -138,7 +137,7 @@ pub fn tail_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     tail_filter()
         .and(require(ingest_api_mailbox_opt))
-        .and_then(tail_endpoint)
+        .then(tail_endpoint)
 }
 
 fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
@@ -148,12 +147,12 @@ fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone 
 async fn tail_endpoint(
     index_id: String,
     ingest_api_service: Mailbox<IngestApiService>,
-) -> Result<impl warp::Reply, Infallible> {
+) -> impl warp::Reply {
     let tail_res = ingest_api_service
         .ask_for_res(TailRequest { index_id })
         .await
         .map_err(FormatError::wrap);
-    Ok(Format::PrettyJson.make_rest_reply(tail_res))
+    Format::PrettyJson.make_rest_reply(tail_res)
 }
 
 fn elastic_bulk_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
@@ -193,7 +192,7 @@ async fn elastic_ingest(
                 BulkApiError::InvalidSource("Expected source for the action.".to_string())
             })
             .and_then(|source| {
-                serde_json::from_str::<Value>(source)
+                serde_json::from_str::<JsonValue>(source)
                     .map_err(|err| BulkApiError::InvalidSource(err.to_string()))
             })?;
 

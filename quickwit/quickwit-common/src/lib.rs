@@ -126,6 +126,34 @@ macro_rules! ignore_error_kind {
     };
 }
 
+pub struct PrettySample<'a, T>(&'a [T], usize);
+
+impl<'a, T> PrettySample<'a, T> {
+    pub fn new(slice: &'a [T], sample_size: usize) -> Self {
+        Self(slice, sample_size)
+    }
+}
+
+impl<T> Debug for PrettySample<'_, T>
+where T: Debug
+{
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "[")?;
+        for (i, item) in self.0.iter().enumerate() {
+            if i == self.1 {
+                write!(formatter, ", ...")?;
+                break;
+            }
+            if i > 0 {
+                write!(formatter, ", ")?;
+            }
+            write!(formatter, "{:?}", item)?;
+        }
+        write!(formatter, "]")?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::ErrorKind;
@@ -162,5 +190,19 @@ mod tests {
             std::fs::remove_file("file-does-not-exist")
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_pretty_sample() {
+        assert_eq!(
+            format!("{:?}", PrettySample::<'_, usize>::new(&[], 2)),
+            "[]"
+        );
+        assert_eq!(format!("{:?}", PrettySample::new(&[1], 2)), "[1]");
+        assert_eq!(format!("{:?}", PrettySample::new(&[1, 2], 2)), "[1, 2]");
+        assert_eq!(
+            format!("{:?}", PrettySample::new(&[1, 2, 3], 2)),
+            "[1, 2, ...]"
+        );
     }
 }

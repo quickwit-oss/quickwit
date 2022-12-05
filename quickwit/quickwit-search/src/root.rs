@@ -152,14 +152,10 @@ pub async fn root_search(
         .await?
         .into_index_config();
 
-    let doc_mapper = build_doc_mapper(
-        &index_config.doc_mapping,
-        &index_config.search_settings,
-        &index_config.indexing_settings,
-    )
-    .map_err(|err| {
-        SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
-    })?;
+    let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
+        .map_err(|err| {
+            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+        })?;
 
     validate_request(search_request)?;
 
@@ -299,7 +295,7 @@ pub async fn root_search(
         let res: IntermediateAggregationResults =
             serde_json::from_str(&intermediate_aggregation_result)?;
         let req: Aggregations = serde_json::from_str(search_request.aggregation_request())?;
-        let res: AggregationResults = res.into_final_bucket_result(req)?;
+        let res: AggregationResults = res.into_final_bucket_result(req, &doc_mapper.schema())?;
         Some(serde_json::to_string(&res)?)
     } else {
         None

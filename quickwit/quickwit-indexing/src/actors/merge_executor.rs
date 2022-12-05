@@ -366,11 +366,20 @@ impl MergeExecutor {
         ctx.record_progress();
 
         // Compute merged split attributes.
-        let merged_segment = merged_index
-            .searchable_segments()?
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow!("Delete operation should output one segment."))?;
+        let merged_segment =
+            if let Some(segment) = merged_index.searchable_segments()?.into_iter().next() {
+                segment
+            } else {
+                info!(
+                    "All documents from split `{}` were deleted.",
+                    split.split_id()
+                );
+                self.metastore
+                    .mark_splits_for_deletion(&split.index_id, &[split.split_id()])
+                    .await?;
+                return Ok(None);
+            };
+
         let merged_segment_reader = SegmentReader::open(&merged_segment)?;
         let num_docs = merged_segment_reader.num_docs() as u64;
         let uncompressed_docs_size_in_bytes = (num_docs as f32
@@ -409,7 +418,7 @@ impl MergeExecutor {
                 num_docs,
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
-                num_merge_ops: max_merge_ops(&[split]),
+                num_merge_ops: split.num_merge_ops,
             },
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
@@ -487,6 +496,11 @@ impl MergeExecutor {
             return Ok(output_directory);
         }
 
+        // If after deletion there is no longer any document, don't try to merge.
+        if num_delete_tasks != 0 && segment_ids.is_empty() {
+            return Ok(output_directory);
+        }
+
         debug!(segment_ids=?segment_ids,"merging-segments");
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         index_writer.merge(&segment_ids).wait()?;
@@ -507,6 +521,7 @@ mod tests {
     use quickwit_common::split_file;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
+    use serde_json::Value as JsonValue;
     use tantivy::{Inventory, ReloadPolicy};
 
     use super::*;
@@ -531,15 +546,10 @@ mod tests {
                 input_formats:
                 - unix_timestamp
                 fast: true
+            timestamp_field: ts
         "#;
-        let indexing_settings_yaml = "timestamp_field: ts";
-        let test_sandbox = TestSandbox::create(
-            &pipeline_id.index_id,
-            doc_mapping_yaml,
-            indexing_settings_yaml,
-            &["body"],
-        )
-        .await?;
+        let test_sandbox =
+            TestSandbox::create(&pipeline_id.index_id, doc_mapping_yaml, "", &["body"]).await?;
         for split_id in 0..4 {
             let single_doc = std::iter::once(
                 serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713u64 + split_id }),
@@ -636,9 +646,9 @@ mod tests {
 
     async fn aux_test_delete_and_merge_executor(
         index_id: &str,
-        docs: Vec<serde_json::Value>,
+        docs: Vec<JsonValue>,
         delete_query: &str,
-        result_docs: Vec<serde_json::Value>,
+        result_docs: Vec<JsonValue>,
     ) -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let pipeline_id = IndexingPipelineId {
@@ -656,15 +666,9 @@ mod tests {
                 input_formats:
                 - unix_timestamp
                 fast: true
+            timestamp_field: ts
         "#;
-        let indexing_settings_yaml = "timestamp_field: ts";
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            indexing_settings_yaml,
-            &["body"],
-        )
-        .await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
         test_sandbox.add_documents(docs).await?;
         let metastore = test_sandbox.metastore();
         metastore
@@ -742,43 +746,55 @@ mod tests {
             .await;
 
         let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
-        assert_eq!(packager_msgs.len(), 1);
-        let split = &packager_msgs[0].splits[0];
-        assert_eq!(split.split_attrs.num_docs, result_docs.len() as u64);
-        assert_eq!(split.split_attrs.delete_opstamp, 1);
-        // Delete operations do not update the num_merge_ops value.
-        assert_eq!(split.split_attrs.num_merge_ops, 1);
-        assert_eq!(
-            split.split_attrs.uncompressed_docs_size_in_bytes,
-            expected_uncompressed_docs_size_in_bytes,
-        );
-        let reader = split
-            .index
-            .reader_builder()
-            .reload_policy(ReloadPolicy::Manual)
-            .try_into()?;
-        let searcher = reader.searcher();
-        assert_eq!(searcher.segment_readers().len(), 1);
+        if !result_docs.is_empty() {
+            assert_eq!(packager_msgs.len(), 1);
+            let split = &packager_msgs[0].splits[0];
+            assert_eq!(split.split_attrs.num_docs, result_docs.len() as u64);
+            assert_eq!(split.split_attrs.delete_opstamp, 1);
+            // Delete operations do not update the num_merge_ops value.
+            assert_eq!(split.split_attrs.num_merge_ops, 1);
+            assert_eq!(
+                split.split_attrs.uncompressed_docs_size_in_bytes,
+                expected_uncompressed_docs_size_in_bytes,
+            );
+            let reader = split
+                .index
+                .reader_builder()
+                .reload_policy(ReloadPolicy::Manual)
+                .try_into()?;
+            let searcher = reader.searcher();
+            assert_eq!(searcher.segment_readers().len(), 1);
 
-        let documents_left = searcher
-            .search(
-                &tantivy::query::AllQuery,
-                &tantivy::collector::TopDocs::with_limit(result_docs.len() + 1),
-            )?
-            .into_iter()
-            .map(|(_, doc_address)| {
-                let doc = searcher.doc(doc_address).unwrap();
-                let doc_json = searcher.schema().to_json(&doc);
-                serde_json::from_str(&doc_json).unwrap()
-            })
-            .collect::<Vec<serde_json::Value>>();
+            let documents_left = searcher
+                .search(
+                    &tantivy::query::AllQuery,
+                    &tantivy::collector::TopDocs::with_limit(result_docs.len() + 1),
+                )?
+                .into_iter()
+                .map(|(_, doc_address)| {
+                    let doc = searcher.doc(doc_address).unwrap();
+                    let doc_json = searcher.schema().to_json(&doc);
+                    serde_json::from_str(&doc_json).unwrap()
+                })
+                .collect::<Vec<JsonValue>>();
 
-        assert_eq!(documents_left.len(), result_docs.len());
-        for doc in &documents_left {
-            assert!(result_docs.contains(dbg!(doc)));
-        }
-        for doc in &result_docs {
-            assert!(documents_left.contains(doc));
+            assert_eq!(documents_left.len(), result_docs.len());
+            for doc in &documents_left {
+                assert!(result_docs.contains(dbg!(doc)));
+            }
+            for doc in &result_docs {
+                assert!(documents_left.contains(doc));
+            }
+        } else {
+            assert!(packager_msgs.is_empty());
+            let metastore = test_sandbox.metastore();
+            assert!(metastore
+                .list_all_splits(index_id)
+                .await?
+                .into_iter()
+                .all(
+                    |split| split.split_state == quickwit_metastore::SplitState::MarkedForDeletion
+                ));
         }
 
         Ok(())
@@ -813,6 +829,20 @@ mod tests {
                 serde_json::json!({"body": ["info"], "ts": ["2021-06-29T00:56:48Z"] }),
                 serde_json::json!({"body": ["info"], "ts": ["2021-06-29T00:56:49Z"] }),
             ],
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_delete_all() -> anyhow::Result<()> {
+        aux_test_delete_and_merge_executor(
+            "test-delete-all",
+            vec![
+                serde_json::json!({"body": "delete", "ts": 1634928208 }),
+                serde_json::json!({"body": "delete", "ts": 1634928209 }),
+            ],
+            "body:delete",
+            vec![],
         )
         .await
     }

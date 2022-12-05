@@ -29,13 +29,12 @@ use quickwit_config::{
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::file_backed_metastore::FileBackedMetastoreFactory;
-use quickwit_metastore::{
-    IndexMetadata, Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState,
-};
+use quickwit_metastore::{Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState};
 use quickwit_storage::{Storage, StorageUriResolver};
+use serde_json::Value as JsonValue;
 
 use crate::actors::IndexingService;
-use crate::models::{DetachPipeline, IndexingStatistics, SpawnPipeline};
+use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
 
 /// Creates a Test environment.
 ///
@@ -78,11 +77,8 @@ impl TestSandbox {
             .iter()
             .map(|search_field| search_field.to_string())
             .collect();
-        let doc_mapper = build_doc_mapper(
-            &index_config.doc_mapping,
-            &index_config.search_settings,
-            &index_config.indexing_settings,
-        )?;
+        let doc_mapper =
+            build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig::for_test()?;
         let storage_resolver = StorageUriResolver::for_test();
@@ -95,8 +91,7 @@ impl TestSandbox {
         let metastore = metastore_uri_resolver
             .resolve(&Uri::from_well_formed(METASTORE_URI))
             .await?;
-        let index_metadata = IndexMetadata::new(index_config);
-        metastore.create_index(index_metadata.clone()).await?;
+        metastore.create_index(index_config.clone()).await?;
         let storage = storage_resolver.resolve(&index_uri)?;
         let universe = Universe::new();
         let indexing_service_actor = IndexingService::new(
@@ -124,11 +119,11 @@ impl TestSandbox {
 
     /// Adds documents.
     ///
-    /// The documents are expected to be `serde_json::Value`.
+    /// The documents are expected to be `JsonValue`.
     /// They can be created using the `serde_json::json!` macro.
     pub async fn add_documents<I>(&self, split_docs: I) -> anyhow::Result<IndexingStatistics>
     where
-        I: IntoIterator<Item = serde_json::Value> + 'static,
+        I: IntoIterator<Item = JsonValue> + 'static,
         I::IntoIter: Send,
     {
         let docs: Vec<String> = split_docs
@@ -156,7 +151,7 @@ impl TestSandbox {
             .await?;
         let pipeline_handle = self
             .indexing_service
-            .ask_for_res(DetachPipeline { pipeline_id })
+            .ask_for_res(DetachIndexingPipeline { pipeline_id })
             .await?;
         let (_pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
         Ok(pipeline_statistics)
@@ -184,6 +179,11 @@ impl TestSandbox {
     /// Returns the doc mapper of the TestSandbox.
     pub fn doc_mapper(&self) -> Arc<dyn DocMapper> {
         self.doc_mapper.clone()
+    }
+
+    /// Returns the index ID.
+    pub fn index_id(&self) -> &str {
+        &self.index_id
     }
 }
 

@@ -34,7 +34,7 @@ use quickwit_metastore::checkpoint::{
 };
 use rusoto_core::Region;
 use rusoto_kinesis::KinesisClient;
-use serde_json::json;
+use serde_json::{json, Value as JsonValue};
 use tokio::sync::mpsc;
 use tokio::time;
 use tracing::{info, warn};
@@ -326,7 +326,7 @@ impl Source for KinesisSource {
         format!("KinesisSource{{source_id={}}}", self.source_id)
     }
 
-    fn observable_state(&self) -> serde_json::Value {
+    fn observable_state(&self) -> JsonValue {
         let shard_consumer_positions: Vec<(&ShardId, &str)> = self
             .state
             .shard_consumers

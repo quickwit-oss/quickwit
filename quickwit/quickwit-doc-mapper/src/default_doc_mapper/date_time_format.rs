@@ -100,6 +100,24 @@ impl std::hash::Hash for StrptimeParser {
     }
 }
 
+// `Strftime` format special characters.
+// These characters are taken from the parsing crate we use for compatibility.
+const STRFTIME_FORMAT_MARKERS: [&str; 36] = [
+    "%a", "%A", "%b", "%B", "%c", "%C", "%d", "%D", "%e", "%f", "%F", "%h", "%H", "%I", "%j", "%k",
+    "%l", "%m", "%M", "%n", "%p", "%P", "%r", "%R", "%S", "%t", "%T", "%U", "%w", "%W", "%x", "%X",
+    "%y", "%Y", "%z", "%Z",
+];
+
+// Checks if a format contains `strftime` special characters.
+fn is_strftime_formatting(format_str: &str) -> bool {
+    for marker in STRFTIME_FORMAT_MARKERS.iter() {
+        if format_str.contains(marker) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Specifies the datetime and unix timestamp formats to use when parsing date strings.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DateTimeInputFormat {
@@ -143,7 +161,15 @@ impl FromStr for DateTimeInputFormat {
             "rfc2822" => DateTimeInputFormat::RFC2822,
             "rfc3339" => DateTimeInputFormat::RCF3339,
             "unix_timestamp" => DateTimeInputFormat::Timestamp,
-            _ => DateTimeInputFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?),
+            _ => {
+                if !is_strftime_formatting(date_time_format_str) {
+                    return Err(format!(
+                        "Unknown input format: `{date_time_format_str}`. A custom date time \
+                         format must contain at least one `strftime` special characters."
+                    ));
+                }
+                DateTimeInputFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?)
+            }
         };
         Ok(date_time_format)
     }
@@ -214,7 +240,15 @@ impl FromStr for DateTimeOutputFormat {
             "unix_timestamp_secs" => DateTimeOutputFormat::TimestampSecs,
             "unix_timestamp_millis" => DateTimeOutputFormat::TimestampMillis,
             "unix_timestamp_micros" => DateTimeOutputFormat::TimestampMicros,
-            _ => DateTimeOutputFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?),
+            _ => {
+                if !is_strftime_formatting(date_time_format_str) {
+                    return Err(format!(
+                        "Unknown output format: `{date_time_format_str}`. A custom date time \
+                         format must contain at least one `strftime` special characters."
+                    ));
+                }
+                DateTimeOutputFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?)
+            }
         };
         Ok(date_time_format)
     }
@@ -322,5 +356,33 @@ mod tests {
             DateTimeOutputFormat::TimestampMicros,
         ];
         assert_eq!(date_time_formats, &expected_date_time_formats);
+    }
+
+    #[test]
+    fn test_fail_date_time_input_format_from_str_with_unknown_format() {
+        let formats = vec![
+            "test%",
+            "test-%v",
+            "test-%q",
+            "unix_timestamp_secs",
+            "unix_timestamp_seconds",
+        ];
+        for format in formats {
+            let error_str = DateTimeInputFormat::from_str(format)
+                .unwrap_err()
+                .to_string();
+            assert!(error_str.contains(&format!("Unknown input format: `{format}`.")));
+        }
+    }
+
+    #[test]
+    fn test_fail_date_time_output_format_from_str_with_unknown_format() {
+        let formats = vec!["test%", "test-%v", "test-%q", "unix_timestamp_seconds"];
+        for format in formats {
+            let error_str = DateTimeOutputFormat::from_str(format)
+                .unwrap_err()
+                .to_string();
+            assert!(error_str.contains(&format!("Unknown output format: `{format}`.")));
+        }
     }
 }

@@ -9,7 +9,7 @@ import TabItem from '@theme/TabItem';
 
 Before running Quickwit search instances on your servers, you will need to create indexes, add documents, and finally launch the server. In this quick start guide, we will install Quickwit and go through these steps one by one. All the Quickwit commands used in this guide are documented [in the CLI reference documentation](../reference/cli.md).
 
-## Install Quickwit using Quickwit installer 
+## Install Quickwit using Quickwit installer
 
 The Quickwit installer automatically picks the correct binary archive for your environment and then downloads and unpacks it in your working directory.
 This method works only for [some OS/architectures](installation.md#download), and you will also need to install some [external dependencies](installation.md#note-on-external-dependencies).
@@ -36,7 +36,7 @@ docker run quickwit/quickwit --version
 
 ## Create your first index
 
-Before adding documents to Quickwit, you need to create an index configured with a JSON `config file`. This config file notably lets you define how to map your input documents to your index fields and whether these fields should be stored and indexed. See the [index config documentation](../configuration/index-config.md).
+Before adding documents to Quickwit, you need to create an index configured with a YAML config file. This config file notably lets you define how to map your input documents to your index fields and whether these fields should be stored and indexed. See the [index config documentation](../configuration/index-config.md).
 
 Let's create an index configured to receive Wikipedia articles.
 
@@ -50,7 +50,7 @@ The index config defines three text fields: `title`, `body` and `url`. It also s
 And here is the complete config:
 
 ```yaml title="wikipedia-index-config.yaml"
-version: 0
+version: 0.4
 index_id: wikipedia
 doc_mapping:
   field_mappings:
@@ -97,7 +97,7 @@ docker run -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/wikipedia-index-config.ya
 
 </Tabs>
 
-Check that a directory `./qwdata/indexes/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../concepts/architecture.md#index).
+Check that a directory `./qwdata/indexes/wikipedia` has been created, Quickwit will write index files here and a `metastore.json` which contains the [index metadata](../concepts/architecture.md#index).
 You're now ready to fill the index.
 
 
@@ -166,7 +166,7 @@ Quickwit provides a search [REST API](../reference/rest-api.md) that can be star
 <TabItem value="cli" label="CLI">
 
 ```bash
-./quickwit run --service searcher
+./quickwit run --service searcher --service metastore
 ```
 
 </TabItem>
@@ -174,7 +174,7 @@ Quickwit provides a search [REST API](../reference/rest-api.md) that can be star
 <TabItem value="docker" label="Docker">
 
 ```bash
-docker run -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit run --service searcher
+docker run -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit run --service searcher --service metastore
 ```
 
 </TabItem>

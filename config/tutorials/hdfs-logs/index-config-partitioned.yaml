@@ -1,0 +1,47 @@
+#
+# Index config file for hdfs-logs dataset with partitioning configured.
+#
+
+version: 0.4
+
+index_id: hdfs-logs-partitioned
+
+doc_mapping:
+  field_mappings:
+    - name: timestamp
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
+      fast: true
+    - name: tenant_id
+      type: u64
+    - name: severity_text
+      type: text
+      tokenizer: raw
+    - name: body
+      type: text
+      tokenizer: default
+      record: position
+    - name: resource
+      type: json
+      tokenizer: raw
+  tag_fields: [tenant_id]
+  partition_key: tenant_id
+  max_num_partitions: 1000
+  timestamp_field: timestamp
+
+search_settings:
+  default_search_fields: [severity_text, body]
+
+indexing_settings:
+  commit_timeout_secs: 30
+  split_num_docs_target: 10000000
+  merge_policy:
+    type: "limit_merge"
+    merge_factor: 10
+    max_merge_ops: 3
+    maturation_period: 48 hours
+  resources:
+    max_merge_write_throughput: 100mb
