@@ -25,8 +25,8 @@ use rand::Rng;
 use tracing::{debug, warn};
 
 const DEFAULT_MAX_RETRY_ATTEMPTS: usize = 30;
-const DEFAULT_BASE_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 250 });
-const DEFAULT_MAX_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 20_000 });
+const DEFAULT_BASE_DELAY: Duration = Duration::from_millis(if cfg!(test) { 50 } else { 250 });
+const DEFAULT_MAX_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1_000 } else { 20_000 });
 
 pub trait Retryable {
     fn is_retryable(&self) -> bool {

@@ -11,7 +11,7 @@ import TabItem from '@theme/TabItem';
 [Vector](https://vector.dev/) is an amazing piece of software (in Rust obviously) and brings a new fresh wind in the observability space,
 it is well-known for collecting logs from every parts of your infrastructure, transform and aggregate them, and finally forward them to a sink.
 
-In this guide, we will to show you how to connect it to Quickwit.
+In this guide, we will show you how to connect it to Quickwit.
 
 ## Create an index for logs
 
@@ -25,16 +25,16 @@ Let's embrace the OpenTelemetry standard and create an index compatible with its
 
 version: 0.4
 
-index_id: otel-logs
+index_id: otel-log-v0
 
 doc_mapping:
   field_mappings:
     - name: timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
       fast: true
-    - name: name
-      type: text
-      tokenizer: default
     - name: severity
       type: text
       tokenizer: raw
@@ -47,11 +47,7 @@ doc_mapping:
       type: json
     - name: resource
       type: json
-
-indexing_settings:
   timestamp_field: timestamp
-  sort_field: timestamp
-  sort_order: desc
 
 search_settings:
   default_search_fields: [severity, body]
@@ -158,7 +154,7 @@ uri = "http://host.docker.internal:7280/api/v1/otel-logs/ingest"
 Now let's start Vector to start send logs to Quickwit.
 
 ```bash
-docker run -v $(pwd)/vector.toml:/etc/vector/vector.toml:ro -p 8383:8383 --add-host=host.docker.internal:host-gateway timberio/vector:0.21.2-distroless-libc
+docker run -v $(pwd)/vector.toml:/etc/vector/vector.toml:ro -p 8383:8383 --add-host=host.docker.internal:host-gateway timberio/vector:0.25.0-distroless-libc
 ```
 
 ## Search logs
