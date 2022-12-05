@@ -109,6 +109,20 @@ impl RoutingExpr {
             salted_hasher,
         })
     }
+
+    /// Evaluates the expression applied to the given
+    /// context and returns a u64 hash.
+    ///
+    /// Obviously this function is not perfectly injective.
+    pub fn eval_hash<Ctx: RoutingExprContext>(&self, ctx: &Ctx) -> u64 {
+        if let Some(inner) = self.inner_opt.as_ref() {
+            let mut hasher: SipHasher = self.salted_hasher;
+            inner.eval_hash(ctx, &mut hasher);
+            hasher.finish()
+        } else {
+            0u64
+        }
+    }
 }
 
 impl Display for RoutingExpr {
@@ -176,11 +190,39 @@ impl FromStr for InnerRoutingExpr {
     type Err = anyhow::Error;
 
     fn from_str(expr_dsl_str: &str) -> anyhow::Result<Self> {
+        let expr_dsl_str = expr_dsl_str.trim();
         if expr_dsl_str.is_empty() {
             return Ok(Default::default());
         }
-        Ok(InnerRoutingExpr::Field(expr_dsl_str.to_string()))
+
+        if expr_dsl_str.contains(',') {
+            Ok(InnerRoutingExpr::Composite(
+                expr_dsl_str
+                    .split(',')
+                    .map(routing_expression_parse_single_elem)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ))
+        } else {
+            routing_expression_parse_single_elem(expr_dsl_str)
+        }
     }
+}
+
+fn routing_expression_parse_single_elem(expr_dsl_str: &str) -> anyhow::Result<InnerRoutingExpr> {
+    let expr_dsl_str = expr_dsl_str.trim();
+
+    let field_name = expr_dsl_str;
+    if !field_name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        anyhow::bail!("'{field_name}' is not a valid fieldname");
+    }
+    if field_name.is_empty() {
+        anyhow::bail!("empty fieldname");
+    }
+
+    Ok(InnerRoutingExpr::Field(field_name.to_string()))
 }
 
 // The display implementation should be consistent with `FromString`.
@@ -188,15 +230,16 @@ impl Display for InnerRoutingExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
             InnerRoutingExpr::Field(field) => {
-                write!(f, "{}", field)?;
+                f.write_str(field)?;
             }
             InnerRoutingExpr::Composite(children) => {
                 if children.is_empty() {
                     return Ok(());
                 }
-                write!(f, "{}", &children[0])?;
+                children[0].fmt(f)?;
                 for child in &children[1..] {
-                    write!(f, ",{}", child)?;
+                    f.write_str(",")?;
+                    child.fmt(f)?;
                 }
             }
         }
@@ -209,22 +252,6 @@ impl Display for InnerRoutingExpr {
 enum ExprType {
     Field,
     Composite,
-}
-
-impl RoutingExpr {
-    /// Evaluates the expression applied to the given
-    /// context and returns a u64 hash.
-    ///
-    /// Obviously this function is not perfectly injective.
-    pub fn eval_hash<Ctx: RoutingExprContext>(&self, ctx: &Ctx) -> u64 {
-        if let Some(inner) = self.inner_opt.as_ref() {
-            let mut hasher: SipHasher = self.salted_hasher;
-            inner.eval_hash(ctx, &mut hasher);
-            hasher.finish()
-        } else {
-            0u64
-        }
-    }
 }
 
 #[cfg(test)]
@@ -258,8 +285,22 @@ mod tests {
     #[test]
     fn test_routing_expr_single_field() {
         let routing_expr = deser_util("tenant_id");
-        assert!(
-            matches!(routing_expr, InnerRoutingExpr::Field(attr_name) if attr_name == "tenant_id")
+        assert_eq!(
+            routing_expr,
+            InnerRoutingExpr::Field("tenant_id".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_routing_expr_multiple_field() {
+        let routing_expr = deser_util("tenant_id,app_id");
+
+        assert_eq!(
+            routing_expr,
+            InnerRoutingExpr::Composite(vec![
+                InnerRoutingExpr::Field("tenant_id".to_owned()),
+                InnerRoutingExpr::Field("app_id".to_owned()),
+            ])
         );
     }
 
