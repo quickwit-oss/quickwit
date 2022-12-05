@@ -64,13 +64,15 @@ struct InnerScratchDirectory {
 }
 
 impl ScratchDirectory {
+    /// Creates a new empty scratch directory located at the given path.
+    ///
+    /// Any existing scratch directory is deleted during this operation leaving
+    /// a blank directory.
     pub async fn create_in_dir<P: AsRef<Path>>(dir_path: P) -> anyhow::Result<Self> {
         let root_dir = dir_path.as_ref().to_path_buf();
+        let directory_path = root_dir.join(SCRATCH);
 
         // Delete if exists and recreate scratch directory.
-        let directory_path = root_dir.join(SCRATCH);
-        fs::create_dir_all(&directory_path).await?;
-
         ignore_error_kind!(
             io::ErrorKind::NotFound,
             fs::remove_dir_all(&directory_path).await
@@ -81,7 +83,7 @@ impl ScratchDirectory {
                 directory_path.display(),
             )
         })?;
-        fs::create_dir(&directory_path).await.with_context(|| {
+        fs::create_dir_all(&directory_path).await.with_context(|| {
             format!(
                 "Failed to create scratch directory `{}`. ",
                 directory_path.display(),
