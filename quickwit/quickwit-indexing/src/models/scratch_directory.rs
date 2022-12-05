@@ -158,6 +158,7 @@ impl WeakScratchDirectory {
         self.inner.upgrade().map(|inner| ScratchDirectory { inner })
     }
 }
+
 #[cfg(test)]
 mod tests {
     use std::mem;
