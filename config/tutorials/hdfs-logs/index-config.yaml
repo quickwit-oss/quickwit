@@ -2,14 +2,18 @@
 # Index config file for hdfs-logs dataset.
 #
 
-version: 0
+version: 0.4
 
 index_id: hdfs-logs
 
 doc_mapping:
   field_mappings:
     - name: timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: tenant_id
       type: u64
@@ -21,14 +25,9 @@ doc_mapping:
       tokenizer: default
       record: position
     - name: resource
-      type: object
-      field_mappings:
-        - name: service
-          type: text
-          tokenizer: raw
+      type: json
+      tokenizer: raw
   tag_fields: [tenant_id]
-
-indexing_settings:
   timestamp_field: timestamp
 
 search_settings:

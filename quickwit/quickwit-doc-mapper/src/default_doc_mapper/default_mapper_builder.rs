@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use super::FieldMappingEntry;
 use crate::default_doc_mapper::default_mapper::Mode;
 use crate::default_doc_mapper::QuickwitJsonOptions;
-use crate::{DefaultDocMapper, SortByConfig};
+use crate::DefaultDocMapper;
 
 /// DefaultDocMapperBuilder is here
 /// to create a valid DocMapper.
@@ -46,10 +46,6 @@ pub struct DefaultDocMapperBuilder {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp_field: Option<String>,
-    /// Specifies the name of the sort field and the sort order.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_by: Option<SortByConfig>,
     /// Describes which fields are indexed and how.
     #[serde(default)]
     pub field_mappings: Vec<FieldMappingEntry>,
@@ -59,10 +55,10 @@ pub struct DefaultDocMapperBuilder {
     /// The partition key is a DSL used to route documents
     /// into specific splits.
     #[serde(default)]
-    pub partition_key: String,
+    pub partition_key: Option<String>,
     /// Maximum number of partitions.
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
-    pub max_num_partitions: NonZeroU64,
+    pub max_num_partitions: NonZeroU32,
     /// Defines the indexing mode.
     #[serde(default)]
     pub mode: ModeType,
@@ -133,7 +129,6 @@ mod tests {
         assert!(default_mapper_builder.tag_fields.is_empty());
         assert_eq!(default_mapper_builder.mode, ModeType::Lenient);
         assert!(default_mapper_builder.dynamic_mapping.is_none());
-        assert!(default_mapper_builder.sort_by.is_none());
         assert_eq!(default_mapper_builder.store_source, false);
         assert!(default_mapper_builder.timestamp_field.is_none());
     }

@@ -27,11 +27,11 @@ use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
     BytesOptions, Cardinality, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions,
-    NumericOptions, SchemaBuilder, TextOptions, Value,
+    NumericOptions, SchemaBuilder, TextOptions, Value as TantivyValue,
 };
 use tantivy::{DateOptions, Document};
+use tracing::warn;
 
-use super::date_time_parsing::format_timestamp;
 use super::date_time_type::QuickwitDateTimeOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
@@ -39,17 +39,7 @@ use crate::default_doc_mapper::field_mapping_entry::{
 use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
 use crate::{DocParsingError, FieldMappingEntry, ModeType};
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum JsonType {
-    Null,
-    Bool,
-    Array,
-    Number,
-    String,
-    Object,
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum LeafType {
     Text(QuickwitTextOptions),
     I64(QuickwitNumericOptions),
@@ -63,18 +53,6 @@ pub enum LeafType {
 }
 
 impl LeafType {
-    fn json_type(&self) -> JsonType {
-        match self {
-            LeafType::Text(_) => JsonType::String,
-            LeafType::I64(_) | LeafType::U64(_) | LeafType::F64(_) => JsonType::Number,
-            LeafType::Bool(_) => JsonType::Bool,
-            LeafType::IpAddr(_) => JsonType::String,
-            LeafType::DateTime(_) => JsonType::String,
-            LeafType::Bytes(_) => JsonType::String,
-            LeafType::Json(_) => JsonType::Object,
-        }
-    }
-
     pub fn is_single_value_fast_field(&self) -> bool {
         match self {
             LeafType::Text(_) => false, // Text is always multivalue
@@ -89,11 +67,11 @@ impl LeafType {
         }
     }
 
-    fn value_from_json(&self, json_val: serde_json::Value) -> Result<Value, String> {
+    fn value_from_json(&self, json_val: JsonValue) -> Result<TantivyValue, String> {
         match self {
             LeafType::Text(_) => {
                 if let JsonValue::String(text) = json_val {
-                    Ok(Value::Str(text))
+                    Ok(TantivyValue::Str(text))
                 } else {
                     Err(format!("Expected JSON string, got `{}`.", json_val))
                 }
@@ -103,7 +81,7 @@ impl LeafType {
             LeafType::F64(_) => f64::from_json(json_val),
             LeafType::Bool(_) => {
                 if let JsonValue::Bool(val) = json_val {
-                    Ok(Value::Bool(val))
+                    Ok(TantivyValue::Bool(val))
                 } else {
                     Err(format!("Expected bool value, got `{}`.", json_val))
                 }
@@ -113,7 +91,7 @@ impl LeafType {
                     let ipv6_value = IpAddr::from_str(ip_address.as_str())
                         .map_err(|err| format!("Failed to parse IP address `{ip_address}`: {err}"))?
                         .into_ipv6_addr();
-                    Ok(Value::IpAddr(ipv6_value))
+                    Ok(TantivyValue::IpAddr(ipv6_value))
                 } else {
                     Err(format!("Expected string value, got `{}`.", json_val))
                 }
@@ -128,11 +106,11 @@ impl LeafType {
                 let payload = base64::decode(&base64_str).map_err(|base64_decode_err| {
                     format!("Expected Base64 string, got `{base64_str}`: {base64_decode_err}")
                 })?;
-                Ok(Value::Bytes(payload))
+                Ok(TantivyValue::Bytes(payload))
             }
             LeafType::Json(_) => {
                 if let JsonValue::Object(json_obj) = json_val {
-                    Ok(Value::JsonObject(json_obj))
+                    Ok(TantivyValue::JsonObject(json_obj))
                 } else {
                     Err(format!("Expected JSON object  got `{}`.", json_val))
                 }
@@ -151,7 +129,7 @@ pub(crate) struct MappingLeaf {
 impl MappingLeaf {
     pub fn doc_from_json(
         &self,
-        json_val: serde_json::Value,
+        json_val: JsonValue,
         document: &mut Document,
         path: &mut [String],
     ) -> Result<(), DocParsingError> {
@@ -186,21 +164,13 @@ impl MappingLeaf {
 
     fn populate_json<'a>(
         &'a self,
-        named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+        named_doc: &mut BTreeMap<String, Vec<TantivyValue>>,
         field_path: &[&'a str],
-        doc_json: &mut serde_json::Map<String, serde_json::Value>,
+        doc_json: &mut serde_json::Map<String, JsonValue>,
     ) {
-        let json_type = self.typ.json_type();
-        if let Some(json_val) = extract_json_val(json_type, named_doc, field_path, self.cardinality)
+        if let Some(json_val) =
+            extract_json_val(self.get_type(), named_doc, field_path, self.cardinality)
         {
-            if let (LeafType::DateTime(options), Some(timestamp)) =
-                (self.get_type(), json_val.as_i64())
-            {
-                let date_time_str = format_timestamp(timestamp, &options.precision)
-                    .expect("Invalid timestamp is not allowed.");
-                return insert_json_val(field_path, JsonValue::String(date_time_str), doc_json);
-            }
-
             insert_json_val(field_path, json_val, doc_json);
         }
     }
@@ -214,20 +184,9 @@ impl MappingLeaf {
     }
 }
 
-fn json_type_from_json_value(json_value: &JsonValue) -> JsonType {
-    match json_value {
-        JsonValue::Null => JsonType::Null,
-        JsonValue::Bool(_) => JsonType::Bool,
-        JsonValue::Array(_) => JsonType::Array,
-        JsonValue::Number(_) => JsonType::Number,
-        JsonValue::String(_) => JsonType::String,
-        JsonValue::Object(_) => JsonType::Object,
-    }
-}
-
 fn extract_json_val(
-    json_type: JsonType,
-    named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+    leaf_type: &LeafType,
+    named_doc: &mut BTreeMap<String, Vec<TantivyValue>>,
     field_path: &[&str],
     cardinality: Cardinality,
 ) -> Option<JsonValue> {
@@ -235,17 +194,51 @@ fn extract_json_val(
     let vals = named_doc.remove(&full_path)?;
     let mut vals_with_correct_type_it = vals
         .into_iter()
-        .filter(|json_val| json_type_from_json_value(json_val) == json_type);
+        .flat_map(|value| value_to_json(value, leaf_type));
     match cardinality {
         Cardinality::SingleValue => vals_with_correct_type_it.next(),
         Cardinality::MultiValues => Some(JsonValue::Array(vals_with_correct_type_it.collect())),
     }
 }
 
+/// Converts Tantivy::Value into Json Value.
+///
+/// Makes sure the type and value are consistent before converting.
+/// For certain LeafType, we use the type options to format the output.
+fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue> {
+    match (&value, leaf_type) {
+        (TantivyValue::Str(_), LeafType::Text(_))
+        | (TantivyValue::I64(_), LeafType::I64(_))
+        | (TantivyValue::U64(_), LeafType::U64(_))
+        | (TantivyValue::F64(_), LeafType::F64(_))
+        | (TantivyValue::Bool(_), LeafType::Bool(_))
+        | (TantivyValue::IpAddr(_), LeafType::IpAddr(_))
+        | (TantivyValue::Bytes(_), LeafType::Bytes(_))
+        | (TantivyValue::JsonObject(_), LeafType::Json(_)) => {
+            let json_value =
+                serde_json::to_value(&value).expect("Json serialization should never fail.");
+            Some(json_value)
+        }
+        (TantivyValue::Date(date_time), LeafType::DateTime(date_time_options)) => {
+            let json_value = date_time_options
+                .format_to_json(*date_time)
+                .expect("Invalid datetime is not allowed.");
+            Some(json_value)
+        }
+        _ => {
+            warn!(
+                "The value type `{:?}` doesn't match the requested type `{:?}`",
+                value, leaf_type
+            );
+            None
+        }
+    }
+}
+
 fn insert_json_val(
     field_path: &[&str], //< may not be empty
     json_val: JsonValue,
-    mut doc_json: &mut serde_json::Map<String, serde_json::Value>,
+    mut doc_json: &mut serde_json::Map<String, JsonValue>,
 ) {
     let (last_field_name, up_to_last) = field_path.split_last().expect("Empty path is forbidden");
     for &field_name in up_to_last {
@@ -261,10 +254,10 @@ fn insert_json_val(
     doc_json.insert(last_field_name.to_string(), json_val);
 }
 
-trait NumVal: Sized + Into<Value> {
+trait NumVal: Sized + Into<TantivyValue> {
     fn from_json_number(num: &serde_json::Number) -> Option<Self>;
 
-    fn from_json(json_val: JsonValue) -> Result<Value, String> {
+    fn from_json(json_val: JsonValue) -> Result<TantivyValue, String> {
         if let JsonValue::Number(num_val) = json_val {
             Ok(Self::from_json_number(&num_val)
                 .ok_or_else(|| {
@@ -334,13 +327,9 @@ impl MappingNode {
         self.branches.values()
     }
 
-    pub fn insert(&mut self, path: &str, node: MappingTree) -> anyhow::Result<()> {
-        if self.branches.contains_key(path) {
-            bail!("Redundant field definition `{}`", path);
-        }
+    pub fn insert(&mut self, path: &str, node: MappingTree) {
         self.branches_order.push(path.to_string());
         self.branches.insert(path.to_string(), node);
-        Ok(())
     }
 
     pub fn ordered_field_mapping_entries(&self) -> Vec<FieldMappingEntry> {
@@ -393,9 +382,9 @@ impl MappingNode {
 
     pub fn populate_json<'a>(
         &'a self,
-        named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+        named_doc: &mut BTreeMap<String, Vec<TantivyValue>>,
         field_path: &mut Vec<&'a str>,
-        doc_json: &mut serde_json::Map<String, serde_json::Value>,
+        doc_json: &mut serde_json::Map<String, JsonValue>,
     ) {
         for (field_name, field_mapping) in &self.branches {
             field_path.push(field_name);
@@ -447,7 +436,7 @@ pub(crate) enum MappingTree {
 impl MappingTree {
     fn doc_from_json(
         &self,
-        json_value: serde_json::Value,
+        json_value: JsonValue,
         mode: ModeType,
         document: &mut Document,
         path: &mut Vec<String>,
@@ -472,9 +461,9 @@ impl MappingTree {
 
     fn populate_json<'a>(
         &'a self,
-        named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+        named_doc: &mut BTreeMap<String, Vec<TantivyValue>>,
         field_path: &mut Vec<&'a str>,
-        doc_json: &mut serde_json::Map<String, serde_json::Value>,
+        doc_json: &mut serde_json::Map<String, JsonValue>,
     ) {
         match self {
             MappingTree::Leaf(mapping_leaf) => {
@@ -503,9 +492,12 @@ fn build_mapping_tree_from_entries<'a>(
     let mut mapping_node = MappingNode::default();
     for entry in entries {
         field_path.push(&entry.name);
+        if mapping_node.branches.contains_key(&entry.name) {
+            bail!("Duplicated field definition `{}`.", entry.name);
+        }
         let child_tree = build_mapping_from_field_type(&entry.mapping_type, field_path, schema)?;
         field_path.pop();
-        mapping_node.insert(&entry.name, child_tree)?;
+        mapping_node.insert(&entry.name, child_tree);
     }
     Ok(mapping_node)
 }
@@ -710,8 +702,8 @@ fn build_mapping_from_field_type<'a>(
 mod tests {
     use std::net::IpAddr;
 
-    use serde_json::json;
-    use tantivy::schema::{Cardinality, Field, IntoIpv6Addr, Value};
+    use serde_json::{json, Value as JsonValue};
+    use tantivy::schema::{Cardinality, Field, IntoIpv6Addr, Value as TantivyValue};
     use tantivy::{DateTime, Document};
     use time::macros::datetime;
 
@@ -748,7 +740,7 @@ mod tests {
     fn test_get_or_insert_path() {
         let mut map = Default::default();
         super::get_or_insert_path(&["a".to_string(), "b".to_string()], &mut map)
-            .insert("c".to_string(), serde_json::Value::from(3u64));
+            .insert("c".to_string(), JsonValue::from(3u64));
         assert_eq!(
             &serde_json::to_value(&map).unwrap(),
             &serde_json::json!({
@@ -760,7 +752,7 @@ mod tests {
             })
         );
         super::get_or_insert_path(&["a".to_string(), "b".to_string()], &mut map)
-            .insert("d".to_string(), serde_json::Value::from(2u64));
+            .insert("d".to_string(), JsonValue::from(2u64));
         assert_eq!(
             &serde_json::to_value(&map).unwrap(),
             &serde_json::json!({
@@ -773,7 +765,7 @@ mod tests {
             })
         );
         super::get_or_insert_path(&["e".to_string()], &mut map)
-            .insert("f".to_string(), serde_json::Value::from(5u64));
+            .insert("f".to_string(), JsonValue::from(5u64));
         assert_eq!(
             &serde_json::to_value(&map).unwrap(),
             &serde_json::json!({
@@ -786,8 +778,7 @@ mod tests {
                 "e": { "f": 5u64 }
             })
         );
-        super::get_or_insert_path(&[], &mut map)
-            .insert("g".to_string(), serde_json::Value::from(6u64));
+        super::get_or_insert_path(&[], &mut map).insert("g".to_string(), JsonValue::from(6u64));
         assert_eq!(
             &serde_json::to_value(&map).unwrap(),
             &serde_json::json!({
@@ -808,7 +799,7 @@ mod tests {
         let leaf = LeafType::U64(QuickwitNumericOptions::default());
         assert_eq!(
             leaf.value_from_json(json!(20i64)).unwrap(),
-            tantivy::schema::Value::U64(20u64)
+            TantivyValue::U64(20u64)
         );
     }
 
@@ -826,7 +817,7 @@ mod tests {
         let leaf = LeafType::I64(QuickwitNumericOptions::default());
         assert_eq!(
             leaf.value_from_json(json!(20u64)).unwrap(),
-            tantivy::schema::Value::I64(20i64)
+            TantivyValue::I64(20i64)
         );
     }
 
@@ -854,7 +845,7 @@ mod tests {
         let leaf = LeafType::F64(QuickwitNumericOptions::default());
         assert_eq!(
             leaf.value_from_json(json!(4_000u64)).unwrap(),
-            Value::F64(4_000f64)
+            TantivyValue::F64(4_000f64)
         );
     }
 
@@ -863,7 +854,7 @@ mod tests {
         let leaf = LeafType::Bool(QuickwitNumericOptions::default());
         assert_eq!(
             leaf.value_from_json(json!(true)).unwrap(),
-            tantivy::schema::Value::Bool(true)
+            TantivyValue::Bool(true)
         );
     }
 
@@ -882,7 +873,10 @@ mod tests {
             .doc_from_json(json!([true, false, true]), &mut document, &mut path)
             .unwrap();
         assert_eq!(document.len(), 3);
-        let values: Vec<bool> = document.get_all(field).flat_map(Value::as_bool).collect();
+        let values: Vec<bool> = document
+            .get_all(field)
+            .flat_map(TantivyValue::as_bool)
+            .collect();
         assert_eq!(&values, &[true, false, true])
     }
 
@@ -900,7 +894,7 @@ mod tests {
         for ip_str in ips {
             let parsed_ip_addr = leaf.value_from_json(json!(ip_str)).unwrap();
             let expected_ip_addr =
-                tantivy::schema::Value::IpAddr(ip_str.parse::<IpAddr>().unwrap().into_ipv6_addr());
+                TantivyValue::IpAddr(ip_str.parse::<IpAddr>().unwrap().into_ipv6_addr());
             assert_eq!(parsed_ip_addr, expected_ip_addr);
         }
     }
@@ -930,7 +924,10 @@ mod tests {
             .doc_from_json(serde_json::json!([10u64, 20u64]), &mut document, &mut path)
             .unwrap();
         assert_eq!(document.len(), 2);
-        let values: Vec<i64> = document.get_all(field).flat_map(Value::as_i64).collect();
+        let values: Vec<i64> = document
+            .get_all(field)
+            .flat_map(TantivyValue::as_i64)
+            .collect();
         assert_eq!(&values, &[10i64, 20i64]);
     }
 
@@ -997,7 +994,10 @@ mod tests {
     fn test_parse_text() {
         let typ = LeafType::Text(QuickwitTextOptions::default());
         let parsed_value = typ.value_from_json(json!("bacon and eggs")).unwrap();
-        assert_eq!(parsed_value, Value::Str("bacon and eggs".to_string()));
+        assert_eq!(
+            parsed_value,
+            TantivyValue::Str("bacon and eggs".to_string())
+        );
     }
 
     #[test]
@@ -1014,7 +1014,7 @@ mod tests {
             .value_from_json(json!("2021-12-19T16:39:57-01:00"))
             .unwrap();
         let date_time = datetime!(2021-12-19 17:39:57 UTC);
-        assert_eq!(value, Value::Date(DateTime::from_utc(date_time)));
+        assert_eq!(value, TantivyValue::Date(DateTime::from_utc(date_time)));
     }
 
     #[test]
@@ -1089,7 +1089,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(document.len(), 2);
-        let bytes_vec: Vec<&[u8]> = document.get_all(field).flat_map(Value::as_bytes).collect();
+        let bytes_vec: Vec<&[u8]> = document
+            .get_all(field)
+            .flat_map(TantivyValue::as_bytes)
+            .collect();
         assert_eq!(
             &bytes_vec[..],
             &[

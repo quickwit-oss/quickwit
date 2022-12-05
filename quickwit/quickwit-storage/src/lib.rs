@@ -20,6 +20,7 @@
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
 #![allow(clippy::len_without_is_empty)]
+#![deny(clippy::disallowed_methods)]
 
 //! `quickwit-storage` is the abstraction used in quickwit to interface itself
 //! to different storage:
@@ -56,7 +57,9 @@ pub use tantivy::directory::OwnedBytes;
 pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockCache;
-pub use self::cache::{wrap_storage_with_long_term_cache, Cache, MemorySizedCache, QuickwitCache};
+pub use self::cache::{
+    wrap_storage_with_long_term_cache, ByteRangeCache, Cache, MemorySizedCache, QuickwitCache,
+};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
 pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};

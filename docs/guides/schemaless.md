@@ -1,6 +1,6 @@
 ---
 title: Schemaless
-sidebar_position: 2
+sidebar_position: 1
 ---
 
 # Strict schema or schemaless?
@@ -15,7 +15,7 @@ As a user, you need to precisely define the list of fields to be ingested by Qui
 For instance, a reasonable mapping for an application log could be:
 
 ```yaml
-version: 0
+version: 0.4
 
 index_id: my_app
 
@@ -23,7 +23,11 @@ doc_mapping:
   mode: strict # <--- The mode attribute
   field_mappings:
     - name: timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: server
       tokenizer: raw
@@ -32,8 +36,6 @@ doc_mapping:
       record: position
     - name: severity
       tokenizer: raw
-
-indexing_settings:
   timestamp_field: timestamp
 
 search_settings:
@@ -54,7 +56,7 @@ By default, this catch-all configuration indexes and stores all of these fields,
 A minimalist, yet perfectly valid and useful index configuration is then:
 
 ```yaml
-version: 0
+version: 0.4
 index_id: "my_dynamic_index"
 doc_mapping:
   mode: dynamic
@@ -99,13 +101,17 @@ Each event type comes with its own set of attributes. Declaring our mapping as t
 Instead, we can cherry-pick the fields that are common to all of the logs, and rely on dynamic mode to handle the rest.
 
 ```yaml
-version: 0
+version: 0.4
 index_id: "my_dynamic_index"
 doc_mapping:
   mode: dynamic
   field_mappings:
     - name: timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: user_id
       type: text
@@ -113,7 +119,6 @@ doc_mapping:
     - name: event_type
       type: text
       tokenizer: raw
-indexing_settings:
   timestamp_field: timestamp
 ```
 
@@ -152,14 +157,18 @@ Quickwit 0.3 introduced a JSON field type to handle this use case.
 A good index configuration here could be:
 
 ```yaml
-version: 0
+version: 0.4
 index_id: "otel_logs"
 mode: lenient
 doc_mapping:
   mode: dynamic
   field_mappings:
     - name: Timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: Attributes
       type: json
@@ -177,8 +186,8 @@ doc_mapping:
       fast: true
     - name: Body
       type: text
-indexing_settings:
   timestamp_field: Timestamp
+  
 search_settings:
   default_search_fields: [SeverityText, Body, Attributes, Resource]
 ```

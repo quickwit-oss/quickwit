@@ -49,14 +49,10 @@ pub async fn root_search_stream(
         .await?
         .into_index_config();
     let split_metadatas = list_relevant_splits(&search_request, metastore).await?;
-    let doc_mapper = build_doc_mapper(
-        &index_config.doc_mapping,
-        &index_config.search_settings,
-        &index_config.indexing_settings,
-    )
-    .map_err(|err| {
-        SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
-    })?;
+    let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
+        .map_err(|err| {
+            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+        })?;
 
     // Validates the query by effectively building it against the current schema.
     doc_mapper.query(doc_mapper.schema(), &search_request)?;

@@ -72,9 +72,10 @@ impl Source for FileSource {
         let mut doc_batch = RawDocBatch::default();
         while self.counters.current_offset < limit_num_bytes {
             let mut doc_line = String::new();
-            let num_bytes = self
-                .reader
-                .read_line(&mut doc_line)
+            // guard the zone in case of slow read, such as reading from someone
+            // typing to stdin
+            let num_bytes = ctx
+                .protect_future(self.reader.read_line(&mut doc_line))
                 .await
                 .map_err(|io_err: io::Error| anyhow::anyhow!(io_err))?;
             if num_bytes == 0 {

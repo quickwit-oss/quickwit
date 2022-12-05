@@ -200,7 +200,7 @@ mod tests {
                 .downloaded_splits_directory
                 .path()
                 .join(&split_filename);
-            assert!(split_filepath.exists());
+            assert!(split_filepath.try_exists().unwrap());
         }
         Ok(())
     }

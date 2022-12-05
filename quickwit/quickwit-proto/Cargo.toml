@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-proto"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -10,10 +10,14 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
+opentelemetry = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
-serde = { workspace = true }
 tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+serde = { workspace = true }
+
 
 [build-dependencies]
 glob = "0.3.0"

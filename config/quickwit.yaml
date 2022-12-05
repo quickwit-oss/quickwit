@@ -9,7 +9,7 @@
 #
 # Config file format version.
 #
-version: 0
+version: 0.4
 #
 # Node ID. Must be unique within a cluster. If not set, a random node ID is generated on each startup.
 #

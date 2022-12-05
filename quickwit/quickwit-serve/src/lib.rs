@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 mod args;
 mod format;
 mod metrics;
@@ -56,7 +58,9 @@ use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
 use quickwit_janitor::{start_janitor_service, JanitorService};
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient};
+use quickwit_metastore::{
+    quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient, RetryingMetastore,
+};
 use quickwit_search::{start_searcher_service, SearchClientPool, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
@@ -125,10 +129,12 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
                      run --service metastore`."
                 )
             })?;
-        let metastore_client = MetastoreGrpcClient::create_and_update_from_members(
+        let grpc_metastore_client = MetastoreGrpcClient::create_and_update_from_members(
+            1,
             cluster.ready_member_change_watcher(),
         )
         .await?;
+        let metastore_client = RetryingMetastore::new(Box::new(grpc_metastore_client));
         Arc::new(metastore_client)
     };
 
@@ -206,7 +212,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         services,
     };
     let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
-    let rest_server = rest::start_rest_server(rest_listen_addr, &universe, &quickwit_services);
+    let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
     tokio::try_join!(grpc_server, rest_server)?;
     Ok(())
 }

@@ -22,11 +22,13 @@ use std::convert::Infallible;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
+use std::time::Instant;
 
 use async_trait::async_trait;
+use quickwit_common::metrics::IntCounter;
 use tokio::sync::oneshot;
 
-use crate::channel_with_priority::{Receiver, Sender};
+use crate::channel_with_priority::{Receiver, Sender, TrySendError};
 use crate::envelope::{wrap_in_envelope, Envelope};
 use crate::{
     Actor, ActorContext, ActorExitStatus, AskError, Handler, QueueCapacity, RecvError, SendError,
@@ -161,9 +163,69 @@ impl<A: Actor> Mailbox<A> {
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
+        self.send_message_with_backpressure_counter(message, None)
+            .await
+    }
+
+    /// Attempts to queue a message in the low priority channel of the mailbox.
+    ///
+    /// If sending the message would block, the method simply returns `TrySendError::Full(message)`.
+    pub fn try_send_message<M>(
+        &self,
+        message: M,
+    ) -> Result<oneshot::Receiver<A::Reply>, TrySendError<M>>
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
         let (envelope, response_rx) = wrap_in_envelope(message);
-        self.inner.tx.send_low_priority(envelope).await?;
+        self.inner
+            .tx
+            .try_send_low_priority(envelope)
+            .map_err(|err| {
+                match err {
+                    TrySendError::Disconnected => TrySendError::Disconnected,
+                    TrySendError::Full(mut envelope) => {
+                        // We need to un pack the envelope.
+                        let message: M = envelope.message_typed().unwrap();
+                        TrySendError::Full(message)
+                    }
+                }
+            })?;
         Ok(response_rx)
+    }
+
+    /// Sends a message to the actor owning the associated inbox.
+    ///
+    /// If the actor experiences some backpressure, then
+    /// `backpressure_micros` will be increased by the amount of
+    /// microseconds of backpressure experienced.
+    pub async fn send_message_with_backpressure_counter<M>(
+        &self,
+        message: M,
+        backpressure_micros_counter_opt: Option<&IntCounter>,
+    ) -> Result<oneshot::Receiver<A::Reply>, SendError>
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let (envelope, response_rx) = wrap_in_envelope(message);
+        if let Some(backpressure_micros_counter) = backpressure_micros_counter_opt {
+            match self.inner.tx.try_send_low_priority(envelope) {
+                Ok(()) => Ok(response_rx),
+                Err(TrySendError::Full(msg)) => {
+                    let now = Instant::now();
+                    self.inner.tx.send_low_priority(msg).await?;
+                    let elapsed = now.elapsed();
+                    backpressure_micros_counter.inc_by(elapsed.as_micros() as u64);
+                    Ok(response_rx)
+                }
+                Err(TrySendError::Disconnected) => Err(SendError::Disconnected),
+            }
+        } else {
+            self.inner.tx.send_low_priority(envelope).await?;
+            Ok(response_rx)
+        }
     }
 
     pub(crate) fn send_message_with_high_priority<M>(&self, message: M) -> Result<(), SendError>
@@ -184,9 +246,33 @@ impl<A: Actor> Mailbox<A> {
         A: Handler<M, Reply = T>,
         M: 'static + Send + Sync + fmt::Debug,
     {
-        self.send_message(message)
-            .await
-            .map_err(|_send_error| AskError::MessageNotDelivered)?
+        self.ask_with_backpressure_counter(message, None).await
+    }
+
+    /// Similar to `ask`, but if a backpressure counter is passed,
+    /// it increments the amount of time spent in the backpressure.
+    ///
+    /// The backpressure duration only includes the amount of time
+    /// it took to `queue` the request into the actor pipeline.
+    ///
+    /// It does not include
+    /// - the amount spent waiting in the queue,
+    /// - the amount spent processing the message.
+    ///
+    /// From an actor context, use the `ActorContext::ask` method instead.
+    pub async fn ask_with_backpressure_counter<M, T>(
+        &self,
+        message: M,
+        backpressure_micros_counter_opt: Option<&IntCounter>,
+    ) -> Result<T, AskError<Infallible>>
+    where
+        A: Handler<M, Reply = T>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let resp = self
+            .send_message_with_backpressure_counter(message, backpressure_micros_counter_opt)
+            .await;
+        resp.map_err(|_send_error| AskError::MessageNotDelivered)?
             .await
             .map_err(|_| AskError::ProcessMessageError)
     }
@@ -303,8 +389,12 @@ impl<A: Actor> WeakMailbox<A> {
 
 #[cfg(test)]
 mod tests {
+    use std::mem;
+    use std::time::Duration;
+
     use super::*;
-    use crate::tests::PingReceiverActor;
+    use crate::tests::{Ping, PingReceiverActor};
+    use crate::Universe;
 
     #[test]
     fn test_weak_mailbox_downgrade_upgrade() {
@@ -319,5 +409,143 @@ mod tests {
         let weak_mailbox = mailbox.downgrade();
         drop(mailbox);
         assert!(weak_mailbox.upgrade().is_none());
+    }
+
+    struct BackPressureActor;
+
+    impl Actor for BackPressureActor {
+        type ObservableState = ();
+
+        fn observable_state(&self) -> Self::ObservableState {}
+
+        fn queue_capacity(&self) -> QueueCapacity {
+            QueueCapacity::Bounded(0)
+        }
+    }
+
+    use async_trait::async_trait;
+
+    #[async_trait]
+    impl Handler<Duration> for BackPressureActor {
+        type Reply = ();
+
+        async fn handle(
+            &mut self,
+            sleep_duration: Duration,
+            _ctx: &ActorContext<Self>,
+        ) -> Result<(), ActorExitStatus> {
+            if !sleep_duration.is_zero() {
+                tokio::time::sleep(sleep_duration).await;
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mailbox_send_with_backpressure_counter_no_backpressure_cleansheet() {
+        let universe = Universe::new();
+        let back_pressure_actor = BackPressureActor;
+        let (mailbox, _handle) = universe.spawn_builder().spawn(back_pressure_actor);
+        // We send a first message to make sure the actor has been properly spawned and is listening
+        // for new messages.
+        mailbox
+            .ask_with_backpressure_counter(Duration::default(), None)
+            .await
+            .unwrap();
+        // At this point the actor was started and even processed a message entirely.
+        let backpressure_micros_counter =
+            IntCounter::new("test_counter", "help for test_counter").unwrap();
+        let wait_duration = Duration::from_millis(1);
+        let processed = mailbox
+            .send_message_with_backpressure_counter(
+                wait_duration,
+                Some(&backpressure_micros_counter),
+            )
+            .await
+            .unwrap();
+        assert_eq!(backpressure_micros_counter.get(), 0u64);
+        processed.await.unwrap();
+        assert_eq!(backpressure_micros_counter.get(), 0u64);
+    }
+
+    #[tokio::test]
+    async fn test_mailbox_send_with_backpressure_counter_backpressure() {
+        let universe = Universe::new();
+        let back_pressure_actor = BackPressureActor;
+        let (mailbox, _handle) = universe.spawn_builder().spawn(back_pressure_actor);
+        // We send a first message to make sure the actor has been properly spawned and is listening
+        // for new messages.
+        mailbox
+            .ask_with_backpressure_counter(Duration::default(), None)
+            .await
+            .unwrap();
+        let backpressure_micros_counter =
+            IntCounter::new("test_counter", "help for test_counter").unwrap();
+        let wait_duration = Duration::from_millis(1);
+        mailbox
+            .send_message_with_backpressure_counter(
+                wait_duration,
+                Some(&backpressure_micros_counter),
+            )
+            .await
+            .unwrap();
+        // That second message will present some backpressure, since the capacity is 0 and
+        // the first message willl take 1000 micros to be processed.
+        mailbox
+            .send_message_with_backpressure_counter(
+                Duration::default(),
+                Some(&backpressure_micros_counter),
+            )
+            .await
+            .unwrap();
+        assert!(backpressure_micros_counter.get() > 1_000u64);
+    }
+
+    #[tokio::test]
+    async fn test_mailbox_waiting_for_processing_does_not_counter_as_backpressure() {
+        let universe = Universe::new();
+        let back_pressure_actor = BackPressureActor;
+        let (mailbox, _handle) = universe.spawn_builder().spawn(back_pressure_actor);
+        mailbox
+            .ask_with_backpressure_counter(Duration::default(), None)
+            .await
+            .unwrap();
+        let backpressure_micros_counter =
+            IntCounter::new("test_counter", "help for test_counter").unwrap();
+        let start = Instant::now();
+        mailbox
+            .ask_with_backpressure_counter(Duration::from_millis(1), None)
+            .await
+            .unwrap();
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_micros() > 1000);
+        assert_eq!(backpressure_micros_counter.get(), 0);
+    }
+
+    #[test]
+    fn test_try_send() {
+        let (mailbox, _inbox) = super::create_mailbox::<PingReceiverActor>(
+            "hello".to_string(),
+            QueueCapacity::Bounded(1),
+        );
+        assert!(mailbox.try_send_message(Ping).is_ok());
+        assert!(matches!(
+            mailbox.try_send_message(Ping).unwrap_err(),
+            TrySendError::Full(Ping)
+        ));
+    }
+
+    #[test]
+    fn test_try_send_disconnect() {
+        let (mailbox, inbox) = super::create_mailbox::<PingReceiverActor>(
+            "hello".to_string(),
+            QueueCapacity::Bounded(1),
+        );
+        assert!(mailbox.try_send_message(Ping).is_ok());
+        mem::drop(inbox);
+        assert!(matches!(
+            mailbox.try_send_message(Ping).unwrap_err(),
+            TrySendError::Disconnected
+        ));
     }
 }

@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize, Serializer};
 pub enum Protocol {
     Azure,
     File,
+    Grpc,
     PostgreSQL,
     Ram,
     S3,
@@ -45,6 +46,7 @@ impl Protocol {
         match &self {
             Protocol::Azure => "azure",
             Protocol::File => "file",
+            Protocol::Grpc => "grpc",
             Protocol::PostgreSQL => "postgresql",
             Protocol::Ram => "ram",
             Protocol::S3 => "s3",
@@ -57,6 +59,10 @@ impl Protocol {
 
     pub fn is_file(&self) -> bool {
         matches!(&self, Protocol::File)
+    }
+
+    pub fn is_grpc(&self) -> bool {
+        matches!(&self, Protocol::Grpc)
     }
 
     pub fn is_postgresql(&self) -> bool {
@@ -97,6 +103,7 @@ impl FromStr for Protocol {
         match protocol {
             "azure" => Ok(Protocol::Azure),
             "file" => Ok(Protocol::File),
+            "grpc" => Ok(Protocol::Grpc),
             "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
@@ -117,7 +124,8 @@ pub struct Uri {
 impl Uri {
     /// Constructs a [`Uri`] from a properly formatted string `<protocol>://<path>` where `path` is
     /// normalized. Use this method exclusively for trusted input.
-    pub fn from_well_formed(uri: String) -> Self {
+    pub fn from_well_formed<S: ToString>(uri: S) -> Self {
+        let uri = uri.to_string();
         let protocol_idx = uri.find(PROTOCOL_SEPARATOR).expect(
             "URI lacks protocol separator. Use `Uri::from_well_formed` exclusively for trusted \
              input.",
@@ -131,7 +139,7 @@ impl Uri {
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(uri: &str) -> Self {
-        Uri::from_well_formed(uri.to_string())
+        Uri::from_well_formed(uri)
     }
 
     /// Returns the extension of the URI.

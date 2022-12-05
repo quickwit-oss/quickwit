@@ -126,7 +126,7 @@ export function LanguageFeatures(): any {
 }
 
 export const createIndexCompletionProvider = (indexMetadata: IndexMetadata) => {
-  const fields = getAllFields(indexMetadata.doc_mapping);
+  const fields = getAllFields(indexMetadata.index_config.doc_mapping.field_mappings);
   const completionProvider = {
     provideCompletionItems(model: any, position: any) {
       const word = model.getWordUntilPosition(position)
@@ -140,12 +140,12 @@ export const createIndexCompletionProvider = (indexMetadata: IndexMetadata) => {
 
       // We want to auto complete all fields except timestamp that is handled with `TimeRangeSelect` component.
       const fieldSuggestions = fields
-        .filter(field => field.name !== indexMetadata.indexing_settings.timestamp_field)
+        .filter(field => field.json_path !== indexMetadata.index_config.doc_mapping.timestamp_field)
         .map(field => {
           return {
-            label: field.name,
+            label: field.json_path,
             kind: CompletionItemKind.Field,
-            insertText: field.type == 'json' ? field.name + '.' : field.name + ':',
+            insertText: field.field_mapping.type == 'json' ? field.json_path + '.' : field.json_path + ':',
             range: range,
           }
         });

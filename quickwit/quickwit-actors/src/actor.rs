@@ -27,6 +27,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::Future;
+use quickwit_common::metrics::IntCounter;
 use thiserror::Error;
 use tokio::sync::{oneshot, watch};
 use tracing::{debug, error};
@@ -39,6 +40,7 @@ use crate::spawn_builder::SpawnBuilder;
 use crate::Universe;
 use crate::{
     AskError, Command, KillSwitch, Mailbox, Progress, ProtectedZoneGuard, QueueCapacity, SendError,
+    TrySendError,
 };
 
 /// The actor exit status represents the outcome of the execution of an actor,
@@ -135,8 +137,8 @@ pub trait Actor: Send + Sync + Sized + 'static {
     /// The runner method makes it possible to decide the environment
     /// of execution of the Actor.
     ///
-    /// Actor with a handler that may block for more than 50microsecs should
-    /// use the `ActorRunner::DedicatedThread`.
+    /// Actor with a handler that may block for more than 50 microseconds
+    /// should use the `ActorRunner::DedicatedThread`.
     fn runtime_handle(&self) -> tokio::runtime::Handle {
         tokio::runtime::Handle::current()
     }
@@ -239,6 +241,7 @@ pub struct ActorContextInner<A: Actor> {
     // This counter is useful to unsure that obsolete WakeUp
     // events do not effect ulterior `sleep`.
     sleep_count: AtomicUsize,
+    backpressure_micros_counter_opt: Option<IntCounter>,
     observable_state_tx: watch::Sender<A::ObservableState>,
 }
 
@@ -275,6 +278,7 @@ impl<A: Actor> ActorContext<A> {
         scheduler_mailbox: Mailbox<Scheduler>,
         registry: ActorRegistry,
         observable_state_tx: watch::Sender<A::ObservableState>,
+        backpressure_micros_counter_opt: Option<IntCounter>,
     ) -> Self {
         ActorContext {
             inner: ActorContextInner {
@@ -286,6 +290,7 @@ impl<A: Actor> ActorContext<A> {
                 actor_state: AtomicState::default(),
                 sleep_count: AtomicUsize::default(),
                 observable_state_tx,
+                backpressure_micros_counter_opt,
             }
             .into(),
         }
@@ -303,6 +308,7 @@ impl<A: Actor> ActorContext<A> {
             universe.scheduler_mailbox.clone(),
             universe.registry.clone(),
             observable_state_tx,
+            None,
         )
     }
 
@@ -338,6 +344,11 @@ impl<A: Actor> ActorContext<A> {
     where Fut: Future<Output = T> {
         let _guard = self.protect_zone();
         future.await
+    }
+
+    /// Cooperatively yields, while keeping the actor protected.
+    pub async fn yield_now(&self) {
+        self.protect_future(tokio::task::yield_now()).await;
     }
 
     /// Gets a copy of the actor kill switch.
@@ -413,9 +424,6 @@ impl<A: Actor> ActorContext<A> {
     }
 
     pub(crate) fn exit(&self, exit_status: &ActorExitStatus) {
-        if !exit_status.is_success() {
-            error!(actor_name=self.actor_instance_id(), actor_exit_status=?exit_status, "actor-failure");
-        }
         self.actor_state.exit(exit_status.is_success());
         if should_activate_kill_switch(exit_status) {
             error!(actor=%self.actor_instance_id(), exit_status=?exit_status, "exit activating-kill-switch");
@@ -462,14 +470,19 @@ impl<A: Actor> ActorContext<A> {
         &self,
         mailbox: &Mailbox<DestActor>,
         msg: M,
-    ) -> Result<oneshot::Receiver<DestActor::Reply>, crate::SendError>
+    ) -> Result<oneshot::Receiver<DestActor::Reply>, SendError>
     where
         DestActor: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
-        mailbox.send_message(msg).await
+        mailbox
+            .send_message_with_backpressure_counter(
+                msg,
+                self.backpressure_micros_counter_opt.as_ref(),
+            )
+            .await
     }
 
     pub async fn ask<DestActor: Actor, M, T>(
@@ -483,7 +496,9 @@ impl<A: Actor> ActorContext<A> {
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg, "ask");
-        mailbox.ask(msg).await
+        mailbox
+            .ask_with_backpressure_counter(msg, self.backpressure_micros_counter_opt.as_ref())
+            .await
     }
 
     /// Similar to `send_message`, except this method
@@ -509,24 +524,42 @@ impl<A: Actor> ActorContext<A> {
     pub async fn send_exit_with_success<Dest: Actor>(
         &self,
         mailbox: &Mailbox<Dest>,
-    ) -> Result<(), crate::SendError> {
+    ) -> Result<(), SendError> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
         mailbox.send_message(Command::ExitWithSuccess).await?;
         Ok(())
     }
 
-    /// `async` version of `send_self_message`.
+    /// Sends a message to an actor's own mailbox.
+    ///
+    /// Warning: This method is dangerous as it can very easily
+    /// cause a deadlock.
     pub async fn send_self_message<M>(
         &self,
         msg: M,
-    ) -> Result<oneshot::Receiver<A::Reply>, crate::SendError>
+    ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: Handler<M>,
         M: 'static + Sync + Send + fmt::Debug,
     {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
         self.self_mailbox.send_message(msg).await
+    }
+
+    /// Attempts to send a message to itself.
+    ///
+    /// Warning: This method will always fail if
+    /// an actor has a capacity of 0.
+    pub fn try_send_self_message<M>(
+        &self,
+        msg: M,
+    ) -> Result<oneshot::Receiver<A::Reply>, TrySendError<M>>
+    where
+        A: Handler<M>,
+        M: 'static + Sync + Send + fmt::Debug,
+    {
+        self.self_mailbox.try_send_message(msg)
     }
 
     pub async fn schedule_self_msg<M>(&self, after_duration: Duration, message: M)

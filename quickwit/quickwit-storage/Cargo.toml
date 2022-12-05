@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-storage"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -42,6 +42,7 @@ quickwit-common = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
+proptest = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 rusoto_mock = { workspace = true }
 tokio = { workspace = true }

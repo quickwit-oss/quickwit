@@ -7,20 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
- - Support for boolean field
- - Support for slop in phrase queries
 
 ### Fixed
 
+### Changed
+
+### Deprecated
+
 ### Removed
 
-### Change
+### Security
 
-- Quickwit now relies on sqlx rather than diesel for postgresql interaction.
+## [0.4.0] - 2022-06-02
+
+### Added
+- Boolean, datetime, and IP address fields
+- Chinese tokenizer
+- Distributed indexing (Kafka only)
+- gRPC metastore server
+- Index partitioning
+- Kubernetes
+- Node config templating
+- Prometheus metrics
+- Retention policies
+- REST API for CRUD operations on indexes/sources
+- Support for Azure Blob Storage
+- Support for BM25 document scoring
+- Support for deletions
+- Support for slop in phrase queries
+- Support for snippeting
+
+### Fixed
+- Fixed cache misses during search fetch docs phase
+- Fixed credentials leak in metastore URI
+- Fixed GC scalability issues
+- Fixed support for multi-source
+
+### Changed
+- Changed default docstore block size to 1 MiB and compression algorithm to ZSTD
+
+- Quickwit now relies on sqlx rather than Diesel for PostgreSQL interactions.
 Migrating from 0.3 should work as expected. Migrating from earlier version however is
 not supported.
 
+### Removed
+- Removed support for i64 as timestamp field
+- Removed support for sorting index by field
+
 ### Security
+- Forbid access to paths with `..` at storage level
 
 ## [0.3.1] - 2022-06-22
 

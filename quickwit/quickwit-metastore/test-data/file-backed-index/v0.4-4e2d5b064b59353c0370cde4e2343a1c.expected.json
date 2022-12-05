@@ -30,9 +30,15 @@
           {
             "fast": true,
             "indexed": true,
+            "input_formats": [
+              "rfc3339",
+              "unix_timestamp"
+            ],
             "name": "timestamp",
+            "output_format": "rfc3339",
+            "precision": "seconds",
             "stored": true,
-            "type": "i64"
+            "type": "datetime"
           },
           {
             "fast": false,
@@ -54,14 +60,15 @@
             "type": "text"
           }
         ],
-        "max_num_partitions": 20,
+        "max_num_partitions": 100,
         "mode": "dynamic",
         "partition_key": "tenant",
         "store_source": true,
         "tag_fields": [
           "log_level",
           "tenant_id"
-        ]
+        ],
+        "timestamp_field": "timestamp"
       },
       "index_id": "my-index",
       "index_uri": "s3://quickwit-indexes/my-index",
@@ -70,6 +77,7 @@
         "docstore_blocksize": 1000000,
         "docstore_compression_level": 8,
         "merge_policy": {
+          "maturation_period": "2days",
           "max_merge_factor": 11,
           "merge_factor": 9,
           "min_level_num_docs": 100000,
@@ -78,13 +86,9 @@
         "resources": {
           "heap_size": 3
         },
-        "sort_field": "timestamp",
-        "sort_order": "asc",
-        "split_num_docs_target": 10000001,
-        "timestamp_field": "timestamp"
+        "split_num_docs_target": 10000001
       },
       "retention": {
-        "cutoff_reference": "publish_timestamp",
         "period": "90 days",
         "schedule": "daily"
       },
@@ -93,7 +97,7 @@
           "message"
         ]
       },
-      "version": "3"
+      "version": "0.4"
     },
     "sources": [
       {
@@ -105,11 +109,10 @@
         },
         "source_id": "kafka-source",
         "source_type": "kafka",
-        "version": "3"
+        "version": "0.4"
       }
     ],
-    "update_timestamp": 1789,
-    "version": "3"
+    "version": "0.4"
   },
   "splits": [
     {
@@ -138,8 +141,8 @@
       },
       "uncompressed_docs_size_in_bytes": 234234,
       "update_timestamp": 1789,
-      "version": "3"
+      "version": "0.4"
     }
   ],
-  "version": "3"
+  "version": "0.4"
 }

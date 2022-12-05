@@ -1,3 +1,4 @@
+version: 0.4
 source_id: kinesis-source
 source_type: kinesis
 params:

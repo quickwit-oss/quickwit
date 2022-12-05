@@ -30,6 +30,20 @@ import { Client } from '../services/client';
 import { EMPTY_SEARCH_REQUEST, Index, IndexMetadata, ResponseError, SearchRequest, SearchResponse } from '../utils/models';
 import { hasSearchParams, parseSearchUrl, toUrlSearchRequestParams } from '../utils/urls';
 
+function updateSearchRequestWithIndex(index: Index | null, searchRequest: SearchRequest) {
+  // If we have a timestamp field, order by desc on the timestamp field.
+  if (index?.metadata.index_config.doc_mapping.timestamp_field) {
+    searchRequest.sortByField = {
+      field_name: index?.metadata.index_config.doc_mapping.timestamp_field,
+      order: 'Desc'
+    };
+  } else {
+    searchRequest.sortByField = null;
+    searchRequest.startTimestamp = null;
+    searchRequest.endTimestamp = null;
+  }
+}
+
 function SearchView() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -43,19 +57,13 @@ function SearchView() {
   const quickwitClient = useMemo(() => new Client(), []);
 
   const runSearch = (updatedSearchRequest: SearchRequest) => {
+    if (!updatedSearchRequest || !updatedSearchRequest.indexId) {
+      return;
+    }
+
     console.log('Run search...', updatedSearchRequest);
-    // If we have a timestamp field, order by desc on the timestamp field.
-    if (index?.metadata.indexing_settings.timestamp_field) {
-      updatedSearchRequest.sortByField = {
-        field_name: index?.metadata.indexing_settings.timestamp_field,
-        order: 'Desc'
-      };
-    } else {
-      updatedSearchRequest.sortByField = null;
-    }
-    if (updatedSearchRequest !== null) {
-      setSearchRequest(updatedSearchRequest);
-    }
+    updateSearchRequestWithIndex(index, updatedSearchRequest);
+    setSearchRequest(updatedSearchRequest);
     setQueryRunning(true);
     setSearchError(null);
     quickwitClient.search(updatedSearchRequest).then((response) => {
@@ -71,32 +79,35 @@ function SearchView() {
   }
   const onIndexMetadataUpdate = (indexMetadata: IndexMetadata | null) => {
     setSearchRequest(previousRequest => {
-      return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_id};
+      updateSearchRequestWithIndex(index, previousRequest);
+      return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_config.index_id};
     });
   }
   const onSearchRequestUpdate = (searchRequest: SearchRequest) => {
+    console.log("on search request update:", searchRequest);
     setSearchRequest(searchRequest);
   }
   useEffect(() => {
-    if (prevIndexIdRef.current !== index?.metadata.index_id) {
+    if (prevIndexIdRef.current !== index?.metadata.index_config.index_id) {
       setSearchResponse(null);
     }
     // Run search only if this is the first time we set the index.
     if (prevIndexIdRef.current === null) {
       runSearch(searchRequest);
     }
-    prevIndexIdRef.current = index === null ? null : index.metadata.index_id;
+    prevIndexIdRef.current = index === null ? null : index.metadata.index_config.index_id;
   }, [index]);
   useEffect(() => {
-    if (searchRequest.indexId === null || searchRequest.indexId === undefined || searchRequest.indexId === '') {
+    if (!searchRequest.indexId) {
       return;
     }
-    if (index !== null && index.metadata.index_id === searchRequest.indexId) {
+
+    if (index !== null && index.metadata.index_config.index_id === searchRequest.indexId) {
       return;
     }
     // If index id is changing, it's better to reset timestamps as the time unit may be different
     // between indexes.
-    if (prevIndexIdRef.current !== null && prevIndexIdRef.current !== index?.metadata.index_id) {
+    if (prevIndexIdRef.current !== null && prevIndexIdRef.current !== index?.metadata.index_config.index_id) {
       searchRequest.startTimestamp = null;
       searchRequest.endTimestamp = null;
     }
@@ -132,7 +143,7 @@ function SearchView() {
               searchResponse={searchResponse}
               index={index} />
           </FullBoxContainer>
-          { index !== null && ApiUrlFooter(`api/v1/${index?.metadata.index_id}/search?${searchParams.toString()}`) }
+          { index !== null && ApiUrlFooter(`api/v1/${index?.metadata.index_config.index_id}/search?${searchParams.toString()}`) }
         </FullBoxContainer>
       </ViewUnderAppBarBox>
   );

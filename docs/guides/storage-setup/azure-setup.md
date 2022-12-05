@@ -16,16 +16,21 @@ export QW_AZURE_ACCESS_KEY=****
 
 ## Set the Metastore URI and default index URI
 
+Quickwit expects Azure URIs to be of the format `azure://{storage-account}/{container}/{prefix}` where:
+- `storage-account` is your Azure storage account name. 
+- `container` is the container name (or bucket in S3 parlance).
+- `prefix` is optional and can be any prefix.
+
 Here is an example of how to set up your [node config file](/docs/configuration/node-config) with GCS:
 
 ```yaml
-metastore_uri: azure://{my-storage-account}/indexes
-default_index_uri: azure://{my-storage-account}/indexes
+metastore_uri: azure://my-storage-account/my-container/my-indexes
+default_index_uri: azure://my-storage-account/my-container/my-indexes
 ```
 
 ## Set the Index URI
 
 Here is an example of how to setup your index URI in the [index config file](/docs/configuration/index-config):
 ```yaml
-index_uri: azure://{my-storage-account}/indexes/{my-index-id}
+index_uri: azure://my-storage-account/my-indexes/my-index-id
 ```

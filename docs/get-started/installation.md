@@ -8,14 +8,21 @@ import TabItem from '@theme/TabItem';
 
 Quickwit compiles to a single binary, we provide different methods to install it.
 
+## Prerequisites
+
+Quickwit is officially only supported for Linux. Freebsd and MacOS are not officially supported, but should work as well.
+
+Quickwit supplies binaries for x86-64 and aarch64. No special instruction set is required, but on x86-64 SSE3 is recommended.
+Support of aarch64 is currently experimental.
+
 ## Download
 
-Version: 0.3.1 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.3.1)
+Version: 0.4.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.4.0)
 License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
-- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.1/quickwit-v0.3.1-aarch64-unknown-linux-gnu.tar.gz)
-- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.1/quickwit-v0.3.1-x86_64-unknown-linux-gnu.tar.gz)
-- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.1/quickwit-v0.3.1-x86_64-apple-darwin.tar.gz)
+- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.4.0/quickwit-v0.4.0-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.4.0/quickwit-v0.4.0-x86_64-unknown-linux-gnu.tar.gz)
+- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.4.0/quickwit-v0.4.0-x86_64-apple-darwin.tar.gz)
 
 
 Check out the available builds in greater detail on [GitHub](https://github.com/quickwit-oss/quickwit/releases)
@@ -54,6 +61,49 @@ pacman -S openssl
 </TabItem>
 
 </Tabs>
+
+Additionally it requires a few more dependencies to compile it. These dependencies are not required on production system:
+- `clang`: used to compile some dependencies.
+- `protobuf-compiler`: used to compile protobuf definitions.
+- `libssl-dev`: headers for libssl.
+- `pkg-config`: used to locate libssl.
+- `cmake`: used to build librdkafka, for kafka support.
+These dependencies can be installed on your system using the native package manager.
+You can install these dependencies using the following command:
+
+<Tabs>
+
+<TabItem value="ubuntu" label="Ubuntu">
+
+```bash
+apt install -y clang protobuf-compiler libssl-dev pkg-config cmake
+```
+
+</TabItem>
+
+<TabItem value="aws-linux" label="AWS Linux">
+
+```bash
+yum -y update && yum -y install clang openssl-devel pkgconfig cmake3
+# amazonlinux only has protobuf-compiler 2.5, we need something much more up to date.
+wget https://github.com/protocolbuffers/protobuf/releases/download/v21.9/protoc-21.9-linux-x86_64.zip
+sudo unzip protoc-21.9-linux-x86_64.zip -d /usr/local
+# amazonlinux use cmake2 as cmake, we need cmake3
+ln -s /usr/bin/cmake3 /usr/bin/cmake
+```
+
+</TabItem>
+
+<TabItem value="arch-linux" label="Arch Linux">
+
+```bash
+pacman -S clang protobuf openssl pkg-config cmake make
+```
+
+</TabItem>
+
+</Tabs>
+
 
 
 ## Install script

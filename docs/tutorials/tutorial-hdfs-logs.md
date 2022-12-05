@@ -20,7 +20,7 @@ Here is an example of a log entry:
   },
   "attributes": {
     "class": "org.apache.hadoop.hdfs.server.datanode.DataNode"
-  }
+  },
   "tenant_id": 58
 }
 ```
@@ -44,43 +44,46 @@ Let's create an index configured to receive these logs.
 curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/hdfs-logs/index-config.yaml
 ```
 
-The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one object field
-for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`.The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](/docs/concepts/architecture) at query time to boost search speed. Check out the [index config docs](/docs/configuration/index-config) for more details.
+The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one JSON field
+for the nested values `resource.service`, we could use an object field here and maintain a fixed schema, but for convenience we're going to use a JSON field.
+It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`.
+The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](/docs/concepts/architecture) at query time to boost search speed. 
+Check out the [index config docs](/docs/configuration/index-config) for more details.
 
-```yaml title="hdfs_logs_index_config.yaml"
-version: 0
+```yaml title="hdfs-logs-index.yaml"
+version: 0.4
+
 index_id: hdfs-logs
+
 doc_mapping:
   field_mappings:
     - name: timestamp
-      type: i64
-      fast: true # Fast field must be present when this is the timestamp field.
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
+      fast: true
     - name: tenant_id
       type: u64
-      fast: true
     - name: severity_text
       type: text
-      tokenizer: raw # No tokenization.
+      tokenizer: raw
     - name: body
       type: text
       tokenizer: default
-      record: position # Record position will enable phrase query on body field.
+      record: position
     - name: resource
-      type: object
-      field_mappings:
-        - name: service
-          type: text
-          tokenizer: raw # Text field referenced as tag must have the `raw` tokenizer.
+      type: json
+      tokenizer: raw
   tag_fields: [tenant_id]
-
-indexing_settings:
   timestamp_field: timestamp
 
 search_settings:
   default_search_fields: [severity_text, body]
 ```
 
-Now let's create the index with the `create` subcommand (assuming you are inside quickwit install directory):
+Now let's create the index with the `create` subcommand (assuming you are inside Quickwit install directory):
 
 ```bash
 ./quickwit index create --index-config hdfs_logs_index_config.yaml
@@ -89,8 +92,9 @@ Now let's create the index with the `create` subcommand (assuming you are inside
 You're now ready to fill the index.
 
 ## Index logs
-The dataset is a compressed [NDJSON file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz). Instead of downloading it and then indexing the data, we will use pipes to directly send a decompressed stream to Quickwit.
-This can take up to 10 mins on a modern machine, the perfect time for a coffee break.
+The dataset is a compressed [NDJSON file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz).
+Instead of downloading it and then indexing the data, we will use pipes to directly send a decompressed stream to Quickwit.
+This can take up to 10 minutes on a modern machine, the perfect time for a coffee break.
 
 ```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit index ingest --index hdfs-logs
@@ -115,11 +119,12 @@ The `ingest` subcommand generates [splits](/docs/concepts/architecture) of 5 mil
 
 ## Start your server
 
-The command `run --service searcher` starts an http server which provides a [REST API](/docs/reference/rest-api).
+The command `run --service searcher --service metastore` starts a http server which provides a [REST API](/docs/reference/rest-api) 
+and runs the metastore service which is required by the searcher service.
 
 
 ```bash
-./quickwit run --service searcher
+./quickwit run --service searcher --service metastore
 ```
 
 Let's execute the same query on field `severity_text` but with `cURL`:
@@ -149,7 +154,8 @@ which returns the json
 }
 ```
 
-The index config shows that we can use the timestamp field parameters `start_timestamp` and `end_timestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](/docs/concepts/architecture) that have logs in this time range.
+The index config shows that we can use the timestamp field parameters `start_timestamp` and `end_timestamp` and benefit from time pruning. 
+Behind the scenes, Quickwit will only query [splits](/docs/concepts/architecture) that have logs in this time range.
 
 Let's use these parameters with the following query:
 

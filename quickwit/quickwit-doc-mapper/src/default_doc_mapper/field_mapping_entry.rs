@@ -21,6 +21,7 @@ use std::convert::TryFrom;
 
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use tantivy::schema::{
     Cardinality, IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
 };
@@ -64,7 +65,7 @@ struct FieldMappingEntryForSerialization {
     #[serde(rename = "type")]
     type_id: String,
     #[serde(flatten)]
-    pub field_mapping_json: serde_json::Map<String, serde_json::Value>,
+    pub field_mapping_json: serde_json::Map<String, JsonValue>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -232,6 +233,9 @@ pub struct QuickwitJsonOptions {
     /// If true, the field will be stored in the doc store.
     #[serde(default = "default_as_true")]
     pub stored: bool,
+    /// If true, the '.' in json keys will be expanded.
+    #[serde(default = "default_as_true")]
+    pub expand_dots: bool,
 }
 
 impl Default for QuickwitJsonOptions {
@@ -242,6 +246,7 @@ impl Default for QuickwitJsonOptions {
             tokenizer: None,
             record: None,
             stored: true,
+            expand_dots: true,
         }
     }
 }
@@ -264,13 +269,16 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
                 .set_index_option(index_record_option);
             json_options = json_options.set_indexing_options(text_field_indexing);
         }
+        if quickwit_json_options.expand_dots {
+            json_options = json_options.set_expand_dots_enabled();
+        }
         json_options
     }
 }
 
 fn deserialize_mapping_type(
     quickwit_field_type: QuickwitFieldType,
-    json: serde_json::Value,
+    json: JsonValue,
 ) -> anyhow::Result<FieldMappingType> {
     let (typ, cardinality) = match quickwit_field_type {
         QuickwitFieldType::Simple(typ) => (typ, Cardinality::SingleValue),
@@ -361,7 +369,7 @@ impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
             })?;
         let mapping_type = deserialize_mapping_type(
             quickwit_field_type,
-            serde_json::Value::Object(value.field_mapping_json),
+            JsonValue::Object(value.field_mapping_json),
         )
         .map_err(|err| format!("Error while parsing field `{}`: {}", value.name, err))?;
         Ok(FieldMappingEntry {
@@ -372,9 +380,9 @@ impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
 }
 
 /// Serialize object into a `Map` of json values.
-fn serialize_to_map<S: Serialize>(val: &S) -> Option<serde_json::Map<String, serde_json::Value>> {
+fn serialize_to_map<S: Serialize>(val: &S) -> Option<serde_json::Map<String, JsonValue>> {
     let json_val = serde_json::to_value(val).ok()?;
-    if let serde_json::Value::Object(map) = json_val {
+    if let JsonValue::Object(map) = json_val {
         Some(map)
     } else {
         None
@@ -383,7 +391,7 @@ fn serialize_to_map<S: Serialize>(val: &S) -> Option<serde_json::Map<String, ser
 
 fn typed_mapping_to_json_params(
     field_mapping_type: FieldMappingType,
-) -> serde_json::Map<String, serde_json::Value> {
+) -> serde_json::Map<String, JsonValue> {
     match field_mapping_type {
         FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
         FieldMappingType::U64(options, _)
@@ -582,12 +590,10 @@ mod tests {
     "#,
         );
         assert!(mapping_entry.is_err());
-        assert_eq!(
-            mapping_entry.unwrap_err().to_string(),
-            "Error while parsing field `my_field_name`: unknown field `blub`, expected one of \
-             `description`, `indexed`, `tokenizer`, `record`, `stored`"
-                .to_string()
-        );
+        assert!(mapping_entry
+            .unwrap_err()
+            .to_string()
+            .contains("Error while parsing field `my_field_name`: unknown field `blub`"));
         Ok(())
     }
 
@@ -1081,6 +1087,7 @@ mod tests {
                 "name": "my_field_name",
                 "type": "datetime",
                 "input_formats": ["rfc3339", "unix_timestamp"],
+                "output_format": "rfc3339",
                 "precision": "seconds",
                 "stored": true,
                 "indexed": true,
@@ -1108,6 +1115,7 @@ mod tests {
                 "name": "my_field_name",
                 "type": "array<datetime>",
                 "input_formats": ["rfc3339", "unix_timestamp"],
+                "output_format": "rfc3339",
                 "precision": "milliseconds",
                 "stored": true,
                 "indexed": true,
@@ -1202,6 +1210,7 @@ mod tests {
             tokenizer: None,
             record: None,
             stored: true,
+            expand_dots: true,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field");
         assert!(
@@ -1241,6 +1250,7 @@ mod tests {
             tokenizer: Some(QuickwitTextTokenizer::Raw),
             record: None,
             stored: false,
+            expand_dots: true,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field_multi");
         assert!(
@@ -1321,7 +1331,8 @@ mod tests {
                 "description": "If you see this description, your test is failed",
                 "type": "json",
                 "stored": true,
-                "indexed": true
+                "indexed": true,
+                "expand_dots": true,
             })
         );
     }

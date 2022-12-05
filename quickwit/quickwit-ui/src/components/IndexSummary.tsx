@@ -72,13 +72,7 @@ export function IndexSummary({ index }: { index: Index }) {
             .utc()
             .format("YYYY/MM/DD HH:MM")}
         </IndexRow>
-        <IndexRow title="Updated at:">
-          {dayjs
-            .unix(index.metadata.update_timestamp)
-            .utc()
-            .format("YYYY/MM/DD HH:MM")}
-        </IndexRow>
-        <IndexRow title="URI:">{index.metadata.index_uri}</IndexRow>
+        <IndexRow title="URI:">{index.metadata.index_config.index_uri}</IndexRow>
         <IndexRow title="Size of published splits:">
           <NumberFormat
             value={total_num_bytes / 1000000}

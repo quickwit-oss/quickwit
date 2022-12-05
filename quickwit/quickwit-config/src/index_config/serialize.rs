@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -28,19 +28,19 @@ use crate::{
 };
 
 /// Alias for the latest serialization format.
-type IndexConfigForSerialization = IndexConfigV3;
+type IndexConfigForSerialization = IndexConfigV0_4;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub(super) enum VersionedIndexConfig {
-    #[serde(rename = "3")]
-    V3(IndexConfigV3),
+    #[serde(rename = "0.4")]
+    V0_4(IndexConfigV0_4),
 }
 
 impl From<VersionedIndexConfig> for IndexConfigForSerialization {
     fn from(versioned_config: VersionedIndexConfig) -> IndexConfigForSerialization {
         match versioned_config {
-            VersionedIndexConfig::V3(v3) => v3,
+            VersionedIndexConfig::V0_4(v0_4) => v0_4,
         }
     }
 }
@@ -87,12 +87,10 @@ impl IndexConfigForSerialization {
         if let Some(retention_policy) = &self.retention_policy {
             retention_policy.validate()?;
 
-            if retention_policy.requires_timestamp_field()
-                && self.indexing_settings.timestamp_field.is_none()
-            {
-                bail!(
-                    "Failed to validate index config. The retention policy cutoff reference \
-                     requires a timestamp field, but the indexing settings do not declare one."
+            if self.doc_mapping.timestamp_field.is_none() {
+                anyhow::bail!(
+                    "Failed to validate index config. The retention policy requires a timestamp \
+                     field, but the indexing settings do not declare one."
                 );
             }
         }
@@ -100,11 +98,7 @@ impl IndexConfigForSerialization {
         // Note: this needs a deep refactoring to separate the doc mapping configuration,
         // and doc mapper implementations.
         // TODO see if we should store the byproducton the IndexConfig.
-        build_doc_mapper(
-            &self.doc_mapping,
-            &self.search_settings,
-            &self.indexing_settings,
-        )?;
+        build_doc_mapper(&self.doc_mapping, &self.search_settings)?;
 
         self.indexing_settings.merge_policy.validate()?;
 
@@ -121,7 +115,7 @@ impl IndexConfigForSerialization {
 
 impl From<IndexConfig> for VersionedIndexConfig {
     fn from(index_config: IndexConfig) -> Self {
-        VersionedIndexConfig::V3(index_config.into())
+        VersionedIndexConfig::V0_4(index_config.into())
     }
 }
 
@@ -130,14 +124,14 @@ impl TryFrom<VersionedIndexConfig> for IndexConfig {
 
     fn try_from(versioned_index_config: VersionedIndexConfig) -> anyhow::Result<Self> {
         match versioned_index_config {
-            VersionedIndexConfig::V3(v3) => v3.validate_and_build(None),
+            VersionedIndexConfig::V0_4(v3) => v3.validate_and_build(None),
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct IndexConfigV3 {
+pub(crate) struct IndexConfigV0_4 {
     pub index_id: String,
     #[serde(default)]
     pub index_uri: Option<Uri>,
@@ -151,9 +145,9 @@ pub(crate) struct IndexConfigV3 {
     pub retention_policy: Option<RetentionPolicy>,
 }
 
-impl From<IndexConfig> for IndexConfigV3 {
+impl From<IndexConfig> for IndexConfigV0_4 {
     fn from(index_config: IndexConfig) -> Self {
-        IndexConfigV3 {
+        IndexConfigV0_4 {
             index_id: index_config.index_id,
             index_uri: Some(index_config.index_uri),
             doc_mapping: index_config.doc_mapping,
@@ -212,9 +206,25 @@ mod test {
     }
 
     #[test]
+    fn test_validate_retention_policy() {
+        // Not yet invalid, but we modify it right after this.
+        let mut invalid_index_config: IndexConfigForSerialization =
+            minimal_index_config_for_serialization();
+        invalid_index_config.retention_policy = Some(RetentionPolicy {
+            retention_period: "90 days".to_string(),
+            evaluation_schedule: "hourly".to_string(),
+        });
+        let validation_err = invalid_index_config
+            .validate_and_build(None)
+            .unwrap_err()
+            .to_string();
+        assert!(validation_err.contains("The retention policy requires a timestamp field"));
+    }
+
+    #[test]
     fn test_minimal_index_config_missing_root_uri_no_default_uri() {
         let config_yaml = r#"
-            version: 3
+            version: 0.4
             index_id: hdfs-logs
             doc_mapping: {}
         "#;
@@ -226,7 +236,7 @@ mod test {
     #[test]
     fn test_minimal_index_config_missing_root_uri_with_default_index_root_uri() {
         let config_yaml = r#"
-            version: 3
+            version: 0.4
             index_id: hdfs-logs
             doc_mapping: {}
         "#;
@@ -235,7 +245,7 @@ mod test {
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 // same but without the trailing slash.
-                &Uri::from_well_formed("s3://mybucket".to_string()),
+                &Uri::from_well_formed("s3://mybucket"),
             )
             .unwrap();
             assert_eq!(index_config.index_uri.as_str(), "s3://mybucket/hdfs-logs");

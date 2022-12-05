@@ -25,16 +25,17 @@ use std::str::FromStr;
 use quickwit_common::uri::Uri;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value as JsonValue;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
 
 use crate::{is_false, ConfigFormat, TestableForRegression};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
-pub const CLI_INGEST_SOURCE_ID: &str = "_cli-ingest-source";
+pub const CLI_INGEST_SOURCE_ID: &str = "_ingest-cli-source";
 
 /// Reserved source ID used for Quickwit ingest API.
-pub const INGEST_API_SOURCE_ID: &str = "_ingest-api";
+pub const INGEST_API_SOURCE_ID: &str = "_ingest-api-source";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(into = "VersionedSourceConfig")]
@@ -69,11 +70,12 @@ impl SourceConfig {
             SourceParams::Vec(_) => "vec",
             SourceParams::Void(_) => "void",
             SourceParams::IngestApi => "ingest-api",
+            SourceParams::IngestCli => "ingest-cli",
         }
     }
 
     // TODO: Remove after source factory refactor.
-    pub fn params(&self) -> serde_json::Value {
+    pub fn params(&self) -> JsonValue {
         match &self.source_params {
             SourceParams::File(params) => serde_json::to_value(params),
             SourceParams::Kafka(params) => serde_json::to_value(params),
@@ -81,6 +83,7 @@ impl SourceConfig {
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
             SourceParams::IngestApi => serde_json::to_value(()),
+            SourceParams::IngestCli => serde_json::to_value(()),
         }
         .unwrap()
     }
@@ -99,6 +102,16 @@ impl SourceConfig {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestApi,
+        }
+    }
+
+    /// Creates the default cli-ingest source config.
+    pub fn cli_ingest_source() -> SourceConfig {
+        SourceConfig {
+            source_id: CLI_INGEST_SOURCE_ID.to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::IngestCli,
         }
     }
 }
@@ -138,6 +151,8 @@ pub enum SourceParams {
     Void(VoidSourceParams),
     #[serde(rename = "ingest-api")]
     IngestApi,
+    #[serde(rename = "ingest-cli")]
+    IngestCli,
 }
 
 impl SourceParams {
@@ -199,7 +214,7 @@ pub struct KafkaSourceParams {
     /// Kafka client configuration parameters.
     #[serde(default = "serde_json::Value::default")]
     #[serde(skip_serializing_if = "serde_json::Value::is_null")]
-    pub client_params: serde_json::Value,
+    pub client_params: JsonValue,
     /// When backfill mode is enabled, the source exits after reaching the end of the topic.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]

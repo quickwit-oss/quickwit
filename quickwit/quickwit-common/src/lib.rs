@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 mod checklist;
 mod coolid;
 
@@ -124,6 +126,34 @@ macro_rules! ignore_error_kind {
     };
 }
 
+pub struct PrettySample<'a, T>(&'a [T], usize);
+
+impl<'a, T> PrettySample<'a, T> {
+    pub fn new(slice: &'a [T], sample_size: usize) -> Self {
+        Self(slice, sample_size)
+    }
+}
+
+impl<T> Debug for PrettySample<'_, T>
+where T: Debug
+{
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "[")?;
+        for (i, item) in self.0.iter().enumerate() {
+            if i == self.1 {
+                write!(formatter, ", and {} more", self.0.len() - i)?;
+                break;
+            }
+            if i > 0 {
+                write!(formatter, ", ")?;
+            }
+            write!(formatter, "{:?}", item)?;
+        }
+        write!(formatter, "]")?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::ErrorKind;
@@ -160,5 +190,23 @@ mod tests {
             std::fs::remove_file("file-does-not-exist")
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_pretty_sample() {
+        let pretty_sample = PrettySample::<'_, usize>::new(&[], 2);
+        assert_eq!(format!("{:?}", pretty_sample), "[]");
+
+        let pretty_sample = PrettySample::new(&[1], 2);
+        assert_eq!(format!("{:?}", pretty_sample), "[1]");
+
+        let pretty_sample = PrettySample::new(&[1, 2], 2);
+        assert_eq!(format!("{:?}", pretty_sample), "[1, 2]");
+
+        let pretty_sample = PrettySample::new(&[1, 2, 3], 2);
+        assert_eq!(format!("{:?}", pretty_sample), "[1, 2, and 1 more]");
+
+        let pretty_sample = PrettySample::new(&[1, 2, 3, 4], 2);
+        assert_eq!(format!("{:?}", pretty_sample), "[1, 2, and 2 more]");
     }
 }

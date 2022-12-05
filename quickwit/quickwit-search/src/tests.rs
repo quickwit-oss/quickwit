@@ -17,14 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
-use quickwit_proto::{LeafHit, SearchRequest, SortOrder};
-use serde_json::json;
+use quickwit_proto::{SearchRequest, SortOrder};
+use serde_json::{json, Value as JsonValue};
+use tantivy::schema::Value as TantivyValue;
 use tantivy::time::OffsetDateTime;
 
 use super::*;
@@ -44,8 +45,7 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
               - name: binary
                 type: bytes
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
     let docs = vec![
         json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy", "binary": "dGhpcyBpcyBhIHRlc3Qu"}),
         json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="}),
@@ -69,8 +69,53 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
     .await?;
     assert_eq!(single_node_result.num_hits, 1);
     assert_eq!(single_node_result.hits.len(), 1);
-    let hit_json: serde_json::Value = serde_json::from_str(&single_node_result.hits[0].json)?;
-    let expected_json: serde_json::Value = json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy", "binary": "dGhpcyBpcyBhIHRlc3Qu"});
+    let hit_json: JsonValue = serde_json::from_str(&single_node_result.hits[0].json)?;
+    let expected_json: JsonValue = json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy", "binary": "dGhpcyBpcyBhIHRlc3Qu"});
+    assert_json_include!(actual: hit_json, expected: expected_json);
+    assert!(single_node_result.elapsed_time_micros > 10);
+    assert!(single_node_result.elapsed_time_micros < 1_000_000);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_single_node_termset() -> anyhow::Result<()> {
+    let index_id = "single-node-termset-1";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+              - name: url
+                type: text
+              - name: binary
+                type: bytes
+        "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+    let docs = vec![
+        json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy", "binary": "dGhpcyBpcyBhIHRlc3Qu"}),
+        json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="}),
+    ];
+    test_sandbox.add_documents(docs.clone()).await?;
+    let search_request = SearchRequest {
+        index_id: index_id.to_string(),
+        query: "title: IN [beagle]".to_string(),
+        start_timestamp: None,
+        end_timestamp: None,
+        max_hits: 2,
+        start_offset: 0,
+        ..Default::default()
+    };
+    let single_node_result = single_node_search(
+        &search_request,
+        &*test_sandbox.metastore(),
+        test_sandbox.storage_uri_resolver(),
+    )
+    .await?;
+    assert_eq!(single_node_result.num_hits, 1);
+    assert_eq!(single_node_result.hits.len(), 1);
+    let hit_json: JsonValue = serde_json::from_str(&single_node_result.hits[0].json)?;
+    let expected_json: JsonValue = json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="});
     assert_json_include!(actual: hit_json, expected: expected_json);
     assert!(single_node_result.elapsed_time_micros > 10);
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
@@ -87,8 +132,7 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
               - name: body
                 type: text
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
     let docs = vec![
         json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle in the comic strip."}),
         json!({"title": "beagle", "body": "The beagle is a breed of small scent hound."}),
@@ -115,14 +159,14 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
     assert_eq!(single_node_result.num_hits, 2);
     assert_eq!(single_node_result.hits.len(), 2);
 
-    let highlight_json: serde_json::Value =
+    let highlight_json: JsonValue =
         serde_json::from_str(single_node_result.hits[0].snippet.as_ref().unwrap())?;
-    let expected_json: serde_json::Value = json!({"title": [], "body": ["Snoopy is an anthropomorphic <b>beagle</b> in the comic strip"]});
+    let expected_json: JsonValue = json!({"title": [], "body": ["Snoopy is an anthropomorphic <b>beagle</b> in the comic strip"]});
     assert_json_eq!(highlight_json, expected_json);
 
-    let highlight_json: serde_json::Value =
+    let highlight_json: JsonValue =
         serde_json::from_str(single_node_result.hits[1].snippet.as_ref().unwrap())?;
-    let expected_json: serde_json::Value = json!({
+    let expected_json: JsonValue = json!({
         "title": ["<b>beagle</b>"],
         "body": ["The <b>beagle</b> is a breed of small scent hound"]
     });
@@ -178,8 +222,7 @@ async fn test_slop_queries() -> anyhow::Result<()> {
                 record: position
         "#;
 
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
     let docs = vec![
         json!({"title": "one", "body": "a red bike"}),
         json!({"title": "two", "body": "a small blue bike"}),
@@ -237,8 +280,7 @@ async fn test_single_node_several_splits() -> anyhow::Result<()> {
                 type: text
                 tokenizer: 'raw'
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
     for _ in 0..10u32 {
         test_sandbox.add_documents(vec![
                 json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
@@ -291,18 +333,14 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
               - name: owner
                 type: text
                 tokenizer: raw
+            timestamp_field: ts
         "#;
-    let indexing_settings_json = r#"{
-            "timestamp_field": "ts",
-            "sort_field": "ts",
-            "sort_order": "desc"
-        }"#;
+    let indexing_settings_json = r#"{}"#;
     let test_sandbox = TestSandbox::create(
         index_id,
         doc_mapping_yaml,
         indexing_settings_json,
         &["body"],
-        None,
     )
     .await?;
 
@@ -322,6 +360,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 15,
         start_offset: 0,
+        sort_by_field: Some("ts".to_string()),
+        sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -344,6 +384,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 25,
         start_offset: 0,
+        sort_by_field: Some("ts".to_string()),
+        sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -366,6 +408,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         end_timestamp: None,
         max_hits: 25,
         start_offset: 0,
+        sort_by_field: Some("ts".to_string()),
+        sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -397,11 +441,12 @@ async fn single_node_search_sort_by_field(
                 type: text
                 fieldnorms: true
               - name: ts
-                type: i64
+                type: datetime
                 fast: true
               - name: temperature
                 type: i64
                 fast: true
+            timestamp_field: ts
             "#;
 
     let doc_mapping_without_fieldnorms = r#"
@@ -409,11 +454,12 @@ async fn single_node_search_sort_by_field(
               - name: description
                 type: text
               - name: ts
-                type: i64
+                type: datetime
                 fast: true
               - name: temperature
                 type: i64
                 fast: true
+            timestamp_field: ts
             "#;
 
     let doc_mapping_yaml = if fieldnorms_enabled {
@@ -422,24 +468,21 @@ async fn single_node_search_sort_by_field(
         doc_mapping_without_fieldnorms
     };
 
-    let indexing_settings_json = r#"{
-            "timestamp_field": "ts",
-            "sort_field": "ts",
-            "sort_order": "desc"
-        }"#;
+    let indexing_settings_json = r#"{}"#;
     let test_sandbox = TestSandbox::create(
         &index_id,
         doc_mapping_yaml,
         indexing_settings_json,
         &["description"],
-        None,
     )
     .await?;
 
     let mut docs = vec![];
+    let start_timestamp = 72057595;
     for i in 0..30 {
-        let description = format!("city info-{}", i + 1);
-        docs.push(json!({"description": description, "ts": i+1, "temperature": i+32}));
+        let timestamp = start_timestamp + (i + 1) as i64;
+        let description = format!("city info-{}", timestamp);
+        docs.push(json!({"description": description, "ts": timestamp, "temperature": i+32}));
     }
     test_sandbox.add_documents(docs).await?;
 
@@ -505,16 +548,8 @@ async fn test_single_node_invalid_sorting_with_query() -> anyhow::Result<()> {
               - name: temperature
                 type: i64
         "#;
-    let indexing_settings_json = r#"{
-        }"#;
-    let test_sandbox = TestSandbox::create(
-        index_id,
-        doc_mapping_yaml,
-        indexing_settings_json,
-        &["description"],
-        None,
-    )
-    .await?;
+    let test_sandbox =
+        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["description"]).await?;
 
     let mut docs = vec![];
     for i in 0..30 {
@@ -563,7 +598,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
                 tokenizer: raw
         "#;
     let index_id = "single-node-pruning-by-tags";
-    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[]).await?;
     let owners = ["paul", "adrien"];
     for owner in owners {
         let mut docs = vec![];
@@ -621,12 +656,10 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     Ok(())
 }
 
-const DYNAMIC_TEST_INDEX_ID: &str = "search_dynamic_mode";
-
 async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
     let splits = test_sandbox
         .metastore()
-        .list_all_splits(DYNAMIC_TEST_INDEX_ID)
+        .list_all_splits(test_sandbox.index_id())
         .await
         .unwrap();
     let splits_offsets: Vec<_> = splits
@@ -638,7 +671,7 @@ async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Ve
         })
         .collect();
     let request = quickwit_proto::SearchRequest {
-        index_id: DYNAMIC_TEST_INDEX_ID.to_string(),
+        index_id: test_sandbox.index_id().to_string(),
         query: query.to_string(),
         max_hits: 100,
         ..Default::default()
@@ -672,10 +705,9 @@ async fn test_search_dynamic_mode() -> anyhow::Result<()> {
             dynamic_mapping:
                 tokenizer: raw
         "#;
-    let test_sandbox =
-        TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[], None)
-            .await
-            .unwrap();
+    let test_sandbox = TestSandbox::create("search_dynamic_mode", doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
     let docs = vec![
         json!({"body": "hello happy tax payer"}),
         json!({"body": "hello"}),
@@ -694,23 +726,103 @@ async fn test_search_dynamic_mode() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_search_dynamic_mode_expand_dots() -> anyhow::Result<()> {
+    let doc_mapping_yaml = r#"
+            field_mappings: []
+            mode: dynamic
+            #dynamic_mapping:
+            #  expand_dots: true -- that's the default value.
+        "#;
+    let test_sandbox = TestSandbox::create(
+        "search_dynamic_mode_expand_dots",
+        doc_mapping_yaml,
+        "{}",
+        &[],
+    )
+    .await
+    .unwrap();
+    let docs = vec![json!({"k8s.component.name": "quickwit"})];
+    test_sandbox.add_documents(docs).await.unwrap();
+    {
+        let docs = test_search_dynamic_util(&test_sandbox, "k8s.component.name:quickwit").await;
+        assert_eq!(&docs[..], &[0u32]);
+    }
+    {
+        let docs =
+            test_search_dynamic_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
+        assert_eq!(&docs[..], &[0u32]);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_search_dynamic_mode_do_not_expand_dots() -> anyhow::Result<()> {
+    let doc_mapping_yaml = r#"
+            field_mappings: []
+            mode: dynamic
+            dynamic_mapping:
+                expand_dots: false
+        "#;
+    let test_sandbox = TestSandbox::create(
+        "search_dynamic_mode_not_expand_dots",
+        doc_mapping_yaml,
+        "{}",
+        &[],
+    )
+    .await
+    .unwrap();
+    let docs = vec![json!({"k8s.component.name": "quickwit"})];
+    test_sandbox.add_documents(docs).await.unwrap();
+    {
+        let docs =
+            test_search_dynamic_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
+        assert_eq!(&docs[..], &[0u32]);
+    }
+    {
+        let docs = test_search_dynamic_util(&test_sandbox, r#"k8s.component.name:quickwit"#).await;
+        assert!(docs.is_empty());
+    }
+    Ok(())
+}
+
+fn json_to_named_field_doc(doc_json: JsonValue) -> NamedFieldDocument {
+    assert!(doc_json.is_object());
+    let mut doc_map: BTreeMap<String, Vec<TantivyValue>> = BTreeMap::new();
+    for (key, value) in doc_json.as_object().unwrap().clone() {
+        doc_map.insert(key, json_value_to_tantivy_value(value));
+    }
+    NamedFieldDocument(doc_map)
+}
+
+fn json_value_to_tantivy_value(value: JsonValue) -> Vec<TantivyValue> {
+    match value {
+        JsonValue::Bool(val) => vec![TantivyValue::Bool(val)],
+        JsonValue::String(val) => vec![TantivyValue::Str(val)],
+        JsonValue::Array(values) => values
+            .into_iter()
+            .flat_map(json_value_to_tantivy_value)
+            .collect(),
+        JsonValue::Object(object) => {
+            vec![TantivyValue::JsonObject(object)]
+        }
+        JsonValue::Null => vec![],
+        value => vec![value.into()],
+    }
+}
+
 #[track_caller]
 fn test_convert_leaf_hit_aux(
-    default_doc_mapper_json: serde_json::Value,
-    leaf_hit_json: serde_json::Value,
-    expected_hit_json: serde_json::Value,
+    default_doc_mapper_json: JsonValue,
+    document_json: JsonValue,
+    expected_hit_json: JsonValue,
 ) {
     let default_doc_mapper: DefaultDocMapper =
         serde_json::from_value(default_doc_mapper_json).unwrap();
-    let hit = convert_leaf_hit(
-        LeafHit {
-            leaf_json: serde_json::to_string(&leaf_hit_json).unwrap(),
-            ..Default::default()
-        },
-        &default_doc_mapper,
-    )
-    .unwrap();
-    let hit_json: serde_json::Value = serde_json::from_str(&hit.json).unwrap();
+    let named_field_doc = json_to_named_field_doc(document_json);
+    let hit_json_str =
+        convert_document_to_json_string(named_field_doc, &default_doc_mapper).unwrap();
+    let hit_json: JsonValue = serde_json::from_str(&hit_json_str).unwrap();
     assert_eq!(hit_json, expected_hit_json);
 }
 
@@ -813,9 +925,9 @@ fn test_convert_leaf_object_used_to_be_dynamic() {
     );
 }
 
-// This spec might change in the future. THe mode has no impact on the
-// output of convert_leaf_doc. In particular, it does not ignore the previously gathered
-// dynamic field.
+// This spec might change in the future. The mode has no impact on the
+// output of convert_document_to_json_string. In particular, it does not ignore
+// the previously gathered dynamic field.
 #[test]
 fn test_convert_leaf_object_arguable_mode_does_not_affect_format() {
     test_convert_leaf_hit_aux(
@@ -849,8 +961,7 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
                 type: f64
                 fast: true
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"]).await?;
     let docs = vec![
         json!({"color": "blue", "price": 10.0}),
         json!({"color": "blue", "price": 15.0}),
@@ -893,8 +1004,7 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
         test_sandbox.storage_uri_resolver(),
     )
     .await?;
-    let agg_res_json: serde_json::Value =
-        serde_json::from_str(&single_node_result.aggregation.unwrap())?;
+    let agg_res_json: JsonValue = serde_json::from_str(&single_node_result.aggregation.unwrap())?;
     assert_eq!(
         agg_res_json["expensive_colors"]["buckets"][0]["key"],
         "white"
@@ -923,8 +1033,7 @@ async fn test_single_node_aggregation_missing_fast_field() -> anyhow::Result<()>
                 type: f64
                 fast: true
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"]).await?;
     let docs = vec![
         json!({"color": "blue", "price": 10.0}),
         json!({"color": "blue", "price": 15.0}),
@@ -985,8 +1094,7 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
               - name: host
                 type: ip
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["log"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["log"]).await?;
     let docs = vec![
         json!({"log": "User not found", "host": "192.168.0.1"}),
         json!({"log": "Request failed", "host": "10.10.12.123"}),
@@ -1035,9 +1143,8 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
         .await?;
         assert_eq!(single_node_result.num_hits, 1);
         assert_eq!(single_node_result.hits.len(), 1);
-        let hit_json: serde_json::Value = serde_json::from_str(&single_node_result.hits[0].json)?;
-        let expected_json: serde_json::Value =
-            json!({"log": "Request successful", "host": "10.10.11.125"});
+        let hit_json: JsonValue = serde_json::from_str(&single_node_result.hits[0].json)?;
+        let expected_json: JsonValue = json!({"log": "Request successful", "host": "10.10.11.125"});
         assert_json_include!(actual: hit_json, expected: expected_json);
         Ok(())
     }

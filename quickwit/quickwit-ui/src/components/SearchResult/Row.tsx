@@ -24,7 +24,7 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
 import React, { useState } from "react";
-import { DocMapping, Entry, getDateTimeFormat, RawDoc, TimeUnit } from "../../utils/models";
+import { DATE_TIME_WITH_SECONDS_FORMAT, Entry, Field, RawDoc } from "../../utils/models";
 import { QUICKWIT_INTERMEDIATE_GREY } from "../../utils/theme";
 import { JsonEditor } from "../JsonEditor";
 
@@ -32,10 +32,8 @@ dayjs.extend(relativeTime);
 dayjs.extend(utc);
 
 interface RowProps {
-  timestampField: null | string;
-  timeUnit: TimeUnit;
+  timestampField: Field | null;
   row: RawDoc;
-  docMapping: DocMapping;
 }
 
 const EntryName = styled('dt')`
@@ -66,20 +64,38 @@ function EntryFormatter(entry: Entry) {
   )
 }
 
-function DateTimeFormatter(row: RawDoc, timestampField: string | null, timeUnit: TimeUnit) {
-  if (timestampField == null) {
+// Display the timestamp value if found in a `TableCell`.
+function DisplayTimestampValue(row: RawDoc, timestampField: Field | null) {
+  if (timestampField === null || timestampField.field_mapping.output_format === null) {
+    return <></>;
+  }
+  let field_value = row;
+  for (const path_segment of timestampField.path_segments) {
+    field_value = field_value[path_segment]
+  }
+  if (!field_value) {
     return <></>
   }
-  const value = row[timestampField];
-  if (typeof value !== 'number') {
-    return <></>
-  }
-  const datetime = timeUnit === TimeUnit.MILLI_SECOND ? dayjs(value) : dayjs.unix(value);
   return <TableCell sx={{verticalAlign: 'top', padding: '4px'}}>
         <Box sx={{ maxHeight: '115px', width: '90px', display: 'inline-block' }}>
-          {datetime.utc().format(getDateTimeFormat(timeUnit))}
+          {formatDateTime(field_value, timestampField.field_mapping.output_format)}
         </Box>
       </TableCell>
+}
+
+/* eslint-disable  @typescript-eslint/no-explicit-any */
+function formatDateTime(field_value: any, timestampOutputFormat: string): any {
+  // A unix timestamp can be in secs/millis/micros and need to be converted properly.
+  if (timestampOutputFormat === 'unix_timestamp_secs' && typeof field_value === 'number') {
+    return dayjs(field_value * 1000).utc().format(DATE_TIME_WITH_SECONDS_FORMAT);
+  } else if (timestampOutputFormat === 'unix_timestamp_millis' && typeof field_value === 'number') {
+    return dayjs(field_value).utc().format(DATE_TIME_WITH_SECONDS_FORMAT);
+  } else if (timestampOutputFormat === 'unix_timestamp_micros' && typeof field_value === 'number') {
+    return dayjs(field_value / 1000).utc().format(DATE_TIME_WITH_SECONDS_FORMAT);
+  } else {
+    // Other formats are string values and we can just display it as is.
+    return field_value;
+  }
 }
 
 const BreakWordBox = styled('dl')({
@@ -111,7 +127,7 @@ export function Row(props: RowProps) {
             {open ? <KeyboardArrowDown /> : <ChevronRight />}
           </IconButton>
         </TableCell>
-        {DateTimeFormatter(props.row, props.timestampField, props.timeUnit)}
+        {DisplayTimestampValue(props.row, props.timestampField)}
         <TableCell sx={{padding: '4px'}}>
           {!open && <BreakWordBox sx={{ maxHeight: '100px' }}>
               { entries.map((entry) => <React.Fragment key={entry.key}>{EntryFormatter(entry)}</React.Fragment>) }
