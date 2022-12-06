@@ -117,7 +117,7 @@ impl RoutingExpr {
     pub fn eval_hash<Ctx: RoutingExprContext>(&self, ctx: &Ctx) -> u64 {
         if let Some(inner) = self.inner_opt.as_ref() {
             let mut hasher: SipHasher = self.salted_hasher;
-            inner.eval_hash(ctx, &mut hasher);
+            inner.eval_hash(ctx, &mut hasher, self.salted_hasher);
             hasher.finish()
         } else {
             0u64
@@ -144,7 +144,14 @@ enum InnerRoutingExpr {
 }
 
 impl InnerRoutingExpr {
-    fn eval_hash<Ctx: RoutingExprContext, H: Hasher>(&self, ctx: &Ctx, hasher: &mut H) {
+    // our hasher is Copy, but restrict ourself to Clone so it's easier to see
+    // when it get duplicated.
+    fn eval_hash<Ctx: RoutingExprContext, H: Hasher + Clone>(
+        &self,
+        ctx: &Ctx,
+        hasher: &mut H,
+        salted_empty_hasher: H,
+    ) {
         match self {
             InnerRoutingExpr::Field(field_name) => {
                 ExprType::Field.hash(hasher);
@@ -153,12 +160,15 @@ impl InnerRoutingExpr {
             InnerRoutingExpr::Composite(children) => {
                 ExprType::Composite.hash(hasher);
                 for child in children {
-                    child.eval_hash(ctx, hasher);
+                    child.eval_hash(ctx, hasher, salted_empty_hasher.clone());
                 }
             }
             InnerRoutingExpr::Modulo(inner_expr, modulo) => {
                 ExprType::Modulo.hash(hasher);
-                todo!("{inner_expr:?}%{modulo}")
+
+                let mut sub_hasher = salted_empty_hasher.clone();
+                inner_expr.eval_hash(ctx, &mut sub_hasher, salted_empty_hasher);
+                hasher.write_u64(sub_hasher.finish() % modulo);
             }
         }
     }
@@ -321,7 +331,7 @@ mod expression_dsl {
     // Number := { 0..9 } [ Number ]
 
     fn routing_expr(input: &str) -> IResult<&str, Vec<ExpressionAst>> {
-        dbg!(separated_list0(wtag(","), routing_sub_expr)(dbg!(input)))
+        separated_list0(wtag(","), routing_sub_expr)(input)
     }
 
     fn routing_sub_expr(input: &str) -> IResult<&str, ExpressionAst> {
@@ -378,13 +388,15 @@ mod expression_dsl {
 mod tests {
     use super::*;
 
+    use std::collections::HashSet;
+
     fn test_ser_deser(expr: &InnerRoutingExpr) {
         let ser = expr.to_string();
         assert_eq!(&InnerRoutingExpr::from_str(&ser).unwrap(), expr);
     }
 
     fn deser_util(expr_dsl: &str) -> InnerRoutingExpr {
-        let expr = dbg!(InnerRoutingExpr::from_str(expr_dsl).unwrap());
+        let expr = InnerRoutingExpr::from_str(expr_dsl).unwrap();
         test_ser_deser(&expr);
         expr
     }
@@ -463,5 +475,19 @@ mod tests {
         let routing_expr = RoutingExpr::new("tenant_id").unwrap();
         let ctx: serde_json::Map<String, JsonValue> = Default::default();
         assert_eq!(routing_expr.eval_hash(&ctx), 9054185009885066538);
+    }
+
+    #[test]
+    fn test_routing_expr_mod() {
+        let mut seen = HashSet::new();
+        let routing_expr = RoutingExpr::new("hash_mod(tenant_id; 10)").unwrap();
+
+        for i in 0..1000 {
+            let ctx: serde_json::Map<String, JsonValue> =
+                serde_json::from_str(&format!(r#"{{"tenant_id": "happy{i}"}}"#)).unwrap();
+            seen.insert(routing_expr.eval_hash(&ctx));
+        }
+        
+        assert_eq!(seen.len(), 10);
     }
 }
