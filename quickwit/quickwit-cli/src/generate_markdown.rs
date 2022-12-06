@@ -39,6 +39,12 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn markdown_for_command(command: &Command, doc_extensions: &toml::Value) {
+    let command_name = command.get_name();
+    let command_ext: Option<&Value> = doc_extensions.get(command_name.to_owned());
+    markdown_for_command_helper(command, command_ext, command_name.to_string(), vec![]);
+}
+
 fn markdown_for_subcommand(
     subcommand: &Command,
     command_group: Vec<String>,
@@ -62,6 +68,15 @@ fn markdown_for_subcommand(
         }
         val_opt
     };
+    markdown_for_command_helper(subcommand, subcommand_ext, command_name, command_group);
+}
+
+fn markdown_for_command_helper(
+    subcommand: &Command,
+    subcommand_ext: Option<&Value>,
+    command_name: String,
+    command_group: Vec<String>,
+) {
     let long_about_opt: Option<&str> =
         subcommand_ext.and_then(|el| el.get("long_about").and_then(|el| el.as_str()));
 
@@ -154,12 +169,17 @@ fn generate_markdown_from_clap(command: &Command) {
 
     let commands = command.get_subcommands();
     for command in commands {
-        let command_name = command.get_name(); // index, split, source, service
+        let command_name = command.get_name(); // index, split, source
         println!("## {}", command_name);
         if let Some(about) = command.get_about() {
             if !about.trim().is_empty() {
                 println!("{}\n", about);
             }
+        }
+
+        if command.get_subcommands().count() == 0 {
+            markdown_for_command(command, &doc_extensions);
+            continue;
         }
 
         for subcommand in command.get_subcommands().filter(|subcommand| {
