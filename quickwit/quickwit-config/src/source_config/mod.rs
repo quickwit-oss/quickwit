@@ -22,12 +22,15 @@ mod serialize;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use anyhow::bail;
 use quickwit_common::uri::Uri;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
+use vrl::diagnostic::{DiagnosticList, Formatter};
+use vrl::{CompilationResult, TimeZone};
 
 use crate::{is_false, ConfigFormat, TestableForRegression};
 
@@ -53,6 +56,9 @@ pub struct SourceConfig {
     pub enabled: bool,
 
     pub source_params: SourceParams,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform: Option<VrlSettings>,
 }
 
 impl SourceConfig {
@@ -102,6 +108,7 @@ impl SourceConfig {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestApi,
+            transform: None,
         }
     }
 
@@ -112,6 +119,7 @@ impl SourceConfig {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestCli,
+            transform: None,
         }
     }
 }
@@ -127,6 +135,11 @@ impl TestableForRegression for SourceConfig {
                 client_log_level: None,
                 client_params: serde_json::json!({}),
                 enable_backfill_mode: false,
+            }),
+            transform: Some(VrlSettings {
+                source: ".message = downcase(string!(.message))".to_string(),
+                timezone: None,
+                return_only_modified: false,
             }),
         }
     }
@@ -283,6 +296,86 @@ pub struct VecSourceParams {
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct VrlSettings {
+    /// [VRL] source. It is compiled to a VRL [Program].
+    ///
+    /// [VRL]: https://vector.dev/docs/reference/vrl/
+    /// [Program]: vrl::Program
+    source: String,
+
+    /// Timezone to pass to VRL [Program]. It is used for timestamp manipulation.
+    /// If no timezone is given, local timezone is used.
+    ///
+    /// [Program]: vrl::Program
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timezone: Option<String>,
+
+    /// By default, VRL only returns the modified fields. For better user ergonomics,
+    /// we insert a new line and a '.' to the VRL script to return modified body.
+    #[serde(skip_serializing_if = "is_false")]
+    #[serde(default)]
+    return_only_modified: bool,
+}
+
+impl VrlSettings {
+    pub fn new(source: String, timezone: Option<String>, return_only_modified: bool) -> Self {
+        Self {
+            source,
+            timezone,
+            return_only_modified,
+        }
+    }
+
+    pub fn program_source(&self) -> String {
+        if self.return_only_modified {
+            self.source.clone()
+        } else {
+            self.source.clone() + "\n."
+        }
+    }
+
+    pub fn compile_program(&self) -> Result<CompilationResult, DiagnosticList> {
+        let functions = vrl_stdlib::all();
+        let source = self.program_source();
+        vrl::compile(&source, &functions)
+    }
+
+    pub fn get_timezone(&self) -> Option<TimeZone> {
+        let tz_str = self.timezone.as_deref().unwrap_or("UTC");
+        TimeZone::parse(tz_str)
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if let None = self.get_timezone() {
+            bail!(
+                "VRL Timezone `{}` is invalid. Timezone must be a valid name \
+                in the TZ database https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
+                self.timezone.as_ref().unwrap()
+            )
+        }
+
+        if let Err(diagnostics) = self.compile_program() {
+            let errors = Formatter::new(&self.program_source(), diagnostics)
+                .colored()
+                .to_string();
+            bail!("VRL compilation failed:\n {}", errors)
+        }
+
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn new_for_test(source: &str) -> Self {
+        Self {
+            source: source.to_string(),
+            timezone: None,
+            return_only_modified: false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -318,6 +411,11 @@ mod tests {
                 client_log_level: None,
                 client_params: json! {{"bootstrap.servers": "localhost:9092"}},
                 enable_backfill_mode: false,
+            }),
+            transform: Some(VrlSettings {
+                source: ".message = downcase(string!(.message))".to_string(),
+                timezone: Some("local".to_string()),
+                return_only_modified: false,
             }),
         };
         assert_eq!(source_config, expected_source_config);
@@ -407,6 +505,11 @@ mod tests {
                 stream_name: "emr-cluster-logs".to_string(),
                 region_or_endpoint: None,
                 enable_backfill_mode: false,
+            }),
+            transform: Some(VrlSettings {
+                source: ".message = downcase(string!(.message))".to_string(),
+                timezone: Some("local".to_string()),
+                return_only_modified: false,
             }),
         };
         assert_eq!(source_config, expected_source_config);
@@ -526,8 +629,115 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestApi,
+            transform: Some(VrlSettings {
+                source: ".message = downcase(string!(.message))".to_string(),
+                timezone: None,
+                return_only_modified: true,
+            }),
         };
         assert_eq!(source_config, expected_source_config);
         assert!(source_config.num_pipelines().is_none());
+    }
+
+    #[test]
+    fn test_transform_params_serialization() {
+        {
+            let vrl_settings = VrlSettings {
+                source: ".message = downcase(string!(.message))".to_string(),
+                timezone: Some("local".to_string()),
+                return_only_modified: false,
+            };
+            let vrl_settings_yaml = serde_yaml::to_string(&vrl_settings).unwrap();
+            assert_eq!(
+                serde_yaml::from_str::<VrlSettings>(&vrl_settings_yaml).unwrap(),
+                vrl_settings,
+            );
+        }
+        {
+            let vrl_settings = VrlSettings {
+                source: ".message = downcase(string!(.message))".to_string(),
+                timezone: None,
+                return_only_modified: true,
+            };
+            let vrl_settings_yaml = serde_yaml::to_string(&vrl_settings).unwrap();
+            assert_eq!(
+                serde_yaml::from_str::<VrlSettings>(&vrl_settings_yaml).unwrap(),
+                vrl_settings,
+            );
+        }
+    }
+
+    #[test]
+    fn test_transform_params_deserialization() {
+        {
+            let vrl_settings_yaml = r#"
+            source: .message = downcase(string!(.message))
+        "#;
+            let vrl_settings = serde_yaml::from_str::<VrlSettings>(vrl_settings_yaml).unwrap();
+
+            let expected_vrl_settings = VrlSettings {
+                source: ".message = downcase(string!(.message))".to_string(),
+                timezone: None,
+                return_only_modified: false,
+            };
+            assert_eq!(vrl_settings, expected_vrl_settings);
+        }
+        {
+            let vrl_settings_yaml = r#"
+            source: .message = downcase(string!(.message))
+            timezone: Turkey
+            return_only_modified: true
+        "#;
+            let vrl_settings = serde_yaml::from_str::<VrlSettings>(vrl_settings_yaml).unwrap();
+
+            let expected_vrl_settings = VrlSettings {
+                source: ".message = downcase(string!(.message))".to_string(),
+                timezone: Some("Turkey".to_string()),
+                return_only_modified: true,
+            };
+            assert_eq!(vrl_settings, expected_vrl_settings);
+        }
+    }
+
+    #[test]
+    fn test_transform_params_validate() {
+        {
+            let vrl_settings = VrlSettings {
+                source: ".message = downcase(string!(.message))".to_string(),
+                timezone: Some("Turkey".to_string()),
+                return_only_modified: false,
+            };
+            vrl_settings.validate().unwrap();
+        }
+        {
+            let vrl_settings = VrlSettings {
+                source: r#"
+                . = parse_json!(string!(.message))
+                .timestamp = to_unix_timestamp(to_timestamp!(.timestamp))
+                del(.username)
+                .message = downcase(string!(.message))
+                "#
+                .to_string(),
+                timezone: None,
+                return_only_modified: false,
+            };
+            vrl_settings.validate().unwrap();
+        }
+        {
+            let vrl_settings = VrlSettings {
+                source: ".message = downcase(string!(.message))".to_string(),
+                timezone: Some("foo".to_string()),
+                return_only_modified: false,
+            };
+            vrl_settings.validate().unwrap_err();
+        }
+        {
+            let vrl_settings = VrlSettings {
+                source: "foo".to_string(),
+                timezone: Some("Turkey".to_string()),
+                return_only_modified: false,
+            };
+            vrl_settings.validate().unwrap_err();
+        }
     }
 }

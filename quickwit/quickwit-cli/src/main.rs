@@ -297,6 +297,7 @@ mod tests {
                     input_path_opt: None,
                     overwrite: false,
                     clear_cache: true,
+                    vrl_settings: None
                 })) if &index_id == "wikipedia"
                        && config_uri == Uri::from_str("file:///config.yaml").unwrap()
         ));
@@ -321,10 +322,112 @@ mod tests {
                     index_id,
                     input_path_opt: None,
                     overwrite: true,
-                    clear_cache: false
+                    clear_cache: false,
+                    vrl_settings: None
                 })) if &index_id == "wikipedia"
                         && config_uri == Uri::from_str("file:///config.yaml").unwrap()
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_ingest_transform_args() -> anyhow::Result<()> {
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from([
+            "index",
+            "ingest",
+            "--index",
+            "wikipedia",
+            "--config",
+            "/config.yaml",
+            "transform",
+            "--source",
+            ".message = downcase(string!(.message))",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Ingest(
+                IngestDocsArgs {
+                    config_uri,
+                    index_id,
+                    input_path_opt: None,
+                    overwrite: false,
+                    clear_cache: true,
+                    vrl_settings: Some(vrl_settings)
+                })) if &index_id == "wikipedia"
+                       && config_uri == Uri::from_str("file:///config.yaml").unwrap()
+                       && vrl_settings.program_source() == ".message = downcase(string!(.message))\n.".to_string()
+        ));
+
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from([
+            "index",
+            "ingest",
+            "--index",
+            "wikipedia",
+            "--config",
+            "/config.yaml",
+            "--keep-cache",
+            "--overwrite",
+            "transform",
+            "--source",
+            ".message = downcase(string!(.message))",
+            "--return-only-modified",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Ingest(
+                IngestDocsArgs {
+                    config_uri,
+                    index_id,
+                    input_path_opt: None,
+                    overwrite: true,
+                    clear_cache: false,
+                    vrl_settings: Some(vrl_settings)
+                })) if &index_id == "wikipedia"
+                        && config_uri == Uri::from_str("file:///config.yaml").unwrap()
+                       && vrl_settings.program_source() == ".message = downcase(string!(.message))".to_string()
+        ));
+
+        let app = build_cli().no_binary_name(true);
+        // Try to parse without a source
+        let _ = app
+            .try_get_matches_from([
+                "index",
+                "ingest",
+                "--index",
+                "wikipedia",
+                "--config",
+                "/config.yaml",
+                "--keep-cache",
+                "--overwrite",
+                "transform",
+                "--return-only-modified",
+            ])
+            .unwrap_err();
+
+        let app = build_cli().no_binary_name(true);
+        // Try to parse with both --source and --source-file arg
+        let _ = app
+            .try_get_matches_from([
+                "index",
+                "ingest",
+                "--index",
+                "wikipedia",
+                "--config",
+                "/config.yaml",
+                "--keep-cache",
+                "--overwrite",
+                "transform",
+                "--source",
+                ".message = downcase(string!(.message))",
+                "--source-file",
+                "my_vrl_program.txt",
+            ])
+            .unwrap_err();
+
         Ok(())
     }
 

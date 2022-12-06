@@ -33,8 +33,8 @@ Currently Quickwit exposes metrics for three caches: `fastfields`, `shortlived`,
 
 | Namespace | Metric Name | Description | Labels | Type |
 | --------- | ----------- | ----------- | ------ | ---- |
-| `quickwit_indexing` | `processed_docs_total`| Number of processed docs by index, source and processed status in [`valid`, `missing_field`, `parsing_error`] | [`index`, `source`, `docs_processed_status`] | `counter` |
-| `quickwit_indexing` | `processed_docs_total`| Number of processed bytes by index, source and processed status in [`valid`, `missing_field`, `parsing_error`] | [`index`, `source`, `docs_processed_status`] | `counter` |
+| `quickwit_indexing` | `processed_docs_total`| Number of processed docs by index, source and processed status in [`valid`, `missing_field`, `parsing_error`, `transform_error`] | [`index`, `source`, `docs_processed_status`] | `counter` |
+| `quickwit_indexing` | `processed_docs_total`| Number of processed bytes by index, source and processed status in [`valid`, `missing_field`, `parsing_error`, `transform_error`] | [`index`, `source`, `docs_processed_status`] | `counter` |
 | `quickwit_indexing` | `available_concurrent_upload_permits`| Number of available concurrent upload permits by component in [`merger`, `indexer`] | [`component`] | `gauge` |
 | `quickwit_indexing` | `ongoing_merge_operations`| Number of available concurrent upload permits by component in [`merger`, `indexer`]. | [`index`, `source`] | `gauge` |
 

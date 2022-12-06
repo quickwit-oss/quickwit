@@ -2,5 +2,9 @@
   "version": "0.4",
   "source_id": "_ingest-api-source",
   "enabled": true,
-  "source_type": "ingest-api"
+  "source_type": "ingest-api",
+  "transform": {
+    "source": ".message = downcase(string!(.message))",
+    "return_only_modified": true
+  }
 }

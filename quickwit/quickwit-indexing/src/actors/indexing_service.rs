@@ -710,6 +710,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
+            transform: None,
         };
         let spawn_pipeline_msg = SpawnPipeline {
             index_id: index_id.clone(),
@@ -769,6 +770,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
+            transform: None,
         };
         metastore
             .add_source(&index_id, source_config_1.clone())
@@ -791,6 +793,7 @@ mod tests {
             num_pipelines: 2,
             enabled: true,
             source_params: SourceParams::void(),
+            transform: None,
         };
         metastore
             .add_source(&index_id, source_config_2.clone())
@@ -859,6 +862,7 @@ mod tests {
                     num_pipelines: 1,
                     enabled: true,
                     source_params: SourceParams::Vec(VecSourceParams::default()),
+                    transform: None,
                 },
                 pipeline_ord: 0,
             })
@@ -888,6 +892,7 @@ mod tests {
                 batch_num_docs: 10,
                 partition: "0".to_string(),
             }),
+            transform: None,
         };
         indexing_server_mailbox
             .ask_for_res(SpawnPipeline {
@@ -925,6 +930,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
+            transform: None,
         };
         metastore.create_index(index_config).await.unwrap();
         metastore
@@ -1028,6 +1034,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
+            transform: None,
         };
         index_metadata
             .sources

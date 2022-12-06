@@ -17,16 +17,21 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
+use quickwit_config::VrlSettings;
 use quickwit_doc_mapper::{DocMapper, DocParsingError};
 use serde::Serialize;
 use tantivy::schema::{Field, Value};
 use tokio::runtime::Handle;
 use tracing::warn;
+use vrl::diagnostic::Formatter;
+use vrl::{CompilationResult, Program, Runtime, TargetValueRef, Terminate, TimeZone};
 
 use crate::actors::Indexer;
 use crate::models::{NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, RawDocBatch};
@@ -34,6 +39,7 @@ use crate::models::{NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, 
 enum PrepareDocumentError {
     ParsingError,
     MissingField,
+    VrlError(Terminate),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -41,12 +47,14 @@ pub struct DocProcessorCounters {
     index_id: String,
     source_id: String,
     /// Overall number of documents received, partitioned
-    /// into 3 categories:
-    /// - number docs that did not parse correctly.
-    /// - number docs missing a timestamp (if the index has no timestamp,
+    /// into 4 categories:
+    /// - number of docs that did not parse correctly.
+    /// - number of docs that did not get transformed correctly (VRL Error)
+    /// - number of docs missing a timestamp (if the index has no timestamp,
     /// then this counter is 0)
     /// - number of valid docs.
     pub num_parse_errors: u64,
+    pub num_transform_errors: u64,
     pub num_docs_with_missing_fields: u64,
     pub num_valid_docs: u64,
 
@@ -63,6 +71,7 @@ impl DocProcessorCounters {
             index_id,
             source_id,
             num_parse_errors: 0,
+            num_transform_errors: 0,
             num_docs_with_missing_fields: 0,
             num_valid_docs: 0,
             overall_num_bytes: 0,
@@ -71,14 +80,17 @@ impl DocProcessorCounters {
 
     /// Returns the overall number of docs that went through the indexer (valid or not).
     pub fn num_processed_docs(&self) -> u64 {
-        self.num_valid_docs + self.num_parse_errors + self.num_docs_with_missing_fields
+        self.num_valid_docs
+            + self.num_parse_errors
+            + self.num_docs_with_missing_fields
+            + self.num_transform_errors
     }
 
     /// Returns the overall number of docs that were sent to the indexer but were invalid.
     /// (For instance, because they were missing a required field or because their because
     /// their format was invalid)
     pub fn num_invalid_docs(&self) -> u64 {
-        self.num_parse_errors + self.num_docs_with_missing_fields
+        self.num_parse_errors + self.num_docs_with_missing_fields + self.num_transform_errors
     }
 
     pub fn record_parsing_error(&mut self, num_bytes: u64) {
@@ -98,6 +110,27 @@ impl DocProcessorCounters {
                 self.index_id.as_str(),
                 self.source_id.as_str(),
                 "parsing_error",
+            ])
+            .inc_by(num_bytes);
+    }
+
+    pub fn record_transform_error(&mut self, num_bytes: u64) {
+        self.num_transform_errors += 1;
+        self.overall_num_bytes += num_bytes;
+        crate::metrics::INDEXER_METRICS
+            .processed_docs_total
+            .with_label_values([
+                self.index_id.as_str(),
+                self.source_id.as_str(),
+                "transform_error",
+            ])
+            .inc();
+        crate::metrics::INDEXER_METRICS
+            .processed_bytes
+            .with_label_values([
+                self.index_id.as_str(),
+                self.source_id.as_str(),
+                "transform_error",
             ])
             .inc_by(num_bytes);
     }
@@ -143,6 +176,83 @@ pub struct DocProcessor {
     timestamp_field_opt: Option<Field>,
     counters: DocProcessorCounters,
     publish_lock: PublishLock,
+    transform_layer: Option<VrlProgram>,
+}
+
+struct VrlProgram {
+    inner: Program,
+    runtime: Runtime,
+    timezone: TimeZone,
+}
+
+impl TryFrom<VrlSettings> for VrlProgram {
+    type Error = anyhow::Error;
+
+    fn try_from(settings: VrlSettings) -> Result<Self, Self::Error> {
+        settings.validate()?;
+        // Since we validated the settings, we can unwrap the return values
+        let timezone = settings.get_timezone().unwrap();
+
+        let CompilationResult {
+            program,
+            warnings,
+            config: _,
+        } = settings.compile_program().unwrap();
+
+        let compilation_warnings = warnings.warnings();
+        if !compilation_warnings.is_empty() {
+            let warning_message = Formatter::new(
+                &settings.program_source(),
+                compilation_warnings
+                    .iter()
+                    .map(|warning_ref| (*warning_ref).clone())
+                    .collect_vec(),
+            )
+            .to_string();
+            warn!(
+                vrl_warnings = warning_message,
+                "VRL program compiled successfully but returned warnings: {}", warning_message
+            );
+        }
+
+        let state = vrl::state::Runtime::default();
+        let runtime = Runtime::new(state);
+
+        Ok(VrlProgram {
+            inner: program,
+            runtime,
+            timezone,
+        })
+    }
+}
+
+impl VrlProgram {
+    pub fn process_doc(&mut self, doc_json: &str) -> Result<String, PrepareDocumentError> {
+        let mut target: ::value::Value =
+            serde_json::from_str(doc_json).map_err(|_| PrepareDocumentError::ParsingError)?;
+
+        let mut metadata = ::value::Value::Object(BTreeMap::new());
+        let mut secrets = ::value::Secrets::new();
+        let mut target_value = TargetValueRef {
+            value: &mut target,
+            metadata: &mut metadata,
+            secrets: &mut secrets,
+        };
+
+        let runtime_result = self
+            .runtime
+            .resolve(&mut target_value, &self.inner, &self.timezone);
+
+        self.runtime.clear();
+
+        match runtime_result {
+            Ok(value) => Ok(value.to_string()),
+            Err(terminate) => {
+                println!("Vrl returned error {}", terminate);
+                Err(PrepareDocumentError::VrlError(terminate))
+            }
+        }
+    }
 }
 
 impl DocProcessor {
@@ -151,23 +261,37 @@ impl DocProcessor {
         source_id: String,
         doc_mapper: Arc<dyn DocMapper>,
         indexer_mailbox: Mailbox<Indexer>,
-    ) -> Self {
+        vrl_settings: Option<VrlSettings>,
+    ) -> anyhow::Result<Self> {
         let schema = doc_mapper.schema();
         let timestamp_field_opt = doc_mapper.timestamp_field(&schema);
-        Self {
+        let vrl_program = match vrl_settings {
+            Some(settings) => Some(VrlProgram::try_from(settings)?),
+            None => None,
+        };
+
+        let doc_processor = Self {
             doc_mapper,
             indexer_mailbox,
             timestamp_field_opt,
             counters: DocProcessorCounters::new(index_id, source_id),
             publish_lock: PublishLock::default(),
-        }
+            transform_layer: vrl_program,
+        };
+
+        Ok(doc_processor)
     }
 
     fn prepare_document(
-        &self,
+        &mut self,
         doc_json: String,
         ctx: &ActorContext<Self>,
     ) -> Result<PreparedDoc, PrepareDocumentError> {
+        let doc_json = match self.transform_layer.as_mut() {
+            Some(vrl_program) => vrl_program.process_doc(&doc_json)?,
+            None => doc_json,
+        };
+
         // Parse the document
         let _protect_guard = ctx.protect_zone();
         let num_bytes = doc_json.len();
@@ -267,6 +391,9 @@ impl Handler<RawDocBatch> for DocProcessor {
                 Err(PrepareDocumentError::ParsingError) => {
                     self.counters.record_parsing_error(doc_json_num_bytes);
                 }
+                Err(PrepareDocumentError::VrlError(_)) => {
+                    self.counters.record_transform_error(doc_json_num_bytes);
+                }
                 Err(PrepareDocumentError::MissingField) => {
                     self.counters.record_missing_field(doc_json_num_bytes);
                 }
@@ -323,7 +450,9 @@ mod tests {
             source_id.to_string(),
             doc_mapper.clone(),
             indexer_mailbox,
-        );
+            None,
+        )
+        .unwrap();
         let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
@@ -349,6 +478,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 source_id: source_id.to_string(),
                 num_parse_errors: 1,
+                num_transform_errors: 0,
                 num_docs_with_missing_fields: 1,
                 num_valid_docs: 2,
                 overall_num_bytes: 387,
@@ -409,7 +539,9 @@ mod tests {
             "my-source".to_string(),
             doc_mapper,
             indexer_mailbox,
-        );
+            None,
+        )
+        .unwrap();
         let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
@@ -453,7 +585,9 @@ mod tests {
             "my-source".to_string(),
             doc_mapper,
             indexer_mailbox,
-        );
+            None,
+        )
+        .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
         let publish_lock = PublishLock::default();
@@ -480,7 +614,9 @@ mod tests {
             "my-source".to_string(),
             doc_mapper,
             indexer_mailbox,
-        );
+            None,
+        )
+        .unwrap();
         let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
@@ -507,5 +643,85 @@ mod tests {
         assert!(matches!(exit_status, ActorExitStatus::Success));
         let indexer_messages: Vec<PreparedDocBatch> = indexer_inbox.drain_for_test_typed();
         assert!(indexer_messages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_doc_processor_simple_vrl() -> anyhow::Result<()> {
+        let index_id = "my-index";
+        let source_id = "my-source";
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let vrl_settings = VrlSettings::new_for_test(".body = upcase(string!(.body))");
+        let doc_processor = DocProcessor::new(
+            index_id.to_string(),
+            source_id.to_string(),
+            doc_mapper.clone(),
+            indexer_mailbox,
+            Some(vrl_settings),
+        )
+        .unwrap();
+        let universe = Universe::new();
+        let (doc_processor_mailbox, doc_processor_handle) =
+            universe.spawn_builder().spawn(doc_processor);
+        let checkpoint_delta = SourceCheckpointDelta::from(0..4);
+        doc_processor_mailbox
+            .send_message(RawDocBatch {
+                docs: vec![
+                        r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string(), // missing timestamp
+                        r#"{"body": "happy using VRL", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(), // ok
+                        r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#.to_string(), // ok
+                        "{".to_string(),                    // invalid json
+                    ],
+                checkpoint_delta: checkpoint_delta.clone(),
+            })
+            .await?;
+        let doc_processor_counters = doc_processor_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+        assert_eq!(
+            doc_processor_counters,
+            DocProcessorCounters {
+                index_id: index_id.to_string(),
+                source_id: source_id.to_string(),
+                num_parse_errors: 1,
+                num_transform_errors: 0,
+                num_docs_with_missing_fields: 1,
+                num_valid_docs: 2,
+                overall_num_bytes: 397,
+            }
+        );
+        let output_messages = indexer_inbox.drain_for_test();
+        assert_eq!(output_messages.len(), 1);
+        let batch = *(output_messages
+            .into_iter()
+            .next()
+            .unwrap()
+            .downcast::<PreparedDocBatch>()
+            .unwrap());
+        assert_eq!(batch.docs.len(), 2);
+        assert_eq!(batch.checkpoint_delta, checkpoint_delta);
+
+        let schema = doc_mapper.schema();
+        let NamedFieldDocument(named_field_doc_map) = schema.to_named_doc(&batch.docs[0].doc);
+        let doc_json = JsonValue::Object(doc_mapper.doc_to_json(named_field_doc_map)?);
+        assert_eq!(
+            doc_json,
+            serde_json::json!({
+                "_source": {
+                    "body": "HAPPY USING VRL",
+                    "response_date": "2021-12-19T16:39:59+00:00",
+                    "response_payload": "YWJj",
+                    "response_time": 2,
+                    "timestamp": 1628837062
+                },
+                "body": "HAPPY USING VRL",
+                "response_date": "2021-12-19T16:39:59Z",
+                 "response_payload": "YWJj",
+                 "response_time": 2.0,
+                 "timestamp": 1628837062
+            })
+        );
+        Ok(())
     }
 }

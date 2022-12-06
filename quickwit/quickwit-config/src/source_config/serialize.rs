@@ -20,6 +20,7 @@
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
+use super::VrlSettings;
 use crate::{
     validate_identifier, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
@@ -41,6 +42,7 @@ impl From<SourceConfig> for SourceConfigV0_4 {
             num_pipelines: source_config.num_pipelines,
             enabled: source_config.enabled,
             source_params: source_config.source_params,
+            transform: source_config.transform,
         }
     }
 }
@@ -97,6 +99,9 @@ pub(crate) struct SourceConfigV0_4 {
 
     #[serde(flatten)]
     pub source_params: SourceParams,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform: Option<VrlSettings>,
 }
 
 impl SourceConfigV0_4 {
@@ -131,11 +136,17 @@ impl SourceConfigV0_4 {
             | SourceParams::IngestApi
             | SourceParams::IngestCli => {}
         }
+
+        if let Some(ref vrl_settings) = self.transform {
+            vrl_settings.validate()?
+        }
+
         Ok(SourceConfig {
             source_id: self.source_id,
             num_pipelines: self.num_pipelines,
             enabled: self.enabled,
             source_params: self.source_params,
+            transform: self.transform,
         })
     }
 }
@@ -151,11 +162,28 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::stdin(),
+            transform: None,
         };
         assert!(source_config_for_serialization
             .validate_and_build()
             .unwrap_err()
             .to_string()
             .contains("must contain a `filepath`"));
+    }
+
+    #[test]
+    fn test_transform_validation() {
+        let vrl_settings = VrlSettings {
+            source: "somerandomthing".to_string(),
+            timezone: None,
+            return_only_modified: false,
+        };
+        vrl_settings.validate().unwrap_err();
+        let vrl_settings = VrlSettings {
+            source: ".message = downcase(string!(.message))".to_string(),
+            timezone: None,
+            return_only_modified: false,
+        };
+        vrl_settings.validate().unwrap();
     }
 }

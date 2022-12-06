@@ -140,6 +140,7 @@ impl TestSandbox {
                 batch_num_docs: 10,
                 partition: format!("add-docs-{}", add_docs_id),
             }),
+            transform: None,
         };
         let pipeline_id = self
             .indexing_service

@@ -89,6 +89,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
+            transform: None,
         };
         let metastore = metastore_for_test();
         let ctx = SourceExecutionContext::for_test(
@@ -117,6 +118,7 @@ mod tests {
                     num_pipelines: 1,
                     enabled: true,
                     source_params: SourceParams::void(),
+                    transform: None,
                 },
             ),
             VoidSourceParams,

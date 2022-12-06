@@ -19,14 +19,14 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
-use std::io::{stdout, Stdout, Write};
+use std::io::{stdout, Read, Stdout, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
-use clap::{arg, ArgMatches, Command};
+use clap::{arg, ArgGroup, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
@@ -36,7 +36,7 @@ use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
-    CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
+    VrlSettings, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexService};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
@@ -98,6 +98,20 @@ pub fn build_index_command<'a>() -> Command<'a> {
                     arg!(--"keep-cache" "Does not clear local cache directory upon completion.")
                         .required(false),
                 ])
+                .subcommand(
+                    Command::new("transform")
+                    .about("Transform the documents before ingesting.")
+                    .args(&[
+                        arg!(--source <PROGRAM> "VRL program to transform docs before ingesting."),
+                        arg!(--"source-file" <PROGRAM_PATH> "Location of the VRL program to transform docs before ingesting.")
+                            .conflicts_with("source"),
+                        arg!(--timezone <TIMEZONE> "Timezone to use in VRL program's context. Must be a valid name in TZ Database `https://en.wikipedia.org/wiki/List_of_tz_database_time_zones`. Defaults to `UTC`")
+                            .required(false),
+                        arg!(--"return-only-modified" "Return only the modified values. If set transform script does not return the modified body but only the values returned from the script. Flag has no effect if VRL program is not provided.")
+                            .required(false),
+                    ])
+                    .group(ArgGroup::new("vrl-source").args(&["source", "source-file"]).required(true))
+                )
             )
         .subcommand(
             Command::new("ingest-api")
@@ -225,6 +239,7 @@ pub struct IngestDocsArgs {
     pub input_path_opt: Option<PathBuf>,
     pub overwrite: bool,
     pub clear_cache: bool,
+    pub vrl_settings: Option<VrlSettings>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -396,13 +411,51 @@ impl IndexCliCommand {
         let overwrite = matches.is_present("overwrite");
         let clear_cache = !matches.is_present("keep-cache");
 
+        let vrl_settings = if let Some(submatches) = matches.subcommand_matches("transform") {
+            Some(IndexCliCommand::parse_transform_args(submatches)?)
+        } else {
+            None
+        };
+
         Ok(Self::Ingest(IngestDocsArgs {
             index_id,
             input_path_opt,
             overwrite,
             config_uri,
             clear_cache,
+            vrl_settings,
         }))
+    }
+
+    fn parse_transform_args(matches: &ArgMatches) -> anyhow::Result<VrlSettings> {
+        let vrl_program = match matches.value_of("source") {
+            Some(source) => source.to_owned(),
+            None => match matches.value_of("source-file").as_ref() {
+                Some(path) => {
+                    let mut reader = std::fs::File::open(path)?;
+                    let mut buffer = String::new();
+                    reader.read_to_string(&mut buffer)?;
+                    buffer
+                }
+                None => panic!("Either `source` or `source-file` must be present."),
+            },
+        };
+
+        let timezone = if let Some(timezone) = matches.value_of("timezone") {
+            Some(timezone.to_owned())
+        } else {
+            None
+        };
+
+        let vrl_settings = VrlSettings::new(
+            vrl_program,
+            timezone,
+            matches.is_present("return-only-modified"),
+        );
+
+        vrl_settings.validate()?;
+
+        Ok(vrl_settings)
     }
 
     fn parse_toggle_ingest_api_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -893,6 +946,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         num_pipelines: 1,
         enabled: true,
         source_params,
+        transform: args.vrl_settings,
     };
     run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source_config)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
@@ -1056,6 +1110,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
                 num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
+                transform: None,
             },
             pipeline_ord: 0,
         })
