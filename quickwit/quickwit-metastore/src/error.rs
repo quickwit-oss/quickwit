@@ -113,7 +113,7 @@ impl ServiceError for MetastoreError {
             Self::Forbidden { .. } => ServiceErrorCode::Internal,
             Self::IncompatibleCheckpointDelta(_) => ServiceErrorCode::BadRequest,
             Self::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            Self::IndexDoesNotExist { .. } => ServiceErrorCode::BadRequest,
+            Self::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
             Self::InternalError { .. } => ServiceErrorCode::Internal,
             Self::InvalidManifest { .. } => ServiceErrorCode::Internal,
             Self::Io { .. } => ServiceErrorCode::Internal,

@@ -30,9 +30,20 @@ runs:
     - name: Install cross
       run: cargo install cross
       shell: bash
+    - name: Retrieve and export commit date, hash, and tags
+      run: |
+          echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+          echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
+      shell: bash
     - name: Build Quickwit
       run: cross build --release --features release-feature-vendored-set --target ${{ inputs.target }}
       shell: bash
+      env:
+        QW_COMMIT_DATE: ${{ env.QW_COMMIT_DATE }}
+        QW_COMMIT_HASH: ${{ env.QW_COMMIT_HASH }}
+        QW_COMMIT_TAGS: ${{ env.QW_COMMIT_TAGS }}
+
       working-directory: ./quickwit
     - name: Bundle archive
       run: |

@@ -257,7 +257,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         }
 
         let required_fields = list_required_fields_for_node(&field_mappings);
-        let partition_key = RoutingExpr::new(&builder.partition_key)
+        let partition_key = RoutingExpr::new(builder.partition_key.as_deref().unwrap_or(""))
             .context("Failed to interpret the partition key.")?;
         Ok(DefaultDocMapper {
             schema,
@@ -282,6 +282,12 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             Mode::Dynamic(mapping_options) => Some(mapping_options.clone()),
             _ => None,
         };
+        let partition_key_str = default_doc_mapper.partition_key.to_string();
+        let partition_key_opt: Option<String> = if partition_key_str.is_empty() {
+            None
+        } else {
+            Some(partition_key_str)
+        };
         Self {
             store_source: default_doc_mapper.source_field.is_some(),
             timestamp_field: default_doc_mapper.timestamp_field_name(),
@@ -290,7 +296,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             default_search_fields: default_doc_mapper.default_search_field_names,
             mode,
             dynamic_mapping,
-            partition_key: default_doc_mapper.partition_key.to_string(),
+            partition_key: partition_key_opt,
             max_num_partitions: default_doc_mapper.max_num_partitions,
         }
     }
@@ -620,6 +626,62 @@ mod tests {
                             your field `timestamp`."
             .to_string();
         assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_doc_mapper_with_duplicate_fields() -> anyhow::Result<()> {
+        {
+            let doc_mapper = r#"{
+                "field_mappings": [
+                    {"name": "body","type": "text"},
+                    {"name": "body","type": "bytes"}
+                ]
+            }"#;
+            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+            let expected_msg = "Duplicated field definition `body`.".to_string();
+            assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
+        }
+
+        {
+            let doc_mapper = r#"{
+                "field_mappings": [
+                    {
+                        "name": "identity",
+                        "type": "object",
+                        "field_mappings": [
+                            {"type": "text", "name": "username"},
+                            {"type": "text", "name": "username"}
+                        ]
+                    },
+                    {"type": "text", "name": "body"}
+                ]
+            }"#;
+            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+            let expected_msg = "Duplicated field definition `username`.".to_string();
+            assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_should_build_doc_mapper_with_duplicate_fields_at_different_level() -> anyhow::Result<()>
+    {
+        let doc_mapper = r#"{
+            "field_mappings": [
+                {
+                    "name": "identity",
+                    "type": "object",
+                    "field_mappings": [
+                        {"type": "text", "name": "body"},
+                        {"type": "text", "name": "username"}
+                    ]
+                },
+                {"type": "text", "name": "body"}
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+        assert!(builder.try_build().is_ok());
         Ok(())
     }
 

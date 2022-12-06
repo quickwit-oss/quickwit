@@ -30,7 +30,11 @@ doc_mapping:
   mode: lenient
   field_mappings:
     - name: timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: severity_text
       type: text
@@ -46,13 +50,19 @@ doc_mapping:
           type: text
           tokenizer: raw
   tag_fields: ["resource.service"]
-
-indexing_settings:
   timestamp_field: timestamp
 
 search_settings:
   default_search_fields: [severity_text, body]
+
+retention:
+  period: 90 days
+  schedule: daily
 ```
+
+## Index ID
+
+The index ID is a string that uniquely identifies the index within the metastore. It may only contain uppercase or lowercase ASCII letters, digits, hyphens (`-`), and underscores (`_`). Finally, it must start with a letter and contain at least 3 characters but no more than 255.
 
 ## Index uri
 
@@ -83,6 +93,8 @@ The doc mapping defines how a document and the fields it contains are stored and
 | `tag_fields` | Collection of fields already defined in `field_mappings` whose values will be stored as part of the `tags` metadata. [Learn more about tags](../concepts/querying.md#tag-pruning). | [] |
 | `store_source` | Whether or not the original JSON document is stored or not in the index.   | false |
 | `timestamp_field`      | Timestamp field used for sharding documents in splits. The field has to be of type `datetime`. [Learn more about time sharding](./../concepts/architecture.md).  | None |
+ `partition_key`   |  If set, quickwit will route documents into different splits depending on the field name declared as the `partition_key`. | null |
+| `max_num_partitions`  | Limits the number of splits created through partitioning. (See [Partitioning](../concepts/querying.md#partitioning))  |    200 |
 
 ### Field types
 
