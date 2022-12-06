@@ -116,6 +116,7 @@ impl Queues {
     ) -> crate::Result<()> {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
 
+        // TODO None means we don't have itempotent inserts
         self.record_log
             .append_records(&real_queue_id, None, records_it)
             .await?;

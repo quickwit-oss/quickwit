@@ -132,7 +132,9 @@ impl From<TruncateError> for IngestApiError {
             TruncateError::IoError(ioe) => ioe.into(),
             TruncateError::MissingQueue(index_id) => IngestApiError::IndexDoesNotExist { index_id },
             // this error shouldn't happen (except due to a bug in MRecordLog?)
-            TruncateError::TouchError(_) => todo!(),
+            TruncateError::TouchError(_) => {
+                IngestApiError::InvalidPosition("touching at an invalid position".to_owned())
+            }
             // this error can happen now, it used to happily trunk everything
             TruncateError::Future => IngestApiError::InvalidPosition(
                 "trying to truncate past last ingested record".to_owned(),
