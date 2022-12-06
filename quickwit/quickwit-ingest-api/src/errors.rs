@@ -89,9 +89,9 @@ impl From<IngestApiError> for tonic::Status {
 }
 
 impl From<ReadRecordError> for IngestApiError {
-    fn from(e: ReadRecordError) -> IngestApiError {
-        match e {
-            ReadRecordError::IoError(ioe) => ioe.into(),
+    fn from(err: ReadRecordError) -> IngestApiError {
+        match err {
+            ReadRecordError::IoError(io_err) => io_err.into(),
             ReadRecordError::Corruption => IngestApiError::Corruption {
                 msg: "failed to read record".to_owned(),
             },
@@ -100,9 +100,9 @@ impl From<ReadRecordError> for IngestApiError {
 }
 
 impl From<AppendError> for IngestApiError {
-    fn from(e: AppendError) -> IngestApiError {
-        match e {
-            AppendError::IoError(ioe) => ioe.into(),
+    fn from(err: AppendError) -> IngestApiError {
+        match err {
+            AppendError::IoError(io_err) => io_err.into(),
             AppendError::MissingQueue(index_id) => IngestApiError::IndexDoesNotExist { index_id },
             // these errors can't be reached right now
             AppendError::Past => {
@@ -116,9 +116,9 @@ impl From<AppendError> for IngestApiError {
 }
 
 impl From<DeleteQueueError> for IngestApiError {
-    fn from(e: DeleteQueueError) -> IngestApiError {
-        match e {
-            DeleteQueueError::IoError(ioe) => ioe.into(),
+    fn from(err: DeleteQueueError) -> IngestApiError {
+        match err {
+            DeleteQueueError::IoError(io_err) => io_err.into(),
             DeleteQueueError::MissingQueue(index_id) => {
                 IngestApiError::IndexDoesNotExist { index_id }
             }
@@ -127,9 +127,9 @@ impl From<DeleteQueueError> for IngestApiError {
 }
 
 impl From<TruncateError> for IngestApiError {
-    fn from(e: TruncateError) -> IngestApiError {
-        match e {
-            TruncateError::IoError(ioe) => ioe.into(),
+    fn from(err: TruncateError) -> IngestApiError {
+        match err {
+            TruncateError::IoError(io_err) => io_err.into(),
             TruncateError::MissingQueue(index_id) => IngestApiError::IndexDoesNotExist { index_id },
             // this error shouldn't happen (except due to a bug in MRecordLog?)
             TruncateError::TouchError(_) => {
