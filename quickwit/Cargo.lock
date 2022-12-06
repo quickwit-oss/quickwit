@@ -3500,6 +3500,7 @@ dependencies = [
  "itertools",
  "matches",
  "mockall",
+ "nom",
  "once_cell",
  "ouroboros",
  "proptest",
