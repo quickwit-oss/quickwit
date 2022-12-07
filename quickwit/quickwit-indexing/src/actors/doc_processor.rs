@@ -36,7 +36,8 @@ use vrl::{CompilationResult, Program, Runtime, TargetValueRef, Terminate, TimeZo
 use crate::actors::Indexer;
 use crate::models::{NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, RawDocBatch};
 
-enum PrepareDocumentError {
+#[derive(Debug)]
+pub enum PrepareDocumentError {
     ParsingError,
     MissingField,
     VrlError(Terminate),
@@ -287,13 +288,17 @@ impl DocProcessor {
         doc_json: String,
         ctx: &ActorContext<Self>,
     ) -> Result<PreparedDoc, PrepareDocumentError> {
+        let _protect_guard = ctx.protect_zone();
+        self._prepare_document(doc_json)
+    }
+
+    pub fn _prepare_document(&mut self, doc_json: String) -> Result<PreparedDoc, PrepareDocumentError> {
         let doc_json = match self.transform_layer.as_mut() {
             Some(vrl_program) => vrl_program.process_doc(&doc_json)?,
             None => doc_json,
         };
 
         // Parse the document
-        let _protect_guard = ctx.protect_zone();
         let num_bytes = doc_json.len();
         let doc_parsing_result = self.doc_mapper.doc_from_json(doc_json);
         let (partition, doc) = doc_parsing_result.map_err(|doc_parsing_error| {

@@ -65,6 +65,7 @@ testsuite = []
 
 [dev-dependencies]
 bytes = { workspace = true }
+criterion = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }
@@ -81,3 +82,7 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 name = "failpoints"
 path = "failpoints/mod.rs"
 required-features = ["fail/failpoints"]
+
+[[bench]]
+name = "doc_process_vrl_bench"
+harness = false

@@ -4267,6 +4267,7 @@ dependencies = [
  "backoff",
  "byte-unit",
  "bytes",
+ "criterion",
  "fail",
  "flume",
  "fnv",
