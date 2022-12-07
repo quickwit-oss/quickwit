@@ -591,18 +591,21 @@ impl Metastore for PostgresqlMetastore {
                     message: error.to_string(),
                 }
             })?;
+            split_metadata_json_list.push(split_metadata_json);
+
             let time_range_start = split_metadata
                 .time_range
                 .as_ref()
                 .map(|range| *range.start());
+            time_range_start_list.push(time_range_start);
+
             let time_range_end = split_metadata.time_range.map(|range| *range.end());
+            time_range_end_list.push(time_range_end);
+
             let tags: Vec<String> = split_metadata.tags.into_iter().collect();
+            tags_list.push(sqlx::types::Json(tags));
 
             split_ids.push(split_metadata.split_id);
-            time_range_start_list.push(time_range_start);
-            time_range_end_list.push(time_range_end);
-            tags_list.push(sqlx::types::Json(tags));
-            split_metadata_json_list.push(split_metadata_json);
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
         }
 
