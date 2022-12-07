@@ -165,6 +165,26 @@ mod tests {
 
     use super::*;
 
+    #[tokio::test]
+    async fn test_indexing_directory() -> anyhow::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let tmp_path = tempdir.path();
+        let scratch_directory = ScratchDirectory::create_in_dir(tmp_path).await?;
+        let scratch_directory_path = scratch_directory.path().to_path_buf();
+
+        assert_eq!(tmp_path.join(SCRATCH), scratch_directory_path);
+        assert!(scratch_directory_path.try_exists()?);
+
+        let scratch_file_path = scratch_directory_path.join("file");
+        tokio::fs::File::create(&scratch_file_path).await?;
+        assert!(scratch_file_path.try_exists()?);
+
+        let _scratch_directory = ScratchDirectory::create_in_dir(tempdir.path()).await?;
+        assert!(!scratch_file_path.try_exists()?);
+
+        Ok(())
+    }
+
     #[test]
     fn test_scratch_directory() -> io::Result<()> {
         let parent = ScratchDirectory::for_test();
