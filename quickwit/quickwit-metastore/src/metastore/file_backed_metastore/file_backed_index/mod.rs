@@ -167,6 +167,9 @@ impl FileBackedIndex {
 
     /// Stages a single split.
     ///
+    /// If a split already exists and is in the [SplitState::Staged] state,
+    /// it is simply updated/overwritten.
+    ///
     /// If a split already exists and is *not* in the [SplitState::Staged] state, a
     /// [MetastoreError::SplitsNotStaged] error is returned providing the split ID to go with
     /// it.
