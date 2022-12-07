@@ -74,7 +74,11 @@ impl IngestApiService {
         })
     }
 
-    async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
+    async fn ingest(
+        &mut self,
+        request: IngestRequest,
+        ctx: &ActorContext<Self>,
+    ) -> crate::Result<IngestResponse> {
         // Check all indexes exist assuming existing queues always have a corresponding index.
         let first_non_existing_queue_opt = request
             .doc_batches
@@ -94,7 +98,7 @@ impl IngestApiService {
             // If there is an error, we probably want a transactional behavior.
             let records_it = iter_doc_payloads(doc_batch);
             self.queues
-                .append_batch(&doc_batch.index_id, records_it)
+                .append_batch(&doc_batch.index_id, records_it, ctx)
                 .await?;
             let batch_num_docs = doc_batch.doc_lens.len();
             num_docs += batch_num_docs;
@@ -118,9 +122,13 @@ impl IngestApiService {
         )
     }
 
-    async fn suggest_truncate(&mut self, request: SuggestTruncateRequest) -> crate::Result<()> {
+    async fn suggest_truncate(
+        &mut self,
+        request: SuggestTruncateRequest,
+        ctx: &ActorContext<Self>,
+    ) -> crate::Result<()> {
         self.queues
-            .suggest_truncate(&request.index_id, request.up_to_position_included)
+            .suggest_truncate(&request.index_id, request.up_to_position_included, ctx)
             .await?;
         Ok(())
     }
@@ -133,7 +141,7 @@ impl Actor for IngestApiService {
     fn observable_state(&self) -> Self::ObservableState {}
 
     fn runtime_handle(&self) -> tokio::runtime::Handle {
-        RuntimeType::IngestApi.get_runtime_handle()
+        RuntimeType::NonBlocking.get_runtime_handle()
     }
 
     /// The Actor's incoming mailbox queue capacity. It is set when the actor is spawned.
@@ -175,9 +183,12 @@ impl Handler<CreateQueueRequest> for IngestApiService {
     async fn handle(
         &mut self,
         create_queue_req: CreateQueueRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.queues.create_queue(&create_queue_req.queue_id).await)
+        Ok(self
+            .queues
+            .create_queue(&create_queue_req.queue_id, ctx)
+            .await)
     }
 }
 
@@ -187,14 +198,14 @@ impl Handler<CreateQueueIfNotExistsRequest> for IngestApiService {
     async fn handle(
         &mut self,
         create_queue_inf_req: CreateQueueIfNotExistsRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         if self.queues.queue_exists(&create_queue_inf_req.queue_id) {
             return Ok(Ok(()));
         }
         Ok(self
             .queues
-            .create_queue(&create_queue_inf_req.queue_id)
+            .create_queue(&create_queue_inf_req.queue_id, ctx)
             .await)
     }
 }
@@ -205,9 +216,9 @@ impl Handler<DropQueueRequest> for IngestApiService {
     async fn handle(
         &mut self,
         drop_queue_req: DropQueueRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.queues.drop_queue(&drop_queue_req.queue_id).await)
+        Ok(self.queues.drop_queue(&drop_queue_req.queue_id, ctx).await)
     }
 }
 
@@ -217,9 +228,9 @@ impl Handler<IngestRequest> for IngestApiService {
     async fn handle(
         &mut self,
         ingest_req: IngestRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.ingest(ingest_req).await)
+        Ok(self.ingest(ingest_req, ctx).await)
     }
 }
 
@@ -253,9 +264,9 @@ impl Handler<SuggestTruncateRequest> for IngestApiService {
     async fn handle(
         &mut self,
         request: SuggestTruncateRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.suggest_truncate(request).await)
+        Ok(self.suggest_truncate(request, ctx).await)
     }
 }
 

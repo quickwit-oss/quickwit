@@ -22,9 +22,10 @@ use std::path::Path;
 
 use mrecordlog::error::CreateQueueError;
 use mrecordlog::MultiRecordLog;
+use quickwit_actors::ActorContext;
 use quickwit_proto::ingest_api::{DocBatch, FetchResponse, ListQueuesResponse};
 
-use crate::{add_doc, IngestApiError};
+use crate::{add_doc, IngestApiError, IngestApiService};
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
 
@@ -48,15 +49,18 @@ impl Queues {
         self.record_log.queue_exists(&real_queue_id)
     }
 
-    pub async fn create_queue(&mut self, queue_id: &str) -> crate::Result<()> {
+    pub async fn create_queue(
+        &mut self,
+        queue_id: &str,
+        ctx: &ActorContext<IngestApiService>,
+    ) -> crate::Result<()> {
         if self.queue_exists(queue_id) {
             return Err(crate::IngestApiError::IndexAlreadyExists {
                 index_id: queue_id.to_string(),
             });
         }
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        self.record_log
-            .create_queue(&real_queue_id)
+        ctx.protect_future(self.record_log.create_queue(&real_queue_id))
             .await
             .map_err(|e| match e {
                 CreateQueueError::AlreadyExists => IngestApiError::IndexAlreadyExists {
@@ -67,9 +71,14 @@ impl Queues {
         Ok(())
     }
 
-    pub async fn drop_queue(&mut self, queue_id: &str) -> crate::Result<()> {
+    pub async fn drop_queue(
+        &mut self,
+        queue_id: &str,
+        ctx: &ActorContext<IngestApiService>,
+    ) -> crate::Result<()> {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        self.record_log.delete_queue(&real_queue_id).await?;
+        ctx.protect_future(self.record_log.delete_queue(&real_queue_id))
+            .await?;
         Ok(())
     }
 
@@ -90,20 +99,29 @@ impl Queues {
         &mut self,
         queue_id: &str,
         up_to_offset_included: u64,
+        ctx: &ActorContext<IngestApiService>,
     ) -> crate::Result<()> {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
 
-        self.record_log
-            .truncate(&real_queue_id, up_to_offset_included)
-            .await?;
+        ctx.protect_future(
+            self.record_log
+                .truncate(&real_queue_id, up_to_offset_included),
+        )
+        .await?;
 
         Ok(())
     }
 
     // Append a single record to a target queue.
     #[cfg(test)]
-    async fn append(&mut self, queue_id: &str, record: &[u8]) -> crate::Result<()> {
-        self.append_batch(queue_id, std::iter::once(record)).await
+    async fn append(
+        &mut self,
+        queue_id: &str,
+        record: &[u8],
+        ctx: &ActorContext<IngestApiService>,
+    ) -> crate::Result<()> {
+        self.append_batch(queue_id, std::iter::once(record), ctx)
+            .await
     }
 
     // Append a batch of records to a target queue.
@@ -113,13 +131,16 @@ impl Queues {
         &mut self,
         queue_id: &str,
         records_it: impl Iterator<Item = &'a [u8]>,
+        ctx: &ActorContext<IngestApiService>,
     ) -> crate::Result<()> {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
 
         // TODO None means we don't have itempotent inserts
-        self.record_log
-            .append_records(&real_queue_id, None, records_it)
-            .await?;
+        ctx.protect_future(
+            self.record_log
+                .append_records(&real_queue_id, None, records_it),
+        )
+        .await?;
 
         Ok(())
     }
@@ -189,9 +210,12 @@ mod tests {
     use std::collections::HashSet;
     use std::ops::{Deref, DerefMut};
 
+    use quickwit_actors::{create_test_mailbox, ActorContext, Universe};
+    use tokio::sync::watch;
+
     use super::Queues;
     use crate::errors::IngestApiError;
-    use crate::iter_doc_payloads;
+    use crate::{iter_doc_payloads, IngestApiService};
 
     const TEST_QUEUE_ID: &str = "my-queue";
     const TEST_QUEUE_ID2: &str = "my-queue2";
@@ -201,16 +225,20 @@ mod tests {
         tempdir: tempfile::TempDir,
     }
 
-    // this isn't the Default trait because we need async
     impl QueuesForTest {
-        async fn default() -> Self {
+        async fn new() -> (Self, ActorContext<IngestApiService>) {
             let tempdir = tempfile::tempdir().unwrap();
             let mut queues_for_test = QueuesForTest {
                 tempdir,
                 queues: None,
             };
             queues_for_test.reload().await;
-            queues_for_test
+
+            let universe = Universe::new();
+            let (source_mailbox, _source_inbox) = create_test_mailbox();
+            let (observable_state_tx, _observable_state_rx) = watch::channel(());
+            let ctx = ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+            (queues_for_test, ctx)
         }
     }
 
@@ -258,9 +286,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_access_queue_twice() {
-        let mut queues = QueuesForTest::default().await;
-        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
-        let queue_err = queues.create_queue(TEST_QUEUE_ID).await.err().unwrap();
+        let (mut queues, ctx) = QueuesForTest::new().await;
+        queues.create_queue(TEST_QUEUE_ID, &ctx).await.unwrap();
+        let queue_err = queues
+            .create_queue(TEST_QUEUE_ID, &ctx)
+            .await
+            .err()
+            .unwrap();
         assert!(matches!(
             queue_err,
             IngestApiError::IndexAlreadyExists { .. }
@@ -270,16 +302,16 @@ mod tests {
     #[tokio::test]
     async fn test_list_queues() {
         let queue_ids = vec!["foo".to_string(), "bar".to_string(), "baz".to_string()];
-        let mut queues = QueuesForTest::default().await;
+        let (mut queues, ctx) = QueuesForTest::new().await;
         for queue_id in queue_ids.iter() {
-            queues.create_queue(queue_id).await.unwrap();
+            queues.create_queue(queue_id, &ctx).await.unwrap();
         }
         assert_eq!(
             HashSet::<String>::from_iter(queue_ids),
             HashSet::from_iter(queues.list_queues().unwrap().queues)
         );
 
-        queues.drop_queue("foo").await.unwrap();
+        queues.drop_queue("foo", &ctx).await.unwrap();
         assert_eq!(
             HashSet::<String>::from_iter(vec!["bar".to_string(), "baz".to_string()]),
             HashSet::from_iter(queues.list_queues().unwrap().queues)
@@ -288,13 +320,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_simple() {
-        let mut queues = QueuesForTest::default().await;
+        let (mut queues, ctx) = QueuesForTest::new().await;
 
-        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
+        queues.create_queue(TEST_QUEUE_ID, &ctx).await.unwrap();
         queues
             .append_batch(
                 TEST_QUEUE_ID,
                 [b"hello", b"happy"].iter().map(|bytes| bytes.as_slice()),
+                &ctx,
             )
             .await
             .unwrap();
@@ -318,12 +351,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_distinct_queues() {
-        let mut queues = QueuesForTest::default().await;
+        let (mut queues, ctx) = QueuesForTest::new().await;
 
-        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
-        queues.create_queue(TEST_QUEUE_ID2).await.unwrap();
-        queues.append(TEST_QUEUE_ID, b"hello").await.unwrap();
-        queues.append(TEST_QUEUE_ID2, b"hello2").await.unwrap();
+        queues.create_queue(TEST_QUEUE_ID, &ctx).await.unwrap();
+        queues.create_queue(TEST_QUEUE_ID2, &ctx).await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"hello", &ctx).await.unwrap();
+        queues
+            .append(TEST_QUEUE_ID2, b"hello2", &ctx)
+            .await
+            .unwrap();
 
         queues.fetch_test(TEST_QUEUE_ID, None, Some(0), &[&b"hello"[..]]);
         queues.fetch_test(TEST_QUEUE_ID2, None, Some(0), &[&b"hello2"[..]]);
@@ -331,14 +367,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_reopen() {
-        let mut queues = QueuesForTest::default().await;
-        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
+        let (mut queues, ctx) = QueuesForTest::new().await;
+        queues.create_queue(TEST_QUEUE_ID, &ctx).await.unwrap();
 
         queues.reload().await;
-        queues.append(TEST_QUEUE_ID, b"hello").await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"hello", &ctx).await.unwrap();
 
         queues.reload().await;
-        queues.append(TEST_QUEUE_ID, b"happy").await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"happy", &ctx).await.unwrap();
 
         queues.fetch_test(
             TEST_QUEUE_ID,
@@ -353,11 +389,14 @@ mod tests {
     // The truncate contract is actually not as accurate as what we are testing here.
     #[tokio::test]
     async fn test_truncation() {
-        let mut queues = QueuesForTest::default().await;
-        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
-        queues.append(TEST_QUEUE_ID, b"hello").await.unwrap();
-        queues.append(TEST_QUEUE_ID, b"happy").await.unwrap();
-        queues.suggest_truncate(TEST_QUEUE_ID, 0).await.unwrap();
+        let (mut queues, ctx) = QueuesForTest::new().await;
+        queues.create_queue(TEST_QUEUE_ID, &ctx).await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"hello", &ctx).await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"happy", &ctx).await.unwrap();
+        queues
+            .suggest_truncate(TEST_QUEUE_ID, 0, &ctx)
+            .await
+            .unwrap();
         queues.fetch_test(TEST_QUEUE_ID, None, Some(1), &[&b"happy"[..]]);
     }
 
@@ -365,14 +404,17 @@ mod tests {
     async fn test_truncation_and_reload() {
         // This test makes sure that we don't reset the position counter when we truncate an entire
         // queue.
-        let mut queues = QueuesForTest::default().await;
-        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
-        queues.append(TEST_QUEUE_ID, b"hello").await.unwrap();
-        queues.append(TEST_QUEUE_ID, b"happy").await.unwrap();
+        let (mut queues, ctx) = QueuesForTest::new().await;
+        queues.create_queue(TEST_QUEUE_ID, &ctx).await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"hello", &ctx).await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"happy", &ctx).await.unwrap();
         queues.reload().await;
-        queues.suggest_truncate(TEST_QUEUE_ID, 1).await.unwrap();
+        queues
+            .suggest_truncate(TEST_QUEUE_ID, 1, &ctx)
+            .await
+            .unwrap();
         queues.reload().await;
-        queues.append(TEST_QUEUE_ID, b"tax").await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"tax", &ctx).await.unwrap();
         queues.fetch_test(TEST_QUEUE_ID, Some(1), Some(2), &[&b"tax"[..]]);
     }
 
@@ -392,6 +434,8 @@ mod tests {
 
         const NUM_QUEUES: usize = 100;
         const NUM_RECORDS: usize = 1_000_000;
+
+        let (_, ctx) = QueuesForTest::new().await;
 
         // mean 2, standard deviation 3
         let log_normal = LogNormal::new(10.0f32, 3.0f32).unwrap();
@@ -421,13 +465,16 @@ mod tests {
         let mut queues = Queues::open(tmpdir.path()).await.unwrap();
         for queue_id in 0..NUM_QUEUES {
             println!("create queue {queue_id}");
-            queues.create_queue(&queue_id.to_string()).await.unwrap();
+            queues
+                .create_queue(&queue_id.to_string(), &ctx)
+                .await
+                .unwrap();
         }
         let start = std::time::Instant::now();
         let mut num_bytes = 0;
         for record in records.iter() {
             queues
-                .append(&record.queue_id, &record.payload)
+                .append(&record.queue_id, &record.payload, &ctx)
                 .await
                 .unwrap();
             num_bytes += record.payload.len();
