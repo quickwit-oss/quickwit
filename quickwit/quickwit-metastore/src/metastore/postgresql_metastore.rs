@@ -620,7 +620,7 @@ impl Metastore for PostgresqlMetastore {
                     $7 as split_state,
                     $8 as index_id
                 FROM
-                    unnest($1, $2, $3, $4, $5, $6)
+                    UNNEST($1, $2, $3, $4, $5, $6)
                     as tr(split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp)
                 ON CONFLICT(split_id) DO UPDATE
                     SET
