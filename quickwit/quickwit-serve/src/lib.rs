@@ -39,6 +39,7 @@ mod test_utils;
 #[cfg(test)]
 mod tests;
 mod ui_handler;
+mod openapi;
 
 use std::collections::HashSet;
 use std::convert::Infallible;

@@ -37,7 +37,8 @@ pub fn cluster_handler(
 
 /// This struct represents the QueryString passed to
 /// the rest API.
-#[derive(Deserialize, Debug, Eq, PartialEq)]
+#[derive(Deserialize, Debug, Eq, PartialEq, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 struct ClusterStateQueryString {
     /// The output format requested.
@@ -53,6 +54,15 @@ fn cluster_state_filter(
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
+#[utoipa::path(
+    get,
+    path = "/cluster",
+    params(ClusterStateQueryString),
+    responses(
+        (status = 200, description = "Successfully fetched cluster information.", body = [ClusterSnapshot])
+    )
+)]
+/// Get cluster information based on a provided filter.
 async fn get_cluster(request: ClusterStateQueryString, cluster: Arc<Cluster>) -> impl warp::Reply {
     request
         .format

@@ -454,13 +454,39 @@ fn parse_enabled_services_str(
     Ok(enabled_services)
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct ClusterSnapshot {
+    #[schema(example = "qw-cluster-1")]
+    /// The ID of the cluster tha the node is a part of.
     pub cluster_id: String,
+
+    #[schema(example = "node-1")]
+    /// The unique ID of the current node.
     pub self_node_id: NodeId,
+
+    #[schema(
+        value_type = Object,
+        example = json!({
+            "key_values": {
+                "grpc_advertise_addr": "127.0.0.1:8080",
+                "enabled_services": "",
+            },
+            "max_version": 5,
+        })
+    )]
+    /// A snapshot of the current cluster state.
     pub chitchat_state_snapshot: ClusterStateSnapshot,
+
+    #[schema(example = json!(["node-1", "node-2"]))]
+    /// The set of node IDs that are ready to handle operations.
     pub ready_nodes: HashSet<NodeId>,
+
+    #[schema(example = json!(["node-1", "node-2", "node-4"]))]
+    /// The set of node IDs that are online and a part of the cluster.
     pub live_nodes: HashSet<NodeId>,
+
+    #[schema(example = json!(["node-3"]))]
+    /// The set of node IDs that are offline or not currently part of the cluster.
     pub dead_nodes: HashSet<NodeId>,
 }
 
