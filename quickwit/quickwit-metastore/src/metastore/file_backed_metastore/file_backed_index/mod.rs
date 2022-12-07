@@ -166,16 +166,20 @@ impl FileBackedIndex {
     }
 
     /// Stages a single split.
-    /// 
-    /// If a split already exists and is *not* in the [SplitState::Staged] state, a [MetastoreError::SplitsNotStaged]
-    /// error is returned providing the split ID to go with it.
-    pub(crate) fn stage_split(&mut self, split_metadata: SplitMetadata) -> Result<(), MetastoreError> {
+    ///
+    /// If a split already exists and is *not* in the [SplitState::Staged] state, a
+    /// [MetastoreError::SplitsNotStaged] error is returned providing the split ID to go with
+    /// it.
+    pub(crate) fn stage_split(
+        &mut self,
+        split_metadata: SplitMetadata,
+    ) -> Result<(), MetastoreError> {
         // Check whether the split exists.
         // If the split exists, we check what state it is in. If it's anything other than `Staged`
         // something has gone very wrong and we should abort the operation.
         if let Some(existing_split) = self.splits.get(split_metadata.split_id()) {
             if existing_split.split_state != SplitState::Staged {
-                return Err(MetastoreError::SplitsNotStaged { 
+                return Err(MetastoreError::SplitsNotStaged {
                     split_ids: vec![existing_split.split_id().to_string()],
                 });
             }

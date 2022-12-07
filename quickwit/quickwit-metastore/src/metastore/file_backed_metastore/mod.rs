@@ -386,10 +386,10 @@ impl Metastore for FileBackedMetastore {
             let mut failed_split_ids = Vec::new();
             for split_metadata in split_metadata_list {
                 match index.stage_split(split_metadata) {
-                    Ok(()) => {},
+                    Ok(()) => {}
                     Err(MetastoreError::SplitsNotStaged { split_ids }) => {
                         failed_split_ids.extend(split_ids);
-                    },
+                    }
                     Err(error) => return Err(error),
                 };
             }
