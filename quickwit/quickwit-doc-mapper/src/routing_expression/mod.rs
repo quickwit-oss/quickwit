@@ -386,9 +386,9 @@ mod expression_dsl {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::collections::HashSet;
+
+    use super::*;
 
     fn test_ser_deser(expr: &InnerRoutingExpr) {
         let ser = expr.to_string();
@@ -487,7 +487,7 @@ mod tests {
                 serde_json::from_str(&format!(r#"{{"tenant_id": "happy{i}"}}"#)).unwrap();
             seen.insert(routing_expr.eval_hash(&ctx));
         }
-        
+
         assert_eq!(seen.len(), 10);
     }
 }
