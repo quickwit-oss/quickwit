@@ -119,7 +119,7 @@ impl ServiceError for MetastoreError {
             Self::Io { .. } => ServiceErrorCode::Internal,
             Self::SourceAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             Self::SourceDoesNotExist { .. } => ServiceErrorCode::NotFound,
-            Self::SplitsDoNotExist { .. } => ServiceErrorCode::NotFound,
+            Self::SplitsDoNotExist { .. } => ServiceErrorCode::BadRequest,
             Self::SplitsNotDeletable { .. } => ServiceErrorCode::BadRequest,
             Self::SplitsNotStaged { .. } => ServiceErrorCode::BadRequest,
             Self::DbError { .. } => ServiceErrorCode::Internal,
