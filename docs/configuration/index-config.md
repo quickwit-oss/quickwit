@@ -30,7 +30,11 @@ doc_mapping:
   mode: lenient
   field_mappings:
     - name: timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
       fast: true
     - name: severity_text
       type: text
@@ -46,13 +50,19 @@ doc_mapping:
           type: text
           tokenizer: raw
   tag_fields: ["resource.service"]
-
-indexing_settings:
   timestamp_field: timestamp
 
 search_settings:
   default_search_fields: [severity_text, body]
+
+retention:
+  period: 90 days
+  schedule: daily
 ```
+
+## Index ID
+
+The index ID is a string that uniquely identifies the index within the metastore. It may only contain uppercase or lowercase ASCII letters, digits, hyphens (`-`), and underscores (`_`). Finally, it must start with a letter and contain at least 3 characters but no more than 255.
 
 ## Index uri
 
