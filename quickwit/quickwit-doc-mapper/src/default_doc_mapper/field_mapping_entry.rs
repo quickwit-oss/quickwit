@@ -31,7 +31,7 @@ use super::{default_as_true, FieldMappingType};
 use crate::default_doc_mapper::field_mapping_type::QuickwitFieldType;
 use crate::default_doc_mapper::validate_field_mapping_name;
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug, utoipa::ToSchema)]
 pub struct QuickwitObjectOptions {
     pub field_mappings: Vec<FieldMappingEntry>,
 }
@@ -59,11 +59,12 @@ pub struct FieldMappingEntry {
 /// We do not rely on enum with inline tagging and flatten because
 /// - serde does not support it in combination with `deny_unknown_field`
 /// - it is clumsy to handle `array<type>` keys.
-#[derive(Clone, Serialize, Deserialize, Debug)]
-struct FieldMappingEntryForSerialization {
+#[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
+pub(crate) struct FieldMappingEntryForSerialization {
     name: String,
     #[serde(rename = "type")]
     type_id: String,
+    #[schema(value_type = HashMap<String, Object>)]
     #[serde(flatten)]
     pub field_mapping_json: serde_json::Map<String, JsonValue>,
 }
@@ -93,7 +94,7 @@ impl Default for QuickwitNumericOptions {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitIpAddrOptions {
     #[serde(default)]
@@ -118,7 +119,7 @@ impl Default for QuickwitIpAddrOptions {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub enum QuickwitTextTokenizer {
     #[serde(rename = "raw")]
     Raw,
@@ -141,9 +142,10 @@ impl QuickwitTextTokenizer {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitTextOptions {
+    #[schema(value_type = String)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -152,6 +154,7 @@ pub struct QuickwitTextOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokenizer: Option<QuickwitTextTokenizer>,
+    #[schema(value_type = IndexRecordOptionSchema)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub record: Option<IndexRecordOption>,
@@ -204,11 +207,28 @@ impl From<QuickwitTextOptions> for TextOptions {
     }
 }
 
+#[allow(unused)]
+#[derive(utoipa::ToSchema)]
+pub enum IndexRecordOptionSchema {
+    /// records only the `DocId`s
+    #[schema(rename = "basic")]
+    Basic,
+    /// records the document ids as well as the term frequency.
+    /// The term frequency can help giving better scoring of the documents.
+    #[schema(rename = "freq")]
+    WithFreqs,
+    /// records the document id, the term frequency and the positions of
+    /// the occurrences in the document.
+    /// Positions are required to run a [`PhraseQuery`](crate::query::PhraseQuery).
+    #[schema(rename = "position")]
+    WithFreqsAndPositions,
+}
+
 /// Options associated to a json field.
 ///
 /// `QuickwitJsonOptions` is also used to configure
 /// the dynamic mapping.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitJsonOptions {
     /// Optional description of JSON object.
@@ -227,6 +247,7 @@ pub struct QuickwitJsonOptions {
     /// with each token.
     ///
     /// Setting `record` is only allowed if indexed == true.
+    #[schema(value_type = IndexRecordOptionSchema)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub record: Option<IndexRecordOption>,

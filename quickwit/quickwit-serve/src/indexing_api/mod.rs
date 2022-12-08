@@ -19,4 +19,4 @@
 
 mod rest_handler;
 
-pub use rest_handler::indexing_get_handler;
+pub use rest_handler::{indexing_get_handler, IndexingApi};

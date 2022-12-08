@@ -24,7 +24,6 @@ use quickwit_common::metrics;
 use quickwit_proto::ServiceErrorCode;
 use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
-use utoipa::OpenApi;
 
 use crate::cluster_api::cluster_handler;
 use crate::delete_task_api::delete_task_api_handlers;
@@ -51,7 +50,7 @@ pub(crate) async fn start_rest_server(
     // Docs routes
     let api_doc = warp::path("openapi.json")
         .and(warp::get())
-        .map(|| warp::reply::json(&crate::openapi::ApiDoc::openapi()));
+        .map(|| warp::reply::json(&crate::openapi::build_docs()));
 
     // `/health/*` routes.
     let health_check_routes = health_check_handlers(

@@ -26,6 +26,7 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
+utoipa = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-doc-mapper = { workspace = true }

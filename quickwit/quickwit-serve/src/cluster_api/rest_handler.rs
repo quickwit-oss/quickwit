@@ -20,7 +20,7 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use quickwit_cluster::{Cluster, ClusterSnapshot};
+use quickwit_cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
@@ -34,6 +34,19 @@ pub fn cluster_handler(
         .and(warp::path::end().map(move || cluster.clone()))
         .then(get_cluster)
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(get_cluster),
+    components(
+        schemas(
+            ClusterSnapshot,
+            NodeIdSchema,
+        )
+    )
+)]
+pub struct ClusterApi;
+
 
 /// This struct represents the QueryString passed to
 /// the rest API.
@@ -56,12 +69,15 @@ fn cluster_state_filter(
 
 #[utoipa::path(
     get,
-    path = "/cluster",
+    tag = "Cluster Info",
+    path = "/cluster",  // TODO: Work out what the actual path is...
     params(ClusterStateQueryString),
     responses(
-        (status = 200, description = "Successfully fetched cluster information.", body = [ClusterSnapshot])
+        (status = 200, description = "Successfully fetched cluster information.", body = ClusterSnapshot)
     )
 )]
+/// Get Cluster
+///
 /// Get cluster information based on a provided filter.
 async fn get_cluster(request: ClusterStateQueryString, cluster: Arc<Cluster>) -> impl warp::Reply {
     request

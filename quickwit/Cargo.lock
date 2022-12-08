@@ -3441,6 +3441,7 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "utoipa",
 ]
 
 [[package]]
@@ -3525,6 +3526,7 @@ dependencies = [
  "time-fmt",
  "tracing",
  "typetag",
+ "utoipa",
 ]
 
 [[package]]
@@ -3647,6 +3649,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "utoipa",
 ]
 
 [[package]]
@@ -3682,6 +3685,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "utoipa",
 ]
 
 [[package]]
@@ -3729,6 +3733,7 @@ dependencies = [
  "tonic-build",
  "tracing",
  "tracing-opentelemetry",
+ "utoipa",
 ]
 
 [[package]]

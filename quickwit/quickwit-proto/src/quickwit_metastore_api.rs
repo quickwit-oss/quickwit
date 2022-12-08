@@ -1,64 +1,64 @@
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateIndexRequest {
     #[prost(string, tag = "2")]
     pub index_config_serialized_json: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateIndexResponse {}
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadatasRequest {}
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadatasResponse {
     #[prost(string, tag = "1")]
     pub indexes_metadatas_serialized_json: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteIndexRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteTasksResponse {}
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteIndexResponse {}
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexMetadataRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexMetadataResponse {
     #[prost(string, tag = "1")]
     pub index_metadata_serialized_json: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAllSplitsRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsRequest {
     #[prost(string, tag = "1")]
     pub filter_json: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsResponse {
     #[prost(string, tag = "1")]
     pub splits_serialized_json: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StageSplitRequest {
     #[prost(string, tag = "1")]
@@ -66,7 +66,7 @@ pub struct StageSplitRequest {
     #[prost(string, tag = "2")]
     pub split_metadata_serialized_json: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublishSplitsRequest {
     #[prost(string, tag = "1")]
@@ -80,7 +80,7 @@ pub struct PublishSplitsRequest {
         ::prost::alloc::string::String,
     >,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MarkSplitsForDeletionRequest {
     #[prost(string, tag = "2")]
@@ -88,7 +88,7 @@ pub struct MarkSplitsForDeletionRequest {
     #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSplitsRequest {
     #[prost(string, tag = "2")]
@@ -96,10 +96,10 @@ pub struct DeleteSplitsRequest {
     #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitResponse {}
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddSourceRequest {
     #[prost(string, tag = "1")]
@@ -107,7 +107,7 @@ pub struct AddSourceRequest {
     #[prost(string, tag = "2")]
     pub source_config_serialized_json: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ToggleSourceRequest {
     #[prost(string, tag = "1")]
@@ -117,7 +117,7 @@ pub struct ToggleSourceRequest {
     #[prost(bool, tag = "3")]
     pub enable: bool,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSourceRequest {
     #[prost(string, tag = "1")]
@@ -125,7 +125,7 @@ pub struct DeleteSourceRequest {
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetSourceCheckpointRequest {
     #[prost(string, tag = "1")]
@@ -133,10 +133,10 @@ pub struct ResetSourceCheckpointRequest {
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SourceResponse {}
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteTask {
     #[prost(int64, tag = "1")]
@@ -146,29 +146,29 @@ pub struct DeleteTask {
     #[prost(message, optional, tag = "3")]
     pub delete_query: ::core::option::Option<DeleteQuery>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(default)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteQuery {
-    /// / Index ID.
+    /// Index ID.
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    /// / If set, restrict search to documents with a `timestamp >= start_timestamp`.
+    /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     #[prost(int64, optional, tag = "2")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_timestamp: ::core::option::Option<i64>,
-    /// / If set, restrict search to documents with a `timestamp < end_timestamp``.
+    /// If set, restrict search to documents with a `timestamp < end_timestamp``.
     #[prost(int64, optional, tag = "3")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_timestamp: ::core::option::Option<i64>,
-    /// / Query text. The query language is that of tantivy.
+    /// Query text. The query language is that of tantivy.
     #[prost(string, tag = "4")]
     pub query: ::prost::alloc::string::String,
-    /// / Search fields.
+    /// Search fields.
     #[prost(string, repeated, tag = "5")]
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSplitsDeleteOpstampRequest {
     #[prost(string, tag = "1")]
@@ -178,22 +178,22 @@ pub struct UpdateSplitsDeleteOpstampRequest {
     #[prost(uint64, tag = "3")]
     pub delete_opstamp: u64,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSplitsDeleteOpstampResponse {}
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LastDeleteOpstampRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LastDeleteOpstampResponse {
     #[prost(uint64, tag = "1")]
     pub last_delete_opstamp: u64,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListStaleSplitsRequest {
     #[prost(string, tag = "1")]
@@ -203,7 +203,7 @@ pub struct ListStaleSplitsRequest {
     #[prost(uint64, tag = "3")]
     pub num_splits: u64,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksRequest {
     #[prost(string, tag = "1")]
@@ -211,7 +211,7 @@ pub struct ListDeleteTasksRequest {
     #[prost(uint64, tag = "2")]
     pub opstamp_start: u64,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksResponse {
     #[prost(message, repeated, tag = "1")]

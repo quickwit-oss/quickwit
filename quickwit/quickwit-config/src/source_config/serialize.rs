@@ -26,10 +26,10 @@ use crate::{
 
 type SourceConfigForSerialization = SourceConfigV0_4;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 #[serde(tag = "version")]
-pub(crate) enum VersionedSourceConfig {
+pub enum VersionedSourceConfig {
     #[serde(rename = "0.4")]
     V0_4(SourceConfigV0_4),
 }
@@ -80,11 +80,10 @@ fn default_source_enabled() -> bool {
     true
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SourceConfigV0_4 {
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct SourceConfigV0_4 {
     pub source_id: String,
 
-    #[doc(hidden)]
     #[serde(default = "default_num_pipelines", skip_serializing_if = "is_one")]
     /// Number of indexing pipelines spawned for the source on each indexer.
     /// Therefore, if there exists `n` indexers in the cluster, there will be `n` * `num_pipelines`

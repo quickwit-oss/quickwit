@@ -69,7 +69,7 @@ pub struct DefaultDocMapperBuilder {
 }
 
 /// `Mode` describing how the unmapped field should be handled.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ModeType {
     /// Lenient mode: unmapped fields are just ignored.

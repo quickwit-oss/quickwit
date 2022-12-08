@@ -45,11 +45,29 @@ pub use doc_mapper::{DocMapper, NamedField, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
 pub use tokenizers::QUICKWIT_TOKENIZER_MANAGER;
 
+use default_doc_mapper::{FieldMappingEntryForSerialization, QuickwitTextTokenizer, IndexRecordOptionSchema};
+
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";
 
 /// Field name reserved for storing the dynamically indexed fields.
 pub const DYNAMIC_FIELD_NAME: &str = "_dynamic";
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    components(
+        schemas(
+            FieldMappingEntryForSerialization,
+            QuickwitJsonOptions,
+            ModeType,
+            QuickwitTextTokenizer,
+            IndexRecordOptionSchema,
+        )
+    )
+)]
+/// The OpenAPI schemas defined within the config that we don't
+/// necessarily want to expose.
+pub struct DocMapperApiSchemas;
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]

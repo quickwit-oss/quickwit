@@ -19,7 +19,7 @@
 
 pub mod file_backed_metastore;
 pub mod grpc_metastore;
-mod index_metadata;
+pub(crate) mod index_metadata;
 mod instrumented_metastore;
 #[cfg(feature = "postgres")]
 pub mod postgresql_metastore;

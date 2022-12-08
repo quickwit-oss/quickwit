@@ -31,6 +31,17 @@ use warp::{reject, Filter, Rejection};
 use crate::format::FormatError;
 use crate::{require, Format};
 
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        ingest,
+        tail_endpoint,
+        elastic_ingest,
+    ),
+)]
+pub struct IngestApi;
+
 #[derive(Debug, Error)]
 #[error("Body is not utf-8.")]
 struct InvalidUtf8;
@@ -110,6 +121,19 @@ fn lines(body: &str) -> impl Iterator<Item = &str> {
     })
 }
 
+#[utoipa::path(
+    post,
+    tag = "Ingest",
+    path = "{index_id}/ingest",
+    request_body = String,
+    responses(
+        (status = 200, description = "Successfully ingested documents.", body = Object)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to add docs to."),
+    )
+)]
+/// Ingest documents
 async fn ingest(
     index_id: String,
     payload: String,
@@ -144,6 +168,20 @@ fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone 
     warp::path!(String / "fetch").and(warp::get())
 }
 
+
+#[utoipa::path(
+    post,
+    tag = "Ingest",
+    path = "{index_id}/fetch",
+    request_body = String,
+    responses(
+        (status = 200, description = "Successfully ingested documents.", body = Object)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to tail."),
+    )
+)]
+/// Tail
 async fn tail_endpoint(
     index_id: String,
     ingest_api_service: Mailbox<IngestApiService>,
@@ -176,6 +214,16 @@ pub fn elastic_bulk_handler(
         .and_then(elastic_ingest)
 }
 
+#[utoipa::path(
+    post,
+    tag = "Ingest",
+    path = "/_bulk",
+    request_body = String,
+    responses(
+        (status = 200, description = "Successfully ingested documents.", body = Object)
+    ),
+)]
+/// Elastic Bulk Ingest
 async fn elastic_ingest(
     payload: String,
     ingest_api_mailbox: Mailbox<IngestApiService>,

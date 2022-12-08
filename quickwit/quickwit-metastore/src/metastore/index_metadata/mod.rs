@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod serialize;
+pub(crate) mod serialize;
 
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};

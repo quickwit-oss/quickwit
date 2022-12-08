@@ -19,4 +19,4 @@
 
 mod handler;
 
-pub(crate) use handler::health_check_handlers;
+pub(crate) use handler::{health_check_handlers, HealthCheckApi};

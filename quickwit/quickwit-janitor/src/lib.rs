@@ -42,6 +42,18 @@ pub use self::garbage_collection::{
 };
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    components(
+        schemas(
+            FileEntry
+        )
+    )
+)]
+/// The OpenAPI schemas defined within the config that we don't
+/// necessarily want to expose.
+pub struct JanitorApiSchemas;
+
 pub async fn start_janitor_service(
     universe: &Universe,
     config: &QuickwitConfig,

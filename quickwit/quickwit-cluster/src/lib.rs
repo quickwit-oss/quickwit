@@ -32,7 +32,7 @@ use quickwit_config::QuickwitConfig;
 
 pub use crate::cluster::{
     create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterMember,
-    ClusterSnapshot,
+    ClusterSnapshot, NodeIdSchema,
 };
 pub use crate::error::{ClusterError, ClusterResult};
 

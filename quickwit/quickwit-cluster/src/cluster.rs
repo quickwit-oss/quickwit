@@ -454,13 +454,25 @@ fn parse_enabled_services_str(
     Ok(enabled_services)
 }
 
+// Not used within the code, used for documentation.
+#[derive(Debug, utoipa::ToSchema)]
+pub struct NodeIdSchema {
+    #[schema(example = "node-1")]
+    /// The unique identifier of the node in the cluster.
+    pub id: String,
+
+    #[schema(example = "127.0.0.1:8000", value_type = String)]
+    /// The SocketAddr other peers should use to communicate.
+    pub gossip_public_address: SocketAddr,
+}
+
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct ClusterSnapshot {
     #[schema(example = "qw-cluster-1")]
     /// The ID of the cluster tha the node is a part of.
     pub cluster_id: String,
 
-    #[schema(example = "node-1")]
+    #[schema(value_type = NodeIdSchema)]
     /// The unique ID of the current node.
     pub self_node_id: NodeId,
 
@@ -477,15 +489,15 @@ pub struct ClusterSnapshot {
     /// A snapshot of the current cluster state.
     pub chitchat_state_snapshot: ClusterStateSnapshot,
 
-    #[schema(example = json!(["node-1", "node-2"]))]
+    #[schema(value_type  = Vec<NodeIdSchema>)]
     /// The set of node IDs that are ready to handle operations.
     pub ready_nodes: HashSet<NodeId>,
 
-    #[schema(example = json!(["node-1", "node-2", "node-4"]))]
+    #[schema(value_type  = Vec<NodeIdSchema>)]
     /// The set of node IDs that are online and a part of the cluster.
     pub live_nodes: HashSet<NodeId>,
 
-    #[schema(example = json!(["node-3"]))]
+    #[schema(value_type  = Vec<NodeIdSchema>)]
     /// The set of node IDs that are offline or not currently part of the cluster.
     pub dead_nodes: HashSet<NodeId>,
 }

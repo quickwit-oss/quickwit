@@ -54,7 +54,25 @@ pub use metastore_resolver::{
 use quickwit_common::is_disjoint;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 pub use split_metadata::{Split, SplitMetadata, SplitState};
-pub(crate) use split_metadata_version::VersionedSplitMetadata;
+pub(crate) use split_metadata_version::{SplitMetadataV0_4, VersionedSplitMetadata};
+pub(crate) use metastore::index_metadata::serialize::{VersionedIndexMetadata, IndexMetadataV0_4};
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    components(
+        schemas(
+            Split,
+            SplitState,
+            VersionedIndexMetadata,
+            IndexMetadataV0_4,
+            VersionedSplitMetadata,
+            SplitMetadataV0_4,
+        )
+    )
+)]
+/// The OpenAPI schemas defined within the metastore that we don't
+/// necessarily want to expose.
+pub struct MetastoreApiSchemas;
 
 /// Returns `true` if the split time range is included in `time_range_opt`.
 /// If `time_range_opt` is None, returns always true.
