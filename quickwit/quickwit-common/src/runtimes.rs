@@ -44,10 +44,6 @@ pub enum RuntimeType {
     ///
     /// Task are expect to yield within 500 micros.
     NonBlocking,
-
-    /// The ingest API is a bit special in that it has its own
-    /// dedicated thread.
-    IngestApi,
 }
 
 #[derive(Debug)]
@@ -108,12 +104,6 @@ fn start_runtimes(config: RuntimesConfiguration) -> HashMap<RuntimeType, Runtime
         .build()
         .unwrap();
     runtimes.insert(RuntimeType::NonBlocking, non_blocking_runtime);
-    let ingest_api_runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_time()
-        .build()
-        .unwrap();
-    runtimes.insert(RuntimeType::IngestApi, ingest_api_runtime);
     runtimes
 }
 

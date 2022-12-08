@@ -82,6 +82,7 @@ matches = "0.1.9"
 md5 = "0.7"
 mime_guess = "2.0.4"
 mockall = "0.11"
+mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev="11dcabb2bdf8b93fde30c597d4f41245ca9b8eda" }
 new_string_template = "1.4.0"
 num_cpus = "1"
 once_cell = "1"
@@ -116,7 +117,6 @@ reqwest = { version = "0.11", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-rocksdb = { version = "0.18", features = [], default-features = false }
 rusoto_core = { version = "0.48", default-features = false, features = [
   "rustls",
 ] }
