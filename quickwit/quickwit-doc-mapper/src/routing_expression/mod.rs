@@ -117,7 +117,7 @@ impl RoutingExpr {
     pub fn eval_hash<Ctx: RoutingExprContext>(&self, ctx: &Ctx) -> u64 {
         if let Some(inner) = self.inner_opt.as_ref() {
             let mut hasher: SipHasher = self.salted_hasher;
-            inner.eval_hash(ctx, &mut hasher, self.salted_hasher);
+            inner.eval_hash(ctx, &mut hasher);
             hasher.finish()
         } else {
             0u64
@@ -144,14 +144,7 @@ enum InnerRoutingExpr {
 }
 
 impl InnerRoutingExpr {
-    // our hasher is Copy, but restrict ourself to Clone so it's easier to see
-    // when it get duplicated.
-    fn eval_hash<Ctx: RoutingExprContext, H: Hasher + Clone>(
-        &self,
-        ctx: &Ctx,
-        hasher: &mut H,
-        salted_empty_hasher: H,
-    ) {
+    fn eval_hash<Ctx: RoutingExprContext, H: Hasher + Default>(&self, ctx: &Ctx, hasher: &mut H) {
         match self {
             InnerRoutingExpr::Field(field_name) => {
                 ExprType::Field.hash(hasher);
@@ -160,14 +153,14 @@ impl InnerRoutingExpr {
             InnerRoutingExpr::Composite(children) => {
                 ExprType::Composite.hash(hasher);
                 for child in children {
-                    child.eval_hash(ctx, hasher, salted_empty_hasher.clone());
+                    child.eval_hash(ctx, hasher);
                 }
             }
             InnerRoutingExpr::Modulo(inner_expr, modulo) => {
                 ExprType::Modulo.hash(hasher);
 
-                let mut sub_hasher = salted_empty_hasher.clone();
-                inner_expr.eval_hash(ctx, &mut sub_hasher, salted_empty_hasher);
+                let mut sub_hasher = H::default();
+                inner_expr.eval_hash(ctx, &mut sub_hasher);
                 hasher.write_u64(sub_hasher.finish() % modulo);
             }
         }
@@ -272,7 +265,7 @@ impl Display for InnerRoutingExpr {
                 }
             }
             InnerRoutingExpr::Modulo(inner_expr, modulo) => {
-                write!(f, "hash_mod({}; {})", inner_expr, modulo)?;
+                write!(f, "hash_mod(({}), {})", inner_expr, modulo)?;
             }
         }
         Ok(())
@@ -324,8 +317,8 @@ mod expression_dsl {
     // RougingSubExpr := Identifier [ \( Arguments \) ]
     // Identifier := FieldChar [ Identifier ]
     // FieldChar := { a..z | A..Z | 0..9 | _ }
-    // Arguments := Argument [ ; Arguments ]
-    // Argument := { RoutingExpr | DirectValue }
+    // Arguments := Argument [ , Arguments ]
+    // Argument := { \( RoutingExpr \) | RoutingSubExpr | DirectValue }
     // # We may want other DirectValue in the future
     // DirectValue := Number
     // Number := { 0..9 } [ Number ]
@@ -356,14 +349,17 @@ mod expression_dsl {
     }
 
     fn arguments(input: &str) -> IResult<&str, Vec<Argument>> {
-        separated_list0(wtag(";"), argument)(input)
+        separated_list0(wtag(","), argument)(input)
     }
 
     fn argument(input: &str) -> IResult<&str, Argument> {
         if let Ok((input, number)) = number(input) {
             Ok((input, Argument::Number(number)))
+        } else if let Ok((input, (_, arg, _))) = tuple((wtag("("), routing_expr, wtag(")")))(input)
+        {
+            Ok((input, Argument::Expression(arg)))
         } else {
-            routing_expr(input).map(|(input, arg)| (input, Argument::Expression(arg)))
+            routing_sub_expr(input).map(|(input, arg)| (input, Argument::Expression(vec![arg])))
         }
     }
 
@@ -425,10 +421,31 @@ mod tests {
 
     #[test]
     fn test_routing_expr_modulo_field() {
-        let routing_expr = deser_util("hash_mod(tenant_id; 4)");
+        let routing_expr = deser_util("hash_mod(tenant_id, 4)");
         assert_eq!(
             routing_expr,
             InnerRoutingExpr::Modulo(Box::new(InnerRoutingExpr::Field("tenant_id".to_owned())), 4)
+        );
+    }
+
+    #[test]
+    fn test_routing_expr_modulo_complexe() {
+        let routing_expr = deser_util("hash_mod((tenant_id,hash_mod(app_id, 3)), 8),cluster_id");
+        assert_eq!(
+            routing_expr,
+            InnerRoutingExpr::Composite(vec![
+                InnerRoutingExpr::Modulo(
+                    Box::new(InnerRoutingExpr::Composite(vec![
+                        InnerRoutingExpr::Field("tenant_id".to_owned()),
+                        InnerRoutingExpr::Modulo(
+                            Box::new(InnerRoutingExpr::Field("app_id".to_owned()),),
+                            3
+                        ),
+                    ])),
+                    8
+                ),
+                InnerRoutingExpr::Field("cluster_id".to_owned()),
+            ])
         );
     }
 
@@ -480,7 +497,7 @@ mod tests {
     #[test]
     fn test_routing_expr_mod() {
         let mut seen = HashSet::new();
-        let routing_expr = RoutingExpr::new("hash_mod(tenant_id; 10)").unwrap();
+        let routing_expr = RoutingExpr::new("hash_mod(tenant_id, 10)").unwrap();
 
         for i in 0..1000 {
             let ctx: serde_json::Map<String, JsonValue> =
