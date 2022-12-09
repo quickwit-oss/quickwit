@@ -27,13 +27,11 @@ use quickwit_proto::ingest_api::{
     FetchResponse, IngestRequest, IngestResponse, ListQueuesRequest, ListQueuesResponse,
     QueueExistsRequest, SuggestTruncateRequest, TailRequest,
 };
-use rocksdb::DB;
 use tracing::info;
 use ulid::Ulid;
 
 use crate::metrics::INGEST_METRICS;
-use crate::queue::{list_cf, open_db};
-use crate::{iter_doc_payloads, IngestApiError, Position, Queues};
+use crate::{iter_doc_payloads, IngestApiError, Queues};
 
 pub struct IngestApiService {
     partition_id: String,
@@ -48,10 +46,11 @@ pub struct IngestApiService {
 /// The idea is to make sure that if the entire queue storage is lost,
 /// the old source checkpoint (stored in the metastore) do not apply.
 /// (See #2310)
-const PARTITION_ID: &str = "PARTITION_ID";
+const PARTITION_ID_PATH: &str = "partition_id";
 
-fn get_or_initialize_partition_id(db: &DB) -> crate::Result<String> {
-    if let Some(partition_id_bytes) = db.get(PARTITION_ID)? {
+async fn get_or_initialize_partition_id(dir_path: &Path) -> crate::Result<String> {
+    let partition_id_path = dir_path.join(PARTITION_ID_PATH);
+    if let Ok(partition_id_bytes) = tokio::fs::read(&partition_id_path).await {
         let partition_id: &str = std::str::from_utf8(&partition_id_bytes).map_err(|_| {
             let msg = format!("Partition key ({partition_id_bytes:?}) is not utf8");
             IngestApiError::Corruption { msg }
@@ -60,24 +59,26 @@ fn get_or_initialize_partition_id(db: &DB) -> crate::Result<String> {
     }
     // We add a prefix here to make sure we don't mistake it for a split id when reading logs.
     let partition_id = format!("ingest_partition_{}", Ulid::new());
-    db.put(PARTITION_ID, partition_id.as_bytes())?;
+    tokio::fs::write(partition_id_path, partition_id.as_bytes()).await?;
     Ok(partition_id)
 }
 
 impl IngestApiService {
-    pub fn with_queues_dir(queues_dir_path: &Path) -> crate::Result<Self> {
-        let cf_names = list_cf(queues_dir_path)?;
-        let db = open_db(queues_dir_path, &cf_names)?;
-        let partition_id = get_or_initialize_partition_id(&db)?;
+    pub async fn with_queues_dir(queues_dir_path: &Path) -> crate::Result<Self> {
+        let queues = Queues::open(queues_dir_path).await?;
+        let partition_id = get_or_initialize_partition_id(queues_dir_path).await?;
         info!(ingest_partition_id=%partition_id, "Ingest API partition id");
-        let queues = Queues::open_db(db, &cf_names[..])?;
         Ok(IngestApiService {
             partition_id,
             queues,
         })
     }
 
-    async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
+    async fn ingest(
+        &mut self,
+        request: IngestRequest,
+        ctx: &ActorContext<Self>,
+    ) -> crate::Result<IngestResponse> {
         // Check all indexes exist assuming existing queues always have a corresponding index.
         let first_non_existing_queue_opt = request
             .doc_batches
@@ -96,7 +97,9 @@ impl IngestApiService {
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
             let records_it = iter_doc_payloads(doc_batch);
-            self.queues.append_batch(&doc_batch.index_id, records_it)?;
+            self.queues
+                .append_batch(&doc_batch.index_id, records_it, ctx)
+                .await?;
             let batch_num_docs = doc_batch.doc_lens.len();
             num_docs += batch_num_docs;
             INGEST_METRICS
@@ -109,19 +112,24 @@ impl IngestApiService {
     }
 
     fn fetch(&mut self, fetch_req: FetchRequest) -> crate::Result<FetchResponse> {
-        let start_from_opt: Option<Position> = fetch_req.start_after.map(Position::from);
         let num_bytes_limit_opt: Option<usize> = fetch_req
             .num_bytes_limit
             .map(|num_bytes_limit| num_bytes_limit as usize);
-        self.queues
-            .fetch(&fetch_req.index_id, start_from_opt, num_bytes_limit_opt)
+        self.queues.fetch(
+            &fetch_req.index_id,
+            fetch_req.start_after,
+            num_bytes_limit_opt,
+        )
     }
 
-    fn suggest_truncate(&mut self, request: SuggestTruncateRequest) -> crate::Result<()> {
-        self.queues.suggest_truncate(
-            &request.index_id,
-            Position::from(request.up_to_position_included),
-        )?;
+    async fn suggest_truncate(
+        &mut self,
+        request: SuggestTruncateRequest,
+        ctx: &ActorContext<Self>,
+    ) -> crate::Result<()> {
+        self.queues
+            .suggest_truncate(&request.index_id, request.up_to_position_included, ctx)
+            .await?;
         Ok(())
     }
 }
@@ -133,7 +141,7 @@ impl Actor for IngestApiService {
     fn observable_state(&self) -> Self::ObservableState {}
 
     fn runtime_handle(&self) -> tokio::runtime::Handle {
-        RuntimeType::IngestApi.get_runtime_handle()
+        RuntimeType::NonBlocking.get_runtime_handle()
     }
 
     /// The Actor's incoming mailbox queue capacity. It is set when the actor is spawned.
@@ -175,9 +183,12 @@ impl Handler<CreateQueueRequest> for IngestApiService {
     async fn handle(
         &mut self,
         create_queue_req: CreateQueueRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.queues.create_queue(&create_queue_req.queue_id))
+        Ok(self
+            .queues
+            .create_queue(&create_queue_req.queue_id, ctx)
+            .await)
     }
 }
 
@@ -187,12 +198,15 @@ impl Handler<CreateQueueIfNotExistsRequest> for IngestApiService {
     async fn handle(
         &mut self,
         create_queue_inf_req: CreateQueueIfNotExistsRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         if self.queues.queue_exists(&create_queue_inf_req.queue_id) {
             return Ok(Ok(()));
         }
-        Ok(self.queues.create_queue(&create_queue_inf_req.queue_id))
+        Ok(self
+            .queues
+            .create_queue(&create_queue_inf_req.queue_id, ctx)
+            .await)
     }
 }
 
@@ -202,9 +216,9 @@ impl Handler<DropQueueRequest> for IngestApiService {
     async fn handle(
         &mut self,
         drop_queue_req: DropQueueRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.queues.drop_queue(&drop_queue_req.queue_id))
+        Ok(self.queues.drop_queue(&drop_queue_req.queue_id, ctx).await)
     }
 }
 
@@ -214,9 +228,9 @@ impl Handler<IngestRequest> for IngestApiService {
     async fn handle(
         &mut self,
         ingest_req: IngestRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.ingest(ingest_req).await)
+        Ok(self.ingest(ingest_req, ctx).await)
     }
 }
 
@@ -250,9 +264,9 @@ impl Handler<SuggestTruncateRequest> for IngestApiService {
     async fn handle(
         &mut self,
         request: SuggestTruncateRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.suggest_truncate(request))
+        Ok(self.suggest_truncate(request, ctx).await)
     }
 }
 

@@ -81,7 +81,7 @@ async fn get_all_splits(
     index_id: String,
     index_service: Arc<IndexService>,
 ) -> Result<Vec<Split>, IndexServiceError> {
-    info!(index_id = %index_id, "get-index");
+    info!(index_id = %index_id, "get-all-splits");
     index_service.get_all_splits(&index_id).await
 }
 
@@ -202,7 +202,9 @@ mod tests {
     use quickwit_config::{FileSourceParams, SourceParams};
     use quickwit_indexing::mock_split;
     use quickwit_metastore::file_backed_metastore::FileBackedMetastoreFactory;
-    use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver, MockMetastore};
+    use quickwit_metastore::{
+        IndexMetadata, Metastore, MetastoreError, MetastoreUriResolver, MockMetastore,
+    };
     use quickwit_storage::StorageUriResolver;
     use serde::__private::from_utf8_lossy;
     use serde_json::Value as JsonValue;
@@ -522,5 +524,38 @@ mod tests {
         println!("{}", body);
         assert!(body.contains("invalid type: floating point `0.4`"));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rest_delete_non_existing_source() {
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "quickwit-demo-index",
+                    "file:///path/to/index/quickwit-demo-index",
+                ))
+            });
+        metastore
+            .expect_delete_source()
+            .returning(|index_id, source_id| {
+                assert_eq!(index_id, "quickwit-demo-index");
+                Err(MetastoreError::SourceDoesNotExist {
+                    source_id: source_id.to_string(),
+                })
+            });
+        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_management_handler = super::index_management_handlers(
+            Arc::new(index_service),
+            Arc::new(QuickwitConfig::for_test()),
+        )
+        .recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes/quickwit-demo-index/sources/foo-source")
+            .method("DELETE")
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 404);
     }
 }

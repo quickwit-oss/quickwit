@@ -355,6 +355,8 @@ mod tests {
         Ok(())
     }
 
+    // Ignoring this test because the localstack implementation of Kinesis is bogus.
+    #[ignore]
     #[tokio::test]
     async fn test_start_after_sequence_number() -> anyhow::Result<()> {
         let universe = Universe::new();
@@ -413,8 +415,7 @@ mod tests {
         Ok(())
     }
 
-    // This test fails when run against the Localstack Kinesis providers `kinesis-mock` or
-    // `kinesalite` since they do not properly implement the `ChildShards` API.
+    // Ignoring this test because the localstack implementation of Kinesis is bogus.
     #[ignore]
     #[tokio::test]
     async fn test_merge_shards() -> anyhow::Result<()> {
@@ -476,8 +477,7 @@ mod tests {
         Ok(())
     }
 
-    // This test fails when run against the Localstack Kinesis providers `kinesis-mock` or
-    // `kinesalite` since they do not properly implement the `ChildShards` API.
+    // Ignoring this test because the localstack implementation of Kinesis is bogus.
     #[ignore]
     #[tokio::test]
     async fn test_split_shard() -> anyhow::Result<()> {
