@@ -41,11 +41,12 @@ pub mod tag_pruning;
 pub use default_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType, QuickwitJsonOptions,
 };
+use default_doc_mapper::{
+    FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
+};
 pub use doc_mapper::{DocMapper, NamedField, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
 pub use tokenizers::QUICKWIT_TOKENIZER_MANAGER;
-
-use default_doc_mapper::{FieldMappingEntryForSerialization, QuickwitTextTokenizer, IndexRecordOptionSchema};
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";
@@ -54,17 +55,13 @@ pub const SOURCE_FIELD_NAME: &str = "_source";
 pub const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 
 #[derive(utoipa::OpenApi)]
-#[openapi(
-    components(
-        schemas(
-            FieldMappingEntryForSerialization,
-            QuickwitJsonOptions,
-            ModeType,
-            QuickwitTextTokenizer,
-            IndexRecordOptionSchema,
-        )
-    )
-)]
+#[openapi(components(schemas(
+    FieldMappingEntryForSerialization,
+    QuickwitJsonOptions,
+    ModeType,
+    QuickwitTextTokenizer,
+    IndexRecordOptionSchema,
+)))]
 /// The OpenAPI schemas defined within the config that we don't
 /// necessarily want to expose.
 pub struct DocMapperApiSchemas;

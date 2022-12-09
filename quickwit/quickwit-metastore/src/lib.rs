@@ -42,6 +42,7 @@ use std::ops::Range;
 pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
 pub use metastore::file_backed_metastore::FileBackedMetastore;
 pub use metastore::grpc_metastore::{GrpcMetastoreAdapter, MetastoreGrpcClient};
+pub(crate) use metastore::index_metadata::serialize::{IndexMetadataV0_4, VersionedIndexMetadata};
 #[cfg(feature = "postgres")]
 pub use metastore::postgresql_metastore::PostgresqlMetastore;
 pub use metastore::retrying_metastore::RetryingMetastore;
@@ -55,21 +56,16 @@ use quickwit_common::is_disjoint;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 pub use split_metadata::{Split, SplitMetadata, SplitState};
 pub(crate) use split_metadata_version::{SplitMetadataV0_4, VersionedSplitMetadata};
-pub(crate) use metastore::index_metadata::serialize::{VersionedIndexMetadata, IndexMetadataV0_4};
 
 #[derive(utoipa::OpenApi)]
-#[openapi(
-    components(
-        schemas(
-            Split,
-            SplitState,
-            VersionedIndexMetadata,
-            IndexMetadataV0_4,
-            VersionedSplitMetadata,
-            SplitMetadataV0_4,
-        )
-    )
-)]
+#[openapi(components(schemas(
+    Split,
+    SplitState,
+    VersionedIndexMetadata,
+    IndexMetadataV0_4,
+    VersionedSplitMetadata,
+    SplitMetadataV0_4,
+)))]
 /// The OpenAPI schemas defined within the metastore that we don't
 /// necessarily want to expose.
 pub struct MetastoreApiSchemas;

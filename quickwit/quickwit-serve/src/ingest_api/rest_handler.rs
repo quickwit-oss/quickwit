@@ -31,15 +31,8 @@ use warp::{reject, Filter, Rejection};
 use crate::format::FormatError;
 use crate::{require, Format};
 
-
 #[derive(utoipa::OpenApi)]
-#[openapi(
-    paths(
-        ingest,
-        tail_endpoint,
-        elastic_ingest,
-    ),
-)]
+#[openapi(paths(ingest, tail_endpoint, elastic_ingest,))]
 pub struct IngestApi;
 
 #[derive(Debug, Error)]
@@ -167,7 +160,6 @@ pub fn tail_handler(
 fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
     warp::path!(String / "fetch").and(warp::get())
 }
-
 
 #[utoipa::path(
     post,

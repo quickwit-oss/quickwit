@@ -60,7 +60,7 @@ pub(crate) struct SplitMetadataV0_4 {
     /// If a timestamp field is available, the min / max timestamp in
     /// the split.
     pub time_range: Option<RangeInclusive<i64>>,
-    
+
     /// Timestamp for tracking when the split was created.
     #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,

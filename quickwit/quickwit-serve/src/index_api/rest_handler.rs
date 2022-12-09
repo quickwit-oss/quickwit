@@ -32,18 +32,15 @@ use warp::{Filter, Rejection, Reply};
 use crate::format::Format;
 use crate::with_arg;
 
-
 #[derive(utoipa::OpenApi)]
-#[openapi(
-    paths(
-        get_all_splits,
-        get_indexes_metadatas,
-        create_index,
-        delete_index,
-        create_source,
-        delete_source
-    ),
-)]
+#[openapi(paths(
+    get_all_splits,
+    get_indexes_metadatas,
+    create_index,
+    delete_index,
+    create_source,
+    delete_source
+))]
 pub struct IndexApi;
 
 pub fn index_management_handlers(
@@ -90,7 +87,6 @@ fn get_indexes_metadatas_handler(
         .then(get_indexes_metadatas)
         .map(format_response)
 }
-
 
 #[utoipa::path(
     get,

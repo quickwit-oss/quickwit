@@ -33,13 +33,13 @@ mod index_api;
 mod indexing_api;
 mod ingest_api;
 mod node_info_handler;
+mod openapi;
 mod search_api;
 #[cfg(test)]
 mod test_utils;
 #[cfg(test)]
 mod tests;
 mod ui_handler;
-mod openapi;
 
 use std::collections::HashSet;
 use std::convert::Infallible;

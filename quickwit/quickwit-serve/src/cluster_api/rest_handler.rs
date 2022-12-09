@@ -38,15 +38,9 @@ pub fn cluster_handler(
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(get_cluster),
-    components(
-        schemas(
-            ClusterSnapshot,
-            NodeIdSchema,
-        )
-    )
+    components(schemas(ClusterSnapshot, NodeIdSchema,))
 )]
 pub struct ClusterApi;
-
 
 /// This struct represents the QueryString passed to
 /// the rest API.

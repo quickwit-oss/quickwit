@@ -30,7 +30,6 @@ use warp::{Filter, Rejection};
 
 use crate::with_arg;
 
-
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(get_liveness, get_readiness))]
 pub struct HealthCheckApi;

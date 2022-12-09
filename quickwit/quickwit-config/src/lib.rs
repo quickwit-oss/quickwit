@@ -38,6 +38,7 @@ mod templating;
 
 // We export that one for backward compatibility.
 // See #2048
+use index_config::serialize::{IndexConfigV0_4, VersionedIndexConfig};
 pub use index_config::{
     build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig,
     IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
@@ -51,31 +52,25 @@ pub use source_config::{
 };
 use tracing::warn;
 
-use index_config::serialize::{VersionedIndexConfig, IndexConfigV0_4};
 use crate::merge_policy_config::MergePolicyConfig;
-
 pub use crate::quickwit_config::{
     IndexerConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH,
 };
 use crate::source_config::serialize::{SourceConfigV0_4, VersionedSourceConfig};
 
 #[derive(utoipa::OpenApi)]
-#[openapi(
-    components(
-        schemas(
-            IndexingResources,
-            IndexingSettings,
-            SearchSettings,
-            RetentionPolicy,
-            MergePolicyConfig,
-            DocMapping,
-            VersionedSourceConfig,
-            SourceConfigV0_4,
-            VersionedIndexConfig,
-            IndexConfigV0_4,
-        )
-    )
-)]
+#[openapi(components(schemas(
+    IndexingResources,
+    IndexingSettings,
+    SearchSettings,
+    RetentionPolicy,
+    MergePolicyConfig,
+    DocMapping,
+    VersionedSourceConfig,
+    SourceConfigV0_4,
+    VersionedIndexConfig,
+    IndexConfigV0_4,
+)))]
 /// The OpenAPI schemas defined within the metastore that we don't
 /// necessarily want to expose.
 pub struct ConfigApiSchemas;

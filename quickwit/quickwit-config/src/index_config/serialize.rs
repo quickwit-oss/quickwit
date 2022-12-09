@@ -27,7 +27,6 @@ use crate::{
     RetentionPolicy, SearchSettings,
 };
 
-
 /// Alias for the latest serialization format.
 type IndexConfigForSerialization = IndexConfigV0_4;
 

@@ -29,7 +29,6 @@ use crate::require;
 #[openapi(paths(indexing_endpoint))]
 pub struct IndexingApi;
 
-
 #[utoipa::path(
     get,
     tag = "Indexing",

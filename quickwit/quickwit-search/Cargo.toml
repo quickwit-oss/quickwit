@@ -33,6 +33,7 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 opentelemetry = { workspace = true }
+utoipa = { workspace = true }
 
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
