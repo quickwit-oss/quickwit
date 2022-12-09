@@ -251,10 +251,7 @@ impl VrlProgram {
 
         match runtime_result {
             Ok(value) => Ok(value.to_string()),
-            Err(terminate) => Err({
-                println!("{}", terminate);
-                PrepareDocumentError::VrlError(terminate)
-            }),
+            Err(terminate) => Err(PrepareDocumentError::VrlError(terminate)),
         }
     }
 }
