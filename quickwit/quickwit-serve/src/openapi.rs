@@ -2,6 +2,7 @@ use quickwit_config::ConfigApiSchemas;
 use quickwit_doc_mapper::DocMapperApiSchemas;
 use quickwit_janitor::JanitorApiSchemas;
 use quickwit_metastore::MetastoreApiSchemas;
+use utoipa::openapi::Server;
 use utoipa::OpenApi;
 
 use crate::cluster_api::ClusterApi;
@@ -30,6 +31,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
                 ))
                 .build(),
         )
+        .servers(Some(vec![Server::new("/api/v1")]))
         .paths(utoipa::openapi::Paths::new())
         .components(Some(utoipa::openapi::Components::new()))
         .build();
