@@ -64,7 +64,7 @@ fn cluster_state_filter(
 #[utoipa::path(
     get,
     tag = "Cluster Info",
-    path = "/cluster",  // TODO: Work out what the actual path is...
+    path = "/cluster",
     params(ClusterStateQueryString),
     responses(
         (status = 200, description = "Successfully fetched cluster information.", body = ClusterSnapshot)

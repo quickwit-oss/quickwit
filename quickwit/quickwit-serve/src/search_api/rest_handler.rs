@@ -223,7 +223,7 @@ async fn search(
 #[utoipa::path(
     get,
     tag = "Search",
-    path = "/{index_id}/search",  // TODO: Work out what the actual path is...
+    path = "/{index_id}/search",
     responses(
         (status = 200, description = "Successfully executed search.", body = SearchResponseRest)
     ),
@@ -246,7 +246,7 @@ pub fn search_get_handler(
 #[utoipa::path(
     post,
     tag = "Search",
-    path = "/{index_id}/search",  // TODO: Work out what the actual path is...
+    path = "/{index_id}/search",
     request_body = SearchRequestQueryString,
     responses(
         (status = 200, description = "Successfully executed search.", body = SearchResponseRest)
@@ -271,7 +271,7 @@ pub fn search_post_handler(
 #[utoipa::path(
     get,
     tag = "Search",
-    path = "/{index_id}/search/stream",  // TODO: Work out what the actual path is...
+    path = "/{index_id}/search/stream",
     responses(
         (status = 200, description = "Successfully executed search.")
     ),
