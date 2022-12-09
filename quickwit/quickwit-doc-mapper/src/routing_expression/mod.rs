@@ -306,7 +306,7 @@ mod expression_dsl {
         let (i, res) = routing_expr(expr_dsl_str)
             .finish()
             .map_err(|e| anyhow::anyhow!("error parsing routing expression: {e}"))?;
-        t(eof(i))?;
+        eof::<_, ()>(i)?;
 
         Ok(res)
     }
@@ -372,11 +372,6 @@ mod expression_dsl {
         t: &'a str,
     ) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, Error> {
         delimited(multispace0, tag(t), multispace0)
-    }
-
-    // type hint
-    fn t<T>(r: Result<T, nom::Err<()>>) -> Result<T, nom::Err<()>> {
-        r
     }
 }
 
