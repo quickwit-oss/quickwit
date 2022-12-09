@@ -24,10 +24,7 @@ libz-sys = { workspace = true, optional = true }
 once_cell = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
-rdkafka = { workspace = true, features = [
-    "ssl",
-    "sasl",
-], optional = true }
+rdkafka = { workspace = true, features = ["ssl", "sasl"], optional = true }
 rusoto_core = { workspace = true, optional = true }
 rusoto_kinesis = { workspace = true, optional = true }
 serde = { workspace = true }
@@ -65,7 +62,7 @@ testsuite = []
 
 [dev-dependencies]
 bytes = { workspace = true }
-criterion = { workspace = true }
+criterion = { workspace = true, features = ["async_tokio"] }
 mockall = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }
@@ -85,4 +82,8 @@ required-features = ["fail/failpoints"]
 
 [[bench]]
 name = "doc_process_vrl_bench"
+harness = false
+
+[[bench]]
+name = "doc_process_vrl_bench_actor"
 harness = false

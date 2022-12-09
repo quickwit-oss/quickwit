@@ -139,7 +139,6 @@ impl TestableForRegression for SourceConfig {
             transform: Some(VrlSettings {
                 source: ".message = downcase(string!(.message))".to_string(),
                 timezone: None,
-                return_only_modified: false,
             }),
         }
     }
@@ -306,72 +305,56 @@ pub struct VrlSettings {
     source: String,
 
     /// Timezone to pass to VRL [Program]. It is used for timestamp manipulation.
-    /// If no timezone is given, local timezone is used.
+    /// If no timezone is given, UTC timezone is used.
     ///
     /// [Program]: vrl::Program
     #[serde(skip_serializing_if = "Option::is_none")]
     timezone: Option<String>,
-
-    /// By default, VRL only returns the modified fields. For better user ergonomics,
-    /// we insert a new line and a '.' to the VRL script to return modified body.
-    #[serde(skip_serializing_if = "is_false")]
-    #[serde(default)]
-    return_only_modified: bool,
 }
 
 impl VrlSettings {
-    pub fn new(source: String, timezone: Option<String>, return_only_modified: bool) -> Self {
-        Self {
-            source,
-            timezone,
-            return_only_modified,
-        }
+    pub fn new(source: String, timezone: Option<String>) -> Self {
+        Self { source, timezone }
     }
 
     pub fn program_source(&self) -> String {
-        if self.return_only_modified {
-            self.source.clone()
-        } else {
-            self.source.clone() + "\n."
-        }
+        self.source.clone() + "\n."
     }
 
     pub fn compile_program(&self) -> Result<CompilationResult, DiagnosticList> {
         let functions = vrl_stdlib::all();
-        let source = self.program_source();
-        vrl::compile(&source, &functions)
+        vrl::compile(&self.program_source(), &functions)
     }
 
-    pub fn get_timezone(&self) -> Option<TimeZone> {
+    pub fn get_timezone(&self) -> anyhow::Result<TimeZone> {
         let tz_str = self.timezone.as_deref().unwrap_or("UTC");
-        TimeZone::parse(tz_str)
+        TimeZone::parse(tz_str).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Failed to parse timezone: `{}`. Timezone must be a valid name \
+            in the TZ database https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
+                tz_str
+            )
+        })
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        if let None = self.get_timezone() {
-            bail!(
-                "VRL Timezone `{}` is invalid. Timezone must be a valid name \
-                in the TZ database https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
-                self.timezone.as_ref().unwrap()
-            )
-        }
+        self.get_timezone()?;
 
         if let Err(diagnostics) = self.compile_program() {
             let errors = Formatter::new(&self.program_source(), diagnostics)
                 .colored()
                 .to_string();
-            bail!("VRL compilation failed:\n {}", errors)
+            bail!("Failed to parse VRL program:\n {}", errors)
         }
 
         Ok(())
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn new_for_test(source: &str) -> Self {
+    pub fn for_test(source: &str) -> Self {
         Self {
             source: source.to_string(),
             timezone: None,
-            return_only_modified: false,
         }
     }
 }
@@ -415,7 +398,6 @@ mod tests {
             transform: Some(VrlSettings {
                 source: ".message = downcase(string!(.message))".to_string(),
                 timezone: Some("local".to_string()),
-                return_only_modified: false,
             }),
         };
         assert_eq!(source_config, expected_source_config);
@@ -509,7 +491,6 @@ mod tests {
             transform: Some(VrlSettings {
                 source: ".message = downcase(string!(.message))".to_string(),
                 timezone: Some("local".to_string()),
-                return_only_modified: false,
             }),
         };
         assert_eq!(source_config, expected_source_config);
@@ -632,7 +613,6 @@ mod tests {
             transform: Some(VrlSettings {
                 source: ".message = downcase(string!(.message))".to_string(),
                 timezone: None,
-                return_only_modified: true,
             }),
         };
         assert_eq!(source_config, expected_source_config);
@@ -645,7 +625,6 @@ mod tests {
             let vrl_settings = VrlSettings {
                 source: ".message = downcase(string!(.message))".to_string(),
                 timezone: Some("local".to_string()),
-                return_only_modified: false,
             };
             let vrl_settings_yaml = serde_yaml::to_string(&vrl_settings).unwrap();
             assert_eq!(
@@ -657,7 +636,6 @@ mod tests {
             let vrl_settings = VrlSettings {
                 source: ".message = downcase(string!(.message))".to_string(),
                 timezone: None,
-                return_only_modified: true,
             };
             let vrl_settings_yaml = serde_yaml::to_string(&vrl_settings).unwrap();
             assert_eq!(
@@ -678,7 +656,6 @@ mod tests {
             let expected_vrl_settings = VrlSettings {
                 source: ".message = downcase(string!(.message))".to_string(),
                 timezone: None,
-                return_only_modified: false,
             };
             assert_eq!(vrl_settings, expected_vrl_settings);
         }
@@ -686,14 +663,12 @@ mod tests {
             let vrl_settings_yaml = r#"
             source: .message = downcase(string!(.message))
             timezone: Turkey
-            return_only_modified: true
         "#;
             let vrl_settings = serde_yaml::from_str::<VrlSettings>(vrl_settings_yaml).unwrap();
 
             let expected_vrl_settings = VrlSettings {
                 source: ".message = downcase(string!(.message))".to_string(),
                 timezone: Some("Turkey".to_string()),
-                return_only_modified: true,
             };
             assert_eq!(vrl_settings, expected_vrl_settings);
         }
@@ -705,7 +680,6 @@ mod tests {
             let vrl_settings = VrlSettings {
                 source: ".message = downcase(string!(.message))".to_string(),
                 timezone: Some("Turkey".to_string()),
-                return_only_modified: false,
             };
             vrl_settings.validate().unwrap();
         }
@@ -719,7 +693,6 @@ mod tests {
                 "#
                 .to_string(),
                 timezone: None,
-                return_only_modified: false,
             };
             vrl_settings.validate().unwrap();
         }
@@ -727,7 +700,6 @@ mod tests {
             let vrl_settings = VrlSettings {
                 source: ".message = downcase(string!(.message))".to_string(),
                 timezone: Some("foo".to_string()),
-                return_only_modified: false,
             };
             vrl_settings.validate().unwrap_err();
         }
@@ -735,7 +707,6 @@ mod tests {
             let vrl_settings = VrlSettings {
                 source: "foo".to_string(),
                 timezone: Some("Turkey".to_string()),
-                return_only_modified: false,
             };
             vrl_settings.validate().unwrap_err();
         }

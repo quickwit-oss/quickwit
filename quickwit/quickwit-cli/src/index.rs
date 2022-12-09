@@ -107,8 +107,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
                             .conflicts_with("source"),
                         arg!(--timezone <TIMEZONE> "Timezone to use in VRL program's context. Must be a valid name in TZ Database `https://en.wikipedia.org/wiki/List_of_tz_database_time_zones`. Defaults to `UTC`")
                             .required(false),
-                        arg!(--"return-only-modified" "Return only the modified values. If set transform script does not return the modified body but only the values returned from the script. Flag has no effect if VRL program is not provided.")
-                            .required(false),
                     ])
                     .group(ArgGroup::new("vrl-source").args(&["source", "source-file"]).required(true))
                 )
@@ -441,17 +439,11 @@ impl IndexCliCommand {
             },
         };
 
-        let timezone = if let Some(timezone) = matches.value_of("timezone") {
-            Some(timezone.to_owned())
-        } else {
-            None
-        };
+        let timezone = matches
+            .value_of("timezone")
+            .map(|timezone| timezone.to_owned());
 
-        let vrl_settings = VrlSettings::new(
-            vrl_program,
-            timezone,
-            matches.is_present("return-only-modified"),
-        );
+        let vrl_settings = VrlSettings::new(vrl_program, timezone);
 
         vrl_settings.validate()?;
 

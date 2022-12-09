@@ -137,7 +137,7 @@ impl SourceConfigV0_4 {
             | SourceParams::IngestCli => {}
         }
 
-        if let Some(ref vrl_settings) = self.transform {
+        if let Some(vrl_settings) = &self.transform {
             vrl_settings.validate()?
         }
 
@@ -176,13 +176,11 @@ mod tests {
         let vrl_settings = VrlSettings {
             source: "somerandomthing".to_string(),
             timezone: None,
-            return_only_modified: false,
         };
         vrl_settings.validate().unwrap_err();
         let vrl_settings = VrlSettings {
             source: ".message = downcase(string!(.message))".to_string(),
             timezone: None,
-            return_only_modified: false,
         };
         vrl_settings.validate().unwrap();
     }

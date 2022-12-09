@@ -4,7 +4,6 @@
   "enabled": true,
   "source_type": "ingest-api",
   "transform": {
-    "source": ".message = downcase(string!(.message))",
-    "return_only_modified": true
+    "source": ".message = downcase(string!(.message))"
   }
 }

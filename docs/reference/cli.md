@@ -277,10 +277,9 @@ quickwit index ingest
 *Options*
 
 `--source` VRL script as a string. Conflicts with `--source-file` option. \
-`--source` VRL script file location. Conflicts with `--source` option. \
+`--source-file` VRL script file location. Conflicts with `--source` option. \
 `--timezone` Timezone to pass to VRL for timezone related functions.
 Timezone must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Defaults to UTC. \
-`--return-only-modified` VRL script returns only the modified fields by default. Quickwit appends `\n.` to return the modified body. This behaviour can be disabled by passing this option.
 
 *Examples*
 

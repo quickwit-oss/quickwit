@@ -361,38 +361,7 @@ mod tests {
                     vrl_settings: Some(vrl_settings)
                 })) if &index_id == "wikipedia"
                        && config_uri == Uri::from_str("file:///config.yaml").unwrap()
-                       && vrl_settings.program_source() == ".message = downcase(string!(.message))\n.".to_string()
-        ));
-
-        let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from([
-            "index",
-            "ingest",
-            "--index",
-            "wikipedia",
-            "--config",
-            "/config.yaml",
-            "--keep-cache",
-            "--overwrite",
-            "transform",
-            "--source",
-            ".message = downcase(string!(.message))",
-            "--return-only-modified",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::Ingest(
-                IngestDocsArgs {
-                    config_uri,
-                    index_id,
-                    input_path_opt: None,
-                    overwrite: true,
-                    clear_cache: false,
-                    vrl_settings: Some(vrl_settings)
-                })) if &index_id == "wikipedia"
-                        && config_uri == Uri::from_str("file:///config.yaml").unwrap()
-                       && vrl_settings.program_source() == ".message = downcase(string!(.message))".to_string()
+                       && vrl_settings.program_source() == *".message = downcase(string!(.message))\n."
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -408,7 +377,8 @@ mod tests {
                 "--keep-cache",
                 "--overwrite",
                 "transform",
-                "--return-only-modified",
+                "--timezone",
+                "Turkey",
             ])
             .unwrap_err();
 

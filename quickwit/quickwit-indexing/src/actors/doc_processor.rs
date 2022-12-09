@@ -36,6 +36,9 @@ use vrl::{CompilationResult, Program, Runtime, TargetValueRef, Terminate, TimeZo
 use crate::actors::Indexer;
 use crate::models::{NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, RawDocBatch};
 
+type VrlValue = ::value::Value;
+type VrlSecrets = ::value::Secrets;
+
 #[derive(Debug)]
 pub enum PrepareDocumentError {
     ParsingError,
@@ -229,11 +232,11 @@ impl TryFrom<VrlSettings> for VrlProgram {
 
 impl VrlProgram {
     pub fn process_doc(&mut self, doc_json: &str) -> Result<String, PrepareDocumentError> {
-        let mut target: ::value::Value =
+        let mut target: VrlValue =
             serde_json::from_str(doc_json).map_err(|_| PrepareDocumentError::ParsingError)?;
 
-        let mut metadata = ::value::Value::Object(BTreeMap::new());
-        let mut secrets = ::value::Secrets::new();
+        let mut metadata = VrlValue::Object(BTreeMap::new());
+        let mut secrets = VrlSecrets::new();
         let mut target_value = TargetValueRef {
             value: &mut target,
             metadata: &mut metadata,
@@ -248,10 +251,10 @@ impl VrlProgram {
 
         match runtime_result {
             Ok(value) => Ok(value.to_string()),
-            Err(terminate) => {
-                println!("Vrl returned error {}", terminate);
-                Err(PrepareDocumentError::VrlError(terminate))
-            }
+            Err(terminate) => Err({
+                println!("{}", terminate);
+                PrepareDocumentError::VrlError(terminate)
+            }),
         }
     }
 }
@@ -292,7 +295,10 @@ impl DocProcessor {
         self._prepare_document(doc_json)
     }
 
-    pub fn _prepare_document(&mut self, doc_json: String) -> Result<PreparedDoc, PrepareDocumentError> {
+    pub fn _prepare_document(
+        &mut self,
+        doc_json: String,
+    ) -> Result<PreparedDoc, PrepareDocumentError> {
         let doc_json = match self.transform_layer.as_mut() {
             Some(vrl_program) => vrl_program.process_doc(&doc_json)?,
             None => doc_json,
@@ -656,7 +662,7 @@ mod tests {
         let source_id = "my-source";
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
-        let vrl_settings = VrlSettings::new_for_test(".body = upcase(string!(.body))");
+        let vrl_settings = VrlSettings::for_test(".body = upcase(string!(.body))");
         let doc_processor = DocProcessor::new(
             index_id.to_string(),
             source_id.to_string(),
