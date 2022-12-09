@@ -109,6 +109,20 @@ impl RoutingExpr {
             salted_hasher,
         })
     }
+
+    /// Evaluates the expression applied to the given
+    /// context and returns a u64 hash.
+    ///
+    /// Obviously this function is not perfectly injective.
+    pub fn eval_hash<Ctx: RoutingExprContext>(&self, ctx: &Ctx) -> u64 {
+        if let Some(inner) = self.inner_opt.as_ref() {
+            let mut hasher: SipHasher = self.salted_hasher;
+            inner.eval_hash(ctx, &mut hasher);
+            hasher.finish()
+        } else {
+            0u64
+        }
+    }
 }
 
 impl Display for RoutingExpr {
@@ -125,11 +139,12 @@ impl Display for RoutingExpr {
 enum InnerRoutingExpr {
     Field(String),
     Composite(Vec<InnerRoutingExpr>),
-    // TODO Enrich me! Map / Modulo
+    Modulo(Box<InnerRoutingExpr>, u64),
+    // TODO Enrich me! Map / ...
 }
 
 impl InnerRoutingExpr {
-    fn eval_hash<Ctx: RoutingExprContext, H: Hasher>(&self, ctx: &Ctx, hasher: &mut H) {
+    fn eval_hash<Ctx: RoutingExprContext, H: Hasher + Default>(&self, ctx: &Ctx, hasher: &mut H) {
         match self {
             InnerRoutingExpr::Field(field_name) => {
                 ExprType::Field.hash(hasher);
@@ -140,6 +155,13 @@ impl InnerRoutingExpr {
                 for child in children {
                     child.eval_hash(ctx, hasher);
                 }
+            }
+            InnerRoutingExpr::Modulo(inner_expr, modulo) => {
+                ExprType::Modulo.hash(hasher);
+
+                let mut sub_hasher = H::default();
+                inner_expr.eval_hash(ctx, &mut sub_hasher);
+                hasher.write_u64(sub_hasher.finish() % modulo);
             }
         }
     }
@@ -153,6 +175,8 @@ impl Hash for InnerRoutingExpr {
         match self {
             InnerRoutingExpr::Field(field_name) => {
                 ExprType::Field.hash(hasher);
+                // TODO is it okay to write_usize? The result is probably platform dependant, if a
+                // node is 32b, it might not agree with 64b nodes.
                 hasher.write_usize(field_name.len());
                 hasher.write(field_name.as_bytes());
             }
@@ -161,6 +185,11 @@ impl Hash for InnerRoutingExpr {
                 for child in children {
                     child.hash(hasher);
                 }
+            }
+            InnerRoutingExpr::Modulo(inner_expr, modulo) => {
+                ExprType::Modulo.hash(hasher);
+                inner_expr.hash(hasher);
+                hasher.write_u64(*modulo);
             }
         }
     }
@@ -176,10 +205,46 @@ impl FromStr for InnerRoutingExpr {
     type Err = anyhow::Error;
 
     fn from_str(expr_dsl_str: &str) -> anyhow::Result<Self> {
-        if expr_dsl_str.is_empty() {
-            return Ok(Default::default());
+        let ast = expression_dsl::parse_expression(expr_dsl_str)?;
+
+        convert_ast(ast)
+    }
+}
+
+fn convert_ast(ast: Vec<expression_dsl::ExpressionAst>) -> anyhow::Result<InnerRoutingExpr> {
+    use expression_dsl::{Argument, ExpressionAst};
+
+    let mut result = ast.into_iter().map(|ast_elem|
+        match ast_elem {
+            ExpressionAst::Field(field_name) => Ok(InnerRoutingExpr::Field(field_name)),
+            ExpressionAst::Function { name, mut args } => {
+                match &*name {
+                    "hash_mod" => {
+                        if args.len() !=2 {
+                            anyhow::bail!("Invalid arguments for `hash_mod`: expected 2 arguments, found {}", args.len());
+                        }
+
+                        let Argument::Expression(fields) = args.remove(0) else {
+                            anyhow::bail!("Invalid 1st argument for `hash_mod`: expected expression");
+                        };
+
+                        let Argument::Number(modulo) = args.remove(0) else {
+                            anyhow::bail!("Invalid 2nd argument for `hash_mod`: expected number");
+                        };
+
+                        Ok(InnerRoutingExpr::Modulo(Box::new(convert_ast(fields)?), modulo))
+                    },
+                    _ => anyhow::bail!("Unknown function `{}`", name),
+                }
+            },
         }
-        Ok(InnerRoutingExpr::Field(expr_dsl_str.to_string()))
+    ).collect::<Result<Vec<_>, _>>()?;
+    if result.is_empty() {
+        Ok(InnerRoutingExpr::default())
+    } else if result.len() == 1 {
+        Ok(result.remove(0))
+    } else {
+        Ok(InnerRoutingExpr::Composite(result))
     }
 }
 
@@ -188,16 +253,19 @@ impl Display for InnerRoutingExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
             InnerRoutingExpr::Field(field) => {
-                write!(f, "{}", field)?;
+                f.write_str(field)?;
             }
             InnerRoutingExpr::Composite(children) => {
                 if children.is_empty() {
                     return Ok(());
                 }
-                write!(f, "{}", &children[0])?;
+                children[0].fmt(f)?;
                 for child in &children[1..] {
-                    write!(f, ",{}", child)?;
+                    write!(f, ",{child}")?;
                 }
+            }
+            InnerRoutingExpr::Modulo(inner_expr, modulo) => {
+                write!(f, "hash_mod(({}), {})", inner_expr, modulo)?;
             }
         }
         Ok(())
@@ -209,26 +277,108 @@ impl Display for InnerRoutingExpr {
 enum ExprType {
     Field,
     Composite,
+    Modulo,
 }
 
-impl RoutingExpr {
-    /// Evaluates the expression applied to the given
-    /// context and returns a u64 hash.
-    ///
-    /// Obviously this function is not perfectly injective.
-    pub fn eval_hash<Ctx: RoutingExprContext>(&self, ctx: &Ctx) -> u64 {
-        if let Some(inner) = self.inner_opt.as_ref() {
-            let mut hasher: SipHasher = self.salted_hasher;
-            inner.eval_hash(ctx, &mut hasher);
-            hasher.finish()
+mod expression_dsl {
+    use nom::bytes::complete::tag;
+    use nom::character::complete::multispace0;
+    use nom::combinator::{eof, opt};
+    use nom::error::ErrorKind;
+    use nom::multi::separated_list0;
+    use nom::sequence::{delimited, tuple};
+    use nom::{AsChar, Finish, IResult, InputTakeAtPosition};
+
+    // this is a RoutingSubExpr in our DSL.
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    pub(crate) enum ExpressionAst {
+        Field(String),
+        Function { name: String, args: Vec<Argument> },
+    }
+
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    pub(crate) enum Argument {
+        Expression(Vec<ExpressionAst>),
+        Number(u64),
+    }
+
+    pub(crate) fn parse_expression(expr_dsl_str: &str) -> anyhow::Result<Vec<ExpressionAst>> {
+        let (i, res) = routing_expr(expr_dsl_str)
+            .finish()
+            .map_err(|e| anyhow::anyhow!("error parsing routing expression: {e}"))?;
+        eof::<_, ()>(i)?;
+
+        Ok(res)
+    }
+
+    // DSL:
+    //
+    // RoutingExpr := RoutingSubExpr [ , RoutingExpr ]
+    // RougingSubExpr := Identifier [ \( Arguments \) ]
+    // Identifier := FieldChar [ Identifier ]
+    // FieldChar := { a..z | A..Z | 0..9 | _ }
+    // Arguments := Argument [ , Arguments ]
+    // Argument := { \( RoutingExpr \) | RoutingSubExpr | DirectValue }
+    // # We may want other DirectValue in the future
+    // DirectValue := Number
+    // Number := { 0..9 } [ Number ]
+
+    fn routing_expr(input: &str) -> IResult<&str, Vec<ExpressionAst>> {
+        separated_list0(wtag(","), routing_sub_expr)(input)
+    }
+
+    fn routing_sub_expr(input: &str) -> IResult<&str, ExpressionAst> {
+        let (input, identifier) = identifier(input)?;
+        let (input, args) = opt(tuple((wtag("("), arguments, wtag(")"))))(input)?;
+        let res = if let Some((_, args, _)) = args {
+            ExpressionAst::Function {
+                name: identifier.to_owned(),
+                args,
+            }
         } else {
-            0u64
+            ExpressionAst::Field(identifier.to_owned())
+        };
+        Ok((input, res))
+    }
+
+    fn identifier(input: &str) -> IResult<&str, &str> {
+        input.split_at_position1_complete(
+            |item| !(item.is_alphanum() || item == '_'),
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    fn arguments(input: &str) -> IResult<&str, Vec<Argument>> {
+        separated_list0(wtag(","), argument)(input)
+    }
+
+    fn argument(input: &str) -> IResult<&str, Argument> {
+        if let Ok((input, number)) = number(input) {
+            Ok((input, Argument::Number(number)))
+        } else if let Ok((input, (_, arg, _))) = tuple((wtag("("), routing_expr, wtag(")")))(input)
+        {
+            Ok((input, Argument::Expression(arg)))
+        } else {
+            routing_sub_expr(input).map(|(input, arg)| (input, Argument::Expression(vec![arg])))
         }
+    }
+
+    fn number(input: &str) -> IResult<&str, u64> {
+        nom::character::complete::u64(input)
+    }
+
+    // tag, but ignore leading and trailing whitespaces
+    pub fn wtag<'a, Error: nom::error::ParseError<&'a str>>(
+        t: &'a str,
+    ) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, Error> {
+        delimited(multispace0, tag(t), multispace0)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     fn test_ser_deser(expr: &InnerRoutingExpr) {
@@ -258,8 +408,52 @@ mod tests {
     #[test]
     fn test_routing_expr_single_field() {
         let routing_expr = deser_util("tenant_id");
-        assert!(
-            matches!(routing_expr, InnerRoutingExpr::Field(attr_name) if attr_name == "tenant_id")
+        assert_eq!(
+            routing_expr,
+            InnerRoutingExpr::Field("tenant_id".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_routing_expr_modulo_field() {
+        let routing_expr = deser_util("hash_mod(tenant_id, 4)");
+        assert_eq!(
+            routing_expr,
+            InnerRoutingExpr::Modulo(Box::new(InnerRoutingExpr::Field("tenant_id".to_owned())), 4)
+        );
+    }
+
+    #[test]
+    fn test_routing_expr_modulo_complexe() {
+        let routing_expr = deser_util("hash_mod((tenant_id,hash_mod(app_id, 3)), 8),cluster_id");
+        assert_eq!(
+            routing_expr,
+            InnerRoutingExpr::Composite(vec![
+                InnerRoutingExpr::Modulo(
+                    Box::new(InnerRoutingExpr::Composite(vec![
+                        InnerRoutingExpr::Field("tenant_id".to_owned()),
+                        InnerRoutingExpr::Modulo(
+                            Box::new(InnerRoutingExpr::Field("app_id".to_owned()),),
+                            3
+                        ),
+                    ])),
+                    8
+                ),
+                InnerRoutingExpr::Field("cluster_id".to_owned()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_routing_expr_multiple_field() {
+        let routing_expr = deser_util("tenant_id,app_id");
+
+        assert_eq!(
+            routing_expr,
+            InnerRoutingExpr::Composite(vec![
+                InnerRoutingExpr::Field("tenant_id".to_owned()),
+                InnerRoutingExpr::Field("app_id".to_owned()),
+            ])
         );
     }
 
@@ -293,5 +487,19 @@ mod tests {
         let routing_expr = RoutingExpr::new("tenant_id").unwrap();
         let ctx: serde_json::Map<String, JsonValue> = Default::default();
         assert_eq!(routing_expr.eval_hash(&ctx), 9054185009885066538);
+    }
+
+    #[test]
+    fn test_routing_expr_mod() {
+        let mut seen = HashSet::new();
+        let routing_expr = RoutingExpr::new("hash_mod(tenant_id, 10)").unwrap();
+
+        for i in 0..1000 {
+            let ctx: serde_json::Map<String, JsonValue> =
+                serde_json::from_str(&format!(r#"{{"tenant_id": "happy{i}"}}"#)).unwrap();
+            seen.insert(routing_expr.eval_hash(&ctx));
+        }
+
+        assert_eq!(seen.len(), 10);
     }
 }
