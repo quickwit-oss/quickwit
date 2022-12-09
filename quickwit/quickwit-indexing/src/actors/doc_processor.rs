@@ -285,7 +285,7 @@ impl DocProcessor {
 
     fn prepare_document(
         &mut self,
-        doc_json: String,
+        doc_json: &str,
         ctx: &ActorContext<Self>,
     ) -> Result<PreparedDoc, PrepareDocumentError> {
         let _protect_guard = ctx.protect_zone();
@@ -391,7 +391,7 @@ impl Handler<RawDocBatch> for DocProcessor {
         let mut prepared_docs: Vec<PreparedDoc> = Vec::with_capacity(raw_doc_batch.docs.len());
         for doc_json in raw_doc_batch.docs {
             let doc_json_num_bytes = doc_json.len() as u64;
-            match self.prepare_document(doc_json, ctx) {
+            match self.prepare_document(&doc_json, ctx) {
                 Ok(document) => {
                     self.counters.record_valid(doc_json_num_bytes);
                     prepared_docs.push(document);
