@@ -104,34 +104,18 @@ fn bench_simple_json(c: &mut Criterion) {
     let mut doc_processor_light = doc_processor_light_transform();
 
     group.bench_function(BenchmarkId::new("No VRL", "Simple JSON"), |b| {
-        b.iter_with_setup(
-            || {
-                lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |lines| {
-                for line in lines {
-                    doc_processor._prepare_document(line).unwrap();
-                }
-            },
-        )
+        b.iter(|| {
+            for line in &lines {
+                doc_processor._prepare_document(line).unwrap();
+            }
+        })
     });
     group.bench_function(BenchmarkId::new("Light VRL", "Simple JSON"), |b| {
-        b.iter_with_setup(
-            || {
-                lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |lines| {
-                for line in lines {
-                    doc_processor_light._prepare_document(line).unwrap();
-                }
-            },
-        )
+        b.iter(|| {
+            for line in &lines {
+                doc_processor_light._prepare_document(line).unwrap();
+            }
+        })
     });
 }
 
@@ -149,19 +133,11 @@ fn bench_light_json(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Bytes(JSON_NORMAL.len() as u64));
 
     group.bench_function(BenchmarkId::new("No VRL", "Simple JSON"), |b| {
-        b.iter_with_setup(
-            || {
-                normal_lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |lines| {
-                for line in lines {
-                    doc_processor._prepare_document(line).unwrap();
-                }
-            },
-        )
+        b.iter(|| {
+            for line in &normal_lines {
+                doc_processor._prepare_document(line).unwrap();
+            }
+        })
     });
 
     group.throughput(criterion::Throughput::Bytes(
@@ -169,19 +145,11 @@ fn bench_light_json(c: &mut Criterion) {
     ));
 
     group.bench_function(BenchmarkId::new("Light VRL", "Light JSON"), |b| {
-        b.iter_with_setup(
-            || {
-                transform_lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |lines| {
-                for line in lines {
-                    doc_processor_light._prepare_document(line).unwrap();
-                }
-            },
-        )
+        b.iter(|| {
+            for line in &transform_lines {
+                doc_processor_light._prepare_document(line).unwrap();
+            }
+        })
     });
 }
 
@@ -199,19 +167,11 @@ fn bench_heavy_json(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Bytes(JSON_NORMAL.len() as u64));
 
     group.bench_function(BenchmarkId::new("No VRL", "Simple JSON"), |b| {
-        b.iter_with_setup(
-            || {
-                normal_lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |lines| {
-                for line in lines {
-                    doc_processor._prepare_document(line).unwrap();
-                }
-            },
-        )
+        b.iter(|| {
+            for line in &normal_lines {
+                doc_processor._prepare_document(line).unwrap();
+            }
+        })
     });
 
     group.throughput(criterion::Throughput::Bytes(
@@ -219,19 +179,11 @@ fn bench_heavy_json(c: &mut Criterion) {
     ));
 
     group.bench_function(BenchmarkId::new("Heavy VRL", "Heavy JSON"), |b| {
-        b.iter_with_setup(
-            || {
-                transform_lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |lines| {
-                for line in lines {
-                    doc_processor_heavy._prepare_document(line).unwrap();
-                }
-            },
-        )
+        b.iter(|| {
+            for line in &transform_lines {
+                doc_processor_heavy._prepare_document(line).unwrap();
+            }
+        })
     });
 }
 

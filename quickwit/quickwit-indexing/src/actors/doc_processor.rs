@@ -294,10 +294,15 @@ impl DocProcessor {
 
     pub fn _prepare_document(
         &mut self,
-        doc_json: String,
+        doc_json: &str,
     ) -> Result<PreparedDoc, PrepareDocumentError> {
-        let doc_json = match self.transform_layer.as_mut() {
-            Some(vrl_program) => vrl_program.process_doc(&doc_json)?,
+        let transformed_doc = if let Some(vrl_program) = self.transform_layer.as_mut() {
+            Some(vrl_program.process_doc(doc_json)?)
+        } else {
+            None
+        };
+        let doc_json = match transformed_doc {
+            Some(ref transformed) => transformed,
             None => doc_json,
         };
 
