@@ -128,6 +128,19 @@ impl ConfigFormat {
             }
         }
     }
+
+    pub fn parse_file_simple<T>(&self, payload: &[u8]) -> anyhow::Result<T>
+    where T: DeserializeOwned {
+        match self {
+            ConfigFormat::Json => {
+                serde_json::from_slice(payload).context("Failed to read JSON file.")
+            }
+            ConfigFormat::Toml => toml::from_slice(payload).context("Failed to read TOML file."),
+            ConfigFormat::Yaml => {
+                serde_yaml::from_slice(payload).context("Failed to read YAML file.")
+            }
+        }
+    }
 }
 
 impl FromStr for ConfigFormat {

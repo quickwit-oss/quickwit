@@ -344,8 +344,7 @@ mod tests {
             "wikipedia",
             "--config",
             "/config.yaml",
-            "transform",
-            "--source",
+            "--transform-program",
             ".message = downcase(string!(.message))",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
@@ -365,24 +364,6 @@ mod tests {
         ));
 
         let app = build_cli().no_binary_name(true);
-        // Try to parse without a source
-        let _ = app
-            .try_get_matches_from([
-                "index",
-                "ingest",
-                "--index",
-                "wikipedia",
-                "--config",
-                "/config.yaml",
-                "--keep-cache",
-                "--overwrite",
-                "transform",
-                "--timezone",
-                "Turkey",
-            ])
-            .unwrap_err();
-
-        let app = build_cli().no_binary_name(true);
         // Try to parse with both --source and --source-file arg
         let _ = app
             .try_get_matches_from([
@@ -395,9 +376,9 @@ mod tests {
                 "--keep-cache",
                 "--overwrite",
                 "transform",
-                "--source",
+                "--transform-program",
                 ".message = downcase(string!(.message))",
-                "--source-file",
+                "--transform-config",
                 "my_vrl_program.txt",
             ])
             .unwrap_err();

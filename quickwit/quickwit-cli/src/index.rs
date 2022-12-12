@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
-use clap::{arg, ArgGroup, ArgMatches, Command};
+use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
@@ -97,19 +97,12 @@ pub fn build_index_command<'a>() -> Command<'a> {
                         .required(false),
                     arg!(--"keep-cache" "Does not clear local cache directory upon completion.")
                         .required(false),
+                    arg!(--"transform-config" <CONFIG_PATH> "Location of the VRL program to transform docs before ingesting.")
+                        .required(false),
+                    arg!(--"transform-program" <PROGRAM> "VRL program to transform docs before ingesting.")
+                        .required(false)
+                        .conflicts_with("transform-config")
                 ])
-                .subcommand(
-                    Command::new("transform")
-                    .about("Transform the documents before ingesting.")
-                    .args(&[
-                        arg!(--source <PROGRAM> "VRL program to transform docs before ingesting."),
-                        arg!(--"source-file" <PROGRAM_PATH> "Location of the VRL program to transform docs before ingesting.")
-                            .conflicts_with("source"),
-                        arg!(--timezone <TIMEZONE> "Timezone to use in VRL program's context. Must be a valid name in TZ Database `https://en.wikipedia.org/wiki/List_of_tz_database_time_zones`. Defaults to `UTC`")
-                            .required(false),
-                    ])
-                    .group(ArgGroup::new("vrl-source").args(&["source", "source-file"]).required(true))
-                )
             )
         .subcommand(
             Command::new("ingest-api")
@@ -409,11 +402,7 @@ impl IndexCliCommand {
         let overwrite = matches.is_present("overwrite");
         let clear_cache = !matches.is_present("keep-cache");
 
-        let vrl_settings = if let Some(submatches) = matches.subcommand_matches("transform") {
-            Some(IndexCliCommand::parse_transform_args(submatches)?)
-        } else {
-            None
-        };
+        let vrl_settings = IndexCliCommand::parse_transform_args(matches)?;
 
         Ok(Self::Ingest(IngestDocsArgs {
             index_id,
@@ -425,29 +414,28 @@ impl IndexCliCommand {
         }))
     }
 
-    fn parse_transform_args(matches: &ArgMatches) -> anyhow::Result<VrlSettings> {
-        let vrl_program = match matches.value_of("source") {
-            Some(source) => source.to_owned(),
-            None => match matches.value_of("source-file").as_ref() {
-                Some(path) => {
-                    let mut reader = std::fs::File::open(path)?;
-                    let mut buffer = String::new();
-                    reader.read_to_string(&mut buffer)?;
-                    buffer
-                }
-                None => panic!("Either `source` or `source-file` must be present."),
-            },
+    fn parse_transform_args(matches: &ArgMatches) -> anyhow::Result<Option<VrlSettings>> {
+        let vrl_program = if let Some(path) = matches.value_of("transform-config") {
+            let mut reader = std::fs::File::open(path)?;
+            let mut buffer = String::new();
+            reader.read_to_string(&mut buffer)?;
+            let config_uri = Uri::from_str(path)?;
+            let config_format = ConfigFormat::sniff_from_uri(&config_uri)?;
+            let vrl_program: VrlSettings = config_format.parse_file_simple(buffer.as_bytes())?;
+            Some(vrl_program)
+        } else {
+            let vrl_source = matches
+                .value_of("transform-program")
+                .map(|source| source.to_owned());
+
+            vrl_source.map(|source| VrlSettings::new(source, None))
         };
 
-        let timezone = matches
-            .value_of("timezone")
-            .map(|timezone| timezone.to_owned());
+        if let Some(vrl_program) = &vrl_program {
+            vrl_program.validate()?;
+        }
 
-        let vrl_settings = VrlSettings::new(vrl_program, timezone);
-
-        vrl_settings.validate()?;
-
-        Ok(vrl_settings)
+        Ok(vrl_program)
     }
 
     fn parse_toggle_ingest_api_args(matches: &ArgMatches) -> anyhow::Result<Self> {
