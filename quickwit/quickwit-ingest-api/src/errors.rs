@@ -19,13 +19,14 @@
 
 use std::io;
 
+use mrecordlog::error::*;
 use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
 use serde::Serialize;
 use thiserror::Error;
 
 #[derive(Error, Debug, Serialize)]
 pub enum IngestApiError {
-    #[error("Rocks DB Error: {msg}.")]
+    #[error("Data corruption: {msg}.")]
     Corruption { msg: String },
     #[error("Index `{index_id}` does not exist.")]
     IndexDoesNotExist { index_id: String },
@@ -35,6 +36,8 @@ pub enum IngestApiError {
     IngestAPIServiceDown,
     #[error("Io Error {msg}")]
     IoError { msg: String },
+    #[error("Invalid position: {0}.")]
+    InvalidPosition(String),
 }
 
 impl From<io::Error> for IngestApiError {
@@ -53,6 +56,7 @@ impl ServiceError for IngestApiError {
             IngestApiError::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             IngestApiError::IngestAPIServiceDown => ServiceErrorCode::Internal,
             IngestApiError::IoError { .. } => ServiceErrorCode::Internal,
+            IngestApiError::InvalidPosition(_) => ServiceErrorCode::BadRequest,
         }
     }
 }
@@ -60,14 +64,6 @@ impl ServiceError for IngestApiError {
 #[derive(Error, Debug)]
 #[error("Key should contain 16 bytes. It contained {0} bytes.")]
 pub struct CorruptedKey(pub usize);
-
-impl From<rocksdb::Error> for IngestApiError {
-    fn from(err: rocksdb::Error) -> Self {
-        IngestApiError::Corruption {
-            msg: format!("RocksDB error: {err:?}"),
-        }
-    }
-}
 
 impl From<CorruptedKey> for IngestApiError {
     fn from(err: CorruptedKey) -> Self {
@@ -85,9 +81,65 @@ impl From<IngestApiError> for tonic::Status {
             IngestApiError::IndexAlreadyExists { .. } => tonic::Code::AlreadyExists,
             IngestApiError::IngestAPIServiceDown => tonic::Code::Internal,
             IngestApiError::IoError { .. } => tonic::Code::Internal,
+            IngestApiError::InvalidPosition(_) => tonic::Code::InvalidArgument,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)
+    }
+}
+
+impl From<ReadRecordError> for IngestApiError {
+    fn from(err: ReadRecordError) -> IngestApiError {
+        match err {
+            ReadRecordError::IoError(io_err) => io_err.into(),
+            ReadRecordError::Corruption => IngestApiError::Corruption {
+                msg: "failed to read record".to_owned(),
+            },
+        }
+    }
+}
+
+impl From<AppendError> for IngestApiError {
+    fn from(err: AppendError) -> IngestApiError {
+        match err {
+            AppendError::IoError(io_err) => io_err.into(),
+            AppendError::MissingQueue(index_id) => IngestApiError::IndexDoesNotExist { index_id },
+            // these errors can't be reached right now
+            AppendError::Past => {
+                IngestApiError::InvalidPosition("appending record in the past".to_owned())
+            }
+            AppendError::Future => {
+                IngestApiError::InvalidPosition("appending record in the future".to_owned())
+            }
+        }
+    }
+}
+
+impl From<DeleteQueueError> for IngestApiError {
+    fn from(err: DeleteQueueError) -> IngestApiError {
+        match err {
+            DeleteQueueError::IoError(io_err) => io_err.into(),
+            DeleteQueueError::MissingQueue(index_id) => {
+                IngestApiError::IndexDoesNotExist { index_id }
+            }
+        }
+    }
+}
+
+impl From<TruncateError> for IngestApiError {
+    fn from(err: TruncateError) -> IngestApiError {
+        match err {
+            TruncateError::IoError(io_err) => io_err.into(),
+            TruncateError::MissingQueue(index_id) => IngestApiError::IndexDoesNotExist { index_id },
+            // this error shouldn't happen (except due to a bug in MRecordLog?)
+            TruncateError::TouchError(_) => {
+                IngestApiError::InvalidPosition("touching at an invalid position".to_owned())
+            }
+            // this error can happen now, it used to happily trunk everything
+            TruncateError::Future => IngestApiError::InvalidPosition(
+                "trying to truncate past last ingested record".to_owned(),
+            ),
+        }
     }
 }
 
