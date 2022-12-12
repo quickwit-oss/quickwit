@@ -219,7 +219,6 @@ pub enum IndexRecordOptionSchema {
     WithFreqs,
     /// records the document id, the term frequency and the positions of
     /// the occurrences in the document.
-    /// Positions are required to run a [`PhraseQuery`](crate::query::PhraseQuery).
     #[schema(rename = "position")]
     WithFreqsAndPositions,
 }
