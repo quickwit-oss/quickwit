@@ -71,7 +71,7 @@ use crate::source_config::serialize::{SourceConfigV0_4, VersionedSourceConfig};
     VersionedIndexConfig,
     IndexConfigV0_4,
 )))]
-/// The OpenAPI schemas defined within the metastore that we don't
+/// The OpenAPI schemas defined within the config crate that we don't
 /// necessarily want to expose.
 pub struct ConfigApiSchemas;
 
