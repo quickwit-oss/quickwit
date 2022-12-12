@@ -41,9 +41,9 @@ use tracing::{error, info};
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
 use crate::models::{
-    DetachIndexingPipeline, DetachMergePipeline, IndexingDirectory, IndexingPipelineId, Observe,
-    ObservePipeline, ShutdownPipeline, ShutdownPipelines, SpawnPipeline, SpawnPipelines,
-    WeakIndexingDirectory,
+    DetachIndexingPipeline, DetachMergePipeline, IndexingPipelineId, Observe, ObservePipeline,
+    ScratchDirectory, ShutdownPipeline, ShutdownPipelines, SpawnPipeline, SpawnPipelines,
+    WeakScratchDirectory,
 };
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
@@ -123,7 +123,7 @@ pub struct IndexingService {
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     counters: IndexingServiceCounters,
-    indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
+    indexing_directories: HashMap<(IndexId, SourceId), WeakScratchDirectory>,
     local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
@@ -426,19 +426,19 @@ impl IndexingService {
         &mut self,
         pipeline_id: &IndexingPipelineId,
         indexing_dir_path: PathBuf,
-    ) -> Result<IndexingDirectory, IndexingServiceError> {
+    ) -> Result<ScratchDirectory, IndexingServiceError> {
         let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
         if let Some(indexing_directory) = self
             .indexing_directories
             .get(&key)
-            .and_then(WeakIndexingDirectory::upgrade)
+            .and_then(WeakScratchDirectory::upgrade)
         {
             return Ok(indexing_directory);
         }
         let indexing_directory_path = indexing_dir_path
             .join(&pipeline_id.index_id)
             .join(&pipeline_id.source_id);
-        let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path)
+        let indexing_directory = ScratchDirectory::create_in_dir(indexing_directory_path)
             .await
             .map_err(IndexingServiceError::InvalidParams)?;
 
