@@ -46,7 +46,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the document built from an owned JSON string.
     ///
     /// (we pass by value here, as the value can be used as is in the _source field.)
-    fn doc_from_json(&self, doc_json: String) -> Result<(Partition, Document), DocParsingError>;
+    fn doc_from_json(&self, doc_json: &str) -> Result<(Partition, Document), DocParsingError>;
 
     /// Converts a tantivy named Document to the json format.
     ///

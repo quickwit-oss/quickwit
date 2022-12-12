@@ -41,9 +41,9 @@ use tracing::{error, info};
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
 use crate::models::{
-    DetachIndexingPipeline, DetachMergePipeline, IndexingDirectory, IndexingPipelineId, Observe,
-    ObservePipeline, ShutdownPipeline, ShutdownPipelines, SpawnPipeline, SpawnPipelines,
-    WeakIndexingDirectory,
+    DetachIndexingPipeline, DetachMergePipeline, IndexingPipelineId, Observe, ObservePipeline,
+    ScratchDirectory, ShutdownPipeline, ShutdownPipelines, SpawnPipeline, SpawnPipelines,
+    WeakScratchDirectory,
 };
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
@@ -123,7 +123,7 @@ pub struct IndexingService {
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     counters: IndexingServiceCounters,
-    indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
+    indexing_directories: HashMap<(IndexId, SourceId), WeakScratchDirectory>,
     local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
@@ -426,19 +426,19 @@ impl IndexingService {
         &mut self,
         pipeline_id: &IndexingPipelineId,
         indexing_dir_path: PathBuf,
-    ) -> Result<IndexingDirectory, IndexingServiceError> {
+    ) -> Result<ScratchDirectory, IndexingServiceError> {
         let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
         if let Some(indexing_directory) = self
             .indexing_directories
             .get(&key)
-            .and_then(WeakIndexingDirectory::upgrade)
+            .and_then(WeakScratchDirectory::upgrade)
         {
             return Ok(indexing_directory);
         }
         let indexing_directory_path = indexing_dir_path
             .join(&pipeline_id.index_id)
             .join(&pipeline_id.source_id);
-        let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path)
+        let indexing_directory = ScratchDirectory::create_in_dir(indexing_directory_path)
             .await
             .map_err(IndexingServiceError::InvalidParams)?;
 
@@ -995,7 +995,7 @@ mod tests {
             _: FreezePipeline,
             _ctx: &ActorContext<Self>,
         ) -> Result<Self::Reply, ActorExitStatus> {
-            tokio::time::sleep(HEARTBEAT * 10).await;
+            tokio::time::sleep(HEARTBEAT * 5).await;
             Ok(())
         }
     }
@@ -1019,7 +1019,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_indexing_service_does_not_shut_down_pipelines_on_indexing_pipeline_timeout() {
+    async fn test_indexing_service_does_not_shut_down_pipelines_on_indexing_pipeline_freeze() {
         quickwit_common::setup_logging_for_tests();
         let index_id = append_random_suffix("test-indexing-service-indexing-pipeline-timeout");
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -1058,7 +1058,7 @@ mod tests {
         .unwrap();
         let (indexing_server_mailbox, indexing_server_handle) =
             universe.spawn_builder().spawn(indexing_server);
-        let pipeline_ids = indexing_server_mailbox
+        let _pipeline_ids = indexing_server_mailbox
             .ask_for_res(SpawnPipelines {
                 index_id: index_id.clone(),
             })
@@ -1071,33 +1071,16 @@ mod tests {
 
         let indexing_pipeline = universe.get_one::<IndexingPipeline>().unwrap();
 
-        // Freeze pipeline during 10 heartbeats.
+        // Freeze pipeline during 5 heartbeats.
         indexing_pipeline
             .send_message(FreezePipeline)
             .await
             .unwrap();
-
-        // Check that the indexing pipeline is unhealthy. For that we need to do 2 health() call on
-        // the pipeline handle. Check `registered_activity_since_last_call` method for
-        // details.
-        tokio::time::sleep(HEARTBEAT).await;
-        let pipeline_health = indexing_server_mailbox
-            .ask(ObservePipelineHealth(pipeline_ids[0].clone()))
-            .await
-            .unwrap();
-        assert_eq!(pipeline_health, Health::Healthy);
-
-        tokio::time::sleep(HEARTBEAT).await;
-        let pipeline_health = indexing_server_mailbox
-            .ask(ObservePipelineHealth(pipeline_ids[0].clone()))
-            .await
-            .unwrap();
-        assert_eq!(pipeline_health, Health::FailureOrUnhealthy);
-
-        // Check indexing and merge pipelines are still running after a HEARTBEAT.
-        tokio::time::sleep(HEARTBEAT).await;
+        tokio::time::sleep(HEARTBEAT * 5).await;
+        // Check that indexing and merge pipelines are still running.
         let observation = indexing_server_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 1);
+        assert_eq!(observation.num_failed_pipelines, 0);
         assert_eq!(observation.num_running_merge_pipelines, 1);
     }
 }
