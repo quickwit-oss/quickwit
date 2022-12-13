@@ -276,6 +276,7 @@ fn prepend_at_char(schedule: &str) -> String {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(into = "VersionedIndexConfig")]
+#[serde(try_from = "VersionedIndexConfig")]
 pub struct IndexConfig {
     pub index_id: String,
     pub index_uri: Uri,
