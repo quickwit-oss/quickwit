@@ -289,13 +289,7 @@ impl DocProcessor {
         ctx: &ActorContext<Self>,
     ) -> Result<PreparedDoc, PrepareDocumentError> {
         let _protect_guard = ctx.protect_zone();
-        self._prepare_document(doc_json)
-    }
 
-    pub fn _prepare_document(
-        &mut self,
-        doc_json: &str,
-    ) -> Result<PreparedDoc, PrepareDocumentError> {
         let transformed_doc = if let Some(vrl_program) = self.transform_layer.as_mut() {
             Some(vrl_program.process_doc(doc_json)?)
         } else {

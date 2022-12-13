@@ -83,7 +83,3 @@ required-features = ["fail/failpoints"]
 [[bench]]
 name = "doc_process_vrl_bench"
 harness = false
-
-[[bench]]
-name = "doc_process_vrl_bench_actor"
-harness = false
