@@ -555,28 +555,36 @@ mod tests {
     }
 
     #[test]
-    fn test_checkpoint_simple() -> anyhow::Result<()> {
+    fn test_checkpoint_simple() {
         let mut checkpoint = SourceCheckpoint::default();
         assert_eq!(format!("{:?}", checkpoint), "Ckpt()");
-        let delta1 = {
+
+        let delta = {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from(123u64),
                 Position::from(128u64),
             );
-            delta.record_partition_delta(
-                PartitionId::from("b"),
-                Position::from(60002u64),
-                Position::from(60187u64),
-            )?;
+            delta
+                .record_partition_delta(
+                    PartitionId::from("b"),
+                    Position::from(60002u64),
+                    Position::from(60187u64),
+                )
+                .unwrap();
             delta
         };
-        assert!(checkpoint.try_apply_delta(delta1).is_ok());
+        checkpoint.try_apply_delta(delta.clone()).unwrap();
         assert_eq!(
             format!("{:?}", checkpoint),
             "Ckpt(a:00000000000000000128 b:00000000000000060187)"
         );
-        Ok(())
+        // `try_apply_delta` is not idempotent.
+        checkpoint.try_apply_delta(delta).unwrap_err();
+        assert_eq!(
+            format!("{:?}", checkpoint),
+            "Ckpt(a:00000000000000000128 b:00000000000000060187)"
+        );
     }
 
     #[test]

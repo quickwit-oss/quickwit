@@ -141,19 +141,20 @@ pub trait Metastore: Send + Sync + 'static {
         split_metadata: SplitMetadata,
     ) -> MetastoreResult<()>;
 
-    /// Publishes a list of splits.
+    /// Publishes a set of staged splits while optionally marking another set of published splits
+    /// for deletion.
     ///
-    /// This API only updates the state of the split from [`SplitState::Staged`] to
+    /// This API merely updates the state of the staged splits from [`SplitState::Staged`] to
     /// [`SplitState::Published`]. At this point, the split files are assumed to have already
-    /// been uploaded. If the split is already published, this API call returns a success.
+    /// been uploaded.
     /// An error will occur if you specify an index or split that does not exist in the storage.
     ///
     /// This method can be used to advance the checkpoint, by supplying an empty array for
-    /// `split_ids`.
+    /// `staged_split_ids`.
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
-        split_ids: &[&'a str],
+        staged_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     ) -> MetastoreResult<()>;

@@ -902,7 +902,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            metastore
+            let error = metastore
                 .publish_splits(
                     index_id,
                     &[split_id_1, split_id_2],
@@ -914,7 +914,8 @@ pub mod test_suite {
                     .into(),
                 )
                 .await
-                .unwrap();
+                .unwrap_err();
+            assert!(matches!(error, MetastoreError::SplitsNotStaged { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -982,26 +983,24 @@ pub mod test_suite {
 
         let source_id = format!("{index_id}--source");
 
-        let split_id = format!("{index_id}--split");
-        let split_metadata = SplitMetadata {
-            split_id: split_id.clone(),
-            index_id: index_id.clone(),
-            ..Default::default()
-        };
-        metastore
-            .stage_split(&index_id, split_metadata)
-            .await
-            .unwrap();
-
         let mut join_handles = Vec::with_capacity(10);
 
         for partition_id in 0..10 {
             let metastore = metastore.clone();
             let index_id = index_id.clone();
             let source_id = source_id.clone();
-            let split_id = split_id.clone();
 
             let join_handle = tokio::spawn(async move {
+                let split_id = format!("{index_id}--split-{partition_id}");
+                let split_metadata = SplitMetadata {
+                    split_id: split_id.clone(),
+                    index_id: index_id.clone(),
+                    ..Default::default()
+                };
+                metastore
+                    .stage_split(&index_id, split_metadata)
+                    .await
+                    .unwrap();
                 let source_delta = SourceCheckpointDelta::from_partition_delta(
                     PartitionId::from(partition_id as u64),
                     Position::Beginning,
@@ -2261,26 +2260,6 @@ pub mod test_suite {
             split_meta.publish_timestamp,
             Some(split_meta.update_timestamp)
         );
-
-        // wait a sec & re-publish and check publish_timestamp has not changed
-        let last_publish_timestamp_opt = split_meta.publish_timestamp;
-        sleep(Duration::from_secs(1)).await;
-        metastore
-            .publish_splits(
-                index_id,
-                &[split_id],
-                &[],
-                {
-                    let offsets = 5..12;
-                    IndexCheckpointDelta::for_test(source_id, offsets)
-                }
-                .into(),
-            )
-            .await
-            .unwrap();
-        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
-        assert_eq!(split_meta.publish_timestamp, last_publish_timestamp_opt);
-
         current_timestamp = split_meta.update_timestamp;
 
         // wait for 1s, mark split for deletion & check `update_timestamp`
