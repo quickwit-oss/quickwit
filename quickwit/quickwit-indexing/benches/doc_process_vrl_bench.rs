@@ -12,6 +12,43 @@ const JSON_NORMAL: &str = include_str!("data/bench_data.json");
 const JSON_LIGHT_TRANSFORM: &str = include_str!("data/bench_data_light_transform.json");
 const JSON_HEAVY_TRANSFORM: &str = include_str!("data/bench_data_heavy_transform.json");
 
+macro_rules! bench_func {
+    ($input:expr, $group:expr, $name:expr, $param:expr, $func:expr) => {
+        {
+            let lines: Vec<&str> = $input.lines().map(|line| line.trim()).collect();
+            $group.throughput(criterion::Throughput::Bytes($input.len() as u64));
+
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            let checkpoint_delta = SourceCheckpointDelta::from(0..$input.len() as u64);
+
+            $group.bench_function(BenchmarkId::new($name, $param), |b| {
+                b.to_async(&runtime).iter_batched(
+                    || {
+                        lines
+                            .iter()
+                            .map(|line| line.to_string())
+                            .collect::<Vec<_>>()
+                    },
+                    |docs| async {
+                        let (mailbox, handle, universe) = $func;
+                        mailbox
+                            .send_message(RawDocBatch {
+                                docs,
+                                checkpoint_delta: checkpoint_delta.clone(),
+                            })
+                            .await
+                            .unwrap();
+
+                        universe.send_exit_with_success(&mailbox).await.unwrap();
+                        handle.join().await;
+                    },
+                    criterion::BatchSize::SmallInput,
+                )
+            });
+        }
+    };
+}
+
 pub fn default_doc_mapper_for_bench() -> DefaultDocMapper {
     const JSON_CONFIG_VALUE: &str = r#"
         {
@@ -103,198 +140,20 @@ fn create_doc_processor(
 
 fn bench_simple_json(c: &mut Criterion) {
     let mut group = c.benchmark_group("Simple Json");
-    let lines: Vec<&str> = JSON_NORMAL.lines().map(|line| line.trim()).collect();
-    group.throughput(criterion::Throughput::Bytes(JSON_NORMAL.len() as u64));
-
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let checkpoint_delta = SourceCheckpointDelta::from(0..JSON_NORMAL.len() as u64);
-
-    group.bench_function(BenchmarkId::new("No VRL", "Simple JSON"), |b| {
-        b.to_async(&runtime).iter_batched(
-            || {
-                lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |docs| async {
-                let (mailbox, handle, universe) = doc_processor_no_transform();
-                mailbox
-                    .send_message(RawDocBatch {
-                        docs,
-                        checkpoint_delta: checkpoint_delta.clone(),
-                    })
-                    .await
-                    .unwrap();
-
-                universe.send_exit_with_success(&mailbox).await.unwrap();
-                handle.join().await;
-            },
-            criterion::BatchSize::SmallInput,
-        )
-    });
-    group.bench_function(BenchmarkId::new("Light VRL", "Simple JSON"), |b| {
-        b.to_async(&runtime).iter_batched(
-            || {
-                lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |docs| async {
-                let (mailbox, handle, universe) = doc_processor_light_transform();
-                mailbox
-                    .send_message(RawDocBatch {
-                        docs,
-                        checkpoint_delta: checkpoint_delta.clone(),
-                    })
-                    .await
-                    .unwrap();
-
-                universe.send_exit_with_success(&mailbox).await.unwrap();
-                handle.join().await;
-            },
-            criterion::BatchSize::SmallInput,
-        )
-    });
+    bench_func!(JSON_NORMAL, group, "No VRL", "Simple JSON", doc_processor_no_transform());
+    bench_func!(JSON_NORMAL, group, "Light VRL", "Simple JSON", doc_processor_light_transform());
 }
 
 fn bench_light_json(c: &mut Criterion) {
     let mut group = c.benchmark_group("Simple/Light Json");
-    let normal_lines: Vec<&str> = JSON_NORMAL.lines().map(|line| line.trim()).collect();
-    let transform_lines: Vec<&str> = JSON_LIGHT_TRANSFORM
-        .lines()
-        .map(|line| line.trim())
-        .collect();
-
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let checkpoint_delta = SourceCheckpointDelta::from(0..JSON_NORMAL.len() as u64);
-
-    group.throughput(criterion::Throughput::Bytes(JSON_NORMAL.len() as u64));
-
-    group.bench_function(BenchmarkId::new("No VRL", "Simple JSON"), |b| {
-        b.to_async(&runtime).iter_batched(
-            || {
-                normal_lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |docs| async {
-                let (mailbox, handle, universe) = doc_processor_no_transform();
-                mailbox
-                    .send_message(RawDocBatch {
-                        docs,
-                        checkpoint_delta: checkpoint_delta.clone(),
-                    })
-                    .await
-                    .unwrap();
-
-                universe.send_exit_with_success(&mailbox).await.unwrap();
-                handle.join().await;
-            },
-            criterion::BatchSize::SmallInput,
-        )
-    });
-
-    group.throughput(criterion::Throughput::Bytes(
-        JSON_LIGHT_TRANSFORM.len() as u64
-    ));
-    let checkpoint_delta = SourceCheckpointDelta::from(0..JSON_LIGHT_TRANSFORM.len() as u64);
-
-    group.bench_function(BenchmarkId::new("Light VRL", "Light JSON"), |b| {
-        b.to_async(&runtime).iter_batched(
-            || {
-                transform_lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |docs| async {
-                let (mailbox, handle, universe) = doc_processor_light_transform();
-                mailbox
-                    .send_message(RawDocBatch {
-                        docs,
-                        checkpoint_delta: checkpoint_delta.clone(),
-                    })
-                    .await
-                    .unwrap();
-
-                universe.send_exit_with_success(&mailbox).await.unwrap();
-                handle.join().await;
-            },
-            criterion::BatchSize::SmallInput,
-        )
-    });
+    bench_func!(JSON_NORMAL, group, "No VRL", "Simple JSON", doc_processor_no_transform());
+    bench_func!(JSON_LIGHT_TRANSFORM, group, "Light VRL", "Light JSON", doc_processor_light_transform());
 }
 
 fn bench_heavy_json(c: &mut Criterion) {
     let mut group = c.benchmark_group("Simple/Light Json");
-    let normal_lines: Vec<&str> = JSON_NORMAL.lines().map(|line| line.trim()).collect();
-    let transform_lines: Vec<&str> = JSON_HEAVY_TRANSFORM
-        .lines()
-        .map(|line| line.trim())
-        .collect();
-
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let checkpoint_delta = SourceCheckpointDelta::from(0..JSON_NORMAL.len() as u64);
-
-    group.throughput(criterion::Throughput::Bytes(JSON_NORMAL.len() as u64));
-
-    group.bench_function(BenchmarkId::new("No VRL", "Simple JSON"), |b| {
-        b.to_async(&runtime).iter_batched(
-            || {
-                normal_lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |docs| async {
-                let (mailbox, handle, universe) = doc_processor_no_transform();
-                mailbox
-                    .send_message(RawDocBatch {
-                        docs,
-                        checkpoint_delta: checkpoint_delta.clone(),
-                    })
-                    .await
-                    .unwrap();
-
-                universe.send_exit_with_success(&mailbox).await.unwrap();
-                handle.join().await;
-            },
-            criterion::BatchSize::SmallInput,
-        )
-    });
-
-    group.throughput(criterion::Throughput::Bytes(
-        JSON_LIGHT_TRANSFORM.len() as u64
-    ));
-    let checkpoint_delta = SourceCheckpointDelta::from(0..JSON_LIGHT_TRANSFORM.len() as u64);
-
-    group.bench_function(BenchmarkId::new("Heavy VRL", "Heavy JSON"), |b| {
-        b.to_async(&runtime).iter_batched(
-            || {
-                transform_lines
-                    .iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-            },
-            |docs| async {
-                let (mailbox, handle, universe) = doc_processor_heavy_transform();
-                mailbox
-                    .send_message(RawDocBatch {
-                        docs,
-                        checkpoint_delta: checkpoint_delta.clone(),
-                    })
-                    .await
-                    .unwrap();
-
-                universe.send_exit_with_success(&mailbox).await.unwrap();
-                handle.join().await;
-            },
-            criterion::BatchSize::SmallInput,
-        )
-    });
+    bench_func!(JSON_NORMAL, group, "No VRL", "Simple JSON", doc_processor_no_transform());
+    bench_func!(JSON_HEAVY_TRANSFORM, group, "Heavy VRL", "Heavy JSON", doc_processor_heavy_transform());
 }
 
 criterion_group!(
