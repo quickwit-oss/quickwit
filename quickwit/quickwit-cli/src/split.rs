@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
-use clap::{arg, ArgMatches, Command};
+use clap::{arg, ArgMatches, Args, Command, Subcommand};
 use humansize::{format_size, DECIMAL};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
@@ -37,79 +37,174 @@ use tracing::debug;
 
 use crate::{load_quickwit_config, make_table};
 
-pub fn build_split_command<'a>() -> Command<'a> {
-    Command::new("split")
-        .about("Performs operations on splits (list, describe, mark for deletion, extract).")
-        .subcommand(
-            Command::new("list")
-                .about("Lists the splits of an index.")
-                .alias("ls")
-                .args(&[
-                    arg!(--index <INDEX> "Target index ID")
-                        .display_order(1)
-                        .required(true),
-                    arg!(--states <SPLIT_STATES> "Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`.")
-                        .display_order(2)
-                        .required(false)
-                        .use_value_delimiter(true),
-                    arg!(--"create-date" <CREATE_DATE> "Selects the splits whose creation dates are before this date.")
-                        .display_order(3)
-                        .required(false),
-                    arg!(--"start-date" <START_DATE> "Selects the splits that contain documents after this date (time-series indexes only).")
-                        .display_order(4)
-                        .required(false),
-                    arg!(--"end-date" <END_DATE> "Selects the splits that contain documents before this date (time-series indexes only).")
-                        .display_order(5)
-                        .required(false),
-                    arg!(--tags <TAGS> "Selects the splits whose tags are all included in this comma-separated list of tags.")
-                        .display_order(6)
-                        .required(false)
-                        .use_value_delimiter(true),
-                    arg!(--"output-format" <OUTPUT_FORMAT> "Output format. Possible values are `table`, `json`, and `prettyjson`.")
-                        .alias("format")
-                        .display_order(7)
-                        .required(false)
-                ])
-            )
-        .subcommand(
-            Command::new("extract")
-                .about("Downloads and extracts a split to a directory.")
-                .args(&[
-                    arg!(--index <INDEX> "ID of the target index")
-                        .display_order(1),
-                    arg!(--split <SPLIT> "ID of the target split")
-                        .display_order(2),
-                    arg!(--"target-dir" <TARGET_DIR> "Directory to extract the split to."),
-                ])
-            )
-        .subcommand(
-            Command::new("describe")
-                .about("Displays metadata about a split.")
-                .alias("desc")
-                .args(&[
-                    arg!(--index <INDEX> "ID of the target index")
-                        .display_order(1),
-                    arg!(--split <SPLIT> "ID of the target split")
-                        .display_order(2),
-                    arg!(--verbose "Displays additional metadata about the hotcache."),
-                ])
-            )
-        .subcommand(
-            Command::new("mark-for-deletion")
-                .about("Marks one or multiple splits of an index for deletion.")
-                .alias("mark")
-                .args(&[
-                    arg!(--index <INDEX_ID> "Target index ID")
-                        .display_order(1)
-                        .required(true),
-                    arg!(--splits <SPLIT_IDS> "Comma-separated list of split IDs")
-                        .display_order(2)
-                        .required(true)
-                        .use_value_delimiter(true),
-                ])
-            )
-        .arg_required_else_help(true)
+#[derive(Args)]
+pub struct SplitCliCommand {
+    #[command(subcommand)]
+    command: Option<SplitCliCommands>,
 }
+
+#[derive(Subcommand)]
+pub enum SplitCliCommands {
+    /// Lists the splits of an index.
+    #[command(alias = "ls")]
+    List(SplitListArgs),
+    /// Downloads and extracts a split to a directory.
+    Extract(SplitExtractArgs),
+    /// Displays metadata about a split.
+    #[command(alias = "desc")]
+    Describe(SplitDescribeArgs),
+    /// Marks one or multiple splits of an index for deletion.
+    #[command(alias = "mark")]
+    MarkForDeletion(SplitMarkForDeletionArgs),
+}
+
+#[derive(Args)]
+pub struct SplitListArgs {
+    /// ID of the target index
+    #[arg(long, value_name = "INDEX")]
+    index: String,
+
+    /// Selects the splits whose states are included in this comma-separated list of states.
+    /// Possible values are `staged`, `published`, and `marked`.
+    #[arg(long, value_name = "SPLIT_STATES")]
+    state: Option<Vec<SplitState>>,
+
+    /// Selects the splits whose creation dates are before this date.
+    #[arg(long = "create-date", value_name = "CREATE_DATE")]
+    create_date: Option<String>,
+
+    /// Selects the splits that contain documents after this date (time-series indexes only).
+    #[arg(long = "start-date", value_name = "START_DATE")]
+    start_date: Option<String>,
+
+    /// Selects the splits that contain documents before this date (time-series indexes only).
+    #[arg(long = "end-date", value_name = "END_STATES")]
+    end_date: Option<String>,
+
+    /// Selects the splits whose tags are all included in this comma-separated list of tags.
+    #[arg(long, value_name = "TAGS")]
+    tags: Option<Vec<String>>,
+
+    /// Output format. Possible values are `table`, `json`, and `prettyjson`.
+    #[arg(long = "output-format", value_name = "OUTPUT_FORMAT", alias = "format")]
+    output_format: Option<String>,
+}
+
+#[derive(Args)]
+pub struct SplitExtractArgs {
+    /// ID of the target index
+    #[arg(long, value_name = "INDEX")]
+    index: String,
+
+    /// ID of the target split
+    #[arg(long, value_name = "SPLIT")]
+    split: String,
+
+    /// Directory to extract the split to.
+    #[arg(long, value_name = "SPLIT_STATES")]
+    target_dir: PathBuf,
+}
+
+#[derive(Args)]
+pub struct SplitDescribeArgs {
+    /// ID of the target index
+    #[arg(long, value_name = "INDEX")]
+    index: String,
+
+    /// ID of the target split
+    #[arg(long, value_name = "SPLIT")]
+    split: String,
+
+    /// Displays additional metadata about the hotcache.
+    #[arg(long)]
+    verbose: bool,
+}
+
+/// Marks one or multiple splits of an index for deletion.
+#[derive(Args)]
+pub struct SplitMarkForDeletionArgs {
+    /// ID of the target index
+    #[arg(long, value_name = "INDEX")]
+    index: String,
+
+    /// Comma-separated list of split IDs
+    #[arg(long, value_name = "SPLIT_IDS")]
+    splits: Vec<String>,
+}
+
+// pub fn build_split_command<'a>() -> Command<'a> {
+//     Command::new("split")
+//         .about("Performs operations on splits (list, describe, mark for deletion, extract).")
+//         .subcommand(
+//             Command::new("list")
+//                 .about("Lists the splits of an index.")
+//                 .alias("ls")
+//                 .args(&[
+//                     arg!(--index <INDEX> "Target index ID")
+//                         .display_order(1)
+//                         .required(true),
+//                     arg!(--states <SPLIT_STATES> "Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`.")
+//                         .display_order(2)
+//                         .required(false)
+//                         .use_value_delimiter(true),
+//                     arg!(--"create-date" <CREATE_DATE> "Selects the splits whose creation dates are before this date.")
+//                         .display_order(3)
+//                         .required(false),
+//                     arg!(--"start-date" <START_DATE> "Selects the splits that contain documents after this date (time-series indexes only).")
+//                         .display_order(4)
+//                         .required(false),
+//                     arg!(--"end-date" <END_DATE> "Selects the splits that contain documents before this date (time-series indexes only).")
+//                         .display_order(5)
+//                         .required(false),
+//                     arg!(--tags <TAGS> "Selects the splits whose tags are all included in this comma-separated list of tags.")
+//                         .display_order(6)
+//                         .required(false)
+//                         .use_value_delimiter(true),
+//                     arg!(--"output-format" <OUTPUT_FORMAT> "Output format. Possible values are `table`, `json`, and `prettyjson`.")
+//                         .alias("format")
+//                         .display_order(7)
+//                         .required(false)
+//                 ])
+//             )
+//         .subcommand(
+//             Command::new("extract")
+//                 .about("Downloads and extracts a split to a directory.")
+//                 .args(&[
+//                     arg!(--index <INDEX> "ID of the target index")
+//                         .display_order(1),
+//                     arg!(--split <SPLIT> "ID of the target split")
+//                         .display_order(2),
+//                     arg!(--"target-dir" <TARGET_DIR> "Directory to extract the split to."),
+//                 ])
+//             )
+//         .subcommand(
+//             Command::new("describe")
+//                 .about("Displays metadata about a split.")
+//                 .alias("desc")
+//                 .args(&[
+//                     arg!(--index <INDEX> "ID of the target index")
+//                         .display_order(1),
+//                     arg!(--split <SPLIT> "ID of the target split")
+//                         .display_order(2),
+//                     arg!(--verbose "Displays additional metadata about the hotcache."),
+//                 ])
+//             )
+//         .subcommand(
+//             Command::new("mark-for-deletion")
+//                 .about("Marks one or multiple splits of an index for deletion.")
+//                 .alias("mark")
+//                 .args(&[
+//                     arg!(--index <INDEX_ID> "Target index ID")
+//                         .display_order(1)
+//                         .required(true),
+//                     arg!(--splits <SPLIT_IDS> "Comma-separated list of split IDs")
+//                         .display_order(2)
+//                         .required(true)
+//                         .use_value_delimiter(true),
+//                 ])
+//             )
+//         .arg_required_else_help(true)
+// }
 
 #[derive(Debug, Eq, PartialEq)]
 enum OutputFormat {
@@ -169,13 +264,13 @@ pub struct ExtractSplitArgs {
     pub target_dir: PathBuf,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum SplitCliCommand {
-    List(ListSplitArgs),
-    MarkForDeletion(MarkForDeletionArgs),
-    Describe(DescribeSplitArgs),
-    Extract(ExtractSplitArgs),
-}
+// #[derive(Debug, PartialEq)]
+// pub enum SplitCliCommand {
+//     List(ListSplitArgs),
+//     MarkForDeletion(MarkForDeletionArgs),
+//     Describe(DescribeSplitArgs),
+//     Extract(ExtractSplitArgs),
+// }
 
 impl SplitCliCommand {
     pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
