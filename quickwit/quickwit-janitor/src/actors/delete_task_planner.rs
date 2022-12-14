@@ -423,11 +423,12 @@ mod tests {
                 fast: true
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
-        let docs = vec![
+        let docs = [
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "delete", "ts": 0 }),
         ];
+        // Creates 3 splits
         for doc in docs {
             test_sandbox.add_documents(vec![doc]).await?;
         }
@@ -506,8 +507,8 @@ mod tests {
         let (delete_planner_mailbox, delete_planner_handle) =
             universe.spawn_builder().spawn(delete_planner_executor);
         delete_planner_handle.process_pending_and_observe().await;
-        let downloader_msgs =
-            downloader_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
+        let downloader_msgs: Vec<TrackedObject<MergeOperation>> =
+            downloader_inbox.drain_for_test_typed();
         assert_eq!(downloader_msgs.len(), 1);
         // The last split will undergo a delete operation.
         assert_eq!(
@@ -522,7 +523,7 @@ mod tests {
         );
         // Trigger new plan evaluation and check that we don't have new merge operation.
         delete_planner_mailbox
-            .send_message(PlanDeleteOperations)
+            .ask(PlanDeleteOperations)
             .await
             .unwrap();
         assert!(downloader_inbox.drain_for_test().is_empty());
@@ -538,7 +539,7 @@ mod tests {
 
         // Trigger operations planning.
         delete_planner_mailbox
-            .send_message(PlanDeleteOperations)
+            .ask(PlanDeleteOperations)
             .await
             .unwrap();
         let downloader_last_msgs =
