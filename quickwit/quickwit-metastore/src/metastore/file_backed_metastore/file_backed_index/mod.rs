@@ -261,28 +261,16 @@ impl FileBackedIndex {
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         for &split_id in split_ids {
             // Check for the existence of split.
-            let metadata = match self.splits.get_mut(split_id) {
-                Some(metadata) => metadata,
-                _ => {
+            let Some(metadata) = self.splits.get_mut(split_id) else {
                     split_not_found_ids.push(split_id.to_string());
                     continue;
-                }
-            };
-
-            match metadata.split_state {
-                SplitState::Published => {
-                    // Split is already published. This is fine, we just skip it.
-                    continue;
-                }
-                SplitState::Staged => {
-                    // The split state needs to be updated.
-                    metadata.split_state = SplitState::Published;
-                    metadata.update_timestamp = now_timestamp;
-                    metadata.publish_timestamp = Some(now_timestamp);
-                }
-                _ => {
-                    split_not_staged_ids.push(split_id.to_string());
-                }
+                };
+            if metadata.split_state == SplitState::Staged {
+                metadata.split_state = SplitState::Published;
+                metadata.update_timestamp = now_timestamp;
+                metadata.publish_timestamp = Some(now_timestamp);
+            } else {
+                split_not_staged_ids.push(split_id.to_string());
             }
         }
 

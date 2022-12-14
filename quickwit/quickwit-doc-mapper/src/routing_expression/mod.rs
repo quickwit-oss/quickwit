@@ -47,21 +47,21 @@ fn hash_json_val<H: Hasher>(json_val: &JsonValue, hasher: &mut H) {
         }
         JsonValue::String(s) => {
             hasher.write_u8(3u8);
-            hasher.write_usize(s.len());
+            hasher.write_u64(s.len() as u64);
             hasher.write(s.as_bytes());
         }
         JsonValue::Array(arr) => {
             hasher.write_u8(4u8);
-            hasher.write_usize(arr.len());
+            hasher.write_u64(arr.len() as u64);
             for el in arr {
                 hash_json_val(el, hasher);
             }
         }
         JsonValue::Object(obj) => {
             hasher.write_u8(5u8);
-            hasher.write_usize(obj.len());
+            hasher.write_u64(obj.len() as u64);
             for (key, val) in obj.iter() {
-                hasher.write_usize(key.len());
+                hasher.write_u64(key.len() as u64);
                 hasher.write(key.as_bytes());
                 hash_json_val(val, hasher);
             }
@@ -175,9 +175,7 @@ impl Hash for InnerRoutingExpr {
         match self {
             InnerRoutingExpr::Field(field_name) => {
                 ExprType::Field.hash(hasher);
-                // TODO is it okay to write_usize? The result is probably platform dependant, if a
-                // node is 32b, it might not agree with 64b nodes.
-                hasher.write_usize(field_name.len());
+                hasher.write_u64(field_name.len() as u64);
                 hasher.write(field_name.as_bytes());
             }
             InnerRoutingExpr::Composite(children) => {

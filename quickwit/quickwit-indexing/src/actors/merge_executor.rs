@@ -564,7 +564,7 @@ mod tests {
             .map(|split| split.split_metadata)
             .collect();
         assert_eq!(split_metas.len(), 4);
-        let merge_scratch_directory = ScratchDirectory::for_test()?;
+        let merge_scratch_directory = ScratchDirectory::for_test();
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
         let mut tantivy_dirs: Vec<Box<dyn Directory>> = vec![];
@@ -706,7 +706,7 @@ mod tests {
             .unwrap();
         let expected_uncompressed_docs_size_in_bytes =
             (new_split_metadata.uncompressed_docs_size_in_bytes as f32 / 2_f32) as u64;
-        let merge_scratch_directory = ScratchDirectory::for_test()?;
+        let merge_scratch_directory = ScratchDirectory::for_test();
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
         let split_filename = split_file(split_metadata.split_id());
