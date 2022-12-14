@@ -1,3 +1,4 @@
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDependenciesRequest {
     #[prost(message, optional, tag = "1")]
@@ -5,37 +6,46 @@ pub struct GetDependenciesRequest {
     #[prost(message, optional, tag = "2")]
     pub end_time: ::core::option::Option<::prost_types::Timestamp>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDependenciesResponse {
     #[prost(message, repeated, tag = "1")]
     pub dependencies: ::prost::alloc::vec::Vec<super::super::api_v2::DependencyLink>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WriteSpanRequest {
     #[prost(message, optional, tag = "1")]
     pub span: ::core::option::Option<super::super::api_v2::Span>,
 }
 /// empty; extensible in the future
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WriteSpanResponse {}
 /// empty; extensible in the future
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CloseWriterRequest {}
 /// empty; extensible in the future
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CloseWriterResponse {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetTraceRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub trace_id: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetServicesRequest {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetServicesResponse {
     #[prost(string, repeated, tag = "1")]
     pub services: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetOperationsRequest {
     #[prost(string, tag = "1")]
@@ -44,6 +54,7 @@ pub struct GetOperationsRequest {
     pub span_kind: ::prost::alloc::string::String,
 }
 #[derive(Eq, Ord, PartialOrd)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Operation {
     #[prost(string, tag = "1")]
@@ -51,6 +62,7 @@ pub struct Operation {
     #[prost(string, tag = "2")]
     pub span_kind: ::prost::alloc::string::String,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetOperationsResponse {
     /// deprecated
@@ -59,6 +71,7 @@ pub struct GetOperationsResponse {
     #[prost(message, repeated, tag = "2")]
     pub operations: ::prost::alloc::vec::Vec<Operation>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TraceQueryParameters {
     #[prost(string, tag = "1")]
@@ -81,29 +94,35 @@ pub struct TraceQueryParameters {
     #[prost(int32, tag = "8")]
     pub num_traces: i32,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FindTracesRequest {
     #[prost(message, optional, tag = "1")]
     pub query: ::core::option::Option<TraceQueryParameters>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SpansResponseChunk {
     #[prost(message, repeated, tag = "1")]
     pub spans: ::prost::alloc::vec::Vec<super::super::api_v2::Span>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FindTraceIDsRequest {
     #[prost(message, optional, tag = "1")]
     pub query: ::core::option::Option<TraceQueryParameters>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FindTraceIDsResponse {
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub trace_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 /// empty; extensible in the future
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CapabilitiesRequest {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CapabilitiesResponse {
     #[prost(bool, tag = "1")]
@@ -866,7 +885,7 @@ pub mod plugin_capabilities_client {
 pub mod span_writer_plugin_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with SpanWriterPluginServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with SpanWriterPluginServer.
     #[async_trait]
     pub trait SpanWriterPlugin: Send + Sync + 'static {
         /// spanstore/Writer
@@ -1057,7 +1076,7 @@ pub mod span_writer_plugin_server {
 pub mod streaming_span_writer_plugin_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with StreamingSpanWriterPluginServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with StreamingSpanWriterPluginServer.
     #[async_trait]
     pub trait StreamingSpanWriterPlugin: Send + Sync + 'static {
         async fn write_span_stream(
@@ -1211,10 +1230,10 @@ pub mod streaming_span_writer_plugin_server {
 pub mod span_reader_plugin_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with SpanReaderPluginServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with SpanReaderPluginServer.
     #[async_trait]
     pub trait SpanReaderPlugin: Send + Sync + 'static {
-        ///Server streaming response type for the GetTrace method.
+        /// Server streaming response type for the GetTrace method.
         type GetTraceStream: futures_core::Stream<
                 Item = Result<super::SpansResponseChunk, tonic::Status>,
             >
@@ -1233,7 +1252,7 @@ pub mod span_reader_plugin_server {
             &self,
             request: tonic::Request<super::GetOperationsRequest>,
         ) -> Result<tonic::Response<super::GetOperationsResponse>, tonic::Status>;
-        ///Server streaming response type for the FindTraces method.
+        /// Server streaming response type for the FindTraces method.
         type FindTracesStream: futures_core::Stream<
                 Item = Result<super::SpansResponseChunk, tonic::Status>,
             >
@@ -1548,7 +1567,7 @@ pub mod span_reader_plugin_server {
 pub mod archive_span_writer_plugin_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with ArchiveSpanWriterPluginServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with ArchiveSpanWriterPluginServer.
     #[async_trait]
     pub trait ArchiveSpanWriterPlugin: Send + Sync + 'static {
         /// spanstore/Writer
@@ -1701,10 +1720,10 @@ pub mod archive_span_writer_plugin_server {
 pub mod archive_span_reader_plugin_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with ArchiveSpanReaderPluginServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with ArchiveSpanReaderPluginServer.
     #[async_trait]
     pub trait ArchiveSpanReaderPlugin: Send + Sync + 'static {
-        ///Server streaming response type for the GetArchiveTrace method.
+        /// Server streaming response type for the GetArchiveTrace method.
         type GetArchiveTraceStream: futures_core::Stream<
                 Item = Result<super::SpansResponseChunk, tonic::Status>,
             >
@@ -1861,7 +1880,7 @@ pub mod archive_span_reader_plugin_server {
 pub mod dependencies_reader_plugin_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with DependenciesReaderPluginServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with DependenciesReaderPluginServer.
     #[async_trait]
     pub trait DependenciesReaderPlugin: Send + Sync + 'static {
         /// dependencystore/Reader
@@ -2014,7 +2033,7 @@ pub mod dependencies_reader_plugin_server {
 pub mod plugin_capabilities_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with PluginCapabilitiesServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with PluginCapabilitiesServer.
     #[async_trait]
     pub trait PluginCapabilities: Send + Sync + 'static {
         async fn capabilities(

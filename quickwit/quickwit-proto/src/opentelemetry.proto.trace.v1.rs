@@ -9,6 +9,7 @@
 /// When new fields are added into this message, the OTLP request MUST be updated
 /// as well.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TracesData {
     /// An array of ResourceSpans.
@@ -21,6 +22,7 @@ pub struct TracesData {
 }
 /// A collection of ScopeSpans from a Resource.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResourceSpans {
     /// The resource for the spans in this message.
@@ -37,6 +39,7 @@ pub struct ResourceSpans {
 }
 /// A collection of Spans produced by an InstrumentationScope.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScopeSpans {
     /// The instrumentation scope information for the spans in this message.
@@ -55,6 +58,7 @@ pub struct ScopeSpans {
 ///
 /// The next available field id is 17.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Span {
     /// A unique identifier for a trace. All spans from the same trace share
@@ -164,6 +168,7 @@ pub mod span {
     /// Event is a time-stamped annotation of the span, consisting of user-supplied
     /// text description and key-value pairs.
     #[derive(Serialize, Deserialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Event {
         /// time_unix_nano is the time the event occurred.
@@ -190,6 +195,7 @@ pub mod span {
     /// where a single batch handler processes multiple requests from different
     /// traces or when the handler receives a request from a different project.
     #[derive(Serialize, Deserialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Link {
         /// A unique identifier of a trace that this linked span is part of. The ID is a
@@ -271,6 +277,7 @@ pub mod span {
 /// The Status type defines a logical error model that is suitable for different
 /// programming environments, including REST APIs and RPC APIs.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Status {
     /// A developer-facing human readable error message.

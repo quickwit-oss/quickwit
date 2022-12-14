@@ -1,4 +1,5 @@
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsServiceRequest {
     /// An array of ResourceLogs.
@@ -12,6 +13,7 @@ pub struct ExportLogsServiceRequest {
     >,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsServiceResponse {
     /// The details of a partially successful export request.
@@ -33,6 +35,7 @@ pub struct ExportLogsServiceResponse {
     pub partial_success: ::core::option::Option<ExportLogsPartialSuccess>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsPartialSuccess {
     /// The number of rejected log records.
@@ -150,7 +153,7 @@ pub mod logs_service_client {
 pub mod logs_service_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with LogsServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with LogsServiceServer.
     #[async_trait]
     pub trait LogsService: Send + Sync + 'static {
         /// For performance reasons, it is recommended to keep this RPC

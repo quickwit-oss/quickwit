@@ -1,4 +1,5 @@
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportMetricsServiceRequest {
     /// An array of ResourceMetrics.
@@ -12,6 +13,7 @@ pub struct ExportMetricsServiceRequest {
     >,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportMetricsServiceResponse {
     /// The details of a partially successful export request.
@@ -33,6 +35,7 @@ pub struct ExportMetricsServiceResponse {
     pub partial_success: ::core::option::Option<ExportMetricsPartialSuccess>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportMetricsPartialSuccess {
     /// The number of rejected data points.
@@ -153,7 +156,7 @@ pub mod metrics_service_client {
 pub mod metrics_service_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with MetricsServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with MetricsServiceServer.
     #[async_trait]
     pub trait MetricsService: Send + Sync + 'static {
         /// For performance reasons, it is recommended to keep this RPC
