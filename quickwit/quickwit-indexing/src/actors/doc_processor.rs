@@ -231,7 +231,7 @@ impl TryFrom<VrlSettings> for VrlProgram {
 }
 
 impl VrlProgram {
-    pub fn process_doc(&mut self, doc_json: &str) -> Result<String, PrepareDocumentError> {
+    pub fn process_doc(&mut self, doc_json: &str) -> Result<VrlValue, PrepareDocumentError> {
         let mut target: VrlValue =
             serde_json::from_str(doc_json).map_err(|_| PrepareDocumentError::ParsingError)?;
 
@@ -250,7 +250,7 @@ impl VrlProgram {
         self.runtime.clear();
 
         match runtime_result {
-            Ok(value) => Ok(value.to_string()),
+            Ok(value) => Ok(value),
             Err(terminate) => Err(PrepareDocumentError::VrlError(terminate)),
         }
     }
@@ -295,14 +295,16 @@ impl DocProcessor {
         } else {
             None
         };
-        let doc_json = match transformed_doc {
-            Some(ref transformed) => transformed,
-            None => doc_json,
+
+        let doc_parsing_result = if let Some(transformed_doc) = transformed_doc {
+            self.doc_mapper
+                .doc_from_json(&transformed_doc.to_string_lossy())
+        } else {
+            self.doc_mapper.doc_from_json(doc_json)
         };
 
         // Parse the document
         let num_bytes = doc_json.len();
-        let doc_parsing_result = self.doc_mapper.doc_from_json(doc_json);
         let (partition, doc) = doc_parsing_result.map_err(|doc_parsing_error| {
             warn!(err=?doc_parsing_error);
             match doc_parsing_error {
