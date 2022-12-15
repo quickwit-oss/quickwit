@@ -409,7 +409,10 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    #[instrument(skip(self, split_metadata_list))]
+    #[instrument(
+        skip(self, split_metadata_list),
+        fields(split_ids)
+    )]
     async fn stage_splits(
         &self,
         index_id: &str,
@@ -446,6 +449,7 @@ impl Metastore for PostgresqlMetastore {
             split_ids.push(split_metadata.split_id);
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
         }
+        tracing::Span::current().record("split_ids", format!("{:?}", split_ids));
 
         run_with_tx!(self.connection_pool, tx, {
             let upserted_split_ids: Vec<String> = sqlx::query_scalar(r#"
