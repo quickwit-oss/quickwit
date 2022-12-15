@@ -132,7 +132,8 @@ pub fn iter_doc_payloads(doc_batch: &DocBatch) -> impl Iterator<Item = &[u8]> {
 #[cfg(test)]
 mod tests {
 
-    use quickwit_proto::ingest_api::CreateQueueRequest;
+    use quickwit_actors::AskError;
+    use quickwit_proto::ingest_api::{CreateQueueRequest, IngestRequest, SuggestTruncateRequest};
 
     use super::*;
 
@@ -165,6 +166,75 @@ mod tests {
             .ask_for_res(CreateQueueRequest {
                 queue_id: "test-queue".to_string(),
             })
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_queue_limit() {
+        let universe = Universe::new();
+        let tempdir = tempfile::tempdir().unwrap();
+
+        let queues_dir_path = tempdir.path().join("queues-0");
+        get_ingest_api_service(&queues_dir_path).await.unwrap_err();
+        init_ingest_api(
+            &universe,
+            &queues_dir_path,
+            &IngestApiConfig {
+                max_queue_memory_usage: 1024,
+                max_queue_disk_usage: 1024 * 1024 * 256,
+            },
+        )
+        .await
+        .unwrap();
+        let ingest_api_service = get_ingest_api_service(&queues_dir_path).await.unwrap();
+
+        ingest_api_service
+            .ask_for_res(CreateQueueRequest {
+                queue_id: "test-queue".to_string(),
+            })
+            .await
+            .unwrap();
+
+        let ingest_request = IngestRequest {
+            doc_batches: vec![DocBatch {
+                index_id: "test-queue".to_string(),
+                concat_docs: vec![1; 600],
+                doc_lens: vec![30; 20],
+            }],
+        };
+
+        ingest_api_service
+            .ask_for_res(ingest_request.clone())
+            .await
+            .unwrap();
+
+        ingest_api_service
+            .ask_for_res(ingest_request.clone())
+            .await
+            .unwrap();
+
+        // we have to much in memory
+        assert!(matches!(
+            ingest_api_service
+                .ask_for_res(ingest_request.clone())
+                .await
+                .unwrap_err(),
+            AskError::ErrorReply(IngestApiError::RateLimited)
+        ));
+
+        // delete the first batch
+        ingest_api_service
+            .ask_for_res(SuggestTruncateRequest {
+                index_id: "test-queue".to_string(),
+                up_to_position_included: 29,
+            })
+            .await
+            .unwrap();
+
+        // now we should be okay
+        ingest_api_service
+            .ask_for_res(ingest_request)
             .await
             .unwrap();
     }

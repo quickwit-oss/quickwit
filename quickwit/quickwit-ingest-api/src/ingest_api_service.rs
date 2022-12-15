@@ -102,11 +102,11 @@ impl IngestApiService {
 
         let (memory, disk) = self.queues.ressource_usage();
         if memory > self.memory_limit {
-            info!("Ingestion rejectet due to memory limits");
+            info!("Ingestion rejected due to memory limits");
             return Err(IngestApiError::RateLimited);
         }
         if disk > self.disk_limit {
-            info!("Ingestion rejectet due to disk limits");
+            info!("Ingestion rejected due to disk limits");
             return Err(IngestApiError::RateLimited);
         }
 
@@ -124,6 +124,7 @@ impl IngestApiService {
                 .ingested_num_docs
                 .inc_by(batch_num_docs as u64);
         }
+        // TODO we could fsync here and disable autosync to have better i/o perfs.
         Ok(IngestResponse {
             num_docs_for_processing: num_docs as u64,
         })
