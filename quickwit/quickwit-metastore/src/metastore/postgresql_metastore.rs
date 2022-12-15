@@ -409,10 +409,7 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    #[instrument(
-        skip(self, split_metadata_list),
-        fields(split_ids)
-    )]
+    #[instrument(skip(self, split_metadata_list), fields(split_ids))]
     async fn stage_splits(
         &self,
         index_id: &str,
