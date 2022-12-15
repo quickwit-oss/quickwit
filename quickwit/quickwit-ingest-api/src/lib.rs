@@ -52,6 +52,10 @@ pub async fn init_ingest_api(
     universe: &Universe,
     queues_dir_path: &Path,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
+    // TODO replace path with config, extract limits from config
+    let memory_limit = usize::MAX;
+    let disk_limit = usize::MAX;
+
     let mut guard = INGEST_API_SERVICE_MAILBOXES
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
@@ -59,14 +63,15 @@ pub async fn init_ingest_api(
     if let Some(mailbox) = guard.get(queues_dir_path) {
         return Ok(mailbox.clone());
     }
-    let ingest_api_actor = IngestApiService::with_queues_dir(queues_dir_path)
-        .await
-        .with_context(|| {
-            format!(
-                "Failed to open the ingest API record log located at `{}`.",
-                queues_dir_path.display()
-            )
-        })?;
+    let ingest_api_actor =
+        IngestApiService::with_queues_dir(queues_dir_path, memory_limit, disk_limit)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to open the ingest API record log located at `{}`.",
+                    queues_dir_path.display()
+                )
+            })?;
     let (ingest_api_service, _ingest_api_handle) = universe.spawn_builder().spawn(ingest_api_actor);
     guard.insert(queues_dir_path.to_path_buf(), ingest_api_service.clone());
     Ok(ingest_api_service)
