@@ -49,7 +49,7 @@ pub fn simple_json_to_doc_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let lines: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
             for line in lines {
-                doc_mapper.doc_from_json(line).unwrap();
+                doc_mapper.doc_from_json(&line).unwrap();
             }
         })
     });

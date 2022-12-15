@@ -26,16 +26,16 @@ use quickwit_ingest_api::IngestApiService;
 use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
-    ExportTraceServiceRequest, ExportTraceServiceResponse,
+    ExportTracePartialSuccess, ExportTraceServiceRequest, ExportTraceServiceResponse,
 };
-use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpValue;
-use quickwit_proto::opentelemetry::proto::common::v1::KeyValue;
 use quickwit_proto::opentelemetry::proto::trace::v1::Status;
-use serde::Serialize;
-use serde_json::{Number as JsonNumber, Value as JsonValue};
-use tracing::{error, warn};
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+use tracing::error;
 
-const TRACE_INDEX_ID: &str = "otel-trace";
+use crate::otlp::extract_attributes;
+
+const TRACE_INDEX_ID: &str = "otel-trace-v0";
 
 #[derive(Clone)]
 pub struct OtlpGrpcTraceService {
@@ -49,39 +49,49 @@ impl OtlpGrpcTraceService {
     }
 }
 
-type Base64 = String;
+pub type B64String = String;
 
-#[derive(Debug, Serialize)]
-struct Span {
-    trace_id: Base64,
-    trace_state: String,
-    service_name: Option<String>,
-    span_id: Base64,
-    span_kind: SpanKind,
-    span_name: String,
-    span_start_timestamp_nanos: i64,
-    span_end_timestamp_nanos: i64,
-    span_attributes: HashMap<String, JsonValue>,
-    span_dropped_attributes_count: u64,
-    span_dropped_events_count: u64,
-    span_dropped_links_count: u64,
-    span_status: Option<Status>,
-    parent_span_id: Option<Base64>,
-    // events: Vec<Event<'a>> TODO
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Span {
+    pub trace_id: B64String,
+    pub trace_state: String,
+    pub resource_attributes: HashMap<String, JsonValue>,
+    pub resource_dropped_attributes_count: u64,
+    pub service_name: String,
+    pub span_id: B64String,
+    pub span_kind: u64,
+    pub span_name: String,
+    pub span_start_timestamp_secs: i64,
+    pub span_start_timestamp_nanos: i64,
+    pub span_end_timestamp_nanos: i64,
+    pub span_duration_secs: i64,
+    pub span_attributes: HashMap<String, JsonValue>,
+    pub span_dropped_attributes_count: u64,
+    pub span_dropped_events_count: u64,
+    pub span_dropped_links_count: u64,
+    pub span_status: Option<Status>,
+    pub parent_span_id: Option<B64String>,
+    #[serde(default)]
+    pub events: Vec<Event>,
+    #[serde(default)]
+    pub links: Vec<Link>,
 }
 
-#[derive(Debug, Serialize)]
-struct Event {
-    // trace_id: &'a Base64,
-    // service_name: &'a Option<String>,
-    // span_id: &'a Base64,
-    // span_kind: SpanKind,
-    // span_name: &'a String,
-    // span_attributes: &'a HashMap<String, JsonValue>,
-    event_timestamp_nanos: i64,
-    event_name: String,
-    event_attributes: HashMap<String, JsonValue>,
-    event_dropped_attributes_count: u64,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Event {
+    pub event_timestamp_nanos: i64,
+    pub event_name: String,
+    pub event_attributes: HashMap<String, JsonValue>,
+    pub event_dropped_attributes_count: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Link {
+    pub link_trace_id: B64String,
+    pub link_trace_state: String,
+    pub link_span_id: B64String,
+    pub link_attributes: HashMap<String, JsonValue>,
+    pub link_dropped_attributes_count: u64,
 }
 
 #[async_trait]
@@ -95,19 +105,30 @@ impl TraceService for OtlpGrpcTraceService {
             index_id: TRACE_INDEX_ID.to_string(),
             ..Default::default()
         };
+        let mut num_spans = 0;
+        let mut rejected_spans = 0;
+        let mut error_message = String::new();
+
         for resource_span in request.resource_spans {
-            // println!("Resource: {:?}", resource_span.resource);
-            let service_name = match resource_span
+            let resource_attributes = extract_attributes(
+                resource_span
+                    .resource
+                    .clone()
+                    .map(|rsrc| rsrc.attributes)
+                    .unwrap_or_else(Vec::new),
+            );
+            let resource_dropped_attributes_count = resource_span
                 .resource
-                .and_then(|resource| extract_value(resource.attributes, "service.name"))
-            {
-                Some(OtlpValue::StringValue(service_name)) => Some(service_name),
-                _ => None,
+                .map(|rsrc| rsrc.dropped_attributes_count)
+                .unwrap_or(0) as u64;
+            let service_name = match resource_attributes.get("service.name") {
+                Some(JsonValue::String(value)) => value.to_string(),
+                _ => "unknown".to_string(),
             };
             for scope_span in resource_span.scope_spans {
-                // println!("\tScope: {:?}", scope_span.scope);
                 for span in scope_span.spans {
-                    // println!("\t\tSpan: {:?}", span);
+                    num_spans += 1;
+
                     let trace_id = base64::encode(span.trace_id);
                     let span_id = base64::encode(span.span_id);
                     let parent_span_id = if !span.parent_span_id.is_empty() {
@@ -121,108 +142,87 @@ impl TraceService for OtlpGrpcTraceService {
                         "unknown".to_string()
                     };
                     let span_start_timestamp_nanos = span.start_time_unix_nano as i64;
+                    let span_start_timestamp_secs = span_start_timestamp_nanos / 1_000_000_000;
                     let span_end_timestamp_nanos = span.end_time_unix_nano as i64;
+                    let span_duration_nanos = span_end_timestamp_nanos - span_start_timestamp_nanos;
+                    let span_duration_secs = span_duration_nanos / 1_000_000_000 + 1;
                     let span_attributes = extract_attributes(span.attributes);
-                    // for event in span.events {
-                    //     let event = Event {
-                    //         // trace_id: &trace_id,
-                    //         // service_name: &service_name,
-                    //         // span_id: &span_id,
-                    //         // span_kind: to_span_kind(span.kind),
-                    //         // span_name: &span_name,
-                    //         // span_attributes: &span_attributes,
-                    //         event_timestamp_nanos: event.time_unix_nano as i64,
-                    //         event_name: event.name,
-                    //         event_attributes: extract_attributes(event.attributes),
-                    //         event_dropped_attributes_count: event.dropped_attributes_count as
-                    // u64,     };
-                    // }
+
+                    let events = span
+                        .events
+                        .into_iter()
+                        .map(|event| Event {
+                            event_timestamp_nanos: event.time_unix_nano as i64,
+                            event_name: event.name,
+                            event_attributes: extract_attributes(event.attributes),
+                            event_dropped_attributes_count: event.dropped_attributes_count as u64,
+                        })
+                        .collect();
+                    let links = span
+                        .links
+                        .into_iter()
+                        .map(|link| Link {
+                            link_trace_id: base64::encode(link.trace_id),
+                            link_trace_state: link.trace_state,
+                            link_span_id: base64::encode(link.span_id),
+                            link_attributes: extract_attributes(link.attributes),
+                            link_dropped_attributes_count: link.dropped_attributes_count as u64,
+                        })
+                        .collect();
                     let span = Span {
                         trace_id,
                         trace_state: span.trace_state,
+                        resource_attributes: resource_attributes.clone(),
+                        resource_dropped_attributes_count,
                         service_name: service_name.clone(),
                         span_id,
-                        span_kind: to_span_kind(span.kind),
+                        span_kind: span.kind as u64,
                         span_name,
+                        span_start_timestamp_secs,
                         span_start_timestamp_nanos,
                         span_end_timestamp_nanos,
+                        span_duration_secs,
                         span_attributes,
                         span_dropped_attributes_count: span.dropped_attributes_count as u64,
                         span_dropped_events_count: span.dropped_events_count as u64,
                         span_dropped_links_count: span.dropped_links_count as u64,
                         span_status: span.status,
                         parent_span_id,
+                        events,
+                        links,
                     };
-                    let span_json = serde_json::to_vec(&span).expect("");
+                    let span_json = match serde_json::to_vec(&span) {
+                        Ok(span_json) => span_json,
+                        Err(err) => {
+                            error!(error=?err, "Failed to serialize span.");
+                            error_message = format!("Failed to serialize span: {err:?}");
+                            rejected_spans += 1;
+                            continue;
+                        }
+                    };
                     let span_json_len = span_json.len() as u64;
                     doc_batch.concat_docs.extend_from_slice(&span_json);
                     doc_batch.doc_lens.push(span_json_len);
                 }
             }
         }
+        if rejected_spans == num_spans {
+            return Err(tonic::Status::internal(error_message));
+        }
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],
         };
-        // TODO: return appropriate tonic status
-        if let Err(error) = self.ingest_api_service.ask_for_res(ingest_request).await {
-            error!(error=?error, "Failed to ingest trace");
-        }
-        let response = ExportTraceServiceResponse::default();
+        self.ingest_api_service
+            .ask_for_res(ingest_request)
+            .await
+            .map_err(|error| tonic::Status::internal(error.to_string()))?;
+        let response = ExportTraceServiceResponse {
+            // `rejected_spans=0` and `error_message=""` is consided a "full" success.
+            partial_success: Some(ExportTracePartialSuccess {
+                rejected_spans,
+                error_message,
+            }),
+        };
         Ok(tonic::Response::new(response))
     }
-}
-
-#[derive(Debug, Serialize)]
-struct SpanKind {
-    id: i32,
-    name: &'static str,
-}
-
-pub(crate) fn extract_attributes(attributes: Vec<KeyValue>) -> HashMap<String, JsonValue> {
-    let mut attrs = HashMap::new();
-    for attribute in attributes {
-        // Filtering out empty attribute values is fine according to the OTel spec: <https://github.com/open-telemetry/opentelemetry-specification/tree/main/specification/common#attribute>
-        if let Some(value) = attribute
-            .value
-            .and_then(|value| value.value)
-            .and_then(to_json_value)
-        {
-            attrs.insert(attribute.key, value);
-        }
-    }
-    attrs
-}
-
-fn extract_value(attributes: Vec<KeyValue>, key: &str) -> Option<OtlpValue> {
-    attributes
-        .iter()
-        .find(|attribute| attribute.key == key)
-        .and_then(|attribute| attribute.value.clone())
-        .and_then(|value| value.value)
-}
-
-fn to_json_value(value: OtlpValue) -> Option<JsonValue> {
-    match value {
-        OtlpValue::StringValue(value) => Some(JsonValue::String(value)),
-        OtlpValue::BoolValue(value) => Some(JsonValue::Bool(value)),
-        OtlpValue::IntValue(value) => Some(JsonValue::Number(JsonNumber::from(value))),
-        OtlpValue::DoubleValue(value) => JsonNumber::from_f64(value).map(JsonValue::Number),
-        OtlpValue::ArrayValue(_) | OtlpValue::BytesValue(_) | OtlpValue::KvlistValue(_) => {
-            warn!(value=?value, "Skipping unsupported OTLP value type");
-            None
-        }
-    }
-}
-
-fn to_span_kind(id: i32) -> SpanKind {
-    let name = match id {
-        0 => "unspecified",
-        1 => "internal",
-        2 => "server",
-        3 => "client",
-        4 => "producer",
-        5 => "consumer",
-        _ => panic!("Unknown span kind: `{id}`."),
-    };
-    SpanKind { id, name }
 }

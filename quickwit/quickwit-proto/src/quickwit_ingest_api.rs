@@ -167,13 +167,13 @@ pub mod ingest_api_service_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
-        #[doc = "/ Ingests document in a given queue."]
-        #[doc = "/"]
-        #[doc = "/ Upon any kind of error, the client should"]
-        #[doc = "/ - retry to get at least once delivery."]
-        #[doc = "/ - not retry to get at most once delivery."]
-        #[doc = "/"]
-        #[doc = "/ Exactly once delivery is not supported yet."]
+        /// / Ingests document in a given queue.
+        /// /
+        /// / Upon any kind of error, the client should
+        /// / - retry to get at least once delivery.
+        /// / - not retry to get at most once delivery.
+        /// /
+        /// / Exactly once delivery is not supported yet.
         pub async fn ingest(
             &mut self,
             request: impl tonic::IntoRequest<super::IngestRequest>,
@@ -193,16 +193,16 @@ pub mod ingest_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = "/ Fetches record from a given queue."]
-        #[doc = "/"]
-        #[doc = "/ Records are returned in order."]
-        #[doc = "/"]
-        #[doc = "/ The returned `FetchResponse` object is meant to be read with the"]
-        #[doc = "/ `crate::iter_records` function."]
-        #[doc = "/"]
-        #[doc = "/ Fetching does not necessarily return all of the available records."]
-        #[doc = "/ If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),"]
-        #[doc = "/ the reponse will be partial."]
+        /// / Fetches record from a given queue.
+        /// /
+        /// / Records are returned in order.
+        /// /
+        /// / The returned `FetchResponse` object is meant to be read with the
+        /// / `crate::iter_records` function.
+        /// /
+        /// / Fetching does not necessarily return all of the available records.
+        /// / If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
+        /// / the reponse will be partial.
         pub async fn fetch(
             &mut self,
             request: impl tonic::IntoRequest<super::FetchRequest>,
@@ -222,11 +222,11 @@ pub mod ingest_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = "/ Returns a batch containing the last records."]
-        #[doc = "/"]
-        #[doc = "/ It returns the last documents, from the newest"]
-        #[doc = "/ to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)"]
-        #[doc = "/ is exceeded."]
+        /// / Returns a batch containing the last records.
+        /// /
+        /// / It returns the last documents, from the newest
+        /// / to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
+        /// / is exceeded.
         pub async fn tail(
             &mut self,
             request: impl tonic::IntoRequest<super::TailRequest>,
@@ -252,39 +252,39 @@ pub mod ingest_api_service_client {
 pub mod ingest_api_service_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with IngestApiServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with IngestApiServiceServer.
     #[async_trait]
     pub trait IngestApiService: Send + Sync + 'static {
-        #[doc = "/ Ingests document in a given queue."]
-        #[doc = "/"]
-        #[doc = "/ Upon any kind of error, the client should"]
-        #[doc = "/ - retry to get at least once delivery."]
-        #[doc = "/ - not retry to get at most once delivery."]
-        #[doc = "/"]
-        #[doc = "/ Exactly once delivery is not supported yet."]
+        /// / Ingests document in a given queue.
+        /// /
+        /// / Upon any kind of error, the client should
+        /// / - retry to get at least once delivery.
+        /// / - not retry to get at most once delivery.
+        /// /
+        /// / Exactly once delivery is not supported yet.
         async fn ingest(
             &self,
             request: tonic::Request<super::IngestRequest>,
         ) -> Result<tonic::Response<super::IngestResponse>, tonic::Status>;
-        #[doc = "/ Fetches record from a given queue."]
-        #[doc = "/"]
-        #[doc = "/ Records are returned in order."]
-        #[doc = "/"]
-        #[doc = "/ The returned `FetchResponse` object is meant to be read with the"]
-        #[doc = "/ `crate::iter_records` function."]
-        #[doc = "/"]
-        #[doc = "/ Fetching does not necessarily return all of the available records."]
-        #[doc = "/ If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),"]
-        #[doc = "/ the reponse will be partial."]
+        /// / Fetches record from a given queue.
+        /// /
+        /// / Records are returned in order.
+        /// /
+        /// / The returned `FetchResponse` object is meant to be read with the
+        /// / `crate::iter_records` function.
+        /// /
+        /// / Fetching does not necessarily return all of the available records.
+        /// / If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
+        /// / the reponse will be partial.
         async fn fetch(
             &self,
             request: tonic::Request<super::FetchRequest>,
         ) -> Result<tonic::Response<super::FetchResponse>, tonic::Status>;
-        #[doc = "/ Returns a batch containing the last records."]
-        #[doc = "/"]
-        #[doc = "/ It returns the last documents, from the newest"]
-        #[doc = "/ to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)"]
-        #[doc = "/ is exceeded."]
+        /// / Returns a batch containing the last records.
+        /// /
+        /// / It returns the last documents, from the newest
+        /// / to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
+        /// / is exceeded.
         async fn tail(
             &self,
             request: tonic::Request<super::TailRequest>,
