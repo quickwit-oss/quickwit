@@ -3512,6 +3512,7 @@ dependencies = [
  "once_cell",
  "quickwit-actors",
  "quickwit-common",
+ "quickwit-config",
  "quickwit-proto",
  "rand 0.8.5",
  "rand_distr",

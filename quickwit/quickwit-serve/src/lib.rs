@@ -152,21 +152,24 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
 
     let universe = Universe::new();
 
-    let (ingest_api_service, indexer_service) =
-        if config.enabled_services.contains(&QuickwitService::Indexer) {
-            let ingest_api_service =
-                start_ingest_api_service(&universe, &config.data_dir_path).await?;
-            let indexing_service = start_indexing_service(
-                &universe,
-                &config,
-                metastore.clone(),
-                storage_resolver.clone(),
-            )
-            .await?;
-            (Some(ingest_api_service), Some(indexing_service))
-        } else {
-            (None, None)
-        };
+    let (ingest_api_service, indexer_service) = if config
+        .enabled_services
+        .contains(&QuickwitService::Indexer)
+    {
+        let ingest_api_service =
+            start_ingest_api_service(&universe, &config.data_dir_path, &config.ingest_api_config)
+                .await?;
+        let indexing_service = start_indexing_service(
+            &universe,
+            &config,
+            metastore.clone(),
+            storage_resolver.clone(),
+        )
+        .await?;
+        (Some(ingest_api_service), Some(indexing_service))
+    } else {
+        (None, None)
+    };
 
     let search_client_pool =
         SearchClientPool::create_and_keep_updated(cluster.ready_member_change_watcher()).await?;

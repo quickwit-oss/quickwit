@@ -32,7 +32,10 @@ use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
 use crate::templating::render_config;
-use crate::{validate_identifier, ConfigFormat, IndexerConfig, QuickwitConfig, SearcherConfig};
+use crate::{
+    validate_identifier, ConfigFormat, IndexerConfig, IngestApiConfig, QuickwitConfig,
+    SearcherConfig,
+};
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
 
@@ -169,6 +172,9 @@ struct QuickwitConfigBuilder {
     #[serde(rename = "searcher")]
     #[serde(default)]
     searcher_config: SearcherConfig,
+    #[serde(rename = "ingest_api")]
+    #[serde(default)]
+    ingest_api_config: IngestApiConfig,
 }
 
 impl QuickwitConfigBuilder {
@@ -248,6 +254,7 @@ impl QuickwitConfigBuilder {
             default_index_root_uri,
             indexer_config: self.indexer_config,
             searcher_config: self.searcher_config,
+            ingest_api_config: self.ingest_api_config,
         };
 
         validate(&quickwit_config)?;
@@ -288,6 +295,7 @@ impl Default for QuickwitConfigBuilder {
             default_index_root_uri: ConfigValue::none(),
             indexer_config: IndexerConfig::default(),
             searcher_config: SearcherConfig::default(),
+            ingest_api_config: IngestApiConfig::default(),
         }
     }
 }
@@ -337,6 +345,7 @@ pub fn quickwit_config_for_test() -> QuickwitConfig {
         default_index_root_uri,
         indexer_config: IndexerConfig::default(),
         searcher_config: SearcherConfig::default(),
+        ingest_api_config: IngestApiConfig::default(),
     }
 }
 

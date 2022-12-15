@@ -37,6 +37,7 @@ use once_cell::sync::OnceCell;
 pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_config::IngestApiConfig;
 use quickwit_proto::ingest_api::DocBatch;
 use tokio::sync::Mutex;
 
@@ -51,11 +52,8 @@ pub static INGEST_API_SERVICE_MAILBOXES: OnceCell<Mutex<IngestApiServiceMailboxe
 pub async fn init_ingest_api(
     universe: &Universe,
     queues_dir_path: &Path,
+    config: &IngestApiConfig,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
-    // TODO replace path with config, extract limits from config
-    let memory_limit = usize::MAX;
-    let disk_limit = usize::MAX;
-
     let mut guard = INGEST_API_SERVICE_MAILBOXES
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
@@ -63,15 +61,18 @@ pub async fn init_ingest_api(
     if let Some(mailbox) = guard.get(queues_dir_path) {
         return Ok(mailbox.clone());
     }
-    let ingest_api_actor =
-        IngestApiService::with_queues_dir(queues_dir_path, memory_limit, disk_limit)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to open the ingest API record log located at `{}`.",
-                    queues_dir_path.display()
-                )
-            })?;
+    let ingest_api_actor = IngestApiService::with_queues_dir(
+        queues_dir_path,
+        config.max_queue_memory_usage,
+        config.max_queue_disk_usage,
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "Failed to open the ingest API record log located at `{}`.",
+            queues_dir_path.display()
+        )
+    })?;
     let (ingest_api_service, _ingest_api_handle) = universe.spawn_builder().spawn(ingest_api_actor);
     guard.insert(queues_dir_path.to_path_buf(), ingest_api_service.clone());
     Ok(ingest_api_service)
@@ -98,9 +99,10 @@ pub async fn get_ingest_api_service(
 pub async fn start_ingest_api_service(
     universe: &Universe,
     data_dir_path: &Path,
+    config: &IngestApiConfig,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
     let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-    init_ingest_api(universe, &queues_dir_path).await
+    init_ingest_api(universe, &queues_dir_path, config).await
 }
 
 /// Adds a document raw bytes to a [`DocBatch`]
@@ -143,7 +145,7 @@ mod tests {
         get_ingest_api_service(&queues_0_dir_path)
             .await
             .unwrap_err();
-        init_ingest_api(&universe, &queues_0_dir_path)
+        init_ingest_api(&universe, &queues_0_dir_path, &IngestApiConfig::default())
             .await
             .unwrap();
         let ingest_api_service_0 = get_ingest_api_service(&queues_0_dir_path).await.unwrap();
@@ -155,7 +157,7 @@ mod tests {
             .unwrap();
 
         let queues_1_dir_path = tempdir.path().join("queues-1");
-        init_ingest_api(&universe, &queues_1_dir_path)
+        init_ingest_api(&universe, &queues_1_dir_path, &IngestApiConfig::default())
             .await
             .unwrap();
         let ingest_api_service_1 = get_ingest_api_service(&queues_1_dir_path).await.unwrap();

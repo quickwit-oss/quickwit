@@ -657,7 +657,7 @@ mod tests {
     use quickwit_actors::{Health, ObservationType, Supervisable, Universe, HEARTBEAT};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{SourceConfig, SourceParams, VecSourceParams};
+    use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, VecSourceParams};
     use quickwit_ingest_api::init_ingest_api;
     use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore};
 
@@ -688,7 +688,9 @@ mod tests {
         let storage_resolver = StorageUriResolver::for_test();
         let universe = Universe::new();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        init_ingest_api(&universe, &queues_dir_path).await.unwrap();
+        init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
+            .await
+            .unwrap();
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
@@ -940,7 +942,9 @@ mod tests {
         let storage_resolver = StorageUriResolver::for_test();
         let universe = Universe::new();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        init_ingest_api(&universe, &queues_dir_path).await.unwrap();
+        init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
+            .await
+            .unwrap();
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
@@ -1046,7 +1050,9 @@ mod tests {
         let storage_resolver = StorageUriResolver::for_test();
         let universe = Universe::new();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        init_ingest_api(&universe, &queues_dir_path).await.unwrap();
+        init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
+            .await
+            .unwrap();
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
