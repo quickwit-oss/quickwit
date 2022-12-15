@@ -32,7 +32,7 @@ use quickwit_indexing::actors::{
     MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
-use quickwit_indexing::models::{IndexingDirectory, IndexingPipelineId};
+use quickwit_indexing::models::{IndexingPipelineId, ScratchDirectory};
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::Metastore;
 use quickwit_search::SearchClientPool;
@@ -199,9 +199,9 @@ impl DeleteTaskPipeline {
         let (delete_executor_mailbox, task_executor_supervisor_handler) =
             ctx.spawn_actor().supervise(delete_executor);
         let indexing_directory_path = self.delete_service_dir_path.join(&self.index_id);
-        let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
+        let scratch_directory = ScratchDirectory::create_in_dir(indexing_directory_path).await?;
         let merge_split_downloader = MergeSplitDownloader {
-            scratch_directory: indexing_directory.scratch_directory().clone(),
+            scratch_directory,
             split_store: split_store.clone(),
             executor_mailbox: delete_executor_mailbox,
             io_controls: split_download_io_controls,

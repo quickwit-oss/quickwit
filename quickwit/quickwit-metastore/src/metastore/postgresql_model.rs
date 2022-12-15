@@ -28,12 +28,6 @@ use crate::{
     SplitState,
 };
 
-#[derive(sqlx::FromRow, Debug)]
-pub struct IndexIdSplitIdRow {
-    pub index_id: String,
-    pub split_id: Option<String>, // TODO can we get rid of option
-}
-
 /// A model structure for handling index metadata in a database.
 #[derive(sqlx::FromRow)]
 pub struct Index {

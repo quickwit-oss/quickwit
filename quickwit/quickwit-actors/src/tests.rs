@@ -513,6 +513,10 @@ struct Adder(u64);
 impl Actor for Adder {
     type ObservableState = u64;
 
+    fn yield_after_each_message(&self) -> bool {
+        false
+    }
+
     fn observable_state(&self) -> Self::ObservableState {
         self.0
     }

@@ -421,6 +421,10 @@ mod tests {
         fn queue_capacity(&self) -> QueueCapacity {
             QueueCapacity::Bounded(0)
         }
+
+        fn yield_after_each_message(&self) -> bool {
+            false
+        }
     }
 
     use async_trait::async_trait;
