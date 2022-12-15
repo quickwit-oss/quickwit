@@ -409,46 +409,100 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    #[instrument(skip(self, split_metadata), fields(index_id=index_id, split_id=split_metadata.split_id))]
-    async fn stage_split(
+    #[instrument(skip(self, split_metadata_list), fields(split_ids))]
+    async fn stage_splits(
         &self,
         index_id: &str,
-        split_metadata: SplitMetadata,
+        split_metadata_list: Vec<SplitMetadata>,
     ) -> MetastoreResult<()> {
-        let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|error| {
-            MetastoreError::JsonSerializeError {
-                struct_name: "SplitMetadata".to_string(),
-                message: error.to_string(),
+        let mut split_ids = Vec::with_capacity(split_metadata_list.len());
+        let mut time_range_start_list = Vec::with_capacity(split_metadata_list.len());
+        let mut time_range_end_list = Vec::with_capacity(split_metadata_list.len());
+        let mut tags_list = Vec::with_capacity(split_metadata_list.len());
+        let mut split_metadata_json_list = Vec::with_capacity(split_metadata_list.len());
+        let mut delete_opstamps = Vec::with_capacity(split_metadata_list.len());
+
+        for split_metadata in split_metadata_list {
+            let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|error| {
+                MetastoreError::JsonSerializeError {
+                    struct_name: "SplitMetadata".to_string(),
+                    message: error.to_string(),
+                }
+            })?;
+            split_metadata_json_list.push(split_metadata_json);
+
+            let time_range_start = split_metadata
+                .time_range
+                .as_ref()
+                .map(|range| *range.start());
+            time_range_start_list.push(time_range_start);
+
+            let time_range_end = split_metadata.time_range.map(|range| *range.end());
+            time_range_end_list.push(time_range_end);
+
+            let tags: Vec<String> = split_metadata.tags.into_iter().collect();
+            tags_list.push(sqlx::types::Json(tags));
+
+            split_ids.push(split_metadata.split_id);
+            delete_opstamps.push(split_metadata.delete_opstamp as i64);
+        }
+        tracing::Span::current().record("split_ids", format!("{:?}", split_ids));
+
+        run_with_tx!(self.connection_pool, tx, {
+            let upserted_split_ids: Vec<String> = sqlx::query_scalar(r#"
+                INSERT INTO splits
+                    (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, split_state, index_id)
+                SELECT
+                    split_id,
+                    time_range_start,
+                    time_range_end,
+                    ARRAY(SELECT json_array_elements_text(tags_json::json)) as tags,
+                    split_metadata_json,
+                    delete_opstamp,
+                    $7 as split_state,
+                    $8 as index_id
+                FROM
+                    UNNEST($1, $2, $3, $4, $5, $6)
+                    as tr(split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp)
+                ON CONFLICT(split_id) DO UPDATE
+                    SET
+                        time_range_start = excluded.time_range_start,
+                        time_range_end = excluded.time_range_end,
+                        tags = excluded.tags,
+                        split_metadata_json = excluded.split_metadata_json,
+                        delete_opstamp = excluded.delete_opstamp,
+                        index_id = excluded.index_id,
+                        update_timestamp = CURRENT_TIMESTAMP,
+                        create_timestamp = CURRENT_TIMESTAMP
+                    WHERE splits.split_id = excluded.split_id AND splits.split_state = 'Staged'
+                RETURNING split_id;
+                "#)
+                .bind(&split_ids)
+                .bind(time_range_start_list)
+                .bind(time_range_end_list)
+                .bind(tags_list)
+                .bind(split_metadata_json_list)
+                .bind(delete_opstamps)
+                .bind(SplitState::Staged.as_str())
+                .bind(index_id)
+                .fetch_all(tx)
+                .await
+                .map_err(|error| convert_sqlx_err(index_id, error))?;
+
+            if upserted_split_ids.len() != split_ids.len() {
+                let failed_split_ids = split_ids
+                    .into_iter()
+                    .filter(|id| !upserted_split_ids.contains(id))
+                    .collect();
+                return Err(MetastoreError::SplitsNotStaged {
+                    split_ids: failed_split_ids,
+                });
             }
-        })?;
-        let time_range_start = split_metadata
-            .time_range
-            .as_ref()
-            .map(|range| *range.start());
-        let time_range_end = split_metadata.time_range.map(|range| *range.end());
-        let tags: Vec<String> = split_metadata.tags.into_iter().collect();
 
-        sqlx::query(r#"
-            INSERT INTO splits
-                (split_id, split_state, time_range_start, time_range_end, tags, split_metadata_json, index_id, delete_opstamp)
-            VALUES
-                ($1, $2, $3, $4, $5, $6, $7, $8)
-            "#)
-            .bind(&split_metadata.split_id)
-            .bind(SplitState::Staged.as_str())
-            .bind(time_range_start)
-            .bind(time_range_end)
-            .bind(tags)
-            .bind(split_metadata_json)
-            .bind(index_id)
-            .bind(split_metadata.delete_opstamp as i64)
-            .execute(&self.connection_pool)
-            .await
-            .map_err(|error| convert_sqlx_err(index_id, error))?;
+            debug!(index_id=%index_id, num_splits=split_ids.len(), "Splits successfully staged.");
 
-        debug!(index_id=%index_id, split_id=%split_metadata.split_id, "Split successfully staged.");
-
-        Ok(())
+            Ok(())
+        })
     }
 
     #[instrument(skip(self), fields(index_id=index_id))]

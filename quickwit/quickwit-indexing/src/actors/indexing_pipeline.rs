@@ -571,7 +571,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .returning(|_, _| Ok(()));
         metastore
-            .expect_stage_split()
+            .expect_stage_splits()
             .withf(|index_id, _metadata| -> bool { index_id == "test-index" })
             .times(1)
             .returning(|_, _| Ok(()));
@@ -662,7 +662,7 @@ mod tests {
                 Ok(10)
             });
         metastore
-            .expect_stage_split()
+            .expect_stage_splits()
             .withf(|index_id, _metadata| index_id == "test-index")
             .times(1)
             .returning(|_, _| Ok(()));
