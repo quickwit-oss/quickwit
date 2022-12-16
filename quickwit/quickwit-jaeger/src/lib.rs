@@ -481,10 +481,11 @@ fn build_query(
 fn qw_span_to_jaeger_span(qw_span: &str) -> Result<JaegerSpan, Status> {
     let mut span = serde_json::from_str::<QwSpan>(qw_span)
         .map_err(|error| Status::internal(format!("Failed to deserialize span: {error:?}")))?;
-    let trace_id = base64::decode(span.trace_id)
-        .map_err(|error| Status::internal(format!("Failed to decode trace ID: {error:?}")))?;
+    let trace_id = base64::decode(span.trace_id).map_err(|error| {
+        Status::internal(format!("Failed to base64 decode trace ID: {error:?}"))
+    })?;
     let span_id = base64::decode(span.span_id)
-        .map_err(|error| Status::internal(format!("Failed to decode span ID: {error:?}")))?;
+        .map_err(|error| Status::internal(format!("Failed to base64 decode span ID: {error:?}")))?;
 
     let start_time = Some(to_well_known_timestamp(span.span_start_timestamp_nanos));
     let duration = Some(to_well_known_duration(
