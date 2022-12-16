@@ -272,8 +272,6 @@ A VRL script can be used to transfom documents before ingesting. Config can be i
 `source` A [VRL](https://vector.dev/docs/reference/vrl/) script. Used to tranform documents before ingesting. \
 `timezone` Timezone to use for VRL's timezone related functions. If not specified, defaults to UTC. Timezone must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). \
 
-*Examples*
-
 
 ### index ingest-api
 
