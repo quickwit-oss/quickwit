@@ -107,7 +107,7 @@ impl From<BorrowedMessage<'_>> for KafkaMessage {
             doc_opt: parse_message_payload(&message),
             payload_len: message.payload_len() as u64,
             partition: message.partition(),
-            offset: message.offset() as i64,
+            offset: message.offset(),
         }
     }
 }

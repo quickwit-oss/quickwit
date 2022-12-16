@@ -252,7 +252,7 @@ impl Storage for BundleStorage {
             crate::StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
         })?;
-        Ok(file_range.end - file_range.start as u64)
+        Ok(file_range.end - file_range.start)
     }
 
     fn uri(&self) -> &Uri {

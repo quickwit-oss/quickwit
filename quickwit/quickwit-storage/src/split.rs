@@ -124,7 +124,7 @@ impl SplitPayloadBuilder {
     /// the hotcache and the metadata in one continous read.
     pub fn add_file(&mut self, path: &Path) -> io::Result<()> {
         let file = std::fs::metadata(path)?;
-        let file_range = self.current_offset as u64..self.current_offset as u64 + file.len() as u64;
+        let file_range = self.current_offset as u64..self.current_offset as u64 + file.len();
         self.current_offset += file.len() as usize;
         self.metadata.files.insert(path.to_owned(), file_range);
         Ok(())

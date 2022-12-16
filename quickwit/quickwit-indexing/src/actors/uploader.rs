@@ -312,7 +312,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     let split_metadata = create_split_metadata(
                         &packaged_split.split_attrs,
                         packaged_split.tags.clone(),
-                        split_streamer.footer_range.start as u64..split_streamer.footer_range.end as u64,
+                        split_streamer.footer_range.start..split_streamer.footer_range.end,
                     );
 
                     split_metadata_list.push(split_metadata);

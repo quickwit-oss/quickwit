@@ -519,7 +519,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_ingest_api_source_config() {
         let source_config_filepath = get_source_config_filepath("ingest-api-source.json");
-        let file_content = std::fs::read(&source_config_filepath).unwrap();
+        let file_content = std::fs::read(source_config_filepath).unwrap();
         let source_config: SourceConfig = ConfigFormat::Json.parse(&file_content).unwrap();
         let expected_source_config = SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
