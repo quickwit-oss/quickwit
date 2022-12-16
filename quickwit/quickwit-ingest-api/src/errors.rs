@@ -59,7 +59,7 @@ impl ServiceError for IngestApiError {
             IngestApiError::IngestAPIServiceDown => ServiceErrorCode::Internal,
             IngestApiError::IoError { .. } => ServiceErrorCode::Internal,
             IngestApiError::InvalidPosition(_) => ServiceErrorCode::BadRequest,
-            IngestApiError::RateLimited => ServiceErrorCode::Internal,
+            IngestApiError::RateLimited => ServiceErrorCode::RateLimited,
         }
     }
 }

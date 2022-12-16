@@ -124,6 +124,7 @@ pub enum ServiceErrorCode {
     MethodNotAllowed,
     UnsupportedMediaType,
     BadRequest,
+    RateLimited,
 }
 
 impl ServiceErrorCode {
@@ -134,6 +135,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::BadRequest => tonic::Code::InvalidArgument,
             ServiceErrorCode::MethodNotAllowed => tonic::Code::InvalidArgument,
             ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
+            ServiceErrorCode::RateLimited => tonic::Code::ResourceExhausted,
         }
     }
     pub fn to_http_status_code(self) -> http::StatusCode {
@@ -143,6 +145,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::BadRequest => http::StatusCode::BAD_REQUEST,
             ServiceErrorCode::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
             ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ServiceErrorCode::RateLimited => http::StatusCode::TOO_MANY_REQUESTS,
         }
     }
 }
