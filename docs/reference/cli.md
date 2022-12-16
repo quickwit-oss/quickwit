@@ -231,6 +231,8 @@ quickwit index ingest
     [--input-path <input-path>]
     [--overwrite]
     [--keep-cache]
+    [--transform-config <config-path>]
+    [--transform-program <vrl-program>]
 ```
 
 *Options*
@@ -239,6 +241,9 @@ quickwit index ingest
 `--input-path` Location of the input file. \
 `--overwrite` Overwrites pre-existing index. \
 `--keep-cache` Does not clear local cache directory upon completion. \
+`--transform-config` VRL script file location. Conflicts with `--transform-program` option. \
+`--transform-program` VRL script as a string. Conflicts with `--source-file` option. \
+
 
 *Examples*
 
@@ -254,40 +259,21 @@ quickwit index ingest --index wikipedia --config=./config/quickwit.yaml --input-
 cat hdfs-log.json | quickwit index ingest --index wikipedia --config=./config/quickwit.yaml
 ```
 
-### index ingest transform
-
-Transforms the documents before ingesting using a [VRL](https://vector.dev/docs/reference/vrl/) script.
+*Downcase the article title before ingesting*
 
 ```bash
-quickwit index ingest
-    --index <index>
-    --config <config>
-    [--data-dir <data-dir>]
-    [--input-path <input-path>]
-    [--overwrite]
-    [--keep-cache]
-    transform
-    --source <vrl-script>
-    --source-file <script-file>
-    --timezone <timezone>
-    [--return-only-modified]
+quickwit index ingest --index wikipedia --config=./config/quickwit.yaml --input-path wiki-articles-10000.json --transform-program ".title = downcase(string!(.title))`
 ```
 
+*Transform Config*
 
-*Options*
+A VRL script can be used to transfom documents before ingesting. Config can be in JSON, TOML or YAML format. Transform config consists of two parameters: `source` and `timezone`.
 
-`--source` VRL script as a string. Conflicts with `--source-file` option. \
-`--source-file` VRL script file location. Conflicts with `--source` option. \
-`--timezone` Timezone to pass to VRL for timezone related functions.
-Timezone must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Defaults to UTC. \
+`source` A [VRL](https://vector.dev/docs/reference/vrl/) script. Used to tranform documents before ingesting. \
+`timezone` Timezone to use for VRL's timezone related functions. If not specified, defaults to UTC. Timezone must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). \
 
 *Examples*
 
-*Downcase the article title*
-
-```bash
-quickwit index ingest --index wikipedia --config=./config/quickwit.yaml --input-path wiki-articles-10000.json transform --source ".title = downcase(string!(.title))`
-```
 
 ### index ingest-api
 
