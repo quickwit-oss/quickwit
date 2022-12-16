@@ -52,15 +52,17 @@ use once_cell::sync::OnceCell;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_config::service::QuickwitService;
-use quickwit_config::QuickwitConfig;
-use quickwit_core::IndexService;
+use quickwit_config::{load_index_config_from_user_config, ConfigFormat, QuickwitConfig};
+use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
-    quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient, RetryingMetastore,
+    quickwit_metastore_uri_resolver, Metastore, MetastoreError, MetastoreGrpcClient,
+    RetryingMetastore,
 };
+use quickwit_opentelemetry::otlp::OTEL_TRACE_INDEX_CONFIG;
 use quickwit_search::{start_searcher_service, SearchClientPool, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
@@ -150,6 +152,12 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         metastore.clone(),
     ));
 
+    // Always instantiate index management service.
+    let index_service = Arc::new(IndexService::new(
+        metastore.clone(),
+        storage_resolver.clone(),
+    ));
+
     let universe = Universe::new();
 
     let (ingest_api_service, indexer_service) = if config
@@ -159,6 +167,20 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         let ingest_api_service =
             start_ingest_api_service(&universe, &config.data_dir_path, &config.ingest_api_config)
                 .await?;
+        if config.indexer_config.enable_opentelemetry_otlp_service {
+            let index_config = load_index_config_from_user_config(
+                ConfigFormat::Yaml,
+                OTEL_TRACE_INDEX_CONFIG.as_bytes(),
+                &config.default_index_root_uri,
+            )?;
+            match index_service.create_index(index_config, false).await {
+                Ok(_)
+                | Err(IndexServiceError::MetastoreError(MetastoreError::IndexAlreadyExists {
+                    ..
+                })) => Ok(()),
+                Err(error) => Err(error),
+            }?;
+        }
         let indexing_service = start_indexing_service(
             &universe,
             &config,
@@ -191,13 +213,10 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     let search_service: Arc<dyn SearchService> = start_searcher_service(
         &config,
         metastore.clone(),
-        storage_resolver.clone(),
+        storage_resolver,
         search_client_pool,
     )
     .await?;
-
-    // Always instantiate index management service.
-    let index_service = Arc::new(IndexService::new(metastore.clone(), storage_resolver));
 
     let grpc_listen_addr = config.grpc_listen_addr;
     let rest_listen_addr = config.rest_listen_addr;
