@@ -37,7 +37,7 @@ use quickwit_proto::jaeger::storage::v1::{
     SpansResponseChunk,
 };
 use quickwit_proto::opentelemetry::proto::trace::v1::Status as OtlpStatus;
-use quickwit_proto::{SearchRequest, SearchResponse};
+use quickwit_proto::SearchRequest;
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
@@ -75,9 +75,32 @@ impl SpanReaderPlugin for JaegerService {
         let request = request.into_inner();
         debug!(request=?request, "`get_services` request");
 
-        let search_request = request.try_into_search_req()?;
+        let search_request = SearchRequest {
+            index_id: TRACE_INDEX_ID.to_string(),
+            query: build_query("", "", "", HashMap::new()),
+            search_fields: Vec::new(),
+            start_timestamp: None, // TODO: limit to last 24h?
+            end_timestamp: None,
+            max_hits: 1_000,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+            aggregation_request: None,
+            snippet_fields: Vec::new(),
+        };
         let search_response = self.search_service.root_search(search_request).await?;
-        let response = search_response.into_jaeger_resp();
+        let services: Vec<String> = search_response
+            .hits
+            .into_iter()
+            .map(|hit| {
+                serde_json::from_str::<JsonValue>(&hit.json)
+                    .expect("Failed to deserialize hit. This should never happen!")
+            })
+            .flat_map(extract_service_name)
+            .sorted()
+            .dedup()
+            .collect();
+        let response = GetServicesResponse { services };
         debug!(response=?response, "`get_services` response");
         Ok(Response::new(response))
     }
@@ -89,9 +112,35 @@ impl SpanReaderPlugin for JaegerService {
         let request = request.into_inner();
         debug!(request=?request, "`get_operations` request");
 
-        let search_request = request.try_into_search_req()?;
+        let search_request = SearchRequest {
+            index_id: TRACE_INDEX_ID.to_string(),
+            query: build_query(&request.service, &request.span_kind, "", HashMap::new()),
+            search_fields: Vec::new(),
+            start_timestamp: None, // TODO: limit to last 24h?
+            end_timestamp: None,
+            max_hits: 1_000,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+            aggregation_request: None,
+            snippet_fields: Vec::new(),
+        };
         let search_response = self.search_service.root_search(search_request).await?;
-        let response = search_response.into_jaeger_resp();
+        let operations: Vec<Operation> = search_response
+            .hits
+            .into_iter()
+            .map(|hit| {
+                serde_json::from_str::<JsonValue>(&hit.json)
+                    .expect("Failed to deserialize hit. This should never happen!")
+            })
+            .flat_map(extract_operation)
+            .sorted()
+            .dedup()
+            .collect();
+        let response = GetOperationsResponse {
+            operations,
+            operation_names: Vec::new(), // `operation_names` is deprecated.
+        };
         debug!(response=?response, "`get_operations` response");
         Ok(Response::new(response))
     }
@@ -103,7 +152,26 @@ impl SpanReaderPlugin for JaegerService {
         let request = request.into_inner();
         debug!(request=?request, "`find_traces` request");
 
-        let search_request = request.try_into_search_req()?;
+        let query = request
+            .query
+            .ok_or_else(|| Status::invalid_argument("Trace query is empty."))?;
+        let start_timestamp = query.start_time_min.map(|ts| ts.seconds);
+        let end_timestamp = query.start_time_max.map(|ts| ts.seconds);
+        // TODO: Push span duration filter.
+        let max_hits = query.num_traces as u64;
+        let search_request = SearchRequest {
+            index_id: TRACE_INDEX_ID.to_string(),
+            query: build_query(&query.service_name, "", &query.operation_name, query.tags),
+            search_fields: Vec::new(),
+            start_timestamp,
+            end_timestamp,
+            max_hits,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+            aggregation_request: None,
+            snippet_fields: Vec::new(),
+        };
         let search_response = self.search_service.root_search(search_request).await?;
         let trace_ids: HashSet<String> = search_response
             .hits
@@ -161,9 +229,43 @@ impl SpanReaderPlugin for JaegerService {
     ) -> Result<Response<FindTraceIDsResponse>, Status> {
         let request = request.into_inner();
         debug!(request=?request, "`find_trace_ids` request");
-        let search_request = request.try_into_search_req()?;
+        let query = request
+            .query
+            .ok_or_else(|| Status::invalid_argument("Query is empty."))?;
+        let start_timestamp = query.start_time_min.map(|ts| ts.seconds);
+        let end_timestamp = query.start_time_max.map(|ts| ts.seconds);
+        // TODO: Push span duration filter.
+        let max_hits = query.num_traces as u64;
+        let search_request = SearchRequest {
+            index_id: TRACE_INDEX_ID.to_string(),
+            query: build_query(&query.service_name, "", &query.operation_name, query.tags),
+            search_fields: Vec::new(),
+            start_timestamp,
+            end_timestamp,
+            max_hits,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+            aggregation_request: None,
+            snippet_fields: Vec::new(),
+        };
         let search_response = self.search_service.root_search(search_request).await?;
-        let response = search_response.into_jaeger_resp();
+        let trace_ids: Vec<Vec<u8>> = search_response
+            .hits
+            .into_iter()
+            .map(|hit| {
+                serde_json::from_str::<JsonValue>(&hit.json)
+                    .expect("Failed to deserialize hit. This should never happen.")
+            })
+            .filter_map(extract_trace_id)
+            .sorted()
+            .dedup()
+            .map(|trace_id| {
+                base64::decode(&trace_id)
+                    .expect("Failed to decode trace ID. This should never happen!")
+            })
+            .collect();
+        let response = FindTraceIDsResponse { trace_ids };
         debug!(response=?response, "`find_trace_ids` response");
         Ok(Response::new(response))
     }
@@ -174,7 +276,20 @@ impl SpanReaderPlugin for JaegerService {
     ) -> Result<Response<Self::GetTraceStream>, Status> {
         let request = request.into_inner();
         debug!(request=?request, "`get_trace` request");
-        let search_request = request.try_into_search_req()?;
+        let query = format!("trace_id:{}", base64::encode(request.trace_id));
+        let search_request = SearchRequest {
+            index_id: TRACE_INDEX_ID.to_string(),
+            query,
+            search_fields: Vec::new(),
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 1_000,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+            aggregation_request: None,
+            snippet_fields: Vec::new(),
+        };
         let search_response = self.search_service.root_search(search_request).await?;
         let spans = search_response
             .hits
@@ -190,107 +305,11 @@ impl SpanReaderPlugin for JaegerService {
         Ok(Response::new(response))
     }
 }
-trait IntoSearchRequest {
-    fn try_into_search_req(self) -> Result<SearchRequest, Status>;
-}
-
-trait FromSearchResponse {
-    fn from_search_resp(search_response: SearchResponse) -> Self;
-}
-
-trait IntoJaegerResponse<T> {
-    fn into_jaeger_resp(self) -> T;
-}
-
-impl<T> IntoJaegerResponse<T> for SearchResponse
-where T: FromSearchResponse
-{
-    fn into_jaeger_resp(self) -> T {
-        T::from_search_resp(self)
-    }
-}
-
-// GetServices
-impl IntoSearchRequest for GetServicesRequest {
-    fn try_into_search_req(self) -> Result<SearchRequest, Status> {
-        let request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query("", "", "", HashMap::new()),
-            search_fields: Vec::new(),
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 1_000,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
-        };
-        Ok(request)
-    }
-}
-
-impl FromSearchResponse for GetServicesResponse {
-    fn from_search_resp(search_response: SearchResponse) -> Self {
-        let services: Vec<String> = search_response
-            .hits
-            .into_iter()
-            .map(|hit| {
-                serde_json::from_str::<JsonValue>(&hit.json)
-                    .expect("Failed to deserialize hit. This should never happen!")
-            })
-            .flat_map(extract_service_name)
-            .sorted()
-            .dedup()
-            .collect();
-        Self { services }
-    }
-}
 
 fn extract_service_name(mut doc: JsonValue) -> Option<String> {
     match doc["service_name"].take() {
         JsonValue::String(service_name) => Some(service_name),
         _ => None,
-    }
-}
-
-// GetOperations
-impl IntoSearchRequest for GetOperationsRequest {
-    fn try_into_search_req(self) -> Result<SearchRequest, Status> {
-        let request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query(&self.service, &self.span_kind, "", HashMap::new()),
-            search_fields: Vec::new(),
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 1_000,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
-        };
-        Ok(request)
-    }
-}
-
-impl FromSearchResponse for GetOperationsResponse {
-    fn from_search_resp(search_response: SearchResponse) -> Self {
-        let operations: Vec<Operation> = search_response
-            .hits
-            .into_iter()
-            .map(|hit| {
-                serde_json::from_str::<JsonValue>(&hit.json)
-                    .expect("Failed to deserialize hit. This should never happen!")
-            })
-            .filter_map(extract_operation)
-            .sorted()
-            .dedup()
-            .collect();
-        Self {
-            operations,
-            operation_names: Vec::new(), // `operation_names` is deprecated.
-        }
     }
 }
 
@@ -310,106 +329,10 @@ fn extract_operation(mut doc: JsonValue) -> Option<Operation> {
     }
 }
 
-// FindTraces
-impl IntoSearchRequest for FindTracesRequest {
-    fn try_into_search_req(self) -> Result<SearchRequest, Status> {
-        let query = self
-            .query
-            .ok_or_else(|| Status::invalid_argument("Query is empty."))?;
-        let start_timestamp = query.start_time_min.map(|ts| ts.seconds);
-        let end_timestamp = query.start_time_max.map(|ts| ts.seconds);
-        // TODO: Push span duration filter.
-        let max_hits = query.num_traces as u64;
-        let request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query(&query.service_name, "", &query.operation_name, query.tags),
-            search_fields: Vec::new(),
-            start_timestamp,
-            end_timestamp,
-            max_hits,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
-        };
-        Ok(request)
-    }
-}
-
-// FindTraceIDs
-impl IntoSearchRequest for FindTraceIDsRequest {
-    fn try_into_search_req(self) -> Result<SearchRequest, Status> {
-        let query = self
-            .query
-            .ok_or_else(|| Status::invalid_argument("Query is empty."))?;
-        let start_timestamp = query.start_time_min.map(|ts| ts.seconds);
-        let end_timestamp = query.start_time_max.map(|ts| ts.seconds);
-        // TODO: Push span duration filter.
-        let max_hits = query.num_traces as u64;
-        let request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query(&query.service_name, "", &query.operation_name, query.tags),
-            search_fields: Vec::new(),
-            start_timestamp,
-            end_timestamp,
-            max_hits,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
-        };
-        Ok(request)
-    }
-}
-
-impl FromSearchResponse for FindTraceIDsResponse {
-    fn from_search_resp(search_response: SearchResponse) -> Self {
-        let trace_ids: Vec<Vec<u8>> = search_response
-            .hits
-            .into_iter()
-            .map(|hit| {
-                serde_json::from_str::<JsonValue>(&hit.json)
-                    .expect("Failed to deserialize hit. This should never happen.")
-            })
-            .filter_map(extract_trace_id)
-            .sorted()
-            .dedup()
-            .map(|trace_id| {
-                base64::decode(&trace_id)
-                    .expect("Failed to decode trace ID. This should never happen!")
-            })
-            .collect();
-        Self { trace_ids }
-    }
-}
-
 fn extract_trace_id(mut doc: JsonValue) -> Option<String> {
     match doc["trace_id"].take() {
         JsonValue::String(trace_id) => Some(trace_id),
         _ => None,
-    }
-}
-
-// GetTrace
-impl IntoSearchRequest for GetTraceRequest {
-    fn try_into_search_req(self) -> Result<SearchRequest, Status> {
-        let query = format!("trace_id:{}", base64::encode(self.trace_id));
-        let request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query,
-            search_fields: Vec::new(),
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 1_000,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
-        };
-        Ok(request)
     }
 }
 
