@@ -165,20 +165,27 @@ impl FileBackedIndex {
         &self.splits
     }
 
+    /// Stages a single split.
+    ///
+    /// If a split already exists and is in the [SplitState::Staged] state,
+    /// it is simply updated/overwritten.
+    ///
+    /// If a split already exists and is *not* in the [SplitState::Staged] state, a
+    /// [MetastoreError::SplitsNotStaged] error is returned providing the split ID to go with
+    /// it.
     pub(crate) fn stage_split(
         &mut self,
         split_metadata: SplitMetadata,
-    ) -> crate::MetastoreResult<()> {
+    ) -> Result<(), MetastoreError> {
         // Check whether the split exists.
-        // If the split exists, return an error to prevent the split from being registered.
-        if self.splits.contains_key(split_metadata.split_id()) {
-            return Err(MetastoreError::InternalError {
-                message: format!(
-                    "Failed to stage split  `{}`: split already exists.",
-                    split_metadata.split_id()
-                ),
-                cause: "".to_string(),
-            });
+        // If the split exists, we check what state it is in. If it's anything other than `Staged`
+        // something has gone very wrong and we should abort the operation.
+        if let Some(existing_split) = self.splits.get(split_metadata.split_id()) {
+            if existing_split.split_state != SplitState::Staged {
+                return Err(MetastoreError::SplitsNotStaged {
+                    split_ids: vec![existing_split.split_id().to_string()],
+                });
+            }
         }
 
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();

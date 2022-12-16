@@ -130,15 +130,19 @@ pub trait Metastore: Send + Sync + 'static {
 
     // Split API
 
-    /// Stages a split.
+    /// Stages multiple splits.
+    ///
+    /// If a split already exists and is not in the `Staged` state, a `SplitsNotStaged` error
+    /// will be returned.
+    /// Attempting to re-stage any split which is not currently `Staged` is incorrect and should not
+    /// be attempted.
     ///
     /// A split needs to be staged before uploading any of its files to the storage.
-    /// An error will occur if an index that does not exist in the storage is specified, or if you
-    /// specify a split that already exists.
-    async fn stage_split(
+    /// An error will occur if an index that does not exist in the storage is specified.
+    async fn stage_splits(
         &self,
         index_id: &str,
-        split_metadata: SplitMetadata,
+        split_metadata_list: Vec<SplitMetadata>,
     ) -> MetastoreResult<()>;
 
     /// Publishes a set of staged splits while optionally marking another set of published splits

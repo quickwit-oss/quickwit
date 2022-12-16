@@ -692,7 +692,7 @@ mod tests {
         new_split_metadata.split_id = new_split_id();
         new_split_metadata.num_merge_ops = 1;
         metastore
-            .stage_split(index_id, new_split_metadata.clone())
+            .stage_splits(index_id, vec![new_split_metadata.clone()])
             .await
             .unwrap();
         metastore

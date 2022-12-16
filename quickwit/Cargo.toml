@@ -159,8 +159,8 @@ tokio = { version = "1.23", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
 toml = "0.5.9"
-tonic = "0.8"
-tonic-build = "0.8.2"
+tonic = { version = "0.8.3", features = ["gzip"] }
+tonic-build = "0.8.3"
 tower = "0.4.13"
 tracing = "0.1.37"
 tracing-opentelemetry = "0.18.0"
