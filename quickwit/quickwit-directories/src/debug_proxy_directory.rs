@@ -173,10 +173,7 @@ impl<D: Directory> FileHandle for DebugProxyFileHandle<D> {
         Ok(payload)
     }
 
-    async fn read_bytes_async(
-        &self,
-        byte_range: Range<usize>,
-    ) -> tantivy::AsyncIoResult<OwnedBytes> {
+    async fn read_bytes_async(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
         let read_operation_builder =
             ReadOperationBuilder::new(&self.path).with_offset(byte_range.start);
         let payload = self.underlying.read_bytes_async(byte_range).await?;
