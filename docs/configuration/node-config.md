@@ -27,7 +27,7 @@ A commented example is accessible here: [quickwit.yaml](https://github.com/quick
 | peer_seeds | List of IP addresses used by gossip for bootstrapping new nodes joining a cluster. This list may contain the current node address, and it does not need to be exhaustive on every node. | QW_PEER_SEEDS |  |
 | data_dir_path | Path to directory where data (tmp data, splits kept for caching purpose) is persisted. This is mostly used in indexing. | QW_DATA_DIR | `./qwdata` |
 | metastore_uri | Metastore URI. Can be a local directory or `s3://my-bucket/indexes` or `postgres://username:password@localhost:5432/metastore`. [Learn more about the metastore configuration](metastore-config.md). | QW_METASTORE_URI | `{data_dir}/indexes` |
-| default_index_root_uri | Default index root URI that defines the location where index data (splits) is stored. The index uri is build following the the scheme: `{default_index_root_uri}/{index-id}` | QW_DEFAULT_INDEX_ROOT_URI | `{data_dir}/indexes` |
+| default_index_root_uri | Default index root URI that defines the location where index data (splits) is stored. The index URI is built following the scheme: `{default_index_root_uri}/{index-id}` | QW_DEFAULT_INDEX_ROOT_URI | `{data_dir}/indexes` |
 
 
 There are also other parameters that can be only defined by env variables:
