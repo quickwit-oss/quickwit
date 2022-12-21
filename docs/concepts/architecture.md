@@ -73,13 +73,18 @@ For a given query on a given index, a search node will ask the metastore for the
 
 Currently, Quickwit supports metastore backed by Postgresql and AWS S3 bucket. For a test/local deployment, you can also use a file backed metastore. 
 
+### Cluster formation
+
+Quickwit uses [chitchat](https://github.com/quickwit-oss/chitchat), a cluster membership protocol with failure detection implemented by Quickwit. The protocol is inspired by Scuttlebutt reconciliation and phi-accrual detection, ideas borrowed from Cassandra and DynamoDB.
+
+[Learn more on chitchat](https://github.com/quickwit-oss/chitchat).
+
 ### Distributed search
 
 Quickwit's search cluster has the following characteristics:
 
 - It is composed of stateless nodes: any node can answer any query about any splits.
 - A node can distribute search workload to other nodes.
-- Cluster membership is based on the SWIM gossip protocol.
 - Load-balancing is made with rendezvous hashing to allow for efficient caching.
 
 This design provides high availability while keeping the architecture simple.
@@ -97,10 +102,6 @@ Any search node can handle any search request. A node that receives a query will
 Quickwit cluster distributes search workloads while keeping nodes stateless.
 
 Thanks to the hotcache, opening a split on Amazon S3 only takes 60ms. It makes it possible to remain totally stateless: a node does not need to know anything about the indexes. Adding or removing nodes takes seconds and does not require moving data around.
-
-**Cluster discovery**
-
-Quickwit uses a gossip protocol to manage membership and broadcast messages to the cluster provided by [artillery project](https://github.com/bastion-rs/artillery/). The gossip protocol is based on [SWIM: Scalable Weakly-consistent Infection-style Process Group Membership Protocol](https://www.cs.cornell.edu/projects/Quicksilver/public_pdfs/SWIM.pdf) with a few minor adaptations.
 
 **Rendezvous hashing**
 
