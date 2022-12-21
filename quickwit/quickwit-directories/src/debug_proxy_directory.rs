@@ -274,12 +274,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_debug_proxy_open_read_read_async() -> tantivy::Result<()> {
+    async fn test_debug_proxy_open_read_read_async() {
         let test_path = Path::new(TEST_PATH);
-        let debug_proxy = DebugProxyDirectory::wrap(make_test_directory()?);
-        let read_data = debug_proxy.open_read(test_path)?;
+        let debug_proxy = DebugProxyDirectory::wrap(make_test_directory().unwrap());
+        let read_data = debug_proxy.open_read(test_path).unwrap();
         assert_eq!(
-            read_data.read_bytes_slice_async(1..3).await?.as_slice(),
+            read_data.read_bytes_slice_async(1..3).await.unwrap().as_slice(),
             b"el"
         );
         let operations: Vec<crate::ReadOperation> = debug_proxy.drain_read_operations().collect();
@@ -288,6 +288,5 @@ mod tests {
         assert_eq!(op.path, test_path);
         assert_eq!(op.offset, 1);
         assert_eq!(op.num_bytes, 2);
-        Ok(())
     }
 }
