@@ -279,7 +279,11 @@ mod tests {
         let debug_proxy = DebugProxyDirectory::wrap(make_test_directory().unwrap());
         let read_data = debug_proxy.open_read(test_path).unwrap();
         assert_eq!(
-            read_data.read_bytes_slice_async(1..3).await.unwrap().as_slice(),
+            read_data
+                .read_bytes_slice_async(1..3)
+                .await
+                .unwrap()
+                .as_slice(),
             b"el"
         );
         let operations: Vec<crate::ReadOperation> = debug_proxy.drain_read_operations().collect();

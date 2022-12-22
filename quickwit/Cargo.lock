@@ -1243,7 +1243,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
  "fastdivide",
  "itertools",
@@ -2715,7 +2715,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -5037,7 +5037,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.19.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -5089,12 +5089,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 
 [[package]]
 name = "tantivy-common"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -5115,7 +5115,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.19.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
  "combine",
  "once_cell",
@@ -5125,18 +5125,18 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
- "byteorder",
  "ciborium",
  "serde",
  "tantivy-common",
+ "tantivy-fst",
 ]
 
 [[package]]
 name = "tantivy-stacker"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
  "byteorder",
  "murmurhash32",
