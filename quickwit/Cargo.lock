@@ -260,7 +260,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6424becb946de1b1eff7bf5fbc86fabf7457637c88b63dd967b219a712c322c"
 dependencies = [
  "async-trait",
- "base64",
+ "base64 0.13.1",
  "bytes",
  "dyn-clone",
  "futures",
@@ -289,7 +289,7 @@ dependencies = [
  "RustyXML",
  "async-trait",
  "azure_core",
- "base64",
+ "base64 0.13.1",
  "bytes",
  "futures",
  "hmac 0.12.1",
@@ -314,7 +314,7 @@ dependencies = [
  "RustyXML",
  "azure_core",
  "azure_storage",
- "base64",
+ "base64 0.13.1",
  "bytes",
  "futures",
  "log",
@@ -353,6 +353,12 @@ name = "base64"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
+
+[[package]]
+name = "base64"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ea22880d78093b0cbe17c89f64a7d457941e65759157ec6cb31a31d652b05e5"
 
 [[package]]
 name = "bit-set"
@@ -1236,14 +1242,13 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 
 [[package]]
 name = "fastfield_codecs"
-version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.3.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
 dependencies = [
  "fastdivide",
  "itertools",
  "log",
  "measure_time",
- "ownedbytes",
  "prettytable-rs",
  "rand 0.8.5",
  "tantivy-bitpacker",
@@ -1583,7 +1588,7 @@ version = "7.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f19b9f54f7c7f55e31401bb647626ce0cf0f67b0004982ce815b3ee72a02aa8"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "byteorder",
  "flate2",
  "nom",
@@ -1596,7 +1601,7 @@ version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3e372db8e5c0d213e0cd0b9be18be2aca3d44cf2fe30a9d46a65581cd454584"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "bitflags",
  "bytes",
  "headers-core",
@@ -1747,7 +1752,7 @@ checksum = "6e9b187a72d63adbfba487f48095306ac823049cb504ee195541e91c7775f5ad"
 dependencies = [
  "anyhow",
  "async-channel",
- "base64",
+ "base64 0.13.1",
  "futures-lite",
  "infer",
  "pin-project-lite",
@@ -2709,8 +2714,8 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 
 [[package]]
 name = "ownedbytes"
-version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.5.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -3436,7 +3441,7 @@ name = "quickwit-doc-mapper"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "base64",
+ "base64 0.13.1",
  "criterion",
  "dyn-clone",
  "fnv",
@@ -3539,7 +3544,7 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64",
+ "base64 0.13.1",
  "itertools",
  "prost-types",
  "quickwit-opentelemetry",
@@ -3641,7 +3646,7 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64",
+ "base64 0.13.1",
  "quickwit-actors",
  "quickwit-ingest-api",
  "quickwit-proto",
@@ -3675,7 +3680,7 @@ dependencies = [
  "anyhow",
  "assert-json-diff",
  "async-trait",
- "base64",
+ "base64 0.13.1",
  "bytes",
  "chitchat",
  "fastfield_codecs",
@@ -3769,7 +3774,7 @@ dependencies = [
  "azure_core",
  "azure_storage",
  "azure_storage_blobs",
- "base64",
+ "base64 0.13.1",
  "bytes",
  "fnv",
  "futures",
@@ -4029,7 +4034,7 @@ version = "0.11.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68cc60575865c7831548863cc02356512e3f1dc2f3f82cb837d7fc4cc8f3c97c"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "bytes",
  "encoding_rs",
  "futures-core",
@@ -4088,7 +4093,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1db30db44ea73551326269adcf7a2169428a054f14faf9e1768f2163494f2fa2"
 dependencies = [
  "async-trait",
- "base64",
+ "base64 0.13.1",
  "bytes",
  "crc32fast",
  "futures",
@@ -4172,7 +4177,7 @@ version = "0.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a5ae95491c8b4847931e291b151127eccd6ff8ca13f33603eb3d0035ecb05272"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "bytes",
  "chrono",
  "digest 0.9.0",
@@ -4295,7 +4300,7 @@ version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35edb675feee39aec9c99fa5ff985081995a06d594114ae14cbe797ad7b7a6d7"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "log",
  "ring",
  "sct 0.6.1",
@@ -4332,7 +4337,7 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5eebeaeb360c87bfb72e84abdb3447159c0eaececf1bef2aecd65a8be949d1c9"
 dependencies = [
- "base64",
+ "base64 0.13.1",
 ]
 
 [[package]]
@@ -4341,7 +4346,7 @@ version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0864aeff53f8c05aa08d86e5ef839d3dfcf07aeba2db32f12db0ef716e87bd55"
 dependencies = [
- "base64",
+ "base64 0.13.1",
 ]
 
 [[package]]
@@ -4786,7 +4791,7 @@ checksum = "dcbc16ddba161afc99e14d1713a453747a2b07fc097d2009f4c300ec99286105"
 dependencies = [
  "ahash",
  "atoi",
- "base64",
+ "base64 0.13.1",
  "bitflags",
  "byteorder",
  "bytes",
@@ -5031,17 +5036,16 @@ dependencies = [
 
 [[package]]
 name = "tantivy"
-version = "0.19.0-dev"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.19.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
 dependencies = [
  "aho-corasick",
  "arc-swap",
  "async-trait",
- "base64",
+ "base64 0.20.0",
  "bitpacking",
  "byteorder",
  "census",
- "ciborium",
  "crc32fast",
  "crossbeam-channel",
  "downcast-rs",
@@ -5061,7 +5065,6 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "oneshot",
- "ownedbytes",
  "rayon",
  "regex",
  "rust-stemmers",
@@ -5069,11 +5072,12 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
- "stable_deref_trait",
  "tantivy-bitpacker",
  "tantivy-common",
  "tantivy-fst",
  "tantivy-query-grammar",
+ "tantivy-sstable",
+ "tantivy-stacker",
  "tempfile",
  "thiserror",
  "time 0.3.17",
@@ -5084,14 +5088,15 @@ dependencies = [
 
 [[package]]
 name = "tantivy-bitpacker"
-version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.3.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
 
 [[package]]
 name = "tantivy-common"
-version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.5.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
 dependencies = [
+ "async-trait",
  "byteorder",
  "ownedbytes",
 ]
@@ -5109,12 +5114,33 @@ dependencies = [
 
 [[package]]
 name = "tantivy-query-grammar"
-version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.19.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
 dependencies = [
  "combine",
  "once_cell",
  "regex",
+]
+
+[[package]]
+name = "tantivy-sstable"
+version = "0.1.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
+dependencies = [
+ "byteorder",
+ "ciborium",
+ "serde",
+ "tantivy-common",
+]
+
+[[package]]
+name = "tantivy-stacker"
+version = "0.1.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3339a3e#3339a3ec0548914dd0a24752df84a76c891bf100"
+dependencies = [
+ "byteorder",
+ "murmurhash32",
+ "tantivy-common",
 ]
 
 [[package]]
@@ -5507,7 +5533,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum",
- "base64",
+ "base64 0.13.1",
  "bytes",
  "flate2",
  "futures-core",
@@ -5695,7 +5721,7 @@ version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e27992fd6a8c29ee7eef28fc78349aa244134e10ad447ce3b9f0ac0ed0fa4ce0"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "byteorder",
  "bytes",
  "http",
@@ -5822,7 +5848,7 @@ version = "1.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b8b063c2d59218ae09f22b53c42eaad0d53516457905f5235ca4bc9e99daa71"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "chunked_transfer",
  "cookie",
  "cookie_store",

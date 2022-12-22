@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
+use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -36,7 +37,6 @@ use quickwit_storage::{
 };
 use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
-use tantivy::error::AsyncIoError;
 use tantivy::schema::{Cardinality, Field, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
@@ -295,7 +295,7 @@ async fn warm_up_fastfields(
         fast_fields.push((fast_field, cardinality));
     }
 
-    type SendableFuture = dyn Future<Output = Result<OwnedBytes, AsyncIoError>> + Send;
+    type SendableFuture = dyn Future<Output = io::Result<OwnedBytes>> + Send;
     let mut warm_up_futures: Vec<Pin<Box<SendableFuture>>> = Vec::new();
     for (field, cardinality) in fast_fields {
         for segment_reader in searcher.segment_readers() {
