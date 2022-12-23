@@ -3441,7 +3441,7 @@ name = "quickwit-doc-mapper"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "base64 0.13.1",
+ "base64 0.20.0",
  "criterion",
  "dyn-clone",
  "fnv",
@@ -3545,7 +3545,7 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.13.1",
+ "base64 0.20.0",
  "itertools",
  "prost-types",
  "quickwit-opentelemetry",
@@ -3647,7 +3647,7 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.13.1",
+ "base64 0.20.0",
  "quickwit-actors",
  "quickwit-ingest-api",
  "quickwit-proto",
@@ -3681,7 +3681,7 @@ dependencies = [
  "anyhow",
  "assert-json-diff",
  "async-trait",
- "base64 0.13.1",
+ "base64 0.20.0",
  "bytes",
  "chitchat",
  "fastfield_codecs",
@@ -3775,7 +3775,7 @@ dependencies = [
  "azure_core",
  "azure_storage",
  "azure_storage_blobs",
- "base64 0.13.1",
+ "base64 0.20.0",
  "bytes",
  "fnv",
  "futures",
