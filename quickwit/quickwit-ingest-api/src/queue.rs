@@ -203,6 +203,16 @@ impl Queues {
                 .collect(),
         })
     }
+
+    /// Get ressource used by the queue.
+    ///
+    /// Returns the in-memory size, and the on disk size of the queue.
+    pub fn ressource_usage(&self) -> (usize, usize) {
+        (
+            self.record_log.in_memory_size(),
+            self.record_log.on_disk_size(),
+        )
+    }
 }
 
 #[cfg(test)]

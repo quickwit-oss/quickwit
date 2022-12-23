@@ -2298,7 +2298,7 @@ dependencies = [
 [[package]]
 name = "mrecordlog"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/mrecordlog?rev=11dcabb2bdf8b93fde30c597d4f41245ca9b8eda#11dcabb2bdf8b93fde30c597d4f41245ca9b8eda"
+source = "git+https://github.com/quickwit-oss/mrecordlog?rev=8b0e0cfacbbbfc9a544011b01380d689a6c7a3ae#8b0e0cfacbbbfc9a544011b01380d689a6c7a3ae"
 dependencies = [
  "async-trait",
  "crc32fast",
@@ -3526,6 +3526,7 @@ dependencies = [
  "once_cell",
  "quickwit-actors",
  "quickwit-common",
+ "quickwit-config",
  "quickwit-proto",
  "rand 0.8.5",
  "rand_distr",

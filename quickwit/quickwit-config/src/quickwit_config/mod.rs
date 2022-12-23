@@ -141,6 +141,34 @@ impl Default for SearcherConfig {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IngestApiConfig {
+    #[serde(default = "IngestApiConfig::default_max_queue_memory_usage")]
+    pub max_queue_memory_usage: usize,
+    #[serde(default = "IngestApiConfig::default_max_queue_disk_usage")]
+    pub max_queue_disk_usage: usize,
+}
+
+impl IngestApiConfig {
+    fn default_max_queue_memory_usage() -> usize {
+        2 * 1024 * 1024 * 1024 // 2 GiB // TODO maybe we want more?
+    }
+
+    fn default_max_queue_disk_usage() -> usize {
+        4 * 1024 * 1024 * 1024 // 4 GiB // TODO maybe we want more?
+    }
+}
+
+impl Default for IngestApiConfig {
+    fn default() -> Self {
+        Self {
+            max_queue_memory_usage: Self::default_max_queue_memory_usage(),
+            max_queue_disk_usage: Self::default_max_queue_disk_usage(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct QuickwitConfig {
     pub cluster_id: String,
@@ -157,6 +185,7 @@ pub struct QuickwitConfig {
     pub default_index_root_uri: Uri,
     pub indexer_config: IndexerConfig,
     pub searcher_config: SearcherConfig,
+    pub ingest_api_config: IngestApiConfig,
 }
 
 impl QuickwitConfig {
