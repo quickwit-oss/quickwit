@@ -253,7 +253,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         .into_iter()
         .map(|split| split.split_metadata)
         .collect();
-    let merge_scratch_directory = ScratchDirectory::for_test()?;
+    let merge_scratch_directory = ScratchDirectory::for_test();
 
     let downloaded_splits_directory =
         merge_scratch_directory.named_temp_child("downloaded-splits-")?;

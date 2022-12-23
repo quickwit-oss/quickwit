@@ -324,7 +324,7 @@ mod tests {
     use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
 
     fn make_indexed_split_for_test(segment_timestamps: &[i64]) -> anyhow::Result<IndexedSplit> {
-        let split_scratch_directory = ScratchDirectory::for_test()?;
+        let split_scratch_directory = ScratchDirectory::for_test();
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
         let timestamp_field = schema_builder.add_u64_field("timestamp", FAST);

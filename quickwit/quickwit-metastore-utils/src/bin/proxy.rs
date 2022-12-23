@@ -30,6 +30,7 @@ use quickwit_proto::metastore_api::metastore_api_service_server::{
 use quickwit_proto::metastore_api::*;
 use quickwit_proto::tonic;
 use quickwit_proto::tonic::transport::Channel;
+use quickwit_proto::tonic::{Request, Response, Status};
 use structopt::StructOpt;
 use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufWriter};
@@ -137,14 +138,14 @@ impl MetastoreApiService for MetastoreProxyService {
         let resp = lock.client.list_splits(request).await?;
         Ok(resp)
     }
-    /// Stages split.
-    async fn stage_split(
+    /// Stages several splits.
+    async fn stage_splits(
         &self,
-        request: tonic::Request<StageSplitRequest>,
-    ) -> Result<tonic::Response<SplitResponse>, tonic::Status> {
+        request: Request<StageSplitsRequest>,
+    ) -> Result<Response<SplitResponse>, Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
-        let resp = lock.client.stage_split(request).await?;
+        let resp = lock.client.stage_splits(request).await?;
         Ok(resp)
     }
     /// Publishes split.

@@ -687,7 +687,7 @@ async fn test_garbage_collect_index_cli() {
         .await
         .unwrap();
     metastore
-        .stage_split(&test_env.index_id, split.split_metadata)
+        .stage_splits(&test_env.index_id, vec![split.split_metadata])
         .await
         .unwrap();
     assert_eq!(split_path.try_exists().unwrap(), true);

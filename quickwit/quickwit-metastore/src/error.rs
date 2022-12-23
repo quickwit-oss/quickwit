@@ -118,7 +118,7 @@ impl ServiceError for MetastoreError {
             Self::InvalidManifest { .. } => ServiceErrorCode::Internal,
             Self::Io { .. } => ServiceErrorCode::Internal,
             Self::SourceAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            Self::SourceDoesNotExist { .. } => ServiceErrorCode::BadRequest,
+            Self::SourceDoesNotExist { .. } => ServiceErrorCode::NotFound,
             Self::SplitsDoNotExist { .. } => ServiceErrorCode::BadRequest,
             Self::SplitsNotDeletable { .. } => ServiceErrorCode::BadRequest,
             Self::SplitsNotStaged { .. } => ServiceErrorCode::BadRequest,

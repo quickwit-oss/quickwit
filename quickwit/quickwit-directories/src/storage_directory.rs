@@ -28,7 +28,7 @@ use quickwit_common::uri::Uri;
 use quickwit_storage::{OwnedBytes, Storage};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::FileHandle;
-use tantivy::{AsyncIoResult, Directory, HasLen};
+use tantivy::{Directory, HasLen};
 use tracing::{error, instrument};
 
 struct StorageDirectoryFileHandle {
@@ -59,7 +59,7 @@ impl FileHandle for StorageDirectoryFileHandle {
     }
 
     #[instrument(level = "debug", fields(path = %self.path.to_string_lossy()), skip(self))]
-    async fn read_bytes_async(&self, byte_range: Range<usize>) -> AsyncIoResult<OwnedBytes> {
+    async fn read_bytes_async(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
         if byte_range.is_empty() {
             return Ok(OwnedBytes::empty());
         }

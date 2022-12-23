@@ -31,6 +31,7 @@ use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_serv
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic;
+use quickwit_proto::tonic::codegen::CompressionEncoding;
 use tonic::transport::Server;
 use tracing::*;
 
@@ -67,9 +68,9 @@ pub(crate) async fn start_grpc_server(
             .ingest_api_service
             .clone()
             .context("Failed to instantiate OTLP trace service: the ingest API is disabled.")?;
-        Some(TraceServiceServer::new(OtlpGrpcTraceService::new(
-            ingest_api_service,
-        )))
+        let trace_service = TraceServiceServer::new(OtlpGrpcTraceService::new(ingest_api_service))
+            .accept_compressed(CompressionEncoding::Gzip);
+        Some(trace_service)
     } else {
         None
     };
@@ -81,9 +82,9 @@ pub(crate) async fn start_grpc_server(
             .ingest_api_service
             .clone()
             .context("Failed to instantiate OTLP log service: the ingest API is disabled.")?;
-        Some(LogsServiceServer::new(OtlpGrpcLogsService::new(
-            ingest_api_service,
-        )))
+        let logs_service = LogsServiceServer::new(OtlpGrpcLogsService::new(ingest_api_service))
+            .accept_compressed(CompressionEncoding::Gzip);
+        Some(logs_service)
     } else {
         None
     };

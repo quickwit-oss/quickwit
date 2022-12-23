@@ -100,12 +100,11 @@ services:
         - "${TMPDIR:-/tmp}/azurite:/data"
     command: azurite --blobHost 0.0.0.0 --loose
 
-
   prometheus:
     image: prom/prometheus
     container_name: prometheus
     volumes:
-      - ${PWD}/quickwit/scripts/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/docker-compose/prometheus.yml:/etc/prometheus/prometheus.yml
     network_mode: host
 
   jaeger:
@@ -122,3 +121,20 @@ services:
       - "14250:14250"
       - "14268:14268"
       - "16686:16686"
+
+  otel-collector:
+    image: otel/opentelemetry-collector
+    container_name: otel-collector
+    profiles:
+      - otel
+    ports:
+      - "1888:1888"   # pprof extension
+      - "8888:8888"   # Prometheus metrics exposed by the collector
+      - "8889:8889"   # Prometheus exporter metrics
+      - "13133:13133" # health_check extension
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP http receiver
+      - "55679:55679" # zpages extension
+    volumes:
+      - ./config/docker-compose/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command: ["--config=/etc/otel-collector-config.yaml"]

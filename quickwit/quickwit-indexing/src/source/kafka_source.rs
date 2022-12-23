@@ -910,7 +910,7 @@ mod kafka_broker_tests {
         let split_id = new_split_id();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
         metastore
-            .stage_split(index_id, split_metadata)
+            .stage_splits(index_id, vec![split_metadata])
             .await
             .unwrap();
 

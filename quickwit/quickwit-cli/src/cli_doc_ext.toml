@@ -150,7 +150,7 @@ The metastore service exposes Quickwit metastore over the network. This is a cor
 Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
 where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
 The node can optionally join a cluster using the `peer_seeds` parameter.
-This list of node addresses is used to discover the remaining peer nodes in the cluster through a gossip protocol (SWIM).
+This list of node addresses is used to discover the remaining peer nodes in the cluster through a gossip protocol, see [chitchat](https://github.com/quickwit-oss/chitchat).
 
 :::note
 Behind the scenes, Quickwit needs to open the following port for cluster formation and workload distribution:

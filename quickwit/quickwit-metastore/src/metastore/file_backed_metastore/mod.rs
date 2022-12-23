@@ -377,14 +377,30 @@ impl Metastore for FileBackedMetastore {
     /// -------------------------------------------------------------------------------
     /// Mutations over a single index
 
-    async fn stage_split(
+    async fn stage_splits(
         &self,
         index_id: &str,
-        split_metadata: SplitMetadata,
+        split_metadata_list: Vec<SplitMetadata>,
     ) -> MetastoreResult<()> {
         self.mutate(index_id, |index| {
-            index.stage_split(split_metadata)?;
-            Ok(true)
+            let mut failed_split_ids = Vec::new();
+            for split_metadata in split_metadata_list {
+                match index.stage_split(split_metadata) {
+                    Ok(()) => {}
+                    Err(MetastoreError::SplitsNotStaged { split_ids }) => {
+                        failed_split_ids.extend(split_ids);
+                    }
+                    Err(error) => return Err(error),
+                };
+            }
+
+            if !failed_split_ids.is_empty() {
+                Err(MetastoreError::SplitsNotStaged {
+                    split_ids: failed_split_ids,
+                })
+            } else {
+                Ok(true)
+            }
         })
         .await?;
         Ok(())
@@ -716,7 +732,7 @@ mod tests {
 
         // stage split
         metastore
-            .stage_split(index_id, split_metadata)
+            .stage_splits(index_id, vec![split_metadata])
             .await
             .unwrap();
 
@@ -793,7 +809,9 @@ mod tests {
             ..Default::default()
         };
         assert!(metastore.list_all_splits("test-index").await?.is_empty());
-        metastore.stage_split(index_id, split_metadata).await?;
+        metastore
+            .stage_splits(index_id, vec![split_metadata])
+            .await?;
         assert_eq!(metastore.list_all_splits(index_id).await?.len(), 1);
         Ok(())
     }
@@ -827,7 +845,9 @@ mod tests {
             .list_all_splits("test-index")
             .await?
             .is_empty());
-        metastore_wrt.stage_split(index_id, split_metadata).await?;
+        metastore_wrt
+            .stage_splits(index_id, vec![split_metadata])
+            .await?;
         assert!(metastore_read
             .list_all_splits("test-index")
             .await?
@@ -874,7 +894,7 @@ mod tests {
                 };
                 // stage split
                 metastore
-                    .stage_split(index_id, split_metadata)
+                    .stage_splits(index_id, vec![split_metadata])
                     .await
                     .unwrap();
 

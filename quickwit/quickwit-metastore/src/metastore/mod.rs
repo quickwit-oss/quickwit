@@ -130,30 +130,35 @@ pub trait Metastore: Send + Sync + 'static {
 
     // Split API
 
-    /// Stages a split.
+    /// Stages multiple splits.
+    ///
+    /// If a split already exists and is not in the `Staged` state, a `SplitsNotStaged` error
+    /// will be returned.
+    /// Attempting to re-stage any split which is not currently `Staged` is incorrect and should not
+    /// be attempted.
     ///
     /// A split needs to be staged before uploading any of its files to the storage.
-    /// An error will occur if an index that does not exist in the storage is specified, or if you
-    /// specify a split that already exists.
-    async fn stage_split(
+    /// An error will occur if an index that does not exist in the storage is specified.
+    async fn stage_splits(
         &self,
         index_id: &str,
-        split_metadata: SplitMetadata,
+        split_metadata_list: Vec<SplitMetadata>,
     ) -> MetastoreResult<()>;
 
-    /// Publishes a list of splits.
+    /// Publishes a set of staged splits while optionally marking another set of published splits
+    /// for deletion.
     ///
-    /// This API only updates the state of the split from [`SplitState::Staged`] to
+    /// This API merely updates the state of the staged splits from [`SplitState::Staged`] to
     /// [`SplitState::Published`]. At this point, the split files are assumed to have already
-    /// been uploaded. If the split is already published, this API call returns a success.
+    /// been uploaded.
     /// An error will occur if you specify an index or split that does not exist in the storage.
     ///
     /// This method can be used to advance the checkpoint, by supplying an empty array for
-    /// `split_ids`.
+    /// `staged_split_ids`.
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
-        split_ids: &[&'a str],
+        staged_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     ) -> MetastoreResult<()>;

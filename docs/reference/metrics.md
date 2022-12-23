@@ -56,7 +56,7 @@ All metastore methods are monitored by the 3 metrics:
 | `quickwit_metastore` | `request_errors_total` | Number of failed requests | [`operation`, `index`] | `counter` |
 | `quickwit_metastore` | `request_duration_seconds` | Duration of requests | [`operation`, `index`, `error`] | `histogram` |
 
-Examples of operation names: `create_index`, `index_metadata`, `delete_index`, `stage_split`, `publish_splits`, `list_splits`, `add_source`, ...
+Examples of operation names: `create_index`, `index_metadata`, `delete_index`, `stage_splits`, `publish_splits`, `list_splits`, `add_source`, ...
 
 ## Rest API Metrics
 

@@ -454,8 +454,8 @@ pub mod search_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = "/ Fetches the documents contents from the document store."]
-        #[doc = "/ This methods takes `PartialHit`s and returns `Hit`s."]
+        /// / Fetches the documents contents from the document store.
+        /// / This methods takes `PartialHit`s and returns `Hit`s.
         pub async fn fetch_docs(
             &mut self,
             request: impl tonic::IntoRequest<super::FetchDocsRequest>,
@@ -504,7 +504,7 @@ pub mod search_service_client {
 pub mod search_service_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with SearchServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with SearchServiceServer.
     #[async_trait]
     pub trait SearchService: Send + Sync + 'static {
         /// Root search API.
@@ -527,13 +527,13 @@ pub mod search_service_server {
             &self,
             request: tonic::Request<super::LeafSearchRequest>,
         ) -> Result<tonic::Response<super::LeafSearchResponse>, tonic::Status>;
-        #[doc = "/ Fetches the documents contents from the document store."]
-        #[doc = "/ This methods takes `PartialHit`s and returns `Hit`s."]
+        /// / Fetches the documents contents from the document store.
+        /// / This methods takes `PartialHit`s and returns `Hit`s.
         async fn fetch_docs(
             &self,
             request: tonic::Request<super::FetchDocsRequest>,
         ) -> Result<tonic::Response<super::FetchDocsResponse>, tonic::Status>;
-        ///Server streaming response type for the LeafSearchStream method.
+        /// Server streaming response type for the LeafSearchStream method.
         type LeafSearchStreamStream: futures_core::Stream<
                 Item = Result<super::LeafSearchStreamResponse, tonic::Status>,
             >
