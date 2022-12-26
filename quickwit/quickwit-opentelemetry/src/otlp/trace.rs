@@ -35,7 +35,88 @@ use tracing::error;
 
 use crate::otlp::extract_attributes;
 
-const TRACE_INDEX_ID: &str = "otel-trace-v0";
+pub const OTEL_TRACE_INDEX_ID: &str = "otel-trace-v0";
+
+pub const OTEL_TRACE_INDEX_CONFIG: &str = r#"
+version: 0.4
+
+index_id: otel-trace-v0
+
+doc_mapping:
+  mode: lenient
+  field_mappings:
+    - name: trace_id
+      type: bytes
+    - name: trace_state
+      type: text
+      indexed: false
+    - name: resource_attributes
+      type: json
+      tokenizer: raw
+    - name: resource_dropped_attributes_count
+      type: u64
+      indexed: false
+    - name: service_name
+      type: text
+      tokenizer: raw
+    - name: span_id
+      type: bytes
+    - name: span_kind
+      type: u64
+    - name: span_name
+      type: text
+      tokenizer: raw
+    - name: span_start_timestamp_secs
+      type: datetime
+      indexed: true
+      precision: seconds
+      fast: true
+      input_formats: [unix_timestamp]
+      output_format: unix_timestamp_secs
+    - name: span_start_timestamp_nanos
+      type: i64
+      indexed: false
+    - name: span_end_timestamp_nanos
+      type: i64
+      indexed: false
+    - name: span_duration_secs
+      type: i64
+      indexed: false
+    - name: span_attributes
+      type: json
+      tokenizer: raw
+    - name: span_dropped_attributes_count
+      type: u64
+      indexed: false
+    - name: span_dropped_events_count
+      type: u64
+      indexed: false
+    - name: span_dropped_links_count
+      type: u64
+      indexed: false
+    - name: span_status
+      type: json
+      indexed: false
+    - name: parent_span_id
+      type: bytes
+    - name: events
+      type: array<json>
+      tokenizer: raw
+    - name: links
+      type: array<json>
+      tokenizer: raw
+
+  timestamp_field: span_start_timestamp_secs
+
+  partition_key: service_name
+  max_num_partitions: 100
+
+indexing_settings:
+  commit_timeout_secs: 30
+
+search_settings:
+  default_search_fields: []
+"#;
 
 #[derive(Clone)]
 pub struct OtlpGrpcTraceService {
@@ -102,7 +183,7 @@ impl TraceService for OtlpGrpcTraceService {
     ) -> Result<tonic::Response<ExportTraceServiceResponse>, tonic::Status> {
         let request = request.into_inner();
         let mut doc_batch = DocBatch {
-            index_id: TRACE_INDEX_ID.to_string(),
+            index_id: OTEL_TRACE_INDEX_ID.to_string(),
             ..Default::default()
         };
         let mut num_spans = 0;
