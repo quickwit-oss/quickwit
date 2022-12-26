@@ -273,7 +273,7 @@ fn resolve_default_search_fields(
 
     for field_name in default_search_fields {
         let (field, suffix) = schema
-            .find_field(&field_name)
+            .find_field(field_name)
             .with_context(|| format!("Unknown default search field: `{}`", field_name))?;
 
         if !suffix.is_empty() {
@@ -283,8 +283,8 @@ fn resolve_default_search_fields(
                 FieldType::JsonObject(_) => {}
                 _ => {
                     bail!(
-                        "Field {} is not a JSON field. To search the non-json field `.` needs to be \
-                        escaped. ( {} )",
+                        "Field {} is not a JSON field. To search the non-json field `.` needs to \
+                         be escaped. ( {} )",
                         field_entry.name(),
                         field_name.replace('.', r"\.")
                     )
@@ -1335,7 +1335,8 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-        // default field "foo.bar" refers field "foo" whereas "foo\\.bar" would've refered to "foo.bar"
+        // default field "foo.bar" refers field "foo" whereas "foo\\.bar" would've refered to
+        // "foo.bar"
         builder.try_build().unwrap_err();
     }
 }
