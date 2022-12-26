@@ -38,7 +38,7 @@ azure_core = "0.5.0"
 azure_storage = "0.6.0"
 azure_storage_blobs = "0.6.0"
 backoff = { version = "0.4", features = ["tokio"] }
-base64 = "0.13"
+base64 = "0.20"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
 bytes = "1"
 chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "cd568ba" }
