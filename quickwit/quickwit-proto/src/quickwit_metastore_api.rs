@@ -1,77 +1,64 @@
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateIndexRequest {
     #[prost(string, tag = "2")]
     pub index_config_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateIndexResponse {}
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadatasRequest {}
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadatasResponse {
     #[prost(string, tag = "1")]
     pub indexes_metadatas_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteIndexRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteTasksResponse {}
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteIndexResponse {}
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexMetadataRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexMetadataResponse {
     #[prost(string, tag = "1")]
     pub index_metadata_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAllSplitsRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsRequest {
     #[prost(string, tag = "1")]
     pub filter_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsResponse {
     #[prost(string, tag = "1")]
     pub splits_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StageSplitsRequest {
     #[prost(string, tag = "1")]
@@ -80,7 +67,6 @@ pub struct StageSplitsRequest {
     pub split_metadata_list_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublishSplitsRequest {
     #[prost(string, tag = "1")]
@@ -95,7 +81,6 @@ pub struct PublishSplitsRequest {
     >,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MarkSplitsForDeletionRequest {
     #[prost(string, tag = "2")]
@@ -104,7 +89,6 @@ pub struct MarkSplitsForDeletionRequest {
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSplitsRequest {
     #[prost(string, tag = "2")]
@@ -113,11 +97,9 @@ pub struct DeleteSplitsRequest {
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitResponse {}
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddSourceRequest {
     #[prost(string, tag = "1")]
@@ -126,7 +108,6 @@ pub struct AddSourceRequest {
     pub source_config_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ToggleSourceRequest {
     #[prost(string, tag = "1")]
@@ -137,7 +118,6 @@ pub struct ToggleSourceRequest {
     pub enable: bool,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSourceRequest {
     #[prost(string, tag = "1")]
@@ -146,7 +126,6 @@ pub struct DeleteSourceRequest {
     pub source_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetSourceCheckpointRequest {
     #[prost(string, tag = "1")]
@@ -155,11 +134,9 @@ pub struct ResetSourceCheckpointRequest {
     pub source_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SourceResponse {}
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteTask {
     #[prost(int64, tag = "1")]
@@ -171,7 +148,6 @@ pub struct DeleteTask {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteQuery {
     /// / Index ID.
@@ -193,7 +169,6 @@ pub struct DeleteQuery {
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSplitsDeleteOpstampRequest {
     #[prost(string, tag = "1")]
@@ -204,25 +179,21 @@ pub struct UpdateSplitsDeleteOpstampRequest {
     pub delete_opstamp: u64,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSplitsDeleteOpstampResponse {}
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LastDeleteOpstampRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LastDeleteOpstampResponse {
     #[prost(uint64, tag = "1")]
     pub last_delete_opstamp: u64,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListStaleSplitsRequest {
     #[prost(string, tag = "1")]
@@ -233,7 +204,6 @@ pub struct ListStaleSplitsRequest {
     pub num_splits: u64,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksRequest {
     #[prost(string, tag = "1")]
@@ -242,7 +212,6 @@ pub struct ListDeleteTasksRequest {
     pub opstamp_start: u64,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksResponse {
     #[prost(message, repeated, tag = "1")]

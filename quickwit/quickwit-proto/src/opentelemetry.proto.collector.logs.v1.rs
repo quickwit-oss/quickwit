@@ -1,5 +1,4 @@
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsServiceRequest {
     /// An array of ResourceLogs.
@@ -13,7 +12,6 @@ pub struct ExportLogsServiceRequest {
     >,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsServiceResponse {
     /// The details of a partially successful export request.
@@ -35,7 +33,6 @@ pub struct ExportLogsServiceResponse {
     pub partial_success: ::core::option::Option<ExportLogsPartialSuccess>,
 }
 #[derive(Serialize, Deserialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsPartialSuccess {
     /// The number of rejected log records.

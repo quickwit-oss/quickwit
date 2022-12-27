@@ -1603,14 +1603,13 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 
 [[package]]
 name = "fastfield_codecs"
-version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.3.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
  "fastdivide",
  "itertools",
  "log",
  "measure_time",
- "ownedbytes",
  "prettytable-rs",
  "rand 0.8.5",
  "tantivy-bitpacker",
@@ -2797,7 +2796,7 @@ dependencies = [
 [[package]]
 name = "mrecordlog"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/mrecordlog?rev=11dcabb2bdf8b93fde30c597d4f41245ca9b8eda#11dcabb2bdf8b93fde30c597d4f41245ca9b8eda"
+source = "git+https://github.com/quickwit-oss/mrecordlog?rev=8b0e0cfacbbbfc9a544011b01380d689a6c7a3ae#8b0e0cfacbbbfc9a544011b01380d689a6c7a3ae"
 dependencies = [
  "async-trait",
  "crc32fast",
@@ -3280,8 +3279,8 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 
 [[package]]
 name = "ownedbytes"
-version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.5.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -4262,6 +4261,7 @@ dependencies = [
  "once_cell",
  "quickwit-actors",
  "quickwit-common",
+ "quickwit-config",
  "quickwit-proto",
  "rand 0.8.5",
  "rand_distr",
@@ -5973,8 +5973,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy"
-version = "0.19.0-dev"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.19.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -5983,7 +5983,6 @@ dependencies = [
  "bitpacking",
  "byteorder",
  "census",
- "ciborium",
  "crc32fast",
  "crossbeam-channel",
  "downcast-rs",
@@ -6003,7 +6002,6 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "oneshot",
- "ownedbytes",
  "rayon",
  "regex",
  "rust-stemmers",
@@ -6011,11 +6009,12 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
- "stable_deref_trait",
  "tantivy-bitpacker",
  "tantivy-common",
  "tantivy-fst",
  "tantivy-query-grammar",
+ "tantivy-sstable",
+ "tantivy-stacker",
  "tempfile",
  "thiserror",
  "time 0.3.17",
@@ -6026,14 +6025,15 @@ dependencies = [
 
 [[package]]
 name = "tantivy-bitpacker"
-version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.3.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 
 [[package]]
 name = "tantivy-common"
-version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.5.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
+ "async-trait",
  "byteorder",
  "ownedbytes",
 ]
@@ -6051,12 +6051,33 @@ dependencies = [
 
 [[package]]
 name = "tantivy-query-grammar"
-version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=1119e59e#1119e59eae11f196938c52e749664b5afe0585b4"
+version = "0.19.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
 dependencies = [
  "combine",
  "once_cell",
  "regex",
+]
+
+[[package]]
+name = "tantivy-sstable"
+version = "0.1.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
+dependencies = [
+ "ciborium",
+ "serde",
+ "tantivy-common",
+ "tantivy-fst",
+]
+
+[[package]]
+name = "tantivy-stacker"
+version = "0.1.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=bc95900#bc959006fa3b20434ae891c89741d0a24faad039"
+dependencies = [
+ "byteorder",
+ "murmurhash32",
+ "tantivy-common",
 ]
 
 [[package]]

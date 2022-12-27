@@ -179,7 +179,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{IndexConfig, IndexerConfig};
+    use quickwit_config::{IndexConfig, IndexerConfig, IngestApiConfig};
     use quickwit_ingest_api::{init_ingest_api, QUEUES_DIR_NAME};
     use quickwit_metastore::quickwit_metastore_uri_resolver;
     use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
@@ -204,7 +204,8 @@ mod tests {
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
-        let ingest_api_service = init_ingest_api(&universe, &queues_dir_path).await?;
+        let ingest_api_service =
+            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default()).await?;
         let create_queue_req = CreateQueueIfNotExistsRequest {
             queue_id: index_id.clone(),
         };

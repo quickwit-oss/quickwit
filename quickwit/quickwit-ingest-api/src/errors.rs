@@ -38,6 +38,8 @@ pub enum IngestApiError {
     IoError { msg: String },
     #[error("Invalid position: {0}.")]
     InvalidPosition(String),
+    #[error("Rate limited")]
+    RateLimited,
 }
 
 impl From<io::Error> for IngestApiError {
@@ -57,6 +59,7 @@ impl ServiceError for IngestApiError {
             IngestApiError::IngestAPIServiceDown => ServiceErrorCode::Internal,
             IngestApiError::IoError { .. } => ServiceErrorCode::Internal,
             IngestApiError::InvalidPosition(_) => ServiceErrorCode::BadRequest,
+            IngestApiError::RateLimited => ServiceErrorCode::RateLimited,
         }
     }
 }
@@ -82,6 +85,7 @@ impl From<IngestApiError> for tonic::Status {
             IngestApiError::IngestAPIServiceDown => tonic::Code::Internal,
             IngestApiError::IoError { .. } => tonic::Code::Internal,
             IngestApiError::InvalidPosition(_) => tonic::Code::InvalidArgument,
+            IngestApiError::RateLimited => tonic::Code::ResourceExhausted,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)

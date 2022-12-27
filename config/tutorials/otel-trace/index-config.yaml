@@ -11,8 +11,7 @@ doc_mapping:
   mode: lenient
   field_mappings:
     - name: trace_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: trace_state
       type: text
       indexed: false
@@ -26,8 +25,7 @@ doc_mapping:
       type: text
       tokenizer: raw
     - name: span_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: span_kind
       type: u64
     - name: span_name
@@ -65,8 +63,7 @@ doc_mapping:
       type: json
       indexed: false
     - name: parent_span_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: events
       type: array<json>
       tokenizer: raw
