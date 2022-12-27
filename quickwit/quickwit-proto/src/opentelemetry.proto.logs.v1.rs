@@ -9,6 +9,7 @@
 /// When new fields are added into this message, the OTLP request MUST be updated
 /// as well.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LogsData {
     /// An array of ResourceLogs.
@@ -21,6 +22,7 @@ pub struct LogsData {
 }
 /// A collection of ScopeLogs from a Resource.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResourceLogs {
     /// The resource for the logs in this message.
@@ -37,6 +39,7 @@ pub struct ResourceLogs {
 }
 /// A collection of Logs produced by a Scope.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScopeLogs {
     /// The instrumentation scope information for the logs in this message.
@@ -54,6 +57,7 @@ pub struct ScopeLogs {
 /// A log record according to OpenTelemetry Log Data Model:
 /// <https://github.com/open-telemetry/oteps/blob/main/text/logs/0097-log-data-model.md>
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LogRecord {
     /// time_unix_nano is the time when the event occurred.
@@ -184,6 +188,37 @@ impl SeverityNumber {
             SeverityNumber::Fatal4 => "SEVERITY_NUMBER_FATAL4",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SEVERITY_NUMBER_UNSPECIFIED" => Some(Self::Unspecified),
+            "SEVERITY_NUMBER_TRACE" => Some(Self::Trace),
+            "SEVERITY_NUMBER_TRACE2" => Some(Self::Trace2),
+            "SEVERITY_NUMBER_TRACE3" => Some(Self::Trace3),
+            "SEVERITY_NUMBER_TRACE4" => Some(Self::Trace4),
+            "SEVERITY_NUMBER_DEBUG" => Some(Self::Debug),
+            "SEVERITY_NUMBER_DEBUG2" => Some(Self::Debug2),
+            "SEVERITY_NUMBER_DEBUG3" => Some(Self::Debug3),
+            "SEVERITY_NUMBER_DEBUG4" => Some(Self::Debug4),
+            "SEVERITY_NUMBER_INFO" => Some(Self::Info),
+            "SEVERITY_NUMBER_INFO2" => Some(Self::Info2),
+            "SEVERITY_NUMBER_INFO3" => Some(Self::Info3),
+            "SEVERITY_NUMBER_INFO4" => Some(Self::Info4),
+            "SEVERITY_NUMBER_WARN" => Some(Self::Warn),
+            "SEVERITY_NUMBER_WARN2" => Some(Self::Warn2),
+            "SEVERITY_NUMBER_WARN3" => Some(Self::Warn3),
+            "SEVERITY_NUMBER_WARN4" => Some(Self::Warn4),
+            "SEVERITY_NUMBER_ERROR" => Some(Self::Error),
+            "SEVERITY_NUMBER_ERROR2" => Some(Self::Error2),
+            "SEVERITY_NUMBER_ERROR3" => Some(Self::Error3),
+            "SEVERITY_NUMBER_ERROR4" => Some(Self::Error4),
+            "SEVERITY_NUMBER_FATAL" => Some(Self::Fatal),
+            "SEVERITY_NUMBER_FATAL2" => Some(Self::Fatal2),
+            "SEVERITY_NUMBER_FATAL3" => Some(Self::Fatal3),
+            "SEVERITY_NUMBER_FATAL4" => Some(Self::Fatal4),
+            _ => None,
+        }
+    }
 }
 /// Masks for LogRecord.flags field.
 #[derive(Serialize, Deserialize)]
@@ -204,6 +239,14 @@ impl LogRecordFlags {
             LogRecordFlags::LogRecordFlagTraceFlagsMask => {
                 "LOG_RECORD_FLAG_TRACE_FLAGS_MASK"
             }
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "LOG_RECORD_FLAG_UNSPECIFIED" => Some(Self::LogRecordFlagUnspecified),
+            "LOG_RECORD_FLAG_TRACE_FLAGS_MASK" => Some(Self::LogRecordFlagTraceFlagsMask),
+            _ => None,
         }
     }
 }

@@ -1,3 +1,4 @@
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KeyValue {
     #[prost(string, tag = "1")]
@@ -15,6 +16,7 @@ pub struct KeyValue {
     #[prost(bytes = "vec", tag = "7")]
     pub v_binary: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Log {
     #[prost(message, optional, tag = "1")]
@@ -22,6 +24,7 @@ pub struct Log {
     #[prost(message, repeated, tag = "2")]
     pub fields: ::prost::alloc::vec::Vec<KeyValue>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SpanRef {
     #[prost(bytes = "vec", tag = "1")]
@@ -31,6 +34,7 @@ pub struct SpanRef {
     #[prost(enumeration = "SpanRefType", tag = "3")]
     pub ref_type: i32,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Process {
     #[prost(string, tag = "1")]
@@ -38,6 +42,7 @@ pub struct Process {
     #[prost(message, repeated, tag = "2")]
     pub tags: ::prost::alloc::vec::Vec<KeyValue>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Span {
     #[prost(bytes = "vec", tag = "1")]
@@ -65,6 +70,7 @@ pub struct Span {
     #[prost(string, repeated, tag = "12")]
     pub warnings: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Trace {
     #[prost(message, repeated, tag = "1")]
@@ -76,6 +82,7 @@ pub struct Trace {
 }
 /// Nested message and enum types in `Trace`.
 pub mod trace {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ProcessMapping {
         #[prost(string, tag = "1")]
@@ -93,6 +100,7 @@ pub mod trace {
 /// semantics, both Batch and Spans in the same message may contain
 /// their own instances of Process, with span.Process taking priority
 /// over batch.Process.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Batch {
     #[prost(message, repeated, tag = "1")]
@@ -100,6 +108,7 @@ pub struct Batch {
     #[prost(message, optional, tag = "2")]
     pub process: ::core::option::Option<Process>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DependencyLink {
     #[prost(string, tag = "1")]
@@ -134,6 +143,17 @@ impl ValueType {
             ValueType::Binary => "BINARY",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "STRING" => Some(Self::String),
+            "BOOL" => Some(Self::Bool),
+            "INT64" => Some(Self::Int64),
+            "FLOAT64" => Some(Self::Float64),
+            "BINARY" => Some(Self::Binary),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -150,6 +170,14 @@ impl SpanRefType {
         match self {
             SpanRefType::ChildOf => "CHILD_OF",
             SpanRefType::FollowsFrom => "FOLLOWS_FROM",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CHILD_OF" => Some(Self::ChildOf),
+            "FOLLOWS_FROM" => Some(Self::FollowsFrom),
+            _ => None,
         }
     }
 }
