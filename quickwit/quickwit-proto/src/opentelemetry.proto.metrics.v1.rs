@@ -714,6 +714,15 @@ impl AggregationTemporality {
             AggregationTemporality::Cumulative => "AGGREGATION_TEMPORALITY_CUMULATIVE",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "AGGREGATION_TEMPORALITY_UNSPECIFIED" => Some(Self::Unspecified),
+            "AGGREGATION_TEMPORALITY_DELTA" => Some(Self::Delta),
+            "AGGREGATION_TEMPORALITY_CUMULATIVE" => Some(Self::Cumulative),
+            _ => None,
+        }
+    }
 }
 /// DataPointFlags is defined as a protobuf 'uint32' type and is to be used as a
 /// bit-field representing 32 distinct boolean flags.  Each flag defined in this
@@ -741,6 +750,14 @@ impl DataPointFlags {
         match self {
             DataPointFlags::FlagNone => "FLAG_NONE",
             DataPointFlags::FlagNoRecordedValue => "FLAG_NO_RECORDED_VALUE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "FLAG_NONE" => Some(Self::FlagNone),
+            "FLAG_NO_RECORDED_VALUE" => Some(Self::FlagNoRecordedValue),
+            _ => None,
         }
     }
 }

@@ -173,9 +173,9 @@ typetag = "0.2"
 ulid = "1.0"
 username = "0.2"
 uuid = { version = "1.2", features = ["v4", "serde"] }
-value = { git = "https://github.com/quickwit-oss/vector", rev = "83b78e3" } # vrl-value
-vrl = { git = "https://github.com/quickwit-oss/vector", rev = "83b78e3" }
-vrl-stdlib = { git = "https://github.com/quickwit-oss/vector", rev = "83b78e3" }
+value = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" } # vrl-value
+vrl = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" }
+vrl-stdlib = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" }
 warp = "0.3"
 
 quickwit-actors = { version = "0.4.0", path = "./quickwit-actors" }

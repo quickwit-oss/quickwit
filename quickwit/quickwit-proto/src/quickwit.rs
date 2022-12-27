@@ -322,6 +322,14 @@ impl SortOrder {
             SortOrder::Desc => "DESC",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ASC" => Some(Self::Asc),
+            "DESC" => Some(Self::Desc),
+            _ => None,
+        }
+    }
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -346,6 +354,14 @@ impl OutputFormat {
         match self {
             OutputFormat::Csv => "CSV",
             OutputFormat::ClickHouseRowBinary => "CLICK_HOUSE_ROW_BINARY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CSV" => Some(Self::Csv),
+            "CLICK_HOUSE_ROW_BINARY" => Some(Self::ClickHouseRowBinary),
+            _ => None,
         }
     }
 }

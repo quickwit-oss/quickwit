@@ -143,6 +143,17 @@ impl ValueType {
             ValueType::Binary => "BINARY",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "STRING" => Some(Self::String),
+            "BOOL" => Some(Self::Bool),
+            "INT64" => Some(Self::Int64),
+            "FLOAT64" => Some(Self::Float64),
+            "BINARY" => Some(Self::Binary),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -159,6 +170,14 @@ impl SpanRefType {
         match self {
             SpanRefType::ChildOf => "CHILD_OF",
             SpanRefType::FollowsFrom => "FOLLOWS_FROM",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CHILD_OF" => Some(Self::ChildOf),
+            "FOLLOWS_FROM" => Some(Self::FollowsFrom),
+            _ => None,
         }
     }
 }
