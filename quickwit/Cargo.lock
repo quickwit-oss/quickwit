@@ -3247,6 +3247,7 @@ dependencies = [
  "futures",
  "hyper-rustls",
  "once_cell",
+ "quickwit-actors",
  "rand 0.8.5",
  "rusoto_core",
  "rusoto_kinesis",

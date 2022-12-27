@@ -32,6 +32,7 @@ use std::fmt;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use tokio::time::Duration;
 mod actor;
+mod actor_context;
 mod actor_handle;
 mod actor_state;
 #[doc(hidden)]
@@ -45,6 +46,8 @@ mod scheduler;
 mod spawn_builder;
 mod supervisor;
 
+pub use scheduler::{start_scheduler, SchedulerClient};
+
 #[cfg(test)]
 pub(crate) mod tests;
 mod universe;
@@ -53,17 +56,17 @@ pub use actor::{Actor, ActorExitStatus, Handler};
 pub use actor_handle::{ActorHandle, Health, Healthz, Supervisable};
 pub use command::Command;
 pub use observation::{Observation, ObservationType};
-use quickwit_common::{KillSwitch, Progress, ProtectedZoneGuard};
-pub(crate) use scheduler::Scheduler;
+use quickwit_common::KillSwitch;
 use thiserror::Error;
 pub use universe::Universe;
 
-pub use self::actor::ActorContext;
+pub use self::actor_context::ActorContext;
 pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError, TrySendError};
-pub use self::mailbox::{create_mailbox, create_test_mailbox, Inbox, Mailbox};
+pub use self::mailbox::{Inbox, Mailbox};
 pub use self::registry::ActorObservation;
 pub use self::supervisor::{Supervisor, SupervisorState};
+pub use crate::spawn_builder::SpawnContext;
 
 /// Heartbeat used to verify that actors are progressing.
 ///

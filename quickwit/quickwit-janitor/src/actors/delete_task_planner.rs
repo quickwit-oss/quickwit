@@ -398,7 +398,7 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{create_test_mailbox, ActorState, Universe};
+    use quickwit_actors::{ActorState, Universe};
     use quickwit_config::build_doc_mapper;
     use quickwit_indexing::merge_policy::{MergeOperation, NopMergePolicy};
     use quickwit_indexing::TestSandbox;
@@ -413,6 +413,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_task_planner() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
         let index_id = "test-delete-task-planner";
         let doc_mapping_yaml = r#"
             field_mappings:
@@ -493,7 +494,7 @@ mod tests {
             },
         );
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
-        let (downloader_mailbox, downloader_inbox) = create_test_mailbox();
+        let (downloader_mailbox, downloader_inbox) = universe.create_test_mailbox();
         let delete_planner_executor = DeleteTaskPlanner::new(
             index_id.to_string(),
             index_config.index_uri.clone(),
@@ -503,7 +504,6 @@ mod tests {
             Arc::new(NopMergePolicy),
             downloader_mailbox,
         );
-        let universe = Universe::new();
         let (delete_planner_mailbox, delete_planner_handle) =
             universe.spawn_builder().spawn(delete_planner_executor);
         delete_planner_handle.process_pending_and_observe().await;

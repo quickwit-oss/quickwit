@@ -30,6 +30,7 @@ use tokio::sync::oneshot;
 
 use crate::channel_with_priority::{Receiver, Sender, TrySendError};
 use crate::envelope::{wrap_in_envelope, Envelope};
+use crate::scheduler::SchedulerClient;
 use crate::{
     Actor, ActorContext, ActorExitStatus, AskError, Handler, QueueCapacity, RecvError, SendError,
 };
@@ -126,10 +127,15 @@ impl<A: Actor> Mailbox<A> {
     pub fn id(&self) -> &str {
         &self.inner.instance_id
     }
+
+    pub(crate) fn scheduler_client(&self) -> &SchedulerClient {
+        &self.inner.scheduler_client
+    }
 }
 
-pub(crate) struct Inner<A: Actor> {
+struct Inner<A: Actor> {
     pub(crate) tx: Sender<Envelope<A>>,
+    scheduler_client: SchedulerClient,
     instance_id: String,
 }
 
@@ -178,7 +184,7 @@ impl<A: Actor> Mailbox<A> {
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
-        let (envelope, response_rx) = wrap_in_envelope(message);
+        let (envelope, response_rx) = self.wrap_in_envelope(message);
         self.inner
             .tx
             .try_send_low_priority(envelope)
@@ -195,6 +201,15 @@ impl<A: Actor> Mailbox<A> {
         Ok(response_rx)
     }
 
+    fn wrap_in_envelope<M>(&self, message: M) -> (Envelope<A>, oneshot::Receiver<A::Reply>)
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let guard = self.inner.scheduler_client.no_advance_time_guard();
+        wrap_in_envelope(message, guard)
+    }
+
     /// Sends a message to the actor owning the associated inbox.
     ///
     /// If the actor experiences some backpressure, then
@@ -209,7 +224,7 @@ impl<A: Actor> Mailbox<A> {
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
-        let (envelope, response_rx) = wrap_in_envelope(message);
+        let (envelope, response_rx) = self.wrap_in_envelope(message);
         if let Some(backpressure_micros_counter) = backpressure_micros_counter_opt {
             match self.inner.tx.try_send_low_priority(envelope) {
                 Ok(()) => Ok(response_rx),
@@ -233,7 +248,7 @@ impl<A: Actor> Mailbox<A> {
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
-        let (envelope, _response_rx) = wrap_in_envelope(message);
+        let (envelope, _response_rx) = self.wrap_in_envelope(message);
         self.inner.tx.send_high_priority(envelope)
     }
 
@@ -312,6 +327,14 @@ impl<A: Actor> Inbox<A> {
         self.rx.recv().await
     }
 
+    pub async fn recv_typed_message<M: 'static>(&self) -> Option<M> {
+        while let Ok(mut envelope) = self.rx.recv().await {
+            if let Some(msg) = envelope.message_typed() {
+                return Some(msg);
+            }
+        }
+        None
+    }
     pub(crate) async fn recv_cmd_and_scheduled_msg_only(&self) -> Envelope<A> {
         self.rx.recv_high_priority().await
     }
@@ -353,9 +376,10 @@ impl<A: Actor> Inbox<A> {
     }
 }
 
-pub fn create_mailbox<A: Actor>(
+pub(crate) fn create_mailbox<A: Actor>(
     actor_name: String,
     queue_capacity: QueueCapacity,
+    scheduler_client: SchedulerClient,
 ) -> (Mailbox<A>, Inbox<A>) {
     let (tx, rx) = crate::channel_with_priority::channel(queue_capacity);
     let ref_count = Arc::new(AtomicUsize::new(1));
@@ -363,15 +387,12 @@ pub fn create_mailbox<A: Actor>(
         inner: Arc::new(Inner {
             tx,
             instance_id: quickwit_common::new_coolid(&actor_name),
+            scheduler_client,
         }),
         ref_count,
     };
     let inbox = Inbox { rx: Arc::new(rx) };
     (mailbox, inbox)
-}
-
-pub fn create_test_mailbox<A: Actor>() -> (Mailbox<A>, Inbox<A>) {
-    create_mailbox("test-mailbox".to_string(), QueueCapacity::Unbounded)
 }
 
 pub struct WeakMailbox<A: Actor> {
@@ -396,16 +417,18 @@ mod tests {
     use crate::tests::{Ping, PingReceiverActor};
     use crate::Universe;
 
-    #[test]
-    fn test_weak_mailbox_downgrade_upgrade() {
-        let (mailbox, _inbox) = create_test_mailbox::<PingReceiverActor>();
+    #[tokio::test]
+    async fn test_weak_mailbox_downgrade_upgrade() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox::<PingReceiverActor>();
         let weak_mailbox = mailbox.downgrade();
         assert!(weak_mailbox.upgrade().is_some());
     }
 
-    #[test]
-    fn test_weak_mailbox_failing_upgrade() {
-        let (mailbox, _inbox) = create_test_mailbox::<PingReceiverActor>();
+    #[tokio::test]
+    async fn test_weak_mailbox_failing_upgrade() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox::<PingReceiverActor>();
         let weak_mailbox = mailbox.downgrade();
         drop(mailbox);
         assert!(weak_mailbox.upgrade().is_none());
@@ -526,12 +549,11 @@ mod tests {
         assert_eq!(backpressure_micros_counter.get(), 0);
     }
 
-    #[test]
-    fn test_try_send() {
-        let (mailbox, _inbox) = super::create_mailbox::<PingReceiverActor>(
-            "hello".to_string(),
-            QueueCapacity::Bounded(1),
-        );
+    #[tokio::test]
+    async fn test_try_send() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe
+            .create_mailbox::<PingReceiverActor>("hello".to_string(), QueueCapacity::Bounded(1));
         assert!(mailbox.try_send_message(Ping).is_ok());
         assert!(matches!(
             mailbox.try_send_message(Ping).unwrap_err(),
@@ -539,12 +561,11 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_try_send_disconnect() {
-        let (mailbox, inbox) = super::create_mailbox::<PingReceiverActor>(
-            "hello".to_string(),
-            QueueCapacity::Bounded(1),
-        );
+    #[tokio::test]
+    async fn test_try_send_disconnect() {
+        let universe = Universe::new();
+        let (mailbox, inbox) = universe
+            .create_mailbox::<PingReceiverActor>("hello".to_string(), QueueCapacity::Bounded(1));
         assert!(mailbox.try_send_message(Ping).is_ok());
         mem::drop(inbox);
         assert!(matches!(
