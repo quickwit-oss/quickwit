@@ -20,6 +20,7 @@
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
 #![deny(clippy::disallowed_methods)]
+#![allow(rustdoc::invalid_html_tags)]
 
 //! `quickwit-metastore` is the abstraction used in quickwit to interface itself to different
 //! metastore:
