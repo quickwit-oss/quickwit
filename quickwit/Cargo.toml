@@ -38,7 +38,7 @@ azure_core = "0.5.0"
 azure_storage = "0.6.0"
 azure_storage_blobs = "0.6.0"
 backoff = { version = "0.4", features = ["tokio"] }
-base64 = "0.13"
+base64 = "0.20"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
 bytes = "1"
 chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "cd568ba" }
@@ -82,7 +82,7 @@ matches = "0.1.9"
 md5 = "0.7"
 mime_guess = "2.0.4"
 mockall = "0.11"
-mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev="11dcabb2bdf8b93fde30c597d4f41245ca9b8eda" }
+mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev="8b0e0cfacbbbfc9a544011b01380d689a6c7a3ae" }
 new_string_template = "1.4.0"
 num_cpus = "1"
 nom = "7.1.1"
@@ -195,14 +195,14 @@ quickwit-serve = { version = "0.4.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.4.0", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.4.0", path = "./quickwit-telemetry" }
 
-fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "1119e59e" }
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "1119e59e", default-features = false, features = [
+fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "bc95900" }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "bc95900", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
   "quickwit",
 ] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "1119e59e" }
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "bc95900" }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.
@@ -210,4 +210,3 @@ encoding_rs = "=0.8.29"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }
-

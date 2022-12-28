@@ -52,7 +52,7 @@ pub use source_config::{
 use tracing::warn;
 
 pub use crate::quickwit_config::{
-    IndexerConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH,
+    IndexerConfig, IngestApiConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH,
 };
 
 fn is_false(val: &bool) -> bool {
