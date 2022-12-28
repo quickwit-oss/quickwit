@@ -229,7 +229,7 @@ pub mod test_suite {
     pub async fn test_metastore_add_source<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = append_random_suffix("test-metastore-add-source");
+        let index_id = append_random_suffix("test-add-source");
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -291,7 +291,7 @@ pub mod test_suite {
     pub async fn test_metastore_toggle_source<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = append_random_suffix("test-metastore-toggle-source");
+        let index_id = append_random_suffix("test-toggle-source");
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -336,7 +336,7 @@ pub mod test_suite {
     pub async fn test_metastore_delete_source<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = append_random_suffix("test-metastore-delete-source");
+        let index_id = append_random_suffix("test-delete-source");
         let index_uri = format!("ram:///indexes/{index_id}");
         let source_id = "test-metastore-delete-source--void-source-id";
 
@@ -377,7 +377,7 @@ pub mod test_suite {
     pub async fn test_metastore_reset_checkpoint<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = append_random_suffix("test-metastore-reset-checkpoint");
+        let index_id = append_random_suffix("test-reset-checkpoint");
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -455,7 +455,7 @@ pub mod test_suite {
     >() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = append_random_suffix("publish-splits-empty-index");
+        let index_id = append_random_suffix("test-publish-splits-empty");
         let index_uri = format!("ram:///indexes/{index_id}");
 
         let source_id = format!("{index_id}--source");
@@ -527,11 +527,8 @@ pub mod test_suite {
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_1.to_string(),
-            index_id: index_id.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_1.clone(),
+            index_id: index_id.clone(),
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -539,11 +536,8 @@ pub mod test_suite {
 
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_2.to_string(),
-            index_id: index_id.to_string(),
-            num_docs: 5,
-            uncompressed_docs_size_in_bytes: 6,
+            split_id: split_id_2.clone(),
+            index_id: index_id.clone(),
             time_range: Some(30..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -989,17 +983,14 @@ pub mod test_suite {
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let index_id = append_random_suffix("test-metastore-replace-splits");
+        let index_id = append_random_suffix("test-replace-splits");
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
-            footer_offsets: 1000..2000,
             split_id: split_id_1.clone(),
             index_id: index_id.clone(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
             time_range: None,
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1007,11 +998,8 @@ pub mod test_suite {
 
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
-            footer_offsets: 1000..2000,
             split_id: split_id_2.clone(),
             index_id: index_id.clone(),
-            num_docs: 5,
-            uncompressed_docs_size_in_bytes: 6,
             time_range: None,
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1019,11 +1007,8 @@ pub mod test_suite {
 
         let split_id_3 = format!("{index_id}--split-3");
         let split_metadata_3 = SplitMetadata {
-            footer_offsets: 1000..2000,
             split_id: split_id_3.clone(),
             index_id: index_id.clone(),
-            num_docs: 5,
-            uncompressed_docs_size_in_bytes: 6,
             time_range: None,
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1034,8 +1019,8 @@ pub mod test_suite {
             let error = metastore
                 .publish_splits(
                     "index-not-found",
-                    &["split-not-found-one"],
-                    &["split-not-found-two"],
+                    &["split-not-found-1"],
+                    &["split-not-found-2"],
                     None,
                 )
                 .await
@@ -1078,7 +1063,7 @@ pub mod test_suite {
 
             // TODO Source id
             let error = metastore
-                .publish_splits(&index_id, &[&split_id_1], &[&split_id_2], None)
+                .publish_splits(&index_id, &[&split_id_2], &[&split_id_1], None)
                 .await
                 .unwrap_err();
             assert!(matches!(error, MetastoreError::SplitsDoNotExist { .. }));
@@ -1412,114 +1397,95 @@ pub mod test_suite {
     pub async fn test_metastore_list_all_splits<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-
-        let index_id = append_random_suffix("list-all-splits-index");
+        let index_id = append_random_suffix("test-list-all-splits");
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_1.to_string(),
-            index_id: index_id.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
-            time_range: Some(0..=99),
-            create_timestamp: current_timestamp,
+            split_id: split_id_1.clone(),
+            index_id: index_id.clone(),
             ..Default::default()
         };
-
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_2.to_string(),
-            index_id: index_id.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
-            time_range: Some(100..=199),
-            create_timestamp: current_timestamp,
+            split_id: split_id_2.clone(),
+            index_id: index_id.clone(),
             ..Default::default()
         };
-
         let split_id_3 = format!("{index_id}--split-3");
         let split_metadata_3 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_3.to_string(),
-            index_id: index_id.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
-            time_range: Some(200..=299),
-            create_timestamp: current_timestamp,
+            split_id: split_id_3.clone(),
+            index_id: index_id.clone(),
             ..Default::default()
         };
-
         let split_id_4 = format!("{index_id}--split-4");
         let split_metadata_4 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_4.to_string(),
-            index_id: index_id.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
-            time_range: Some(300..=399),
-            create_timestamp: current_timestamp,
+            split_id: split_id_4.clone(),
+            index_id: index_id.clone(),
             ..Default::default()
         };
-
         let split_id_5 = format!("{index_id}--split-5");
         let split_metadata_5 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_5.to_string(),
-            index_id: index_id.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
-            time_range: None,
-            create_timestamp: current_timestamp,
+            split_id: split_id_5.clone(),
+            index_id: index_id.clone(),
+            ..Default::default()
+        };
+        let split_id_6 = format!("{index_id}--split-6");
+        let split_metadata_6 = SplitMetadata {
+            split_id: split_id_6.clone(),
+            index_id: index_id.clone(),
             ..Default::default()
         };
 
-        // List all splits on a non-existent index
-        {
-            let error = metastore
-                .list_all_splits("index-not-found")
-                .await
-                .unwrap_err();
-            assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
-        }
+        let error = metastore
+            .list_all_splits("index-not-found")
+            .await
+            .unwrap_err();
+        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
 
-        // List all splits on an index
-        {
-            metastore.create_index(index_config).await.unwrap();
+        metastore.create_index(index_config).await.unwrap();
 
-            metastore
-                .stage_splits(
-                    &index_id,
-                    vec![
-                        split_metadata_1,
-                        split_metadata_2,
-                        split_metadata_3,
-                        split_metadata_4,
-                        split_metadata_5,
-                    ],
-                )
-                .await
-                .unwrap();
+        metastore
+            .stage_splits(
+                &index_id,
+                vec![
+                    split_metadata_1,
+                    split_metadata_2,
+                    split_metadata_3,
+                    split_metadata_4,
+                    split_metadata_5,
+                    split_metadata_6,
+                ],
+            )
+            .await
+            .unwrap();
 
-            let splits = metastore.list_all_splits(&index_id).await.unwrap();
-            let split_ids = collect_split_ids(&splits);
-            assert_eq!(
-                split_ids,
-                &[
-                    &split_id_1,
-                    &split_id_2,
-                    &split_id_3,
-                    &split_id_4,
-                    &split_id_5
-                ]
-            );
+        metastore
+            .publish_splits(&index_id, &[&split_id_1, &split_id_2], &[], None)
+            .await
+            .unwrap();
 
-            cleanup_index(&metastore, &index_id).await;
-        }
+        metastore
+            .mark_splits_for_deletion(&index_id, &[&split_id_3, &split_id_4])
+            .await
+            .unwrap();
+
+        let splits = metastore.list_all_splits(&index_id).await.unwrap();
+        let split_ids = collect_split_ids(&splits);
+        assert_eq!(
+            split_ids,
+            &[
+                &split_id_1,
+                &split_id_2,
+                &split_id_3,
+                &split_id_4,
+                &split_id_5,
+                &split_id_6
+            ]
+        );
+
+        cleanup_index(&metastore, &index_id).await;
     }
 
     pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -1527,18 +1493,14 @@ pub mod test_suite {
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let index_id = append_random_suffix("list-splits-index");
+        let index_id = append_random_suffix("test-list-splits");
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_1.to_string(),
-            index_id: index_id.to_string(),
-            partition_id: 3u64,
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_1.clone(),
+            index_id: index_id.clone(),
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             tags: to_btree_set(&["tag!", "tag:foo", "tag:bar"]),
@@ -1548,12 +1510,8 @@ pub mod test_suite {
 
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_2.to_string(),
-            index_id: index_id.to_string(),
-            partition_id: 3u64,
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_2.clone(),
+            index_id: index_id.clone(),
             time_range: Some(100..=199),
             create_timestamp: current_timestamp,
             tags: to_btree_set(&["tag!", "tag:bar"]),
@@ -1563,12 +1521,8 @@ pub mod test_suite {
 
         let split_id_3 = format!("{index_id}--split-3");
         let split_metadata_3 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_3.to_string(),
-            index_id: index_id.to_string(),
-            partition_id: 3u64,
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_3.clone(),
+            index_id: index_id.clone(),
             time_range: Some(200..=299),
             create_timestamp: current_timestamp,
             tags: to_btree_set(&["tag!", "tag:foo", "tag:baz"]),
@@ -1578,12 +1532,8 @@ pub mod test_suite {
 
         let split_id_4 = format!("{index_id}--split-4");
         let split_metadata_4 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_4.to_string(),
-            index_id: index_id.to_string(),
-            partition_id: 3u64,
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_4.clone(),
+            index_id: index_id.clone(),
             time_range: Some(300..=399),
             tags: to_btree_set(&["tag!", "tag:foo"]),
             delete_opstamp: 7,
@@ -1592,12 +1542,8 @@ pub mod test_suite {
 
         let split_id_5 = format!("{index_id}--split-5");
         let split_metadata_5 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_5.to_string(),
-            index_id: index_id.to_string(),
-            partition_id: 3u64,
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_5.clone(),
+            index_id: index_id.clone(),
             time_range: None,
             create_timestamp: current_timestamp,
             tags: to_btree_set(&["tag!", "tag:baz", "tag:biz"]),
@@ -1868,15 +1814,10 @@ pub mod test_suite {
             // add a split without tag
             let split_id_6 = format!("{index_id}--split-6");
             let split_metadata_6 = SplitMetadata {
-                footer_offsets: 1000..2000,
-                split_id: split_id_6.to_string(),
-                index_id: index_id.to_string(),
-                partition_id: 3u64,
-                num_docs: 1,
-                uncompressed_docs_size_in_bytes: 2,
+                split_id: split_id_6.clone(),
+                index_id: index_id.clone(),
                 time_range: None,
                 create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-                tags: to_btree_set(&[]),
                 ..Default::default()
             };
             metastore
@@ -1979,7 +1920,7 @@ pub mod test_suite {
 
         let mut current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let index_id = append_random_suffix("split-update-timestamp-index");
+        let index_id = append_random_suffix("split-update-timestamp");
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -1987,12 +1928,8 @@ pub mod test_suite {
 
         let split_id = format!("{index_id}--split");
         let split_metadata = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id.to_string(),
-            index_id: index_id.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
-            time_range: Some(0..=99),
+            split_id: split_id.clone(),
+            index_id: index_id.clone(),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -2056,7 +1993,7 @@ pub mod test_suite {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
         let delete_query = DeleteQuery {
-            index_id: index_id.to_string(),
+            index_id: index_id.clone(),
             query: "my_field:my_value".to_string(),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
@@ -2148,7 +2085,7 @@ pub mod test_suite {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
         let delete_query = DeleteQuery {
-            index_id: index_id.to_string(),
+            index_id: index_id.clone(),
             query: "my_field:my_value".to_string(),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
@@ -2238,40 +2175,32 @@ pub mod test_suite {
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_1.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_1.clone(),
+            index_id: index_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 20,
             ..Default::default()
         };
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_2.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_2.clone(),
+            index_id: index_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 10,
             ..Default::default()
         };
         let split_id_3 = format!("{index_id}--split-3");
         let split_metadata_3 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_3.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_3.clone(),
+            index_id: index_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 0,
             ..Default::default()
         };
         let split_id_4 = format!("{index_id}--split-4");
         let split_metadata_4 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_4.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_4.clone(),
+            index_id: index_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 20,
             ..Default::default()
@@ -2363,30 +2292,24 @@ pub mod test_suite {
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_1.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_1.clone(),
+            index_id: index_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 20,
             ..Default::default()
         };
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_2.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_2.clone(),
+            index_id: index_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 10,
             ..Default::default()
         };
         let split_id_3 = format!("{index_id}--split-3");
         let split_metadata_3 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_3.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_3.clone(),
+            index_id: index_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 0,
             ..Default::default()
@@ -2463,20 +2386,16 @@ pub mod test_suite {
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_1.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_1.clone(),
+            index_id: index_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 20,
             ..Default::default()
         };
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_2.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
+            split_id: split_id_2.clone(),
+            index_id: index_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 10,
             ..Default::default()
