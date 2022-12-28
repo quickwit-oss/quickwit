@@ -112,7 +112,7 @@ impl Storage for RamStorage {
             StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
         })?;
-        Ok(payload_bytes.slice(range.start as usize..range.end as usize))
+        Ok(payload_bytes.slice(range.start..range.end))
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {

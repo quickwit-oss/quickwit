@@ -590,7 +590,7 @@ async fn test_garbage_collect_cli_no_grace() {
     // On `dry_run = true` splits `MarkedForDeletion` should still exist.
     for split_id in split_ids {
         let split_file = quickwit_common::split_file(split_id);
-        let split_filepath = index_path.join(&split_file);
+        let split_filepath = index_path.join(split_file);
         assert_eq!(split_filepath.try_exists().unwrap(), true);
     }
 
@@ -601,7 +601,7 @@ async fn test_garbage_collect_cli_no_grace() {
     // If split is `MarkedForDeletion` it should be deleted after gc run
     for split_id in split_ids {
         let split_file = quickwit_common::split_file(split_id);
-        let split_filepath = index_path.join(&split_file);
+        let split_filepath = index_path.join(split_file);
         assert_eq!(split_filepath.try_exists().unwrap(), false);
     }
 

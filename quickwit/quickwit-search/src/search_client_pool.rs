@@ -210,7 +210,7 @@ impl Hash for Node {
 
 impl SearchClientPool {
     /// Assign the given job to the clients.
-    /// Returns a list of pair (SocketAddr, Vec<Job>)
+    /// Returns a list of pair (SocketAddr, `Vec<Job>`)
     ///
     /// When exclude_addresses filters all clients it is ignored.
     pub fn assign_jobs<J: Job>(

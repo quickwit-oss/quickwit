@@ -51,7 +51,7 @@ impl QuickwitCache {
         quickwit_cache.add_route(
             ".fast",
             Arc::new(SimpleCache::with_capacity_in_bytes(
-                fast_field_cache_capacity as usize,
+                fast_field_cache_capacity,
                 fast_field_cache_counters,
             )),
         );

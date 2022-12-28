@@ -261,7 +261,7 @@ impl SpanReaderPlugin for JaegerService {
             .sorted()
             .dedup()
             .map(|trace_id| {
-                base64::decode(&trace_id)
+                base64::decode(trace_id)
                     .expect("Failed to decode trace ID. This should never happen!")
             })
             .collect();

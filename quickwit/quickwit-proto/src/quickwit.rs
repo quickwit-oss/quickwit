@@ -1,4 +1,5 @@
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchRequest {
     /// Index ID
@@ -39,6 +40,7 @@ pub struct SearchRequest {
     pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
     /// Number of hits matching the query.
@@ -59,6 +61,7 @@ pub struct SearchResponse {
     pub aggregation: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitSearchError {
     /// The searcherror that occured formatted as string.
@@ -72,6 +75,7 @@ pub struct SplitSearchError {
     pub retryable_error: bool,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequest {
     /// Search request. This is a perfect copy of the original search request,
@@ -91,6 +95,7 @@ pub struct LeafSearchRequest {
     pub index_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitIdAndFooterOffsets {
     /// Index split id to apply the query on.
@@ -118,6 +123,7 @@ pub struct SplitIdAndFooterOffsets {
 /// /
 /// / See  `quickwit_search::convert_leaf_hit`
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafHit {
     /// The actual content of the hit/
@@ -131,6 +137,7 @@ pub struct LeafHit {
     pub leaf_snippet_json: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hit {
     /// The actual content of the hit/
@@ -148,6 +155,7 @@ pub struct Hit {
 /// go and fetch the actual document data, by performing a `get_doc(...)`
 /// request.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {
     /// Sorting field value. (e.g. timestamp)
@@ -173,6 +181,7 @@ pub struct PartialHit {
     pub doc_id: u32,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchResponse {
     /// Total number of documents matched by the query.
@@ -195,6 +204,7 @@ pub struct LeafSearchResponse {
     >,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsRequest {
     /// Request fetching the content of a given list of partial_hits.
@@ -221,6 +231,7 @@ pub struct FetchDocsRequest {
     pub doc_mapper: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsResponse {
     /// List of complete hits.
@@ -228,6 +239,7 @@ pub struct FetchDocsResponse {
     pub hits: ::prost::alloc::vec::Vec<LeafHit>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchStreamRequest {
     /// Index ID
@@ -258,6 +270,7 @@ pub struct SearchStreamRequest {
     pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchStreamRequest {
     /// Stream request. This is a perfect copy of the original stream request,
@@ -277,6 +290,7 @@ pub struct LeafSearchStreamRequest {
     pub index_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchStreamResponse {
     /// Row of data serialized in bytes.
@@ -308,6 +322,14 @@ impl SortOrder {
             SortOrder::Desc => "DESC",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ASC" => Some(Self::Asc),
+            "DESC" => Some(Self::Desc),
+            _ => None,
+        }
+    }
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -332,6 +354,14 @@ impl OutputFormat {
         match self {
             OutputFormat::Csv => "CSV",
             OutputFormat::ClickHouseRowBinary => "CLICK_HOUSE_ROW_BINARY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CSV" => Some(Self::Csv),
+            "CLICK_HOUSE_ROW_BINARY" => Some(Self::ClickHouseRowBinary),
+            _ => None,
         }
     }
 }

@@ -206,7 +206,7 @@ async fn elastic_ingest(
     }
 
     let ingest_req = IngestRequest {
-        doc_batches: batches.into_iter().map(|(_, batch)| batch).collect(),
+        doc_batches: batches.into_values().collect(),
     };
     let ingest_resp = ingest_api_mailbox
         .ask_for_res(ingest_req)

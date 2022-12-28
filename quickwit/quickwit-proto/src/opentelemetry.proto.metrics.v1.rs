@@ -9,6 +9,7 @@
 /// When new fields are added into this message, the OTLP request MUST be updated
 /// as well.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MetricsData {
     /// An array of ResourceMetrics.
@@ -21,6 +22,7 @@ pub struct MetricsData {
 }
 /// A collection of ScopeMetrics from a Resource.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResourceMetrics {
     /// The resource for the metrics in this message.
@@ -37,6 +39,7 @@ pub struct ResourceMetrics {
 }
 /// A collection of Metrics produced by an Scope.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScopeMetrics {
     /// The instrumentation scope information for the metrics in this message.
@@ -137,6 +140,7 @@ pub struct ScopeMetrics {
 /// when the start time is truly unknown, setting StartTimeUnixNano is
 /// strongly encouraged.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Metric {
     /// name of the metric, including its DNS name prefix. It must be unique.
@@ -161,6 +165,7 @@ pub mod metric {
     /// reported value type for the data points, as well as the relatationship to
     /// the time interval over which they are reported.
     #[derive(Serialize, Deserialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Data {
         #[prost(message, tag = "5")]
@@ -185,6 +190,7 @@ pub mod metric {
 /// AggregationTemporality is not included. Consequently, this also means
 /// "StartTimeUnixNano" is ignored for all data points.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Gauge {
     #[prost(message, repeated, tag = "1")]
@@ -193,6 +199,7 @@ pub struct Gauge {
 /// Sum represents the type of a scalar metric that is calculated as a sum of all
 /// reported measurements over a time interval.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Sum {
     #[prost(message, repeated, tag = "1")]
@@ -208,6 +215,7 @@ pub struct Sum {
 /// Histogram represents the type of a metric that is calculated by aggregating
 /// as a Histogram of all reported measurements over a time interval.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Histogram {
     #[prost(message, repeated, tag = "1")]
@@ -220,6 +228,7 @@ pub struct Histogram {
 /// ExponentialHistogram represents the type of a metric that is calculated by aggregating
 /// as a ExponentialHistogram of all reported double measurements over a time interval.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExponentialHistogram {
     #[prost(message, repeated, tag = "1")]
@@ -236,6 +245,7 @@ pub struct ExponentialHistogram {
 /// While they can be useful in some applications, histogram data points are
 /// recommended for new applications.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Summary {
     #[prost(message, repeated, tag = "1")]
@@ -244,6 +254,7 @@ pub struct Summary {
 /// NumberDataPoint is a single data point in a timeseries that describes the
 /// time-varying scalar value of a metric.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NumberDataPoint {
     /// The set of key/value pairs that uniquely identify the timeseries from
@@ -283,6 +294,7 @@ pub mod number_data_point {
     /// The value itself.  A point is considered invalid when one of the recognized
     /// value fields is not present inside this oneof.
     #[derive(Serialize, Deserialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Value {
         #[prost(double, tag = "4")]
@@ -302,6 +314,7 @@ pub mod number_data_point {
 /// "explicit_bounds" and "bucket_counts" must be omitted and only "count" and
 /// "sum" are known.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HistogramDataPoint {
     /// The set of key/value pairs that uniquely identify the timeseries from
@@ -383,6 +396,7 @@ pub struct HistogramDataPoint {
 /// distribution of those values across a set of buckets.
 ///
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExponentialHistogramDataPoint {
     /// The set of key/value pairs that uniquely identify the timeseries from
@@ -472,6 +486,7 @@ pub mod exponential_histogram_data_point {
     /// Buckets are a set of bucket counts, encoded in a contiguous array
     /// of counts.
     #[derive(Serialize, Deserialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Buckets {
         /// Offset is the bucket index of the first entry in the bucket_counts array.
@@ -495,6 +510,7 @@ pub mod exponential_histogram_data_point {
 /// SummaryDataPoint is a single data point in a timeseries that describes the
 /// time-varying values of a Summary metric.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SummaryDataPoint {
     /// The set of key/value pairs that uniquely identify the timeseries from
@@ -549,6 +565,7 @@ pub mod summary_data_point {
     /// See the following issue for more context:
     /// <https://github.com/open-telemetry/opentelemetry-proto/issues/125>
     #[derive(Serialize, Deserialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ValueAtQuantile {
         /// The quantile of a distribution. Must be in the interval
@@ -567,6 +584,7 @@ pub mod summary_data_point {
 /// was recorded, for example the span and trace ID of the active span when the
 /// exemplar was recorded.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Exemplar {
     /// The set of key/value pairs that were filtered out by the aggregator, but
@@ -604,6 +622,7 @@ pub mod exemplar {
     /// considered invalid when one of the recognized value fields is not present
     /// inside this oneof.
     #[derive(Serialize, Deserialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Value {
         #[prost(double, tag = "3")]
@@ -695,6 +714,15 @@ impl AggregationTemporality {
             AggregationTemporality::Cumulative => "AGGREGATION_TEMPORALITY_CUMULATIVE",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "AGGREGATION_TEMPORALITY_UNSPECIFIED" => Some(Self::Unspecified),
+            "AGGREGATION_TEMPORALITY_DELTA" => Some(Self::Delta),
+            "AGGREGATION_TEMPORALITY_CUMULATIVE" => Some(Self::Cumulative),
+            _ => None,
+        }
+    }
 }
 /// DataPointFlags is defined as a protobuf 'uint32' type and is to be used as a
 /// bit-field representing 32 distinct boolean flags.  Each flag defined in this
@@ -722,6 +750,14 @@ impl DataPointFlags {
         match self {
             DataPointFlags::FlagNone => "FLAG_NONE",
             DataPointFlags::FlagNoRecordedValue => "FLAG_NO_RECORDED_VALUE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "FLAG_NONE" => Some(Self::FlagNone),
+            "FLAG_NO_RECORDED_VALUE" => Some(Self::FlagNoRecordedValue),
+            _ => None,
         }
     }
 }
