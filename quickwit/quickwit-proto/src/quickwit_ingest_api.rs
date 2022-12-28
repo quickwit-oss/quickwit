@@ -1,40 +1,47 @@
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueueExistsRequest {
     #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateQueueRequest {
     #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateQueueIfNotExistsRequest {
     #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DropQueueRequest {
     #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestRequest {
     #[prost(message, repeated, tag = "1")]
     pub doc_batches: ::prost::alloc::vec::Vec<DocBatch>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestResponse {
     #[prost(uint64, tag = "1")]
     pub num_docs_for_processing: u64,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchRequest {
     #[prost(string, tag = "1")]
@@ -45,6 +52,7 @@ pub struct FetchRequest {
     pub num_bytes_limit: ::core::option::Option<u64>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchResponse {
     #[prost(uint64, optional, tag = "1")]
@@ -53,6 +61,7 @@ pub struct FetchResponse {
     pub doc_batch: ::core::option::Option<DocBatch>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DocBatch {
     #[prost(string, tag = "1")]
@@ -76,6 +85,7 @@ pub struct DocBatch {
 /// / earlier than this position can yield undefined result:
 /// / the truncated records may or may not be returned.
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SuggestTruncateRequest {
     #[prost(string, tag = "1")]
@@ -84,15 +94,18 @@ pub struct SuggestTruncateRequest {
     pub up_to_position_included: u64,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TailRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListQueuesRequest {}
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListQueuesResponse {
     #[prost(string, repeated, tag = "1")]
