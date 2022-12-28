@@ -186,7 +186,7 @@ pub mod test_suite {
     pub async fn test_metastore_delete_index<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = append_random_suffix("test-delete-index-index");
+        let index_id = append_random_suffix("test-delete-index");
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -226,9 +226,9 @@ pub mod test_suite {
     pub async fn test_metastore_add_source<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = "test-metastore-add-source";
+        let index_id = append_random_suffix("test-metastore-add-source");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         metastore.create_index(index_config.clone()).await.unwrap();
 
@@ -243,7 +243,7 @@ pub mod test_suite {
 
         assert_eq!(
             metastore
-                .index_metadata(index_id)
+                .index_metadata(&index_id)
                 .await
                 .unwrap()
                 .checkpoint
@@ -252,11 +252,11 @@ pub mod test_suite {
         );
 
         metastore
-            .add_source(index_id, source.clone())
+            .add_source(&index_id, source.clone())
             .await
             .unwrap();
 
-        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
 
         let sources = &index_metadata.sources;
         assert_eq!(sources.len(), 1);
@@ -270,7 +270,7 @@ pub mod test_suite {
 
         assert!(matches!(
             metastore
-                .add_source(index_id, source.clone())
+                .add_source(&index_id, source.clone())
                 .await
                 .unwrap_err(),
             MetastoreError::SourceAlreadyExists { .. }
@@ -288,9 +288,9 @@ pub mod test_suite {
     pub async fn test_metastore_toggle_source<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = "test-metastore-toggle-source";
+        let index_id = append_random_suffix("test-metastore-toggle-source");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         metastore.create_index(index_config.clone()).await.unwrap();
 
@@ -302,28 +302,28 @@ pub mod test_suite {
             source_params: SourceParams::void(),
         };
         metastore
-            .add_source(index_id, source.clone())
+            .add_source(&index_id, source.clone())
             .await
             .unwrap();
-        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
         let source = index_metadata.sources.get(source_id).unwrap();
         assert_eq!(source.enabled, true);
 
         // Disable source.
         metastore
-            .toggle_source(index_id, &source.source_id, false)
+            .toggle_source(&index_id, &source.source_id, false)
             .await
             .unwrap();
-        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
         let source = index_metadata.sources.get(source_id).unwrap();
         assert_eq!(source.enabled, false);
 
         // Enable source.
         metastore
-            .toggle_source(index_id, &source.source_id, true)
+            .toggle_source(&index_id, &source.source_id, true)
             .await
             .unwrap();
-        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
         let source = index_metadata.sources.get(source_id).unwrap();
         assert_eq!(source.enabled, true);
 
@@ -334,7 +334,7 @@ pub mod test_suite {
         let _ = tracing_subscriber::fmt::try_init();
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = "test-metastore-delete-source";
+        let index_id = append_random_suffix("test-metastore-delete-source");
         let index_uri = format!("ram:///indexes/{index_id}");
         let source_id = "test-metastore-delete-source--void-source-id";
 
@@ -345,18 +345,18 @@ pub mod test_suite {
             source_params: SourceParams::void(),
         };
 
-        let index_config = IndexConfig::for_test(index_id, index_uri.as_str());
+        let index_config = IndexConfig::for_test(&index_id, index_uri.as_str());
 
         metastore.create_index(index_config.clone()).await.unwrap();
-        metastore.add_source(index_id, source).await.unwrap();
-        metastore.delete_source(index_id, source_id).await.unwrap();
+        metastore.add_source(&index_id, source).await.unwrap();
+        metastore.delete_source(&index_id, source_id).await.unwrap();
 
-        let sources = metastore.index_metadata(index_id).await.unwrap().sources;
+        let sources = metastore.index_metadata(&index_id).await.unwrap().sources;
         assert!(sources.is_empty());
 
         assert!(matches!(
             metastore
-                .delete_source(index_id, source_id)
+                .delete_source(&index_id, source_id)
                 .await
                 .unwrap_err(),
             MetastoreError::SourceDoesNotExist { .. }
@@ -453,7 +453,7 @@ pub mod test_suite {
     >() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = "publish-splits-empty-index";
+        let index_id = append_random_suffix("publish-splits-empty-index");
         let index_uri = format!("ram:///indexes/{index_id}");
         let source_id = "publish-splits-empty-source";
 
@@ -478,12 +478,12 @@ pub mod test_suite {
         // Update the checkpoint, by publishing an empty array of splits with a non-empty
         // checkpoint. This operation is allowed and used in the Indexer.
         {
-            let index_config = IndexConfig::for_test(index_id, &index_uri);
+            let index_config = IndexConfig::for_test(&index_id, &index_uri);
             metastore.create_index(index_config.clone()).await.unwrap();
 
             let result = metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[],
                     &[],
                     {
@@ -495,7 +495,7 @@ pub mod test_suite {
                 .await;
             assert!(result.is_ok());
 
-            let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+            let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
             let source_checkpoint = index_metadata
                 .checkpoint
                 .source_checkpoint(source_id)
@@ -507,7 +507,7 @@ pub mod test_suite {
                     .unwrap(),
                 &Position::from(100u64 - 1)
             );
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
     }
 
@@ -516,10 +516,10 @@ pub mod test_suite {
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let index_id = "publish-splits-index";
+        let index_id = append_random_suffix("publish-splits-index");
         let index_uri = format!("ram:///indexes/{index_id}");
         let source_id = "publish-splits-source";
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = "publish-splits-index-one";
         let split_metadata_1 = SplitMetadata {
@@ -568,12 +568,12 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             let result = metastore
-                .publish_splits(index_id, &["non-existent-split"], &[], None)
+                .publish_splits(&index_id, &["non-existent-split"], &[], None)
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Publish a staged split on an index
@@ -581,16 +581,16 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_splits(index_id, vec![split_metadata_1.clone()])
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
             metastore
-                .publish_splits(index_id, &[split_id_1], &[], None)
+                .publish_splits(&index_id, &[split_id_1], &[], None)
                 .await
                 .unwrap();
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Publish a published split on an index
@@ -598,13 +598,13 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_splits(index_id, vec![split_metadata_1.clone()])
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1],
                     &[],
                     {
@@ -618,7 +618,7 @@ pub mod test_suite {
 
             let publish_error = metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1],
                     &[],
                     {
@@ -634,7 +634,7 @@ pub mod test_suite {
                 MetastoreError::IncompatibleCheckpointDelta(_)
             ));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Publish a non-staged split on an index
@@ -642,13 +642,13 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_splits(index_id, vec![split_metadata_1.clone()])
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1],
                     &[],
                     {
@@ -661,13 +661,13 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .mark_splits_for_deletion(index_id, &[split_id_1])
+                .mark_splits_for_deletion(&index_id, &[split_id_1])
                 .await
                 .unwrap();
 
             let result = metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1],
                     &[],
                     {
@@ -680,7 +680,7 @@ pub mod test_suite {
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsNotStaged { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Publish a staged split and non-existent split on an index
@@ -688,13 +688,13 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_splits(index_id, vec![split_metadata_1.clone()])
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
             let result = metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1, "non-existent-split"],
                     &[],
                     {
@@ -707,7 +707,7 @@ pub mod test_suite {
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Publish a published split and non-existant split on an index
@@ -715,13 +715,13 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_splits(index_id, vec![split_metadata_1.clone()])
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1],
                     &[],
                     {
@@ -735,7 +735,7 @@ pub mod test_suite {
 
             let result = metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1, "non-existent-split"],
                     &[],
                     {
@@ -748,7 +748,7 @@ pub mod test_suite {
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Publish a non-staged split and non-existant split on an index
@@ -756,13 +756,13 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_splits(index_id, vec![split_metadata_1.clone()])
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1],
                     &[],
                     {
@@ -775,13 +775,13 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .mark_splits_for_deletion(index_id, &[split_id_1])
+                .mark_splits_for_deletion(&index_id, &[split_id_1])
                 .await
                 .unwrap();
 
             let result = metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1, "non-existent-split"],
                     &[],
                     {
@@ -794,7 +794,7 @@ pub mod test_suite {
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Publish staged splits on an index
@@ -802,18 +802,18 @@ pub mod test_suite {
             metastore.create_index(index_config.clone()).await.unwrap();
 
             metastore
-                .stage_splits(index_id, vec![split_metadata_1.clone()])
+                .stage_splits(&index_id, vec![split_metadata_1.clone()])
                 .await
                 .unwrap();
 
             metastore
-                .stage_splits(index_id, vec![split_metadata_2.clone()])
+                .stage_splits(&index_id, vec![split_metadata_2.clone()])
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1, split_id_2],
                     &[],
                     {
@@ -825,7 +825,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Publish a staged split and published split on an index
@@ -834,7 +834,7 @@ pub mod test_suite {
 
             metastore
                 .stage_splits(
-                    index_id,
+                    &index_id,
                     vec![split_metadata_1.clone(), split_metadata_2.clone()],
                 )
                 .await
@@ -842,7 +842,7 @@ pub mod test_suite {
 
             metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_2],
                     &[],
                     {
@@ -856,7 +856,7 @@ pub mod test_suite {
 
             let error = metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1, split_id_2],
                     &[],
                     {
@@ -869,7 +869,7 @@ pub mod test_suite {
                 .unwrap_err();
             assert!(matches!(error, MetastoreError::SplitsNotStaged { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Publish published splits on an index
@@ -878,7 +878,7 @@ pub mod test_suite {
 
             metastore
                 .stage_splits(
-                    index_id,
+                    &index_id,
                     vec![split_metadata_1.clone(), split_metadata_2.clone()],
                 )
                 .await
@@ -886,7 +886,7 @@ pub mod test_suite {
 
             metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1, split_id_2],
                     &[],
                     {
@@ -900,7 +900,7 @@ pub mod test_suite {
 
             let publish_error = metastore
                 .publish_splits(
-                    index_id,
+                    &index_id,
                     &[split_id_1, split_id_2],
                     &[],
                     {
@@ -916,7 +916,7 @@ pub mod test_suite {
                 MetastoreError::IncompatibleCheckpointDelta(_)
             ));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
     }
 
@@ -1410,9 +1410,9 @@ pub mod test_suite {
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let index_id = "list-all-splits-index";
+        let index_id = append_random_suffix("list-all-splits-index");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = "list-all-splits-index-one";
         let split_metadata_1 = SplitMetadata {
@@ -1485,7 +1485,7 @@ pub mod test_suite {
 
             metastore
                 .stage_splits(
-                    index_id,
+                    &index_id,
                     vec![
                         split_metadata_1.clone(),
                         split_metadata_2.clone(),
@@ -1497,7 +1497,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let splits = metastore.list_all_splits(index_id).await.unwrap();
+            let splits = metastore.list_all_splits(&index_id).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1508,7 +1508,7 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-all-splits-index-four"), true);
             assert_eq!(split_ids.contains("list-all-splits-index-five"), true);
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
     }
 
@@ -1518,9 +1518,9 @@ pub mod test_suite {
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let index_id = "list-splits-index";
+        let index_id = append_random_suffix("list-splits-index");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = "list-splits-one";
         let split_metadata_1 = SplitMetadata {
@@ -1595,7 +1595,7 @@ pub mod test_suite {
         {
             info!("List all splits on a non-existent index");
 
-            let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
+            let query = ListSplitsQuery::for_index(&index_id).with_split_state(SplitState::Staged);
 
             let metastore_err = metastore.list_splits(query).await.unwrap_err();
             error!(err=?metastore_err);
@@ -1611,7 +1611,7 @@ pub mod test_suite {
 
             metastore
                 .stage_splits(
-                    index_id,
+                    &index_id,
                     vec![
                         split_metadata_1.clone(),
                         split_metadata_2.clone(),
@@ -1623,7 +1623,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let query = ListSplitsQuery::for_index(index_id).with_limit(3);
+            let query = ListSplitsQuery::for_index(&index_id).with_limit(3);
             let splits = metastore.list_splits(query).await.unwrap();
             assert_eq!(
                 splits.len(),
@@ -1631,7 +1631,7 @@ pub mod test_suite {
                 "Expected number of splits returned to match limit.",
             );
 
-            let query = ListSplitsQuery::for_index(index_id).with_offset(3);
+            let query = ListSplitsQuery::for_index(&index_id).with_offset(3);
             let splits = metastore.list_splits(query).await.unwrap();
             assert_eq!(
                 splits.len(),
@@ -1639,7 +1639,7 @@ pub mod test_suite {
                 "Expected 3 splits to be skipped out of the 5 provided splits.",
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(0)
                 .with_time_range_end_lt(99);
@@ -1654,7 +1654,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-five"])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(200);
 
@@ -1668,7 +1668,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_end_lt(200);
             let splits = metastore.list_splits(query).await.unwrap();
@@ -1681,7 +1681,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(0)
                 .with_time_range_end_lt(100);
@@ -1695,7 +1695,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-five"])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(0)
                 .with_time_range_end_lt(101);
@@ -1709,7 +1709,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(0)
                 .with_time_range_end_lt(199);
@@ -1723,7 +1723,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(0)
                 .with_time_range_end_lt(200);
@@ -1737,7 +1737,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(0)
                 .with_time_range_end_lt(201);
@@ -1756,7 +1756,7 @@ pub mod test_suite {
                 ])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(0)
                 .with_time_range_end_lt(299);
@@ -1775,7 +1775,7 @@ pub mod test_suite {
                 ])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(0)
                 .with_time_range_end_lt(300);
@@ -1794,7 +1794,7 @@ pub mod test_suite {
                 ])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(0)
                 .with_time_range_end_lt(301);
@@ -1814,7 +1814,7 @@ pub mod test_suite {
                 ])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(301)
                 .with_time_range_end_lt(400);
@@ -1829,7 +1829,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-four", "list-splits-five"])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(300)
                 .with_time_range_end_lt(400);
@@ -1843,7 +1843,7 @@ pub mod test_suite {
                 split_ids,
                 to_hash_set(&["list-splits-four", "list-splits-five"])
             );
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(299)
                 .with_time_range_end_lt(400);
@@ -1857,7 +1857,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(201)
                 .with_time_range_end_lt(400);
@@ -1871,7 +1871,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(200)
                 .with_time_range_end_lt(400);
@@ -1886,7 +1886,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(199)
                 .with_time_range_end_lt(400);
@@ -1905,7 +1905,7 @@ pub mod test_suite {
                 ])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(101)
                 .with_time_range_end_lt(400);
@@ -1924,7 +1924,7 @@ pub mod test_suite {
                 ])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(101)
                 .with_time_range_end_lt(400);
@@ -1943,7 +1943,7 @@ pub mod test_suite {
                 ])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(100)
                 .with_time_range_end_lt(400);
@@ -1963,7 +1963,7 @@ pub mod test_suite {
                 ])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(99)
                 .with_time_range_end_lt(400);
@@ -1983,7 +1983,7 @@ pub mod test_suite {
                 ])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_start_gte(1000)
                 .with_time_range_end_lt(1100);
@@ -2010,11 +2010,11 @@ pub mod test_suite {
                 ..Default::default()
             };
             metastore
-                .stage_splits(index_id, vec![split_metadata_6.clone()])
+                .stage_splits(&index_id, vec![split_metadata_6.clone()])
                 .await
                 .unwrap();
 
-            let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
+            let query = ListSplitsQuery::for_index(&index_id).with_split_state(SplitState::Staged);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
@@ -2036,7 +2036,7 @@ pub mod test_suite {
                 TagFilterAst::Or(vec![no_tag("tag!"), tag("tag:bar")]),
                 TagFilterAst::Or(vec![no_tag("tag!"), tag("tag:baz")]),
             ]);
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_split_state(SplitState::Staged)
                 .with_tags_filter(tag_filter_ast);
             let splits = metastore.list_splits(query).await.unwrap();
@@ -2056,7 +2056,7 @@ pub mod test_suite {
             );
 
             let query =
-                ListSplitsQuery::for_index(index_id).with_update_timestamp_gte(current_timestamp);
+                ListSplitsQuery::for_index(&index_id).with_update_timestamp_gte(current_timestamp);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
@@ -2074,7 +2074,7 @@ pub mod test_suite {
                 ])
             );
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_update_timestamp_gte(split_metadata_6.create_timestamp);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -2083,7 +2083,7 @@ pub mod test_suite {
                 .collect();
             assert_eq!(split_ids, to_hash_set(&["list-splits-six"]));
 
-            let query = ListSplitsQuery::for_index(index_id)
+            let query = ListSplitsQuery::for_index(&index_id)
                 .with_create_timestamp_lt(split_metadata_6.create_timestamp);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -2101,7 +2101,7 @@ pub mod test_suite {
                 ])
             );
 
-            let query = ListSplitsQuery::for_index(index_id).with_delete_opstamp_lt(6);
+            let query = ListSplitsQuery::for_index(&index_id).with_delete_opstamp_lt(6);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
@@ -2117,7 +2117,7 @@ pub mod test_suite {
                 ])
             );
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
     }
 
@@ -2128,10 +2128,10 @@ pub mod test_suite {
 
         let mut current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let index_id = "split-update-timestamp-index";
+        let index_id = append_random_suffix("split-update-timestamp-index");
         let index_uri = format!("ram:///indexes/{index_id}");
         let source_id = "split-update-timestamp-source";
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id = "split-update-timestamp-one";
         let split_metadata = SplitMetadata {
@@ -2151,12 +2151,12 @@ pub mod test_suite {
         // wait for 1s, stage split & check `update_timestamp`
         sleep(Duration::from_secs(1)).await;
         metastore
-            .stage_splits(index_id, vec![split_metadata.clone()])
+            .stage_splits(&index_id, vec![split_metadata.clone()])
             .await
             .unwrap();
 
         sleep(Duration::from_secs(1)).await;
-        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
+        let split_meta = metastore.list_all_splits(&index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
         assert!(split_meta.publish_timestamp.is_none());
 
@@ -2166,7 +2166,7 @@ pub mod test_suite {
         sleep(Duration::from_secs(1)).await;
         metastore
             .publish_splits(
-                index_id,
+                &index_id,
                 &[split_id],
                 &[],
                 {
@@ -2177,7 +2177,7 @@ pub mod test_suite {
             )
             .await
             .unwrap();
-        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
+        let split_meta = metastore.list_all_splits(&index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
         assert_eq!(
             split_meta.publish_timestamp,
@@ -2188,21 +2188,21 @@ pub mod test_suite {
         // wait for 1s, mark split for deletion & check `update_timestamp`
         sleep(Duration::from_secs(1)).await;
         metastore
-            .mark_splits_for_deletion(index_id, &[split_id])
+            .mark_splits_for_deletion(&index_id, &[split_id])
             .await
             .unwrap();
-        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
+        let split_meta = metastore.list_all_splits(&index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
         assert!(split_meta.publish_timestamp.is_some());
 
-        cleanup_index(&metastore, index_id).await;
+        cleanup_index(&metastore, &index_id).await;
     }
 
     pub async fn test_metastore_create_delete_task<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
-        let index_id = "add-delete-task";
+        let index_id = append_random_suffix("add-delete-task");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
         let delete_query = DeleteQuery {
             index_id: index_id.to_string(),
             query: "my_field:my_value".to_string(),
@@ -2228,14 +2228,14 @@ pub mod test_suite {
             .unwrap();
         assert!(delete_task_2.opstamp > delete_task_1.opstamp);
 
-        cleanup_index(&metastore, index_id).await;
+        cleanup_index(&metastore, &index_id).await;
     }
 
     pub async fn test_metastore_last_delete_opstamp<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
-        let index_id_1 = "add-delete-task-1";
+        let index_id_1 = append_random_suffix("test-last-delete-opstamp-1");
         let index_uri_1 = format!("ram:///indexes/{index_id_1}");
-        let index_config_1 = IndexConfig::for_test(index_id_1, &index_uri_1);
+        let index_config_1 = IndexConfig::for_test(&index_id_1, &index_uri_1);
         let delete_query_index_1 = DeleteQuery {
             index_id: index_id_1.to_string(),
             query: "my_field:my_value".to_string(),
@@ -2243,9 +2243,9 @@ pub mod test_suite {
             end_timestamp: Some(2),
             search_fields: Vec::new(),
         };
-        let index_id_2 = "add-delete-task-2";
+        let index_id_2 = append_random_suffix("test-last-delete-opstamp-2");
         let index_uri_2 = format!("ram:///indexes/{index_id_2}");
-        let index_config_2 = IndexConfig::for_test(index_id_2, &index_uri_2);
+        let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
         let delete_query_index_2 = DeleteQuery {
             index_id: index_id_2.to_string(),
             query: "my_field:my_value".to_string(),
@@ -2263,11 +2263,11 @@ pub mod test_suite {
             .unwrap();
 
         let last_opstamp_index_1_with_no_task =
-            metastore.last_delete_opstamp(index_id_1).await.unwrap();
+            metastore.last_delete_opstamp(&index_id_1).await.unwrap();
         assert_eq!(last_opstamp_index_1_with_no_task, 0);
 
         // Create a delete task.
-        let _ = metastore
+        metastore
             .create_delete_task(delete_query_index_1.clone())
             .await
             .unwrap();
@@ -2280,21 +2280,21 @@ pub mod test_suite {
             .await
             .unwrap();
 
-        let last_opstamp_index_1 = metastore.last_delete_opstamp(index_id_1).await.unwrap();
-        let last_opstamp_index_2 = metastore.last_delete_opstamp(index_id_2).await.unwrap();
+        let last_opstamp_index_1 = metastore.last_delete_opstamp(&index_id_1).await.unwrap();
+        let last_opstamp_index_2 = metastore.last_delete_opstamp(&index_id_2).await.unwrap();
         assert_eq!(last_opstamp_index_1, delete_task_2.opstamp);
         assert_eq!(last_opstamp_index_2, delete_task_3.opstamp);
-        cleanup_index(&metastore, index_id_1).await;
-        cleanup_index(&metastore, index_id_2).await;
+        cleanup_index(&metastore, &index_id_1).await;
+        cleanup_index(&metastore, &index_id_2).await;
     }
 
     pub async fn test_metastore_delete_index_with_tasks<
         MetastoreToTest: Metastore + DefaultForTest,
     >() {
         let metastore = MetastoreToTest::default_for_test().await;
-        let index_id = "delete-delete-tasks";
+        let index_id = append_random_suffix("delete-delete-tasks");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
         let delete_query = DeleteQuery {
             index_id: index_id.to_string(),
             query: "my_field:my_value".to_string(),
@@ -2312,14 +2312,14 @@ pub mod test_suite {
             .await
             .unwrap();
 
-        metastore.delete_index(index_id).await.unwrap();
+        metastore.delete_index(&index_id).await.unwrap();
     }
 
     pub async fn test_metastore_list_delete_tasks<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
-        let index_id_1 = "list_delete_tasks-1";
+        let index_id_1 = append_random_suffix("test-list-delete-tasks-1");
         let index_uri_1 = format!("ram:///indexes/{index_id_1}");
-        let index_config_1 = IndexConfig::for_test(index_id_1, &index_uri_1);
+        let index_config_1 = IndexConfig::for_test(&index_id_1, &index_uri_1);
         let delete_query_index_1 = DeleteQuery {
             index_id: index_id_1.to_string(),
             query: "my_field:my_value".to_string(),
@@ -2327,9 +2327,9 @@ pub mod test_suite {
             end_timestamp: Some(2),
             search_fields: Vec::new(),
         };
-        let index_id_2 = "list_delete_tasks-2";
+        let index_id_2 = append_random_suffix("test-list-delete-tasks-2");
         let index_uri_2 = format!("ram:///indexes/{index_id_2}");
-        let index_config_2 = IndexConfig::for_test(index_id_2, &index_uri_2);
+        let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
         let delete_query_index_2 = DeleteQuery {
             index_id: index_id_2.to_string(),
             query: "my_field:my_value".to_string(),
@@ -2360,11 +2360,12 @@ pub mod test_suite {
             .await
             .unwrap();
 
-        let all_index_id_1_delete_tasks = metastore.list_delete_tasks(index_id_1, 0).await.unwrap();
+        let all_index_id_1_delete_tasks =
+            metastore.list_delete_tasks(&index_id_1, 0).await.unwrap();
         assert_eq!(all_index_id_1_delete_tasks.len(), 2);
 
         let recent_index_id_1_delete_tasks = metastore
-            .list_delete_tasks(index_id_1, delete_task_1.opstamp)
+            .list_delete_tasks(&index_id_1, delete_task_1.opstamp)
             .await
             .unwrap();
         assert_eq!(recent_index_id_1_delete_tasks.len(), 1);
@@ -2372,16 +2373,16 @@ pub mod test_suite {
             recent_index_id_1_delete_tasks[0].opstamp,
             delete_task_2.opstamp
         );
-        cleanup_index(&metastore, index_id_1).await;
-        cleanup_index(&metastore, index_id_2).await;
+        cleanup_index(&metastore, &index_id_1).await;
+        cleanup_index(&metastore, &index_id_2).await;
     }
 
     pub async fn test_metastore_list_stale_splits<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-        let index_id = "list-stale-splits";
+        let index_id = append_random_suffix("list-stale-splits");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = "list-stale-splits-one";
         let split_metadata_1 = SplitMetadata {
@@ -2443,7 +2444,7 @@ pub mod test_suite {
 
             metastore
                 .stage_splits(
-                    index_id,
+                    &index_id,
                     vec![
                         split_metadata_1.clone(),
                         split_metadata_2.clone(),
@@ -2457,27 +2458,33 @@ pub mod test_suite {
             sleep(Duration::from_secs(1)).await;
 
             metastore
-                .stage_splits(index_id, vec![split_metadata_4.clone()])
+                .stage_splits(&index_id, vec![split_metadata_4.clone()])
                 .await
                 .unwrap();
             metastore
-                .publish_splits(index_id, &[split_id_4], &[], None)
+                .publish_splits(&index_id, &[split_id_4], &[], None)
                 .await
                 .unwrap();
             // Sleep for 1 second to have different publish timestamps.
             tokio::time::sleep(Duration::from_secs(1)).await;
             metastore
-                .publish_splits(index_id, &[split_id_1, split_id_2], &[], None)
+                .publish_splits(&index_id, &[split_id_1, split_id_2], &[], None)
                 .await
                 .unwrap();
-            let splits = metastore.list_stale_splits(index_id, 100, 1).await.unwrap();
+            let splits = metastore
+                .list_stale_splits(&index_id, 100, 1)
+                .await
+                .unwrap();
             assert_eq!(splits.len(), 1);
             assert_eq!(
                 splits[0].split_metadata.delete_opstamp,
                 split_metadata_2.delete_opstamp
             );
 
-            let splits = metastore.list_stale_splits(index_id, 100, 4).await.unwrap();
+            let splits = metastore
+                .list_stale_splits(&index_id, 100, 4)
+                .await
+                .unwrap();
             assert_eq!(splits.len(), 3);
             assert_eq!(splits[0].split_id(), split_metadata_2.split_id());
             assert_eq!(splits[1].split_id(), split_metadata_4.split_id());
@@ -2487,16 +2494,16 @@ pub mod test_suite {
                 split_metadata_1.delete_opstamp
             );
 
-            let splits = metastore.list_stale_splits(index_id, 20, 2).await.unwrap();
+            let splits = metastore.list_stale_splits(&index_id, 20, 2).await.unwrap();
             assert_eq!(splits.len(), 1);
             assert_eq!(
                 splits[0].split_metadata.delete_opstamp,
                 split_metadata_2.delete_opstamp
             );
 
-            let splits = metastore.list_stale_splits(index_id, 10, 2).await.unwrap();
+            let splits = metastore.list_stale_splits(&index_id, 10, 2).await.unwrap();
             assert!(splits.is_empty());
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
     }
 
@@ -2505,9 +2512,9 @@ pub mod test_suite {
     >() {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-        let index_id = "update-splits-delete-opstamp";
+        let index_id = append_random_suffix("update-splits-delete-opstamp");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = "update-splits-delete-opstamp-one";
         let split_metadata_1 = SplitMetadata {
@@ -2559,7 +2566,7 @@ pub mod test_suite {
 
             metastore
                 .stage_splits(
-                    index_id,
+                    &index_id,
                     vec![
                         split_metadata_1.clone(),
                         split_metadata_2.clone(),
@@ -2569,36 +2576,45 @@ pub mod test_suite {
                 .await
                 .unwrap();
             metastore
-                .publish_splits(index_id, &[split_id_1, split_id_2], &[], None)
+                .publish_splits(&index_id, &[split_id_1, split_id_2], &[], None)
                 .await
                 .unwrap();
 
-            let splits = metastore.list_stale_splits(index_id, 100, 2).await.unwrap();
+            let splits = metastore
+                .list_stale_splits(&index_id, 100, 2)
+                .await
+                .unwrap();
             assert_eq!(splits.len(), 2);
 
             metastore
-                .update_splits_delete_opstamp(index_id, &[split_id_1, split_id_2], 100)
+                .update_splits_delete_opstamp(&index_id, &[split_id_1, split_id_2], 100)
                 .await
                 .unwrap();
 
-            let splits = metastore.list_stale_splits(index_id, 100, 2).await.unwrap();
+            let splits = metastore
+                .list_stale_splits(&index_id, 100, 2)
+                .await
+                .unwrap();
             assert_eq!(splits.len(), 0);
 
-            let splits = metastore.list_stale_splits(index_id, 200, 2).await.unwrap();
+            let splits = metastore
+                .list_stale_splits(&index_id, 200, 2)
+                .await
+                .unwrap();
             assert_eq!(splits.len(), 2);
             assert_eq!(splits[0].split_metadata.delete_opstamp, 100);
             assert_eq!(splits[1].split_metadata.delete_opstamp, 100);
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
     }
 
     pub async fn test_metastore_stage_splits<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-        let index_id = "stage-splits-bulk";
-        let index_uri = format!("ram://indexes/{index_id}");
-        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_id = append_random_suffix("test-stage-splits");
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = "stage-splits-bulk-1";
         let split_metadata_1 = SplitMetadata {
@@ -2633,13 +2649,13 @@ pub mod test_suite {
         // Stage a split on an index
         metastore
             .stage_splits(
-                index_id,
+                &index_id,
                 vec![split_metadata_1.clone(), split_metadata_2.clone()],
             )
             .await
             .unwrap();
 
-        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
+        let query = ListSplitsQuery::for_index(&index_id).with_split_state(SplitState::Staged);
         let splits = metastore.list_splits(query).await.unwrap();
         let split_ids: HashSet<String> = splits
             .into_iter()
@@ -2649,16 +2665,16 @@ pub mod test_suite {
 
         // Stage a existent-staged-split on an index
         metastore
-            .stage_splits(index_id, vec![split_metadata_1.clone()])
+            .stage_splits(&index_id, vec![split_metadata_1.clone()])
             .await
             .expect("Pre-existing staged splits should be updated.");
 
         metastore
-            .publish_splits(index_id, &[split_id_1, split_id_2], &[], None)
+            .publish_splits(&index_id, &[split_id_1, split_id_2], &[], None)
             .await
             .unwrap();
         let err = metastore
-            .stage_splits(index_id, vec![split_metadata_1.clone()])
+            .stage_splits(&index_id, vec![split_metadata_1.clone()])
             .await
             .expect_err(
                 "Metastore should not allow splits which are not `Staged` to be overwritten.",
@@ -2670,11 +2686,11 @@ pub mod test_suite {
         );
 
         metastore
-            .mark_splits_for_deletion(index_id, &[split_id_2])
+            .mark_splits_for_deletion(&index_id, &[split_id_2])
             .await
             .unwrap();
         let err = metastore
-            .stage_splits(index_id, vec![split_metadata_2.clone()])
+            .stage_splits(&index_id, vec![split_metadata_2.clone()])
             .await
             .expect_err(
                 "Metastore should not allow splits which are not `Staged` to be overwritten.",
@@ -2685,7 +2701,7 @@ pub mod test_suite {
              operation that must not occur.",
         );
 
-        cleanup_index(&metastore, index_id).await;
+        cleanup_index(&metastore, &index_id).await;
     }
 }
 
