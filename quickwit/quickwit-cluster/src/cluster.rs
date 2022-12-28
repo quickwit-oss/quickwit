@@ -31,6 +31,9 @@ use chitchat::{
     NodeId, NodeState,
 };
 use itertools::Itertools;
+use quickwit_common::service::QuickwitService;
+use quickwit_proto::indexing_api::IndexingTask;
+use quickwit_proto::ClusterMember;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::timeout;
@@ -39,7 +42,6 @@ use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
 
 use crate::error::{ClusterError, ClusterResult};
-use crate::QuickwitService;
 
 const HEALTH_KEY: &str = "health";
 const HEALTH_VALUE_READY: &str = "READY";
@@ -51,54 +53,7 @@ const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_secs(1)
 };
 const ENABLED_SERVICES_KEY: &str = "enabled_services";
-
-/// Cluster member.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClusterMember {
-    /// A unique node ID across the cluster.
-    /// The Chitchat node ID is the concatenation of the node ID and the start timestamp:
-    /// `{node_id}/{start_timestamp}`.
-    pub node_id: String,
-    /// The start timestamp (seconds) of the node.
-    pub start_timestamp: u64,
-    /// Enabled services, i.e. services configured to run on the node. Depending on the node and
-    /// service health, each service may or may not be available/running.
-    pub enabled_services: HashSet<QuickwitService>,
-    /// Gossip advertise address, i.e. the address that other nodes should use to gossip with the
-    /// node.
-    pub gossip_advertise_addr: SocketAddr,
-    /// gRPC advertise address, i.e. the address that other nodes should use to communicate with
-    /// the node via gRPC.
-    pub grpc_advertise_addr: SocketAddr,
-}
-
-impl ClusterMember {
-    pub fn new(
-        node_id: String,
-        start_timestamp: u64,
-        enabled_services: HashSet<QuickwitService>,
-        gossip_advertise_addr: SocketAddr,
-        grpc_advertise_addr: SocketAddr,
-    ) -> Self {
-        Self {
-            node_id,
-            start_timestamp,
-            enabled_services,
-            gossip_advertise_addr,
-            grpc_advertise_addr,
-        }
-    }
-
-    pub fn chitchat_id(&self) -> String {
-        format!("{}/{}", self.node_id, self.start_timestamp)
-    }
-}
-
-impl From<ClusterMember> for NodeId {
-    fn from(member: ClusterMember) -> Self {
-        Self::new(member.chitchat_id(), member.gossip_advertise_addr)
-    }
-}
+const RUNNING_INDEXING_TASKS: &str = "running_indexing_tasks";
 
 /// This is an implementation of a cluster using Chitchat.
 pub struct Cluster {
@@ -354,6 +309,16 @@ impl Cluster {
         let node_state = chitchat_mutex.self_node_state();
         is_ready_predicate(node_state)
     }
+
+    pub async fn set_self_node_running_indexing_tasks(
+        &self,
+        tasks: &[IndexingTask],
+    ) -> anyhow::Result<()> {
+        let running_indexing_tasks_json_string = serde_json::to_string(tasks)?;
+        self.set_key_value(RUNNING_INDEXING_TASKS, running_indexing_tasks_json_string)
+            .await;
+        Ok(())
+    }
 }
 
 // Builds cluster members with the given `NodeId`s and `ClusterStateSnapshot`.
@@ -410,6 +375,11 @@ fn build_cluster_member(
             )
         })
         .map(|addr_str| addr_str.parse::<SocketAddr>())??;
+    let running_indexing_tasks = node_state
+        .get(RUNNING_INDEXING_TASKS)
+        .map(serde_json::from_str::<Vec<IndexingTask>>)
+        .transpose()?
+        .unwrap_or_default();
     let (node_id, start_timestamp_str) = chitchat_node.id.split_once('/').ok_or_else(|| {
         anyhow::anyhow!(
             "Failed to create cluster member instance from NodeId `{}`.",
@@ -423,6 +393,7 @@ fn build_cluster_member(
         enabled_services,
         chitchat_node.gossip_public_address,
         grpc_advertise_addr,
+        running_indexing_tasks,
     ))
 }
 
@@ -488,6 +459,7 @@ pub async fn create_cluster_for_test_with_id(
             enabled_services.clone(),
             gossip_advertise_addr,
             grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
+            Vec::new(),
         ),
         gossip_advertise_addr,
         cluster_id,
@@ -845,6 +817,7 @@ mod tests {
                 HashSet::default(),
                 cluster2_listen_addr,
                 grpc_addr,
+                Vec::new(),
             ),
             cluster2_listen_addr,
             cluster_id.to_string(),
@@ -950,6 +923,7 @@ mod tests {
                 HashSet::default(),
                 cluster2_listen_addr,
                 grpc_addr,
+                Vec::new(),
             ),
             cluster2_listen_addr,
             cluster_id.to_string(),
@@ -968,6 +942,7 @@ mod tests {
                 HashSet::default(),
                 cluster3_listen_addr,
                 grpc_addr,
+                Vec::new(),
             ),
             cluster3_listen_addr,
             cluster_id.to_string(),

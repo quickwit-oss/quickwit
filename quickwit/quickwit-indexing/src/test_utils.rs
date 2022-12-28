@@ -20,7 +20,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use chitchat::transport::ChannelTransport;
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_cluster::create_cluster_for_test;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{
@@ -68,6 +70,12 @@ impl TestSandbox {
         search_fields: &[&str],
     ) -> anyhow::Result<Self> {
         let node_id = append_random_suffix("test-node");
+        let transport = ChannelTransport::default();
+        let cluster = Arc::new(
+            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+                .await
+                .unwrap(),
+        );
         let index_uri = index_uri(index_id);
         let mut index_config = IndexConfig::for_test(index_id, index_uri.as_str());
         index_config.doc_mapping = ConfigFormat::Yaml.parse(doc_mapping_yaml.as_bytes())?;
@@ -98,6 +106,7 @@ impl TestSandbox {
             node_id.to_string(),
             temp_dir.path().to_path_buf(),
             indexer_config,
+            cluster,
             metastore.clone(),
             storage_resolver.clone(),
         )
@@ -133,7 +142,8 @@ impl TestSandbox {
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source_config = SourceConfig {
             source_id: self.index_id.clone(),
-            num_pipelines: 0,
+            max_num_pipelines_per_indexer: 0,
+            desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::Vec(VecSourceParams {
                 docs,

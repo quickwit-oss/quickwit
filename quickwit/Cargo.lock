@@ -3264,6 +3264,7 @@ dependencies = [
  "async-trait",
  "atty",
  "byte-unit",
+ "chitchat",
  "clap 3.1.18",
  "colored",
  "console-subscriber",
@@ -3338,6 +3339,7 @@ dependencies = [
  "anyhow",
  "async-speed-limit",
  "colored",
+ "enum-iterator",
  "env_logger",
  "home",
  "itertools",
@@ -3379,6 +3381,33 @@ dependencies = [
  "serde_yaml",
  "tokio",
  "toml",
+ "tracing",
+]
+
+[[package]]
+name = "quickwit-control-plane"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chitchat",
+ "itertools",
+ "quickwit-actors",
+ "quickwit-cluster",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-core",
+ "quickwit-indexing",
+ "quickwit-metastore",
+ "quickwit-proto",
+ "quickwit-storage",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time 0.3.17",
+ "tokio",
+ "tokio-stream",
+ "tower",
  "tracing",
 ]
 
@@ -3477,6 +3506,7 @@ dependencies = [
  "backoff",
  "byte-unit",
  "bytes",
+ "chitchat",
  "fail",
  "flume",
  "fnv",
@@ -3490,6 +3520,7 @@ dependencies = [
  "proptest",
  "quickwit-actors",
  "quickwit-aws",
+ "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
  "quickwit-directories",
@@ -3662,14 +3693,22 @@ dependencies = [
 name = "quickwit-proto"
 version = "0.4.0"
 dependencies = [
+ "anyhow",
+ "chitchat",
+ "enum-iterator",
  "glob",
+ "itertools",
  "opentelemetry",
  "prost",
  "prost-build",
  "prost-types",
+ "quickwit-common",
  "serde",
+ "tokio",
+ "tokio-stream",
  "tonic",
  "tonic-build",
+ "tower",
  "tracing",
  "tracing-opentelemetry",
 ]
@@ -3737,6 +3776,7 @@ dependencies = [
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-control-plane",
  "quickwit-core",
  "quickwit-directories",
  "quickwit-doc-mapper",

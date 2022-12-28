@@ -44,10 +44,21 @@ pub struct SourceConfig {
     pub source_id: String,
 
     #[doc(hidden)]
-    /// Number of indexing pipelines spawned for the source on each indexer.
-    /// Therefore, if there exists `n` indexers in the cluster, there will be `n` * `num_pipelines`
-    /// indexing pipelines running for the source.
-    pub num_pipelines: usize,
+    /// Maximum number of indexing pipelines spawned for the source on a given indexer.
+    /// The maximum is reached only if there is enough `desired_num_pipelines` to run.
+    /// Example:
+    /// - `max_num_pipelines_per_indexer=2`
+    /// - `desired_num_pipelines=1`
+    /// => Only one pipeline will run one indexer.
+    pub max_num_pipelines_per_indexer: usize,
+    /// Number of desired indexing pipelines to run on a cluster for the source.
+    /// This number could not be reach if there is not enough indexers.
+    /// Example:
+    /// - `max_num_pipelines_per_indexer=1`
+    /// - `desired_num_pipelines=2`
+    /// - 1 indexer
+    /// => Only one pipeline will start on the sole indexer.
+    pub desired_num_pipelines: usize,
 
     // Denotes if this source is enabled.
     pub enabled: bool,
@@ -88,10 +99,17 @@ impl SourceConfig {
         .unwrap()
     }
 
-    pub fn num_pipelines(&self) -> Option<usize> {
+    pub fn desired_num_pipelines(&self) -> usize {
         match &self.source_params {
-            SourceParams::Kafka(_) | SourceParams::Void(_) => Some(self.num_pipelines),
-            _ => None,
+            SourceParams::Kafka(_) | SourceParams::Void(_) => self.desired_num_pipelines,
+            _ => 1,
+        }
+    }
+
+    pub fn max_num_pipelines_per_indexer(&self) -> usize {
+        match &self.source_params {
+            SourceParams::Kafka(_) | SourceParams::Void(_) => self.max_num_pipelines_per_indexer,
+            _ => 1,
         }
     }
 
@@ -99,7 +117,8 @@ impl SourceConfig {
     pub fn ingest_api_default() -> SourceConfig {
         SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestApi,
         }
@@ -109,7 +128,8 @@ impl SourceConfig {
     pub fn cli_ingest_source() -> SourceConfig {
         SourceConfig {
             source_id: CLI_INGEST_SOURCE_ID.to_string(),
-            num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestCli,
         }
@@ -120,7 +140,8 @@ impl TestableForRegression for SourceConfig {
     fn sample_for_regression() -> Self {
         SourceConfig {
             source_id: "kafka-source".to_string(),
-            num_pipelines: 2,
+            max_num_pipelines_per_indexer: 2,
+            desired_num_pipelines: 2,
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "kafka-topic".to_string(),
@@ -311,7 +332,8 @@ mod tests {
             SourceConfig::load(&source_config_uri, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kafka-source".to_string(),
-            num_pipelines: 2,
+            max_num_pipelines_per_indexer: 2,
+            desired_num_pipelines: 2,
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "cloudera-cluster-logs".to_string(),
@@ -321,7 +343,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.num_pipelines().unwrap(), 2);
+        assert_eq!(source_config.desired_num_pipelines(), 2);
     }
 
     #[test]
@@ -401,7 +423,8 @@ mod tests {
             SourceConfig::load(&source_config_uri, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kinesis-source".to_string(),
-            num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::Kinesis(KinesisSourceParams {
                 stream_name: "emr-cluster-logs".to_string(),
@@ -410,7 +433,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
-        assert!(source_config.num_pipelines().is_none());
+        assert_eq!(source_config.desired_num_pipelines(), 1);
     }
 
     #[test]
@@ -523,11 +546,12 @@ mod tests {
         let source_config: SourceConfig = ConfigFormat::Json.parse(&file_content).unwrap();
         let expected_source_config = SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestApi,
         };
         assert_eq!(source_config, expected_source_config);
-        assert!(source_config.num_pipelines().is_none());
+        assert_eq!(source_config.desired_num_pipelines(), 1);
     }
 }

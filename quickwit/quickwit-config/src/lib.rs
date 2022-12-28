@@ -32,7 +32,6 @@ mod index_config;
 pub mod merge_policy_config;
 mod quickwit_config;
 mod qw_env_vars;
-pub mod service;
 mod source_config;
 mod templating;
 

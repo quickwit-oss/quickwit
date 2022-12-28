@@ -22,18 +22,21 @@ use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
+use chitchat::transport::ChannelTransport;
 use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
+use quickwit_cluster::create_cluster_for_test;
+use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
     CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
@@ -890,7 +893,8 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     };
     let source_config = SourceConfig {
         source_id: CLI_INGEST_SOURCE_ID.to_string(),
-        num_pipelines: 1,
+        max_num_pipelines_per_indexer: 1,
+        desired_num_pipelines: 1,
         enabled: true,
         source_params,
     };
@@ -904,6 +908,9 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         let index_service = IndexService::from_config(config.clone()).await?;
         index_service.clear_index(&args.index_id).await?;
     }
+    // TODO: add comment to explain why we start a "fake" cluster.
+    let transport = ChannelTransport::default();
+    let fake_cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, false).await?;
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
@@ -913,6 +920,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         config.node_id.clone(),
         config.data_dir_path.clone(),
         indexer_config,
+        Arc::new(fake_cluster),
         metastore,
         quickwit_storage_uri_resolver().clone(),
     )
@@ -1031,6 +1039,9 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
+    // TODO: add comment to explain why we start a "fake" cluster.
+    let transport = ChannelTransport::default();
+    let fake_cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, false).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&config.metastore_uri)
@@ -1041,6 +1052,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         config.node_id,
         config.data_dir_path,
         indexer_config,
+        Arc::new(fake_cluster),
         metastore,
         storage_resolver,
     )
@@ -1053,7 +1065,8 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
             index_id: args.index_id,
             source_config: SourceConfig {
                 source_id: args.source_id,
-                num_pipelines: 1,
+                max_num_pipelines_per_indexer: 1,
+                desired_num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
             },

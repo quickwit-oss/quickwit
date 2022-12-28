@@ -36,9 +36,9 @@ use quickwit_cli::index::{
 use quickwit_cli::service::RunCliCommand;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
+use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::Uri;
 use quickwit_common::ChecklistError;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::CLI_INGEST_SOURCE_ID;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError, SplitState};

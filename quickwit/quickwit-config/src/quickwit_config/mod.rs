@@ -27,12 +27,12 @@ use std::path::PathBuf;
 use anyhow::bail;
 use byte_unit::Byte;
 use quickwit_common::net::HostAddr;
+use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::quickwit_config::serialize::load_quickwit_config_with_env;
-use crate::service::QuickwitService;
 use crate::ConfigFormat;
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";

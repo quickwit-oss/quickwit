@@ -416,6 +416,8 @@ where
         source_id: source.source_id.clone(),
         source_type: source.source_type().to_string(),
         enabled: source.enabled.to_string(),
+        max_num_pipelines_per_indexer: source.max_num_pipelines_per_indexer.to_string(),
+        desired_num_pipelines: source.desired_num_pipelines.to_string(),
     }];
     let source_table = make_table("Source", source_rows, true);
 
@@ -452,6 +454,8 @@ where I: IntoIterator<Item = SourceConfig> {
             source_type: source.source_type().to_string(),
             source_id: source.source_id,
             enabled: source.enabled.to_string(),
+            max_num_pipelines_per_indexer: source.max_num_pipelines_per_indexer.to_string(),
+            desired_num_pipelines: source.desired_num_pipelines.to_string(),
         })
         .sorted_by(|left, right| left.source_id.cmp(&right.source_id));
     make_table("Sources", rows, false)
@@ -465,6 +469,10 @@ struct SourceRow {
     source_type: String,
     #[tabled(rename = "Enabled")]
     enabled: String,
+    #[tabled(rename = "Max number of pipelines running per indexer")]
+    max_num_pipelines_per_indexer: String,
+    #[tabled(rename = "Number of desired piplines running in the cluster")]
+    desired_num_pipelines: String,
 }
 
 #[derive(Tabled)]
@@ -736,7 +744,8 @@ mod tests {
             .collect();
         let sources = vec![SourceConfig {
             source_id: "foo-source".to_string(),
-            num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::file("path/to/file"),
         }];
@@ -744,6 +753,8 @@ mod tests {
             source_id: "foo-source".to_string(),
             source_type: "file".to_string(),
             enabled: "true".to_string(),
+            max_num_pipelines_per_indexer: "1".to_string(),
+            desired_num_pipelines: "1".to_string(),
         }];
         let expected_params = vec![ParamsRow {
             key: "filepath".to_string(),
@@ -801,13 +812,15 @@ mod tests {
         let sources = [
             SourceConfig {
                 source_id: "foo-source".to_string(),
-                num_pipelines: 1,
+                max_num_pipelines_per_indexer: 1,
+                desired_num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::stdin(),
             },
             SourceConfig {
                 source_id: "bar-source".to_string(),
-                num_pipelines: 1,
+                max_num_pipelines_per_indexer: 1,
+                desired_num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::stdin(),
             },
@@ -817,11 +830,15 @@ mod tests {
                 source_id: "bar-source".to_string(),
                 source_type: "file".to_string(),
                 enabled: "true".to_string(),
+                max_num_pipelines_per_indexer: "1".to_string(),
+                desired_num_pipelines: "1".to_string(),
             },
             SourceRow {
                 source_id: "foo-source".to_string(),
                 source_type: "file".to_string(),
                 enabled: "true".to_string(),
+                max_num_pipelines_per_indexer: "1".to_string(),
+                desired_num_pipelines: "1".to_string(),
             },
         ];
         assert_eq!(

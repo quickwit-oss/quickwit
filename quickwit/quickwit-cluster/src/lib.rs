@@ -27,12 +27,12 @@ use std::sync::Arc;
 
 use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
-use quickwit_config::service::QuickwitService;
+use quickwit_common::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
+use quickwit_proto::ClusterMember;
 
 pub use crate::cluster::{
-    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterMember,
-    ClusterSnapshot,
+    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterSnapshot,
 };
 pub use crate::error::{ClusterError, ClusterResult};
 
@@ -50,9 +50,10 @@ pub async fn start_cluster_service(
     let self_node = ClusterMember::new(
         quickwit_config.node_id.clone(),
         unix_timestamp(),
-        enabled_services.clone(),
+        HashSet::from_iter(enabled_services.clone().into_iter()),
         quickwit_config.gossip_advertise_addr,
         quickwit_config.grpc_advertise_addr,
+        Vec::new(),
     );
 
     let cluster = Cluster::join(

@@ -27,8 +27,8 @@ use hyper::Uri;
 use itertools::Itertools;
 use quickwit_common::new_coolid;
 use quickwit_common::rand::append_random_suffix;
+use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::Uri as QuickwitUri;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::{IndexConfig, QuickwitConfig, SourceConfig};
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_proto::tonic::transport::Endpoint;
@@ -149,7 +149,8 @@ impl ClusterSandbox {
         while num_attempts < max_num_attempts {
             tokio::time::sleep(Duration::from_millis(100 * (num_attempts + 1))).await;
             let cluster_snapshot = self.rest_client.cluster_snapshot().await?;
-            if cluster_snapshot.ready_nodes.len() == expected_num_alive_nodes {
+            // We add +1 as self node is not in the `cluster_snapshot.ready_nodes`.
+            if cluster_snapshot.ready_nodes.len() + 1 == expected_num_alive_nodes {
                 return Ok(());
             }
             num_attempts += 1;

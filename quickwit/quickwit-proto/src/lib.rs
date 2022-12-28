@@ -21,8 +21,25 @@
 #![deny(clippy::disallowed_methods)]
 
 mod quickwit;
+mod quickwit_control_plane_api;
+mod quickwit_grpc_clients;
+mod quickwit_indexing_api;
 mod quickwit_ingest_api;
 mod quickwit_metastore_api;
+mod quickwit_models;
+
+pub use quickwit_grpc_clients::{
+    create_balance_channel_and_udpate_from_members, ControlPlaneGrpcClient,
+};
+pub use quickwit_models::ClusterMember;
+
+pub mod control_plane_api {
+    pub use crate::quickwit_control_plane_api::*;
+}
+
+pub mod indexing_api {
+    pub use crate::quickwit_indexing_api::*;
+}
 
 pub mod ingest_api {
     pub use crate::quickwit_ingest_api::*;
@@ -34,7 +51,7 @@ pub mod metastore_api {
 
 pub mod jaeger {
     pub mod api_v2 {
-            include!("jaeger.api_v2.rs");
+        include!("jaeger.api_v2.rs");
     }
     pub mod storage {
         pub mod v1 {
@@ -102,16 +119,16 @@ use std::convert::Infallible;
 use std::fmt;
 
 use ::opentelemetry::global;
+use ::opentelemetry::propagation::Extractor;
+use ::opentelemetry::propagation::Injector;
 pub use quickwit::*;
 use quickwit_metastore_api::DeleteQuery;
 pub use tonic;
-use tonic::Status;
 use tonic::codegen::http;
 use tonic::service::Interceptor;
+use tonic::Status;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use ::opentelemetry::propagation::Injector;
-use ::opentelemetry::propagation::Extractor;
 
 /// This enum serves as a Rosetta stone of
 /// gRPC and Http status code.
@@ -210,7 +227,7 @@ impl fmt::Display for SplitSearchError {
     }
 }
 
-/// `MutMetadataMap` used to extract [`tonic::metadata::MetadataMap`] from a request. 
+/// `MutMetadataMap` used to extract [`tonic::metadata::MetadataMap`] from a request.
 pub struct MutMetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
 
 impl<'a> Injector for MutMetadataMap<'a> {
@@ -259,7 +276,6 @@ impl Interceptor for SpanContextInterceptor {
     }
 }
 
-
 /// `MetadataMap` extracts OpenTelemetry
 /// tracing keys from request's headers.
 struct MetadataMap<'a>(&'a tonic::metadata::MetadataMap);
@@ -283,10 +299,9 @@ impl<'a> Extractor for MetadataMap<'a> {
     }
 }
 
-
 /// Sets parent span context derived from [`tonic::metadata::MetadataMap`].
 pub fn set_parent_span_from_request_metadata(request_metadata: &tonic::metadata::MetadataMap) {
     let parent_cx =
-    global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request_metadata)));
+        global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request_metadata)));
     Span::current().set_parent(parent_cx);
 }

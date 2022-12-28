@@ -24,13 +24,13 @@ use std::str::FromStr;
 use anyhow::{bail, Context};
 use quickwit_common::net::{find_private_ip, Host};
 use quickwit_common::new_coolid;
+use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
-use crate::service::QuickwitService;
 use crate::templating::render_config;
 use crate::{
     validate_identifier, ConfigFormat, IndexerConfig, IngestApiConfig, QuickwitConfig,

@@ -194,7 +194,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
-                    num_pipelines: 1,
+                    max_num_pipelines_per_indexer: 1,
+                    desired_num_pipelines: 1,
                     enabled: true,
                     source_params: SourceParams::File(params.clone()),
                 },
@@ -257,7 +258,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
-                    num_pipelines: 1,
+                    max_num_pipelines_per_indexer: 1,
+                    desired_num_pipelines: 1,
                     enabled: true,
                     source_params: SourceParams::File(params.clone()),
                 },
@@ -343,7 +345,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
-                    num_pipelines: 1,
+                    max_num_pipelines_per_indexer: 1,
+                    desired_num_pipelines: 1,
                     enabled: true,
                     source_params: SourceParams::File(params.clone()),
                 },

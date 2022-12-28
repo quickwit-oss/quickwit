@@ -29,9 +29,8 @@ use async_trait::async_trait;
 pub use grpc_adapter::GrpcMetastoreAdapter;
 use http::Uri;
 use itertools::Itertools;
-use quickwit_cluster::ClusterMember;
+use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::Uri as QuickwitUri;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
 use quickwit_proto::metastore_api::{
@@ -45,7 +44,7 @@ use quickwit_proto::metastore_api::{
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::Status;
-use quickwit_proto::SpanContextInterceptor;
+use quickwit_proto::{ClusterMember, SpanContextInterceptor};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
@@ -698,10 +697,10 @@ mod tests {
     use std::net::SocketAddr;
     use std::sync::Arc;
 
-    use quickwit_cluster::ClusterMember;
-    use quickwit_config::service::QuickwitService;
+    use quickwit_common::service::QuickwitService;
     use quickwit_proto::metastore_api::metastore_api_service_server::MetastoreApiServiceServer;
     use quickwit_proto::tonic::transport::Server;
+    use quickwit_proto::ClusterMember;
     use tokio::sync::watch;
     use tokio_stream::wrappers::WatchStream;
 
@@ -766,6 +765,7 @@ mod tests {
             HashSet::from([QuickwitService::Metastore, QuickwitService::Indexer]),
             metastore_service_grpc_addr,
             metastore_service_grpc_addr,
+            Vec::new(),
         );
         let searcher_member = ClusterMember::new(
             "2".to_string(),
@@ -773,6 +773,7 @@ mod tests {
             HashSet::from([QuickwitService::Searcher]),
             searcher_grpc_addr,
             searcher_grpc_addr,
+            Vec::new(),
         );
         let (members_tx, members_rx) =
             watch::channel::<Vec<ClusterMember>>(vec![metastore_service_member.clone()]);
@@ -849,6 +850,7 @@ mod tests {
             HashSet::from([QuickwitService::Metastore]),
             grpc_addr_1,
             grpc_addr_1,
+            Vec::new(),
         );
         let metastore_member_2 = ClusterMember::new(
             "2".to_string(),
@@ -856,6 +858,7 @@ mod tests {
             HashSet::from([QuickwitService::Metastore]),
             grpc_addr_2,
             grpc_addr_2,
+            Vec::new(),
         );
         let metastore_member_3 = ClusterMember::new(
             "3".to_string(),
@@ -863,6 +866,7 @@ mod tests {
             HashSet::from([QuickwitService::Metastore]),
             grpc_addr_3,
             grpc_addr_3,
+            Vec::new(),
         );
         let (members_tx, members_rx) =
             watch::channel::<Vec<ClusterMember>>(vec![metastore_member_1.clone()]);

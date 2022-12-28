@@ -30,6 +30,7 @@ pub mod net;
 mod progress;
 pub mod rand;
 pub mod runtimes;
+pub mod service;
 pub mod uri;
 
 use std::fmt::Debug;

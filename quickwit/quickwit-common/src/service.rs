@@ -26,12 +26,13 @@ use enum_iterator::{all, Sequence};
 use itertools::Itertools;
 use serde::Serialize;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Sequence)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Sequence, PartialOrd, Ord)]
 pub enum QuickwitService {
     Indexer,
     Searcher,
     Janitor,
     Metastore,
+    ControlPlane,
 }
 
 impl QuickwitService {
@@ -41,9 +42,9 @@ impl QuickwitService {
             QuickwitService::Searcher => "searcher",
             QuickwitService::Janitor => "janitor",
             QuickwitService::Metastore => "metastore",
+            QuickwitService::ControlPlane => "control_plane",
         }
     }
-
     pub fn supported_services() -> HashSet<QuickwitService> {
         all::<QuickwitService>().into_iter().collect()
     }
@@ -64,6 +65,7 @@ impl FromStr for QuickwitService {
             "searcher" => Ok(QuickwitService::Searcher),
             "janitor" => Ok(QuickwitService::Janitor),
             "metastore" => Ok(QuickwitService::Metastore),
+            "control_plane" => Ok(QuickwitService::ControlPlane),
             _ => {
                 bail!(
                     "Failed to parse service `{service_str}`. Supported services are: `{}`.",
