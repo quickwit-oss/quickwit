@@ -235,7 +235,7 @@ pub mod test_suite {
 
         metastore.create_index(index_config.clone()).await.unwrap();
 
-        let source_id = "test-metastore-add-source--void-source-id";
+        let source_id = format!("{index_id}--source");
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
@@ -250,7 +250,7 @@ pub mod test_suite {
                 .await
                 .unwrap()
                 .checkpoint
-                .source_checkpoint(source_id),
+                .source_checkpoint(&source_id),
             None
         );
 
@@ -263,11 +263,11 @@ pub mod test_suite {
 
         let sources = &index_metadata.sources;
         assert_eq!(sources.len(), 1);
-        assert!(sources.contains_key(source_id));
-        assert_eq!(sources.get(source_id).unwrap().source_id, source_id);
-        assert_eq!(sources.get(source_id).unwrap().source_type(), "void");
+        assert!(sources.contains_key(&source_id));
+        assert_eq!(sources.get(&source_id).unwrap().source_id, source_id);
+        assert_eq!(sources.get(&source_id).unwrap().source_type(), "void");
         assert_eq!(
-            index_metadata.checkpoint.source_checkpoint(source_id),
+            index_metadata.checkpoint.source_checkpoint(&source_id),
             Some(&SourceCheckpoint::default())
         );
 
@@ -280,7 +280,7 @@ pub mod test_suite {
         ));
         assert!(matches!(
             metastore
-                .add_source("index-id-does-not-exist", source)
+                .add_source("index-not-found", source)
                 .await
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
@@ -297,7 +297,7 @@ pub mod test_suite {
 
         metastore.create_index(index_config.clone()).await.unwrap();
 
-        let source_id = "test-metastore-toggle-source--void-source-id";
+        let source_id = format!("{index_id}--source");
         let source = SourceConfig {
             source_id: source_id.to_string(),
             num_pipelines: 1,
@@ -309,7 +309,7 @@ pub mod test_suite {
             .await
             .unwrap();
         let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
-        let source = index_metadata.sources.get(source_id).unwrap();
+        let source = index_metadata.sources.get(&source_id).unwrap();
         assert_eq!(source.enabled, true);
 
         // Disable source.
@@ -318,7 +318,7 @@ pub mod test_suite {
             .await
             .unwrap();
         let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
-        let source = index_metadata.sources.get(source_id).unwrap();
+        let source = index_metadata.sources.get(&source_id).unwrap();
         assert_eq!(source.enabled, false);
 
         // Enable source.
@@ -327,7 +327,7 @@ pub mod test_suite {
             .await
             .unwrap();
         let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
-        let source = index_metadata.sources.get(source_id).unwrap();
+        let source = index_metadata.sources.get(&source_id).unwrap();
         assert_eq!(source.enabled, true);
 
         cleanup_index(&metastore, index_metadata.index_id()).await;
@@ -338,7 +338,7 @@ pub mod test_suite {
 
         let index_id = append_random_suffix("test-delete-source");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let source_id = "test-metastore-delete-source--void-source-id";
+        let source_id = format!("{index_id}--source");
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
@@ -351,21 +351,24 @@ pub mod test_suite {
 
         metastore.create_index(index_config.clone()).await.unwrap();
         metastore.add_source(&index_id, source).await.unwrap();
-        metastore.delete_source(&index_id, source_id).await.unwrap();
+        metastore
+            .delete_source(&index_id, &source_id)
+            .await
+            .unwrap();
 
         let sources = metastore.index_metadata(&index_id).await.unwrap().sources;
         assert!(sources.is_empty());
 
         assert!(matches!(
             metastore
-                .delete_source(&index_id, source_id)
+                .delete_source(&index_id, &source_id)
                 .await
                 .unwrap_err(),
             MetastoreError::SourceDoesNotExist { .. }
         ));
         assert!(matches!(
             metastore
-                .delete_source("index-id-does-not-exist", source_id)
+                .delete_source("index-not-found", &source_id)
                 .await
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
@@ -1160,7 +1163,7 @@ pub mod test_suite {
                 .await
                 .unwrap_err();
             assert!(
-                matches!(error, MetastoreError::SplitsNotDeletable { split_ids } if split_ids == &[split_id_1.clone()])
+                matches!(error, MetastoreError::SplitsNotDeletable { split_ids } if split_ids == [split_id_1.clone()])
             );
 
             cleanup_index(&metastore, &index_id).await;
@@ -1924,7 +1927,7 @@ pub mod test_suite {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        let source_id = "split-update-timestamp-source";
+        let source_id = format!("{index_id}--source");
 
         let split_id = format!("{index_id}--split");
         let split_metadata = SplitMetadata {
@@ -1960,7 +1963,7 @@ pub mod test_suite {
                 &[],
                 {
                     let offsets = 0..5;
-                    IndexCheckpointDelta::for_test(source_id, offsets)
+                    IndexCheckpointDelta::for_test(&source_id, offsets)
                 }
                 .into(),
             )
