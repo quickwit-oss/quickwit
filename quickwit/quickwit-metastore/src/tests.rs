@@ -58,7 +58,7 @@ pub mod test_suite {
 
     async fn cleanup_index(metastore: &dyn Metastore, index_id: &str) {
         // List all splits.
-        let all_splits = metastore.list_all_splits(&index_id).await.unwrap();
+        let all_splits = metastore.list_all_splits(index_id).await.unwrap();
 
         if !all_splits.is_empty() {
             let all_split_ids: Vec<&str> =
@@ -66,7 +66,7 @@ pub mod test_suite {
 
             // Mark splits for deletion.
             metastore
-                .mark_splits_for_deletion(&index_id, &all_split_ids)
+                .mark_splits_for_deletion(index_id, &all_split_ids)
                 .await
                 .unwrap();
 
@@ -408,7 +408,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
             metastore
-                .publish_splits(&index_id, &[&split_id], &[], None)
+                .publish_splits(&index_id, &[split_id], &[], None)
                 .await
                 .unwrap();
         }
