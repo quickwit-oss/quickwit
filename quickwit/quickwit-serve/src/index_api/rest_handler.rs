@@ -493,6 +493,15 @@ mod tests {
         let index_metadata = metastore.index_metadata("hdfs-logs").await.unwrap();
         assert!(!index_metadata.sources.contains_key("file-source"));
 
+        // Check get a non exising source returns 404.
+        let resp = warp::test::request()
+            .path("/indexes/hdfs-logs/sources/file-source")
+            .method("GET")
+            .body(&source_config_body)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 404);
+
         // Check delete index.
         let resp = warp::test::request()
             .path("/indexes/hdfs-logs")
