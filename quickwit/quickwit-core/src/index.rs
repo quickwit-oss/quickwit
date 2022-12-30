@@ -323,6 +323,27 @@ impl IndexService {
         Ok(source)
     }
 
+    pub async fn get_source(
+        &self,
+        index_id: &str,
+        source_id: &str,
+    ) -> Result<SourceConfig, IndexServiceError> {
+        let source_config = self
+            .metastore
+            .index_metadata(index_id)
+            .await?
+            .sources
+            .get(source_id)
+            .ok_or_else(|| {
+                IndexServiceError::MetastoreError(MetastoreError::SourceDoesNotExist {
+                    source_id: source_id.to_string(),
+                })
+            })?
+            .clone();
+
+        Ok(source_config)
+    }
+
     pub async fn delete_source(
         &self,
         index_id: &str,

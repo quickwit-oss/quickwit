@@ -42,6 +42,7 @@ pub fn index_management_handlers(
         .or(create_index_handler(index_service.clone(), quickwit_config))
         .or(delete_index_handler(index_service.clone()))
         .or(create_source_handler(index_service.clone()))
+        .or(get_source_handler(index_service.clone()))
         .or(delete_source_handler(index_service))
 }
 
@@ -174,6 +175,25 @@ async fn create_source(
 ) -> Result<SourceConfig, IndexServiceError> {
     info!(index_id = %index_id, source_id = %source_config.source_id, "create-source");
     index_service.create_source(&index_id, source_config).await
+}
+
+fn get_source_handler(
+    index_service: Arc<IndexService>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    warp::path!("indexes" / String / "sources" / String)
+        .and(warp::get())
+        .and(with_arg(index_service))
+        .then(get_source)
+        .map(format_response)
+}
+
+async fn get_source(
+    index_id: String,
+    source_id: String,
+    index_service: Arc<IndexService>,
+) -> Result<SourceConfig, IndexServiceError> {
+    info!(index_id = %index_id, source_id = %source_id, "get-source");
+    index_service.get_source(&index_id, &source_id).await
 }
 
 fn delete_source_handler(
@@ -442,6 +462,14 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 200);
 
+        // Get source.
+        let resp = warp::test::request()
+            .path("/indexes/hdfs-logs/sources/file-source")
+            .method("GET")
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+
         // Check that the source has been added to index metadata.
         let index_metadata = metastore.index_metadata("hdfs-logs").await.unwrap();
         assert!(index_metadata.sources.contains_key("file-source"));
@@ -464,6 +492,15 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let index_metadata = metastore.index_metadata("hdfs-logs").await.unwrap();
         assert!(!index_metadata.sources.contains_key("file-source"));
+
+        // Check get a non exising source returns 404.
+        let resp = warp::test::request()
+            .path("/indexes/hdfs-logs/sources/file-source")
+            .method("GET")
+            .body(&source_config_body)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 404);
 
         // Check delete index.
         let resp = warp::test::request()
