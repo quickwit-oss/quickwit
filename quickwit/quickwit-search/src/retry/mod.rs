@@ -22,8 +22,8 @@ pub mod search_stream;
 
 use std::collections::HashSet;
 
-use crate::search_client_pool::Job;
-use crate::{SearchClientPool, SearchServiceClient};
+use crate::search_job_allocator::Job;
+use crate::{SearchJobAllocator, SearchServiceClient};
 
 /// A retry policy to evaluate if a request should be retried.
 /// A retry can be made either on an error or on a partial success.
@@ -68,7 +68,7 @@ impl<'a> Job for &'a str {
 // 1. Take the first split_id of the request
 // 2. Ask for a relevant client for that split while excluding the failing client.
 pub fn retry_client(
-    client_pool: &SearchClientPool,
+    client_pool: &SearchJobAllocator,
     failing_client: &SearchServiceClient,
     split_id: &str,
 ) -> anyhow::Result<SearchServiceClient> {
@@ -85,7 +85,7 @@ mod tests {
     use quickwit_proto::{FetchDocsResponse, SplitIdAndFooterOffsets};
 
     use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
-    use crate::{MockSearchService, SearchClientPool, SearchError};
+    use crate::{MockSearchService, SearchError, SearchJobAllocator};
 
     #[test]
     fn test_should_retry_on_error() {
@@ -107,8 +107,11 @@ mod tests {
         let mock_service_1 = MockSearchService::new();
         let mock_service_2 = MockSearchService::new();
         let client_pool = Arc::new(
-            SearchClientPool::from_mocks(vec![Arc::new(mock_service_1), Arc::new(mock_service_2)])
-                .await?,
+            SearchJobAllocator::from_mocks(vec![
+                Arc::new(mock_service_1),
+                Arc::new(mock_service_2),
+            ])
+            .await?,
         );
         let client_hashmap = client_pool.clients();
         let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;

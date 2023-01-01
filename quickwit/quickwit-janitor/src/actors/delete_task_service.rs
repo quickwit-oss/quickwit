@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
 use quickwit_config::IndexConfig;
 use quickwit_metastore::Metastore;
-use quickwit_search::SearchClientPool;
+use quickwit_search::SearchJobAllocator;
 use quickwit_storage::StorageUriResolver;
 use serde::Serialize;
 use tracing::{error, info, warn};
@@ -41,7 +41,7 @@ pub struct DeleteTaskServiceState {
 
 pub struct DeleteTaskService {
     metastore: Arc<dyn Metastore>,
-    search_client_pool: SearchClientPool,
+    search_client_pool: SearchJobAllocator,
     storage_resolver: StorageUriResolver,
     data_dir_path: PathBuf,
     pipeline_handles_by_index_id: HashMap<String, ActorHandle<DeleteTaskPipeline>>,
@@ -51,7 +51,7 @@ pub struct DeleteTaskService {
 impl DeleteTaskService {
     pub fn new(
         metastore: Arc<dyn Metastore>,
-        search_client_pool: SearchClientPool,
+        search_client_pool: SearchJobAllocator,
         storage_resolver: StorageUriResolver,
         data_dir_path: PathBuf,
         max_concurrent_split_uploads: usize,
@@ -187,7 +187,7 @@ mod tests {
     use quickwit_actors::{Universe, HEARTBEAT};
     use quickwit_indexing::TestSandbox;
     use quickwit_proto::metastore_api::DeleteQuery;
-    use quickwit_search::{MockSearchService, SearchClientPool};
+    use quickwit_search::{MockSearchService, SearchJobAllocator};
     use quickwit_storage::StorageUriResolver;
 
     use super::DeleteTaskService;
@@ -207,7 +207,8 @@ mod tests {
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
         let metastore = test_sandbox.metastore();
         let mock_search_service = MockSearchService::new();
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+        let client_pool =
+            SearchJobAllocator::from_mocks(vec![Arc::new(mock_search_service)]).await?;
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let delete_task_service = DeleteTaskService::new(

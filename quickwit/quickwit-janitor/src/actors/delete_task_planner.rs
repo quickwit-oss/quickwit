@@ -34,7 +34,7 @@ use quickwit_metastore::{
 };
 use quickwit_proto::metastore_api::DeleteTask;
 use quickwit_proto::SearchRequest;
-use quickwit_search::{jobs_to_leaf_request, SearchClientPool, SearchJob};
+use quickwit_search::{jobs_to_leaf_request, SearchJob, SearchJobAllocator};
 use serde::Serialize;
 use tantivy::Inventory;
 use tracing::{debug, info};
@@ -78,7 +78,7 @@ pub struct DeleteTaskPlanner {
     index_uri: Uri,
     doc_mapper_str: String,
     metastore: Arc<dyn Metastore>,
-    search_client_pool: SearchClientPool,
+    search_client_pool: SearchJobAllocator,
     merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     /// Inventory of ongoing delete operations. If everything goes well,
@@ -123,7 +123,7 @@ impl DeleteTaskPlanner {
         index_uri: Uri,
         doc_mapper_str: String,
         metastore: Arc<dyn Metastore>,
-        search_client_pool: SearchClientPool,
+        search_client_pool: SearchJobAllocator,
         merge_policy: Arc<dyn MergePolicy>,
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> Self {
@@ -492,7 +492,8 @@ mod tests {
                 })
             },
         );
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+        let client_pool =
+            SearchJobAllocator::from_mocks(vec![Arc::new(mock_search_service)]).await?;
         let (downloader_mailbox, downloader_inbox) = create_test_mailbox();
         let delete_planner_executor = DeleteTaskPlanner::new(
             index_id.to_string(),

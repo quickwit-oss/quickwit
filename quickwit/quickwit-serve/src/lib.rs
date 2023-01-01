@@ -64,7 +64,7 @@ use quickwit_metastore::{
     RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::OTEL_TRACE_INDEX_CONFIG;
-use quickwit_search::{start_searcher_service, SearchClientPool, SearchService};
+use quickwit_search::{start_searcher_service, SearchJobAllocator, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
 use tracing::{error, warn};
@@ -195,7 +195,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     };
 
     let search_client_pool =
-        SearchClientPool::create_and_keep_updated(cluster.ready_member_change_watcher()).await?;
+        SearchJobAllocator::create_and_keep_updated(cluster.ready_member_change_watcher()).await?;
 
     let janitor_service = if config.enabled_services.contains(&QuickwitService::Janitor) {
         let janitor_service = start_janitor_service(

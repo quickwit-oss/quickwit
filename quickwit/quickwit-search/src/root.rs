@@ -38,9 +38,9 @@ use tracing::{debug, error, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::make_merge_collector;
-use crate::search_client_pool::Job;
+use crate::search_job_allocator::Job;
 use crate::{
-    extract_split_and_footer_offsets, list_relevant_splits, SearchClientPool, SearchError,
+    extract_split_and_footer_offsets, list_relevant_splits, SearchError, SearchJobAllocator,
     SearchServiceClient,
 };
 
@@ -143,7 +143,7 @@ pub async fn root_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
     cluster_client: &ClusterClient,
-    client_pool: &SearchClientPool,
+    client_pool: &SearchJobAllocator,
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
 
@@ -313,7 +313,7 @@ pub async fn root_search(
 fn assign_client_fetch_doc_tasks(
     partial_hits: &[PartialHit],
     split_offsets_map: &HashMap<String, SplitIdAndFooterOffsets>,
-    client_pool: &SearchClientPool,
+    client_pool: &SearchJobAllocator,
 ) -> crate::Result<Vec<(SearchServiceClient, Vec<FetchDocsJob>)>> {
     // Group the partial hits per split
     let mut partial_hits_map: HashMap<String, Vec<PartialHit>> = HashMap::new();
@@ -482,7 +482,7 @@ mod tests {
                 })
             },
         );
-        let client_pool = SearchClientPool::from_mocks(vec![
+        let client_pool = SearchJobAllocator::from_mocks(vec![
             Arc::new(mock_search_service1),
             Arc::new(mock_search_service2),
         ])
@@ -542,7 +542,8 @@ mod tests {
                 })
             },
         );
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+        let client_pool =
+            SearchJobAllocator::from_mocks(vec![Arc::new(mock_search_service)]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
@@ -616,7 +617,7 @@ mod tests {
                 })
             },
         );
-        let client_pool = SearchClientPool::from_mocks(vec![
+        let client_pool = SearchJobAllocator::from_mocks(vec![
             Arc::new(mock_search_service1),
             Arc::new(mock_search_service2),
         ])
@@ -721,7 +722,7 @@ mod tests {
                 })
             },
         );
-        let client_pool = SearchClientPool::from_mocks(vec![
+        let client_pool = SearchJobAllocator::from_mocks(vec![
             Arc::new(mock_search_service1),
             Arc::new(mock_search_service2),
         ])
@@ -843,7 +844,7 @@ mod tests {
                 })
             },
         );
-        let client_pool = SearchClientPool::from_mocks(vec![
+        let client_pool = SearchJobAllocator::from_mocks(vec![
             Arc::new(mock_search_service1),
             Arc::new(mock_search_service2),
         ])
@@ -918,7 +919,7 @@ mod tests {
             },
         );
         let client_pool =
-            SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?;
+            SearchJobAllocator::from_mocks(vec![Arc::new(mock_search_service1)]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
@@ -975,7 +976,7 @@ mod tests {
             },
         );
         let client_pool =
-            SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?;
+            SearchJobAllocator::from_mocks(vec![Arc::new(mock_search_service1)]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await;
@@ -1051,7 +1052,7 @@ mod tests {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
-        let client_pool = SearchClientPool::from_mocks(vec![
+        let client_pool = SearchJobAllocator::from_mocks(vec![
             Arc::new(mock_search_service1),
             Arc::new(mock_search_service2),
         ])
@@ -1122,7 +1123,7 @@ mod tests {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
-        let client_pool = SearchClientPool::from_mocks(vec![
+        let client_pool = SearchJobAllocator::from_mocks(vec![
             Arc::new(mock_search_service1),
             Arc::new(mock_search_service2),
         ])
@@ -1151,7 +1152,7 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split")]));
 
         let client_pool =
-            SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
+            SearchJobAllocator::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
 
         assert!(root_search(
@@ -1238,7 +1239,7 @@ mod tests {
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split1")]));
         let client_pool =
-            SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
+            SearchJobAllocator::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await;
@@ -1276,7 +1277,7 @@ mod tests {
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split1")]));
         let client_pool =
-            SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
+            SearchJobAllocator::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await;

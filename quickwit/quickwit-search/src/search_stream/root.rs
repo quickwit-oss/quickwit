@@ -30,7 +30,7 @@ use tracing::*;
 
 use crate::cluster_client::ClusterClient;
 use crate::root::SearchJob;
-use crate::{list_relevant_splits, SearchClientPool, SearchError, SearchServiceClient};
+use crate::{list_relevant_splits, SearchError, SearchJobAllocator, SearchServiceClient};
 
 /// Perform a distributed search stream.
 #[instrument(skip(metastore, cluster_client, client_pool))]
@@ -38,7 +38,7 @@ pub async fn root_search_stream(
     search_stream_request: SearchStreamRequest,
     metastore: &dyn Metastore,
     cluster_client: ClusterClient,
-    client_pool: &SearchClientPool,
+    client_pool: &SearchJobAllocator,
 ) -> crate::Result<impl futures::Stream<Item = crate::Result<Bytes>>> {
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
@@ -154,7 +154,8 @@ mod tests {
         );
         // The test will hang on indefinitely if we don't drop the receiver.
         drop(result_sender);
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+        let client_pool =
+            SearchJobAllocator::from_mocks(vec![Arc::new(mock_search_service)]).await?;
 
         let cluster_client = ClusterClient::new(client_pool.clone());
         let result: Vec<Bytes> =
@@ -210,7 +211,8 @@ mod tests {
         );
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+        let client_pool =
+            SearchJobAllocator::from_mocks(vec![Arc::new(mock_search_service)]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
         let result: Vec<_> = stream.try_collect().await?;
@@ -270,7 +272,8 @@ mod tests {
             );
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+        let client_pool =
+            SearchJobAllocator::from_mocks(vec![Arc::new(mock_search_service)]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
         let result: Result<Vec<_>, SearchError> = stream.try_collect().await;
@@ -295,7 +298,7 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split")]));
 
         let client_pool =
-            SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
+            SearchJobAllocator::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
 
         assert!(root_search_stream(
             quickwit_proto::SearchStreamRequest {

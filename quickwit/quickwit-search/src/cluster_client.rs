@@ -31,19 +31,19 @@ use tracing::debug;
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfullSplitIds};
 use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
-use crate::{SearchClientPool, SearchError, SearchServiceClient};
+use crate::{SearchError, SearchJobAllocator, SearchServiceClient};
 
 /// Client that executes placed requests (Request, `SearchServiceClient`) and provides
 /// retry policies for `FetchDocsRequest`, `LeafSearchRequest` and `LeafSearchStreamRequest`
 /// to retry on other `SearchServiceClient`.
 #[derive(Clone)]
 pub struct ClusterClient {
-    client_pool: SearchClientPool,
+    client_pool: SearchJobAllocator,
 }
 
 impl ClusterClient {
     /// Instantiates [`ClusterClient`].
-    pub fn new(client_pool: SearchClientPool) -> Self {
+    pub fn new(client_pool: SearchJobAllocator) -> Self {
         Self { client_pool }
     }
 
@@ -321,7 +321,7 @@ mod tests {
             .return_once(|_: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse { hits: vec![] })
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
+        let client_pool = SearchJobAllocator::from_mocks(vec![Arc::new(mock_service)]).await?;
         let first_client =
             client_pool.assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())?;
         let cluster_client = ClusterClient::new(client_pool);
@@ -345,9 +345,11 @@ mod tests {
             .return_once(|_: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse { hits: vec![] })
             });
-        let client_pool =
-            SearchClientPool::from_mocks(vec![Arc::new(mock_service_1), Arc::new(mock_service_2)])
-                .await?;
+        let client_pool = SearchJobAllocator::from_mocks(vec![
+            Arc::new(mock_service_1),
+            Arc::new(mock_service_2),
+        ])
+        .await?;
         let client_hashmap = client_pool.clients();
         let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
@@ -366,7 +368,7 @@ mod tests {
             .returning(|_: quickwit_proto::FetchDocsRequest| {
                 Err(SearchError::InternalError("error".to_string()))
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service_1)]).await?;
+        let client_pool = SearchJobAllocator::from_mocks(vec![Arc::new(mock_service_1)]).await?;
         let client_hashmap = client_pool.clients();
         let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
@@ -391,7 +393,7 @@ mod tests {
                     ..Default::default()
                 })
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
+        let client_pool = SearchJobAllocator::from_mocks(vec![Arc::new(mock_service)]).await?;
         let first_client =
             client_pool.assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())?;
         let cluster_client = ClusterClient::new(client_pool);
@@ -436,7 +438,7 @@ mod tests {
                     ..Default::default()
                 })
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
+        let client_pool = SearchJobAllocator::from_mocks(vec![Arc::new(mock_service)]).await?;
         let first_client = client_pool
             .assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())
             .unwrap();
@@ -526,9 +528,11 @@ mod tests {
         mock_service_2
             .expect_leaf_search_stream()
             .return_once(|_| Ok(UnboundedReceiverStream::new(result_receiver)));
-        let client_pool =
-            SearchClientPool::from_mocks(vec![Arc::new(mock_service_1), Arc::new(mock_service_2)])
-                .await?;
+        let client_pool = SearchJobAllocator::from_mocks(vec![
+            Arc::new(mock_service_1),
+            Arc::new(mock_service_2),
+        ])
+        .await?;
         result_sender.send(Ok(LeafSearchStreamResponse {
             data: Vec::new(),
             split_id: "split_1".to_string(),

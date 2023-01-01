@@ -24,7 +24,7 @@ use std::sync::Arc;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::QuickwitConfig;
 use quickwit_metastore::Metastore;
-use quickwit_search::SearchClientPool;
+use quickwit_search::SearchJobAllocator;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
 
@@ -46,7 +46,7 @@ pub async fn start_janitor_service(
     universe: &Universe,
     config: &QuickwitConfig,
     metastore: Arc<dyn Metastore>,
-    search_client_pool: SearchClientPool,
+    search_client_pool: SearchJobAllocator,
     storage_uri_resolver: StorageUriResolver,
 ) -> anyhow::Result<Mailbox<JanitorService>> {
     info!("Starting janitor service.");

@@ -19,6 +19,7 @@
 
 #![deny(clippy::disallowed_methods)]
 
+mod client_pool;
 mod cluster;
 mod error;
 
@@ -30,6 +31,7 @@ use chitchat::FailureDetectorConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
 
+pub use crate::client_pool::{ServiceClientBuilder, ServiceClientPool};
 pub use crate::cluster::{
     create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterMember,
     ClusterSnapshot,

@@ -35,7 +35,7 @@ use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::models::{IndexingPipelineId, ScratchDirectory};
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::Metastore;
-use quickwit_search::SearchClientPool;
+use quickwit_search::SearchJobAllocator;
 use quickwit_storage::Storage;
 use serde::Serialize;
 use tokio::join;
@@ -66,7 +66,7 @@ pub struct DeleteTaskPipelineState {
 pub struct DeleteTaskPipeline {
     index_id: String,
     metastore: Arc<dyn Metastore>,
-    search_client_pool: SearchClientPool,
+    search_client_pool: SearchJobAllocator,
     indexing_settings: IndexingSettings,
     index_storage: Arc<dyn Storage>,
     delete_service_dir_path: PathBuf,
@@ -116,7 +116,7 @@ impl DeleteTaskPipeline {
     pub fn new(
         index_id: String,
         metastore: Arc<dyn Metastore>,
-        search_client_pool: SearchClientPool,
+        search_client_pool: SearchJobAllocator,
         indexing_settings: IndexingSettings,
         index_storage: Arc<dyn Storage>,
         delete_service_dir_path: PathBuf,
@@ -287,7 +287,7 @@ mod tests {
     use quickwit_metastore::SplitState;
     use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
-    use quickwit_search::{MockSearchService, SearchClientPool, SearchError};
+    use quickwit_search::{MockSearchService, SearchError, SearchJobAllocator};
 
     use super::{ActorContext, ActorExitStatus, DeleteTaskPipeline};
 
@@ -362,7 +362,8 @@ mod tests {
                     ..Default::default()
                 })
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+        let client_pool =
+            SearchJobAllocator::from_mocks(vec![Arc::new(mock_search_service)]).await?;
 
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
@@ -434,7 +435,8 @@ mod tests {
                     ..Default::default()
                 })
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+        let client_pool =
+            SearchJobAllocator::from_mocks(vec![Arc::new(mock_search_service)]).await?;
 
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
