@@ -3382,6 +3382,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-control-plane"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chitchat",
+ "itertools",
+ "quickwit-actors",
+ "quickwit-cluster",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-core",
+ "quickwit-indexing",
+ "quickwit-metastore",
+ "quickwit-proto",
+ "quickwit-storage",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time 0.3.17",
+ "tokio",
+ "tokio-stream",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-core"
 version = "0.4.0"
 dependencies = [
@@ -3464,6 +3491,23 @@ dependencies = [
  "time-fmt",
  "tracing",
  "typetag",
+]
+
+[[package]]
+name = "quickwit-grpc-clients"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "quickwit-cluster",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-proto",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower",
+ "tracing",
 ]
 
 [[package]]
@@ -3609,6 +3653,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-doc-mapper",
+ "quickwit-grpc-clients",
  "quickwit-proto",
  "quickwit-storage",
  "rand 0.8.5",

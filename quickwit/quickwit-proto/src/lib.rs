@@ -23,8 +23,18 @@
 #![allow(rustdoc::invalid_html_tags)]
 
 mod quickwit;
+mod quickwit_control_plane_api;
+mod quickwit_indexing_api;
 mod quickwit_ingest_api;
 mod quickwit_metastore_api;
+
+pub mod control_plane_api {
+    pub use crate::quickwit_control_plane_api::*;
+}
+
+pub mod indexing_api {
+    pub use crate::quickwit_indexing_api::*;
+}
 
 pub mod ingest_api {
     pub use crate::quickwit_ingest_api::*;

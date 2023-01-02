@@ -36,69 +36,25 @@ use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::error::{ClusterError, ClusterResult};
+use crate::member::{
+    build_cluster_members, ClusterMember, RunningIndexingPlan, ENABLED_SERVICES_KEY,
+    GRPC_ADVERTISE_ADDR_KEY, RUNNING_INDEXING_PLAN,
+};
 use crate::QuickwitService;
 
-const HEALTH_KEY: &str = "health";
-const HEALTH_VALUE_READY: &str = "READY";
-const HEALTH_VALUE_NOT_READY: &str = "NOT_READY";
-const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
 const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(25)
 } else {
     Duration::from_secs(1)
 };
-const ENABLED_SERVICES_KEY: &str = "enabled_services";
 
-/// Cluster member.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClusterMember {
-    /// A unique node ID across the cluster.
-    /// The Chitchat node ID is the concatenation of the node ID and the start timestamp:
-    /// `{node_id}/{start_timestamp}`.
-    pub node_id: String,
-    /// The start timestamp (seconds) of the node.
-    pub start_timestamp: u64,
-    /// Enabled services, i.e. services configured to run on the node. Depending on the node and
-    /// service health, each service may or may not be available/running.
-    pub enabled_services: HashSet<QuickwitService>,
-    /// Gossip advertise address, i.e. the address that other nodes should use to gossip with the
-    /// node.
-    pub gossip_advertise_addr: SocketAddr,
-    /// gRPC advertise address, i.e. the address that other nodes should use to communicate with
-    /// the node via gRPC.
-    pub grpc_advertise_addr: SocketAddr,
-}
-
-impl ClusterMember {
-    pub fn new(
-        node_id: String,
-        start_timestamp: u64,
-        enabled_services: HashSet<QuickwitService>,
-        gossip_advertise_addr: SocketAddr,
-        grpc_advertise_addr: SocketAddr,
-    ) -> Self {
-        Self {
-            node_id,
-            start_timestamp,
-            enabled_services,
-            gossip_advertise_addr,
-            grpc_advertise_addr,
-        }
-    }
-
-    pub fn chitchat_id(&self) -> String {
-        format!("{}/{}", self.node_id, self.start_timestamp)
-    }
-}
-
-impl From<ClusterMember> for NodeId {
-    fn from(member: ClusterMember) -> Self {
-        Self::new(member.chitchat_id(), member.gossip_advertise_addr)
-    }
-}
+// Health key and values used to store node's health in chitchat state.
+const HEALTH_KEY: &str = "health";
+const HEALTH_VALUE_READY: &str = "READY";
+const HEALTH_VALUE_NOT_READY: &str = "NOT_READY";
 
 /// This is an implementation of a cluster using Chitchat.
 pub struct Cluster {
@@ -267,7 +223,8 @@ impl Cluster {
         build_cluster_members(ready_nodes, &cluster_snapshot.chitchat_state_snapshot)
     }
 
-    /// Returns the gRPC addresses of the members providing the specified service.
+    // Returns the gRPC addresses of the members providing the specified service. Used for testing.
+    #[cfg(test)]
     pub fn members_grpc_advertise_addr_for_service(
         &self,
         service: &QuickwitService,
@@ -310,10 +267,10 @@ impl Cluster {
 
     /// Leave the cluster.
     pub async fn shutdown(self) {
-        info!(self_addr = ?self.gossip_listen_addr, "Shutting down the cluster.");
+        info!(self_addr = ?self.gossip_listen_addr, "Shutting down chitchat.");
         let result = self.chitchat_handle.shutdown().await;
         if let Err(error) = result {
-            error!(self_addr = ?self.gossip_listen_addr, error = ?error, "Error while shuting down.");
+            error!(self_addr = ?self.gossip_listen_addr, error = ?error, "Error while shuting down chitchat.");
         }
 
         self.stop.store(true, Ordering::Relaxed);
@@ -339,6 +296,7 @@ impl Cluster {
         Ok(())
     }
 
+    /// Set self readyness value.
     pub async fn set_self_node_ready(&self, ready: bool) {
         let health_value = if ready {
             HEALTH_VALUE_READY
@@ -348,110 +306,23 @@ impl Cluster {
         self.set_key_value(HEALTH_KEY, health_value).await
     }
 
+    /// Returns true if self is ready.
     pub async fn is_self_node_ready(&self) -> bool {
         let chitchat = self.chitchat_handle.chitchat();
         let mut chitchat_mutex = chitchat.lock().await;
         let node_state = chitchat_mutex.self_node_state();
         is_ready_predicate(node_state)
     }
-}
 
-// Builds cluster members with the given `NodeId`s and `ClusterStateSnapshot`.
-fn build_cluster_members(
-    node_ids: HashSet<NodeId>,
-    cluster_state_snapshot: &ClusterStateSnapshot,
-) -> Vec<ClusterMember> {
-    node_ids
-        .iter()
-        .map(|node_id| {
-            if let Some(node_state) = cluster_state_snapshot.node_states.get(&node_id.id) {
-                build_cluster_member(node_id, node_state)
-            } else {
-                anyhow::bail!("Could not find node id `{}` in ChitChat state.", node_id.id,)
-            }
-        })
-        .filter_map(|member_res| {
-            // Just log an error for members that cannot be built.
-            if let Err(error) = &member_res {
-                error!(
-                    error=?error,
-                    "Failed to build cluster member from cluster state, ignoring member.",
-                );
-            }
-            member_res.ok()
-        })
-        .collect_vec()
-}
-
-// Builds a cluster member from [`NodeId`] and [`NodeState`].
-fn build_cluster_member(
-    chitchat_node: &NodeId,
-    node_state: &NodeState,
-) -> anyhow::Result<ClusterMember> {
-    let enabled_services = node_state
-        .get(ENABLED_SERVICES_KEY)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Could not find `{}` key in node `{}` state.",
-                ENABLED_SERVICES_KEY,
-                chitchat_node.id
-            )
-        })
-        .map(|enabled_services_str| {
-            parse_enabled_services_str(enabled_services_str, &chitchat_node.id)
-        })??;
-    let grpc_advertise_addr = node_state
-        .get(GRPC_ADVERTISE_ADDR_KEY)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Could not find `{}` key in node `{}` state.",
-                GRPC_ADVERTISE_ADDR_KEY,
-                chitchat_node.id
-            )
-        })
-        .map(|addr_str| addr_str.parse::<SocketAddr>())??;
-    let (node_id, start_timestamp_str) = chitchat_node.id.split_once('/').ok_or_else(|| {
-        anyhow::anyhow!(
-            "Failed to create cluster member instance from NodeId `{}`.",
-            chitchat_node.id
-        )
-    })?;
-    let start_timestamp = start_timestamp_str.parse()?;
-    Ok(ClusterMember::new(
-        node_id.to_string(),
-        start_timestamp,
-        enabled_services,
-        chitchat_node.gossip_public_address,
-        grpc_advertise_addr,
-    ))
-}
-
-fn parse_enabled_services_str(
-    enabled_services_str: &str,
-    node_id: &str,
-) -> anyhow::Result<HashSet<QuickwitService>> {
-    let enabled_services: HashSet<QuickwitService> = enabled_services_str
-        .split(',')
-        .filter(|service_str| !service_str.is_empty())
-        .filter_map(|service_str| match service_str.parse() {
-            Ok(service) => Some(service),
-            Err(_) => {
-                warn!(
-                    node_id=%node_id,
-                    service=%service_str,
-                    "Found unknown service enabled on node."
-                );
-                None
-            }
-        })
-        .collect();
-    if enabled_services.is_empty() {
-        warn!(
-            node_id=%node_id,
-            "Node has no enabled services."
-        )
+    pub async fn set_self_node_running_indexing_plan(
+        &self,
+        running_indexing_plan: &RunningIndexingPlan,
+    ) -> anyhow::Result<()> {
+        let running_indexing_plan_json_string = serde_json::to_string(running_indexing_plan)?;
+        self.set_key_value(RUNNING_INDEXING_PLAN, running_indexing_plan_json_string)
+            .await;
+        Ok(())
     }
-    Ok(enabled_services)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -488,6 +359,7 @@ pub async fn create_cluster_for_test_with_id(
             enabled_services.clone(),
             gossip_advertise_addr,
             grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
+            None,
         ),
         gossip_advertise_addr,
         cluster_id,
@@ -541,11 +413,12 @@ mod tests {
 
     use chitchat::transport::ChannelTransport;
     use itertools::Itertools;
+    use quickwit_proto::indexing_api::IndexingTask;
 
     use super::*;
 
     #[tokio::test]
-    async fn test_cluster_single_node() -> anyhow::Result<()> {
+    async fn test_cluster_single_node_readyness() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false).await?;
         let members: Vec<SocketAddr> = cluster
@@ -586,6 +459,66 @@ mod tests {
         assert!(!cluster.is_self_node_ready().await);
         cluster.shutdown().await;
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cluster_members_built_from_chitchat_state() {
+        let transport = ChannelTransport::default();
+        let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let cluster2 = create_cluster_for_test(
+            vec![cluster1.gossip_listen_addr.to_string()],
+            &["indexer", "metastore"],
+            &transport,
+            true,
+        )
+        .await
+        .unwrap();
+        let indexing_task = IndexingTask {
+            index_id: "index-1".to_string(),
+            source_id: "source-1".to_string(),
+        };
+        let running_indexing_plan = RunningIndexingPlan {
+            indexing_tasks: vec![indexing_task.clone()],
+        };
+        cluster2
+            .set_key_value(GRPC_ADVERTISE_ADDR_KEY, "127.0.0.1:1001")
+            .await;
+        cluster2
+            .set_self_node_running_indexing_plan(&running_indexing_plan)
+            .await
+            .unwrap();
+        cluster1
+            .wait_for_members(|members| members.len() == 2, Duration::from_secs(30))
+            .await
+            .unwrap();
+        let members = cluster1.ready_members_from_chitchat_state().await;
+        let member_node_1 = members
+            .iter()
+            .find(|member| member.chitchat_id() == cluster1.node_id.id)
+            .unwrap();
+        let member_node_2 = members
+            .iter()
+            .find(|member| member.chitchat_id() == cluster2.node_id.id)
+            .unwrap();
+        assert_eq!(
+            member_node_1.enabled_services,
+            HashSet::from_iter([QuickwitService::Indexer])
+        );
+        assert!(member_node_1.running_indexing_plan.is_none());
+        assert_eq!(
+            member_node_2.grpc_advertise_addr,
+            ([127, 0, 0, 1], 1001).into()
+        );
+        assert_eq!(
+            member_node_2.enabled_services,
+            HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Metastore].into_iter())
+        );
+        assert_eq!(
+            member_node_2.running_indexing_plan,
+            Some(running_indexing_plan)
+        );
     }
 
     #[tokio::test]
@@ -845,6 +778,7 @@ mod tests {
                 HashSet::default(),
                 cluster2_listen_addr,
                 grpc_addr,
+                None,
             ),
             cluster2_listen_addr,
             cluster_id.to_string(),
@@ -950,6 +884,7 @@ mod tests {
                 HashSet::default(),
                 cluster2_listen_addr,
                 grpc_addr,
+                None,
             ),
             cluster2_listen_addr,
             cluster_id.to_string(),
@@ -968,6 +903,7 @@ mod tests {
                 HashSet::default(),
                 cluster3_listen_addr,
                 grpc_addr,
+                None,
             ),
             cluster3_listen_addr,
             cluster_id.to_string(),
