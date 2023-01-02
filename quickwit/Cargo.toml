@@ -29,7 +29,7 @@ debug = 0
 
 [workspace.dependencies]
 anyhow = "1"
-arc-swap = "1.5"
+arc-swap = "1.6"
 assert-json-diff = "2"
 async-speed-limit = "0.4"
 async-trait = "0.1"
