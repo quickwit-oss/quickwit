@@ -43,6 +43,7 @@ use quickwit_common::uri::Uri;
 use quickwit_common::ChecklistError;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::CLI_INGEST_SOURCE_ID;
+use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError, SplitState};
 use serde_json::{json, Number, Value};
 use tokio::time::{sleep, Duration};
@@ -501,6 +502,43 @@ async fn test_delete_index_cli_dry_run() {
     delete_index_cli(args).await.unwrap();
     let metastore = refresh_metastore(metastore).await.unwrap();
     assert!(!metastore.index_exists(&index_id).await.unwrap());
+}
+
+#[tokio::test]
+async fn test_delete_index_cli() {
+    let index_id = append_random_suffix("test-delete-cmd");
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
+    create_logs_index(&test_env).await.unwrap();
+
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+        .await
+        .unwrap();
+
+    let args = DeleteIndexArgs {
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        index_id: index_id.clone(),
+        assume_yes: true,
+        dry_run: false,
+    };
+
+    delete_index_cli(args).await.unwrap();
+
+    assert!(test_env
+        .metastore()
+        .await
+        .unwrap()
+        .index_metadata(&test_env.index_id)
+        .await
+        .is_err());
+
+    assert!(!test_env
+        .data_dir_path
+        .join(INDEXING_DIR_NAME)
+        .join(test_env.index_id)
+        .as_path()
+        .try_exists()
+        .unwrap());
 }
 
 #[tokio::test]
