@@ -61,7 +61,7 @@ export function QueryEditor(props: SearchComponentProps) {
     const updatedLanguageId = getLanguageId(props.searchRequest.indexId);
     if (monacoRef.current !== null && updatedLanguageId !== '' && props.index !== null) {
       const monaco = monacoRef.current;
-      if (!monaco.languages.getLanguages().some(({ id }: {id :string }) => id === languageId)) {
+      if (!monaco.languages.getLanguages().some(({ id }: {id :string }) => id === updatedLanguageId)) {
         console.log('register language', updatedLanguageId);
         monaco.languages.register({'id': updatedLanguageId});
         monaco.languages.setMonarchTokensProvider(updatedLanguageId, LanguageFeatures())
