@@ -220,7 +220,7 @@ mod tests {
     use std::collections::HashSet;
     use std::ops::{Deref, DerefMut};
 
-    use quickwit_actors::{create_test_mailbox, ActorContext, Universe};
+    use quickwit_actors::{ActorContext, Universe};
     use tokio::sync::watch;
 
     use super::Queues;
@@ -245,7 +245,7 @@ mod tests {
             queues_for_test.reload().await;
 
             let universe = Universe::new();
-            let (source_mailbox, _source_inbox) = create_test_mailbox();
+            let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
             let (observable_state_tx, _observable_state_rx) = watch::channel(());
             let ctx = ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
             (queues_for_test, ctx)

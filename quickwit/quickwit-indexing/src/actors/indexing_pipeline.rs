@@ -23,8 +23,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox,
-    QueueCapacity, Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, QueueCapacity,
+    Supervisable,
 };
 use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, SourceConfig};
@@ -256,8 +256,9 @@ impl IndexingPipeline {
             root_dir=%self.params.indexing_directory.path().display(),
             "Spawning indexing pipeline.",
         );
-        let (source_mailbox, source_inbox) =
-            create_mailbox::<SourceActor>("SourceActor".to_string(), QueueCapacity::Unbounded);
+        let (source_mailbox, source_inbox) = ctx
+            .spawn_ctx()
+            .create_mailbox::<SourceActor>("SourceActor", QueueCapacity::Unbounded);
 
         // Publisher
         let publisher = Publisher::new(
@@ -546,6 +547,7 @@ mod tests {
     async fn test_indexing_pipeline_num_fails_before_success(
         mut num_fails: usize,
     ) -> anyhow::Result<bool> {
+        let universe = Universe::new();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_index_metadata()
@@ -590,7 +592,6 @@ mod tests {
             )
             .times(1)
             .returning(|_, _, _, _| Ok(()));
-        let universe = Universe::new();
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
@@ -607,8 +608,7 @@ mod tests {
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
-        let (merge_planner_mailbox, _) =
-            create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
+        let (merge_planner_mailbox, _) = universe.create_test_mailbox();
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -698,8 +698,7 @@ mod tests {
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
-        let (merge_planner_mailbox, _) =
-            create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
+        let (merge_planner_mailbox, _) = universe.create_test_mailbox();
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -766,7 +765,7 @@ mod tests {
             max_concurrent_split_uploads: 2,
             merge_max_io_num_bytes_per_sec: None,
         };
-        let merge_pipeline = MergePipeline::new(merge_pipeline_params);
+        let merge_pipeline = MergePipeline::new(merge_pipeline_params, universe.spawn_ctx());
         let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
         let (_merge_pipeline_mailbox, merge_pipeline_handler) =
             universe.spawn_builder().spawn(merge_pipeline);
@@ -795,12 +794,12 @@ mod tests {
         // restart.
         let indexer = universe.get::<Indexer>().into_iter().next().unwrap();
         indexer.send_message(Command::Quit).await.unwrap();
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        universe.simulate_time_shift(Duration::from_secs(2)).await;
         // Check indexing pipeline has restarted.
         let obs = indexing_pipeline_handler
             .process_pending_and_observe()
             .await;
-        assert_eq!(obs.generation, 2);
+        assert_eq!(obs.generation, 1);
         // Check that the merge pipeline is still up.
         assert_eq!(merge_pipeline_handler.harvest_health(), Health::Healthy);
         Ok(())
