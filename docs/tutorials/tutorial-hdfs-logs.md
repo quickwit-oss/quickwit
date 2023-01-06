@@ -85,9 +85,29 @@ search_settings:
 
 Now let's create the index with the `create` subcommand (assuming you are inside Quickwit install directory):
 
+<Tabs>
+
+<TabItem value="cli" label="CLI">
+
 ```bash
 ./quickwit index create --index-config hdfs_logs_index_config.yaml
 ```
+
+</TabItem>
+
+<TabItem value="docker" label="Docker">
+
+```bash
+# Create first the data directory.
+mkdir qwdata
+docker run -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/hdfs_logs_index_config.yaml:/quickwit/hdfs_logs_index_config.yaml quickwit/quickwit index create --index-config hdfs_logs_index_config.yaml
+```
+
+</TabItem>
+
+</Tabs>
+
+
 
 You're now ready to fill the index.
 
@@ -96,19 +116,71 @@ The dataset is a compressed [NDJSON file](https://quickwit-datasets-public.s3.am
 Instead of downloading it and then indexing the data, we will use pipes to directly send a decompressed stream to Quickwit.
 This can take up to 10 minutes on a modern machine, the perfect time for a coffee break.
 
+<Tabs>
+
+<TabItem value="cli" label="CLI">
+
 ```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit index ingest --index hdfs-logs
 ```
 
+</TabItem>
+
+<TabItem value="docker" label="Docker">
+
+```bash
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | docker run -v $(pwd)/qwdata:/quickwit/qwdata -i quickwit/quickwit index ingest --index hdfs-logs
+```
+
+</TabItem>
+
+</Tabs>
+
+
+
 If you are in a hurry, use the sample dataset that contains 10 000 documents, we will use this dataset for the example queries:
+
+<Tabs>
+
+<TabItem value="cli" label="CLI">
+
 ```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | ./quickwit index ingest --index hdfs-logs
 ```
 
+</TabItem>
+
+<TabItem value="docker" label="Docker">
+
+```bash
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000 | gunzip | docker run -v $(pwd)/qwdata:/quickwit/qwdata -i quickwit/quickwit index ingest --index hdfs-logs
+```
+
+</TabItem>
+
+</Tabs>
+
 You can check it's working by using `search` subcommand and look for `INFO` in `severity_text` field:
+
+<Tabs>
+
+<TabItem value="cli" label="CLI">
+
 ```bash
 ./quickwit index search --index hdfs-logs  --query "severity_text:INFO"
 ```
+
+</TabItem>
+
+<TabItem value="docker" label="Docker">
+
+```bash
+docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index search --index hdfs-logs  --query "severity_text:INFO"
+```
+
+</TabItem>
+
+</Tabs>
 
 :::note
 
@@ -122,10 +194,25 @@ The `ingest` subcommand generates [splits](/docs/concepts/architecture) of 5 mil
 The command `run --service searcher --service metastore` starts a http server which provides a [REST API](/docs/reference/rest-api) 
 and runs the metastore service which is required by the searcher service.
 
+<Tabs>
+
+<TabItem value="cli" label="CLI">
 
 ```bash
 ./quickwit run --service searcher --service metastore
 ```
+
+</TabItem>
+
+<TabItem value="docker" label="Docker">
+
+```bash
+docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index delete --index hdfs-logs
+```
+
+</TabItem>
+
+</Tabs>
 
 Let's execute the same query on field `severity_text` but with `cURL`:
 
