@@ -422,9 +422,8 @@ async fn upload_split(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::time::{Duration, Instant};
 
-    use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
+    use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
@@ -435,14 +434,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
         };
-        let universe = Universe::new();
-        let (sequencer_mailbox, sequencer_inbox) = create_test_mailbox::<Sequencer<Publisher>>();
+        let (sequencer_mailbox, sequencer_inbox) =
+            universe.create_test_mailbox::<Sequencer<Publisher>>();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_splits()
@@ -543,7 +543,8 @@ mod tests {
             pipeline_ord: 0,
         };
         let universe = Universe::new();
-        let (sequencer_mailbox, sequencer_inbox) = create_test_mailbox::<Sequencer<Publisher>>();
+        let (sequencer_mailbox, sequencer_inbox) =
+            universe.create_test_mailbox::<Sequencer<Publisher>>();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_splits()
@@ -677,7 +678,7 @@ mod tests {
             pipeline_ord: 0,
         };
         let universe = Universe::new();
-        let (publisher_mailbox, publisher_inbox) = create_test_mailbox::<Publisher>();
+        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_splits()
@@ -729,27 +730,12 @@ mod tests {
             uploader_handle.process_pending_and_observe().await.obs_type,
             ObservationType::Alive
         );
-        // We have to wait a bit to make sure uploader has sent the message.
-
-        let start = Instant::now();
-        let mut splits_updates = loop {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            let split_updated: Vec<SplitsUpdate> = publisher_inbox.drain_for_test_typed();
-            if !split_updated.is_empty() {
-                break split_updated;
-            }
-            assert!(
-                start.elapsed() < Duration::from_secs(1),
-                "Failed to receive publisher message in time"
-            );
-        };
-
         let SplitsUpdate {
             index_id,
             new_splits,
             replaced_split_ids,
             ..
-        } = splits_updates.pop().unwrap();
+        } = publisher_inbox.recv_typed_message().await.unwrap();
 
         assert_eq!(index_id, "test-index-no-sequencer");
         assert_eq!(new_splits.len(), 1);

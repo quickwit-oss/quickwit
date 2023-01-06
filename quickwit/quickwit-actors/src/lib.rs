@@ -41,10 +41,12 @@ mod envelope;
 mod mailbox;
 mod observation;
 mod registry;
-mod scheduler;
+pub(crate) mod scheduler;
 mod spawn_builder;
 mod supervisor;
 
+mod actor_context;
+mod spawn_context;
 #[cfg(test)]
 pub(crate) mod tests;
 mod universe;
@@ -53,15 +55,17 @@ pub use actor::{Actor, ActorExitStatus, Handler};
 pub use actor_handle::{ActorHandle, Health, Healthz, Supervisable};
 pub use command::Command;
 pub use observation::{Observation, ObservationType};
-use quickwit_common::{KillSwitch, Progress, ProtectedZoneGuard};
+use quickwit_common::KillSwitch;
 pub(crate) use scheduler::Scheduler;
+pub use spawn_context::SpawnContext;
 use thiserror::Error;
 pub use universe::Universe;
 
-pub use self::actor::ActorContext;
+pub use self::actor_context::ActorContext;
 pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError, TrySendError};
-pub use self::mailbox::{create_mailbox, create_test_mailbox, Inbox, Mailbox};
+pub(crate) use self::mailbox::create_mailbox;
+pub use self::mailbox::{Inbox, Mailbox};
 pub use self::registry::ActorObservation;
 pub use self::supervisor::{Supervisor, SupervisorState};
 

@@ -303,7 +303,7 @@ impl Handler<NewPublishLock> for DocProcessor {
 mod tests {
     use std::sync::Arc;
 
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::Universe;
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use serde_json::Value as JsonValue;
@@ -316,15 +316,15 @@ mod tests {
     async fn test_doc_processor_simple() -> anyhow::Result<()> {
         let index_id = "my-index";
         let source_id = "my-source";
+        let universe = Universe::new();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let doc_processor = DocProcessor::new(
             index_id.to_string(),
             source_id.to_string(),
             doc_mapper.clone(),
             indexer_mailbox,
         );
-        let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
         let checkpoint_delta = SourceCheckpointDelta::from(0..4);
@@ -403,14 +403,14 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> = Arc::new(
             serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap(),
         );
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let universe = Universe::new();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let doc_processor = DocProcessor::new(
             "my-index".to_string(),
             "my-source".to_string(),
             doc_mapper,
             indexer_mailbox,
         );
-        let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
         doc_processor_mailbox
@@ -446,8 +446,8 @@ mod tests {
     #[tokio::test]
     async fn test_doc_processor_forward_publish_lock() {
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
         let universe = Universe::new();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let doc_processor = DocProcessor::new(
             "my-index".to_string(),
             "my-source".to_string(),
@@ -474,14 +474,14 @@ mod tests {
     #[tokio::test]
     async fn test_doc_processor_ignores_messages_when_publish_lock_is_dead() {
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let universe = Universe::new();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let doc_processor = DocProcessor::new(
             "my-index".to_string(),
             "my-source".to_string(),
             doc_mapper,
             indexer_mailbox,
         );
-        let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
         let publish_lock = PublishLock::default();

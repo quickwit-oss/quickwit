@@ -242,15 +242,15 @@ mod tests {
             1
         );
         metastore.delete_index(index_id).await.unwrap();
-        tokio::time::sleep(HEARTBEAT * 2).await;
+        universe.simulate_time_shift(HEARTBEAT * 2).await;
         let state_after_deletion = delete_task_service_handler
             .process_pending_and_observe()
             .await;
         assert_eq!(state_after_deletion.num_running_pipelines, 0);
         assert!(universe.get_one::<DeleteTaskService>().is_some());
         let actors_observations = universe.observe(HEARTBEAT).await;
-        // Once the pipeline is properly shut down, the only remaining actors are the scheduler and
-        // the delete service.
+        // Once the pipeline is properly shut down, the only remaining actor is the
+        // delete service.
         assert_eq!(actors_observations.len(), 2);
         assert!(universe.get_one::<DeleteTaskService>().is_some());
         Ok(())

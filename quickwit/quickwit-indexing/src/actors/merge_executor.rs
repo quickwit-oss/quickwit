@@ -517,7 +517,7 @@ fn open_index<T: Into<Box<dyn Directory>>>(directory: T) -> tantivy::Result<Inde
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::Universe;
     use quickwit_common::split_file;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
@@ -531,6 +531,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -586,7 +587,7 @@ mod tests {
             merge_scratch_directory,
             downloaded_splits_directory,
         };
-        let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
+        let (merge_packager_mailbox, merge_packager_inbox) = universe.create_test_mailbox();
         let merge_executor = MergeExecutor::new(
             pipeline_id,
             metastore,
@@ -594,7 +595,6 @@ mod tests {
             IoControls::default(),
             merge_packager_mailbox,
         );
-        let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
             universe.spawn_builder().spawn(merge_executor);
         merge_executor_mailbox.send_message(merge_scratch).await?;
@@ -651,6 +651,7 @@ mod tests {
         result_docs: Vec<JsonValue>,
     ) -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_id: index_id.to_string(),
             node_id: "unknown".to_string(),
@@ -727,7 +728,7 @@ mod tests {
             merge_scratch_directory,
             downloaded_splits_directory,
         };
-        let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
+        let (merge_packager_mailbox, merge_packager_inbox) = universe.create_test_mailbox();
         let delete_task_executor = MergeExecutor::new(
             pipeline_id,
             metastore,
@@ -735,7 +736,6 @@ mod tests {
             IoControls::default(),
             merge_packager_mailbox,
         );
-        let universe = Universe::new();
         let (delete_task_executor_mailbox, delete_task_executor_handle) =
             universe.spawn_builder().spawn(delete_task_executor);
         delete_task_executor_mailbox
