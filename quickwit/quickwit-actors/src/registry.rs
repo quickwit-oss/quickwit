@@ -226,6 +226,6 @@ mod tests {
         let universe = Universe::new();
         let (_mailbox, _handle) = universe.spawn_builder().spawn(test_actor);
         let obs = universe.observe(Duration::from_millis(1000)).await;
-        assert_eq!(obs.len(), 2);
+        assert_eq!(obs.len(), 1);
     }
 }
