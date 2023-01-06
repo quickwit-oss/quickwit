@@ -40,7 +40,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use fail::FailScenario;
-use quickwit_actors::{create_test_mailbox, ActorExitStatus, Universe};
+use quickwit_actors::{ActorExitStatus, Universe};
 use quickwit_common::io::IoControls;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::split_file;
@@ -216,6 +216,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     // time to time a kill switch activation because the ControlledDirectory did not
     // do any write during a HEARTBEAT... Before removing the protect zone, we need
     // to investigate this instability. Then this test will finally be really helpful.
+    let universe = Universe::new();
     let doc_mapper_yaml = r#"
         field_mappings:
           - name: body
@@ -283,7 +284,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         node_id: "test-node".to_string(),
         pipeline_ord: 0,
     };
-    let (merge_packager_mailbox, _merge_packager_inbox) = create_test_mailbox();
+    let (merge_packager_mailbox, _merge_packager_inbox) = universe.create_test_mailbox();
     let io_controls = IoControls::default();
     let merge_executor = MergeExecutor::new(
         pipeline_id,
@@ -292,7 +293,6 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         io_controls,
         merge_packager_mailbox,
     );
-    let universe = Universe::new();
     let (merge_executor_mailbox, merge_executor_handle) =
         universe.spawn_builder().spawn(merge_executor);
 
