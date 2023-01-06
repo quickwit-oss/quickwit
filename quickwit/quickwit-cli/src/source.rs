@@ -736,7 +736,8 @@ mod tests {
             .collect();
         let sources = vec![SourceConfig {
             source_id: "foo-source".to_string(),
-            num_pipelines: 1,
+            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
             enabled: true,
             source_params: SourceParams::file("path/to/file"),
         }];
@@ -801,13 +802,15 @@ mod tests {
         let sources = [
             SourceConfig {
                 source_id: "foo-source".to_string(),
-                num_pipelines: 1,
+                desired_num_pipelines: 1,
+                max_num_pipelines_per_indexer: 1,
                 enabled: true,
                 source_params: SourceParams::stdin(),
             },
             SourceConfig {
                 source_id: "bar-source".to_string(),
-                num_pipelines: 1,
+                desired_num_pipelines: 1,
+                max_num_pipelines_per_indexer: 1,
                 enabled: true,
                 source_params: SourceParams::stdin(),
             },

@@ -35,7 +35,7 @@ use crate::with_arg;
 pub fn index_management_handlers(
     index_service: Arc<IndexService>,
     quickwit_config: Arc<QuickwitConfig>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     get_index_metadata_handler(index_service.clone())
         .or(get_indexes_metadatas_handler(index_service.clone()))
         .or(get_all_splits_handler(index_service.clone()))
@@ -52,7 +52,7 @@ fn format_response<T: Serialize>(result: Result<T, IndexServiceError>) -> impl R
 
 fn get_index_metadata_handler(
     index_service: Arc<IndexService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String)
         .and(warp::get())
         .and(with_arg(index_service))
@@ -70,7 +70,7 @@ async fn get_index_metadata(
 
 fn get_indexes_metadatas_handler(
     index_service: Arc<IndexService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes")
         .and(warp::get())
         .and(with_arg(index_service))
@@ -88,7 +88,7 @@ async fn get_all_splits(
 
 fn get_all_splits_handler(
     index_service: Arc<IndexService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String / "splits")
         .and(warp::get())
         .and(with_arg(index_service))
@@ -109,7 +109,7 @@ async fn get_indexes_metadatas(
 fn create_index_handler(
     index_service: Arc<IndexService>,
     quickwit_config: Arc<QuickwitConfig>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes")
         // TODO: add a filter on the content type, we support only json.
         .and(warp::post())
@@ -141,7 +141,7 @@ async fn create_index(
 
 fn delete_index_handler(
     index_service: Arc<IndexService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String)
         .and(warp::delete())
         .and(with_arg(index_service))
@@ -159,7 +159,7 @@ async fn delete_index(
 
 fn create_source_handler(
     index_service: Arc<IndexService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String / "sources")
         .and(warp::post())
         .and(json_body())
@@ -179,7 +179,7 @@ async fn create_source(
 
 fn get_source_handler(
     index_service: Arc<IndexService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String / "sources" / String)
         .and(warp::get())
         .and(with_arg(index_service))
@@ -198,7 +198,7 @@ async fn get_source(
 
 fn delete_source_handler(
     index_service: Arc<IndexService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String / "sources" / String)
         .and(warp::delete())
         .and(with_arg(index_service))

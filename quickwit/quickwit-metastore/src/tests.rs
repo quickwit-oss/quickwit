@@ -239,7 +239,8 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
         };
@@ -300,7 +301,8 @@ pub mod test_suite {
         let source_id = format!("{index_id}--source");
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
         };
@@ -342,7 +344,8 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
         };
@@ -392,7 +395,8 @@ pub mod test_suite {
         for (source_id, split_id) in source_ids.iter().zip(split_ids.iter()) {
             let source = SourceConfig {
                 source_id: source_id.clone(),
-                num_pipelines: 1,
+                max_num_pipelines_per_indexer: 1,
+                desired_num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::void(),
             };

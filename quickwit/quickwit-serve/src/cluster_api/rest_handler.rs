@@ -29,7 +29,7 @@ use crate::Format;
 /// Cluster handler.
 pub fn cluster_handler(
     cluster: Arc<Cluster>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     cluster_state_filter()
         .and(warp::path::end().map(move || cluster.clone()))
         .then(get_cluster)

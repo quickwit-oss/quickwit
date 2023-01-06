@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::Duration;
+
 use quickwit_cluster::ClusterMember;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::control_plane_api::control_plane_service_client::ControlPlaneServiceClient;
@@ -44,7 +46,15 @@ pub struct ControlPlaneGrpcClient {
 }
 
 impl ControlPlaneGrpcClient {
-    /// Create a [`ControlPlaneGrpcClient`] that sends gRPC requests to nodes running
+    /// Creates a [`ControlPlaneGrpcClient`] from a channel.
+    pub fn new(channel: Channel) -> Self {
+        let timeout_channel = Timeout::new(channel, Duration::from_secs(5));
+        Self {
+            underlying: ControlPlaneServiceClient::new(timeout_channel),
+        }
+    }
+
+    /// Creates a [`ControlPlaneGrpcClient`] that sends gRPC requests to nodes running
     /// `ControlPlane` service. It listens to cluster members changes to update the
     /// nodes.
     pub async fn create_and_update_from_members(

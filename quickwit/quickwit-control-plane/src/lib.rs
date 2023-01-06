@@ -21,10 +21,13 @@ use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::Cluster;
+use quickwit_indexing::indexing_client_pool::IndexingClientPool;
 use quickwit_metastore::Metastore;
 use scheduler::IndexingScheduler;
 
-mod scheduler;
+pub mod grpc_adapter;
+pub mod indexing_plan;
+pub mod scheduler;
 
 /// Starts the Control Plane.
 pub async fn start_control_plane_service(
@@ -32,7 +35,7 @@ pub async fn start_control_plane_service(
     cluster: Arc<Cluster>,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<IndexingScheduler>> {
-    let scheduler = IndexingScheduler::new(cluster, metastore);
+    let scheduler = IndexingScheduler::new(cluster, metastore, IndexingClientPool::new(Vec::new()));
     let (scheduler_mailbox, _) = universe.spawn_builder().spawn(scheduler);
     Ok(scheduler_mailbox)
 }

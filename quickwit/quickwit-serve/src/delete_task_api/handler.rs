@@ -49,13 +49,13 @@ pub struct DeleteQueryRequest {
 /// Delete query API handlers.
 pub fn delete_task_api_handlers(
     metastore: Arc<dyn Metastore>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     get_delete_tasks_handler(metastore.clone()).or(post_delete_tasks_handler(metastore.clone()))
 }
 
 pub fn get_delete_tasks_handler(
     metastore: Arc<dyn Metastore>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!(String / "delete-tasks")
         .and(warp::get())
         .and(with_arg(metastore))
@@ -74,7 +74,7 @@ async fn get_delete_tasks(index_id: String, metastore: Arc<dyn Metastore>) -> im
 
 pub fn post_delete_tasks_handler(
     metastore: Arc<dyn Metastore>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!(String / "delete-tasks")
         .and(warp::body::json())
         .and(warp::post())
