@@ -125,7 +125,7 @@ impl Source for VecSource {
 mod tests {
     use std::path::PathBuf;
 
-    use quickwit_actors::{create_test_mailbox, Actor, Command, Universe};
+    use quickwit_actors::{Actor, Command, Universe};
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::metastore_for_test;
     use serde_json::json;
@@ -136,7 +136,7 @@ mod tests {
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let docs = std::iter::repeat_with(|| "{}".to_string())
             .take(100)
             .collect();
@@ -192,7 +192,7 @@ mod tests {
     #[tokio::test]
     async fn test_vec_source_from_checkpoint() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let docs = (0..10).map(|i| format!("{}", i)).collect();
         let params = VecSourceParams {
             docs,

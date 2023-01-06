@@ -458,7 +458,7 @@ impl IndexingService {
         {
             return Ok(merge_pipeline_mailbox_handle.mailbox.clone());
         }
-        let merge_pipeline = MergePipeline::new(merge_pipeline_params);
+        let merge_pipeline = MergePipeline::new(merge_pipeline_params, ctx.spawn_ctx());
         let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(merge_pipeline);
         let merge_pipeline_mailbox_handle = MergePipelineHandle {
@@ -905,7 +905,9 @@ mod tests {
             if obs.num_successful_pipelines == 2 {
                 return;
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            universe
+                .simulate_time_shift(Duration::from_millis(100))
+                .await;
         }
         panic!("Sleep");
     }
@@ -1082,7 +1084,7 @@ mod tests {
             .send_message(FreezePipeline)
             .await
             .unwrap();
-        tokio::time::sleep(HEARTBEAT * 5).await;
+        universe.simulate_time_shift(HEARTBEAT * 5).await;
         // Check that indexing and merge pipelines are still running.
         let observation = indexing_server_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 1);

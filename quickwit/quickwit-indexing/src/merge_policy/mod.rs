@@ -163,7 +163,7 @@ pub mod tests {
     use std::ops::RangeInclusive;
 
     use proptest::prelude::*;
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::Universe;
     use rand::seq::SliceRandom;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
@@ -342,7 +342,9 @@ pub mod tests {
         incoming_splits: Vec<SplitMetadata>,
         check_final_configuration: CheckFn,
     ) -> anyhow::Result<Vec<SplitMetadata>> {
-        let (merge_op_mailbox, merge_op_inbox) = create_test_mailbox::<MergeSplitDownloader>();
+        let universe = Universe::new();
+        let (merge_op_mailbox, merge_op_inbox) =
+            universe.create_test_mailbox::<MergeSplitDownloader>();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -351,7 +353,6 @@ pub mod tests {
         };
         let merge_planner =
             MergePlanner::new(pipeline_id, Vec::new(), merge_policy, merge_op_mailbox);
-        let universe = Universe::new();
         let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
             universe.spawn_builder().spawn(merge_planner);

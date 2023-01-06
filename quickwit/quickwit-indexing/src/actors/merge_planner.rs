@@ -300,7 +300,7 @@ mod tests {
     use std::time::Duration;
 
     use itertools::Itertools;
-    use quickwit_actors::{create_mailbox, QueueCapacity, Universe};
+    use quickwit_actors::{QueueCapacity, Universe};
     use quickwit_config::merge_policy_config::{
         ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
     };
@@ -336,8 +336,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_with_stable_custom_merge_policy() -> anyhow::Result<()> {
+        let universe = Universe::new();
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
-            create_mailbox("MergeSplitDownloader".to_string(), QueueCapacity::Unbounded);
+            universe.create_test_mailbox();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -359,7 +360,6 @@ mod tests {
             merge_policy,
             merge_split_downloader_mailbox,
         );
-        let universe = Universe::new();
 
         let (merge_planner_mailbox, merge_planner_handle) =
             universe.spawn_builder().spawn(merge_planner);
@@ -420,8 +420,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_priority() -> anyhow::Result<()> {
+        let universe = Universe::new();
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
-            create_mailbox("MergeSplitDownloader".to_string(), QueueCapacity::Unbounded);
+            universe.create_test_mailbox();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -445,7 +446,6 @@ mod tests {
             merge_policy,
             merge_split_downloader_mailbox,
         );
-        let universe = Universe::new();
         let (merge_planner_mailbox, merge_planner_handle) =
             universe.spawn_builder().spawn(merge_planner);
         // send 4 splits, offering 2 merge opportunities.
@@ -469,10 +469,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_priority_only_queue_up_to_capacity() {
-        let (merge_split_downloader_mailbox, merge_split_downloader_inbox) = create_mailbox(
-            "MergeSplitDownloader".to_string(),
-            QueueCapacity::Bounded(2),
-        );
+        let universe = Universe::new();
+        let (merge_split_downloader_mailbox, merge_split_downloader_inbox) = universe
+            .spawn_ctx()
+            .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),

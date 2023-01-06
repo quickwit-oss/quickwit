@@ -321,6 +321,15 @@ impl<A: Actor> Inbox<A> {
         self.rx.try_recv()
     }
 
+    pub async fn recv_typed_message<M: 'static>(&self) -> Option<M> {
+        while let Ok(mut envelope) = self.rx.recv().await {
+            if let Some(msg) = envelope.message_typed() {
+                return Some(msg);
+            }
+        }
+        None
+    }
+
     #[allow(dead_code)] // temporary
     pub(crate) fn try_recv_cmd_and_scheduled_msg_only(&self) -> Result<Envelope<A>, RecvError> {
         self.rx.try_recv_high_priority_message()
@@ -370,10 +379,6 @@ pub fn create_mailbox<A: Actor>(
     (mailbox, inbox)
 }
 
-pub fn create_test_mailbox<A: Actor>() -> (Mailbox<A>, Inbox<A>) {
-    create_mailbox("test-mailbox".to_string(), QueueCapacity::Unbounded)
-}
-
 pub struct WeakMailbox<A: Actor> {
     inner: Weak<Inner<A>>,
     ref_count: Weak<AtomicUsize>,
@@ -396,16 +401,18 @@ mod tests {
     use crate::tests::{Ping, PingReceiverActor};
     use crate::Universe;
 
-    #[test]
-    fn test_weak_mailbox_downgrade_upgrade() {
-        let (mailbox, _inbox) = create_test_mailbox::<PingReceiverActor>();
+    #[tokio::test]
+    async fn test_weak_mailbox_downgrade_upgrade() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox::<PingReceiverActor>();
         let weak_mailbox = mailbox.downgrade();
         assert!(weak_mailbox.upgrade().is_some());
     }
 
-    #[test]
-    fn test_weak_mailbox_failing_upgrade() {
-        let (mailbox, _inbox) = create_test_mailbox::<PingReceiverActor>();
+    #[tokio::test]
+    async fn test_weak_mailbox_failing_upgrade() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox::<PingReceiverActor>();
         let weak_mailbox = mailbox.downgrade();
         drop(mailbox);
         assert!(weak_mailbox.upgrade().is_none());

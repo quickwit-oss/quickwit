@@ -385,7 +385,7 @@ Quickwit offers you three different modes:
 ```yaml
 - indexed: true
 - stored: true
-- tokenizer: raw
+- tokenizer: default
 - record: basic
 - expand_dots: true
 ```

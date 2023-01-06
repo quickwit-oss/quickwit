@@ -22,7 +22,10 @@ use std::time::Duration;
 use crate::registry::{ActorObservation, ActorRegistry};
 use crate::scheduler::{SimulateAdvanceTime, TimeShift};
 use crate::spawn_builder::SpawnBuilder;
-use crate::{Actor, Command, KillSwitch, Mailbox, QueueCapacity, Scheduler};
+use crate::{
+    create_mailbox, Actor, Command, Inbox, KillSwitch, Mailbox, QueueCapacity, Scheduler,
+    SpawnContext,
+};
 
 /// Universe serves as the top-level context in which Actor can be spawned.
 /// It is *not* a singleton. A typical application will usually have only one universe hosting all
@@ -53,6 +56,14 @@ impl Universe {
             kill_switch,
             registry,
         }
+    }
+
+    pub fn spawn_ctx(&self) -> &SpawnContext {
+        &SpawnContext
+    }
+
+    pub fn create_test_mailbox<A: Actor>(&self) -> (Mailbox<A>, Inbox<A>) {
+        create_mailbox("test-mailbox".to_string(), QueueCapacity::Unbounded)
     }
 
     pub fn get<A: Actor>(&self) -> Vec<Mailbox<A>> {

@@ -134,7 +134,7 @@ mod tests {
     use std::iter;
     use std::sync::Arc;
 
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::Universe;
     use quickwit_common::split_file;
     use quickwit_storage::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
     use tantivy::Inventory;
@@ -168,7 +168,7 @@ mod tests {
         };
 
         let universe = Universe::new();
-        let (merge_executor_mailbox, merge_executor_inbox) = create_test_mailbox();
+        let (merge_executor_mailbox, merge_executor_inbox) = universe.create_test_mailbox();
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory,
             split_store,
