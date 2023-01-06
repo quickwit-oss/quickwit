@@ -1,0 +1,41 @@
+[package]
+name = "quickwit-control-plane"
+version = "0.4.0"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
+license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
+description = "Core crate of quickwit"
+repository = "https://github.com/quickwit-oss/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chitchat = { workspace = true }
+itertools = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tower = { workspace = true }
+tracing = { workspace = true }
+
+quickwit-actors = { workspace = true }
+quickwit-cluster = { workspace = true }
+quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-core = { workspace = true }
+quickwit-indexing = { workspace = true }
+quickwit-metastore = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-storage = { workspace = true }
+
+[dev-dependencies]
+quickwit-config = { workspace = true, features = ["testsuite"] }
+quickwit-metastore = { workspace = true, features = ["testsuite"] }
+
+[features]
+testsuite = []
