@@ -249,9 +249,7 @@ mod tests {
         assert_eq!(state_after_deletion.num_running_pipelines, 0);
         assert!(universe.get_one::<DeleteTaskService>().is_some());
         let actors_observations = universe.observe(HEARTBEAT).await;
-        // Once the pipeline is properly shut down, the only remaining actor is the
-        // delete service.
-        assert_eq!(actors_observations.len(), 2);
+        assert_eq!(actors_observations.len(), 1);
         assert!(universe.get_one::<DeleteTaskService>().is_some());
         Ok(())
     }

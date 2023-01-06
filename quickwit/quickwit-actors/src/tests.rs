@@ -281,8 +281,8 @@ async fn test_timeouting_actor() {
         ObservationType::Timeout
     );
     assert_eq!(buggy_handle.harvest_health(), Health::Healthy);
-    tokio::time::sleep(crate::HEARTBEAT).await;
-    tokio::time::sleep(crate::HEARTBEAT).await;
+    universe.simulate_time_shift(crate::HEARTBEAT).await;
+    universe.simulate_time_shift(crate::HEARTBEAT).await;
     assert_eq!(buggy_handle.harvest_health(), Health::FailureOrUnhealthy);
 }
 
