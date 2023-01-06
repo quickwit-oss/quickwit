@@ -3486,6 +3486,7 @@ dependencies = [
  "once_cell",
  "oneshot",
  "openssl",
+ "openssl-src",
  "proptest",
  "quickwit-actors",
  "quickwit-aws",
@@ -4390,7 +4391,8 @@ dependencies = [
 [[package]]
 name = "sasl2-sys"
 version = "0.1.20+2.1.28"
-source = "git+https://github.com/quickwit-oss/rust-sasl/?rev=daca921#daca9216beca2f2d8c9ce5d803906918a316021a"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e645bd98535fc8fd251c43ba7c7c1f9be1e0369c99b6a5ea719052a773e655c"
 dependencies = [
  "cc",
  "duct",

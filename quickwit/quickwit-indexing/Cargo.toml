@@ -55,7 +55,8 @@ quickwit-storage = { workspace = true }
 [features]
 kafka = ["rdkafka", "backoff"]
 kafka-broker-tests = []
-vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored"]
+vendored-kafka = ["kafka", "rdkafka/gssapi-vendored", "libz-sys/static"]
+vendored-openssl = ["openssl/vendored", "openssl-src/force-engine"]
 kinesis = ["rusoto_core", "rusoto_kinesis", "quickwit-aws/kinesis"]
 kinesis-localstack-tests = []
 testsuite = []
@@ -73,6 +74,9 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
+
+[build-dependencies]
+openssl-src = { workspace = true, optional = true }
 
 [[test]]
 name = "failpoints"

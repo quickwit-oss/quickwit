@@ -92,6 +92,7 @@ release-feature-vendored-set = [
   "quickwit-metastore/postgres",
   "quickwit-metastore/azure",
   "quickwit-indexing/vendored-kafka",
+  "quickwit-indexing/vendored-openssl",
   "quickwit-indexing/kinesis",
   "openssl-support",
   "jemalloc",
