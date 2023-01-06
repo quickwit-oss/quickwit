@@ -172,7 +172,7 @@ mod tests {
     use std::io::Write;
     use std::path::PathBuf;
 
-    use quickwit_actors::{create_test_mailbox, Command, Universe};
+    use quickwit_actors::{Command, Universe};
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
@@ -183,7 +183,7 @@ mod tests {
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (doc_processor_mailbox, indexer_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let params = FileSourceParams::file("data/test_corpus.json");
 
         let metastore = metastore_for_test();
@@ -232,7 +232,7 @@ mod tests {
     async fn test_file_source_several_batch() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         use tempfile::NamedTempFile;
         let mut temp_file = NamedTempFile::new()?;
         let temp_path = temp_file.path().to_path_buf();
@@ -317,7 +317,7 @@ mod tests {
     async fn test_file_source_resume_from_checkpoint() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         use tempfile::NamedTempFile;
         let mut temp_file = NamedTempFile::new()?;
         for i in 0..100 {
