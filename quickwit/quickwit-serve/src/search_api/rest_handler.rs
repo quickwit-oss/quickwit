@@ -237,7 +237,7 @@ async fn search(
 /// Parses the search request from the request query string.
 pub fn search_get_handler(
     search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     search_get_filter()
         .and(with_arg(search_service))
         .then(search)
@@ -262,7 +262,7 @@ pub fn search_get_handler(
 /// Parses the search request from the request body.
 pub fn search_post_handler(
     search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     search_post_filter()
         .and(with_arg(search_service))
         .then(search)
@@ -283,7 +283,7 @@ pub fn search_post_handler(
 /// Stream Search Index
 pub fn search_stream_handler(
     search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     search_stream_filter()
         .and(with_arg(search_service))
         .then(search_stream)
@@ -423,7 +423,7 @@ mod tests {
 
     fn search_handler(
         mock_search_service: MockSearchService,
-    ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
         let mock_search_service_in_arc = Arc::new(mock_search_service);
         search_get_handler(mock_search_service_in_arc.clone())
             .or(search_post_handler(mock_search_service_in_arc.clone()))

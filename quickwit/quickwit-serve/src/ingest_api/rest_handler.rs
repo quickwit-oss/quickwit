@@ -93,7 +93,7 @@ struct BulkActionMeta {
 
 pub fn ingest_handler(
     ingest_api_mailbox_opt: Option<Mailbox<IngestApiService>>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     ingest_filter()
         .and(require(ingest_api_mailbox_opt))
         .then(ingest)
@@ -159,7 +159,7 @@ async fn ingest(
 
 pub fn tail_handler(
     ingest_api_mailbox_opt: Option<Mailbox<IngestApiService>>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     tail_filter()
         .and(require(ingest_api_mailbox_opt))
         .then(tail_endpoint)
@@ -208,7 +208,7 @@ fn elastic_bulk_filter() -> impl Filter<Extract = (String,), Error = Rejection> 
 
 pub fn elastic_bulk_handler(
     ingest_api_mailbox_opt: Option<Mailbox<IngestApiService>>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_bulk_filter()
         .and(require(ingest_api_mailbox_opt))
         .and_then(elastic_ingest)

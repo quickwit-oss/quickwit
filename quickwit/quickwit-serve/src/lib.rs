@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-#![allow(opaque_hidden_inferred_bound)]
 #![deny(clippy::disallowed_methods)]
 
 mod args;
@@ -55,14 +54,17 @@ use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, QuickwitConfig};
+use quickwit_control_plane::scheduler::IndexingScheduler;
+use quickwit_control_plane::start_control_plane_service;
 use quickwit_core::{IndexService, IndexServiceError};
+use quickwit_grpc_clients::ControlPlaneGrpcClient;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, Metastore, MetastoreError, MetastoreGrpcClient,
-    RetryingMetastore,
+    MetastoreWithControlPlaneTriggers, RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::OTEL_TRACE_INDEX_CONFIG;
 use quickwit_search::{start_searcher_service, SearchClientPool, SearchService};
@@ -87,11 +89,12 @@ struct QuickwitServices {
     pub build_info: &'static QuickwitBuildInfo,
     pub cluster: Arc<Cluster>,
     pub metastore: Arc<dyn Metastore>,
+    pub indexing_scheduler_service: Option<Mailbox<IndexingScheduler>>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
     pub search_service: Arc<dyn SearchService>,
-    pub indexer_service: Option<Mailbox<IndexingService>>,
+    pub indexing_service: Option<Mailbox<IndexingService>>,
     pub janitor_service: Option<Mailbox<JanitorService>>,
     pub ingest_api_service: Option<Mailbox<IngestApiService>>,
     pub index_service: Arc<IndexService>,
@@ -117,9 +120,17 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         .enabled_services
         .contains(&QuickwitService::Metastore)
     {
-        quickwit_metastore_uri_resolver()
+        let metastore = quickwit_metastore_uri_resolver()
             .resolve(&config.metastore_uri)
-            .await?
+            .await?;
+        let control_plane_client = ControlPlaneGrpcClient::create_and_update_from_members(
+            cluster.ready_member_change_watcher(),
+        )
+        .await?;
+        Arc::new(MetastoreWithControlPlaneTriggers::new(
+            metastore,
+            control_plane_client,
+        ))
     } else {
         // Wait 10 seconds for nodes running a `Metastore` service.
         cluster
@@ -162,7 +173,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
 
     let universe = Universe::new();
 
-    let (ingest_api_service, indexer_service) = if config
+    let (ingest_api_service, indexing_service) = if config
         .enabled_services
         .contains(&QuickwitService::Indexer)
     {
@@ -186,6 +197,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         let indexing_service = start_indexing_service(
             &universe,
             &config,
+            cluster.clone(),
             metastore.clone(),
             storage_resolver.clone(),
         )
@@ -220,6 +232,15 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     )
     .await?;
 
+    let indexing_scheduler_service: Option<Mailbox<IndexingScheduler>> = if config
+        .enabled_services
+        .contains(&QuickwitService::ControlPlane)
+    {
+        Some(start_control_plane_service(&universe, cluster.clone(), metastore.clone()).await?)
+    } else {
+        None
+    };
+
     let grpc_listen_addr = config.grpc_listen_addr;
     let rest_listen_addr = config.rest_listen_addr;
     let services = config.enabled_services.clone();
@@ -228,8 +249,9 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         build_info: quickwit_build_info(),
         cluster,
         metastore,
+        indexing_scheduler_service,
         search_service,
-        indexer_service,
+        indexing_service,
         janitor_service,
         ingest_api_service,
         index_service,

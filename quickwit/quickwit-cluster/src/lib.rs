@@ -36,7 +36,7 @@ pub use crate::cluster::{
     NodeIdSchema,
 };
 pub use crate::error::{ClusterError, ClusterResult};
-pub use crate::member::ClusterMember;
+pub use crate::member::{ClusterMember, RunningIndexingPlan};
 
 fn unix_timestamp() -> u64 {
     let duration_since_epoch = std::time::SystemTime::now()

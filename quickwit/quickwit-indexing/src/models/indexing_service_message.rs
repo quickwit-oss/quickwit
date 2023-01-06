@@ -22,13 +22,6 @@ use quickwit_config::SourceConfig;
 use super::IndexingPipelineId;
 use crate::actors::MergePipelineId;
 
-#[derive(Debug)]
-pub struct SpawnPipelines {
-    pub index_id: String,
-    // TODO
-    // pub source_id: Option<String>,
-}
-
 #[derive(Clone, Debug)]
 pub struct SpawnPipeline {
     pub index_id: String,

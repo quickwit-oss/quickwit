@@ -81,7 +81,9 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
 }
 
 pub fn start_actor_runtimes(services: &HashSet<QuickwitService>) -> anyhow::Result<()> {
-    if services.contains(&QuickwitService::Indexer) || services.contains(&QuickwitService::Janitor)
+    if services.contains(&QuickwitService::Indexer)
+        || services.contains(&QuickwitService::Janitor)
+        || services.contains(&QuickwitService::ControlPlane)
     {
         let runtime_configuration = RuntimesConfiguration::default();
         quickwit_common::runtimes::initialize_runtimes(runtime_configuration)

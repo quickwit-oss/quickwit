@@ -255,7 +255,8 @@ mod tests {
     fn make_source_config() -> SourceConfig {
         SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            num_pipelines: 1,
+            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,

@@ -1,7 +1,8 @@
 {
     "version": "0.4",
     "source_id": "hdfs-logs-kafka-source",
-    "num_pipelines": 2,
+    "desired_num_pipelines": 2,
+    "max_num_pipelines_per_indexer": 2,
     "source_type": "kafka",
     "params": {
         "topic": "cloudera-cluster-logs",

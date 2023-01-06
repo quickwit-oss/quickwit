@@ -177,7 +177,9 @@ impl Handler<Loop> for IngestApiGarbageCollector {
 mod tests {
     use std::time::Duration;
 
+    use chitchat::transport::ChannelTransport;
     use quickwit_actors::Universe;
+    use quickwit_cluster::create_cluster_for_test;
     use quickwit_common::uri::Uri;
     use quickwit_config::{IndexConfig, IndexerConfig, IngestApiConfig};
     use quickwit_ingest_api::{init_ingest_api, QUEUES_DIR_NAME};
@@ -192,7 +194,12 @@ mod tests {
         let index_id = "test-ingest-api-gc-index".to_string();
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
-
+        let transport = ChannelTransport::default();
+        let cluster = Arc::new(
+            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+                .await
+                .unwrap(),
+        );
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
@@ -222,6 +229,7 @@ mod tests {
             "test-ingest-api-gc-node".to_string(),
             data_dir_path,
             indexer_config,
+            cluster.clone(),
             metastore.clone(),
             storage_resolver.clone(),
         )
