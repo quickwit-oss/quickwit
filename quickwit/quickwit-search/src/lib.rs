@@ -107,8 +107,8 @@ fn partial_hit_sorting_key(partial_hit: &PartialHit) -> (Reverse<u64>, GlobalDoc
 fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAndFooterOffsets {
     SplitIdAndFooterOffsets {
         split_id: split_metadata.split_id.clone(),
-        split_footer_start: split_metadata.footer_offsets.start as u64,
-        split_footer_end: split_metadata.footer_offsets.end as u64,
+        split_footer_start: split_metadata.footer_offsets.start,
+        split_footer_end: split_metadata.footer_offsets.end,
     }
 }
 

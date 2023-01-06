@@ -1,4 +1,5 @@
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportTraceServiceRequest {
     /// An array of ResourceSpans.
@@ -12,6 +13,7 @@ pub struct ExportTraceServiceRequest {
     >,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportTraceServiceResponse {
     /// The details of a partially successful export request.
@@ -33,6 +35,7 @@ pub struct ExportTraceServiceResponse {
     pub partial_success: ::core::option::Option<ExportTracePartialSuccess>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportTracePartialSuccess {
     /// The number of rejected spans.

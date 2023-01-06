@@ -60,7 +60,7 @@ const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
     // Protect against a `retry_count` that will lead to an overflow.
     let max_power = (retry_count as u32 + 1).min(31);
-    Duration::from_secs(2u64.pow(max_power) as u64).min(MAX_RETRY_DELAY)
+    Duration::from_secs(2u64.pow(max_power)).min(MAX_RETRY_DELAY)
 }
 
 /// Spawning an indexing pipeline puts a lot of pressure on the file system, metastore, etc. so

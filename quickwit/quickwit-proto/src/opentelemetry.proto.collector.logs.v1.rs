@@ -1,4 +1,5 @@
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsServiceRequest {
     /// An array of ResourceLogs.
@@ -12,6 +13,7 @@ pub struct ExportLogsServiceRequest {
     >,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsServiceResponse {
     /// The details of a partially successful export request.
@@ -26,13 +28,14 @@ pub struct ExportLogsServiceResponse {
     /// In such cases, the `rejected_<signal>` MUST have a value of `0` and
     /// the `error_message` MUST be non-empty.
     ///
-    /// A `partial_success` message with an empty value (rejected_<signal> = 0 and
+    /// A `partial_success` message with an empty value (`rejected_<signal>1 = 0 and
     /// `error_message` = "") is equivalent to it not being set/present. Senders
     /// SHOULD interpret it the same way as in the full success case.
     #[prost(message, optional, tag = "1")]
     pub partial_success: ::core::option::Option<ExportLogsPartialSuccess>,
 }
 #[derive(Serialize, Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsPartialSuccess {
     /// The number of rejected log records.

@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![allow(rustdoc::invalid_html_tags)]
+
 mod indexed_split;
 mod indexing_pipeline_id;
 mod indexing_service_message;

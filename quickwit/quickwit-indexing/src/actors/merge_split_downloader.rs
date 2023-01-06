@@ -199,7 +199,7 @@ mod tests {
             let split_filepath = merge_scratch
                 .downloaded_splits_directory
                 .path()
-                .join(&split_filename);
+                .join(split_filename);
             assert!(split_filepath.try_exists().unwrap());
         }
         Ok(())

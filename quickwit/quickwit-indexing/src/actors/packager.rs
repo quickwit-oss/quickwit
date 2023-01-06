@@ -174,7 +174,7 @@ fn list_split_files(
     // list the segment files
     for segment_meta in segment_metas {
         for relative_path in segment_meta.list_files() {
-            let filepath = scratch_directory.path().join(&relative_path);
+            let filepath = scratch_directory.path().join(relative_path);
             if filepath.try_exists()? {
                 // If the file is missing, this is fine.
                 // segment_meta.list_files() may actually returns files that

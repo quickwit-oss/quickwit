@@ -28,15 +28,16 @@ import {
   ListItemText,
   Popover,
   TextField,
+  TextFieldProps,
 } from "@mui/material";
 import { AccessTime, ChevronRight, DateRange } from "@mui/icons-material";
 import { Dayjs, default as dayjs } from 'dayjs';
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
-import { DateTimePicker } from "@mui/lab";
+import { DateTimePicker } from '@mui/x-date-pickers';
 import { SearchComponentProps } from "../utils/SearchComponentProps";
-import DateAdapter from '@mui/lab/AdapterDayjs';
-import LocalizationProvider from '@mui/lab/LocalizationProvider';
+import { AdapterDayjs, } from '@mui/x-date-pickers/AdapterDayjs';
+import { LocalizationProvider } from '@mui/x-date-pickers';
 import { DATE_TIME_WITH_SECONDS_FORMAT } from "../utils/models";
 
 dayjs.extend(relativeTime);
@@ -194,7 +195,7 @@ function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
   };
 
   return (
-    <LocalizationProvider dateAdapter={DateAdapter}>
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Box display="flex" flexDirection="column" p={2} sx={{ minWidth: '300px'}}>
         <Box flexGrow={1}>
           <Box pb={1.5}>
@@ -202,12 +203,12 @@ function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
               label="Start Date"
               value={startDate}
               inputFormat={DATE_TIME_WITH_SECONDS_FORMAT}
-              onChange={(newValue) => {
+              onChange={(newValue: null | Dayjs) => {
                 // By default, newValue is a datetime defined on the local time zone and for now we consider
                 // input/output only in UTC.
                 setStartDate(newValue ? dayjs(newValue.valueOf() + newValue.utcOffset() * 60 * 1000).utc() : null);
               }}
-              renderInput={(params) => <TextField {...params} sx={{width: '100%'}} />}
+              renderInput={(props: TextFieldProps) => <TextField {...props} sx={{width: '100%'}} />}
             />
           </Box>
           <Box>
@@ -215,12 +216,12 @@ function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
               label="End Date"
               value={endDate}
               inputFormat={DATE_TIME_WITH_SECONDS_FORMAT}
-              onChange={(newValue) => {
+              onChange={(newValue: null | Dayjs) => {
                 // By default, newValue is a datetime defined on the local time zone and for now we consider
                 // input/output only in UTC.
                 setEndDate(newValue ? dayjs(newValue.valueOf() + newValue.utcOffset() * 60 * 1000).utc() : null);
               }}
-              renderInput={(params) => <TextField {...params} sx={{width: '100%'}} />}
+              renderInput={(props: TextFieldProps) => <TextField {...props} sx={{width: '100%'}} />}
             />
           </Box>
         </Box>

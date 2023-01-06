@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use thiserror::Error;
 use tracing::error;
 
-use crate::{QueueCapacity, SendError, ActorContext};
+use crate::{ActorContext, QueueCapacity, SendError};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
