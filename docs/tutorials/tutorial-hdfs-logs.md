@@ -37,6 +37,13 @@ curl -L https://install.quickwit.io | sh
 cd quickwit-v*/
 ```
 
+Or pull and run the Quickwit binary in an isolated Docker container.
+
+```bash
+docker run quickwit/quickwit --version
+```
+
+
 ## Create your index
 
 Let's create an index configured to receive these logs.
@@ -155,7 +162,7 @@ curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10
 <TabItem value="docker" label="Docker">
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000 | gunzip | docker run -v $(pwd)/qwdata:/quickwit/qwdata -i quickwit/quickwit index ingest --index hdfs-logs
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | docker run -v $(pwd)/qwdata:/quickwit/qwdata -i quickwit/quickwit index ingest --index hdfs-logs
 ```
 
 </TabItem>
@@ -209,7 +216,7 @@ and runs the metastore service which is required by the searcher service.
 <TabItem value="docker" label="Docker">
 
 ```bash
-docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index delete --index hdfs-logs
+docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit run --service searcher --service metastore
 ```
 
 </TabItem>
@@ -257,10 +264,25 @@ curl 'http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:INFO&sta
 
 Let's do some cleanup by deleting the index:
 
+<Tabs>
+
+<TabItem value="cli" label="CLI">
+
 ```bash
 ./quickwit index delete --index hdfs-logs
 ```
 
+</TabItem>
+
+<TabItem value="docker" label="Docker">
+
+```bash
+docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index delete --index hdfs-logs
+```
+
+</TabItem>
+
+</Tabs>
 
 Congratz! You finished this tutorial!
 
