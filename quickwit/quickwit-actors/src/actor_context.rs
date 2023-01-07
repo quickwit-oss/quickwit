@@ -93,10 +93,18 @@ impl<A: Actor> ActorContext<A> {
         &self.spawn_ctx
     }
 
+    /// Sleeps for a given amount of time.
+    ///
+    /// That sleep is measured by the universe scheduler, which means that it can be
+    /// shortened if `Universe::simulate_sleep(..)` is used.
+    ///
+    /// While sleeping, an actor is protected from its
+    /// supervisor via `ActorContext::protect_future(..)`.
     pub async fn sleep(&self, duration: Duration) {
         let scheduler_client = &self.spawn_ctx().scheduler_client;
         scheduler_client.dec_no_advance_time();
-        scheduler_client.simulate_sleep(duration).await;
+        self.protect_future(scheduler_client.simulate_sleep(duration))
+            .await;
         scheduler_client.inc_no_advance_time();
     }
 
@@ -311,6 +319,7 @@ impl<A: Actor> ActorContext<A> {
     }
 
     /// Attempts to send a message to itself.
+    /// The message will be queue to self's low_priority queue.
     ///
     /// Warning: This method will always fail if
     /// an actor has a capacity of 0.
@@ -325,6 +334,8 @@ impl<A: Actor> ActorContext<A> {
         self.self_mailbox.try_send_message(msg)
     }
 
+    /// Schedules a message that will be sent to the high-priority
+    /// queue of the actor Mailbox once `after_duration` has elapsed.
     pub async fn schedule_self_msg<M>(&self, after_duration: Duration, message: M)
     where
         A: Handler<M>,

@@ -83,6 +83,7 @@ struct SchedulerClientInner {
 }
 
 impl SchedulerClient {
+    /// Returns a `SchedulerClient` with no `Scheduler` behind, thus disconnected.
     pub fn disconnected() -> Self {
         let (tx, _rx) = flume::unbounded();
         SchedulerClient {
@@ -96,7 +97,26 @@ impl SchedulerClient {
         }
     }
 
-    pub fn schedule_event<F: Future<Output = ()> + Send + Sync + 'static>(
+    /// Returns true if someone asked for the time to be accelerated.
+    fn time_is_accelerated(&self) -> bool {
+        self.inner.accelerate_time_count.load(Ordering::SeqCst) > 0
+    }
+
+    /// Returns true if something is preventing for accelerating the time.
+    fn advance_time_is_forbidden(&self) -> bool {
+        self.inner
+            .no_advance_time_guard_count
+            .load(Ordering::SeqCst)
+            > 0
+    }
+
+    /// Schedules a new event.
+    /// Once `timeout` is elapsed, the future `fut` is
+    /// executed.
+    ///
+    /// `fut` will be executed in the scheduler task, so it is
+    /// required to be short.
+    pub fn schedule_event<F: FnOnce<Output = ()> + Send + Sync + 'static>(
         &self,
         fut: F,
         timeout: Duration,
@@ -315,26 +335,19 @@ impl Scheduler {
         }
     }
 
-    /// Return the duration we should advance time to.
+    /// Updates the simulated time shift, if appropriate.
     ///
-    /// Returns None if no one is waiting for Universe::simulate_time_shift or
-    /// if some message handler, actor's initialize or finalize have not been processed yet.
+    /// We advance time if:
+    /// - someone is actually requesting for a simulated fast forward in time.
+    /// (if Universe::simulate_time_shift(..) has been called).
+    /// - no message is queued for processing, no initialize or no finalize
+    /// is being processed.
     fn advance_time_if_necessary(&mut self) {
         let Some(scheduler_client) = self.scheduler_client() else { return; };
-        let no_one_waiting_for_advance_time = scheduler_client
-            .inner
-            .accelerate_time_count
-            .load(Ordering::SeqCst)
-            == 0;
-        if no_one_waiting_for_advance_time {
+        if !scheduler_client.time_is_accelerated() {
             return;
         }
-        let existing_pending_messages = scheduler_client
-            .inner
-            .no_advance_time_guard_count
-            .load(std::sync::atomic::Ordering::Relaxed)
-            > 0;
-        if existing_pending_messages {
+        if scheduler_client.advance_time_is_forbidden() {
             return;
         }
         let Some(advance_to_instant) = self.next_event_deadline() else { return; };
