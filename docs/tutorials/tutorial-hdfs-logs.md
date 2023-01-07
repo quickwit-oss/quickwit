@@ -5,6 +5,8 @@ tags: [self-hosted, setup]
 icon_url: /img/quickwit-icon.svg
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 In this guide, we will index about 40 million log entries (13 GB decompressed) and start a three-node cluster on a local machine. If you want to start a server with indexes on AWS S3, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md).
 
