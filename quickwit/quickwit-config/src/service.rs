@@ -28,6 +28,7 @@ use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Sequence)]
 pub enum QuickwitService {
+    ControlPlane,
     Indexer,
     Searcher,
     Janitor,
@@ -37,6 +38,7 @@ pub enum QuickwitService {
 impl QuickwitService {
     pub fn as_str(&self) -> &'static str {
         match self {
+            QuickwitService::ControlPlane => "control_plane",
             QuickwitService::Indexer => "indexer",
             QuickwitService::Searcher => "searcher",
             QuickwitService::Janitor => "janitor",
@@ -60,6 +62,7 @@ impl FromStr for QuickwitService {
 
     fn from_str(service_str: &str) -> Result<Self, Self::Err> {
         match service_str {
+            "control_plane" => Ok(QuickwitService::ControlPlane),
             "indexer" => Ok(QuickwitService::Indexer),
             "searcher" => Ok(QuickwitService::Searcher),
             "janitor" => Ok(QuickwitService::Janitor),
