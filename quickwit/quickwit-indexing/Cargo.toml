@@ -24,10 +24,7 @@ libz-sys = { workspace = true, optional = true }
 once_cell = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
-rdkafka = { workspace = true, features = [
-    "ssl",
-    "sasl",
-], optional = true }
+rdkafka = { workspace = true, optional = true }
 rusoto_core = { workspace = true, optional = true }
 rusoto_kinesis = { workspace = true, optional = true }
 serde = { workspace = true }
@@ -55,7 +52,8 @@ quickwit-storage = { workspace = true }
 [features]
 kafka = ["rdkafka", "backoff"]
 kafka-broker-tests = []
-vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored"]
+vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored", "rdkafka/gssapi-vendored"]
+vendored-kafka-macos = ["kafka", "libz-sys/static", "openssl/vendored"]
 kinesis = ["rusoto_core", "rusoto_kinesis", "quickwit-aws/kinesis"]
 kinesis-localstack-tests = []
 testsuite = []

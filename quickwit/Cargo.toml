@@ -113,7 +113,6 @@ rdkafka = { version = "0.28", default-features = false, features = [
   "libz",
   "ssl",
   "cmake-build",
-  "gssapi-vendored",
 ] }
 regex = "1.7.0"
 reqwest = { version = "0.11", default-features = false, features = [

@@ -2,61 +2,33 @@ name: Build and publish nightly packages
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * *"
 
 jobs:
-  build-native-binaries:
-    name: Build ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+  build-macos-binaries:
+    name: Build ${{ matrix.target }}
+    runs-on: macos-latest
     strategy:
       matrix:
-        include:
-          - os: macos-latest
-            target: aarch64-apple-darwin
-
+        target: [x86_64-apple-darwin, aarch64-apple-darwin]
     steps:
       - uses: actions/checkout@v3
-      - name: Extract asset version
-        run: echo "ASSET_VERSION=foo" >> $GITHUB_ENV
-      - name: Extract asset full name
-        run: echo "ASSET_FULL_NAME=quickwit-${{ env.ASSET_VERSION }}-${{ matrix.target }}" >> $GITHUB_ENV
-      - uses: actions-rs/toolchain@v1
+      - uses: ./.github/actions/cargo-build-macos-binary
         with:
-          toolchain: stable
           target: ${{ matrix.target }}
-          override: true
-      - name: Build binary
-        run: cargo build --release --features release-feature-vendored-set --target ${{ matrix.target }}
-        shell: bash
-        working-directory: ./quickwit
-      - name: Bundle archive
-        run: |
-          make archive BINARY_FILE=quickwit/target/release/quickwit \
-            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
-        shell: bash
-      - name: Save binary archive for few days
-        uses: actions/upload-artifact@v3
+          version: nightly
+          token: ${{ secrets.GITHUB_TOKEN }}
+  build-linux-binaries:
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/cross-build-binary
         with:
-          name: ${{ env.ASSET_FULL_NAME }}.tar.gz
-          path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
-          retention-days: 3
-
-
-# on:
-#   workflow_dispatch:
-#   schedule:
-#     - cron: "0 5 * * *"
-
-# jobs:
-#   build-binaries:
-#     strategy:
-#       matrix:
-#         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
-#     name: Build ${{ matrix.target }}
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: actions/checkout@v3
-#       - uses: ./.github/actions/build-binary
-#         with:
-#           target: ${{ matrix.target }}
-#           version: nightly
-#           token: ${{ secrets.GITHUB_TOKEN }}
+          target: ${{ matrix.target }}
+          version: nightly
+          token: ${{ secrets.GITHUB_TOKEN }}
