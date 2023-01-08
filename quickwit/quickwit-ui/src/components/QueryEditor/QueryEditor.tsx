@@ -67,15 +67,15 @@ export function QueryEditor(props: SearchComponentProps) {
         monaco.languages.setMonarchTokensProvider(updatedLanguageId, LanguageFeatures())
         if (props.index != null) {
           monaco.languages.registerCompletionItemProvider(updatedLanguageId, createIndexCompletionProvider(props.index.metadata));
+          monaco.languages.setLanguageConfiguration(
+            updatedLanguageId,
+            LANGUAGE_CONFIG,
+          );
         }
-        monaco.languages.setLanguageConfiguration(
-          updatedLanguageId,
-          LANGUAGE_CONFIG,
-        );
       }
       setLanguageId(updatedLanguageId);
     }
-  }, [monacoRef, props.searchRequest, props.index]);
+  }, [monacoRef, props.index]);
 
   useEffect(() => {
     if (monacoRef.current !== null) {
