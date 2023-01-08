@@ -342,7 +342,7 @@ impl<A: Actor> ActorContext<A> {
         M: Sync + Send + std::fmt::Debug + 'static,
     {
         let self_mailbox = self.inner.self_mailbox.clone();
-        let callback = async move {
+        let callback = move || {
             let _ = self_mailbox.send_message_with_high_priority(message);
         };
         self.inner

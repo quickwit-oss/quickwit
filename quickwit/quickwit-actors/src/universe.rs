@@ -23,7 +23,7 @@ use crate::mailbox::create_mailbox;
 use crate::registry::ActorObservation;
 use crate::scheduler::start_scheduler;
 use crate::spawn_builder::{SpawnBuilder, SpawnContext};
-use crate::{Actor, Command, Inbox, Mailbox, QueueCapacity, SchedulerClient};
+use crate::{Actor, Command, Inbox, Mailbox, QueueCapacity};
 
 /// Universe serves as the top-level context in which Actor can be spawned.
 /// It is *not* a singleton. A typical application will usually have only one universe hosting all
@@ -54,11 +54,7 @@ impl Universe {
     }
 
     pub fn create_test_mailbox<A: Actor>(&self) -> (Mailbox<A>, Inbox<A>) {
-        create_mailbox(
-            "test-mailbox".to_string(),
-            QueueCapacity::Unbounded,
-            SchedulerClient::disconnected(),
-        )
+        create_mailbox("test-mailbox".to_string(), QueueCapacity::Unbounded, None)
     }
 
     pub fn create_mailbox<A: Actor>(

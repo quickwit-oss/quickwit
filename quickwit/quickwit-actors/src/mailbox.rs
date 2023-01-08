@@ -128,14 +128,14 @@ impl<A: Actor> Mailbox<A> {
         &self.inner.instance_id
     }
 
-    pub(crate) fn scheduler_client(&self) -> &SchedulerClient {
-        &self.inner.scheduler_client
+    pub(crate) fn scheduler_client(&self) -> Option<&SchedulerClient> {
+        self.inner.scheduler_client_opt.as_ref()
     }
 }
 
 struct Inner<A: Actor> {
     pub(crate) tx: Sender<Envelope<A>>,
-    scheduler_client: SchedulerClient,
+    scheduler_client_opt: Option<SchedulerClient>,
     instance_id: String,
 }
 
@@ -206,7 +206,11 @@ impl<A: Actor> Mailbox<A> {
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
-        let guard = self.inner.scheduler_client.no_advance_time_guard();
+        let guard = self
+            .inner
+            .scheduler_client_opt
+            .as_ref()
+            .map(|scheduler_client| scheduler_client.no_advance_time_guard());
         wrap_in_envelope(message, guard)
     }
 
@@ -379,7 +383,7 @@ impl<A: Actor> Inbox<A> {
 pub(crate) fn create_mailbox<A: Actor>(
     actor_name: String,
     queue_capacity: QueueCapacity,
-    scheduler_client: SchedulerClient,
+    scheduler_client_opt: Option<SchedulerClient>,
 ) -> (Mailbox<A>, Inbox<A>) {
     let (tx, rx) = crate::channel_with_priority::channel(queue_capacity);
     let ref_count = Arc::new(AtomicUsize::new(1));
@@ -387,7 +391,7 @@ pub(crate) fn create_mailbox<A: Actor>(
         inner: Arc::new(Inner {
             tx,
             instance_id: quickwit_common::new_coolid(&actor_name),
-            scheduler_client,
+            scheduler_client_opt,
         }),
         ref_count,
     };

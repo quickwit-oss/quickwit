@@ -59,7 +59,7 @@ impl SpawnContext {
         create_mailbox(
             actor_name.to_string(),
             queue_capacity,
-            self.scheduler_client.clone(),
+            Some(self.scheduler_client.clone()),
         )
     }
 
@@ -291,7 +291,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
             .ctx
             .mailbox()
             .scheduler_client()
-            .no_advance_time_guard();
+            .map(|scheduler_client| scheduler_client.no_advance_time_guard());
         if let Err(finalize_error) = self
             .actor
             .finalize(&exit_status, &self.ctx)

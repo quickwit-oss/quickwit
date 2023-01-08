@@ -20,8 +20,6 @@
 use std::cmp::Reverse;
 use std::collections::binary_heap::PeekMut;
 use std::collections::BinaryHeap;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -29,7 +27,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-type Callback = Pin<Box<dyn Future<Output = ()> + Sync + Send + 'static>>;
+type Callback = Box<dyn FnOnce() + Sync + Send + 'static>;
 
 struct TimeoutEvent {
     deadline: Instant,
@@ -83,27 +81,13 @@ struct SchedulerClientInner {
 }
 
 impl SchedulerClient {
-    /// Returns a `SchedulerClient` with no `Scheduler` behind, thus disconnected.
-    pub fn disconnected() -> Self {
-        let (tx, _rx) = flume::unbounded();
-        SchedulerClient {
-            inner: Arc::new(SchedulerClientInner {
-                tx,
-                // We offset the no advance time guard count to make sure
-                // we do not drop to 0.
-                no_advance_time_guard_count: AtomicUsize::new(1),
-                accelerate_time_count: Default::default(),
-            }),
-        }
-    }
-
     /// Returns true if someone asked for the time to be accelerated.
     fn time_is_accelerated(&self) -> bool {
         self.inner.accelerate_time_count.load(Ordering::SeqCst) > 0
     }
 
     /// Returns true if something is preventing for accelerating the time.
-    fn advance_time_is_forbidden(&self) -> bool {
+    fn is_advance_time_forbidden(&self) -> bool {
         self.inner
             .no_advance_time_guard_count
             .load(Ordering::SeqCst)
@@ -116,16 +100,15 @@ impl SchedulerClient {
     ///
     /// `fut` will be executed in the scheduler task, so it is
     /// required to be short.
-    pub fn schedule_event<F: FnOnce<Output = ()> + Send + Sync + 'static>(
+    pub fn schedule_event<F: FnOnce() + Send + Sync + 'static>(
         &self,
-        fut: F,
+        callback: F,
         timeout: Duration,
     ) {
-        let callback = Box::pin(fut);
-        let _ = self
-            .inner
-            .tx
-            .send(SchedulerMessage::Schedule { callback, timeout });
+        let _ = self.inner.tx.send(SchedulerMessage::Schedule {
+            callback: Box::new(callback),
+            timeout,
+        });
     }
 
     // Increases the number of reasons to not simulate advance time.
@@ -161,6 +144,8 @@ impl SchedulerClient {
         let _ = self.inner.tx.send(SchedulerMessage::Timeout);
     }
 
+    /// Returns a `NoAdvanceTimeGuard` which calls `inc_no_advance_time`
+    /// on `NoAdvanceTimeGuard::new` and `dec_no_advance_time` when dropped.
     pub fn no_advance_time_guard(&self) -> NoAdvanceTimeGuard {
         NoAdvanceTimeGuard::new(self.clone())
     }
@@ -234,7 +219,9 @@ struct Scheduler {
     // We attribute an event_id to all event just to break ties
     // if two events are scheduled on the same time.
     event_id_generator: u64,
-    // simulated_time = Instant::now() + simulated_time_shift.
+    // Simulated time shift which defines the scheduler time reference as `simulated_time =
+    // Instant::now() + simulated_time_shift`. By default `simulated_time_shift` is set to 0
+    // but it can be shifted when the scheduler has to process a simulate sleep event`.
     simulated_time_shift: Duration,
     future_events: BinaryHeap<Reverse<TimeoutEvent>>,
     next_timeout: Option<JoinHandle<()>>,
@@ -251,7 +238,7 @@ impl Scheduler {
                 break;
             }
             let next_event = PeekMut::pop(next_event_peek);
-            next_event.0.callback.await;
+            (next_event.0.callback)();
         }
 
         // If the condition to accelerate time are met, we can
@@ -277,7 +264,7 @@ impl Scheduler {
     async fn process_simulate_sleep(&mut self, oneshot_tx: oneshot::Sender<()>, timeout: Duration) {
         let Some(scheduler_client) = self.scheduler_client() else { return; };
         let accelerate_time_count_guard = AccelerateTimeCountGuard::new(scheduler_client);
-        let callback: Callback = Box::pin(async move {
+        let callback: Callback = Box::new(move || {
             drop(accelerate_time_count_guard);
             let _ = oneshot_tx.send(());
         });
@@ -347,7 +334,7 @@ impl Scheduler {
         if !scheduler_client.time_is_accelerated() {
             return;
         }
-        if scheduler_client.advance_time_is_forbidden() {
+        if scheduler_client.is_advance_time_forbidden() {
             return;
         }
         let Some(advance_to_instant) = self.next_event_deadline() else { return; };

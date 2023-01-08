@@ -36,7 +36,7 @@ use crate::{Actor, ActorContext, ActorExitStatus, Handler};
 
 pub struct Envelope<A> {
     handler_envelope: Box<dyn EnvelopeT<A>>,
-    _no_advance_time_guard: NoAdvanceTimeGuard,
+    _no_advance_time_guard: Option<NoAdvanceTimeGuard>,
 }
 
 impl<A: Actor> Envelope<A> {
@@ -131,7 +131,7 @@ where
 
 pub(crate) fn wrap_in_envelope<A, M>(
     msg: M,
-    no_advance_time_guard: NoAdvanceTimeGuard,
+    no_advance_time_guard: Option<NoAdvanceTimeGuard>,
 ) -> (Envelope<A>, oneshot::Receiver<A::Reply>)
 where
     A: Handler<M>,
