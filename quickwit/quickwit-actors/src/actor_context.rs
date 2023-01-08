@@ -98,13 +98,12 @@ impl<A: Actor> ActorContext<A> {
     /// That sleep is measured by the universe scheduler, which means that it can be
     /// shortened if `Universe::simulate_sleep(..)` is used.
     ///
-    /// While sleeping, an actor is protected from its
-    /// supervisor via `ActorContext::protect_future(..)`.
+    /// While sleeping, an actor is NOT protected from its supervisor.
+    /// It is up to the user to call `ActorContext::protect_future(..)`.
     pub async fn sleep(&self, duration: Duration) {
         let scheduler_client = &self.spawn_ctx().scheduler_client;
         scheduler_client.dec_no_advance_time();
-        self.protect_future(scheduler_client.simulate_sleep(duration))
-            .await;
+        scheduler_client.simulate_sleep(duration).await;
         scheduler_client.inc_no_advance_time();
     }
 
