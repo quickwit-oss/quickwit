@@ -21,6 +21,7 @@
 
 mod cluster;
 mod error;
+mod member;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -31,10 +32,10 @@ use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
 
 pub use crate::cluster::{
-    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterMember,
-    ClusterSnapshot,
+    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterSnapshot,
 };
 pub use crate::error::{ClusterError, ClusterResult};
+pub use crate::member::ClusterMember;
 
 fn unix_timestamp() -> u64 {
     let duration_since_epoch = std::time::SystemTime::now()
@@ -53,6 +54,7 @@ pub async fn start_cluster_service(
         enabled_services.clone(),
         quickwit_config.gossip_advertise_addr,
         quickwit_config.grpc_advertise_addr,
+        None,
     );
 
     let cluster = Cluster::join(
