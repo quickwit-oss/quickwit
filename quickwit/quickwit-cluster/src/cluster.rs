@@ -352,7 +352,7 @@ pub struct ClusterSnapshot {
         example = json!({
             "key_values": {
                 "grpc_advertise_addr": "127.0.0.1:8080",
-                "enabled_services": "",
+                "enabled_services": "searcher",
             },
             "max_version": 5,
         })
