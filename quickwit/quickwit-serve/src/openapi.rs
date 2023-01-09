@@ -60,7 +60,6 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base.merge_components_and_paths(DeleteTaskApi::openapi());
     docs_base.merge_components_and_paths(HealthCheckApi::openapi());
     docs_base.merge_components_and_paths(IndexApi::openapi());
-    docs_base.merge_components_and_paths(DocMapperApiSchemas::openapi());
     docs_base.merge_components_and_paths(IndexingApi::openapi());
     docs_base.merge_components_and_paths(IngestApi::openapi());
     docs_base.merge_components_and_paths(SearchApi::openapi());
@@ -69,6 +68,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base.merge_components_and_paths(MetastoreApiSchemas::openapi());
     docs_base.merge_components_and_paths(ConfigApiSchemas::openapi());
     docs_base.merge_components_and_paths(JanitorApiSchemas::openapi());
+    docs_base.merge_components_and_paths(DocMapperApiSchemas::openapi());
 
     docs_base
 }
