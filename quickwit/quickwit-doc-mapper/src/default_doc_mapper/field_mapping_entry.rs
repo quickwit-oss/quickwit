@@ -38,14 +38,16 @@ pub struct QuickwitObjectOptions {
 
 /// A `FieldMappingEntry` defines how a field is indexed, stored,
 /// and mapped from a JSON document to the related index fields.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(
     try_from = "FieldMappingEntryForSerialization",
     into = "FieldMappingEntryForSerialization"
 )]
 pub struct FieldMappingEntry {
+    #[schema(example = "title")]
     /// Field name in the index schema.
     pub name: String,
+    #[schema(inline)]
     /// Property parameters which defines the type and the way the value must be indexed.
     pub mapping_type: FieldMappingType,
 }
@@ -63,17 +65,16 @@ pub struct FieldMappingEntry {
 // Docs bellow used for OpenAPI generation:
 /// A `FieldMappingEntry` defines how a field is indexed, stored,
 /// and mapped from a JSON document to the related index fields.
-#[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub(crate) struct FieldMappingEntryForSerialization {
     name: String,
     #[serde(rename = "type")]
     type_id: String,
-    #[schema(value_type = HashMap<String, Object>)]
     #[serde(flatten)]
     pub field_mapping_json: serde_json::Map<String, JsonValue>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitNumericOptions {
     #[serde(default)]
