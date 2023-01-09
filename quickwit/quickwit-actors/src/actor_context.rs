@@ -31,13 +31,12 @@ use tracing::{debug, error};
 
 use crate::actor_state::AtomicState;
 use crate::registry::ActorRegistry;
-use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
-use crate::spawn_builder::SpawnBuilder;
+use crate::spawn_builder::{SpawnBuilder, SpawnContext};
 #[cfg(any(test, feature = "testsuite"))]
 use crate::Universe;
 use crate::{
     Actor, ActorExitStatus, ActorState, AskError, Command, Handler, Mailbox, SendError,
-    SpawnContext, TrySendError,
+    TrySendError,
 };
 
 // TODO hide all of this public stuff
@@ -62,11 +61,9 @@ impl<A: Actor> Deref for ActorContext<A> {
 }
 
 pub struct ActorContextInner<A: Actor> {
+    spawn_ctx: SpawnContext,
     self_mailbox: Mailbox<A>,
     progress: Progress,
-    kill_switch: KillSwitch,
-    scheduler_mailbox: Mailbox<Scheduler>,
-    registry: ActorRegistry,
     actor_state: AtomicState,
     backpressure_micros_counter_opt: Option<IntCounter>,
     observable_state_tx: watch::Sender<A::ObservableState>,
@@ -75,25 +72,39 @@ pub struct ActorContextInner<A: Actor> {
 impl<A: Actor> ActorContext<A> {
     pub(crate) fn new(
         self_mailbox: Mailbox<A>,
-        kill_switch: KillSwitch,
-        scheduler_mailbox: Mailbox<Scheduler>,
-        registry: ActorRegistry,
+        spawn_ctx: SpawnContext,
         observable_state_tx: watch::Sender<A::ObservableState>,
         backpressure_micros_counter_opt: Option<IntCounter>,
     ) -> Self {
         ActorContext {
             inner: ActorContextInner {
                 self_mailbox,
+                spawn_ctx,
                 progress: Progress::default(),
-                kill_switch,
-                scheduler_mailbox,
-                registry,
                 actor_state: AtomicState::default(),
                 observable_state_tx,
                 backpressure_micros_counter_opt,
             }
             .into(),
         }
+    }
+
+    pub fn spawn_ctx(&self) -> &SpawnContext {
+        &self.spawn_ctx
+    }
+
+    /// Sleeps for a given amount of time.
+    ///
+    /// That sleep is measured by the universe scheduler, which means that it can be
+    /// shortened if `Universe::simulate_sleep(..)` is used.
+    ///
+    /// While sleeping, an actor is NOT protected from its supervisor.
+    /// It is up to the user to call `ActorContext::protect_future(..)`.
+    pub async fn sleep(&self, duration: Duration) {
+        let scheduler_client = &self.spawn_ctx().scheduler_client;
+        scheduler_client.dec_no_advance_time();
+        scheduler_client.simulate_sleep(duration).await;
+        scheduler_client.inc_no_advance_time();
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -104,9 +115,7 @@ impl<A: Actor> ActorContext<A> {
     ) -> Self {
         Self::new(
             actor_mailbox,
-            universe.kill_switch.clone(),
-            universe.scheduler_mailbox.clone(),
-            universe.registry.clone(),
+            universe.spawn_ctx.clone(),
             observable_state_tx,
             None,
         )
@@ -117,7 +126,7 @@ impl<A: Actor> ActorContext<A> {
     }
 
     pub(crate) fn registry(&self) -> &ActorRegistry {
-        &self.registry
+        &self.spawn_ctx.registry
     }
 
     pub fn actor_instance_id(&self) -> &str {
@@ -153,7 +162,7 @@ impl<A: Actor> ActorContext<A> {
     /// For instance, when quitting from the process_message function, prefer simply
     /// returning `Error(ActorExitStatus::Failure(..))`
     pub fn kill_switch(&self) -> &KillSwitch {
-        &self.kill_switch
+        &self.spawn_ctx.kill_switch
     }
 
     #[must_use]
@@ -162,16 +171,7 @@ impl<A: Actor> ActorContext<A> {
     }
 
     pub fn spawn_actor<SpawnedActor: Actor>(&self) -> SpawnBuilder<SpawnedActor> {
-        SpawnBuilder::new(
-            self.scheduler_mailbox.clone(),
-            self.kill_switch.child(),
-            self.registry.clone(),
-        )
-    }
-
-    /// Returns a spawn context associated with the current universe.
-    pub fn spawn_ctx(&self) -> &SpawnContext {
-        &SpawnContext
+        self.spawn_ctx.clone().spawn_builder()
     }
 
     /// Records some progress.
@@ -216,9 +216,7 @@ impl<A: Actor> ActorContext<A> {
             self.kill_switch().kill();
         }
     }
-}
 
-impl<A: Actor> ActorContext<A> {
     /// Posts a message in an actor's mailbox.
     ///
     /// This method does not wait for the message to be handled by the
@@ -320,6 +318,7 @@ impl<A: Actor> ActorContext<A> {
     }
 
     /// Attempts to send a message to itself.
+    /// The message will be queue to self's low_priority queue.
     ///
     /// Warning: This method will always fail if
     /// an actor has a capacity of 0.
@@ -334,22 +333,21 @@ impl<A: Actor> ActorContext<A> {
         self.self_mailbox.try_send_message(msg)
     }
 
+    /// Schedules a message that will be sent to the high-priority
+    /// queue of the actor Mailbox once `after_duration` has elapsed.
     pub async fn schedule_self_msg<M>(&self, after_duration: Duration, message: M)
     where
         A: Handler<M>,
         M: Sync + Send + std::fmt::Debug + 'static,
     {
         let self_mailbox = self.inner.self_mailbox.clone();
-        let callback = Callback(Box::pin(async move {
+        let callback = move || {
             let _ = self_mailbox.send_message_with_high_priority(message);
-        }));
-        let scheduler_msg = ScheduleEvent {
-            timeout: after_duration,
-            callback,
         };
-        let _ = self
-            .send_message(&self.inner.scheduler_mailbox, scheduler_msg)
-            .await;
+        self.inner
+            .spawn_ctx
+            .scheduler_client
+            .schedule_event(callback, after_duration);
     }
 }
 

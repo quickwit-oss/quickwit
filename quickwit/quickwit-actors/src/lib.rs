@@ -32,6 +32,7 @@ use std::fmt;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use tokio::time::Duration;
 mod actor;
+mod actor_context;
 mod actor_handle;
 mod actor_state;
 #[doc(hidden)]
@@ -45,8 +46,8 @@ pub(crate) mod scheduler;
 mod spawn_builder;
 mod supervisor;
 
-mod actor_context;
-mod spawn_context;
+pub use scheduler::{start_scheduler, SchedulerClient};
+
 #[cfg(test)]
 pub(crate) mod tests;
 mod universe;
@@ -56,15 +57,13 @@ pub use actor_handle::{ActorHandle, Health, Healthz, Supervisable};
 pub use command::Command;
 pub use observation::{Observation, ObservationType};
 use quickwit_common::KillSwitch;
-pub(crate) use scheduler::Scheduler;
-pub use spawn_context::SpawnContext;
+pub use spawn_builder::SpawnContext;
 use thiserror::Error;
 pub use universe::Universe;
 
 pub use self::actor_context::ActorContext;
 pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError, TrySendError};
-pub(crate) use self::mailbox::create_mailbox;
 pub use self::mailbox::{Inbox, Mailbox};
 pub use self::registry::ActorObservation;
 pub use self::supervisor::{Supervisor, SupervisorState};

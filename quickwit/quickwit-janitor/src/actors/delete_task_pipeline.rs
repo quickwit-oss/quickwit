@@ -453,12 +453,7 @@ mod tests {
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         pipeline_handler.quit().await;
         let observations = universe.observe(HEARTBEAT).await;
-        // Once the pipeline is properly shut down, the only remaining actor is the scheduler.
-        assert_eq!(observations.len(), 1);
-        assert_eq!(
-            observations[0].type_name,
-            "quickwit_actors::scheduler::Scheduler"
-        );
+        assert!(observations.is_empty());
         Ok(())
     }
 }
