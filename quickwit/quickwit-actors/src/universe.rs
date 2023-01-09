@@ -19,13 +19,11 @@
 
 use std::time::Duration;
 
-use crate::registry::{ActorObservation, ActorRegistry};
-use crate::scheduler::{SimulateAdvanceTime, TimeShift};
-use crate::spawn_builder::SpawnBuilder;
-use crate::{
-    create_mailbox, Actor, Command, Inbox, KillSwitch, Mailbox, QueueCapacity, Scheduler,
-    SpawnContext,
-};
+use crate::mailbox::create_mailbox;
+use crate::registry::ActorObservation;
+use crate::scheduler::start_scheduler;
+use crate::spawn_builder::{SpawnBuilder, SpawnContext};
+use crate::{Actor, Command, Inbox, Mailbox, QueueCapacity};
 
 /// Universe serves as the top-level context in which Actor can be spawned.
 /// It is *not* a singleton. A typical application will usually have only one universe hosting all
@@ -33,80 +31,71 @@ use crate::{
 ///
 /// In particular, unit test all have their own universe and hence can be executed in parallel.
 pub struct Universe {
-    pub(crate) scheduler_mailbox: Mailbox<Scheduler>,
-    // This killswitch is used for the scheduler, and will be used by default for all spawned
-    // actors.
-    pub(crate) kill_switch: KillSwitch,
-    pub(crate) registry: ActorRegistry,
+    pub(crate) spawn_ctx: SpawnContext,
+}
+
+impl Default for Universe {
+    fn default() -> Universe {
+        Universe::new()
+    }
 }
 
 impl Universe {
     /// Creates a new universe.
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Universe {
-        let scheduler = Scheduler::default();
-        let kill_switch = KillSwitch::default();
-        let (fake_mailbox, _inbox) =
-            crate::create_mailbox("fake-mailbox".to_string(), QueueCapacity::Unbounded);
-        let registry = ActorRegistry::default();
-        let (scheduler_mailbox, _scheduler_inbox) =
-            SpawnBuilder::new(fake_mailbox, kill_switch.clone(), registry.clone()).spawn(scheduler);
+        let scheduler_client = start_scheduler();
         Universe {
-            scheduler_mailbox,
-            kill_switch,
-            registry,
+            spawn_ctx: SpawnContext::new(scheduler_client),
         }
     }
 
     pub fn spawn_ctx(&self) -> &SpawnContext {
-        &SpawnContext
+        &self.spawn_ctx
     }
 
     pub fn create_test_mailbox<A: Actor>(&self) -> (Mailbox<A>, Inbox<A>) {
-        create_mailbox("test-mailbox".to_string(), QueueCapacity::Unbounded)
+        create_mailbox("test-mailbox".to_string(), QueueCapacity::Unbounded, None)
+    }
+
+    pub fn create_mailbox<A: Actor>(
+        &self,
+        actor_name: impl ToString,
+        queue_capacity: QueueCapacity,
+    ) -> (Mailbox<A>, Inbox<A>) {
+        self.spawn_ctx.create_mailbox(actor_name, queue_capacity)
     }
 
     pub fn get<A: Actor>(&self) -> Vec<Mailbox<A>> {
-        self.registry.get::<A>()
+        self.spawn_ctx.registry.get::<A>()
     }
 
     pub fn get_one<A: Actor>(&self) -> Option<Mailbox<A>> {
-        self.registry.get_one::<A>()
+        self.spawn_ctx.registry.get_one::<A>()
     }
 
     pub async fn observe(&self, timeout: Duration) -> Vec<ActorObservation> {
-        self.registry.observe(timeout).await
+        self.spawn_ctx.registry.observe(timeout).await
     }
 
     pub fn kill(&self) {
-        self.kill_switch.kill();
+        self.spawn_ctx.kill_switch.kill();
     }
 
     /// Simulate advancing the time for unit tests.
     ///
-    /// It is not just about jumping the clock and triggering one round of messages:
-    /// These message might have generated more messages for instance.
-    ///
-    /// This simulation triggers progress step by step, and after each step, leaves 100ms for actors
-    /// to schedule extra messages.
+    /// This is smarter than just mocking a clock.
+    /// As long as everything is happening in actors handlers, initialize
+    /// or finalize methods, the result should be rigorously the same as
+    /// if we waited.
     pub async fn simulate_time_shift(&self, duration: Duration) {
-        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-        let _ = self
-            .scheduler_mailbox
-            .send_message(SimulateAdvanceTime {
-                time_shift: TimeShift::ByDuration(duration),
-                tx,
-            })
+        self.spawn_ctx
+            .scheduler_client
+            .simulate_sleep(duration)
             .await;
-        let _ = rx.await;
     }
 
     pub fn spawn_builder<A: Actor>(&self) -> SpawnBuilder<A> {
-        SpawnBuilder::new(
-            self.scheduler_mailbox.clone(),
-            self.kill_switch.child(),
-            self.registry.clone(),
-        )
+        self.spawn_ctx.spawn_builder()
     }
 
     /// Inform an actor to process pending message and then stop processing new messages
@@ -122,7 +111,7 @@ impl Universe {
 
 impl Drop for Universe {
     fn drop(&mut self) {
-        self.kill_switch.kill();
+        self.spawn_ctx.kill_switch.kill();
     }
 }
 
@@ -135,12 +124,12 @@ mod tests {
     use crate::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
 
     #[derive(Default)]
-    pub struct ActorWithSchedule {
+    pub struct CountingMinutesActor {
         count: usize,
     }
 
     #[async_trait]
-    impl Actor for ActorWithSchedule {
+    impl Actor for CountingMinutesActor {
         type ObservableState = usize;
 
         fn observable_state(&self) -> usize {
@@ -156,7 +145,7 @@ mod tests {
     struct Loop;
 
     #[async_trait]
-    impl Handler<Loop> for ActorWithSchedule {
+    impl Handler<Loop> for CountingMinutesActor {
         type Reply = ();
         async fn handle(
             &mut self,
@@ -172,14 +161,12 @@ mod tests {
     #[tokio::test]
     async fn test_schedule_for_actor() {
         let universe = Universe::new();
-        let actor_with_schedule = ActorWithSchedule::default();
+        let actor_with_schedule = CountingMinutesActor::default();
         let (_maibox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
         let count_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(count_after_initialization, 1);
         universe.simulate_time_shift(Duration::from_secs(200)).await;
         let count_after_advance_time = handler.process_pending_and_observe().await.state;
-        // Note the count is 2 here and not 1 + 3  = 4.
-        // See comment on `universe.simulate_advance_time`.
         assert_eq!(count_after_advance_time, 4);
     }
 }

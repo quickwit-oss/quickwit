@@ -724,8 +724,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() -> anyhow::Result<()>
-    {
+    async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_index_metadata()
@@ -794,14 +793,13 @@ mod tests {
         // restart.
         let indexer = universe.get::<Indexer>().into_iter().next().unwrap();
         indexer.send_message(Command::Quit).await.unwrap();
-        universe.simulate_time_shift(Duration::from_secs(2)).await;
+        universe.simulate_time_shift(Duration::from_secs(10)).await;
         // Check indexing pipeline has restarted.
         let obs = indexing_pipeline_handler
             .process_pending_and_observe()
             .await;
-        assert_eq!(obs.generation, 1);
+        assert_eq!(obs.generation, 2);
         // Check that the merge pipeline is still up.
         assert_eq!(merge_pipeline_handler.harvest_health(), Health::Healthy);
-        Ok(())
     }
 }

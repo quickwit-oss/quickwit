@@ -61,21 +61,21 @@ export function QueryEditor(props: SearchComponentProps) {
     const updatedLanguageId = getLanguageId(props.searchRequest.indexId);
     if (monacoRef.current !== null && updatedLanguageId !== '' && props.index !== null) {
       const monaco = monacoRef.current;
-      if (!monaco.languages.getLanguages().some(({ id }: {id :string }) => id === languageId)) {
+      if (!monaco.languages.getLanguages().some(({ id }: {id :string }) => id === updatedLanguageId)) {
         console.log('register language', updatedLanguageId);
         monaco.languages.register({'id': updatedLanguageId});
         monaco.languages.setMonarchTokensProvider(updatedLanguageId, LanguageFeatures())
         if (props.index != null) {
           monaco.languages.registerCompletionItemProvider(updatedLanguageId, createIndexCompletionProvider(props.index.metadata));
+          monaco.languages.setLanguageConfiguration(
+            updatedLanguageId,
+            LANGUAGE_CONFIG,
+          );
         }
-        monaco.languages.setLanguageConfiguration(
-          updatedLanguageId,
-          LANGUAGE_CONFIG,
-        );
       }
       setLanguageId(updatedLanguageId);
     }
-  }, [monacoRef, props.searchRequest, props.index]);
+  }, [monacoRef, props.index]);
 
   useEffect(() => {
     if (monacoRef.current !== null) {

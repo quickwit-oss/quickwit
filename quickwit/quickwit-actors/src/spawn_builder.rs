@@ -23,34 +23,68 @@ use tokio::sync::watch;
 use tracing::{debug, error, info};
 
 use crate::envelope::Envelope;
-use crate::mailbox::Inbox;
+use crate::mailbox::{create_mailbox, Inbox};
 use crate::registry::ActorRegistry;
-use crate::scheduler::Scheduler;
+use crate::scheduler::{NoAdvanceTimeGuard, SchedulerClient};
 use crate::supervisor::Supervisor;
 use crate::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, KillSwitch, Mailbox,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, KillSwitch, Mailbox, QueueCapacity,
 };
 
+#[derive(Clone)]
+pub struct SpawnContext {
+    pub(crate) scheduler_client: SchedulerClient,
+    pub(crate) kill_switch: KillSwitch,
+    pub(crate) registry: ActorRegistry,
+}
+
+impl SpawnContext {
+    pub fn new(scheduler_client: SchedulerClient) -> Self {
+        SpawnContext {
+            scheduler_client,
+            kill_switch: Default::default(),
+            registry: ActorRegistry::default(),
+        }
+    }
+
+    pub fn spawn_builder<A: Actor>(&self) -> SpawnBuilder<A> {
+        SpawnBuilder::new(self.child_context())
+    }
+
+    pub fn create_mailbox<A: Actor>(
+        &self,
+        actor_name: impl ToString,
+        queue_capacity: QueueCapacity,
+    ) -> (Mailbox<A>, Inbox<A>) {
+        create_mailbox(
+            actor_name.to_string(),
+            queue_capacity,
+            Some(self.scheduler_client.clone()),
+        )
+    }
+
+    pub fn child_context(&self) -> SpawnContext {
+        SpawnContext {
+            scheduler_client: self.scheduler_client.clone(),
+            kill_switch: self.kill_switch.child(),
+            registry: self.registry.clone(),
+        }
+    }
+}
+
 /// `SpawnBuilder` makes it possible to configure misc parameters before spawning an actor.
+#[derive(Clone)]
 pub struct SpawnBuilder<A: Actor> {
-    scheduler_mailbox: Mailbox<Scheduler>,
-    registry: ActorRegistry,
-    kill_switch: KillSwitch,
+    spawn_ctx: SpawnContext,
     #[allow(clippy::type_complexity)]
     mailboxes: Option<(Mailbox<A>, Inbox<A>)>,
     backpressure_micros_counter_opt: Option<IntCounter>,
 }
 
 impl<A: Actor> SpawnBuilder<A> {
-    pub(crate) fn new(
-        scheduler_mailbox: Mailbox<Scheduler>,
-        kill_switch: KillSwitch,
-        registry: ActorRegistry,
-    ) -> Self {
+    pub(crate) fn new(spawn_ctx: SpawnContext) -> Self {
         SpawnBuilder {
-            scheduler_mailbox,
-            registry,
-            kill_switch,
+            spawn_ctx,
             mailboxes: None,
             backpressure_micros_counter_opt: None,
         }
@@ -61,7 +95,7 @@ impl<A: Actor> SpawnBuilder<A> {
     /// By default, the kill switch is inherited from the context that was used to
     /// spawn the actor.
     pub fn set_kill_switch(mut self, kill_switch: KillSwitch) -> Self {
-        self.kill_switch = kill_switch;
+        self.spawn_ctx.kill_switch = kill_switch;
         self
     }
 
@@ -96,7 +130,7 @@ impl<A: Actor> SpawnBuilder<A> {
         }
         let actor_name = actor.name();
         let queue_capacity = actor.queue_capacity();
-        create_mailbox(actor_name, queue_capacity)
+        self.spawn_ctx.create_mailbox(actor_name, queue_capacity)
     }
 
     fn create_actor_context_and_inbox(
@@ -112,9 +146,7 @@ impl<A: Actor> SpawnBuilder<A> {
         let (state_tx, state_rx) = watch::channel(obs_state);
         let ctx = ActorContext::new(
             mailbox,
-            self.kill_switch.clone(),
-            self.scheduler_mailbox.clone(),
-            self.registry.clone(),
+            self.spawn_ctx.clone(),
             state_tx,
             self.backpressure_micros_counter_opt,
         );
@@ -123,13 +155,16 @@ impl<A: Actor> SpawnBuilder<A> {
 
     /// Spawns an async actor.
     pub fn spawn(self, actor: A) -> (Mailbox<A>, ActorHandle<A>) {
+        // We prevent fast forward of the scheduler during  initialization.
+        let no_advance_time_guard = self.spawn_ctx.scheduler_client.no_advance_time_guard();
         let runtime_handle = actor.runtime_handle();
         let (ctx, inbox, state_rx) = self.create_actor_context_and_inbox(&actor);
         debug!(actor_id = %ctx.actor_instance_id(), "spawn-actor");
         let mailbox = ctx.mailbox().clone();
         ctx.registry().register(&mailbox);
         let ctx_clone = ctx.clone();
-        let loop_async_actor_future = async move { actor_loop(actor, inbox, ctx).await };
+        let loop_async_actor_future =
+            async move { actor_loop(actor, inbox, no_advance_time_guard, ctx).await };
         let join_handle = runtime_handle.spawn(loop_async_actor_future);
         let actor_handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
         (mailbox, actor_handle)
@@ -143,14 +178,12 @@ impl<A: Actor> SpawnBuilder<A> {
         let actor_name = actor.name();
         let (mailbox, inbox) = self.take_or_create_mailboxes(&actor);
         self.mailboxes = Some((mailbox, inbox.clone()));
-        let kill_switch = self.kill_switch.clone();
-        let child_kill_switch = kill_switch.child();
-        let scheduler_mailbox = self.scheduler_mailbox.clone();
-        let registry = self.registry.clone();
-        let (mailbox, actor_handle) = self.set_kill_switch(child_kill_switch).spawn(actor);
+        let child_ctx = self.spawn_ctx.child_context();
+        let parent_spawn_ctx = std::mem::replace(&mut self.spawn_ctx, child_ctx);
+        let (mailbox, actor_handle) = self.spawn(actor);
         let supervisor = Supervisor::new(actor_name, Box::new(actor_factory), inbox, actor_handle);
-        let (_superviser_mailbox, supervisor_handle) =
-            SpawnBuilder::new(scheduler_mailbox, kill_switch, registry).spawn(supervisor);
+        let (_supervisor_mailbox, supervisor_handle) =
+            parent_spawn_ctx.spawn_builder().spawn(supervisor);
         (mailbox, supervisor_handle)
     }
 }
@@ -254,6 +287,11 @@ impl<A: Actor> ActorExecutionEnv<A> {
     }
 
     async fn finalize(&mut self, exit_status: ActorExitStatus) -> ActorExitStatus {
+        let _no_advance_time_guard = self
+            .ctx
+            .mailbox()
+            .scheduler_client()
+            .map(|scheduler_client| scheduler_client.no_advance_time_guard());
         if let Err(finalize_error) = self
             .actor
             .finalize(&exit_status, &self.ctx)
@@ -292,10 +330,16 @@ impl<A: Actor> Drop for ActorExecutionEnv<A> {
     }
 }
 
-async fn actor_loop<A: Actor>(actor: A, inbox: Inbox<A>, ctx: ActorContext<A>) -> ActorExitStatus {
+async fn actor_loop<A: Actor>(
+    actor: A,
+    inbox: Inbox<A>,
+    no_advance_time_guard: NoAdvanceTimeGuard,
+    ctx: ActorContext<A>,
+) -> ActorExitStatus {
     let mut actor_env = ActorExecutionEnv { actor, inbox, ctx };
 
     let initialize_exit_status_res: Result<(), ActorExitStatus> = actor_env.initialize().await;
+    drop(no_advance_time_guard);
 
     let after_process_exit_status = if let Err(initialize_exit_status) = initialize_exit_status_res
     {
@@ -306,6 +350,8 @@ async fn actor_loop<A: Actor>(actor: A, inbox: Inbox<A>, ctx: ActorContext<A>) -
         actor_env.process_messages().await
     };
 
+    // TODO the no advance time guard for finalize has a race condition. Ideally we would
+    // like to have the guard before we drop the last envelope.
     let final_exit_status = actor_env.finalize(after_process_exit_status).await;
     // The last observation is collected on `ActorExecutionEnv::Drop`.
     actor_env.process_exit_status(&final_exit_status);
