@@ -50,15 +50,19 @@ pub struct FieldMappingEntry {
     pub mapping_type: FieldMappingType,
 }
 
-/// Struct used for serialization and deserialization
-/// Main advantage: having a flat structure and gain flexibility
-/// if we want to add some syntactic sugar in the mapping.
-/// Main drawback: we have a bunch of mixed parameters in it but
-/// seems to be reasonable.
-///
-/// We do not rely on enum with inline tagging and flatten because
-/// - serde does not support it in combination with `deny_unknown_field`
-/// - it is clumsy to handle `array<type>` keys.
+// Struct used for serialization and deserialization
+// Main advantage: having a flat structure and gain flexibility
+// if we want to add some syntactic sugar in the mapping.
+// Main drawback: we have a bunch of mixed parameters in it but
+// seems to be reasonable.
+//
+// We do not rely on enum with inline tagging and flatten because
+// - serde does not support it in combination with `deny_unknown_field`
+// - it is clumsy to handle `array<type>` keys.
+
+// Docs bellow used for OpenAPI generation:
+/// A `FieldMappingEntry` defines how a field is indexed, stored,
+/// and mapped from a JSON document to the related index fields.
 #[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub(crate) struct FieldMappingEntryForSerialization {
     name: String,
