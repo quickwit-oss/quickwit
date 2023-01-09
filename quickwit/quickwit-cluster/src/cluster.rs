@@ -369,7 +369,7 @@ pub struct ClusterSnapshot {
     pub live_nodes: HashSet<NodeId>,
 
     #[schema(value_type  = Vec<NodeIdSchema>)]
-    /// The set of node IDs that are offline or not currently part of the cluster.
+    /// The set of node IDs flagged as dead or faulty.
     pub dead_nodes: HashSet<NodeId>,
 }
 
