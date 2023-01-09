@@ -81,7 +81,7 @@ doc_mapping:
       indexed: false
     - name: span_duration_secs
       type: i64
-      indexed: false
+      fast: true
     - name: span_attributes
       type: json
       tokenizer: raw

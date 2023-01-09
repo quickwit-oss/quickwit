@@ -119,7 +119,14 @@ impl SpanReaderPlugin for JaegerService {
         debug!(request=?request, "`get_operations` request");
 
         let index_id = TRACE_INDEX_ID.to_string();
-        let query = build_query(&request.service, &request.span_kind, "", HashMap::new());
+        let query = build_search_query(
+            &request.service,
+            &request.span_kind,
+            "",
+            HashMap::new(),
+            None,
+            None,
+        );
         let max_hits = 1_000;
         let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24 hours lookback
 
@@ -168,11 +175,19 @@ impl SpanReaderPlugin for JaegerService {
             .ok_or_else(|| Status::invalid_argument("Trace query is empty."))?;
         let start_timestamp = query.start_time_min.map(|ts| ts.seconds);
         let end_timestamp = query.start_time_max.map(|ts| ts.seconds);
-        // TODO: Push span duration filter.
+        let min_span_duration = query.duration_min.map(|d| d.seconds);
+        let max_span_duration = query.duration_max.map(|d| d.seconds);
         let max_hits = query.num_traces as u64;
         let search_request = SearchRequest {
             index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query(&query.service_name, "", &query.operation_name, query.tags),
+            query: build_search_query(
+                &query.service_name,
+                "",
+                &query.operation_name,
+                query.tags,
+                min_span_duration,
+                max_span_duration,
+            ),
             search_fields: Vec::new(),
             start_timestamp,
             end_timestamp,
@@ -245,11 +260,19 @@ impl SpanReaderPlugin for JaegerService {
             .ok_or_else(|| Status::invalid_argument("Query is empty."))?;
         let start_timestamp = query.start_time_min.map(|ts| ts.seconds);
         let end_timestamp = query.start_time_max.map(|ts| ts.seconds);
-        // TODO: Push span duration filter.
+        let min_span_duration = query.duration_min.map(|d| d.seconds);
+        let max_span_duration = query.duration_max.map(|d| d.seconds);
         let max_hits = query.num_traces as u64;
         let search_request = SearchRequest {
             index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query(&query.service_name, "", &query.operation_name, query.tags),
+            query: build_search_query(
+                &query.service_name,
+                "",
+                &query.operation_name,
+                query.tags,
+                min_span_duration,
+                max_span_duration,
+            ),
             search_fields: Vec::new(),
             start_timestamp,
             end_timestamp,
@@ -347,11 +370,14 @@ fn extract_trace_id(mut doc: JsonValue) -> Option<String> {
     }
 }
 
-fn build_query(
+// TODO: builder pattern + query DSL
+fn build_search_query(
     service_name: &str,
     span_kind: &str,
     span_name: &str,
     mut tags: HashMap<String, String>,
+    min_span_duration_secs: Option<i64>,
+    max_span_duration_secs: Option<i64>,
 ) -> String {
     if let Some(qw_query) = tags.remove("_qw_query") {
         return qw_query;
@@ -404,6 +430,26 @@ fn build_query(
                 query.push_str("\")");
             }
         }
+    }
+    if min_span_duration_secs.is_some() || max_span_duration_secs.is_some() {
+        if !query.is_empty() {
+            query.push_str(" AND ");
+        }
+        query.push_str("span_duration_secs:[");
+
+        if let Some(min_span_duration) = min_span_duration_secs {
+            query.push_str(&min_span_duration.to_string());
+        } else {
+            query.push('*');
+        }
+        query.push_str(" TO ");
+
+        if let Some(max_span_duration) = max_span_duration_secs {
+            query.push_str(&max_span_duration.to_string());
+        } else {
+            query.push('*');
+        }
+        query.push_str("]");
     }
     if query.is_empty() {
         query.push('*');
@@ -730,15 +776,36 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::new();
-            assert_eq!(build_query(service_name, span_kind, span_name, tags), "*");
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
+            assert_eq!(
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
+                "*"
+            );
         }
         {
             let service_name = "quickwit";
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::new();
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
             assert_eq!(
-                build_query(service_name, span_kind, span_name, tags),
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
                 "service_name:quickwit"
             );
         }
@@ -747,8 +814,17 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::from_iter([("_qw_query".to_string(), "query".to_string())]);
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
             assert_eq!(
-                build_query(service_name, span_kind, span_name, tags),
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
                 "query"
             );
         }
@@ -757,8 +833,17 @@ mod tests {
             let span_kind = "client";
             let span_name = "";
             let tags = HashMap::new();
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
             assert_eq!(
-                build_query(service_name, span_kind, span_name, tags),
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
                 "span_kind:3"
             );
         }
@@ -767,8 +852,17 @@ mod tests {
             let span_kind = "";
             let span_name = "leaf_search";
             let tags = HashMap::new();
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
             assert_eq!(
-                build_query(service_name, span_kind, span_name, tags),
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
                 "span_name:leaf_search"
             );
         }
@@ -777,8 +871,17 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::from_iter([("foo".to_string(), "bar baz".to_string())]);
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
             assert_eq!(
-                build_query(service_name, span_kind, span_name, tags),
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
                 r#"(span_attributes.foo:"bar baz" OR events.event_attributes.foo:"bar baz")"#
             );
         }
@@ -787,8 +890,17 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::from_iter([("event".to_string(), "Failed to ...".to_string())]);
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
             assert_eq!(
-                build_query(service_name, span_kind, span_name, tags),
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
                 r#"events.event_name:"Failed to ...""#
             );
         }
@@ -800,8 +912,17 @@ mod tests {
                 ("event".to_string(), "Failed to ...".to_string()),
                 ("foo".to_string(), "bar".to_string()),
             ]);
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
             assert_eq!(
-                build_query(service_name, span_kind, span_name, tags),
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
                 r#"events.event_name:"Failed to ..." AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
             );
         }
@@ -813,9 +934,75 @@ mod tests {
                 ("baz".to_string(), "qux".to_string()),
                 ("foo".to_string(), "bar".to_string()),
             ]);
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
             assert_eq!(
-                build_query(service_name, span_kind, span_name, tags),
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
                 r#"(span_attributes.baz:"qux" OR events.event_attributes.baz:"qux") AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+            );
+        }
+        {
+            let service_name = "";
+            let span_kind = "";
+            let span_name = "";
+            let tags = HashMap::new();
+            let min_span_duration_secs = Some(7);
+            let max_span_duration_secs = None;
+            assert_eq!(
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
+                r#"span_duration_secs:[7 TO *]"#
+            );
+        }
+        {
+            let service_name = "";
+            let span_kind = "";
+            let span_name = "";
+            let tags = HashMap::new();
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = Some(77);
+            assert_eq!(
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
+                r#"span_duration_secs:[* TO 77]"#
+            );
+        }
+        {
+            let service_name = "";
+            let span_kind = "";
+            let span_name = "";
+            let tags = HashMap::new();
+            let min_span_duration_secs = Some(7);
+            let max_span_duration_secs = Some(77);
+            assert_eq!(
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
+                r#"span_duration_secs:[7 TO 77]"#
             );
         }
         {
@@ -823,8 +1010,17 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
             assert_eq!(
-                build_query(service_name, span_kind, span_name, tags),
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
                 r#"service_name:quickwit AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
             );
         }
@@ -833,8 +1029,17 @@ mod tests {
             let span_kind = "client";
             let span_name = "";
             let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
             assert_eq!(
-                build_query(service_name, span_kind, span_name, tags),
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
                 r#"service_name:quickwit AND span_kind:3 AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
             );
         }
@@ -843,9 +1048,37 @@ mod tests {
             let span_kind = "client";
             let span_name = "leaf_search";
             let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
             assert_eq!(
-                build_query(service_name, span_kind, span_name, tags),
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
                 r#"service_name:quickwit AND span_kind:3 AND span_name:leaf_search AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+            );
+        }
+        {
+            let service_name = "quickwit";
+            let span_kind = "client";
+            let span_name = "leaf_search";
+            let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let min_span_duration_secs = Some(7);
+            let max_span_duration_secs = Some(77);
+            assert_eq!(
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
+                r#"service_name:quickwit AND span_kind:3 AND span_name:leaf_search AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_duration_secs:[7 TO 77]"#
             );
         }
     }
