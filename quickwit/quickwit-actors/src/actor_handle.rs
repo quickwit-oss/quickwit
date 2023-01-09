@@ -22,7 +22,6 @@ use std::fmt;
 use serde::Serialize;
 use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
-use tokio::time::timeout;
 use tracing::error;
 
 use crate::actor_state::ActorState;
@@ -228,7 +227,9 @@ impl<A: Actor> ActorHandle<A> {
         &self,
         rx: oneshot::Receiver<A::ObservableState>,
     ) -> Observation<A::ObservableState> {
-        let observable_state_or_timeout = timeout(crate::OBSERVE_TIMEOUT, rx).await;
+        let scheduler_client = &self.actor_context.spawn_ctx().scheduler_client;
+        let observable_state_or_timeout =
+            scheduler_client.timeout(crate::OBSERVE_TIMEOUT, rx).await;
         match observable_state_or_timeout {
             Ok(Ok(state)) => {
                 let obs_type = ObservationType::Alive;
@@ -322,7 +323,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_panic_in_actor() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (mailbox, handle) = universe.spawn_builder().spawn(PanickingActor::default());
         mailbox.send_message(Panic).await?;
         let (exit_status, count) = handle.join().await;
@@ -333,7 +334,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exit() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (mailbox, handle) = universe.spawn_builder().spawn(ExitActor::default());
         mailbox.send_message(Exit).await?;
         let (exit_status, count) = handle.join().await;

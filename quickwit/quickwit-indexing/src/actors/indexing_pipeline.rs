@@ -547,7 +547,7 @@ mod tests {
     async fn test_indexing_pipeline_num_fails_before_success(
         mut num_fails: usize,
     ) -> anyhow::Result<bool> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_index_metadata()
@@ -681,7 +681,7 @@ mod tests {
             )
             .times(1)
             .returning(|_, _, _, _| Ok(()));
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
@@ -736,7 +736,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(|_| Ok(Vec::new()));
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
@@ -792,14 +792,18 @@ mod tests {
         // Let's shutdown the indexer, this will trigger the the indexing pipeline failure and the
         // restart.
         let indexer = universe.get::<Indexer>().into_iter().next().unwrap();
-        indexer.send_message(Command::Quit).await.unwrap();
-        universe.simulate_time_shift(Duration::from_secs(10)).await;
-        // Check indexing pipeline has restarted.
-        let obs = indexing_pipeline_handler
-            .process_pending_and_observe()
-            .await;
-        assert_eq!(obs.generation, 2);
-        // Check that the merge pipeline is still up.
-        assert_eq!(merge_pipeline_handler.harvest_health(), Health::Healthy);
+        let _ = indexer.ask(Command::Quit).await;
+        for _ in 0..10 {
+            universe.sleep(quickwit_actors::HEARTBEAT).await;
+            // Check indexing pipeline has restarted.
+            let obs = indexing_pipeline_handler
+                .process_pending_and_observe()
+                .await;
+            if obs.generation == 2 {
+                assert_eq!(merge_pipeline_handler.harvest_health(), Health::Healthy);
+                return;
+            }
+        }
+        panic!("Pipeline was apparently not restarted.");
     }
 }

@@ -135,7 +135,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let docs = std::iter::repeat_with(|| "{}".to_string())
             .take(100)
@@ -191,7 +191,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_vec_source_from_checkpoint() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let docs = (0..10).map(|i| format!("{}", i)).collect();
         let params = VecSourceParams {

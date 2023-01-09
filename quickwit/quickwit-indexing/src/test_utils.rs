@@ -93,7 +93,7 @@ impl TestSandbox {
             .await?;
         metastore.create_index(index_config.clone()).await?;
         let storage = storage_resolver.resolve(&index_uri)?;
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let indexing_service_actor = IndexingService::new(
             node_id.to_string(),
             temp_dir.path().to_path_buf(),

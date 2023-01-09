@@ -244,7 +244,7 @@ mod tests {
             };
             queues_for_test.reload().await;
 
-            let universe = Universe::new();
+            let universe = Universe::with_accelerated_time();
             let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
             let (observable_state_tx, _observable_state_rx) = watch::channel(());
             let ctx = ActorContext::for_test(&universe, source_mailbox, observable_state_tx);

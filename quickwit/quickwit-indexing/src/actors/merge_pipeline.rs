@@ -440,7 +440,6 @@ pub struct MergePipelineParams {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::time::Duration;
 
     use quickwit_actors::{ActorExitStatus, Universe};
     use quickwit_doc_mapper::default_doc_mapper_for_test;
@@ -459,7 +458,7 @@ mod tests {
             .expect_list_splits()
             .times(1)
             .returning(|_| Ok(Vec::new()));
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -480,7 +479,6 @@ mod tests {
         };
         let pipeline = MergePipeline::new(pipeline_params, universe.spawn_ctx());
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
-        universe.simulate_time_shift(Duration::from_secs(2)).await;
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.quit().await;
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1);

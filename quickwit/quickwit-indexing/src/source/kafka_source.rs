@@ -1092,7 +1092,7 @@ mod kafka_broker_tests {
             .unwrap();
         kafka_source.state.num_inactive_partitions = 1;
 
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
         let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
         let ctx: ActorContext<SourceActor> =
@@ -1151,7 +1151,7 @@ mod kafka_broker_tests {
             .await
             .unwrap();
 
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
         let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
@@ -1221,7 +1221,7 @@ mod kafka_broker_tests {
 
     #[tokio::test]
     async fn test_kafka_source() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let admin_client = create_admin_client()?;
         let topic = append_random_suffix("test-kafka-source--topic");
         create_topic(&admin_client, &topic, 3).await?;
