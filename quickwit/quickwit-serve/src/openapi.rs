@@ -50,7 +50,8 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
                 ))
                 .build(),
         )
-        // .servers(Some(vec![Server::new("/api/v1")])) TODO: How's best to represent this for *some* routes?
+        // .servers(Some(vec![Server::new("/api/v1")])) TODO: How's best to represent this for
+        // *some* routes?
         .paths(utoipa::openapi::Paths::new())
         .components(Some(utoipa::openapi::Components::new()))
         .build();
