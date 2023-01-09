@@ -41,7 +41,7 @@ pub mod tag_pruning;
 pub use default_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType, QuickwitJsonOptions,
 };
-use default_doc_mapper::{FieldMappingType, IndexRecordOptionSchema, QuickwitTextTokenizer};
+use default_doc_mapper::{QuickwitObjectOptions, FieldMappingType, IndexRecordOptionSchema, QuickwitTextTokenizer};
 pub use doc_mapper::{DocMapper, NamedField, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
 pub use tokenizers::QUICKWIT_TOKENIZER_MANAGER;
@@ -55,6 +55,7 @@ pub const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(
     QuickwitJsonOptions,
+    QuickwitObjectOptions,
     ModeType,
     QuickwitTextTokenizer,
     IndexRecordOptionSchema,
