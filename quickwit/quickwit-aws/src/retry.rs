@@ -20,6 +20,7 @@
 use std::fmt::Debug;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use futures::Future;
 use rand::Rng;
 use tracing::{debug, warn};
@@ -75,16 +76,21 @@ impl Default for RetryParams {
     }
 }
 
-/// Retry with exponential backoff and full jitter. Implementation and default values originate from
-/// the Java SDK. See also: <https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/>.
-pub async fn retry<F, U, E, Fut>(retry_params: &RetryParams, f: F) -> Result<U, E>
+#[async_trait]
+trait MockableTime {
+    async fn sleep(&self, duration: Duration);
+}
+
+async fn retry_with_mockable_time<U, E, Fut>(
+    retry_params: &RetryParams,
+    f: impl Fn() -> Fut,
+    mockable_time: impl MockableTime,
+) -> Result<U, E>
 where
-    F: Fn() -> Fut,
     Fut: Future<Output = Result<U, E>>,
     E: Retryable + Debug + 'static,
 {
     let mut attempt_count = 0;
-
     loop {
         let response = f().await;
 
@@ -116,26 +122,58 @@ where
                     error = ?error,
                     "Request failed, retrying"
                 );
-
-                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                mockable_time.sleep(Duration::from_millis(delay_ms)).await;
             }
         }
     }
 }
 
+struct TokioTime;
+
+#[async_trait]
+impl MockableTime for TokioTime {
+    async fn sleep(&self, duration: Duration) {
+        tokio::time::sleep(duration).await;
+    }
+}
+
+/// Retry with exponential backoff and full jitter. Implementation and default values originate from
+/// the Java SDK. See also: <https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/>.
+pub async fn retry<U, E, Fut>(retry_params: &RetryParams, f: impl Fn() -> Fut) -> Result<U, E>
+where
+    Fut: Future<Output = Result<U, E>>,
+    E: Retryable + Debug + 'static,
+{
+    retry_with_mockable_time(retry_params, f, TokioTime).await
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::RwLock;
+    use std::time::Duration;
 
+    use async_trait::async_trait;
     use futures::future::ready;
+    use quickwit_actors::{start_scheduler, SchedulerClient};
 
-    use super::{retry, Retry, RetryParams};
+    use super::{Retry, RetryParams};
+    use crate::retry::retry_with_mockable_time;
+
+    #[async_trait]
+    impl super::MockableTime for SchedulerClient {
+        async fn sleep(&self, duration: Duration) {
+            self.simulate_sleep(duration).await;
+        }
+    }
 
     async fn simulate_retries<T>(values: Vec<Result<T, Retry<usize>>>) -> Result<T, Retry<usize>> {
+        let scheduler_client = start_scheduler();
         let values_it = RwLock::new(values.into_iter());
-        retry(&RetryParams::default(), || {
-            ready(values_it.write().unwrap().next().unwrap())
-        })
+        retry_with_mockable_time(
+            &RetryParams::default(),
+            || ready(values_it.write().unwrap().next().unwrap()),
+            scheduler_client,
+        )
         .await
     }
 
