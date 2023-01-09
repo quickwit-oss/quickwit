@@ -50,7 +50,7 @@ use crate::TestableForRegression;
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocMapping {
-    #[schema(value_type = FieldMappingEntryForSerialization)]
+    #[schema(value_type = Vec<FieldMappingEntryForSerialization>)]
     #[serde(default)]
     pub field_mappings: Vec<FieldMappingEntry>,
     #[schema(value_type = Vec<String>)]
