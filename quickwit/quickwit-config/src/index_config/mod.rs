@@ -120,13 +120,13 @@ impl Default for IndexingResources {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
-    #[schema(default = json!(60))]
+    #[schema(default = 60)]
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
-    #[schema(default = json!(8))]
+    #[schema(default = 8)]
     #[serde(default = "IndexingSettings::default_docstore_compression_level")]
     pub docstore_compression_level: i32,
-    #[schema(default = json!(1_000_000))]
+    #[schema(default = 1_000_000)]
     #[serde(default = "IndexingSettings::default_docstore_blocksize")]
     pub docstore_blocksize: usize,
     /// The merge policy aims to eventually produce mature splits that have a larger size but
