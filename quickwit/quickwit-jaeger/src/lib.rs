@@ -79,7 +79,7 @@ impl SpanReaderPlugin for JaegerService {
         let index_id = TRACE_INDEX_ID.to_string();
         let query = "*".to_string();
         let max_hits = 1_000;
-        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24 hours lookback
+        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
 
         let search_request = SearchRequest {
             index_id,
@@ -128,7 +128,7 @@ impl SpanReaderPlugin for JaegerService {
             None,
         );
         let max_hits = 1_000;
-        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24 hours lookback
+        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
 
         let search_request = SearchRequest {
             index_id,
@@ -449,7 +449,7 @@ fn build_search_query(
         } else {
             query.push('*');
         }
-        query.push_str("]");
+        query.push(']');
     }
     if query.is_empty() {
         query.push('*');
