@@ -21,7 +21,6 @@ use quickwit_config::ConfigApiSchemas;
 use quickwit_doc_mapper::DocMapperApiSchemas;
 use quickwit_janitor::JanitorApiSchemas;
 use quickwit_metastore::MetastoreApiSchemas;
-use utoipa::openapi::Server;
 use utoipa::OpenApi;
 
 use crate::cluster_api::ClusterApi;
@@ -51,35 +50,35 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
                 ))
                 .build(),
         )
-        .servers(Some(vec![Server::new("/api/v1")]))
+        // .servers(Some(vec![Server::new("/api/v1")])) TODO: How's best to represent this for *some* routes?
         .paths(utoipa::openapi::Paths::new())
         .components(Some(utoipa::openapi::Components::new()))
         .build();
 
     // Routing
-    docs_base.merge(ClusterApi::openapi());
-    docs_base.merge(DeleteTaskApi::openapi());
-    docs_base.merge(HealthCheckApi::openapi());
-    docs_base.merge(IndexApi::openapi());
-    docs_base.merge(DocMapperApiSchemas::openapi());
-    docs_base.merge(IndexingApi::openapi());
-    docs_base.merge(IngestApi::openapi());
-    docs_base.merge(SearchApi::openapi());
+    docs_base.merge_components_and_paths(ClusterApi::openapi());
+    docs_base.merge_components_and_paths(DeleteTaskApi::openapi());
+    docs_base.merge_components_and_paths(HealthCheckApi::openapi());
+    docs_base.merge_components_and_paths(IndexApi::openapi());
+    docs_base.merge_components_and_paths(DocMapperApiSchemas::openapi());
+    docs_base.merge_components_and_paths(IndexingApi::openapi());
+    docs_base.merge_components_and_paths(IngestApi::openapi());
+    docs_base.merge_components_and_paths(SearchApi::openapi());
 
     // Schemas
-    docs_base.merge(MetastoreApiSchemas::openapi());
-    docs_base.merge(ConfigApiSchemas::openapi());
-    docs_base.merge(JanitorApiSchemas::openapi());
+    docs_base.merge_components_and_paths(MetastoreApiSchemas::openapi());
+    docs_base.merge_components_and_paths(ConfigApiSchemas::openapi());
+    docs_base.merge_components_and_paths(JanitorApiSchemas::openapi());
 
     docs_base
 }
 
 pub trait OpenApiMerger {
-    fn merge(&mut self, schema: utoipa::openapi::OpenApi);
+    fn merge_components_and_paths(&mut self, schema: utoipa::openapi::OpenApi);
 }
 
 impl OpenApiMerger for utoipa::openapi::OpenApi {
-    fn merge(&mut self, schema: utoipa::openapi::OpenApi) {
+    fn merge_components_and_paths(&mut self, schema: utoipa::openapi::OpenApi) {
         self.paths.paths.extend(schema.paths.paths);
 
         if let Some(tags) = &mut self.tags {
