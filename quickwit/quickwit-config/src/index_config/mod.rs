@@ -75,7 +75,7 @@ pub struct DocMapping {
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingResources {
-    #[schema(value_type = String)]
+    #[schema(value_type = String, default = "2 GB")]
     #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: Byte,
     /// Sets the maximum write IO throughput in bytes/sec for the merge and delete pipelines.
