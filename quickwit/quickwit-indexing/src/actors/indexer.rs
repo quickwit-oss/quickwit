@@ -45,8 +45,8 @@ use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
 use crate::models::{
-    CommitTrigger, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingDirectory,
-    IndexingPipelineId, NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock,
+    CommitTrigger, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingPipelineId,
+    NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, ScratchDirectory,
 };
 
 // Random partition id used to gather partitions exceeding the maximum number of partitions.
@@ -73,7 +73,7 @@ pub struct IndexerCounters {
 struct IndexerState {
     pipeline_id: IndexingPipelineId,
     metastore: Arc<dyn Metastore>,
-    indexing_directory: IndexingDirectory,
+    indexing_directory: ScratchDirectory,
     indexing_settings: IndexingSettings,
     publish_lock: PublishLock,
     schema: Schema,
@@ -102,7 +102,7 @@ impl IndexerState {
             self.pipeline_id.clone(),
             partition_id,
             last_delete_opstamp,
-            self.indexing_directory.scratch_directory().clone(),
+            self.indexing_directory.clone(),
             index_builder,
             io_controls,
         )?;
@@ -407,7 +407,7 @@ impl Indexer {
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<dyn DocMapper>,
         metastore: Arc<dyn Metastore>,
-        indexing_directory: IndexingDirectory,
+        indexing_directory: ScratchDirectory,
         indexing_settings: IndexingSettings,
         index_serializer_mailbox: Mailbox<IndexSerializer>,
     ) -> Self {
@@ -555,7 +555,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::Universe;
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::MockMetastore;
@@ -563,7 +563,7 @@ mod tests {
 
     use super::*;
     use crate::actors::indexer::{record_timestamp, IndexerCounters};
-    use crate::models::IndexingDirectory;
+    use crate::models::ScratchDirectory;
 
     #[test]
     fn test_record_timestamp() {
@@ -589,10 +589,11 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
-        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
+        let universe = Universe::new();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
@@ -614,7 +615,6 @@ mod tests {
             indexing_settings,
             index_serializer_mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
             .send_message(PreparedDocBatch {
@@ -711,6 +711,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_trigger_on_memory_limit() -> anyhow::Result<()> {
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -721,10 +722,10 @@ mod tests {
         let last_delete_opstamp = 10;
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.resources.heap_size = Byte::from_bytes(5_000_000);
-        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
@@ -746,7 +747,6 @@ mod tests {
             indexing_settings,
             index_serializer_mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, _indexer_handle) = universe.spawn_builder().spawn(indexer);
 
         let make_doc = |i: u64| {
@@ -788,6 +788,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_on_timeout() -> anyhow::Result<()> {
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -799,9 +800,9 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
-        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
@@ -823,7 +824,6 @@ mod tests {
             indexing_settings,
             index_serializer_mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
             .send_message(PreparedDocBatch {
@@ -878,6 +878,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_eof() -> anyhow::Result<()> {
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -888,9 +889,9 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
-        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
@@ -912,7 +913,6 @@ mod tests {
             indexing_settings,
             index_serializer_mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
             .send_message(PreparedDocBatch {
@@ -959,6 +959,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_partitioning() -> anyhow::Result<()> {
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -972,9 +973,9 @@ mod tests {
         let tenant_field = schema.get_field("tenant").unwrap();
         let body_field = schema.get_field("body").unwrap();
 
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
-        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
@@ -996,7 +997,6 @@ mod tests {
             indexing_settings,
             index_serializer_mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
             .send_message(PreparedDocBatch {
@@ -1058,6 +1058,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_exceeding_max_num_partitions() {
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -1067,7 +1068,7 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let mut metastore = MockMetastore::default();
         metastore
@@ -1077,7 +1078,7 @@ mod tests {
                 Ok(10)
             });
         metastore.expect_publish_splits().never();
-        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -1086,7 +1087,6 @@ mod tests {
             indexing_settings,
             index_serializer_mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
         for partition in 0..100 {
@@ -1127,6 +1127,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_propagates_publish_lock() {
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -1136,7 +1137,7 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MockMetastore::default();
@@ -1147,7 +1148,7 @@ mod tests {
                 Ok(10)
             });
         metastore.expect_publish_splits().never();
-        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -1156,7 +1157,6 @@ mod tests {
             indexing_settings,
             index_serializer_mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
         let first_lock = PublishLock::default();
@@ -1198,6 +1198,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_ignores_messages_when_publish_lock_is_dead() {
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -1207,7 +1208,7 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await;
+        let indexing_directory = ScratchDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MockMetastore::default();
@@ -1218,7 +1219,7 @@ mod tests {
                 Ok(10)
             });
         metastore.expect_publish_splits().never();
-        let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -1227,7 +1228,6 @@ mod tests {
             indexing_settings,
             index_serializer_mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
         let publish_lock = PublishLock::default();

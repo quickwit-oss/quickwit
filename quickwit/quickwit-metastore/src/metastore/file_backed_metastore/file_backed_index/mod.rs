@@ -165,20 +165,27 @@ impl FileBackedIndex {
         &self.splits
     }
 
+    /// Stages a single split.
+    ///
+    /// If a split already exists and is in the [SplitState::Staged] state,
+    /// it is simply updated/overwritten.
+    ///
+    /// If a split already exists and is *not* in the [SplitState::Staged] state, a
+    /// [MetastoreError::SplitsNotStaged] error is returned providing the split ID to go with
+    /// it.
     pub(crate) fn stage_split(
         &mut self,
         split_metadata: SplitMetadata,
-    ) -> crate::MetastoreResult<()> {
+    ) -> Result<(), MetastoreError> {
         // Check whether the split exists.
-        // If the split exists, return an error to prevent the split from being registered.
-        if self.splits.contains_key(split_metadata.split_id()) {
-            return Err(MetastoreError::InternalError {
-                message: format!(
-                    "Failed to stage split  `{}`: split already exists.",
-                    split_metadata.split_id()
-                ),
-                cause: "".to_string(),
-            });
+        // If the split exists, we check what state it is in. If it's anything other than `Staged`
+        // something has gone very wrong and we should abort the operation.
+        if let Some(existing_split) = self.splits.get(split_metadata.split_id()) {
+            if existing_split.split_state != SplitState::Staged {
+                return Err(MetastoreError::SplitsNotStaged {
+                    split_ids: vec![existing_split.split_id().to_string()],
+                });
+            }
         }
 
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
@@ -261,28 +268,16 @@ impl FileBackedIndex {
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         for &split_id in split_ids {
             // Check for the existence of split.
-            let metadata = match self.splits.get_mut(split_id) {
-                Some(metadata) => metadata,
-                _ => {
+            let Some(metadata) = self.splits.get_mut(split_id) else {
                     split_not_found_ids.push(split_id.to_string());
                     continue;
-                }
-            };
-
-            match metadata.split_state {
-                SplitState::Published => {
-                    // Split is already published. This is fine, we just skip it.
-                    continue;
-                }
-                SplitState::Staged => {
-                    // The split state needs to be updated.
-                    metadata.split_state = SplitState::Published;
-                    metadata.update_timestamp = now_timestamp;
-                    metadata.publish_timestamp = Some(now_timestamp);
-                }
-                _ => {
-                    split_not_staged_ids.push(split_id.to_string());
-                }
+                };
+            if metadata.split_state == SplitState::Staged {
+                metadata.split_state = SplitState::Published;
+                metadata.update_timestamp = now_timestamp;
+                metadata.publish_timestamp = Some(now_timestamp);
+            } else {
+                split_not_staged_ids.push(split_id.to_string());
             }
         }
 

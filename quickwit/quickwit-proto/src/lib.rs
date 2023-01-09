@@ -20,9 +20,21 @@
 #![allow(clippy::derive_partial_eq_without_eq)]
 #![deny(clippy::disallowed_methods)]
 
+#![allow(rustdoc::invalid_html_tags)]
+
 mod quickwit;
+mod quickwit_control_plane_api;
+mod quickwit_indexing_api;
 mod quickwit_ingest_api;
 mod quickwit_metastore_api;
+
+pub mod control_plane_api {
+    pub use crate::quickwit_control_plane_api::*;
+}
+
+pub mod indexing_api {
+    pub use crate::quickwit_indexing_api::*;
+}
 
 pub mod ingest_api {
     pub use crate::quickwit_ingest_api::*;
@@ -124,6 +136,7 @@ pub enum ServiceErrorCode {
     MethodNotAllowed,
     UnsupportedMediaType,
     BadRequest,
+    RateLimited,
 }
 
 impl ServiceErrorCode {
@@ -134,6 +147,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::BadRequest => tonic::Code::InvalidArgument,
             ServiceErrorCode::MethodNotAllowed => tonic::Code::InvalidArgument,
             ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
+            ServiceErrorCode::RateLimited => tonic::Code::ResourceExhausted,
         }
     }
     pub fn to_http_status_code(self) -> http::StatusCode {
@@ -143,6 +157,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::BadRequest => http::StatusCode::BAD_REQUEST,
             ServiceErrorCode::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
             ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ServiceErrorCode::RateLimited => http::StatusCode::TOO_MANY_REQUESTS,
         }
     }
 }

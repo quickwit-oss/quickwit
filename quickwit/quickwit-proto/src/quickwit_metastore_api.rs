@@ -1,72 +1,86 @@
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateIndexRequest {
     #[prost(string, tag = "2")]
     pub index_config_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateIndexResponse {}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadatasRequest {}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadatasResponse {
     #[prost(string, tag = "1")]
     pub indexes_metadatas_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteIndexRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteTasksResponse {}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteIndexResponse {}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexMetadataRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexMetadataResponse {
     #[prost(string, tag = "1")]
     pub index_metadata_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAllSplitsRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsRequest {
     #[prost(string, tag = "1")]
     pub filter_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsResponse {
     #[prost(string, tag = "1")]
     pub splits_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StageSplitRequest {
+pub struct StageSplitsRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub split_metadata_serialized_json: ::prost::alloc::string::String,
+    pub split_metadata_list_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublishSplitsRequest {
     #[prost(string, tag = "1")]
@@ -81,6 +95,7 @@ pub struct PublishSplitsRequest {
     >,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MarkSplitsForDeletionRequest {
     #[prost(string, tag = "2")]
@@ -89,6 +104,7 @@ pub struct MarkSplitsForDeletionRequest {
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSplitsRequest {
     #[prost(string, tag = "2")]
@@ -97,9 +113,11 @@ pub struct DeleteSplitsRequest {
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitResponse {}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddSourceRequest {
     #[prost(string, tag = "1")]
@@ -108,6 +126,7 @@ pub struct AddSourceRequest {
     pub source_config_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ToggleSourceRequest {
     #[prost(string, tag = "1")]
@@ -118,6 +137,7 @@ pub struct ToggleSourceRequest {
     pub enable: bool,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSourceRequest {
     #[prost(string, tag = "1")]
@@ -126,6 +146,7 @@ pub struct DeleteSourceRequest {
     pub source_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetSourceCheckpointRequest {
     #[prost(string, tag = "1")]
@@ -134,9 +155,11 @@ pub struct ResetSourceCheckpointRequest {
     pub source_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SourceResponse {}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteTask {
     #[prost(int64, tag = "1")]
@@ -148,6 +171,7 @@ pub struct DeleteTask {
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(default)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteQuery {
     /// Index ID.
@@ -169,6 +193,7 @@ pub struct DeleteQuery {
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSplitsDeleteOpstampRequest {
     #[prost(string, tag = "1")]
@@ -179,21 +204,25 @@ pub struct UpdateSplitsDeleteOpstampRequest {
     pub delete_opstamp: u64,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSplitsDeleteOpstampResponse {}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LastDeleteOpstampRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LastDeleteOpstampResponse {
     #[prost(uint64, tag = "1")]
     pub last_delete_opstamp: u64,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListStaleSplitsRequest {
     #[prost(string, tag = "1")]
@@ -204,6 +233,7 @@ pub struct ListStaleSplitsRequest {
     pub num_splits: u64,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksRequest {
     #[prost(string, tag = "1")]
@@ -212,6 +242,7 @@ pub struct ListDeleteTasksRequest {
     pub opstamp_start: u64,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksResponse {
     #[prost(message, repeated, tag = "1")]
@@ -409,10 +440,10 @@ pub mod metastore_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        /// Stages split.
-        pub async fn stage_split(
+        /// Stages several splits.
+        pub async fn stage_splits(
             &mut self,
-            request: impl tonic::IntoRequest<super::StageSplitRequest>,
+            request: impl tonic::IntoRequest<super::StageSplitsRequest>,
         ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status> {
             self.inner
                 .ready()
@@ -425,7 +456,7 @@ pub mod metastore_api_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit_metastore_api.MetastoreApiService/stage_split",
+                "/quickwit_metastore_api.MetastoreApiService/stage_splits",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
@@ -652,7 +683,7 @@ pub mod metastore_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = "/ Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`."]
+        /// / Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
         pub async fn list_stale_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListStaleSplitsRequest>,
@@ -678,7 +709,7 @@ pub mod metastore_api_service_client {
 pub mod metastore_api_service_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with MetastoreApiServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with MetastoreApiServiceServer.
     #[async_trait]
     pub trait MetastoreApiService: Send + Sync + 'static {
         /// Creates an index.
@@ -711,10 +742,10 @@ pub mod metastore_api_service_server {
             &self,
             request: tonic::Request<super::ListSplitsRequest>,
         ) -> Result<tonic::Response<super::ListSplitsResponse>, tonic::Status>;
-        /// Stages split.
-        async fn stage_split(
+        /// Stages several splits.
+        async fn stage_splits(
             &self,
-            request: tonic::Request<super::StageSplitRequest>,
+            request: tonic::Request<super::StageSplitsRequest>,
         ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status>;
         /// Publishes split.
         async fn publish_splits(
@@ -774,7 +805,7 @@ pub mod metastore_api_service_server {
             &self,
             request: tonic::Request<super::ListDeleteTasksRequest>,
         ) -> Result<tonic::Response<super::ListDeleteTasksResponse>, tonic::Status>;
-        #[doc = "/ Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`."]
+        /// / Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
         async fn list_stale_splits(
             &self,
             request: tonic::Request<super::ListStaleSplitsRequest>,
@@ -1077,13 +1108,13 @@ pub mod metastore_api_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit_metastore_api.MetastoreApiService/stage_split" => {
+                "/quickwit_metastore_api.MetastoreApiService/stage_splits" => {
                     #[allow(non_camel_case_types)]
-                    struct stage_splitSvc<T: MetastoreApiService>(pub Arc<T>);
+                    struct stage_splitsSvc<T: MetastoreApiService>(pub Arc<T>);
                     impl<
                         T: MetastoreApiService,
-                    > tonic::server::UnaryService<super::StageSplitRequest>
-                    for stage_splitSvc<T> {
+                    > tonic::server::UnaryService<super::StageSplitsRequest>
+                    for stage_splitsSvc<T> {
                         type Response = super::SplitResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -1091,10 +1122,12 @@ pub mod metastore_api_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::StageSplitRequest>,
+                            request: tonic::Request<super::StageSplitsRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move { (*inner).stage_split(request).await };
+                            let fut = async move {
+                                (*inner).stage_splits(request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1103,7 +1136,7 @@ pub mod metastore_api_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = stage_splitSvc(inner);
+                        let method = stage_splitsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

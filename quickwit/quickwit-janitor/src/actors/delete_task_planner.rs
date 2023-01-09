@@ -398,7 +398,7 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{create_test_mailbox, ActorState, Universe};
+    use quickwit_actors::{ActorState, Universe};
     use quickwit_config::build_doc_mapper;
     use quickwit_indexing::merge_policy::{MergeOperation, NopMergePolicy};
     use quickwit_indexing::TestSandbox;
@@ -413,6 +413,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_task_planner() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
         let index_id = "test-delete-task-planner";
         let doc_mapping_yaml = r#"
             field_mappings:
@@ -423,11 +424,12 @@ mod tests {
                 fast: true
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
-        let docs = vec![
+        let docs = [
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "delete", "ts": 0 }),
         ];
+        // Creates 3 splits
         for doc in docs {
             test_sandbox.add_documents(vec![doc]).await?;
         }
@@ -492,7 +494,7 @@ mod tests {
             },
         );
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
-        let (downloader_mailbox, downloader_inbox) = create_test_mailbox();
+        let (downloader_mailbox, downloader_inbox) = universe.create_test_mailbox();
         let delete_planner_executor = DeleteTaskPlanner::new(
             index_id.to_string(),
             index_config.index_uri.clone(),
@@ -502,12 +504,11 @@ mod tests {
             Arc::new(NopMergePolicy),
             downloader_mailbox,
         );
-        let universe = Universe::new();
         let (delete_planner_mailbox, delete_planner_handle) =
             universe.spawn_builder().spawn(delete_planner_executor);
         delete_planner_handle.process_pending_and_observe().await;
-        let downloader_msgs =
-            downloader_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
+        let downloader_msgs: Vec<TrackedObject<MergeOperation>> =
+            downloader_inbox.drain_for_test_typed();
         assert_eq!(downloader_msgs.len(), 1);
         // The last split will undergo a delete operation.
         assert_eq!(
@@ -522,7 +523,7 @@ mod tests {
         );
         // Trigger new plan evaluation and check that we don't have new merge operation.
         delete_planner_mailbox
-            .send_message(PlanDeleteOperations)
+            .ask(PlanDeleteOperations)
             .await
             .unwrap();
         assert!(downloader_inbox.drain_for_test().is_empty());
@@ -538,7 +539,7 @@ mod tests {
 
         // Trigger operations planning.
         delete_planner_mailbox
-            .send_message(PlanDeleteOperations)
+            .ask(PlanDeleteOperations)
             .await
             .unwrap();
         let downloader_last_msgs =

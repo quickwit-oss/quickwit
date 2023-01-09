@@ -71,7 +71,7 @@ generate_req_enum!(
     DeleteIndexRequest,
     ListAllSplitsRequest,
     ListSplitsRequest,
-    StageSplitRequest,
+    StageSplitsRequest,
     PublishSplitsRequest,
     MarkSplitsForDeletionRequest,
     DeleteSplitsRequest,

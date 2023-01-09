@@ -21,6 +21,7 @@ ulid = {workspace = true}
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]

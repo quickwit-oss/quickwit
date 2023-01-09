@@ -150,8 +150,8 @@ where for<'a> T: Serialize {
     let file_regression_test_path = format!("{}/{}.json", test_dir.display(), test_name);
     let file_regression_expected_path =
         format!("{}/{}.expected.json", test_dir.display(), test_name);
-    std::fs::write(&file_regression_test_path, sample_json.as_bytes())?;
-    std::fs::write(&file_regression_expected_path, sample_json.as_bytes())?;
+    std::fs::write(file_regression_test_path, sample_json.as_bytes())?;
+    std::fs::write(file_regression_expected_path, sample_json.as_bytes())?;
     Ok(())
 }
 

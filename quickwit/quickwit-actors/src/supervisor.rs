@@ -236,7 +236,7 @@ mod tests {
         async fn handle(
             &mut self,
             msg: FailingActorMessage,
-            _ctx: &ActorContext<Self>,
+            ctx: &ActorContext<Self>,
         ) -> Result<Self::Reply, ActorExitStatus> {
             match msg {
                 FailingActorMessage::Panic => {
@@ -251,7 +251,7 @@ mod tests {
                     self.counter += 1;
                 }
                 FailingActorMessage::Freeze(wait_duration) => {
-                    tokio::time::sleep(wait_duration).await;
+                    ctx.sleep(wait_duration).await;
                 }
             }
             Ok(self.counter)

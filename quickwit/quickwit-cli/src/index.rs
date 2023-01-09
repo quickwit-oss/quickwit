@@ -1357,7 +1357,7 @@ impl ThroughputCalculator {
             .push_back((current_instant, current_processed_bytes));
         (current_processed_bytes - first_processed_bytes) as f64
             / 1_000_000f64
-            / elapsed_time.max(1f64) as f64
+            / elapsed_time.max(1f64)
     }
 
     pub fn elapsed_time(&self) -> Duration {

@@ -31,7 +31,7 @@ use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
-use crate::otlp::trace::extract_attributes;
+use crate::otlp::extract_attributes;
 
 const OTEL_LOG_INDEX_ID: &str = "otel-log-v0";
 

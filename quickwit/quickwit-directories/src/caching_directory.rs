@@ -26,7 +26,7 @@ use async_trait::async_trait;
 use quickwit_storage::ByteRangeCache;
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
-use tantivy::{AsyncIoResult, Directory, HasLen};
+use tantivy::{Directory, HasLen};
 
 /// The caching directory is a simple cache that wraps another directory.
 #[derive(Clone)]
@@ -86,7 +86,7 @@ impl FileHandle for CachingFileHandle {
         Ok(owned_bytes)
     }
 
-    async fn read_bytes_async(&self, byte_range: Range<usize>) -> AsyncIoResult<OwnedBytes> {
+    async fn read_bytes_async(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
         if let Some(owned_bytes) = self.cache.get_slice(&self.path, byte_range.clone()) {
             return Ok(owned_bytes);
         }

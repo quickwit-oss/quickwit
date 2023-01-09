@@ -365,7 +365,7 @@ pub(super) fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow
 
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]
 mod tests {
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::Universe;
 
     use super::*;
     use crate::source::kinesis::helpers::tests::{
@@ -419,7 +419,7 @@ mod tests {
     #[tokio::test]
     async fn test_kinesis_source() {
         let universe = Universe::new();
-        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let (kinesis_client, stream_name) = setup("test-kinesis-source", 3).await.unwrap();
         let params = KinesisSourceParams {
             stream_name: stream_name.clone(),

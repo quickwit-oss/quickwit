@@ -41,9 +41,9 @@ use tracing::{error, info};
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
 use crate::models::{
-    DetachIndexingPipeline, DetachMergePipeline, IndexingDirectory, IndexingPipelineId, Observe,
-    ObservePipeline, ShutdownPipeline, ShutdownPipelines, SpawnPipeline, SpawnPipelines,
-    WeakIndexingDirectory,
+    DetachIndexingPipeline, DetachMergePipeline, IndexingPipelineId, Observe, ObservePipeline,
+    ScratchDirectory, ShutdownPipeline, ShutdownPipelines, SpawnPipeline, SpawnPipelines,
+    WeakScratchDirectory,
 };
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
@@ -123,7 +123,7 @@ pub struct IndexingService {
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     counters: IndexingServiceCounters,
-    indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
+    indexing_directories: HashMap<(IndexId, SourceId), WeakScratchDirectory>,
     local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
@@ -426,19 +426,19 @@ impl IndexingService {
         &mut self,
         pipeline_id: &IndexingPipelineId,
         indexing_dir_path: PathBuf,
-    ) -> Result<IndexingDirectory, IndexingServiceError> {
+    ) -> Result<ScratchDirectory, IndexingServiceError> {
         let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
         if let Some(indexing_directory) = self
             .indexing_directories
             .get(&key)
-            .and_then(WeakIndexingDirectory::upgrade)
+            .and_then(WeakScratchDirectory::upgrade)
         {
             return Ok(indexing_directory);
         }
         let indexing_directory_path = indexing_dir_path
             .join(&pipeline_id.index_id)
             .join(&pipeline_id.source_id);
-        let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path)
+        let indexing_directory = ScratchDirectory::create_in_dir(indexing_directory_path)
             .await
             .map_err(IndexingServiceError::InvalidParams)?;
 
@@ -458,7 +458,7 @@ impl IndexingService {
         {
             return Ok(merge_pipeline_mailbox_handle.mailbox.clone());
         }
-        let merge_pipeline = MergePipeline::new(merge_pipeline_params);
+        let merge_pipeline = MergePipeline::new(merge_pipeline_params, ctx.spawn_ctx());
         let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(merge_pipeline);
         let merge_pipeline_mailbox_handle = MergePipelineHandle {
@@ -657,7 +657,7 @@ mod tests {
     use quickwit_actors::{Health, ObservationType, Supervisable, Universe, HEARTBEAT};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{SourceConfig, SourceParams, VecSourceParams};
+    use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, VecSourceParams};
     use quickwit_ingest_api::init_ingest_api;
     use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore};
 
@@ -688,7 +688,9 @@ mod tests {
         let storage_resolver = StorageUriResolver::for_test();
         let universe = Universe::new();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        init_ingest_api(&universe, &queues_dir_path).await.unwrap();
+        init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
+            .await
+            .unwrap();
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
@@ -903,7 +905,9 @@ mod tests {
             if obs.num_successful_pipelines == 2 {
                 return;
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            universe
+                .simulate_time_shift(Duration::from_millis(100))
+                .await;
         }
         panic!("Sleep");
     }
@@ -940,7 +944,9 @@ mod tests {
         let storage_resolver = StorageUriResolver::for_test();
         let universe = Universe::new();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        init_ingest_api(&universe, &queues_dir_path).await.unwrap();
+        init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
+            .await
+            .unwrap();
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
@@ -1046,7 +1052,9 @@ mod tests {
         let storage_resolver = StorageUriResolver::for_test();
         let universe = Universe::new();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        init_ingest_api(&universe, &queues_dir_path).await.unwrap();
+        init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
+            .await
+            .unwrap();
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
@@ -1076,7 +1084,7 @@ mod tests {
             .send_message(FreezePipeline)
             .await
             .unwrap();
-        tokio::time::sleep(HEARTBEAT * 5).await;
+        universe.simulate_time_shift(HEARTBEAT * 5).await;
         // Check that indexing and merge pipelines are still running.
         let observation = indexing_server_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 1);

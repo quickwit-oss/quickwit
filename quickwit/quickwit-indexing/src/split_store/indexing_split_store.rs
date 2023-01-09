@@ -211,7 +211,7 @@ impl IndexingSplitStore {
             .await?
         {
             tracing::Span::current().record("cache_hit", true);
-            let mmap_directory: Box<dyn Directory> = Box::new(MmapDirectory::open(&split_path)?);
+            let mmap_directory: Box<dyn Directory> = Box::new(MmapDirectory::open(split_path)?);
             return Ok(mmap_directory);
         } else {
             tracing::Span::current().record("cache_hit", false);

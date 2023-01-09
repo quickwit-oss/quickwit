@@ -229,7 +229,9 @@ pub(crate) mod test_suite {
     async fn test_exists(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("exists");
         assert!(!storage.exists(test_path).await.unwrap());
-        storage.put(test_path, Box::new(vec![])).await?;
+        storage
+            .put(test_path, Box::<std::vec::Vec<u8>>::default())
+            .await?;
         assert!(storage.exists(test_path).await.unwrap());
         storage.delete(test_path).await.unwrap();
         Ok(())

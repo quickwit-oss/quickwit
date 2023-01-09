@@ -36,6 +36,8 @@ use crate::{iter_doc_payloads, IngestApiError, Queues};
 pub struct IngestApiService {
     partition_id: String,
     queues: Queues,
+    memory_limit: usize,
+    disk_limit: usize,
 }
 
 /// When we create our queue storage, we also generate and store
@@ -64,13 +66,19 @@ async fn get_or_initialize_partition_id(dir_path: &Path) -> crate::Result<String
 }
 
 impl IngestApiService {
-    pub async fn with_queues_dir(queues_dir_path: &Path) -> crate::Result<Self> {
+    pub async fn with_queues_dir(
+        queues_dir_path: &Path,
+        memory_limit: usize,
+        disk_limit: usize,
+    ) -> crate::Result<Self> {
         let queues = Queues::open(queues_dir_path).await?;
         let partition_id = get_or_initialize_partition_id(queues_dir_path).await?;
         info!(ingest_partition_id=%partition_id, "Ingest API partition id");
         Ok(IngestApiService {
             partition_id,
             queues,
+            memory_limit,
+            disk_limit,
         })
     }
 
@@ -92,6 +100,16 @@ impl IngestApiService {
             });
         }
 
+        let (memory, disk) = self.queues.ressource_usage();
+        if memory > self.memory_limit {
+            info!("Ingestion rejected due to memory limits");
+            return Err(IngestApiError::RateLimited);
+        }
+        if disk > self.disk_limit {
+            info!("Ingestion rejected due to disk limits");
+            return Err(IngestApiError::RateLimited);
+        }
+
         let mut num_docs = 0usize;
         for doc_batch in &request.doc_batches {
             // TODO better error handling.
@@ -106,6 +124,7 @@ impl IngestApiService {
                 .ingested_num_docs
                 .inc_by(batch_num_docs as u64);
         }
+        // TODO we could fsync here and disable autosync to have better i/o perfs.
         Ok(IngestResponse {
             num_docs_for_processing: num_docs as u64,
         })

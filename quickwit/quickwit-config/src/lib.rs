@@ -54,7 +54,7 @@ use tracing::warn;
 
 use crate::merge_policy_config::MergePolicyConfig;
 pub use crate::quickwit_config::{
-    IndexerConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH,
+    IndexerConfig, IngestApiConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH,
 };
 use crate::source_config::serialize::{SourceConfigV0_4, VersionedSourceConfig};
 

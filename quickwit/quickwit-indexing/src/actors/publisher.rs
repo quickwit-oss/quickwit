@@ -182,7 +182,7 @@ impl Handler<SplitsUpdate> for Publisher {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
@@ -194,6 +194,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_publisher_publish_operation() {
+        let universe = Universe::new();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
@@ -209,9 +210,9 @@ mod tests {
             )
             .times(1)
             .returning(|_, _, _, _| Ok(()));
-        let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
+        let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
 
-        let (source_mailbox, source_inbox) = create_test_mailbox();
+        let (source_mailbox, source_inbox) = universe.create_test_mailbox();
 
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
@@ -219,7 +220,6 @@ mod tests {
             Some(merge_planner_mailbox),
             Some(source_mailbox),
         );
-        let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
         assert!(publisher_mailbox
@@ -265,6 +265,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_publisher_replace_operation() {
+        let universe = Universe::new();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
@@ -278,14 +279,13 @@ mod tests {
             )
             .times(1)
             .returning(|_, _, _, _| Ok(()));
-        let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
+        let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             Arc::new(mock_metastore),
             Some(merge_planner_mailbox),
             None,
         );
-        let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
         let publisher_message = SplitsUpdate {
             index_id: "index".to_string(),
@@ -313,9 +313,10 @@ mod tests {
 
     #[tokio::test]
     async fn publisher_acquires_publish_lock() {
+        let universe = Universe::new();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore.expect_publish_splits().never();
-        let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
+        let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
 
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
@@ -323,7 +324,6 @@ mod tests {
             Some(merge_planner_mailbox),
             None,
         );
-        let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
         let publish_lock = PublishLock::default();

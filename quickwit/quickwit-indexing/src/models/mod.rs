@@ -17,8 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![allow(rustdoc::invalid_html_tags)]
+
 mod indexed_split;
-mod indexing_directory;
 mod indexing_pipeline_id;
 mod indexing_service_message;
 mod indexing_statistics;
@@ -36,7 +37,6 @@ mod split_attrs;
 pub use indexed_split::{
     CommitTrigger, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder, IndexedSplitBuilder,
 };
-pub use indexing_directory::{IndexingDirectory, WeakIndexingDirectory};
 pub use indexing_pipeline_id::IndexingPipelineId;
 pub use indexing_service_message::{
     DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, ShutdownPipeline,
@@ -51,7 +51,7 @@ pub use prepared_doc::{PreparedDoc, PreparedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};
 pub use publisher_message::SplitsUpdate;
 pub use raw_doc_batch::RawDocBatch;
-pub use scratch_directory::ScratchDirectory;
+pub use scratch_directory::{ScratchDirectory, WeakScratchDirectory};
 pub use split_attrs::{create_split_metadata, SplitAttrs};
 
 #[derive(Clone, Copy, Debug)]

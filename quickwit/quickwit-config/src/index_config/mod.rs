@@ -525,7 +525,7 @@ mod tests {
     fn test_index_config_parse_aux(config_format: ConfigFormat) {
         let index_config_filepath =
             get_index_config_filepath(&format!("hdfs-logs.{config_format:?}").to_lowercase());
-        let file = std::fs::read_to_string(&index_config_filepath).unwrap();
+        let file = std::fs::read_to_string(index_config_filepath).unwrap();
         let index_config = load_index_config_from_user_config(
             config_format,
             file.as_bytes(),
@@ -609,7 +609,7 @@ mod tests {
         let default_index_root_uri = Uri::from_well_formed("s3://defaultbucket/");
         {
             let index_config_filepath = get_index_config_filepath("minimal-hdfs-logs.yaml");
-            let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
+            let file_content = std::fs::read_to_string(index_config_filepath).unwrap();
             let index_config = load_index_config_from_user_config(
                 ConfigFormat::Yaml,
                 file_content.as_bytes(),
@@ -632,7 +632,7 @@ mod tests {
         }
         {
             let index_config_filepath = get_index_config_filepath("partial-hdfs-logs.yaml");
-            let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
+            let file_content = std::fs::read_to_string(index_config_filepath).unwrap();
             let index_config = load_index_config_from_user_config(
                 ConfigFormat::Yaml,
                 file_content.as_bytes(),

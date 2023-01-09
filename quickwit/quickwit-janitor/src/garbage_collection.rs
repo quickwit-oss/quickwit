@@ -367,7 +367,7 @@ mod tests {
             ..Default::default()
         };
         metastore
-            .stage_split(index_id, split_metadata)
+            .stage_splits(index_id, vec![split_metadata])
             .await
             .unwrap();
 
@@ -425,7 +425,7 @@ mod tests {
             ..Default::default()
         };
         metastore
-            .stage_split(index_id, split_metadata)
+            .stage_splits(index_id, vec![split_metadata])
             .await
             .unwrap();
         metastore
