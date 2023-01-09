@@ -40,6 +40,7 @@ use quickwit_proto::opentelemetry::proto::trace::v1::Status as OtlpStatus;
 use quickwit_proto::SearchRequest;
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
+use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
@@ -75,13 +76,18 @@ impl SpanReaderPlugin for JaegerService {
         let request = request.into_inner();
         debug!(request=?request, "`get_services` request");
 
+        let index_id = TRACE_INDEX_ID.to_string();
+        let query = "*".to_string();
+        let max_hits = 1_000;
+        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24 hours lookback
+
         let search_request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query("", "", "", HashMap::new()),
-            search_fields: Vec::new(),
-            start_timestamp: None, // TODO: limit to last 24h?
+            index_id,
+            query,
+            max_hits,
+            start_timestamp,
             end_timestamp: None,
-            max_hits: 1_000,
+            search_fields: Vec::new(),
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,
@@ -112,13 +118,18 @@ impl SpanReaderPlugin for JaegerService {
         let request = request.into_inner();
         debug!(request=?request, "`get_operations` request");
 
+        let index_id = TRACE_INDEX_ID.to_string();
+        let query = build_query(&request.service, &request.span_kind, "", HashMap::new());
+        let max_hits = 1_000;
+        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24 hours lookback
+
         let search_request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query(&request.service, &request.span_kind, "", HashMap::new()),
-            search_fields: Vec::new(),
-            start_timestamp: None, // TODO: limit to last 24h?
+            index_id,
+            query,
+            max_hits,
+            start_timestamp,
             end_timestamp: None,
-            max_hits: 1_000,
+            search_fields: Vec::new(),
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,
