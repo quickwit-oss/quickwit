@@ -6,59 +6,24 @@ on:
       - "v*"
 
 jobs:
-  build-native-binaries:
-    name: Build ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+  build-macos-binaries:
+    name: Build ${{ matrix.target }}
+    runs-on: macos-latest
     strategy:
       matrix:
-        include:
-          - build: macos
-            os: macos-latest
-            target: x86_64-apple-darwin
+        target: [x86_64-apple-darwin, aarch64-apple-darwin]
 
     steps:
       - uses: actions/checkout@v3
       - name: Extract asset version
         run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
-      - name: Extract asset full name
-        run: echo "ASSET_FULL_NAME=quickwit-${{ env.ASSET_VERSION }}-${{ matrix.target }}" >> $GITHUB_ENV
-      - name: Install protoc
-        run: brew install protobuf
-        shell: bash
-      - uses: actions/setup-node@v3
+      - uses: ./.github/actions/cargo-build-macos-binary
         with:
-          node-version: 16
-          cache: "yarn"
-          cache-dependency-path: quickwit/quickwit-ui/yarn.lock
-      - run: make build-ui
-        shell: bash
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-      - name: Build binary
-        run: cargo build --release --features release-feature-vendored-set
-        shell: bash
-        working-directory: ./quickwit
-      - name: Bundle archive
-        run: |
-          make archive BINARY_FILE=quickwit/target/release/quickwit \
-            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
-      - name: Save binary archive for few days
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.ASSET_FULL_NAME }}.tar.gz
-          path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
-          retention-days: 3
-      - name: Upload archive
-        uses: quickwit-inc/upload-to-github-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          file: ${{ env.ASSET_FULL_NAME }}.tar.gz
-          overwrite: true
-          tag_name: ${{ env.ASSET_VERSION }}
+          target: ${{ matrix.target }}
+          version: ${{ env.ASSET_VERSION }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-  build-binaries:
+  build-linux-binaries:
     strategy:
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
@@ -68,7 +33,7 @@ jobs:
       - uses: actions/checkout@v3
       - name: Extract asset version
         run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
-      - uses: ./.github/actions/build-binary
+      - uses: ./.github/actions/cross-build-binary
         with:
           target: ${{ matrix.target }}
           version: ${{ env.ASSET_VERSION }}

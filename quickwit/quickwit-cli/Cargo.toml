@@ -96,3 +96,12 @@ release-feature-vendored-set = [
   "openssl-support",
   "jemalloc",
 ]
+
+release-macos-feature-vendored-set = [
+  "quickwit-metastore/postgres",
+  "quickwit-metastore/azure",
+  "quickwit-indexing/vendored-kafka-macos",
+  "quickwit-indexing/kinesis",
+  "openssl-support",
+  "jemalloc",
+]
