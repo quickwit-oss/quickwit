@@ -365,7 +365,7 @@ pub struct ClusterSnapshot {
     pub ready_nodes: HashSet<NodeId>,
 
     #[schema(value_type  = Vec<NodeIdSchema>)]
-    /// The set of node IDs that are online and a part of the cluster.
+    /// The set of cluster node IDs that are alive.
     pub live_nodes: HashSet<NodeId>,
 
     #[schema(value_type  = Vec<NodeIdSchema>)]
