@@ -34,7 +34,7 @@ use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPl
 use quickwit_proto::jaeger::storage::v1::{
     FindTraceIDsRequest, FindTraceIDsResponse, FindTracesRequest, GetOperationsRequest,
     GetOperationsResponse, GetServicesRequest, GetServicesResponse, GetTraceRequest, Operation,
-    SpansResponseChunk,
+    SpansResponseChunk, TraceQueryParameters,
 };
 use quickwit_proto::opentelemetry::proto::trace::v1::Status as OtlpStatus;
 use quickwit_proto::SearchRequest;
@@ -51,6 +51,9 @@ use tracing::{debug, warn};
 
 const TRACE_INDEX_ID: &str = "otel-trace-v0";
 
+/// A base64-encoded 16-byte array.
+type TraceId = String;
+
 pub struct JaegerService {
     search_service: Arc<dyn SearchService>,
 }
@@ -58,6 +61,82 @@ pub struct JaegerService {
 impl JaegerService {
     pub fn new(search_service: Arc<dyn SearchService>) -> Self {
         Self { search_service }
+    }
+
+    async fn find_trace_ids(
+        &self,
+        trace_query: TraceQueryParameters,
+    ) -> Result<Vec<TraceId>, Status> {
+        let start_timestamp = trace_query.start_time_min.map(|ts| ts.seconds);
+        let end_timestamp = trace_query.start_time_max.map(|ts| ts.seconds);
+        // let min_span_duration_secs = trace_query.duration_min.map(|d| d.seconds);
+        // let max_span_duration_secs = trace_query.duration_max.map(|d| d.seconds);
+        let max_hits = 1_0000;
+        let search_request = SearchRequest {
+            index_id: TRACE_INDEX_ID.to_string(),
+            query: build_search_query(
+                &trace_query.service_name,
+                "",
+                &trace_query.operation_name,
+                trace_query.tags,
+                None, // TODO: enable when range queries on i64 are available in Quickwit
+                None,
+            ),
+            start_timestamp,
+            end_timestamp,
+            max_hits,
+            search_fields: Vec::new(),
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+            aggregation_request: None,
+            snippet_fields: Vec::new(),
+        };
+        let search_response = self.search_service.root_search(search_request).await?;
+        let trace_ids: HashSet<String> = search_response
+            .hits
+            .into_iter()
+            .map(|hit| {
+                serde_json::from_str::<JsonValue>(&hit.json)
+                    .expect("Failed to deserialize hit. This should never happen!")
+            })
+            .flat_map(extract_trace_id)
+            .collect();
+        debug!(trace_ids=?trace_ids, "`find_traces` matched trace IDs");
+        Ok(trace_ids.into_iter().collect())
+    }
+
+    async fn fetch_spans(&self, trace_ids: &[TraceId]) -> Result<Vec<JaegerSpan>, Status> {
+        let mut query = String::new();
+
+        for (i, trace_id) in trace_ids.iter().enumerate() {
+            if i > 0 {
+                query.push_str(" OR ");
+            }
+            query.push_str("trace_id:");
+            query.push_str(trace_id);
+        }
+        let search_request = SearchRequest {
+            index_id: TRACE_INDEX_ID.to_string(),
+            query,
+            search_fields: Vec::new(),
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 1_000,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+            aggregation_request: None,
+            snippet_fields: Vec::new(),
+        };
+        let search_response = self.search_service.root_search(search_request).await?;
+        let spans = search_response
+            .hits
+            .into_iter()
+            .map(|hit| qw_span_to_jaeger_span(&hit.json))
+            .collect::<Result<_, _>>()?;
+        debug!(spans=?spans, "`find_traces` response");
+        Ok(spans)
     }
 }
 
@@ -163,6 +242,27 @@ impl SpanReaderPlugin for JaegerService {
         Ok(Response::new(response))
     }
 
+    async fn find_trace_i_ds(
+        &self,
+        request: Request<FindTraceIDsRequest>,
+    ) -> Result<Response<FindTraceIDsResponse>, Status> {
+        let request = request.into_inner();
+        debug!(request=?request, "`find_trace_ids` request");
+
+        let trace_query = request
+            .query
+            .ok_or_else(|| Status::invalid_argument("Query is empty."))?;
+        let trace_ids = self
+            .find_trace_ids(trace_query)
+            .await?
+            .into_iter()
+            .map(|trace_id| base64::decode(trace_id).expect("Failed to Base64 decode trace ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
+            .collect();
+        let response = FindTraceIDsResponse { trace_ids };
+        debug!(response=?response, "`find_trace_ids` response");
+        Ok(Response::new(response))
+    }
+
     async fn find_traces(
         &self,
         request: Request<FindTracesRequest>,
@@ -170,137 +270,21 @@ impl SpanReaderPlugin for JaegerService {
         let request = request.into_inner();
         debug!(request=?request, "`find_traces` request");
 
-        let query = request
+        let trace_query = request
             .query
             .ok_or_else(|| Status::invalid_argument("Trace query is empty."))?;
-        let start_timestamp = query.start_time_min.map(|ts| ts.seconds);
-        let end_timestamp = query.start_time_max.map(|ts| ts.seconds);
-        let min_span_duration = query.duration_min.map(|d| d.seconds);
-        let max_span_duration = query.duration_max.map(|d| d.seconds);
-        let max_hits = query.num_traces as u64;
-        let search_request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query: build_search_query(
-                &query.service_name,
-                "",
-                &query.operation_name,
-                query.tags,
-                min_span_duration,
-                max_span_duration,
-            ),
-            search_fields: Vec::new(),
-            start_timestamp,
-            end_timestamp,
-            max_hits,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
-        };
-        let search_response = self.search_service.root_search(search_request).await?;
-        let trace_ids: HashSet<String> = search_response
-            .hits
-            .into_iter()
-            .map(|hit| {
-                serde_json::from_str::<JsonValue>(&hit.json)
-                    .expect("Failed to deserialize hit. This should never happen!")
-            })
-            .flat_map(extract_trace_id)
-            .collect();
-        debug!(trace_ids=?trace_ids, "`find_traces` matched trace IDs");
+
+        let trace_ids = self.find_trace_ids(trace_query).await?;
+        let (tx, rx) = mpsc::channel(1);
+
         if trace_ids.is_empty() {
-            let (_tx, rx) = mpsc::channel(1);
             return Ok(Response::new(ReceiverStream::new(rx)));
         }
-        let mut query = String::new();
-        for (i, trace_id) in trace_ids.iter().enumerate() {
-            if i > 0 {
-                query.push_str(" OR ");
-            }
-            query.push_str("trace_id:");
-            query.push_str(trace_id);
-        }
-        let search_request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query,
-            search_fields: Vec::new(),
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 1_000,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
-        };
-        let search_response = self.search_service.root_search(search_request).await?;
-        let spans = search_response
-            .hits
-            .into_iter()
-            .map(|hit| qw_span_to_jaeger_span(&hit.json))
-            .collect::<Result<_, _>>()?;
-        debug!(spans=?spans, "`find_traces` response");
-        let (tx, rx) = mpsc::channel(1);
+        let spans = self.fetch_spans(&trace_ids).await?;
         tx.send(Ok(SpansResponseChunk { spans }))
             .await
             .expect("The channel should be opened and empty.");
         let response = ReceiverStream::new(rx);
-        Ok(Response::new(response))
-    }
-
-    async fn find_trace_i_ds(
-        &self,
-        request: Request<FindTraceIDsRequest>,
-    ) -> Result<Response<FindTraceIDsResponse>, Status> {
-        let request = request.into_inner();
-        debug!(request=?request, "`find_trace_ids` request");
-        let query = request
-            .query
-            .ok_or_else(|| Status::invalid_argument("Query is empty."))?;
-        let start_timestamp = query.start_time_min.map(|ts| ts.seconds);
-        let end_timestamp = query.start_time_max.map(|ts| ts.seconds);
-        let min_span_duration = query.duration_min.map(|d| d.seconds);
-        let max_span_duration = query.duration_max.map(|d| d.seconds);
-        let max_hits = query.num_traces as u64;
-        let search_request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query: build_search_query(
-                &query.service_name,
-                "",
-                &query.operation_name,
-                query.tags,
-                min_span_duration,
-                max_span_duration,
-            ),
-            search_fields: Vec::new(),
-            start_timestamp,
-            end_timestamp,
-            max_hits,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
-        };
-        let search_response = self.search_service.root_search(search_request).await?;
-        let trace_ids: Vec<Vec<u8>> = search_response
-            .hits
-            .into_iter()
-            .map(|hit| {
-                serde_json::from_str::<JsonValue>(&hit.json)
-                    .expect("Failed to deserialize hit. This should never happen.")
-            })
-            .filter_map(extract_trace_id)
-            .sorted()
-            .dedup()
-            .map(|trace_id| {
-                base64::decode(trace_id)
-                    .expect("Failed to decode trace ID. This should never happen!")
-            })
-            .collect();
-        let response = FindTraceIDsResponse { trace_ids };
-        debug!(response=?response, "`find_trace_ids` response");
         Ok(Response::new(response))
     }
 
@@ -310,27 +294,8 @@ impl SpanReaderPlugin for JaegerService {
     ) -> Result<Response<Self::GetTraceStream>, Status> {
         let request = request.into_inner();
         debug!(request=?request, "`get_trace` request");
-        let query = format!("trace_id:{}", base64::encode(request.trace_id));
-        let search_request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query,
-            search_fields: Vec::new(),
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 1_000,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
-        };
-        let search_response = self.search_service.root_search(search_request).await?;
-        let spans = search_response
-            .hits
-            .into_iter()
-            .map(|hit| qw_span_to_jaeger_span(&hit.json))
-            .collect::<Result<_, _>>()?;
-        debug!(spans=?spans, "`get_trace` response");
+        let trace_id = base64::encode(request.trace_id);
+        let spans = self.fetch_spans(&[trace_id]).await?;
         let (tx, rx) = mpsc::channel(1);
         tx.send(Ok(SpansResponseChunk { spans }))
             .await
@@ -462,10 +427,10 @@ fn qw_span_to_jaeger_span(qw_span: &str) -> Result<JaegerSpan, Status> {
     let mut span = serde_json::from_str::<QwSpan>(qw_span)
         .map_err(|error| Status::internal(format!("Failed to deserialize span: {error:?}")))?;
     let trace_id = base64::decode(span.trace_id).map_err(|error| {
-        Status::internal(format!("Failed to base64 decode trace ID: {error:?}"))
+        Status::internal(format!("Failed to Base64 decode trace ID: {error:?}"))
     })?;
     let span_id = base64::decode(span.span_id)
-        .map_err(|error| Status::internal(format!("Failed to base64 decode span ID: {error:?}")))?;
+        .map_err(|error| Status::internal(format!("Failed to Base64 decode span ID: {error:?}")))?;
 
     let start_time = Some(to_well_known_timestamp(span.span_start_timestamp_nanos));
     let duration = Some(to_well_known_duration(
