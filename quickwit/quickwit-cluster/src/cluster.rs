@@ -340,7 +340,7 @@ pub struct NodeIdSchema {
 #[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub struct ClusterSnapshot {
     #[schema(example = "qw-cluster-1")]
-    /// The ID of the cluster tha the node is a part of.
+    /// The ID of the cluster that the node is a part of.
     pub cluster_id: String,
 
     #[schema(value_type = NodeIdSchema)]
