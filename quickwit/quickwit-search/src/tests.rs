@@ -421,7 +421,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     assert!(single_node_response.is_err());
     assert_eq!(
         single_node_response.err().map(|err| err.to_string()),
-        Some("Invalid query: Field does not exists: 'tag'".to_string())
+        Some("Invalid query: Field does not exist: 'tag'".to_string())
     );
     Ok(())
 }
@@ -1148,4 +1148,140 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
         assert_json_include!(actual: hit_json, expected: expected_json);
         Ok(())
     }
+}
+
+#[tokio::test]
+async fn test_single_node_range_queries() -> anyhow::Result<()> {
+    let index_id = "single-node-range-queries";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: datetime
+                type: datetime
+                fast: true
+              - name: log
+                type: text
+              - name: status_code
+                type: u64
+                fast: true
+              - name: host
+                type: ip
+                fast: true
+              - name: latency
+                type: f64
+                fast: true
+              - name: error_code
+                type: i64
+                fast: true
+        "#;
+    let docs = vec![
+        json!({"datetime": "2023-01-10T15:13:35Z", "log": "User not found", "status_code": 404, "host": "192.168.0.1", "latency": 12.34, "error_code": 4}),
+        json!({"datetime": "2023-01-10T15:13:36Z", "log": "Request failed", "status_code": 400, "host": "10.10.12.123", "latency": 56.78, "error_code": 1}),
+        json!({"datetime": "2023-01-10T15:13:37Z", "log": "Request successful", "status_code": 200, "host": "10.10.11.125", "latency": 91.10, "error_code": -1}),
+        json!({"datetime": "2023-01-10T15:13:38Z", "log": "Auth service error", "status_code": 401, "host": "2001:db8::1:0:0:1", "latency": 111.12, "error_code": 2}),
+        json!({"datetime": "2023-01-10T15:13:39Z", "log": "Settings saved", "status_code": 200, "host": "::afff:4567:890a", "latency": 112.13, "error_code": -1}),
+        json!({"datetime": "2023-01-10T15:13:40Z", "log": "Request failed", "status_code": 400, "host": "10.10.12.123", "latency": 114.15, "error_code": 1}),
+    ];
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["log"]).await?;
+    test_sandbox.add_documents(docs).await?;
+    {
+        let search_request = SearchRequest {
+            index_id: index_id.to_string(),
+            query: "datetime:[2023-01-10T15:13:36Z TO 2023-01-10T15:13:38Z}".to_string(),
+            search_fields: Vec::new(),
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+            ..Default::default()
+        };
+        let single_node_result = single_node_search(
+            &search_request,
+            &*test_sandbox.metastore(),
+            test_sandbox.storage_uri_resolver(),
+        )
+        .await?;
+        assert_eq!(single_node_result.num_hits, 2);
+        assert_eq!(single_node_result.hits.len(), 2);
+    }
+    {
+        let search_request = SearchRequest {
+            index_id: index_id.to_string(),
+            query: "status_code:[400 TO 401]".to_string(),
+            search_fields: Vec::new(),
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+            ..Default::default()
+        };
+        let single_node_result = single_node_search(
+            &search_request,
+            &*test_sandbox.metastore(),
+            test_sandbox.storage_uri_resolver(),
+        )
+        .await?;
+        assert_eq!(single_node_result.num_hits, 3);
+        assert_eq!(single_node_result.hits.len(), 3);
+    }
+    {
+        let search_request = SearchRequest {
+            index_id: index_id.to_string(),
+            query: "host:[10.0.0.0 TO 10.255.255.255]".to_string(),
+            search_fields: Vec::new(),
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+            ..Default::default()
+        };
+        let single_node_result = single_node_search(
+            &search_request,
+            &*test_sandbox.metastore(),
+            test_sandbox.storage_uri_resolver(),
+        )
+        .await?;
+        assert_eq!(single_node_result.num_hits, 3);
+        assert_eq!(single_node_result.hits.len(), 3);
+    }
+    {
+        let search_request = SearchRequest {
+            index_id: index_id.to_string(),
+            query: "latency:[100 TO *]".to_string(),
+            search_fields: Vec::new(),
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+            ..Default::default()
+        };
+        let single_node_result = single_node_search(
+            &search_request,
+            &*test_sandbox.metastore(),
+            test_sandbox.storage_uri_resolver(),
+        )
+        .await?;
+        assert_eq!(single_node_result.num_hits, 3);
+        assert_eq!(single_node_result.hits.len(), 3);
+    }
+    {
+        let search_request = SearchRequest {
+            index_id: index_id.to_string(),
+            query: "error_code:[-1 TO 1]".to_string(),
+            search_fields: Vec::new(),
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+            ..Default::default()
+        };
+        let single_node_result = single_node_search(
+            &search_request,
+            &*test_sandbox.metastore(),
+            test_sandbox.storage_uri_resolver(),
+        )
+        .await?;
+        assert_eq!(single_node_result.num_hits, 4);
+        assert_eq!(single_node_result.hits.len(), 4);
+    }
+    Ok(())
 }
