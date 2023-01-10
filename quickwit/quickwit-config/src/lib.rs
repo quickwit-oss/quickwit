@@ -71,8 +71,7 @@ use crate::source_config::serialize::{SourceConfigV0_4, VersionedSourceConfig};
     VersionedIndexConfig,
     IndexConfigV0_4,
 )))]
-/// The OpenAPI schemas defined within the config crate that we don't
-/// necessarily want to expose.
+/// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct ConfigApiSchemas;
 
 fn is_false(val: &bool) -> bool {

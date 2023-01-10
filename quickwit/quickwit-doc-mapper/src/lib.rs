@@ -64,8 +64,7 @@ pub const DYNAMIC_FIELD_NAME: &str = "_dynamic";
     IndexRecordOptionSchema,
     FieldMappingEntryForSerialization,
 )))]
-/// The OpenAPI schemas defined within the config that we don't
-/// necessarily want to expose.
+/// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct DocMapperApiSchemas;
 
 /// Returns a default `DefaultIndexConfig` for unit tests.

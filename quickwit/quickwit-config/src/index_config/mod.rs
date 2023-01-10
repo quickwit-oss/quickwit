@@ -55,7 +55,7 @@ pub struct DocMapping {
     /// The mapping of the index schema fields.
     ///
     /// This defines the name, type and other information about the field(s).
-    /// 
+    ///
     /// Properties are determined by the specified type, for more information
     /// please see: https://quickwit.io/docs/configuration/index-config#field-types
     pub field_mappings: Vec<FieldMappingEntry>,

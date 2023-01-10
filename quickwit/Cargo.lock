@@ -3559,6 +3559,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "ulid",
+ "utoipa",
 ]
 
 [[package]]

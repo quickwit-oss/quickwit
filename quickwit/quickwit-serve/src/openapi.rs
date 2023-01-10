@@ -22,6 +22,7 @@ use quickwit_doc_mapper::DocMapperApiSchemas;
 use quickwit_janitor::JanitorApiSchemas;
 use quickwit_metastore::MetastoreApiSchemas;
 use utoipa::OpenApi;
+use quickwit_indexing::IndexingApiSchemas;
 
 use crate::cluster_api::ClusterApi;
 use crate::delete_task_api::DeleteTaskApi;
@@ -70,6 +71,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base.merge_components_and_paths(ConfigApiSchemas::openapi());
     docs_base.merge_components_and_paths(JanitorApiSchemas::openapi());
     docs_base.merge_components_and_paths(DocMapperApiSchemas::openapi());
+    docs_base.merge_components_and_paths(IndexingApiSchemas::openapi());
 
     docs_base
 }

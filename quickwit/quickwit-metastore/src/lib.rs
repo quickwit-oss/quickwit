@@ -67,8 +67,7 @@ pub(crate) use split_metadata_version::{SplitMetadataV0_4, VersionedSplitMetadat
     VersionedSplitMetadata,
     SplitMetadataV0_4,
 )))]
-/// The OpenAPI schemas defined within the metastore that we don't
-/// necessarily want to expose.
+/// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct MetastoreApiSchemas;
 
 /// Returns `true` if the split time range is included in `time_range_opt`.
