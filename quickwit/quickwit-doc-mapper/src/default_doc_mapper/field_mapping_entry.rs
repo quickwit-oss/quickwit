@@ -64,6 +64,11 @@ pub struct FieldMappingEntry {
 // Docs bellow used for OpenAPI generation:
 /// A `FieldMappingEntry` defines how a field is indexed, stored,
 /// and mapped from a JSON document to the related index fields.
+///
+/// Property parameters which defines the way the value must be indexed.
+///
+/// Properties are determined by the specified type, for more information
+/// please see: https://quickwit.io/docs/configuration/index-config#field-types
 #[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub(crate) struct FieldMappingEntryForSerialization {
     /// Field name in the index schema.
@@ -72,10 +77,6 @@ pub(crate) struct FieldMappingEntryForSerialization {
     type_id: String,
     #[serde(flatten)]
     #[schema(value_type = HashMap<String, Object>)]
-    /// Property parameters which defines the way the value must be indexed.
-    ///
-    /// Properties are determined by the specified type, for more information
-    /// please see: https://quickwit.io/docs/configuration/index-config#field-types
     pub field_mapping_json: serde_json::Map<String, JsonValue>,
 }
 
