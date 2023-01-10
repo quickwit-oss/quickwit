@@ -33,21 +33,20 @@ use crate::default_doc_mapper::validate_field_mapping_name;
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, utoipa::ToSchema)]
 pub struct QuickwitObjectOptions {
+    #[schema(value_type = Vec<FieldMappingEntryForSerialization>)]
     pub field_mappings: Vec<FieldMappingEntry>,
 }
 
 /// A `FieldMappingEntry` defines how a field is indexed, stored,
 /// and mapped from a JSON document to the related index fields.
-#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(
     try_from = "FieldMappingEntryForSerialization",
     into = "FieldMappingEntryForSerialization"
 )]
 pub struct FieldMappingEntry {
-    #[schema(example = "title")]
     /// Field name in the index schema.
     pub name: String,
-    #[schema(inline)]
     /// Property parameters which defines the type and the way the value must be indexed.
     pub mapping_type: FieldMappingType,
 }
@@ -65,12 +64,18 @@ pub struct FieldMappingEntry {
 // Docs bellow used for OpenAPI generation:
 /// A `FieldMappingEntry` defines how a field is indexed, stored,
 /// and mapped from a JSON document to the related index fields.
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub(crate) struct FieldMappingEntryForSerialization {
+    /// Field name in the index schema.
     name: String,
     #[serde(rename = "type")]
     type_id: String,
     #[serde(flatten)]
+    #[schema(value_type = HashMap<String, Object>)]
+    /// Property parameters which defines the way the value must be indexed.
+    ///
+    /// Properties are determined by the specified type, for more information
+    /// please see: https://quickwit.io/docs/configuration/index-config#field-types
     pub field_mapping_json: serde_json::Map<String, JsonValue>,
 }
 

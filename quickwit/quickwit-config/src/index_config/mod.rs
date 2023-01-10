@@ -51,6 +51,10 @@ use crate::TestableForRegression;
 #[serde(deny_unknown_fields)]
 pub struct DocMapping {
     #[serde(default)]
+    #[schema(value_type = Vec<FieldMappingEntryForSerialization>)]
+    /// The mapping of the index schema fields.
+    ///
+    /// This defines the name, type and other information about the field(s).
     pub field_mappings: Vec<FieldMappingEntry>,
     #[schema(value_type = Vec<String>)]
     #[serde(default)]
