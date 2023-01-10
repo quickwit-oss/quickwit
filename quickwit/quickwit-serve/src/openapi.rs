@@ -19,10 +19,10 @@
 
 use quickwit_config::ConfigApiSchemas;
 use quickwit_doc_mapper::DocMapperApiSchemas;
+use quickwit_indexing::IndexingApiSchemas;
 use quickwit_janitor::JanitorApiSchemas;
 use quickwit_metastore::MetastoreApiSchemas;
 use utoipa::OpenApi;
-use quickwit_indexing::IndexingApiSchemas;
 
 use crate::cluster_api::ClusterApi;
 use crate::delete_task_api::DeleteTaskApi;
