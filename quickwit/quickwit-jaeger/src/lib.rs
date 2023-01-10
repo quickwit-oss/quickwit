@@ -19,7 +19,8 @@
 
 #![deny(clippy::disallowed_methods)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::fmt::Write;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -40,6 +41,7 @@ use quickwit_proto::opentelemetry::proto::trace::v1::Status as OtlpStatus;
 use quickwit_proto::SearchRequest;
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
+use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -67,45 +69,63 @@ impl JaegerService {
         &self,
         trace_query: TraceQueryParameters,
     ) -> Result<Vec<TraceId>, Status> {
-        let start_timestamp = trace_query.start_time_min.map(|ts| ts.seconds);
-        let end_timestamp = trace_query.start_time_max.map(|ts| ts.seconds);
-        // let min_span_duration_secs = trace_query.duration_min.map(|d| d.seconds);
-        // let max_span_duration_secs = trace_query.duration_max.map(|d| d.seconds);
-        let max_hits = 1_0000;
+        let index_id = TRACE_INDEX_ID.to_string();
+        let min_span_start_timestamp_secs_opt = trace_query.start_time_min.map(|ts| ts.seconds);
+        let max_span_start_timestamp_secs_opt = trace_query.start_time_max.map(|ts| ts.seconds);
+        let min_span_duration_millis_opt = trace_query
+            .duration_min
+            .and_then(|d| to_duration_millis(&d));
+        let max_span_duration_millis_opt = trace_query
+            .duration_max
+            .and_then(|d| to_duration_millis(&d));
+        let query = build_search_query(
+            &trace_query.service_name,
+            "",
+            &trace_query.operation_name,
+            trace_query.tags,
+            min_span_start_timestamp_secs_opt,
+            max_span_start_timestamp_secs_opt,
+            min_span_duration_millis_opt,
+            max_span_duration_millis_opt,
+        );
+        let aggregation_query = build_aggregations_query(trace_query.num_traces as usize);
+        let max_hits = 0;
         let search_request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
-            query: build_search_query(
-                &trace_query.service_name,
-                "",
-                &trace_query.operation_name,
-                trace_query.tags,
-                None, // TODO: enable when range queries on i64 are available in Quickwit
-                None,
-                None,
-                None,
-            ),
-            start_timestamp,
-            end_timestamp,
+            index_id,
+            query,
+            aggregation_request: Some(aggregation_query),
             max_hits,
+            start_timestamp: min_span_start_timestamp_secs_opt,
+            end_timestamp: max_span_start_timestamp_secs_opt,
             search_fields: Vec::new(),
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,
-            aggregation_request: None,
             snippet_fields: Vec::new(),
         };
         let search_response = self.search_service.root_search(search_request).await?;
-        let trace_ids: HashSet<String> = search_response
-            .hits
-            .into_iter()
-            .map(|hit| {
-                serde_json::from_str::<JsonValue>(&hit.json)
-                    .expect("Failed to deserialize hit. This should never happen!")
-            })
-            .flat_map(extract_trace_id)
-            .collect();
-        debug!(trace_ids=?trace_ids, "`find_traces` matched trace IDs");
-        Ok(trace_ids.into_iter().collect())
+
+        let Some(aggregations_json) = search_response.aggregation else {
+            debug!("The query matched no traces.");
+            return Ok(Vec::new())
+        };
+        if let Ok(JsonValue::Object(mut aggregations)) = serde_json::from_str(&aggregations_json) {
+            if let Some(JsonValue::Object(mut aggregation)) = aggregations.remove("trace_ids") {
+                if let Some(JsonValue::Array(buckets)) = aggregation.remove("buckets") {
+                    let mut trace_ids = Vec::with_capacity(buckets.len());
+                    for bucket in buckets {
+                        if let JsonValue::Object(mut bucket) = bucket {
+                            if let Some(JsonValue::String(trace_id)) = bucket.remove("key") {
+                                trace_ids.push(trace_id);
+                            }
+                        }
+                    }
+                    debug!(trace_ids=?trace_ids, "The query matched {} traces.", trace_ids.len());
+                    return Ok(trace_ids);
+                }
+            }
+        }
+        Err(Status::internal("Failed to parse aggregations response."))
     }
 
     async fn fetch_spans(&self, trace_ids: &[TraceId]) -> Result<Vec<JaegerSpan>, Status> {
@@ -124,13 +144,14 @@ impl JaegerService {
             search_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
-            max_hits: 1_000,
+            max_hits: 10_000, // TODO: self.max_fetched_spans
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,
             aggregation_request: None,
             snippet_fields: Vec::new(),
         };
+        // TODO: switch to streaming search when available.
         let search_response = self.search_service.root_search(search_request).await?;
         let spans = search_response
             .hits
@@ -332,23 +353,17 @@ fn extract_operation(mut doc: JsonValue) -> Option<Operation> {
     }
 }
 
-fn extract_trace_id(mut doc: JsonValue) -> Option<String> {
-    match doc["trace_id"].take() {
-        JsonValue::String(trace_id) => Some(trace_id),
-        _ => None,
-    }
-}
-
 // TODO: builder pattern + query DSL
+#[allow(clippy::too_many_arguments)]
 fn build_search_query(
     service_name: &str,
     span_kind: &str,
     span_name: &str,
     mut tags: HashMap<String, String>,
-    min_span_start_timestamp_secs: Option<i64>,
-    max_span_start_timestamp_secs: Option<i64>,
-    min_span_duration_secs: Option<i64>,
-    max_span_duration_secs: Option<i64>,
+    min_span_start_timestamp_secs_opt: Option<i64>,
+    max_span_start_timestamp_secs_opt: Option<i64>,
+    min_span_duration_millis_opt: Option<i64>,
+    max_span_duration_millis_opt: Option<i64>,
 ) -> String {
     if let Some(qw_query) = tags.remove("_qw_query") {
         return qw_query;
@@ -402,41 +417,49 @@ fn build_search_query(
             }
         }
     }
-    if min_span_start_timestamp_secs.is_some() || max_span_start_timestamp_secs.is_some() {
+    if min_span_start_timestamp_secs_opt.is_some() || max_span_start_timestamp_secs_opt.is_some() {
         if !query.is_empty() {
             query.push_str(" AND ");
         }
         query.push_str("span_start_timestamp_secs:[");
 
-        if let Some(min_span_timestamp) = min_span_start_timestamp_secs {
-            query.push_str(&min_span_timestamp.to_string());
+        if let Some(min_span_start_timestamp_secs) = min_span_start_timestamp_secs_opt {
+            let min_span_start_datetime =
+                OffsetDateTime::from_unix_timestamp(min_span_start_timestamp_secs).expect("");
+            let min_span_start_datetime_rfc3339 =
+                min_span_start_datetime.format(&Rfc3339).expect("");
+            query.push_str(&min_span_start_datetime_rfc3339);
         } else {
             query.push('*');
         }
         query.push_str(" TO ");
 
-        if let Some(max_span_timestamp) = max_span_start_timestamp_secs {
-            query.push_str(&max_span_timestamp.to_string());
+        if let Some(max_span_start_timestamp_secs) = max_span_start_timestamp_secs_opt {
+            let max_span_start_datetime =
+                OffsetDateTime::from_unix_timestamp(max_span_start_timestamp_secs).expect("");
+            let max_span_start_datetime_rfc3339 =
+                max_span_start_datetime.format(&Rfc3339).expect("");
+            query.push_str(&max_span_start_datetime_rfc3339);
         } else {
             query.push('*');
         }
         query.push(']');
     }
-    if min_span_duration_secs.is_some() || max_span_duration_secs.is_some() {
+    if min_span_duration_millis_opt.is_some() || max_span_duration_millis_opt.is_some() {
         if !query.is_empty() {
             query.push_str(" AND ");
         }
-        query.push_str("span_duration_secs:[");
+        query.push_str("span_duration_millis:[");
 
-        if let Some(min_span_duration) = min_span_duration_secs {
-            query.push_str(&min_span_duration.to_string());
+        if let Some(min_span_duration_millis) = min_span_duration_millis_opt {
+            write!(query, "{}", min_span_duration_millis).expect("");
         } else {
             query.push('*');
         }
         query.push_str(" TO ");
 
-        if let Some(max_span_duration) = max_span_duration_secs {
-            query.push_str(&max_span_duration.to_string());
+        if let Some(max_span_duration_millis) = max_span_duration_millis_opt {
+            write!(query, "{}", max_span_duration_millis).expect("");
         } else {
             query.push('*');
         }
@@ -446,6 +469,31 @@ fn build_search_query(
         query.push('*');
     }
     debug!(query=%query, "Search query");
+    query
+}
+
+fn build_aggregations_query(num_traces: usize) -> String {
+    let query = format!(
+        r#"{{
+        "trace_ids": {{
+            "terms": {{
+                "field": "trace_id",
+                "size": {num_traces},
+                "order": {{
+                    "span_start_timestamp_secs_stats.max": "desc"
+                }}
+            }},
+            "aggs": {{
+                "span_start_timestamp_secs_stats": {{
+                    "stats": {{
+                        "field": "span_start_timestamp_secs"
+                    }}
+                }}
+            }}
+        }}
+    }}"#,
+    );
+    debug!(query=%query, "Aggregations query");
     query
 }
 
@@ -504,18 +552,27 @@ fn qw_span_to_jaeger_span(qw_span: &str) -> Result<JaegerSpan, Status> {
     Ok(span)
 }
 
-fn to_well_known_timestamp(timestamp_nanos: i64) -> WellKnownTimestamp {
-    let seconds = timestamp_nanos / 1_000_000_000;
+fn to_duration_millis(duration: &WellKnownDuration) -> Option<i64> {
+    let duration_millis = duration.seconds * 1_000 + (duration.nanos as i64) / 1_000_000;
+    if duration_millis == 0 {
+        None
+    } else {
+        Some(duration_millis)
+    }
+}
+
+fn to_well_known_timestamp(timestamp_nanos: u64) -> WellKnownTimestamp {
+    let seconds = (timestamp_nanos / 1_000_000_000) as i64;
     let nanos = (timestamp_nanos % 1_000_000_000) as i32;
     WellKnownTimestamp { seconds, nanos }
 }
 
 fn to_well_known_duration(
-    start_timestamp_nanos: i64,
-    end_timestamp_nanos: i64,
+    start_timestamp_nanos: u64,
+    end_timestamp_nanos: u64,
 ) -> WellKnownDuration {
     let duration_nanos = end_timestamp_nanos - start_timestamp_nanos;
-    let seconds = duration_nanos / 1_000_000_000;
+    let seconds = (duration_nanos / 1_000_000_000) as i64;
     let nanos = (duration_nanos % 1_000_000_000) as i32;
     WellKnownDuration { seconds, nanos }
 }
@@ -670,7 +727,7 @@ fn otlp_links_to_jaeger_references(
 
     if let Some(parent_span_id) = parent_span_id_opt {
         let parent_span_id = base64::decode(parent_span_id).map_err(|error| {
-            Status::internal(format!("Failed to decode parent span ID: {error:?}"))
+            Status::internal(format!("Failed to Base64 decode parent span ID: {error:?}"))
         })?;
         let reference = JaegerSpanRef {
             trace_id: trace_id.to_vec(),
@@ -683,10 +740,10 @@ fn otlp_links_to_jaeger_references(
     // Parent ID, if any."
     for link in links {
         let trace_id = base64::decode(link.link_trace_id).map_err(|error| {
-            Status::internal(format!("Failed to decode parent span ID: {error:?}"))
+            Status::internal(format!("Failed to Base64 decode parent span ID: {error:?}"))
         })?;
         let span_id = base64::decode(link.link_span_id).map_err(|error| {
-            Status::internal(format!("Failed to decode parent span ID: {error:?}"))
+            Status::internal(format!("Failed to Base64 decode parent span ID: {error:?}"))
         })?;
         let reference = JaegerSpanRef {
             trace_id,
@@ -757,6 +814,7 @@ fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
 mod tests {
     use quickwit_proto::jaeger::api_v2::ValueType;
     use serde_json::json;
+    use tantivy::aggregation::agg_req::{Aggregation, Aggregations, BucketAggregationType};
 
     use super::*;
 
@@ -995,7 +1053,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"span_start_timestamp_secs:[3 TO *]"#
+                r#"span_start_timestamp_secs:[1970-01-01T00:00:03Z TO *]"#
             );
         }
         {
@@ -1018,7 +1076,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"span_start_timestamp_secs:[* TO 33]"#
+                r#"span_start_timestamp_secs:[* TO 1970-01-01T00:00:33Z]"#
             );
         }
         {
@@ -1041,7 +1099,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"span_start_timestamp_secs:[3 TO 33]"#
+                r#"span_start_timestamp_secs:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z]"#
             );
         }
         {
@@ -1064,7 +1122,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"span_duration_secs:[7 TO *]"#
+                r#"span_duration_millis:[7 TO *]"#
             );
         }
         {
@@ -1087,7 +1145,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"span_duration_secs:[* TO 77]"#
+                r#"span_duration_millis:[* TO 77]"#
             );
         }
         {
@@ -1110,7 +1168,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"span_duration_secs:[7 TO 77]"#
+                r#"span_duration_millis:[7 TO 77]"#
             );
         }
         {
@@ -1202,8 +1260,43 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"service_name:quickwit AND span_kind:3 AND span_name:leaf_search AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_start_timestamp_secs:[3 TO 33] AND span_duration_secs:[7 TO 77]"#
+                r#"service_name:quickwit AND span_kind:3 AND span_name:leaf_search AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_start_timestamp_secs:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z] AND span_duration_millis:[7 TO 77]"#
             );
+        }
+    }
+
+    #[test]
+    fn test_build_aggregations_query() {
+        let aggregations_query = build_aggregations_query(77);
+        let aggregations: Aggregations = serde_json::from_str(&aggregations_query).unwrap();
+        let aggregation = aggregations.get("trace_ids").unwrap();
+        let Aggregation::Bucket(ref bucket_aggregation) = aggregation else {
+            panic!("Expected a bucket aggregation!");
+        };
+        let BucketAggregationType::Terms(ref terms_aggregation) = bucket_aggregation.bucket_agg else {
+            panic!("Expected a terms aggregation!");
+        };
+        assert_eq!(terms_aggregation.field, "trace_id");
+        assert_eq!(terms_aggregation.size.unwrap(), 77);
+    }
+
+    #[test]
+    fn test_to_duration_millis() {
+        {
+            let duration = WellKnownDuration {
+                seconds: 0,
+                nanos: 1,
+            };
+            let duration_millis = to_duration_millis(&duration);
+            assert!(duration_millis.is_none())
+        }
+        {
+            let duration = WellKnownDuration {
+                seconds: 1,
+                nanos: 1_000_000,
+            };
+            let duration_millis = to_duration_millis(&duration).unwrap();
+            assert_eq!(duration_millis, 1001)
         }
     }
 
