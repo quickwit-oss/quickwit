@@ -26,10 +26,10 @@ use async_trait::async_trait;
 use futures::future;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use tokio::sync::oneshot;
 
+use crate::command::Observe;
 use crate::mailbox::WeakMailbox;
-use crate::{Actor, Command, Mailbox};
+use crate::{Actor, Mailbox};
 
 struct TypedJsonObservable<A: Actor> {
     actor_instance_id: String,
@@ -60,14 +60,9 @@ impl<A: Actor> JsonObservable for TypedJsonObservable<A> {
     }
     async fn observe(&self) -> Option<JsonValue> {
         let mailbox = self.weak_mailbox.upgrade()?;
-        let (oneshot_tx, oneshot_rx) = oneshot::channel::<Box<dyn Any + Send>>();
-        mailbox
-            .send_message_with_high_priority(Command::Observe(oneshot_tx))
-            .ok()?;
-        let any_box = oneshot_rx.await.ok()?;
-        let state: Box<<A as Actor>::ObservableState> =
-            any_box.downcast::<A::ObservableState>().ok()?;
-        serde_json::to_value(&*state).ok()
+        let oneshot_rx = mailbox.send_message_with_high_priority(Observe).ok()?;
+        let state: <A as Actor>::ObservableState = oneshot_rx.await.ok()?;
+        serde_json::to_value(&state).ok()
     }
 }
 

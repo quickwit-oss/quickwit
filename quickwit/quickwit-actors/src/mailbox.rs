@@ -109,6 +109,12 @@ impl<A: Actor> Handler<LastMailbox> for A {
     }
 }
 
+#[derive(Copy, Clone)]
+pub(crate) enum Priority {
+    High,
+    Low,
+}
+
 impl<A: Actor> Clone for Mailbox<A> {
     fn clone(&self) -> Self {
         self.ref_count.fetch_add(1, Ordering::SeqCst);
@@ -247,13 +253,36 @@ impl<A: Actor> Mailbox<A> {
         }
     }
 
-    pub(crate) fn send_message_with_high_priority<M>(&self, message: M) -> Result<(), SendError>
+    pub(crate) fn send_message_with_high_priority<M>(
+        &self,
+        message: M,
+    ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
-        let (envelope, _response_rx) = self.wrap_in_envelope(message);
-        self.inner.tx.send_high_priority(envelope)
+        let (envelope, response_rx) = self.wrap_in_envelope(message);
+        self.inner.tx.send_high_priority(envelope)?;
+        Ok(response_rx)
+    }
+
+    pub(crate) async fn send_message_with_priority<M>(
+        &self,
+        message: M,
+        priority: Priority,
+    ) -> Result<oneshot::Receiver<A::Reply>, SendError>
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let (envelope, response_rx) = self.wrap_in_envelope(message);
+        match priority {
+            Priority::High => self.inner.tx.send_high_priority(envelope)?,
+            Priority::Low => {
+                self.inner.tx.send_low_priority(envelope).await?;
+            }
+        }
+        Ok(response_rx)
     }
 
     /// Similar to `send_message`, except this method
