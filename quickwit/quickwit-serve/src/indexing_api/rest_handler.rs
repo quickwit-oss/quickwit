@@ -34,7 +34,7 @@ pub struct IndexingApi;
     tag = "Indexing",
     path = "/indexing",
     responses(
-        (status = 200, description = "Successfully observed indexing pipelines.", body = IndexingApiSchemas)
+        (status = 200, description = "Successfully observed indexing pipelines.", body = IndexingStatistics)
     ),
 )]
 /// Observe Indexing Pipeline

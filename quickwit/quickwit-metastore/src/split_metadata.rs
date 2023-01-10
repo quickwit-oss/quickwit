@@ -41,7 +41,7 @@ pub struct Split {
     pub publish_timestamp: Option<i64>,
 
     #[serde(flatten)]
-    #[schema(inline, value_type = VersionedSplitMetadata)]
+    #[schema(value_type = VersionedSplitMetadata)]
     /// Immutable part of the split.
     pub split_metadata: SplitMetadata,
 }

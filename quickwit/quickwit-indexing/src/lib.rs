@@ -54,7 +54,7 @@ use self::merge_policy::MergePolicy;
 pub use self::source::check_source_connectivity;
 
 #[derive(utoipa::OpenApi)]
-#[openapi(components(schemas(IndexingStatistics,)))]
+#[openapi(components(schemas(IndexingStatistics)))]
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct IndexingApiSchemas;
 
