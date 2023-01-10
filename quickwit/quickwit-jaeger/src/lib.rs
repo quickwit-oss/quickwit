@@ -81,6 +81,8 @@ impl JaegerService {
                 trace_query.tags,
                 None, // TODO: enable when range queries on i64 are available in Quickwit
                 None,
+                None,
+                None,
             ),
             start_timestamp,
             end_timestamp,
@@ -203,6 +205,8 @@ impl SpanReaderPlugin for JaegerService {
             &request.span_kind,
             "",
             HashMap::new(),
+            None,
+            None,
             None,
             None,
         );
@@ -341,6 +345,8 @@ fn build_search_query(
     span_kind: &str,
     span_name: &str,
     mut tags: HashMap<String, String>,
+    min_span_start_timestamp_secs: Option<i64>,
+    max_span_start_timestamp_secs: Option<i64>,
     min_span_duration_secs: Option<i64>,
     max_span_duration_secs: Option<i64>,
 ) -> String {
@@ -395,6 +401,26 @@ fn build_search_query(
                 query.push_str("\")");
             }
         }
+    }
+    if min_span_start_timestamp_secs.is_some() || max_span_start_timestamp_secs.is_some() {
+        if !query.is_empty() {
+            query.push_str(" AND ");
+        }
+        query.push_str("span_start_timestamp_secs:[");
+
+        if let Some(min_span_timestamp) = min_span_start_timestamp_secs {
+            query.push_str(&min_span_timestamp.to_string());
+        } else {
+            query.push('*');
+        }
+        query.push_str(" TO ");
+
+        if let Some(max_span_timestamp) = max_span_start_timestamp_secs {
+            query.push_str(&max_span_timestamp.to_string());
+        } else {
+            query.push('*');
+        }
+        query.push(']');
     }
     if min_span_duration_secs.is_some() || max_span_duration_secs.is_some() {
         if !query.is_empty() {
@@ -741,6 +767,8 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::new();
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -749,6 +777,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -760,6 +790,8 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::new();
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -768,6 +800,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -779,6 +813,8 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::from_iter([("_qw_query".to_string(), "query".to_string())]);
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -787,6 +823,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -798,6 +836,8 @@ mod tests {
             let span_kind = "client";
             let span_name = "";
             let tags = HashMap::new();
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -806,6 +846,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -817,6 +859,8 @@ mod tests {
             let span_kind = "";
             let span_name = "leaf_search";
             let tags = HashMap::new();
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -825,6 +869,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -836,6 +882,8 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::from_iter([("foo".to_string(), "bar baz".to_string())]);
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -844,6 +892,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -855,6 +905,8 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::from_iter([("event".to_string(), "Failed to ...".to_string())]);
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -863,6 +915,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -877,6 +931,8 @@ mod tests {
                 ("event".to_string(), "Failed to ...".to_string()),
                 ("foo".to_string(), "bar".to_string()),
             ]);
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -885,6 +941,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -899,6 +957,8 @@ mod tests {
                 ("baz".to_string(), "qux".to_string()),
                 ("foo".to_string(), "bar".to_string()),
             ]);
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -907,6 +967,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -918,6 +980,77 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::new();
+            let min_span_start_timestamp_secs = Some(3);
+            let max_span_start_timestamp_secs = None;
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
+            assert_eq!(
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
+                r#"span_start_timestamp_secs:[3 TO *]"#
+            );
+        }
+        {
+            let service_name = "";
+            let span_kind = "";
+            let span_name = "";
+            let tags = HashMap::new();
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = Some(33);
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
+            assert_eq!(
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
+                r#"span_start_timestamp_secs:[* TO 33]"#
+            );
+        }
+        {
+            let service_name = "";
+            let span_kind = "";
+            let span_name = "";
+            let tags = HashMap::new();
+            let min_span_start_timestamp_secs = Some(3);
+            let max_span_start_timestamp_secs = Some(33);
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
+            assert_eq!(
+                build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                ),
+                r#"span_start_timestamp_secs:[3 TO 33]"#
+            );
+        }
+        {
+            let service_name = "";
+            let span_kind = "";
+            let span_name = "";
+            let tags = HashMap::new();
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = Some(7);
             let max_span_duration_secs = None;
             assert_eq!(
@@ -926,6 +1059,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -937,6 +1072,8 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::new();
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = Some(77);
             assert_eq!(
@@ -945,6 +1082,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -956,6 +1095,8 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::new();
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = Some(7);
             let max_span_duration_secs = Some(77);
             assert_eq!(
@@ -964,6 +1105,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -975,6 +1118,8 @@ mod tests {
             let span_kind = "";
             let span_name = "";
             let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -983,6 +1128,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -994,6 +1141,8 @@ mod tests {
             let span_kind = "client";
             let span_name = "";
             let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -1002,6 +1151,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -1013,6 +1164,8 @@ mod tests {
             let span_kind = "client";
             let span_name = "leaf_search";
             let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
@@ -1021,6 +1174,8 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
@@ -1032,6 +1187,8 @@ mod tests {
             let span_kind = "client";
             let span_name = "leaf_search";
             let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let min_span_start_timestamp_secs = Some(3);
+            let max_span_start_timestamp_secs = Some(33);
             let min_span_duration_secs = Some(7);
             let max_span_duration_secs = Some(77);
             assert_eq!(
@@ -1040,10 +1197,12 @@ mod tests {
                     span_kind,
                     span_name,
                     tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"service_name:quickwit AND span_kind:3 AND span_name:leaf_search AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_duration_secs:[7 TO 77]"#
+                r#"service_name:quickwit AND span_kind:3 AND span_name:leaf_search AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_start_timestamp_secs:[3 TO 33] AND span_duration_secs:[7 TO 77]"#
             );
         }
     }
