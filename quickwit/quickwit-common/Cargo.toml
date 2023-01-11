@@ -28,6 +28,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 warp = { workspace = true }
+utoipa = { workspace = true }
 
 [features]
 testsuite = []

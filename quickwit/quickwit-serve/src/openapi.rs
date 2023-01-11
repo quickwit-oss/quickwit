@@ -17,11 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_common::metrics::MetricsApi;
 use quickwit_config::ConfigApiSchemas;
 use quickwit_doc_mapper::DocMapperApiSchemas;
 use quickwit_indexing::IndexingApiSchemas;
 use quickwit_janitor::JanitorApiSchemas;
 use quickwit_metastore::MetastoreApiSchemas;
+use utoipa::openapi::Server;
 use utoipa::OpenApi;
 
 use crate::cluster_api::ClusterApi;
@@ -51,20 +53,19 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
                 ))
                 .build(),
         )
-        // .servers(Some(vec![Server::new("/api/v1")])) TODO: How's best to represent this for
-        // *some* routes?
         .paths(utoipa::openapi::Paths::new())
         .components(Some(utoipa::openapi::Components::new()))
         .build();
 
     // Routing
-    docs_base.merge_components_and_paths(ClusterApi::openapi());
-    docs_base.merge_components_and_paths(DeleteTaskApi::openapi());
-    docs_base.merge_components_and_paths(HealthCheckApi::openapi());
-    docs_base.merge_components_and_paths(IndexApi::openapi());
-    docs_base.merge_components_and_paths(IndexingApi::openapi());
-    docs_base.merge_components_and_paths(IngestApi::openapi());
-    docs_base.merge_components_and_paths(SearchApi::openapi());
+    docs_base.merge_components_and_paths(HealthCheckApi::openapi().with_path_prefix("/health"));
+    docs_base.merge_components_and_paths(MetricsApi::openapi().with_path_prefix("/metrics"));
+    docs_base.merge_components_and_paths(ClusterApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(DeleteTaskApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(IndexApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(IndexingApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(IngestApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(SearchApi::openapi().with_path_prefix("/api/v1"));
 
     // Schemas
     docs_base.merge_components_and_paths(MetastoreApiSchemas::openapi());
@@ -78,6 +79,8 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
 
 pub trait OpenApiMerger {
     fn merge_components_and_paths(&mut self, schema: utoipa::openapi::OpenApi);
+
+    fn with_path_prefix(self, path: &str) -> Self;
 }
 
 impl OpenApiMerger for utoipa::openapi::OpenApi {
@@ -101,5 +104,13 @@ impl OpenApiMerger for utoipa::openapi::OpenApi {
         } else {
             self.components = schema.components;
         }
+    }
+
+    fn with_path_prefix(mut self, path: &str) -> Self {
+        for details in self.paths.paths.values_mut() {
+            details.servers = Some(vec![Server::new(path)]);
+        }
+
+        self
     }
 }

@@ -66,7 +66,7 @@ fn readiness_handler(
 #[utoipa::path(
     get,
     tag = "Node Health",
-    path = "/health/livez",
+    path = "/livez",
     responses(
         (status = 200, description = "The service is live.", body = bool),
         (status = 503, description = "The service is not live.", body = bool),
@@ -102,7 +102,7 @@ async fn get_liveness(
 #[utoipa::path(
     get,
     tag = "Node Health",
-    path = "/health/readyz",
+    path = "/readyz",
     responses(
         (status = 200, description = "The service is ready.", body = bool),
         (status = 503, description = "The service is not ready.", body = bool),
