@@ -31,9 +31,8 @@ use super::{default_as_true, FieldMappingType};
 use crate::default_doc_mapper::field_mapping_type::QuickwitFieldType;
 use crate::default_doc_mapper::validate_field_mapping_name;
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, utoipa::ToSchema)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct QuickwitObjectOptions {
-    #[schema(value_type = Vec<FieldMappingEntryForSerialization>)]
     pub field_mappings: Vec<FieldMappingEntry>,
 }
 
