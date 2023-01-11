@@ -67,7 +67,7 @@ pub struct FieldMappingEntry {
 /// Property parameters which defines the way the value must be indexed.
 ///
 /// Properties are determined by the specified type, for more information
-/// please see: https://quickwit.io/docs/configuration/index-config#field-types
+/// please see: <https://quickwit.io/docs/configuration/index-config#field-types>
 #[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
 pub(crate) struct FieldMappingEntryForSerialization {
     /// Field name in the index schema.

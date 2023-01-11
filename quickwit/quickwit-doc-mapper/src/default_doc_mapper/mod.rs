@@ -36,8 +36,7 @@ pub use self::field_mapping_entry::{
     FieldMappingEntry, QuickwitJsonOptions, QuickwitNumericOptions, QuickwitTextOptions,
 };
 pub(crate) use self::field_mapping_entry::{
-    FieldMappingEntryForSerialization, IndexRecordOptionSchema,
-    QuickwitTextTokenizer,
+    FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
 };
 pub use self::field_mapping_type::FieldMappingType;
 
