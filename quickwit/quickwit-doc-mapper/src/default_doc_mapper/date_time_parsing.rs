@@ -36,13 +36,13 @@ pub(super) fn parse_date_time_str(
 ) -> Result<TantivyDateTime, String> {
     for date_time_format in date_time_formats {
         let date_time_res = match date_time_format {
-            DateTimeInputFormat::ISO8601 => {
+            DateTimeInputFormat::Iso8601 => {
                 parse_iso8601(date_time_str).map(TantivyDateTime::from_utc)
             }
-            DateTimeInputFormat::RFC2822 => {
+            DateTimeInputFormat::Rfc2822 => {
                 parse_rfc2822(date_time_str).map(TantivyDateTime::from_utc)
             }
-            DateTimeInputFormat::RCF3339 => {
+            DateTimeInputFormat::Rfc3339 => {
                 parse_rfc3339(date_time_str).map(TantivyDateTime::from_utc)
             }
             DateTimeInputFormat::Strptime(parser) => parser
@@ -209,9 +209,9 @@ mod tests {
             let date_time = parse_date_time_str(
                 date_time_str,
                 &[
-                    DateTimeInputFormat::ISO8601,
-                    DateTimeInputFormat::RFC2822,
-                    DateTimeInputFormat::RCF3339,
+                    DateTimeInputFormat::Iso8601,
+                    DateTimeInputFormat::Rfc2822,
+                    DateTimeInputFormat::Rfc3339,
                     DateTimeInputFormat::Strptime(
                         StrptimeParser::from_str("%Y-%m-%d %H:%M:%S").unwrap(),
                     ),
@@ -231,7 +231,7 @@ mod tests {
         }
         let error = parse_date_time_str(
             "foo",
-            &[DateTimeInputFormat::ISO8601, DateTimeInputFormat::RFC2822],
+            &[DateTimeInputFormat::Iso8601, DateTimeInputFormat::Rfc2822],
         )
         .unwrap_err();
         assert_eq!(
@@ -246,7 +246,7 @@ mod tests {
             let unix_ts_secs = time::OffsetDateTime::now_utc().unix_timestamp();
             let date_time = parse_date_time_int(
                 unix_ts_secs,
-                &[DateTimeInputFormat::ISO8601, DateTimeInputFormat::Timestamp],
+                &[DateTimeInputFormat::Iso8601, DateTimeInputFormat::Timestamp],
             )
             .unwrap();
             assert_eq!(date_time.into_timestamp_secs(), unix_ts_secs);
@@ -255,7 +255,7 @@ mod tests {
         {
             let error = parse_date_time_int(
                 1668730394917,
-                &[DateTimeInputFormat::ISO8601, DateTimeInputFormat::RFC2822],
+                &[DateTimeInputFormat::Iso8601, DateTimeInputFormat::Rfc2822],
             )
             .unwrap_err();
             assert_eq!(
@@ -276,8 +276,8 @@ mod tests {
             let date_time = parse_date_time_str(
                 date_time_str,
                 &[
-                    DateTimeInputFormat::ISO8601,
-                    DateTimeInputFormat::RCF3339,
+                    DateTimeInputFormat::Iso8601,
+                    DateTimeInputFormat::Rfc3339,
                     DateTimeInputFormat::Strptime(
                         StrptimeParser::from_str("%Y-%m-%d %H:%M:%S.%f").unwrap(),
                     ),
