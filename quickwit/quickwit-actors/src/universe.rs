@@ -52,7 +52,7 @@ impl Universe {
     /// Creates a universe were time is accelerated.
     ///
     /// Time is accelerated in a way to exhibit a behavior as close as possible
-    /// the what would have happened with normal time but faster.
+    /// to what would have happened with normal time but faster.
     ///
     /// The time "jumps" only happen when no actor is processing any message,
     /// running initialization or finalize.

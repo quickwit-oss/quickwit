@@ -130,7 +130,7 @@ impl SchedulerClient {
 
     /// Switch accelerated time mode for the scheduler.
     ///
-    /// The scheduler will jump in time whever there are no more `NoAdvanceInTimeGuard`.
+    /// The scheduler will jump in time whenever there are no more `NoAdvanceInTimeGuard`.
     pub fn accelerate_time(&self) {
         self.inner.accelerate_time.store(true, Ordering::Relaxed);
         self.process_time();
@@ -163,7 +163,7 @@ impl SchedulerClient {
     }
 
     // Triggers an event, telling the Scheduler to process time,
-    // check whether some scheduled event have timeout, or whether we should
+    // checks whether some scheduled events have timed out, or whether we should
     // jump forward in time.
     pub(crate) fn process_time(&self) {
         let _ = self.inner.tx.send(SchedulerMessage::ProcessTime);
@@ -238,7 +238,7 @@ impl Scheduler {
     /// - schedule a message to make sure process_time is called in time for the next event.
     fn process_time(&mut self) {
         let now = self.simulated_now();
-        // Pops all elapsed events and executesthe associated callback.
+        // Pops all elapsed events and executes the associated callback.
         while let Some(next_event_peek) = self.future_events.peek_mut() {
             if next_event_peek.0.deadline > now {
                 // The next event is out of scope.
