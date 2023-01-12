@@ -43,6 +43,7 @@ use std::ops::Range;
 pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
 pub use metastore::file_backed_metastore::FileBackedMetastore;
 pub use metastore::grpc_metastore::{GrpcMetastoreAdapter, MetastoreGrpcClient};
+pub(crate) use metastore::index_metadata::serialize::{IndexMetadataV0_4, VersionedIndexMetadata};
 #[cfg(feature = "postgres")]
 pub use metastore::postgresql_metastore::PostgresqlMetastore;
 pub use metastore::retrying_metastore::RetryingMetastore;
@@ -55,7 +56,19 @@ pub use metastore_resolver::{
 use quickwit_common::is_disjoint;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 pub use split_metadata::{Split, SplitMetadata, SplitState};
-pub(crate) use split_metadata_version::VersionedSplitMetadata;
+pub(crate) use split_metadata_version::{SplitMetadataV0_4, VersionedSplitMetadata};
+
+#[derive(utoipa::OpenApi)]
+#[openapi(components(schemas(
+    Split,
+    SplitState,
+    VersionedIndexMetadata,
+    IndexMetadataV0_4,
+    VersionedSplitMetadata,
+    SplitMetadataV0_4,
+)))]
+/// Schema used for the OpenAPI generation which are apart of this crate.
+pub struct MetastoreApiSchemas;
 
 /// Returns `true` if the split time range is included in `time_range_opt`.
 /// If `time_range_opt` is None, returns always true.

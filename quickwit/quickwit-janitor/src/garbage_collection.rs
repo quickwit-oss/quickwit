@@ -49,7 +49,7 @@ pub enum SplitDeletionError {
 }
 
 #[allow(missing_docs)]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, utoipa::ToSchema)]
 pub struct FileEntry {
     /// The file_name is a file name, within an index directory.
     pub file_name: String,

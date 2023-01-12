@@ -32,6 +32,17 @@ use warp::{Filter, Rejection, Reply};
 use crate::format::Format;
 use crate::with_arg;
 
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(
+    get_all_splits,
+    get_indexes_metadatas,
+    create_index,
+    delete_index,
+    create_source,
+    delete_source
+))]
+pub struct IndexApi;
+
 pub fn index_management_handlers(
     index_service: Arc<IndexService>,
     quickwit_config: Arc<QuickwitConfig>,
@@ -78,6 +89,18 @@ fn get_indexes_metadatas_handler(
         .map(format_response)
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexes",
+    path = "/indexes/{index_id}/splits",
+    responses(
+        (status = 200, description = "Successfully fetched all splits.", body = [Split])
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to retrieve delete tasks for."),
+    )
+)]
+/// Get All Splits
 async fn get_all_splits(
     index_id: String,
     index_service: Arc<IndexService>,
@@ -96,6 +119,16 @@ fn get_all_splits_handler(
         .map(format_response)
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexes",
+    path = "/indexes",
+    responses(
+        // We return `VersionedIndexMetadata` as it's the serialized model view.
+        (status = 200, description = "Successfully fetched all indexes.", body = [VersionedIndexMetadata])
+    ),
+)]
+/// Get Indexes Metadata
 async fn get_indexes_metadatas(
     index_service: Arc<IndexService>,
 ) -> Result<Vec<IndexMetadata>, IndexServiceError> {
@@ -125,6 +158,17 @@ fn json_body<T: DeserializeOwned + Send>(
     warp::body::content_length_limit(1024 * 1024).and(warp::body::json())
 }
 
+#[utoipa::path(
+    post,
+    tag = "Indexes",
+    path = "/indexes",
+    request_body = VersionedIndexConfig,
+    responses(
+        // We return `VersionedIndexMetadata` as it's the serialized model view.
+        (status = 200, description = "Successfully created index.", body = VersionedIndexMetadata)
+    ),
+)]
+/// Create Index
 async fn create_index(
     index_config_bytes: Bytes,
     index_service: Arc<IndexService>,
@@ -149,6 +193,19 @@ fn delete_index_handler(
         .map(format_response)
 }
 
+#[utoipa::path(
+    delete,
+    tag = "Indexes",
+    path = "indexes/{index_id}",
+    responses(
+        // We return `VersionedIndexMetadata` as it's the serialized model view.
+        (status = 200, description = "Successfully created index.", body = [FileEntry])
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to remove."),
+    )
+)]
+/// Delete Index
 async fn delete_index(
     index_id: String,
     index_service: Arc<IndexService>,
@@ -168,6 +225,20 @@ fn create_source_handler(
         .map(format_response)
 }
 
+#[utoipa::path(
+    post,
+    tag = "Sources",
+    path = "indexes/{index_id}/sources",
+    request_body = VersionedSourceConfig,
+    responses(
+        // We return `VersionedSourceConfig` as it's the serialized model view.
+        (status = 200, description = "Successfully created source.", body = VersionedSourceConfig)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to create a source for."),
+    )
+)]
+/// Create Source
 async fn create_source(
     index_id: String,
     source_config: SourceConfig,
@@ -206,6 +277,19 @@ fn delete_source_handler(
         .map(format_response)
 }
 
+#[utoipa::path(
+    delete,
+    tag = "Sources",
+    path = "indexes/{index_id}/sources/{source_id}",
+    responses(
+        (status = 200, description = "Successfully deleted source.")
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to remove the source from."),
+        ("source_id" = String, Path, description = "The source ID to remove from the index."),
+    )
+)]
+/// Delete Source
 async fn delete_source(
     index_id: String,
     source_id: String,

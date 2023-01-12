@@ -38,6 +38,7 @@ mod templating;
 
 // We export that one for backward compatibility.
 // See #2048
+use index_config::serialize::{IndexConfigV0_4, VersionedIndexConfig};
 pub use index_config::{
     build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig,
     IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
@@ -51,9 +52,36 @@ pub use source_config::{
 };
 use tracing::warn;
 
+use crate::merge_policy_config::{
+    ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
+};
 pub use crate::quickwit_config::{
     IndexerConfig, IngestApiConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH,
 };
+use crate::source_config::serialize::{SourceConfigV0_4, VersionedSourceConfig};
+
+#[derive(utoipa::OpenApi)]
+#[openapi(components(schemas(
+    IndexingResources,
+    IndexingSettings,
+    SearchSettings,
+    RetentionPolicy,
+    MergePolicyConfig,
+    DocMapping,
+    VersionedSourceConfig,
+    SourceConfigV0_4,
+    VersionedIndexConfig,
+    IndexConfigV0_4,
+    SourceParams,
+    FileSourceParams,
+    KafkaSourceParams,
+    KinesisSourceParams,
+    RegionOrEndpoint,
+    ConstWriteAmplificationMergePolicyConfig,
+    StableLogMergePolicyConfig,
+)))]
+/// Schema used for the OpenAPI generation which are apart of this crate.
+pub struct ConfigApiSchemas;
 
 fn is_false(val: &bool) -> bool {
     !*val

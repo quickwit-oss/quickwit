@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod serialize;
+pub(crate) mod serialize;
 
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
@@ -47,11 +47,19 @@ use crate::TestableForRegression;
 // This is partly a duplicate of the `DocMapper` and can
 // be viewed as a temporary hack for 0.2 release before
 // refactoring.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocMapping {
     #[serde(default)]
+    #[schema(value_type = Vec<FieldMappingEntryForSerialization>)]
+    /// The mapping of the index schema fields.
+    ///
+    /// This defines the name, type and other information about the field(s).
+    ///
+    /// Properties are determined by the specified type, for more information
+    /// please see: <https://quickwit.io/docs/configuration/index-config#field-types>
     pub field_mappings: Vec<FieldMappingEntry>,
+    #[schema(value_type = Vec<String>)]
     #[serde(default)]
     pub tag_fields: BTreeSet<String>,
     #[serde(default)]
@@ -65,19 +73,22 @@ pub struct DocMapping {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub partition_key: Option<String>,
+    #[schema(value_type = u32)]
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
     pub max_num_partitions: NonZeroU32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingResources {
+    #[schema(value_type = String, default = "2 GB")]
     #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: Byte,
     /// Sets the maximum write IO throughput in bytes/sec for the merge and delete pipelines.
     /// The IO limit is applied both to the downloader and to the merge executor.
     /// On hardware where IO is limited, this parameter can help limiting the impact of
     /// merges/deletes on indexing.
+    #[schema(value_type = String)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_merge_write_throughput: Option<Byte>,
@@ -112,13 +123,16 @@ impl Default for IndexingResources {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
+    #[schema(default = 60)]
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
+    #[schema(default = 8)]
     #[serde(default = "IndexingSettings::default_docstore_compression_level")]
     pub docstore_compression_level: i32,
+    #[schema(default = 1_000_000)]
     #[serde(default = "IndexingSettings::default_docstore_blocksize")]
     pub docstore_blocksize: usize,
     /// The merge policy aims to eventually produce mature splits that have a larger size but
@@ -177,14 +191,14 @@ impl Default for IndexingSettings {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SearchSettings {
     #[serde(default)]
     pub default_search_fields: Vec<String>,
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RetentionPolicy {
     /// Duration of time for which the splits should be retained, expressed in a human-friendly way

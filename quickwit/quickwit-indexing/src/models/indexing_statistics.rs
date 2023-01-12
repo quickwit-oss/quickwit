@@ -24,7 +24,7 @@ use serde::Serialize;
 use crate::actors::{DocProcessorCounters, IndexerCounters, PublisherCounters, UploaderCounters};
 
 /// A Struct that holds all statistical data about indexing
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, utoipa::ToSchema)]
 pub struct IndexingStatistics {
     /// Number of document processed (valid or not)
     pub num_docs: u64,

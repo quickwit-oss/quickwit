@@ -26,7 +26,7 @@ use crate::checkpoint::IndexCheckpoint;
 use crate::split_metadata::utc_now_timestamp;
 use crate::IndexMetadata;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexMetadata {
     #[serde(rename = "0.4")]
@@ -63,12 +63,15 @@ impl From<IndexMetadata> for IndexMetadataV0_4 {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub(crate) struct IndexMetadataV0_4 {
+    #[schema(value_type = VersionedIndexConfig)]
     pub index_config: IndexConfig,
+    #[schema(value_type = Object)]
     pub checkpoint: IndexCheckpoint,
     #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
+    #[schema(value_type = Vec<VersionedSourceConfig>)]
     pub sources: Vec<SourceConfig>,
 }
 

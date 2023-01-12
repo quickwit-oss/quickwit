@@ -19,4 +19,4 @@
 
 mod rest_handler;
 
-pub use self::rest_handler::index_management_handlers;
+pub use self::rest_handler::{index_management_handlers, IndexApi};

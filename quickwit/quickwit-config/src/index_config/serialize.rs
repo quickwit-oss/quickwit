@@ -30,9 +30,9 @@ use crate::{
 /// Alias for the latest serialization format.
 type IndexConfigForSerialization = IndexConfigV0_4;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
-pub(super) enum VersionedIndexConfig {
+pub(crate) enum VersionedIndexConfig {
     #[serde(rename = "0.4")]
     V0_4(IndexConfigV0_4),
 }
@@ -129,10 +129,11 @@ impl TryFrom<VersionedIndexConfig> for IndexConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct IndexConfigV0_4 {
+pub struct IndexConfigV0_4 {
     pub index_id: String,
+    #[schema(value_type = String)]
     #[serde(default)]
     pub index_uri: Option<Uri>,
     pub doc_mapping: DocMapping,

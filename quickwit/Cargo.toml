@@ -173,6 +173,7 @@ tracing-subscriber = { version = "0.3.16", features = [
 typetag = "0.2"
 ulid = "1.0"
 username = "0.2"
+utoipa = { version = "2.4.2", features = ["json"]}
 uuid = { version = "1.2", features = ["v4", "serde"] }
 warp = "0.3"
 

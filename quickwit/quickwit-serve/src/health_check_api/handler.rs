@@ -30,6 +30,10 @@ use warp::{Filter, Rejection};
 
 use crate::with_arg;
 
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(get_liveness, get_readiness))]
+pub struct HealthCheckApi;
+
 /// Health check handlers.
 pub(crate) fn health_check_handlers(
     cluster: Arc<Cluster>,
@@ -59,6 +63,16 @@ fn readiness_handler(
         .then(get_readiness)
 }
 
+#[utoipa::path(
+    get,
+    tag = "Node Health",
+    path = "/livez",
+    responses(
+        (status = 200, description = "The service is live.", body = bool),
+        (status = 503, description = "The service is not live.", body = bool),
+    ),
+)]
+/// Get Node Liveliness
 async fn get_liveness(
     indexer_service_opt: Option<Mailbox<IndexingService>>,
     janitor_service_opt: Option<Mailbox<JanitorService>>,
@@ -85,6 +99,16 @@ async fn get_liveness(
     with_status(warp::reply::json(&is_live), status_code)
 }
 
+#[utoipa::path(
+    get,
+    tag = "Node Health",
+    path = "/readyz",
+    responses(
+        (status = 200, description = "The service is ready.", body = bool),
+        (status = 503, description = "The service is not ready.", body = bool),
+    ),
+)]
+/// Get Node Readiness
 async fn get_readiness(cluster: Arc<Cluster>) -> impl warp::Reply {
     let is_ready = cluster.is_self_node_ready().await;
     let status_code = if is_ready {

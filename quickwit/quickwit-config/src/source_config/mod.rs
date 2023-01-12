@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod serialize;
+pub(crate) mod serialize;
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -136,7 +136,7 @@ impl TestableForRegression for SourceConfig {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "source_type", content = "params")]
 pub enum SourceParams {
     #[serde(rename = "file")]
@@ -169,10 +169,11 @@ impl SourceParams {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FileSourceParams {
     /// Path of the file to read. Assume stdin if None.
+    #[schema(value_type = String)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     #[serde(deserialize_with = "absolute_filepath_from_str")]
@@ -203,15 +204,17 @@ impl FileSourceParams {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct KafkaSourceParams {
     /// Name of the topic that the source consumes.
     pub topic: String,
     /// Kafka client log level. Possible values are `debug`, `info`, `warn`, and `error`.
+    #[schema(value_type = String)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_log_level: Option<String>,
     /// Kafka client configuration parameters.
+    #[schema(value_type = Object)]
     #[serde(default = "serde_json::Value::default")]
     #[serde(skip_serializing_if = "serde_json::Value::is_null")]
     pub client_params: JsonValue,
@@ -221,14 +224,14 @@ pub struct KafkaSourceParams {
     pub enable_backfill_mode: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum RegionOrEndpoint {
     Region(String),
     Endpoint(String),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(try_from = "KinesisSourceParamsInner")]
 pub struct KinesisSourceParams {
     pub stream_name: String,

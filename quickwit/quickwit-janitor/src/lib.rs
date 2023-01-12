@@ -42,6 +42,11 @@ pub use self::garbage_collection::{
 };
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 
+#[derive(utoipa::OpenApi)]
+#[openapi(components(schemas(FileEntry)))]
+/// Schema used for the OpenAPI generation which are apart of this crate.
+pub struct JanitorApiSchemas;
+
 pub async fn start_janitor_service(
     universe: &Universe,
     config: &QuickwitConfig,

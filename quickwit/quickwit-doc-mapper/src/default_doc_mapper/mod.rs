@@ -35,6 +35,9 @@ pub use self::default_mapper_builder::{DefaultDocMapperBuilder, ModeType};
 pub use self::field_mapping_entry::{
     FieldMappingEntry, QuickwitJsonOptions, QuickwitNumericOptions, QuickwitTextOptions,
 };
+pub(crate) use self::field_mapping_entry::{
+    FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
+};
 pub use self::field_mapping_type::FieldMappingType;
 
 /// Regular expression validating a field mapping name.

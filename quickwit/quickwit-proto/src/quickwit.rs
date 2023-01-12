@@ -1,4 +1,4 @@
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchRequest {
@@ -39,7 +39,7 @@ pub struct SearchRequest {
     #[prost(string, repeated, tag = "12")]
     pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
@@ -60,7 +60,7 @@ pub struct SearchResponse {
     #[prost(string, optional, tag = "5")]
     pub aggregation: ::core::option::Option<::prost::alloc::string::String>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitSearchError {
@@ -74,7 +74,7 @@ pub struct SplitSearchError {
     #[prost(bool, tag = "3")]
     pub retryable_error: bool,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequest {
@@ -94,7 +94,7 @@ pub struct LeafSearchRequest {
     #[prost(string, tag = "6")]
     pub index_uri: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitIdAndFooterOffsets {
@@ -122,7 +122,7 @@ pub struct SplitIdAndFooterOffsets {
 /// / flattened by concatenating the path to the root.
 /// /
 /// / See  `quickwit_search::convert_leaf_hit`
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafHit {
@@ -136,7 +136,7 @@ pub struct LeafHit {
     #[prost(string, optional, tag = "3")]
     pub leaf_snippet_json: ::core::option::Option<::prost::alloc::string::String>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hit {
@@ -154,7 +154,7 @@ pub struct Hit {
 /// Instead, it holds a document_uri which is enough information to
 /// go and fetch the actual document data, by performing a `get_doc(...)`
 /// request.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {
@@ -180,7 +180,7 @@ pub struct PartialHit {
     #[prost(uint32, tag = "4")]
     pub doc_id: u32,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchResponse {
@@ -203,7 +203,7 @@ pub struct LeafSearchResponse {
         ::prost::alloc::string::String,
     >,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsRequest {
@@ -230,7 +230,7 @@ pub struct FetchDocsRequest {
     #[prost(string, tag = "6")]
     pub doc_mapper: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsResponse {
@@ -238,7 +238,7 @@ pub struct FetchDocsResponse {
     #[prost(message, repeated, tag = "1")]
     pub hits: ::prost::alloc::vec::Vec<LeafHit>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchStreamRequest {
@@ -269,7 +269,7 @@ pub struct SearchStreamRequest {
     #[prost(string, repeated, tag = "10")]
     pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchStreamRequest {
@@ -289,7 +289,7 @@ pub struct LeafSearchStreamRequest {
     #[prost(string, tag = "6")]
     pub index_uri: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchStreamResponse {
@@ -300,7 +300,7 @@ pub struct LeafSearchStreamResponse {
     #[prost(string, tag = "2")]
     pub split_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SortOrder {
@@ -331,7 +331,7 @@ impl SortOrder {
         }
     }
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

@@ -31,6 +31,18 @@ use warp::{reject, Filter, Rejection};
 use crate::format::FormatError;
 use crate::{require, Format};
 
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(ingest, tail_endpoint, elastic_ingest,))]
+pub struct IngestApi;
+
+#[derive(utoipa::OpenApi)]
+#[openapi(components(schemas(
+    quickwit_proto::ingest_api::DocBatch,
+    quickwit_proto::ingest_api::FetchResponse,
+    quickwit_proto::ingest_api::IngestResponse,
+)))]
+pub struct IngestApiSchemas;
+
 #[derive(Debug, Error)]
 #[error("Body is not utf-8.")]
 struct InvalidUtf8;
@@ -110,6 +122,19 @@ fn lines(body: &str) -> impl Iterator<Item = &str> {
     })
 }
 
+#[utoipa::path(
+    post,
+    tag = "Ingest",
+    path = "{index_id}/ingest",
+    request_body(content = String, description = "Documents to ingest in NDJSON format and limited to 10MB", content_type = "application/json"),
+    responses(
+        (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to add docs to."),
+    )
+)]
+/// Ingest documents
 async fn ingest(
     index_id: String,
     payload: String,
@@ -144,6 +169,19 @@ fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone 
     warp::path!(String / "fetch").and(warp::get())
 }
 
+#[utoipa::path(
+    post,
+    tag = "Ingest",
+    path = "{index_id}/fetch",
+    request_body = String,
+    responses(
+        (status = 200, description = "Successfully fetched documents.", body = FetchResponse)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to tail."),
+    )
+)]
+/// Tail
 async fn tail_endpoint(
     index_id: String,
     ingest_api_service: Mailbox<IngestApiService>,
@@ -176,6 +214,16 @@ pub fn elastic_bulk_handler(
         .and_then(elastic_ingest)
 }
 
+#[utoipa::path(
+    post,
+    tag = "Ingest",
+    path = "/_bulk",
+    request_body(content = String, description = "Elasticsearch compatible bulk resquest body limited to 10MB", content_type = "application/json"),
+    responses(
+        (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
+    ),
+)]
+/// Elastic Bulk Ingest
 async fn elastic_ingest(
     payload: String,
     ingest_api_mailbox: Mailbox<IngestApiService>,

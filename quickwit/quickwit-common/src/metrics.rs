@@ -23,6 +23,15 @@ pub use prometheus::{
     IntCounterVec as PrometheusIntCounterVec, IntGauge, IntGaugeVec as PrometheusIntGaugeVec,
 };
 
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(metrics_handler))]
+/// Endpoints which are weirdly tied to another crate with no
+/// other bits of information attached.
+///
+/// If a crate plans to encompass different schemas, handlers, etc...
+/// Then it should have it's own specific API group.
+pub struct MetricsApi;
+
 pub struct HistogramVec<const N: usize> {
     underlying: PrometheusHistogramVec,
 }
@@ -113,6 +122,17 @@ pub fn new_histogram_vec<const N: usize>(
     HistogramVec { underlying }
 }
 
+#[utoipa::path(
+    get,
+    tag = "Get Metrics",
+    path = "/",
+    responses(
+        (status = 200, description = "Successfully fetched metrics.", body = String),
+    ),
+)]
+/// Get Node Metrics
+///
+/// These are in the form of prometheus metrics.
 pub fn metrics_handler() -> impl warp::Reply {
     let metric_families = prometheus::gather();
     let mut buffer = Vec::new();

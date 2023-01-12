@@ -31,6 +31,7 @@ time-fmt = "0.3.8"
 ouroboros = "0.15.5"
 tracing = { workspace = true }
 typetag = { workspace = true }
+utoipa = { workspace = true }
 
 quickwit-proto = { workspace = true }
 

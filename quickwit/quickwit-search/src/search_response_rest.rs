@@ -28,13 +28,15 @@ use crate::error::SearchError;
 
 /// SearchResponseRest represents the response returned by the REST search API
 /// and is meant to be serialized into JSON.
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SearchResponseRest {
     /// Overall number of documents matching the query.
     pub num_hits: u64,
+    #[schema(value_type = Vec<Object>)]
     /// List of hits returned.
     pub hits: Vec<JsonValue>,
     /// List of snippets
+    #[schema(value_type = Vec<Object>)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snippets: Option<Vec<JsonValue>>,
     /// Elapsed time.
@@ -42,6 +44,7 @@ pub struct SearchResponseRest {
     /// Search errors.
     pub errors: Vec<String>,
     /// Aggregations.
+    #[schema(value_type = Object)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aggregations: Option<JsonValue>,
 }
