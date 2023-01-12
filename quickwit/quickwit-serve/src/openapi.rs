@@ -31,7 +31,7 @@ use crate::delete_task_api::DeleteTaskApi;
 use crate::health_check_api::HealthCheckApi;
 use crate::index_api::IndexApi;
 use crate::indexing_api::IndexingApi;
-use crate::ingest_api::IngestApi;
+use crate::ingest_api::{IngestApi, IngestApiSchemas};
 use crate::search_api::SearchApi;
 
 /// Builds the OpenApi docs structure using the registered/merged docs.
@@ -73,6 +73,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base.merge_components_and_paths(JanitorApiSchemas::openapi());
     docs_base.merge_components_and_paths(DocMapperApiSchemas::openapi());
     docs_base.merge_components_and_paths(IndexingApiSchemas::openapi());
+    docs_base.merge_components_and_paths(IngestApiSchemas::openapi());
 
     docs_base
 }

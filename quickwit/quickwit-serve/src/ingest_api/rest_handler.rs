@@ -35,6 +35,14 @@ use crate::{require, Format};
 #[openapi(paths(ingest, tail_endpoint, elastic_ingest,))]
 pub struct IngestApi;
 
+#[derive(utoipa::OpenApi)]
+#[openapi(components(schemas(
+    quickwit_proto::ingest_api::DocBatch,
+    quickwit_proto::ingest_api::FetchResponse,
+    quickwit_proto::ingest_api::IngestResponse,
+)))]
+pub struct IngestApiSchemas;
+
 #[derive(Debug, Error)]
 #[error("Body is not utf-8.")]
 struct InvalidUtf8;
@@ -118,9 +126,9 @@ fn lines(body: &str) -> impl Iterator<Item = &str> {
     post,
     tag = "Ingest",
     path = "{index_id}/ingest",
-    request_body = String,
+    request_body(content = String, description = "Documents to ingest in NDJSON format and limited to 10MB", content_type = "application/json"),
     responses(
-        (status = 200, description = "Successfully ingested documents.", body = Object)
+        (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
     ),
     params(
         ("index_id" = String, Path, description = "The index ID to add docs to."),
@@ -167,7 +175,7 @@ fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone 
     path = "{index_id}/fetch",
     request_body = String,
     responses(
-        (status = 200, description = "Successfully ingested documents.", body = Object)
+        (status = 200, description = "Successfully fetched documents.", body = FetchResponse)
     ),
     params(
         ("index_id" = String, Path, description = "The index ID to tail."),
@@ -210,9 +218,9 @@ pub fn elastic_bulk_handler(
     post,
     tag = "Ingest",
     path = "/_bulk",
-    request_body = String,
+    request_body(content = String, description = "Elasticsearch compatible bulk resquest body limited to 10MB", content_type = "application/json"),
     responses(
-        (status = 200, description = "Successfully ingested documents.", body = Object)
+        (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
     ),
 )]
 /// Elastic Bulk Ingest

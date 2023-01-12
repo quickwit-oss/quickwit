@@ -55,7 +55,7 @@ impl Default for ConstWriteAmplificationMergePolicyConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StableLogMergePolicyConfig {
     /// Number of docs below which all splits are considered as belonging to the same level.
