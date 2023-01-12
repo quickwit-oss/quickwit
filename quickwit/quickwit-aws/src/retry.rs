@@ -162,7 +162,7 @@ mod tests {
     #[async_trait]
     impl super::MockableTime for SchedulerClient {
         async fn sleep(&self, duration: Duration) {
-            SchedulerClient::sleep(&self, duration).await;
+            SchedulerClient::sleep(self, duration).await;
         }
     }
 
