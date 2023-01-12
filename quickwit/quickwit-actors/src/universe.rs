@@ -95,6 +95,11 @@ impl Universe {
         self.spawn_ctx.kill_switch.kill();
     }
 
+    /// This function acts as a drop-in replacement of
+    /// `tokio::time::sleep`.
+    ///
+    /// It can however be accelerated when using a time-accelerated
+    /// Universe.
     pub async fn sleep(&self, duration: Duration) {
         self.spawn_ctx.scheduler_client.sleep(duration).await;
     }
