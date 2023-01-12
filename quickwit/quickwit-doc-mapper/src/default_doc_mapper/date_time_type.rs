@@ -97,9 +97,9 @@ impl QuickwitDateTimeOptions {
     pub(crate) fn format_to_json(&self, date_time: DateTime) -> Result<JsonValue, String> {
         let date = date_time.into_utc();
         let format_result = match &self.output_format {
-            DateTimeOutputFormat::RCF3339 => date.format(&Rfc3339).map(JsonValue::String),
-            DateTimeOutputFormat::ISO8601 => date.format(&Iso8601::DEFAULT).map(JsonValue::String),
-            DateTimeOutputFormat::RFC2822 => date.format(&Rfc2822).map(JsonValue::String),
+            DateTimeOutputFormat::Rfc3339 => date.format(&Rfc3339).map(JsonValue::String),
+            DateTimeOutputFormat::Iso8601 => date.format(&Iso8601::DEFAULT).map(JsonValue::String),
+            DateTimeOutputFormat::Rfc2822 => date.format(&Rfc2822).map(JsonValue::String),
             DateTimeOutputFormat::Strptime(strftime_parser) => strftime_parser
                 .format_date_time(&date)
                 .map(JsonValue::String),
@@ -123,7 +123,7 @@ pub struct InputFormats(Vec<DateTimeInputFormat>);
 impl Default for InputFormats {
     fn default() -> Self {
         Self(vec![
-            DateTimeInputFormat::RCF3339,
+            DateTimeInputFormat::Rfc3339,
             DateTimeInputFormat::Timestamp,
         ])
     }
@@ -179,11 +179,11 @@ mod tests {
             }
             _ => panic!("Expected a date time field mapping."),
         };
-        let expected_input_formats = InputFormats(vec![DateTimeInputFormat::RCF3339]);
+        let expected_input_formats = InputFormats(vec![DateTimeInputFormat::Rfc3339]);
         let expected_date_time_options = QuickwitDateTimeOptions {
             description: Some("When the record was last updated.".to_string()),
             input_formats: expected_input_formats,
-            output_format: DateTimeOutputFormat::RCF3339,
+            output_format: DateTimeOutputFormat::Rfc3339,
             precision: DateTimePrecision::Milliseconds,
             indexed: true,
             fast: true,
@@ -221,7 +221,7 @@ mod tests {
             }
             _ => panic!("Expected a date time field mapping."),
         };
-        let expected_input_formats = InputFormats(vec![DateTimeInputFormat::RCF3339]);
+        let expected_input_formats = InputFormats(vec![DateTimeInputFormat::Rfc3339]);
         let expected_date_time_options = QuickwitDateTimeOptions {
             description: Some("When the record was last updated.".to_string()),
             input_formats: expected_input_formats,
@@ -240,11 +240,11 @@ mod tests {
         assert_eq!(date_time_options, QuickwitDateTimeOptions::default());
         assert_eq!(
             date_time_options.input_formats.0,
-            &[DateTimeInputFormat::RCF3339, DateTimeInputFormat::Timestamp]
+            &[DateTimeInputFormat::Rfc3339, DateTimeInputFormat::Timestamp]
         );
         assert_eq!(
             date_time_options.output_format,
-            DateTimeOutputFormat::RCF3339
+            DateTimeOutputFormat::Rfc3339
         );
         assert_eq!(date_time_options.precision, DateTimePrecision::Seconds);
         assert!(date_time_options.indexed);
@@ -314,7 +314,7 @@ mod tests {
             let input_formats: InputFormats = serde_json::from_str(input_formats_json).unwrap();
             assert_eq!(
                 input_formats.0,
-                &[DateTimeInputFormat::RCF3339, DateTimeInputFormat::Timestamp]
+                &[DateTimeInputFormat::Rfc3339, DateTimeInputFormat::Timestamp]
             );
         }
         {
@@ -322,7 +322,7 @@ mod tests {
             let input_formats: InputFormats = serde_json::from_str(input_formats_json).unwrap();
             assert_eq!(
                 input_formats.0,
-                &[DateTimeInputFormat::RCF3339, DateTimeInputFormat::Timestamp]
+                &[DateTimeInputFormat::Rfc3339, DateTimeInputFormat::Timestamp]
             );
         }
     }
@@ -342,7 +342,7 @@ mod tests {
     fn test_date_time_options_parse_json() {
         let date_time_options = QuickwitDateTimeOptions {
             input_formats: InputFormats(vec![
-                DateTimeInputFormat::RCF3339,
+                DateTimeInputFormat::Rfc3339,
                 DateTimeInputFormat::Timestamp,
             ]),
             ..Default::default()
