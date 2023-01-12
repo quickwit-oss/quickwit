@@ -36,9 +36,7 @@ pub struct PhysicalIndexingPlan {
 }
 
 impl PhysicalIndexingPlan {
-    /// Creates a [`PhysicalIndexingPlan`] from a non empty list of node IDs.
-    pub fn new(node_ids: Vec<String>) -> Self {
-        assert!(!node_ids.is_empty());
+    fn new(node_ids: Vec<String>) -> Self {
         let indexing_tasks_per_indexer = node_ids
             .into_iter()
             .map(|node_id| (node_id, Vec::new()))
@@ -48,21 +46,19 @@ impl PhysicalIndexingPlan {
         }
     }
 
-    /// Adds the indexing task to the list of tasks assigned to the given node ID.
-    pub fn assign_indexing_task(&mut self, node_id: &String, indexing_task: IndexingTask) {
-        let node_indexing_tasks = self
-            .indexing_tasks_per_node_id
-            .get_mut(node_id)
-            .expect("The node must always be present.");
-        node_indexing_tasks.push(indexing_task);
-    }
-
     /// Returns the number of indexing tasks for the given node ID.
-    pub fn num_indexing_tasks_for_node(&self, node_id: &String) -> usize {
+    pub fn num_indexing_tasks_for_node(&self, node_id: &str) -> usize {
         self.indexing_tasks_per_node_id
             .get(node_id)
             .map(|tasks| tasks.len())
             .unwrap_or(0)
+    }
+
+    pub fn assign_indexing_task(&mut self, node_id: String, indexing_task: IndexingTask) {
+        self.indexing_tasks_per_node_id
+            .entry(node_id)
+            .or_insert_with(Vec::new)
+            .push(indexing_task);
     }
 
     /// Returns the number of indexing tasks for the given node ID, index ID and source ID.
@@ -83,10 +79,12 @@ impl PhysicalIndexingPlan {
         &self.indexing_tasks_per_node_id
     }
 
-    /// Returns the mean number of indexing tasks per node.
+    /// Returns the mean number of indexing tasks per node. It returns 0 if there is no node.
     pub fn num_indexing_tasks_mean_per_node(&self) -> f32 {
         let num_nodes = self.indexing_tasks_per_node_id.len();
-        // `num_indexers > 0`, an assert is made when calling `new` method.
+        if num_nodes == 0 {
+            return 0f32;
+        }
         self.num_indexing_tasks() as f32 / num_nodes as f32
     }
 
@@ -121,7 +119,7 @@ impl PhysicalIndexingPlan {
 
 #[derive(Debug)]
 struct NodeScore<'a> {
-    pub node_id: &'a String,
+    pub node_id: &'a str,
     pub score: f32,
 }
 
@@ -207,7 +205,7 @@ pub(crate) fn build_physical_indexing_plan(
             .next()
             .expect("There is always at least one candidate");
 
-        plan.assign_indexing_task(best_node_score.node_id, indexing_task);
+        plan.assign_indexing_task(best_node_score.node_id.to_string(), indexing_task);
     }
 
     plan
@@ -239,7 +237,7 @@ fn select_node_candidates<'a>(
 /// `score = indexing_tasks_per_node_mean - num_indexing_tasks_for_given_node`.
 /// The lower the number of tasks, the higher the score will be.
 // TODO: introduce other criteria.
-fn compute_node_score(node_id: &String, physical_plan: &PhysicalIndexingPlan) -> f32 {
+fn compute_node_score(node_id: &str, physical_plan: &PhysicalIndexingPlan) -> f32 {
     physical_plan.num_indexing_tasks_mean_per_node()
         - physical_plan.num_indexing_tasks_for_node(node_id) as f32
 }

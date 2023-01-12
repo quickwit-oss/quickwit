@@ -27,13 +27,12 @@ use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
-use chitchat::transport::ChannelTransport;
 use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
-use quickwit_cluster::create_cluster_for_test;
+use quickwit_cluster::create_fake_cluster_for_cli;
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
@@ -922,8 +921,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     // The indexing service needs to update its cluster chitchat state so that the control plane is
     // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
     // and avoid impacting potential control plane running on the cluster.
-    let transport = ChannelTransport::default();
-    let fake_cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, false).await?;
+    let fake_cluster = create_fake_cluster_for_cli().await?;
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
@@ -1055,8 +1053,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     // The indexing service needs to update its cluster chitchat state so that the control plane is
     // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
     // and avoid impacting potential control plane running on the cluster.
-    let transport = ChannelTransport::default();
-    let fake_cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, false).await?;
+    let fake_cluster = create_fake_cluster_for_cli().await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&config.metastore_uri)

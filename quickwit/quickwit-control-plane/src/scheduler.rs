@@ -132,11 +132,22 @@ impl IndexingScheduler {
     }
 
     async fn schedule_indexing_plan(&mut self) -> anyhow::Result<()> {
-        let indexers = self.get_indexers_from_cluster_state().await;
+        let indexers: Vec<ClusterMember> = self.get_indexers_from_cluster_state().await;
         if indexers.is_empty() {
             warn!("No indexer available, cannot build a physical indexing plan.");
             return Ok(());
         };
+        let source_configs: HashMap<IndexSourceId, SourceConfig> =
+            self.fetch_source_configs().await?;
+        let indexing_tasks = build_indexing_plan(&indexers, &source_configs);
+        let new_physical_plan =
+            build_physical_indexing_plan(&indexers, &source_configs, indexing_tasks);
+        self.apply_physical_indexing_plan(&indexers, new_physical_plan)
+            .await;
+        Ok(())
+    }
+
+    async fn fetch_source_configs(&self) -> anyhow::Result<HashMap<IndexSourceId, SourceConfig>> {
         let indexes_metadatas = self.metastore.list_indexes_metadatas().await?;
         let source_configs: HashMap<IndexSourceId, SourceConfig> = indexes_metadatas
             .into_iter()
@@ -155,12 +166,7 @@ impl IndexingScheduler {
                     })
             })
             .collect();
-        let indexing_tasks = build_indexing_plan(&indexers, &source_configs);
-        let new_physical_plan =
-            build_physical_indexing_plan(&indexers, &source_configs, indexing_tasks);
-        self.apply_physical_indexing_plan(&indexers, new_physical_plan)
-            .await;
-        Ok(())
+        Ok(source_configs)
     }
 
     /// Checks if the last applied plan corresponds to the running indexing tasks present in the
@@ -197,6 +203,9 @@ impl IndexingScheduler {
                 )
             })
             .collect();
+        // TODO(fmassot): in the case where we have the same set of nodes in the two plans, a
+        // rescheduling is not needed, we probably should just reapply the same plan on the
+        // indexers.
         if !are_indexing_plans_equal(
             &running_indexing_tasks_by_node_id,
             last_applied_plan.indexing_tasks_per_node(),
@@ -222,7 +231,7 @@ impl IndexingScheduler {
         new_physical_plan: PhysicalIndexingPlan,
     ) {
         info!("Apply physical indexing plan: {:?}", new_physical_plan);
-        for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_node().iter() {
+        for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_node() {
             let indexer = indexers
                 .iter()
                 .find(|indexer| &indexer.node_id == node_id)
@@ -313,20 +322,24 @@ impl Handler<RefreshPlanLoop> for IndexingScheduler {
     }
 }
 
-/// Returns true if equal, if not, logs the difference between the plans.
-/// The plans are considered equal if they have the same node IDs and if
-/// each node has the same running tasks.
+/// Compares the `running_plan` retrieved from the chitchat state and
+/// the last plan applied by the scheduler and returns
+/// - true if plans are equal. Plans are considered equal if they have the same node IDs and if each
+///   node has the same running tasks.
+/// - false if not and logs the difference between plans.
 fn are_indexing_plans_equal(
     running_plan: &HashMap<String, Vec<IndexingTask>>,
     last_applied_plan: &HashMap<String, Vec<IndexingTask>>,
 ) -> bool {
     let mut plans_are_equal = true;
     // Compare node IDs with at least one task.
-    let running_node_ids: HashSet<&String> =
-        running_plan.iter().map(|(node_id, _)| node_id).collect();
-    let planned_node_ids: HashSet<&String> = last_applied_plan
+    let running_node_ids: HashSet<&str> = running_plan
         .iter()
-        .map(|(node_id, _)| node_id)
+        .map(|(node_id, _)| node_id.as_str())
+        .collect();
+    let planned_node_ids: HashSet<&str> = last_applied_plan
+        .iter()
+        .map(|(node_id, _)| node_id.as_str())
         .collect();
     let common_node_ids = running_node_ids.intersection(&planned_node_ids);
     let missing_planned_node_ids = planned_node_ids.difference(&running_node_ids).collect_vec();
@@ -336,12 +349,13 @@ fn are_indexing_plans_equal(
         plans_are_equal = false;
         let running_tasks = running_plan
             .get(*unplanned_node_id)
-            .expect("The node ID must be the HashMap.");
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         if running_tasks.is_empty() {
             // An new indexer may have joined the cluster.
-            warn!("The indexer `{unplanned_node_id}` is not part of the last applied plan.")
+            info!("The indexer `{unplanned_node_id}` is not part of the last applied plan.")
         } else {
-            warn!(
+            info!(
                 "The indexer `{unplanned_node_id}`, which is not part of the last applied plan, \
                  has some running tasks: {running_tasks:?}."
             );
@@ -353,8 +367,9 @@ fn are_indexing_plans_equal(
         plans_are_equal = false;
         let planned_tasks = last_applied_plan
             .get(*missing_planned_node_id)
-            .expect("The node ID must be the HashMap.");
-        warn!(
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        info!(
             "The indexer `{missing_planned_node_id}` is not part of the the running plan, none of \
              his tasks are running: {planned_tasks:?}."
         );
@@ -364,27 +379,25 @@ fn are_indexing_plans_equal(
     for common_node_id in common_node_ids {
         let running_tasks: HashSet<_> = running_plan
             .get(*common_node_id)
-            .expect("The node ID must be the HashMap.")
-            .iter()
-            .collect();
+            .map(|tasks| HashSet::from_iter(tasks.iter()))
+            .unwrap_or_default();
         let desired_tasks: HashSet<_> = last_applied_plan
             .get(*common_node_id)
-            .expect("The node ID must be the HashMap.")
-            .iter()
-            .collect();
+            .map(|tasks| HashSet::from_iter(tasks.iter()))
+            .unwrap_or_default();
         let missing_desired_tasks = desired_tasks.difference(&running_tasks).collect_vec();
         let non_desired_tasks = running_tasks.difference(&desired_tasks).collect_vec();
 
         if !missing_desired_tasks.is_empty() {
             plans_are_equal = false;
-            warn!(
+            info!(
                 "Indexer `{common_node_id}` does not run the desired indexing tasks: \
                  `{missing_desired_tasks:?}`"
             );
         }
         if !non_desired_tasks.is_empty() {
             plans_are_equal = false;
-            warn!(
+            info!(
                 "Indexer `{common_node_id}` is running non desired indexing tasks: \
                  `{non_desired_tasks:?}`"
             );

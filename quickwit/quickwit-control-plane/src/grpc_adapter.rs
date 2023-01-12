@@ -44,7 +44,7 @@ impl grpc::ControlPlaneService for GrpcControlPlaneAdapter {
         let index_event_request = request.into_inner();
         let create_index_reply = self
             .0
-            .send_message(index_event_request)
+            .ask(index_event_request)
             .await
             .map(|_| NotifyIndexChangeResponse {})
             .map_err(|send_error| {

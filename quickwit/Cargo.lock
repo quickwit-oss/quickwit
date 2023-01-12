@@ -4023,7 +4023,6 @@ dependencies = [
  "async-trait",
  "atty",
  "byte-unit",
- "chitchat",
  "clap 3.1.18",
  "colored",
  "console-subscriber",
