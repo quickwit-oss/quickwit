@@ -49,6 +49,20 @@ impl Universe {
         }
     }
 
+    /// Creates a universe were time is accelerated.
+    ///
+    /// Time is accelerated in a way to exhibit a behavior as close as possible
+    /// to what would have happened with normal time but faster.
+    ///
+    /// The time "jumps" only happen when no actor is processing any message,
+    /// running initialization or finalize.
+    #[cfg(any(tests, feature = "testsuite"))]
+    pub fn with_accelerated_time() -> Universe {
+        let universe = Universe::new();
+        universe.spawn_ctx().scheduler_client.accelerate_time();
+        universe
+    }
+
     pub fn spawn_ctx(&self) -> &SpawnContext {
         &self.spawn_ctx
     }
@@ -81,17 +95,13 @@ impl Universe {
         self.spawn_ctx.kill_switch.kill();
     }
 
-    /// Simulate advancing the time for unit tests.
+    /// This function acts as a drop-in replacement of
+    /// `tokio::time::sleep`.
     ///
-    /// This is smarter than just mocking a clock.
-    /// As long as everything is happening in actors handlers, initialize
-    /// or finalize methods, the result should be rigorously the same as
-    /// if we waited.
-    pub async fn simulate_time_shift(&self, duration: Duration) {
-        self.spawn_ctx
-            .scheduler_client
-            .simulate_sleep(duration)
-            .await;
+    /// It can however be accelerated when using a time-accelerated
+    /// Universe.
+    pub async fn sleep(&self, duration: Duration) {
+        self.spawn_ctx.scheduler_client.sleep(duration).await;
     }
 
     pub fn spawn_builder<A: Actor>(&self) -> SpawnBuilder<A> {
@@ -160,12 +170,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_schedule_for_actor() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let actor_with_schedule = CountingMinutesActor::default();
         let (_maibox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
         let count_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(count_after_initialization, 1);
-        universe.simulate_time_shift(Duration::from_secs(200)).await;
+        universe.sleep(Duration::from_secs(200)).await;
         let count_after_advance_time = handler.process_pending_and_observe().await.state;
         assert_eq!(count_after_advance_time, 4);
     }

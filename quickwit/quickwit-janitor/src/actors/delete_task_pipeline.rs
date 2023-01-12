@@ -377,14 +377,14 @@ mod tests {
             data_dir_path,
             4,
         );
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
 
         let (pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         // Insure that the message sent by initialize method is processed.
         let _ = pipeline_handler.process_pending_and_observe().await.state;
         // Pipeline will first fail and we need to wait a HEARTBEAT * 2 for the pipeline state to be
         // updated.
-        universe.simulate_time_shift(HEARTBEAT * 2).await;
+        universe.sleep(HEARTBEAT * 2).await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
         assert_eq!(pipeline_state.delete_task_planner.num_errors, 1);
         assert_eq!(pipeline_state.downloader.num_errors, 0);
@@ -392,9 +392,8 @@ mod tests {
         assert_eq!(pipeline_state.packager.num_errors, 0);
         assert_eq!(pipeline_state.uploader.num_errors, 0);
         assert_eq!(pipeline_state.publisher.num_errors, 0);
-        let _ = pipeline_mailbox.send_message(GracefulShutdown).await;
-        // Time shifting to speed up the test.
-        universe.simulate_time_shift(HEARTBEAT * 10).await;
+        let _ = pipeline_mailbox.ask(GracefulShutdown).await;
+
         let splits = metastore.list_all_splits(index_id).await?;
         assert_eq!(splits.len(), 2);
         let published_split = splits
@@ -448,7 +447,7 @@ mod tests {
             data_dir_path,
             4,
         );
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
 
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         pipeline_handler.quit().await;

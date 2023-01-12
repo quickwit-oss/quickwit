@@ -416,7 +416,7 @@ mod tests {
     #[tokio::test]
     async fn test_packager_simple() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (mailbox, inbox) = universe.create_test_mailbox();
         let indexed_split = make_indexed_split_for_test(&[1628203589, 1628203640])?;
         let tag_fields = get_tag_fields(

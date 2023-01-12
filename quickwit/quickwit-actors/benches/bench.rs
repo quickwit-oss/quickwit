@@ -57,7 +57,7 @@ impl<const YIELD_AFTER_EACH_MESSAGE: bool> Handler<AddMessage>
 }
 
 async fn actor_bench_code<const YIELD_AFTER_EACH_MESSAGE: bool>(num_messages: usize) {
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let actor: DoNothingActor<YIELD_AFTER_EACH_MESSAGE> = DoNothingActor::default();
     let (mailbox, handle) = universe.spawn_builder().spawn(actor);
     for _ in 0..num_messages {

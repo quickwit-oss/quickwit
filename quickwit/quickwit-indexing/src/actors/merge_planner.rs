@@ -336,7 +336,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_with_stable_custom_merge_policy() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
             universe.create_test_mailbox();
         let pipeline_id = IndexingPipelineId {
@@ -420,7 +420,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_priority() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
             universe.create_test_mailbox();
         let pipeline_id = IndexingPipelineId {
@@ -469,7 +469,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_priority_only_queue_up_to_capacity() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) = universe
             .spawn_ctx()
             .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
@@ -496,7 +496,7 @@ mod tests {
             merge_policy,
             merge_split_downloader_mailbox,
         );
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (merge_planner_mailbox, _) = universe.spawn_builder().spawn(merge_planner);
         tokio::task::spawn(async move {
             // Sending 200 splits offering 100 split opportunities

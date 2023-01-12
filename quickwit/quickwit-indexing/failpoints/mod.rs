@@ -216,7 +216,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     // time to time a kill switch activation because the ControlledDirectory did not
     // do any write during a HEARTBEAT... Before removing the protect zone, we need
     // to investigate this instability. Then this test will finally be really helpful.
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let doc_mapper_yaml = r#"
         field_mappings:
           - name: body

@@ -191,7 +191,7 @@ mod tests {
     #[tokio::test]
     async fn test_registry() {
         let test_actor = PingReceiverActor::default();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (_mailbox, _handle) = universe.spawn_builder().spawn(test_actor);
         let _actor_mailbox = universe.get_one::<PingReceiverActor>().unwrap();
     }
@@ -199,7 +199,7 @@ mod tests {
     #[tokio::test]
     async fn test_registry_killed_actor() {
         let test_actor = PingReceiverActor::default();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (_mailbox, handle) = universe.spawn_builder().spawn(test_actor);
         handle.kill().await;
         assert!(universe.get_one::<PingReceiverActor>().is_none());
@@ -208,7 +208,7 @@ mod tests {
     #[tokio::test]
     async fn test_registry_last_mailbox_dropped_actor() {
         let test_actor = PingReceiverActor::default();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (mailbox, handle) = universe.spawn_builder().spawn(test_actor);
         drop(mailbox);
         handle.join().await;
@@ -218,7 +218,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_actor_states() {
         let test_actor = PingReceiverActor::default();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (_mailbox, _handle) = universe.spawn_builder().spawn(test_actor);
         let obs = universe.observe(Duration::from_millis(1000)).await;
         assert_eq!(obs.len(), 1);
