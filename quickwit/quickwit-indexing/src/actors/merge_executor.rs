@@ -531,7 +531,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -651,7 +651,7 @@ mod tests {
         result_docs: Vec<JsonValue>,
     ) -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: index_id.to_string(),
             node_id: "unknown".to_string(),

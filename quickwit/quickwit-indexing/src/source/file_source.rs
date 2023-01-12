@@ -182,7 +182,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let params = FileSourceParams::file("data/test_corpus.json");
 
@@ -231,7 +231,7 @@ mod tests {
     #[tokio::test]
     async fn test_file_source_several_batch() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         use tempfile::NamedTempFile;
         let mut temp_file = NamedTempFile::new()?;
@@ -316,7 +316,7 @@ mod tests {
     #[tokio::test]
     async fn test_file_source_resume_from_checkpoint() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         use tempfile::NamedTempFile;
         let mut temp_file = NamedTempFile::new()?;

@@ -418,7 +418,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_kinesis_source() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let (kinesis_client, stream_name) = setup("test-kinesis-source", 3).await.unwrap();
         let params = KinesisSourceParams {

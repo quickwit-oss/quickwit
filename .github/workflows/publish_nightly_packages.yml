@@ -6,7 +6,20 @@ on:
     - cron: "0 5 * * *"
 
 jobs:
-  build-binaries:
+  build-macos-binaries:
+    name: Build ${{ matrix.target }}
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [x86_64-apple-darwin, aarch64-apple-darwin]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/cargo-build-macos-binary
+        with:
+          target: ${{ matrix.target }}
+          version: nightly
+          token: ${{ secrets.GITHUB_TOKEN }}
+  build-linux-binaries:
     strategy:
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
@@ -14,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: ./.github/actions/build-binary
+      - uses: ./.github/actions/cross-build-binary
         with:
           target: ${{ matrix.target }}
           version: nightly

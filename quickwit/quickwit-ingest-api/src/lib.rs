@@ -139,7 +139,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_ingest_api_service() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let tempdir = tempfile::tempdir().unwrap();
 
         let queues_0_dir_path = tempdir.path().join("queues-0");
@@ -172,7 +172,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_queue_limit() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let tempdir = tempfile::tempdir().unwrap();
 
         let queues_dir_path = tempdir.path().join("queues-0");

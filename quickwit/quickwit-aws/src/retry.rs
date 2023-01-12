@@ -162,12 +162,13 @@ mod tests {
     #[async_trait]
     impl super::MockableTime for SchedulerClient {
         async fn sleep(&self, duration: Duration) {
-            self.simulate_sleep(duration).await;
+            SchedulerClient::sleep(self, duration).await;
         }
     }
 
     async fn simulate_retries<T>(values: Vec<Result<T, Retry<usize>>>) -> Result<T, Retry<usize>> {
         let scheduler_client = start_scheduler();
+        scheduler_client.accelerate_time();
         let values_it = RwLock::new(values.into_iter());
         retry_with_mockable_time(
             &RetryParams::default(),

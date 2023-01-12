@@ -194,7 +194,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_publisher_publish_operation() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
@@ -265,7 +265,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_publisher_replace_operation() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
@@ -313,7 +313,7 @@ mod tests {
 
     #[tokio::test]
     async fn publisher_acquires_publish_lock() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore.expect_publish_splits().never();
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();

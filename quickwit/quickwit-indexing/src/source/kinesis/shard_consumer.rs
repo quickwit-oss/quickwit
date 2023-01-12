@@ -263,7 +263,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shard_eof() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (sink_tx, mut sink_rx) = mpsc::channel(100);
         let (kinesis_client, stream_name) = setup("test-shard-eof", 1).await?;
         let shard_id_0 = make_shard_id(0);
@@ -303,7 +303,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_at_horizon() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (sink_tx, mut sink_rx) = mpsc::channel(100);
         let (kinesis_client, stream_name) = setup("test-start-at-horizon", 1).await?;
         let sequence_numbers = put_records_into_shards(
@@ -359,7 +359,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn test_start_after_sequence_number() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (sink_tx, mut sink_rx) = mpsc::channel(100);
         let (kinesis_client, stream_name) = setup("test-start-after-sequence-number", 1).await?;
         let sequence_numbers = put_records_into_shards(
@@ -419,7 +419,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn test_merge_shards() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (sink_tx, mut sink_rx) = mpsc::channel(100);
         let (kinesis_client, stream_name) = setup("test-merge-shards", 2).await?;
         let shard_id_0 = make_shard_id(0);
@@ -481,7 +481,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn test_split_shard() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (sink_tx, mut sink_rx) = mpsc::channel(100);
         let (kinesis_client, stream_name) = setup("test-split-shard", 1).await?;
         let shard_id_0 = make_shard_id(0);

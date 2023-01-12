@@ -201,7 +201,7 @@ mod tests {
         metastore.create_index(index_config).await.unwrap();
 
         // Setup ingest api objects
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
         let ingest_api_service =
@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(state_after_initialization.num_deleted_queues, 0);
 
         // 15 seconds later
-        universe.simulate_time_shift(Duration::from_secs(15)).await;
+        universe.sleep(Duration::from_secs(15)).await;
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);
         assert_eq!(state_after_initialization.num_deleted_queues, 0);
@@ -249,7 +249,7 @@ mod tests {
         metastore.delete_index(&index_id).await.unwrap();
 
         // 45 seconds later
-        universe.simulate_time_shift(RUN_INTERVAL).await;
+        universe.sleep(RUN_INTERVAL).await;
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 2);
         assert_eq!(state_after_initialization.num_deleted_queues, 1);

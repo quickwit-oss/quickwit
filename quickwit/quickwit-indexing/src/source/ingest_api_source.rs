@@ -263,7 +263,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_source() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let temp_dir = tempfile::tempdir()?;
@@ -292,7 +292,7 @@ mod tests {
             .ask_for_res(ingest_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        universe.simulate_time_shift(Duration::from_secs(2)).await;
+        universe.sleep(Duration::from_secs(2)).await;
         let counters = ingest_api_source_handle
             .process_pending_and_observe()
             .await
@@ -314,7 +314,7 @@ mod tests {
     /// See #2310
     #[tokio::test]
     async fn test_ingest_api_source_partition_id_changes() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let partition_id_before_lost_queue_dir = {
             let temp_dir = tempfile::tempdir()?;
             let queues_dir_path = temp_dir.path();
@@ -347,7 +347,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_source_resume_from_checkpoint() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let temp_dir = tempfile::tempdir()?;
@@ -385,7 +385,7 @@ mod tests {
             .ask_for_res(ingest_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        universe.simulate_time_shift(Duration::from_secs(2)).await;
+        universe.sleep(Duration::from_secs(2)).await;
         let counters = ingest_api_source_handle
             .process_pending_and_observe()
             .await
@@ -412,7 +412,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_source_with_one_doc() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let temp_dir = tempfile::tempdir()?;
@@ -441,7 +441,7 @@ mod tests {
             .ask_for_res(ingest_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        universe.simulate_time_shift(Duration::from_secs(2)).await;
+        universe.sleep(Duration::from_secs(2)).await;
         let counters = ingest_api_source_handle
             .process_pending_and_observe()
             .await

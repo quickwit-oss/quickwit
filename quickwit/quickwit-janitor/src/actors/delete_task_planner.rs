@@ -413,7 +413,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_task_planner() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let index_id = "test-delete-task-planner";
         let doc_mapping_yaml = r#"
             field_mappings:

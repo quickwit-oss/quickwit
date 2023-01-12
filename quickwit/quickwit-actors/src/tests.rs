@@ -131,7 +131,7 @@ impl Handler<AddPeer> for PingerSenderActor {
 #[tokio::test]
 async fn test_actor_stops_when_last_mailbox_is_dropped() {
     quickwit_common::setup_logging_for_tests();
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let (ping_recv_mailbox, ping_recv_handle) =
         universe.spawn_builder().spawn(PingReceiverActor::default());
     drop(ping_recv_mailbox);
@@ -142,7 +142,7 @@ async fn test_actor_stops_when_last_mailbox_is_dropped() {
 #[tokio::test]
 async fn test_ping_actor() {
     quickwit_common::setup_logging_for_tests();
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let (ping_recv_mailbox, ping_recv_handle) =
         universe.spawn_builder().spawn(PingReceiverActor::default());
     let (ping_sender_mailbox, ping_sender_handle) =
@@ -261,7 +261,7 @@ impl Handler<Block> for BuggyActor {
 
 #[tokio::test]
 async fn test_timeouting_actor() {
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let (buggy_mailbox, buggy_handle) = universe.spawn_builder().spawn(BuggyActor);
     let buggy_mailbox = buggy_mailbox;
     assert_eq!(
@@ -281,15 +281,14 @@ async fn test_timeouting_actor() {
         ObservationType::Timeout
     );
     assert_eq!(buggy_handle.harvest_health(), Health::Healthy);
-    universe.simulate_time_shift(crate::HEARTBEAT).await;
-    universe.simulate_time_shift(crate::HEARTBEAT).await;
+    universe.sleep(crate::HEARTBEAT * 2).await;
     assert_eq!(buggy_handle.harvest_health(), Health::FailureOrUnhealthy);
 }
 
 #[tokio::test]
 async fn test_pause_actor() {
     quickwit_common::setup_logging_for_tests();
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let (ping_mailbox, ping_handle) = universe.spawn_builder().spawn(PingReceiverActor::default());
     for _ in 0u32..1000u32 {
         assert!(ping_mailbox.send_message(Ping).await.is_ok());
@@ -311,7 +310,7 @@ async fn test_pause_actor() {
 #[tokio::test]
 async fn test_actor_running_states() {
     quickwit_common::setup_logging_for_tests();
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let (ping_mailbox, ping_handle) = universe.spawn_builder().spawn(PingReceiverActor::default());
     assert!(ping_handle.state() == ActorState::Processing);
     for _ in 0u32..10u32 {
@@ -381,7 +380,7 @@ impl Handler<SingleShot> for LoopingActor {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_looping() -> anyhow::Result<()> {
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let looping_actor = LoopingActor::default();
     let (looping_actor_mailbox, looping_actor_handle) =
         universe.spawn_builder().spawn(looping_actor);
@@ -463,7 +462,7 @@ impl Handler<u64> for SpawningActor {
 
 #[tokio::test]
 async fn test_actor_spawning_actor() -> anyhow::Result<()> {
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let (mailbox, handle) = universe.spawn_builder().spawn(SpawningActor::default());
     mailbox.send_message(1).await?;
     mailbox.send_message(2).await?;
@@ -498,7 +497,7 @@ impl Actor for BuggyFinalizeActor {
 
 #[tokio::test]
 async fn test_actor_finalize_error_set_exit_status_to_panicked() -> anyhow::Result<()> {
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let (mailbox, handle) = universe.spawn_builder().spawn(BuggyFinalizeActor);
     assert!(matches!(handle.state(), ActorState::Processing));
     drop(mailbox);
@@ -544,7 +543,7 @@ struct Sleep(Duration);
 
 #[tokio::test]
 async fn test_actor_return_response() -> anyhow::Result<()> {
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let adder = Adder::default();
     let (mailbox, _handle) = universe.spawn_builder().spawn(adder);
     let plus_two = mailbox.send_message(AddOperand(2)).await?;
@@ -599,7 +598,7 @@ impl Handler<()> for TestActorWithDrain {
 #[tokio::test]
 async fn test_drain_is_called() {
     quickwit_common::setup_logging_for_tests();
-    let universe = Universe::new();
+    let universe = Universe::with_accelerated_time();
     let test_actor_with_drain = TestActorWithDrain::default();
     let (mailbox, handle) = universe.spawn_builder().spawn(test_actor_with_drain);
     assert_eq!(

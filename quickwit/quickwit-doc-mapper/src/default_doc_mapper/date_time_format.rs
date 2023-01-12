@@ -121,25 +121,25 @@ fn is_strftime_formatting(format_str: &str) -> bool {
 /// Specifies the datetime and unix timestamp formats to use when parsing date strings.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DateTimeInputFormat {
-    ISO8601,
-    RFC2822,
-    RCF3339,
+    Iso8601,
+    Rfc2822,
+    Rfc3339,
     Strptime(StrptimeParser),
     Timestamp,
 }
 
 impl Default for DateTimeInputFormat {
     fn default() -> Self {
-        DateTimeInputFormat::RCF3339
+        DateTimeInputFormat::Rfc3339
     }
 }
 
 impl DateTimeInputFormat {
     pub fn as_str(&self) -> &str {
         match self {
-            DateTimeInputFormat::ISO8601 => "iso8601",
-            DateTimeInputFormat::RFC2822 => "rfc2822",
-            DateTimeInputFormat::RCF3339 => "rfc3339",
+            DateTimeInputFormat::Iso8601 => "iso8601",
+            DateTimeInputFormat::Rfc2822 => "rfc2822",
+            DateTimeInputFormat::Rfc3339 => "rfc3339",
             DateTimeInputFormat::Strptime(parser) => parser.borrow_strptime_format(),
             DateTimeInputFormat::Timestamp => "unix_timestamp",
         }
@@ -157,9 +157,9 @@ impl FromStr for DateTimeInputFormat {
 
     fn from_str(date_time_format_str: &str) -> Result<Self, Self::Err> {
         let date_time_format = match date_time_format_str.to_lowercase().as_str() {
-            "iso8601" => DateTimeInputFormat::ISO8601,
-            "rfc2822" => DateTimeInputFormat::RFC2822,
-            "rfc3339" => DateTimeInputFormat::RCF3339,
+            "iso8601" => DateTimeInputFormat::Iso8601,
+            "rfc2822" => DateTimeInputFormat::Rfc2822,
+            "rfc3339" => DateTimeInputFormat::Rfc3339,
             "unix_timestamp" => DateTimeInputFormat::Timestamp,
             _ => {
                 if !is_strftime_formatting(date_time_format_str) {
@@ -194,9 +194,9 @@ impl<'de> Deserialize<'de> for DateTimeInputFormat {
 /// Specifies the datetime format to use when displaying datetime values.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DateTimeOutputFormat {
-    ISO8601,
-    RFC2822,
-    RCF3339,
+    Iso8601,
+    Rfc2822,
+    Rfc3339,
     Strptime(StrptimeParser),
     TimestampSecs,
     TimestampMillis,
@@ -205,16 +205,16 @@ pub enum DateTimeOutputFormat {
 
 impl Default for DateTimeOutputFormat {
     fn default() -> Self {
-        DateTimeOutputFormat::RCF3339
+        DateTimeOutputFormat::Rfc3339
     }
 }
 
 impl DateTimeOutputFormat {
     pub fn as_str(&self) -> &str {
         match self {
-            DateTimeOutputFormat::ISO8601 => "iso8601",
-            DateTimeOutputFormat::RFC2822 => "rfc2822",
-            DateTimeOutputFormat::RCF3339 => "rfc3339",
+            DateTimeOutputFormat::Iso8601 => "iso8601",
+            DateTimeOutputFormat::Rfc2822 => "rfc2822",
+            DateTimeOutputFormat::Rfc3339 => "rfc3339",
             DateTimeOutputFormat::Strptime(parser) => parser.borrow_strptime_format(),
             DateTimeOutputFormat::TimestampSecs => "unix_timestamp_secs",
             DateTimeOutputFormat::TimestampMillis => "unix_timestamp_millis",
@@ -234,9 +234,9 @@ impl FromStr for DateTimeOutputFormat {
 
     fn from_str(date_time_format_str: &str) -> Result<Self, Self::Err> {
         let date_time_format = match date_time_format_str.to_lowercase().as_str() {
-            "iso8601" => DateTimeOutputFormat::ISO8601,
-            "rfc2822" => DateTimeOutputFormat::RFC2822,
-            "rfc3339" => DateTimeOutputFormat::RCF3339,
+            "iso8601" => DateTimeOutputFormat::Iso8601,
+            "rfc2822" => DateTimeOutputFormat::Rfc2822,
+            "rfc3339" => DateTimeOutputFormat::Rfc3339,
             "unix_timestamp_secs" => DateTimeOutputFormat::TimestampSecs,
             "unix_timestamp_millis" => DateTimeOutputFormat::TimestampMillis,
             "unix_timestamp_micros" => DateTimeOutputFormat::TimestampMicros,
@@ -277,9 +277,9 @@ mod tests {
     #[test]
     fn test_date_time_input_format_ser() {
         let date_time_formats_json = serde_json::to_value(&[
-            DateTimeInputFormat::ISO8601,
-            DateTimeInputFormat::RFC2822,
-            DateTimeInputFormat::RCF3339,
+            DateTimeInputFormat::Iso8601,
+            DateTimeInputFormat::Rfc2822,
+            DateTimeInputFormat::Rfc3339,
             DateTimeInputFormat::Timestamp,
         ])
         .unwrap();
@@ -302,9 +302,9 @@ mod tests {
         let date_time_formats: Vec<DateTimeInputFormat> =
             serde_json::from_str(date_time_formats_json).unwrap();
         let expected_date_time_formats = [
-            DateTimeInputFormat::ISO8601,
-            DateTimeInputFormat::RFC2822,
-            DateTimeInputFormat::RCF3339,
+            DateTimeInputFormat::Iso8601,
+            DateTimeInputFormat::Rfc2822,
+            DateTimeInputFormat::Rfc3339,
             DateTimeInputFormat::Timestamp,
         ];
         assert_eq!(date_time_formats, &expected_date_time_formats);
@@ -313,9 +313,9 @@ mod tests {
     #[test]
     fn test_date_time_output_format_ser() {
         let date_time_formats_json = serde_json::to_value(&[
-            DateTimeOutputFormat::ISO8601,
-            DateTimeOutputFormat::RFC2822,
-            DateTimeOutputFormat::RCF3339,
+            DateTimeOutputFormat::Iso8601,
+            DateTimeOutputFormat::Rfc2822,
+            DateTimeOutputFormat::Rfc3339,
             DateTimeOutputFormat::TimestampSecs,
             DateTimeOutputFormat::TimestampMillis,
             DateTimeOutputFormat::TimestampMicros,
@@ -348,9 +348,9 @@ mod tests {
         let date_time_formats: Vec<DateTimeOutputFormat> =
             serde_json::from_str(date_time_formats_json).unwrap();
         let expected_date_time_formats = [
-            DateTimeOutputFormat::ISO8601,
-            DateTimeOutputFormat::RFC2822,
-            DateTimeOutputFormat::RCF3339,
+            DateTimeOutputFormat::Iso8601,
+            DateTimeOutputFormat::Rfc2822,
+            DateTimeOutputFormat::Rfc3339,
             DateTimeOutputFormat::TimestampSecs,
             DateTimeOutputFormat::TimestampMillis,
             DateTimeOutputFormat::TimestampMicros,

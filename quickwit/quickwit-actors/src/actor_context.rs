@@ -103,7 +103,7 @@ impl<A: Actor> ActorContext<A> {
     pub async fn sleep(&self, duration: Duration) {
         let scheduler_client = &self.spawn_ctx().scheduler_client;
         scheduler_client.dec_no_advance_time();
-        scheduler_client.simulate_sleep(duration).await;
+        scheduler_client.sleep(duration).await;
         scheduler_client.inc_no_advance_time();
     }
 

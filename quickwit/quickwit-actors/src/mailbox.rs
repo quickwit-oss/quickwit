@@ -109,6 +109,12 @@ impl<A: Actor> Handler<LastMailbox> for A {
     }
 }
 
+#[derive(Copy, Clone)]
+pub(crate) enum Priority {
+    High,
+    Low,
+}
+
 impl<A: Actor> Clone for Mailbox<A> {
     fn clone(&self) -> Self {
         self.ref_count.fetch_add(1, Ordering::SeqCst);
@@ -247,13 +253,36 @@ impl<A: Actor> Mailbox<A> {
         }
     }
 
-    pub(crate) fn send_message_with_high_priority<M>(&self, message: M) -> Result<(), SendError>
+    pub(crate) fn send_message_with_high_priority<M>(
+        &self,
+        message: M,
+    ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
-        let (envelope, _response_rx) = self.wrap_in_envelope(message);
-        self.inner.tx.send_high_priority(envelope)
+        let (envelope, response_rx) = self.wrap_in_envelope(message);
+        self.inner.tx.send_high_priority(envelope)?;
+        Ok(response_rx)
+    }
+
+    pub(crate) async fn send_message_with_priority<M>(
+        &self,
+        message: M,
+        priority: Priority,
+    ) -> Result<oneshot::Receiver<A::Reply>, SendError>
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let (envelope, response_rx) = self.wrap_in_envelope(message);
+        match priority {
+            Priority::High => self.inner.tx.send_high_priority(envelope)?,
+            Priority::Low => {
+                self.inner.tx.send_low_priority(envelope).await?;
+            }
+        }
+        Ok(response_rx)
     }
 
     /// Similar to `send_message`, except this method
@@ -423,7 +452,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_weak_mailbox_downgrade_upgrade() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (mailbox, _inbox) = universe.create_test_mailbox::<PingReceiverActor>();
         let weak_mailbox = mailbox.downgrade();
         assert!(weak_mailbox.upgrade().is_some());
@@ -431,7 +460,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_weak_mailbox_failing_upgrade() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (mailbox, _inbox) = universe.create_test_mailbox::<PingReceiverActor>();
         let weak_mailbox = mailbox.downgrade();
         drop(mailbox);
@@ -474,7 +503,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mailbox_send_with_backpressure_counter_no_backpressure_cleansheet() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let back_pressure_actor = BackPressureActor;
         let (mailbox, _handle) = universe.spawn_builder().spawn(back_pressure_actor);
         // We send a first message to make sure the actor has been properly spawned and is listening
@@ -501,7 +530,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mailbox_send_with_backpressure_counter_backpressure() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let back_pressure_actor = BackPressureActor;
         let (mailbox, _handle) = universe.spawn_builder().spawn(back_pressure_actor);
         // We send a first message to make sure the actor has been properly spawned and is listening
@@ -534,7 +563,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mailbox_waiting_for_processing_does_not_counter_as_backpressure() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let back_pressure_actor = BackPressureActor;
         let (mailbox, _handle) = universe.spawn_builder().spawn(back_pressure_actor);
         mailbox
@@ -555,7 +584,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_try_send() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (mailbox, _inbox) = universe
             .create_mailbox::<PingReceiverActor>("hello".to_string(), QueueCapacity::Bounded(1));
         assert!(mailbox.try_send_message(Ping).is_ok());
@@ -567,7 +596,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_try_send_disconnect() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (mailbox, inbox) = universe
             .create_mailbox::<PingReceiverActor>("hello".to_string(), QueueCapacity::Bounded(1));
         assert!(mailbox.try_send_message(Ping).is_ok());

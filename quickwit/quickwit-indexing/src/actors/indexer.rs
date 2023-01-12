@@ -592,7 +592,7 @@ mod tests {
         let indexing_directory = ScratchDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
@@ -711,7 +711,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_trigger_on_memory_limit() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -788,7 +788,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_on_timeout() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -849,7 +849,7 @@ mod tests {
                 num_docs_in_workbench: 1,
             }
         );
-        universe.simulate_time_shift(Duration::from_secs(61)).await;
+        universe.sleep(Duration::from_secs(61)).await;
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
         assert_eq!(
             indexer_counters,
@@ -878,7 +878,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_eof() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -959,7 +959,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_partitioning() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -1058,7 +1058,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_exceeding_max_num_partitions() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -1127,7 +1127,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_propagates_publish_lock() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -1198,7 +1198,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_ignores_messages_when_publish_lock_is_dead() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),

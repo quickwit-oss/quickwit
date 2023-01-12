@@ -106,7 +106,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_void_source_running() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let void_source = VoidSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(

@@ -20,7 +20,8 @@
 use std::cmp::Reverse;
 use std::collections::binary_heap::PeekMut;
 use std::collections::BinaryHeap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -58,14 +59,10 @@ impl Ord for TimeoutEvent {
 }
 
 enum SchedulerMessage {
-    Timeout,
+    ProcessTime,
     Schedule {
         callback: Callback,
         timeout: Duration,
-    },
-    SimulateSleep {
-        cb: oneshot::Sender<()>,
-        duration: Duration,
     },
 }
 
@@ -76,14 +73,14 @@ pub struct SchedulerClient {
 
 struct SchedulerClientInner {
     no_advance_time_guard_count: AtomicUsize,
-    accelerate_time_count: AtomicUsize,
+    accelerate_time: AtomicBool,
     tx: flume::Sender<SchedulerMessage>,
 }
 
 impl SchedulerClient {
     /// Returns true if someone asked for the time to be accelerated.
     fn time_is_accelerated(&self) -> bool {
-        self.inner.accelerate_time_count.load(Ordering::SeqCst) > 0
+        self.inner.accelerate_time.load(Ordering::Relaxed)
     }
 
     /// Returns true if something is preventing for accelerating the time.
@@ -127,21 +124,49 @@ impl SchedulerClient {
             .no_advance_time_guard_count
             .fetch_sub(1, Ordering::SeqCst);
         if previous_count == 1 {
-            self.timeout();
+            self.process_time();
         }
     }
 
-    pub async fn simulate_sleep(&self, duration: Duration) {
+    /// Switch accelerated time mode for the scheduler.
+    ///
+    /// The scheduler will jump in time whenever there are no more `NoAdvanceInTimeGuard`.
+    pub fn accelerate_time(&self) {
+        self.inner.accelerate_time.store(true, Ordering::Relaxed);
+        self.process_time();
+    }
+
+    pub async fn sleep(&self, duration: Duration) {
         let (oneshot_tx, oneshot_rx) = oneshot::channel();
-        let _ = self.inner.tx.send(SchedulerMessage::SimulateSleep {
-            cb: oneshot_tx,
+        self.schedule_event(
+            move || {
+                let _ = oneshot_tx.send(());
+            },
             duration,
-        });
+        );
         let _ = oneshot_rx.await;
     }
 
-    pub(crate) fn timeout(&self) {
-        let _ = self.inner.tx.send(SchedulerMessage::Timeout);
+    pub async fn timeout<O>(
+        &self,
+        duration: Duration,
+        fut: impl Future<Output = O>,
+    ) -> Result<O, ()> {
+        tokio::select! {
+            _ = self.sleep(duration) => {
+                Err(())
+            },
+            future_output = fut => {
+                Ok(future_output)
+            }
+        }
+    }
+
+    // Triggers an event, telling the Scheduler to process time,
+    // checks whether some scheduled events have timed out, or whether we should
+    // jump forward in time.
+    pub(crate) fn process_time(&self) {
+        let _ = self.inner.tx.send(SchedulerMessage::ProcessTime);
     }
 
     /// Returns a `NoAdvanceTimeGuard` which calls `inc_no_advance_time`
@@ -168,33 +193,12 @@ impl Drop for NoAdvanceTimeGuard {
     }
 }
 
-struct AccelerateTimeCountGuard(SchedulerClient);
-
-impl AccelerateTimeCountGuard {
-    fn new(scheduler_client: SchedulerClient) -> Self {
-        scheduler_client
-            .inner
-            .accelerate_time_count
-            .fetch_add(1, Ordering::SeqCst);
-        AccelerateTimeCountGuard(scheduler_client)
-    }
-}
-
-impl Drop for AccelerateTimeCountGuard {
-    fn drop(&mut self) {
-        self.0
-            .inner
-            .accelerate_time_count
-            .fetch_sub(1, Ordering::SeqCst);
-    }
-}
-
 pub fn start_scheduler() -> SchedulerClient {
     let (tx, rx) = flume::unbounded::<SchedulerMessage>();
     let scheduler_client = SchedulerClient {
         inner: Arc::new(SchedulerClientInner {
             no_advance_time_guard_count: AtomicUsize::default(),
-            accelerate_time_count: AtomicUsize::default(),
+            accelerate_time: Default::default(),
             tx,
         }),
     };
@@ -202,12 +206,9 @@ pub fn start_scheduler() -> SchedulerClient {
     tokio::spawn(async move {
         while let Ok(scheduler_message) = rx.recv_async().await {
             match scheduler_message {
-                SchedulerMessage::Timeout => scheduler.process_timeout().await,
+                SchedulerMessage::ProcessTime => scheduler.process_time(),
                 SchedulerMessage::Schedule { callback, timeout } => {
                     scheduler.process_schedule(callback, timeout);
-                }
-                SchedulerMessage::SimulateSleep { cb, duration } => {
-                    scheduler.process_simulate_sleep(cb, duration).await;
                 }
             }
         }
@@ -229,9 +230,15 @@ struct Scheduler {
 }
 
 impl Scheduler {
-    async fn process_timeout(&mut self) {
+    /// Processes "time".
+    ///
+    /// This :
+    /// - identifies all events that are elapsed and execute their callback,
+    /// - advance time if necessary
+    /// - schedule a message to make sure process_time is called in time for the next event.
+    fn process_time(&mut self) {
         let now = self.simulated_now();
-        // Pops all elapsed events.
+        // Pops all elapsed events and executes the associated callback.
         while let Some(next_event_peek) = self.future_events.peek_mut() {
             if next_event_peek.0.deadline > now {
                 // The next event is out of scope.
@@ -250,26 +257,9 @@ impl Scheduler {
     /// Schedules a new event.
     fn process_schedule(&mut self, callback: Callback, timeout: Duration) {
         let new_evt_deadline = self.simulated_now() + timeout;
-        let current_next_deadline = self.future_events.peek().map(|evt| evt.0.deadline);
-        let is_new_next_deadline = current_next_deadline
-            .map(|next_evt_deadline| new_evt_deadline < next_evt_deadline)
-            .unwrap_or(true);
         let timeout_event = self.timeout_event(new_evt_deadline, callback);
         self.future_events.push(Reverse(timeout_event));
-        if is_new_next_deadline {
-            self.schedule_next_timeout();
-        }
-    }
-
-    async fn process_simulate_sleep(&mut self, oneshot_tx: oneshot::Sender<()>, timeout: Duration) {
-        let Some(scheduler_client) = self.scheduler_client() else { return; };
-        let accelerate_time_count_guard = AccelerateTimeCountGuard::new(scheduler_client);
-        let callback: Callback = Box::new(move || {
-            drop(accelerate_time_count_guard);
-            let _ = oneshot_tx.send(());
-        });
-        self.process_schedule(callback, timeout);
-        self.process_timeout().await;
+        self.process_time();
     }
 
     fn scheduler_client(&self) -> Option<SchedulerClient> {
@@ -305,7 +295,7 @@ impl Scheduler {
             } else {
                 tokio::time::sleep(timeout).await;
             }
-            scheduler_client.timeout();
+            scheduler_client.process_time();
         });
         self.next_timeout = Some(new_join_handle);
     }
@@ -412,12 +402,10 @@ mod tests {
         let simple_actor = ClockActor {
             count: count.clone(),
         };
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         universe.spawn_builder().spawn(simple_actor);
         assert_eq!(count.load(Ordering::SeqCst), 0);
-        universe
-            .simulate_time_shift(Duration::from_millis(15))
-            .await;
+        universe.sleep(Duration::from_millis(15)).await;
         assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
@@ -429,10 +417,10 @@ mod tests {
         let simple_actor = ClockActor {
             count: count.clone(),
         };
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         universe.spawn_builder().spawn(simple_actor);
         assert_eq!(count.load(Ordering::SeqCst), 0);
-        universe.simulate_time_shift(Duration::from_secs(10)).await;
+        universe.sleep(Duration::from_secs(10)).await;
         assert_eq!(count.load(Ordering::SeqCst), 10);
         let elapsed = start.elapsed();
         // The whole point is to accelerate time.
