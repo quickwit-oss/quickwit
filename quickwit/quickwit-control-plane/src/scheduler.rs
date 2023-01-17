@@ -414,7 +414,7 @@ mod tests {
     use std::sync::Arc;
 
     use chitchat::transport::ChannelTransport;
-    use quickwit_actors::{Universe, HEARTBEAT};
+    use quickwit_actors::Universe;
     use quickwit_cluster::{
         create_cluster_for_test, grpc_addr_from_listen_addr_for_test, RunningIndexingPlan,
     };
@@ -474,7 +474,7 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (indexing_service_mailbox, indexing_service_inbox) = universe.create_test_mailbox();
         let client_grpc_addr = grpc_addr_from_listen_addr_for_test(cluster.gossip_listen_addr);
         let indexing_client_pool =
@@ -495,8 +495,8 @@ mod tests {
 
         // After a HEARTBEAT, the control loop will check if the desired plan is running on the
         // indexer. As the chitchat state of the indexer is not updated (we did not instantiate a
-        // indexing service for that), the control loop will trigger a new scheduling
-        universe.simulate_time_shift(HEARTBEAT.mul_f32(1.1)).await;
+        // indexing service for that), the control loop will trigger a new scheduling.
+        scheduler_handler.process_pending_and_observe().await;
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
         let indexing_service_inbox_messages =
             indexing_service_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
@@ -517,7 +517,6 @@ mod tests {
             .set_self_node_running_indexing_plan(&running_plan)
             .await
             .unwrap();
-        universe.simulate_time_shift(HEARTBEAT * 3).await;
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
         assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 2);
         let indexing_service_inbox_messages =
@@ -533,7 +532,6 @@ mod tests {
             .set_self_node_running_indexing_plan(&modified_running_plan)
             .await
             .unwrap();
-        universe.simulate_time_shift(HEARTBEAT.mul_f32(1.1)).await;
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
         assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 3);
         let indexing_service_inbox_messages =

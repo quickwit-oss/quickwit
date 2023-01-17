@@ -942,7 +942,6 @@ mod tests {
             4
         );
 
-        // Ensure that a supervise message has been processed as it will update chitchat state.
         let self_member = &cluster.ready_members_from_chitchat_state().await[0];
         assert_eq!(
             HashSet::<_>::from_iter(
@@ -979,8 +978,6 @@ mod tests {
             indexing_server_handle.observe().await.num_running_pipelines,
             3
         );
-        // Ensure that a supervise message has been processed as it will update chitchat state.
-        universe.simulate_time_shift(HEARTBEAT).await;
         indexing_server_handle.process_pending_and_observe().await;
         let self_member = &cluster.ready_members_from_chitchat_state().await[0];
         assert_eq!(

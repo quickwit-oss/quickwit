@@ -58,13 +58,16 @@ impl grpc::ControlPlaneService for GrpcControlPlaneAdapter {
 mod tests {
     use std::collections::HashSet;
     use std::net::SocketAddr;
+    use std::sync::Arc;
 
+    use chitchat::transport::ChannelTransport;
     use quickwit_actors::{Mailbox, Universe};
-    use quickwit_cluster::ClusterMember;
+    use quickwit_cluster::{create_cluster_for_test, ClusterMember};
     use quickwit_config::service::QuickwitService;
     use quickwit_grpc_clients::ControlPlaneGrpcClient;
+    use quickwit_indexing::indexing_client_pool::IndexingClientPool;
+    use quickwit_metastore::MockMetastore;
     use quickwit_proto::control_plane_api::control_plane_service_server::ControlPlaneServiceServer;
-    use quickwit_proto::control_plane_api::NotifyIndexChangeRequest;
     use quickwit_proto::tonic::transport::Server;
     use tokio::sync::watch;
     use tokio_stream::wrappers::WatchStream;
@@ -89,12 +92,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_plane_grpc_client() -> anyhow::Result<()> {
-        let universe = Universe::new();
-        let (indexing_planner_mailbox, indexing_planner_inbox) = universe.create_test_mailbox();
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::with_accelerated_time();
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_list_indexes_metadatas()
+            .returning(move || Ok(Vec::new()));
+        let transport = ChannelTransport::default();
+        let cluster = Arc::new(
+            create_cluster_for_test(Vec::new(), &["control_plane", "indexer"], &transport, true)
+                .await
+                .unwrap(),
+        );
+        let scheduler = IndexingScheduler::new(
+            cluster,
+            Arc::new(metastore),
+            IndexingClientPool::new(Vec::new()),
+        );
+        let (_, scheduler_handler) = universe.spawn_builder().spawn(scheduler);
         let control_plane_grpc_addr_port = quickwit_common::net::find_available_tcp_port().unwrap();
         let control_plane_grpc_addr: SocketAddr =
             ([127, 0, 0, 1], control_plane_grpc_addr_port).into();
-        start_grpc_server(control_plane_grpc_addr, indexing_planner_mailbox).await?;
+        start_grpc_server(control_plane_grpc_addr, scheduler_handler.mailbox().clone()).await?;
         let control_plane_service_member = ClusterMember::new(
             "1".to_string(),
             0,
@@ -110,15 +129,10 @@ mod tests {
             ControlPlaneGrpcClient::create_and_update_from_members(watch_members)
                 .await
                 .unwrap();
-
         let result = control_plane_client.notify_index_change().await;
         assert!(result.is_ok());
-        assert_eq!(
-            indexing_planner_inbox
-                .drain_for_test_typed::<NotifyIndexChangeRequest>()
-                .len(),
-            1
-        );
+        let scheduler_state = scheduler_handler.process_pending_and_observe().await;
+        assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 2);
 
         Ok(())
     }
