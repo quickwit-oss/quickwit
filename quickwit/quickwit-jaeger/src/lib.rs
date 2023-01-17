@@ -480,12 +480,12 @@ fn build_aggregations_query(num_traces: usize) -> String {
                 "field": "trace_id",
                 "size": {num_traces},
                 "order": {{
-                    "span_start_timestamp_secs_stats.max": "desc"
+                    "max_span_start_timestamp_secs": "desc"
                 }}
             }},
             "aggs": {{
-                "span_start_timestamp_secs_stats": {{
-                    "stats": {{
+                "max_span_start_timestamp_secs": {{
+                    "max": {{
                         "field": "span_start_timestamp_secs"
                     }}
                 }}
@@ -814,7 +814,9 @@ fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
 mod tests {
     use quickwit_proto::jaeger::api_v2::ValueType;
     use serde_json::json;
-    use tantivy::aggregation::agg_req::{Aggregation, Aggregations, BucketAggregationType};
+    use tantivy::aggregation::agg_req::{
+        Aggregation, Aggregations, BucketAggregationType, MetricAggregation,
+    };
 
     use super::*;
 
@@ -1278,6 +1280,11 @@ mod tests {
         };
         assert_eq!(terms_aggregation.field, "trace_id");
         assert_eq!(terms_aggregation.size.unwrap(), 77);
+
+        let Aggregation::Metric(MetricAggregation::Max(max_aggregation)) = bucket_aggregation.sub_aggregation.get("max_span_start_timestamp_secs").unwrap() else {
+            panic!("Expected a max metric aggregation!");
+        };
+        assert_eq!(max_aggregation.field, "span_start_timestamp_secs");
     }
 
     #[test]
