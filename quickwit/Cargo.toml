@@ -24,6 +24,7 @@ members = [
   "quickwit-serve",
   "quickwit-storage",
   "quickwit-telemetry",
+  "xtask",
 ]
 
 [profile.dev]

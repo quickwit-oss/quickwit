@@ -21,3 +21,4 @@ quickwit/quickwit-ui/package-lock.json
 .cargo
 deps
 qwdata
+elastic-search-artifacts

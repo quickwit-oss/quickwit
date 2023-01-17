@@ -1,0 +1,7 @@
+elastic_stack_version = "8.5"
+download_dir = "./checkout"
+target_dir = "./src"
+
+includes = [
+    'search.json'
+]
