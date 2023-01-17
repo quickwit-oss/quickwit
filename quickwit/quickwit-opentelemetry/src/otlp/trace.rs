@@ -142,7 +142,7 @@ pub type Base64 = String;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Span {
     pub trace_id: Base64,
-    pub trace_state: String,
+    pub trace_state: Option<String>,
     pub resource_attributes: HashMap<String, JsonValue>,
     pub resource_dropped_attributes_count: u64,
     pub service_name: String,
@@ -158,12 +158,32 @@ pub struct Span {
     pub span_dropped_attributes_count: u64,
     pub span_dropped_events_count: u64,
     pub span_dropped_links_count: u64,
-    pub span_status: Option<Status>,
+    pub span_status: Option<SpanStatus>,
     pub parent_span_id: Option<Base64>,
     #[serde(default)]
     pub events: Vec<Event>,
     #[serde(default)]
     pub links: Vec<Link>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SpanStatus {
+    pub code: i32,
+    pub message: Option<String>,
+}
+
+impl From<Status> for SpanStatus {
+    fn from(value: Status) -> Self {
+        let message = if value.message.is_empty() {
+            None
+        } else {
+            Some(value.message)
+        };
+        Self {
+            code: value.code,
+            message,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -256,9 +276,14 @@ impl TraceService for OtlpGrpcTraceService {
                             link_dropped_attributes_count: link.dropped_attributes_count as u64,
                         })
                         .collect();
+                    let trace_state = if span.trace_state.is_empty() {
+                        None
+                    } else {
+                        Some(span.trace_state)
+                    };
                     let span = Span {
                         trace_id,
-                        trace_state: span.trace_state,
+                        trace_state,
                         resource_attributes: resource_attributes.clone(),
                         resource_dropped_attributes_count,
                         service_name: service_name.clone(),
@@ -273,7 +298,7 @@ impl TraceService for OtlpGrpcTraceService {
                         span_dropped_attributes_count: span.dropped_attributes_count as u64,
                         span_dropped_events_count: span.dropped_events_count as u64,
                         span_dropped_links_count: span.dropped_links_count as u64,
-                        span_status: span.status,
+                        span_status: span.status.map(|status| status.into()),
                         parent_span_id,
                         events,
                         links,

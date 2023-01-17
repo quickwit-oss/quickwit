@@ -26,7 +26,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use itertools::Itertools;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
-use quickwit_opentelemetry::otlp::{Event as QwEvent, Link as QwLink, Span as QwSpan};
+use quickwit_opentelemetry::otlp::{
+    Event as QwEvent, Link as QwLink, Span as QwSpan, SpanStatus as QwSpanStatus,
+};
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
     SpanRef as JaegerSpanRef, SpanRefType as JaegerSpanRefType, ValueType,
@@ -37,7 +39,6 @@ use quickwit_proto::jaeger::storage::v1::{
     GetOperationsResponse, GetServicesRequest, GetServicesResponse, GetTraceRequest, Operation,
     SpansResponseChunk, TraceQueryParameters,
 };
-use quickwit_proto::opentelemetry::proto::trace::v1::Status as OtlpStatus;
 use quickwit_proto::SearchRequest;
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
@@ -153,7 +154,7 @@ impl JaegerService {
         };
         // TODO: switch to streaming search when available.
         let search_response = self.search_service.root_search(search_request).await?;
-        let spans = search_response
+        let spans: Vec<JaegerSpan> = search_response
             .hits
             .into_iter()
             .map(|hit| qw_span_to_jaeger_span(&hit.json))
@@ -627,16 +628,16 @@ fn inject_span_kind_tag(tags: &mut Vec<JaegerKeyValue>, span_kind_id: u64) {
     });
 }
 
-fn inject_span_status_tags(tags: &mut Vec<JaegerKeyValue>, span_status_opt: Option<OtlpStatus>) {
+fn inject_span_status_tags(tags: &mut Vec<JaegerKeyValue>, span_status_opt: Option<QwSpanStatus>) {
     // Span Status MUST be reported as key-value pairs associated with the Span, unless the Status
     // is UNSET. In the latter case it MUST NOT be reported.
     if let Some(span_status) = span_status_opt {
         // Description of the Status if it has a value otherwise not set.
-        if !span_status.message.is_empty() {
+        if let Some(message) = span_status.message {
             tags.push(JaegerKeyValue {
                 key: "otel.status_description".to_string(),
                 v_type: ValueType::String as i32,
-                v_str: span_status.message,
+                v_str: message,
                 v_bool: false,
                 v_int64: 0,
                 v_float64: 0.0,
@@ -1411,18 +1412,18 @@ mod tests {
         }
         {
             let mut tags = Vec::new();
-            let span_status = OtlpStatus {
+            let span_status = QwSpanStatus {
                 code: 0,
-                message: "".to_string(),
+                message: None,
             };
             inject_span_status_tags(&mut tags, Some(span_status));
             assert!(tags.is_empty());
         }
         {
             let mut tags = Vec::new();
-            let span_status = OtlpStatus {
+            let span_status = QwSpanStatus {
                 code: 0,
-                message: "foo".to_string(),
+                message: Some("foo".to_string()),
             };
             inject_span_status_tags(&mut tags, Some(span_status));
             assert_eq!(tags.len(), 1);
@@ -1432,9 +1433,9 @@ mod tests {
         }
         {
             let mut tags = Vec::new();
-            let span_status = OtlpStatus {
+            let span_status = QwSpanStatus {
                 code: 1,
-                message: "Ok".to_string(),
+                message: Some("Ok".to_string()),
             };
             inject_span_status_tags(&mut tags, Some(span_status));
             assert_eq!(tags.len(), 2);
@@ -1449,9 +1450,9 @@ mod tests {
         }
         {
             let mut tags = Vec::new();
-            let span_status = OtlpStatus {
+            let span_status = QwSpanStatus {
                 code: 2,
-                message: "Error".to_string(),
+                message: Some("Error".to_string()),
             };
             inject_span_status_tags(&mut tags, Some(span_status));
             assert_eq!(tags.len(), 3);
