@@ -21,6 +21,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, HEARTBEAT};
@@ -274,9 +275,9 @@ impl Handler<NotifyIndexChangeRequest> for IndexingScheduler {
         _: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         info!("Index change notification: shedule indexing plan.");
-        if let Err(error) = self.schedule_indexing_plan().await {
-            error!("Error when scheduling indexing plan: `{}`.", error);
-        }
+        self.schedule_indexing_plan()
+            .await
+            .context("Error when scheduling indexing plan")?;
         Ok(())
     }
 }

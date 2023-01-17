@@ -37,12 +37,12 @@ pub struct PhysicalIndexingPlan {
 
 impl PhysicalIndexingPlan {
     fn new(node_ids: Vec<String>) -> Self {
-        let indexing_tasks_per_indexer = node_ids
+        let indexing_tasks_per_node_id = node_ids
             .into_iter()
             .map(|node_id| (node_id, Vec::new()))
             .collect();
         Self {
-            indexing_tasks_per_node_id: indexing_tasks_per_indexer,
+            indexing_tasks_per_node_id,
         }
     }
 
@@ -57,7 +57,7 @@ impl PhysicalIndexingPlan {
     pub fn assign_indexing_task(&mut self, node_id: String, indexing_task: IndexingTask) {
         self.indexing_tasks_per_node_id
             .entry(node_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(indexing_task);
     }
 
@@ -190,22 +190,21 @@ pub(crate) fn build_physical_indexing_plan(
         // `build_indexing_plan`, we make sure to always respect the constraint
         // `max_num_pipelines_per_indexer` by limiting the number of indexing tasks per
         // source.
-        if candidates.is_empty() {
-            tracing::warn!(indexing_task=?indexing_task, "No indexer candidate available for the indexing task, cannot assign it to an indexer. This should not happen.");
-            continue;
-        }
-        // Score each candidate and select the best node.
-        let best_node_score = candidates
+        let best_node_opt: Option<&str> = candidates
             .iter()
+            // NodeScore implements Ord and can be used easily for sorting.
             .map(|node_id| NodeScore {
                 node_id,
                 score: -compute_node_score(node_id, &plan),
             })
             .sorted()
             .next()
-            .expect("There is always at least one candidate");
-
-        plan.assign_indexing_task(best_node_score.node_id.to_string(), indexing_task);
+            .map(|node_score| node_score.node_id);
+        if let Some(best_node) = best_node_opt {
+            plan.assign_indexing_task(best_node.to_string(), indexing_task);
+        } else {
+            tracing::warn!(indexing_task=?indexing_task, "No indexer candidate available for the indexing task, cannot assign it to an indexer. This should not happen.");
+        };
     }
 
     plan
@@ -220,9 +219,10 @@ fn select_node_candidates<'a>(
     physical_plan: &PhysicalIndexingPlan,
     source_config: &SourceConfig,
     indexing_task: &IndexingTask,
-) -> Vec<&'a String> {
+) -> Vec<&'a str> {
     node_ids
         .iter()
+        .map(String::as_str)
         .filter(|node_id| {
             physical_plan.num_indexing_tasks_for(
                 node_id,
@@ -285,7 +285,7 @@ pub(crate) fn build_indexing_plan(
         if source_config.source_id == CLI_INGEST_SOURCE_ID {
             continue;
         }
-        // Ignore file sources as we don't know thee file location.
+        // Ignore file sources as we don't know the file location.
         if source_config.source_type() == "file" {
             continue;
         }

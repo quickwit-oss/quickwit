@@ -60,13 +60,13 @@ impl MetastoreWithControlPlaneTriggers {
 }
 
 // Send an event to the Control Plane. The `action` is just there for logging.
-fn send_event_to_control_plane(mut control_plane_client: ControlPlaneGrpcClient, action: String) {
+fn send_event_to_control_plane(
+    mut control_plane_client: ControlPlaneGrpcClient,
+    action: &'static str,
+) {
     tokio::spawn(async move {
         if let Err(error) = control_plane_client.notify_index_change().await {
-            error!(
-                "Failed to send index event to the control plane on `{}`: `{}`.",
-                action, error
-            );
+            error!("Failed to send index event to the control plane on `{action}`: `{error}`.");
         }
     });
 }
@@ -79,10 +79,7 @@ impl Metastore for MetastoreWithControlPlaneTriggers {
 
     async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
         let _ = self.metastore.delete_index(index_id).await?;
-        send_event_to_control_plane(
-            self.control_plane_client.clone(),
-            "delete-index".to_string(),
-        );
+        send_event_to_control_plane(self.control_plane_client.clone(), "delete-index");
         Ok(())
     }
 
@@ -169,13 +166,11 @@ impl Metastore for MetastoreWithControlPlaneTriggers {
     // Source API
 
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
-        let should_send_event_to_control_plane = source.source_id != CLI_INGEST_SOURCE_ID;
+        let should_send_event_to_control_plane =
+            ![CLI_INGEST_SOURCE_ID, "file"].contains(&source.source_id.as_str());
         let _ = self.metastore.add_source(index_id, source).await?;
         if should_send_event_to_control_plane {
-            send_event_to_control_plane(
-                self.control_plane_client.clone(),
-                "create-source".to_string(),
-            );
+            send_event_to_control_plane(self.control_plane_client.clone(), "create-source");
         }
         Ok(())
     }
@@ -203,10 +198,7 @@ impl Metastore for MetastoreWithControlPlaneTriggers {
 
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
         let _ = self.metastore.delete_source(index_id, source_id).await?;
-        send_event_to_control_plane(
-            self.control_plane_client.clone(),
-            "delete-source".to_string(),
-        );
+        send_event_to_control_plane(self.control_plane_client.clone(), "delete-source");
         Ok(())
     }
 
