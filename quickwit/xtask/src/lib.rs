@@ -1,5 +1,18 @@
+// needed for quote!
+#![recursion_limit = "512"]
+
+#[macro_use]
+extern crate lazy_static;
+
+#[macro_use]
+extern crate log;
+
+#[macro_use]
+extern crate quote;
+
 mod api_generator;
 mod api_spec_artifacts;
+mod error;
 
 use std::{env, path};
 
@@ -18,6 +31,6 @@ pub static ES_STACK_VERSION: Lazy<String> =
 
 pub const ES_ARTIFACTS_DIR_NAME: &'static str = "elastic-search-artifacts";
 
-pub const SELECTED_SPEC_FILES: &'static [&str] = &["search"];
+pub const SELECTED_SPEC_FILES: &'static [&str] = &["search.json"];
 
 pub const GENERATED_FILE_NAME: &'static str = "api_specs.rs";
