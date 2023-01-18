@@ -25,21 +25,23 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 
 # Development
 ## Setup & run tests
-1. Install Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
+1. Install Rust, CMake, Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
 2. Install node@16 and `npm install -g yarn`
 3. Install awslocal https://github.com/localstack/awscli-local
 4. Install protoc https://grpc.io/docs/protoc-installation/ (you may need to install the latest binaries rather than your distro's flavor)
-5. Start the external services with `make docker-compose-up`
-6. Run `QW_S3_ENDPOINT=http://localhost:4566 AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features`
-7. Run UI tests `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui test`
+5. In the project's root directory start the external services with `make docker-compose-up`
+6. Switch to the `quickwit` subdirectory
+7. Run `QW_S3_ENDPOINT=http://localhost:4566 AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features`
+8. Run UI tests `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui test`
 
 ## Start the UI
-1. Start a server `cargo r run`
-2. `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui start`
-3. Open your browser at `http://localhost:3000/ui`
+1. Switch to the `quickwit` subdirectory of the project and create a data directory `qwdata` there if it doesn't exist
+2. Start a server `cargo r run --config ../config/quickwit.yaml`
+3. `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui start`
+4. Open your browser at `http://localhost:3000/ui` if it doesn't open automatically
 
 ## Running UI e2e tests
-1. Ensure to run a searcher `cargo r run --service searcher --config config/quickwit.yaml`
+1. Ensure to run a searcher `cargo r run --service searcher --config ../config/quickwit.yaml`
 2. Run `yarn --cwd quickwit-ui e2e-test`
 
 ## Running services such as Amazon Kinesis or S3, Kafka, or PostgreSQL locally.
@@ -50,8 +52,10 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 1. Ensure Docker and Docker Compose are correctly installed on your machine (see above)
 2. Start the Jaeger services (UI, collector, agent, ...) running the command `make docker-compose-up DOCKER_SERVICES=jaeger`
 3. Start Quickwit with the following environment variables:
-`QW_ENABLE_JAEGER_EXPORTER=true`
-`OTEL_BSP_MAX_EXPORT_BATCH_SIZE=8`
+```
+QW_ENABLE_JAEGER_EXPORTER=true
+OTEL_BSP_MAX_EXPORT_BATCH_SIZE=8
+```
 
 If you are on MacOS, the default UDP packet size is 9216 bytes which is too low compared to the jaeger exporter max size set by default at 65000 bytes. As a workaround, you can increase the limit at your own risk: `sudo sysctl -w net.inet.udp.maxdgram=65535`.
 
