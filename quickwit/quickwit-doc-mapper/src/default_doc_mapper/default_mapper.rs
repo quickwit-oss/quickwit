@@ -123,9 +123,7 @@ impl DefaultDocMapper {
 
 fn validate_tag_fields(tag_fields: &[String], schema: &Schema) -> anyhow::Result<()> {
     for tag_field in tag_fields {
-        let field = schema
-            .get_field(tag_field)
-            .ok_or_else(|| anyhow::anyhow!("Tag field `{}` does not exist.", tag_field))?;
+        let field = schema.get_field(tag_field)?;
         let field_type = schema.get_field_entry(field).field_type();
         match field_type {
             FieldType::Str(options) => {

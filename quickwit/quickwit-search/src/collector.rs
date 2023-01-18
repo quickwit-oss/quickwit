@@ -110,15 +110,12 @@ fn resolve_sort_by(
     match sort_by {
         SortBy::DocId => Ok(SortingFieldComputer::DocId),
         SortBy::FastField { field_name, order } => {
-            if let Some(field) = segment_reader.schema().get_field(field_name) {
-                let fast_field_reader = segment_reader.fast_fields().u64_lenient(field)?;
-                Ok(SortingFieldComputer::FastField {
-                    fast_field_reader,
-                    order: *order,
-                })
-            } else {
-                Ok(SortingFieldComputer::DocId)
-            }
+            // /!\ behavior change if field_name does not exists
+            let fast_field_reader = segment_reader.fast_fields().u64_lenient(field_name)?;
+            Ok(SortingFieldComputer::FastField {
+                fast_field_reader,
+                order: *order,
+            })
         }
         SortBy::Score { order } => Ok(SortingFieldComputer::Score { order: *order }),
     }

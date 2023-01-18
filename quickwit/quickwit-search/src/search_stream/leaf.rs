@@ -344,14 +344,7 @@ impl<'a> SearchStreamRequestFields {
         schema: &'a Schema,
         doc_mapper: &dyn DocMapper,
     ) -> crate::Result<SearchStreamRequestFields> {
-        let fast_field = schema
-            .get_field(&stream_request.fast_field)
-            .ok_or_else(|| {
-                SearchError::InvalidQuery(format!(
-                    "Field `{}` does not exist in schema",
-                    &stream_request.fast_field
-                ))
-            })?;
+        let fast_field = schema.get_field(&stream_request.fast_field)?;
 
         if !Self::is_fast_field(schema, &fast_field) {
             return Err(SearchError::InvalidQuery(format!(
@@ -364,7 +357,7 @@ impl<'a> SearchStreamRequestFields {
         let partition_by_fast_field = stream_request
             .partition_by_field
             .as_deref()
-            .and_then(|field_name| schema.get_field(field_name));
+            .and_then(|field_name| schema.get_field(field_name).ok());
 
         if partition_by_fast_field.is_some()
             && !Self::is_fast_field(schema, &partition_by_fast_field.unwrap())

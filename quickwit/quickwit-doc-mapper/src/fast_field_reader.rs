@@ -66,15 +66,15 @@ pub fn timestamp_field_reader(
     let timestamp_field_entry = schema.get_field_entry(timestamp_field);
     let fast_field_readers = segment_reader.fast_fields();
     let field_schema_type = timestamp_field_entry.field_type().value_type();
+    let field_name = timestamp_field_entry.name();
     let timestamp_field_reader = match field_schema_type {
-        Type::I64 => GenericFastFieldReader::I64(fast_field_readers.i64(timestamp_field)?),
-        Type::Date => GenericFastFieldReader::Date(fast_field_readers.date(timestamp_field)?),
+        Type::I64 => GenericFastFieldReader::I64(fast_field_readers.i64(field_name)?),
+        Type::Date => GenericFastFieldReader::Date(fast_field_readers.date(field_name)?),
         _ => {
             return Err(TantivyError::SchemaError(format!(
                 "Failed to build timestamp filter for field `{:?}`: expected I64 or Date type, \
                  got `{:?}`.",
-                timestamp_field_entry.name(),
-                field_schema_type
+                field_name, field_schema_type
             )))
         }
     };

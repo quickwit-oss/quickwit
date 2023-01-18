@@ -26,7 +26,7 @@ use itertools::Itertools;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::{FetchDocsResponse, PartialHit, SearchRequest, SplitIdAndFooterOffsets};
 use quickwit_storage::Storage;
-use tantivy::query::{Query, QueryParserError};
+use tantivy::query::Query;
 use tantivy::schema::{Field, Value};
 use tantivy::{ReloadPolicy, Score, Searcher, SnippetGenerator, Term};
 use tracing::error;
@@ -292,9 +292,7 @@ async fn create_fields_snippet_generator(
     let (query, _) = doc_mapper.query(schema.clone(), search_request)?;
     let mut snippet_generators = HashMap::new();
     for field_name in &search_request.snippet_fields {
-        let field = schema
-            .get_field(field_name)
-            .ok_or_else(|| QueryParserError::FieldDoesNotExist(field_name.clone()))?;
+        let field = schema.get_field(field_name)?;
         let snippet_generator = create_snippet_generator(searcher, &*query, field).await?;
         snippet_generators.insert(field_name.clone(), snippet_generator);
     }
