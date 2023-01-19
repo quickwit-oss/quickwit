@@ -89,8 +89,13 @@ GET api/v1/<index id>/search/stream?query=searchterm
 Streams field values from ALL documents matching a search query in the given index `<index id>`, in a specified output format among the following:
 
 - [CSV](https://datatracker.ietf.org/doc/html/rfc4180)
-- [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary)
- This endpoint is available as long as you have at least one node running a searcher service in the cluster.
+- [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary). If `partition_by_field` is set, Quickwit returns chunks of data for a each partition field value. Each chunk starts with 16 bytes being partition value and content length and then the `fast_field` values in `RowBinary` format.
+
+`fast_field` and `partition_by_field` must be fast fields of type `i64` or `u64`.
+
+This endpoint is available as long as you have at least one node running a searcher service in the cluster.
+
+
 
 :::note
 
@@ -109,10 +114,12 @@ The endpoint will return 10 million values if 10 million documents match the que
 | Variable            | Type       | Description                                                                                                      | Default value                                      |
 |---------------------|------------|------------------------------------------------------------------------------------------------------------------|----------------------------------------------------|
 | **query**           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                          |                                                    |
-| **fast_field**      | `String`   | Name of a field to retrieve from documents. This field must be marked as "fast" in the index config. (mandatory) |                                                    |
+| **fast_field**      | `String`   | Name of a field to retrieve from documents. This field must be a fast field of type `i64` or `u64`. (mandatory) |                                                    |
 | **search_field**    | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2"                                                  | index_config.search_settings.default_search_fields |
 | **start_timestamp** | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds.        |                                                    |
 | **end_timestamp**   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.           |                                                    |
+| **partition_by_field**   | `String`      | If set, the endpoint returns chunks of data for each partition field value. This field must be a fast field of type `i64` or `u64`.           |                                                    |
+
 | **output_format**   | `String`   | Response output format. `csv` or `clickHouseRowBinary`                                                           | `csv`                                              |
 
 :::info
