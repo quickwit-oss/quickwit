@@ -356,6 +356,10 @@ impl<A: Actor> Clone for Inbox<A> {
 }
 
 impl<A: Actor> Inbox<A> {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.rx.is_empty()
+    }
+
     pub(crate) async fn recv(&self) -> Result<Envelope<A>, RecvError> {
         self.rx.recv().await
     }

@@ -271,8 +271,15 @@ impl<A: Actor> ActorExecutionEnv<A> {
         let envelope = recv_envelope(&mut self.inbox, &self.ctx).await;
         self.ctx.process();
         self.process_one_message(envelope).await?;
-        while let Some(envelope) = try_recv_envelope(&mut self.inbox, &self.ctx) {
-            self.process_one_message(envelope).await?;
+        loop {
+            while let Some(envelope) = try_recv_envelope(&mut self.inbox, &self.ctx) {
+                self.process_one_message(envelope).await?;
+            }
+            self.ctx.yield_now().await;
+
+            if self.inbox.is_empty() {
+                break;
+            }
         }
         self.actor.on_drained_messages(&self.ctx).await?;
         self.ctx.idle();
