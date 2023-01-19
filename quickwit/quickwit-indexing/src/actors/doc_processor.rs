@@ -171,7 +171,7 @@ impl DocProcessor {
         // Parse the document
         let _protect_guard = ctx.protect_zone();
         let num_bytes = doc_json.len();
-        let doc_parsing_result = self.doc_mapper.doc_from_json(doc_json);
+        let doc_parsing_result = self.doc_mapper.doc_from_json_str(doc_json);
         let (partition, doc) = doc_parsing_result.map_err(|doc_parsing_error| {
             warn!(err=?doc_parsing_error);
             match doc_parsing_error {

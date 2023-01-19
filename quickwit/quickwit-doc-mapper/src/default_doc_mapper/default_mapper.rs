@@ -32,7 +32,7 @@ use super::field_mapping_entry::QuickwitTextTokenizer;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{build_mapping_tree, MappingNode, MappingTree};
 pub use crate::default_doc_mapper::QuickwitJsonOptions;
-use crate::doc_mapper::Partition;
+use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
@@ -342,13 +342,10 @@ fn extract_single_obj(
 
 #[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
-    fn doc_from_json(&self, doc_json: &str) -> Result<(Partition, Document), DocParsingError> {
-        let json_obj: serde_json::Map<String, JsonValue> =
-            serde_json::from_str(doc_json).map_err(|_| {
-                let doc_json_sample = doc_json.chars().take(20).collect();
-                DocParsingError::NotJsonObject(doc_json_sample)
-            })?;
-
+    fn doc_from_json_obj(
+        &self,
+        json_obj: JsonObject,
+    ) -> Result<(Partition, Document), DocParsingError> {
         let partition: Partition = self.partition_key.eval_hash(&json_obj);
 
         let mut dynamic_json_obj = serde_json::Map::default();
@@ -492,9 +489,11 @@ mod tests {
 
     #[test]
     fn test_parsing_document() {
-        let doc_mapper = crate::default_doc_mapper_for_test();
         let json_doc = example_json_doc_value();
-        let (_, document) = doc_mapper.doc_from_json(&json_doc.to_string()).unwrap();
+        let doc_mapper = crate::default_doc_mapper_for_test();
+        let (_, document) = doc_mapper
+            .doc_from_json_obj(json_doc.as_object().unwrap().clone())
+            .unwrap();
         let schema = doc_mapper.schema();
         // 8 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
@@ -534,7 +533,7 @@ mod tests {
     fn test_accept_parsing_document_with_unknown_fields_and_missing_fields() {
         let doc_mapper = crate::default_doc_mapper_for_test();
         doc_mapper
-            .doc_from_json(
+            .doc_from_json_str(
                 r#"{
                 "timestamp": 1586960586000,
                 "unknown_field": "20200415T072306-0700 INFO This is a great log",
@@ -549,7 +548,7 @@ mod tests {
     #[test]
     fn test_fail_parsing_document_with_missing_fast_field() {
         let doc_mapper = crate::default_doc_mapper_for_test();
-        let result = doc_mapper.doc_from_json(
+        let result = doc_mapper.doc_from_json_str(
             r#"{
                 "timestamp": 1586960586000,
                 "unknown_field": "20200415T072306-0700 INFO This is a great log",
@@ -568,7 +567,7 @@ mod tests {
     #[test]
     fn test_fail_to_parse_document_with_wrong_cardinality() -> anyhow::Result<()> {
         let doc_mapper = crate::default_doc_mapper_for_test();
-        let result = doc_mapper.doc_from_json(
+        let result = doc_mapper.doc_from_json_str(
             r#"{
                 "timestamp": 1586960586000,
                 "body": ["text 1", "text 2"]
@@ -586,7 +585,7 @@ mod tests {
     #[test]
     fn test_fail_to_parse_document_with_wrong_value() -> anyhow::Result<()> {
         let doc_mapper = crate::default_doc_mapper_for_test();
-        let result = doc_mapper.doc_from_json(
+        let result = doc_mapper.doc_from_json_str(
             r#"{
                 "timestamp": 1586960586000,
                 "body": 1
@@ -741,12 +740,12 @@ mod tests {
         }"#;
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
         let doc_mapper = builder.try_build()?;
-        let result = doc_mapper.doc_from_json(
+        let result = doc_mapper.doc_from_json_str(
             r#"{
             "image": "invalid base64 data"
         }"#,
         );
-        let expected_msg = "The field 'image' could not be parsed: Expected Base64 string, got \
+        let expected_msg = "The field `image` could not be parsed: Expected Base64 string, got \
                             `invalid base64 data`: Invalid byte 32, offset 7.";
         assert_eq!(result.unwrap_err().to_string(), expected_msg);
         Ok(())
@@ -782,7 +781,7 @@ mod tests {
             "image": "YWJj"
         });
         let (_, document) = doc_mapper
-            .doc_from_json(&json_doc_value.to_string())
+            .doc_from_json_obj(json_doc_value.as_object().unwrap().clone())
             .unwrap();
 
         // 2 properties, + 1 value for "_source"
@@ -926,7 +925,7 @@ mod tests {
         let default_doc_mapper: DefaultDocMapper =
             serde_json::from_str(r#"{ "mode": "strict" }"#).unwrap();
         let parsing_err = default_doc_mapper
-            .doc_from_json(r#"{ "a": { "b": 5, "c": 6 } }"#)
+            .doc_from_json_str(r#"{ "a": { "b": 5, "c": 6 } }"#)
             .err()
             .unwrap();
         assert!(
@@ -955,10 +954,10 @@ mod tests {
         )
         .unwrap();
         assert!(default_doc_mapper
-            .doc_from_json(r#"{ "some_obj": { "child_a": "hello" } }"#)
+            .doc_from_json_str(r#"{ "some_obj": { "child_a": "hello" } }"#)
             .is_ok());
         let parsing_err = default_doc_mapper
-            .doc_from_json(r#"{ "some_obj": { "child_a": "hello", "child_b": 6 } }"#)
+            .doc_from_json_str(r#"{ "some_obj": { "child_a": "hello", "child_b": 6 } }"#)
             .err()
             .unwrap();
         assert!(
@@ -971,7 +970,7 @@ mod tests {
         let default_doc_mapper: DefaultDocMapper =
             serde_json::from_str(r#"{ "mode": "lenient" }"#).unwrap();
         let (_, doc) = default_doc_mapper
-            .doc_from_json(r#"{ "a": { "b": 5, "c": 6 } }"#)
+            .doc_from_json_str(r#"{ "a": { "b": 5, "c": 6 } }"#)
             .unwrap();
         assert_eq!(doc.len(), 0);
     }
@@ -983,7 +982,7 @@ mod tests {
         let schema = default_doc_mapper.schema();
         let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).unwrap();
         let (_, doc) = default_doc_mapper
-            .doc_from_json(r#"{ "a": { "b": 5, "c": 6 } }"#)
+            .doc_from_json_str(r#"{ "a": { "b": 5, "c": 6 } }"#)
             .unwrap();
         let vals: Vec<&TantivyValue> = doc.get_all(dynamic_field).collect();
         assert_eq!(vals.len(), 1);
@@ -1023,7 +1022,7 @@ mod tests {
         )
         .unwrap();
         let (_, doc) = default_doc_mapper
-            .doc_from_json(
+            .doc_from_json_str(
                 r#"{ "some_obj": { "child_a": "", "child_b": {"c": 3} }, "some_obj2": 4 }"#,
             )
             .unwrap();
@@ -1071,7 +1070,7 @@ mod tests {
         )
         .unwrap();
         let (_, doc) = default_doc_mapper
-            .doc_from_json(r#"{ "some_obj": { "json_obj": {"hello": 2} } }"#)
+            .doc_from_json_str(r#"{ "some_obj": { "json_obj": {"hello": 2} } }"#)
             .unwrap();
         let json_field = default_doc_mapper
             .schema()

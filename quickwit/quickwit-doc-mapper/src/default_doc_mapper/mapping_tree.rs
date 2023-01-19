@@ -986,7 +986,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             parse_err.to_string(),
-            "The field 'root.my_field' could not be parsed: Expected JSON number, got `[1,2]`."
+            "The field `root.my_field` could not be parsed: Expected JSON number, got `[1,2]`."
         );
     }
 

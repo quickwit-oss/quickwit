@@ -31,6 +31,8 @@ use tantivy::{Document, Term};
 
 pub type Partition = u64;
 
+pub type JsonObject = serde_json::Map<String, JsonValue>;
+
 use crate::{DocParsingError, QueryParserError};
 
 /// The `DocMapper` trait defines the way of defining how a (json) document,
@@ -43,10 +45,21 @@ use crate::{DocParsingError, QueryParserError};
 /// - a way to build a tantivy:Schema
 #[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
-    /// Returns the document built from an owned JSON string.
-    ///
-    /// (we pass by value here, as the value can be used as is in the _source field.)
-    fn doc_from_json(&self, doc_json: &str) -> Result<(Partition, Document), DocParsingError>;
+    /// Builds a tantivy [`Document`] from a JSON object.
+    fn doc_from_json_obj(
+        &self,
+        json_obj: JsonObject,
+    ) -> Result<(Partition, Document), DocParsingError>;
+
+    /// Parses a JSON string and returns a tantivy [`Document`].
+    fn doc_from_json_str(&self, doc_json: &str) -> Result<(Partition, Document), DocParsingError> {
+        let json_obj: JsonObject = serde_json::from_str(doc_json).map_err(|_| {
+            let mut doc_json_sample: String = doc_json.chars().take(20).collect();
+            doc_json_sample.push_str("...");
+            DocParsingError::NotJsonObject(doc_json_sample)
+        })?;
+        self.doc_from_json_obj(json_obj)
+    }
 
     /// Converts a tantivy named Document to the json format.
     ///
