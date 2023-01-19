@@ -201,7 +201,7 @@ impl<A: Actor + Default> SpawnBuilder<A> {
 }
 
 /// Returns `None` if no message is available at the moment.
-async fn get_envelope<A: Actor>(inbox: &mut Inbox<A>, ctx: &ActorContext<A>) -> Envelope<A> {
+async fn recv_envelope<A: Actor>(inbox: &mut Inbox<A>, ctx: &ActorContext<A>) -> Envelope<A> {
     if ctx.state().is_running() {
         ctx.protect_future(inbox.recv()).await.expect(
             "Disconnection should be impossible because the ActorContext holds a Mailbox too",
@@ -213,7 +213,7 @@ async fn get_envelope<A: Actor>(inbox: &mut Inbox<A>, ctx: &ActorContext<A>) -> 
     }
 }
 
-fn try_get_envelope<A: Actor>(inbox: &mut Inbox<A>, ctx: &ActorContext<A>) -> Option<Envelope<A>> {
+fn try_recv_envelope<A: Actor>(inbox: &mut Inbox<A>, ctx: &ActorContext<A>) -> Option<Envelope<A>> {
     if ctx.state().is_running() {
         inbox.try_recv()
     } else {
@@ -268,10 +268,10 @@ impl<A: Actor> ActorExecutionEnv<A> {
 
     async fn process_all_available_messages(&mut self) -> Result<(), ActorExitStatus> {
         self.yield_and_check_if_killed().await?;
-        let envelope = get_envelope(&mut self.inbox, &self.ctx).await;
+        let envelope = recv_envelope(&mut self.inbox, &self.ctx).await;
         self.ctx.process();
         self.process_one_message(envelope).await?;
-        while let Some(envelope) = try_get_envelope(&mut self.inbox, &self.ctx) {
+        while let Some(envelope) = try_recv_envelope(&mut self.inbox, &self.ctx) {
             self.process_one_message(envelope).await?;
         }
         self.actor.on_drained_messages(&self.ctx).await?;
