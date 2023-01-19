@@ -79,7 +79,7 @@ indexmap = { version = "1.9.2", features = ["serde"] }
 itertools = "0.10.5"
 json_comments = "0.2"
 libz-sys = "1.1.8"
-lru = "0.8"
+lru = "0.9"
 matches = "0.1.9"
 md5 = "0.7"
 mime_guess = "2.0.4"
