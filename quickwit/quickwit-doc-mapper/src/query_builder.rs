@@ -126,7 +126,8 @@ fn extract_field_name(leaf: &UserInputLeaf) -> Option<&str> {
 
 fn is_valid_field_for_range(field_entry: &FieldEntry) -> anyhow::Result<()> {
     match field_entry.field_type() {
-        FieldType::Date(_)
+        FieldType::Bool(_)
+        | FieldType::Date(_)
         | FieldType::IpAddr(_)
         | FieldType::F64(_)
         | FieldType::I64(_)
@@ -141,8 +142,8 @@ fn is_valid_field_for_range(field_entry: &FieldEntry) -> anyhow::Result<()> {
         }
         other_type => {
             anyhow::bail!(
-                "Field `{}` is of type `{:?}`. Range queries are only supported on datetime, IP, \
-                 and numeric fields at the moment.",
+                "Field `{}` is of type `{:?}`. Range queries are only supported on boolean, \
+                 datetime, IP, and numeric fields at the moment.",
                 field_entry.name(),
                 other_type.value_type()
             );
@@ -422,8 +423,8 @@ mod test {
             vec![],
             None,
             TestExpectation::Err(
-                "Field `title` is of type `Str`. Range queries are only supported on datetime, \
-                 IP, and numeric fields",
+                "Field `title` is of type `Str`. Range queries are only supported on boolean, \
+                 datetime, IP, and numeric fields",
             ),
         )
         .unwrap();
@@ -432,8 +433,8 @@ mod test {
             vec![],
             None,
             TestExpectation::Err(
-                "Field `title` is of type `Str`. Range queries are only supported on datetime, \
-                 IP, and numeric fields",
+                "Field `title` is of type `Str`. Range queries are only supported on boolean, \
+                 datetime, IP, and numeric fields",
             ),
         )
         .unwrap();
@@ -442,8 +443,8 @@ mod test {
             vec![],
             None,
             TestExpectation::Err(
-                "Field `title` is of type `Str`. Range queries are only supported on datetime, \
-                 IP, and numeric fields",
+                "Field `title` is of type `Str`. Range queries are only supported on boolean, \
+                 datetime, IP, and numeric fields",
             ),
         )
         .unwrap();
