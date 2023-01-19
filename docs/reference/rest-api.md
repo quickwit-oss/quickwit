@@ -89,9 +89,9 @@ GET api/v1/<index id>/search/stream?query=searchterm
 Streams field values from ALL documents matching a search query in the given index `<index id>`, in a specified output format among the following:
 
 - [CSV](https://datatracker.ietf.org/doc/html/rfc4180)
-- [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary). If `partition_by_field` is set, Quickwit returns chunks data for a each partition. Each chunk starts with 16 bytes being partition value and content length and then the `fast_field` values in `RowBinary` format.
+- [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary). If `partition_by_field` is set, Quickwit returns chunks of data for a each partition field value. Each chunk starts with 16 bytes being partition value and content length and then the `fast_field` values in `RowBinary` format.
 
-`fast_field` and `partition_by_field` must be a fast field of type `i64` or `u64`.
+`fast_field` and `partition_by_field` must be fast fields of type `i64` or `u64`.
 
 This endpoint is available as long as you have at least one node running a searcher service in the cluster.
 

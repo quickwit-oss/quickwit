@@ -69,7 +69,7 @@ The region or custom endpoint will be detected using the first successful method
 - `AWS_REGION` environment variable
 - Amazon’s instance metadata API [https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html)
 
-### S3-compatible Object Storage like Minio, Google Cloud Storage.
+## S3-compatible Object Storage
 
 Quickwit can target other S3-compatible storage.
 This is done by setting an endpoint url in the `QW_S3_ENDPOINT` environment variable.
@@ -82,18 +82,16 @@ Example:
 export QW_S3_ENDPOINT=http://localhost:9000/
 ```
 
+### Google Cloud Storage
+
 Example for Google Cloud Storage:
 
 ```bash
 export QW_S3_ENDPOINT=https://storage.googleapis.com
 ```
 
-Get an access key & a secret key from the object storage of your preference and run the following commands:
+See our [Google Cloud Storage Setup Guide](../guides/storage-setup/gcs-setup.md) for the detailed steps to configure Quickwit with Google Cloud Storage.
 
-```bash
-export AWS_SECRET_ACCESS_KEY=***
-export AWS_ACCESS_KEY_ID=***
-```
 
 ### Scaleway object storage
 
@@ -104,7 +102,7 @@ export QW_S3_ENDPOINT=https://s3.{your-region}.scw.cloud
 export AWS_REGION={your-region}
 ```
 
-See our [Scaleway Setup Guide](../guides/storage-setup/scaleway-setup.md) for the detailed steps to configure Quickwit with Scalewy object storage.
+See our [Scaleway Setup Guide](../guides/storage-setup/scaleway-setup.md) for the detailed steps to configure Quickwit with Scaleway object storage.
 
 ### Garage
 
@@ -112,16 +110,16 @@ See our [Scaleway Setup Guide](../guides/storage-setup/scaleway-setup.md) for th
 
 To use it with Quickwit, you will need to setup the region, as mentioned in [Garage documentation](https://garagehq.deuxfleurs.fr/documentation/connect/), it's often set just to `garage`.
 
-Example plus a local garage server:
+Example for a local garage server:
 
 ```bash
 export QW_S3_ENDPOINT=http://127.0.0.1:3900
 export AWS_REGION=garage
 ```
 
-### Ceph and more!
+### MinIO, Ceph and more!
 
-We support other S3-compatible storages and are welcoming any PR to enrich the documentation with new storage backends.
+We support other S3-compatible storages and are [welcoming PRs](http://github.com/quickwit-oss/quickwit) to enrich the documentation with new storage backends.
 
 ## Azure blob storage
 
