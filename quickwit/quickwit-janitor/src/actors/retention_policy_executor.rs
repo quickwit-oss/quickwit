@@ -374,7 +374,7 @@ mod tests {
             });
 
         let retention_policy_executor = RetentionPolicyExecutor::new(Arc::new(mock_metastore));
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (mailbox, handle) = universe.spawn_builder().spawn(retention_policy_executor);
 
         let counters = handle.process_pending_and_observe().await.state;
@@ -386,9 +386,7 @@ mod tests {
             ]))
             .await?;
 
-        universe
-            .simulate_time_shift(RUN_INTERVAL + Duration::from_secs(5))
-            .await;
+        universe.sleep(RUN_INTERVAL + Duration::from_secs(5)).await;
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_refresh_passes, 2);
         mailbox
@@ -399,9 +397,7 @@ mod tests {
             ]))
             .await?;
 
-        universe
-            .simulate_time_shift(RUN_INTERVAL + Duration::from_secs(5))
-            .await;
+        universe.sleep(RUN_INTERVAL + Duration::from_secs(5)).await;
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_refresh_passes, 3);
         mailbox
@@ -459,14 +455,14 @@ mod tests {
             });
 
         let retention_policy_executor = RetentionPolicyExecutor::new(Arc::new(mock_metastore));
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (_mailbox, handle) = universe.spawn_builder().spawn(retention_policy_executor);
 
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_execution_passes, 0);
         assert_eq!(counters.num_expired_splits, 0);
 
-        universe.simulate_time_shift(shift_time_by()).await;
+        universe.sleep(shift_time_by()).await;
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_execution_passes, 2);
         assert_eq!(counters.num_expired_splits, 2);

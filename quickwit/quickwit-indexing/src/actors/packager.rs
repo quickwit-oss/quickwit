@@ -174,7 +174,7 @@ fn list_split_files(
     // list the segment files
     for segment_meta in segment_metas {
         for relative_path in segment_meta.list_files() {
-            let filepath = scratch_directory.path().join(&relative_path);
+            let filepath = scratch_directory.path().join(relative_path);
             if filepath.try_exists()? {
                 // If the file is missing, this is fine.
                 // segment_meta.list_files() may actually returns files that
@@ -313,7 +313,7 @@ fn u64_from_term_data(data: &[u8]) -> anyhow::Result<u64> {
 mod tests {
     use std::ops::RangeInclusive;
 
-    use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
+    use quickwit_actors::{ObservationType, Universe};
     use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
@@ -416,8 +416,8 @@ mod tests {
     #[tokio::test]
     async fn test_packager_simple() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
+        let universe = Universe::with_accelerated_time();
+        let (mailbox, inbox) = universe.create_test_mailbox();
         let indexed_split = make_indexed_split_for_test(&[1628203589, 1628203640])?;
         let tag_fields = get_tag_fields(
             indexed_split.index.schema(),

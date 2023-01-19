@@ -25,6 +25,19 @@ use warp::{Filter, Rejection};
 use crate::format::Format;
 use crate::require;
 
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(indexing_endpoint))]
+pub struct IndexingApi;
+
+#[utoipa::path(
+    get,
+    tag = "Indexing",
+    path = "/indexing",
+    responses(
+        (status = 200, description = "Successfully observed indexing pipelines.", body = IndexingStatistics)
+    ),
+)]
+/// Observe Indexing Pipeline
 async fn indexing_endpoint(indexing_service_mailbox: Mailbox<IndexingService>) -> impl warp::Reply {
     let obs = indexing_service_mailbox.ask(Observe).await;
     Format::PrettyJson.make_rest_reply_non_serializable_error(obs)

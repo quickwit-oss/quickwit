@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::split_metadata::utc_now_timestamp;
 use crate::SplitMetadata;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub(crate) struct SplitMetadataV0_4 {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -56,6 +56,7 @@ pub(crate) struct SplitMetadataV0_4 {
     #[serde(alias = "size_in_bytes")]
     pub uncompressed_docs_size_in_bytes: u64,
 
+    #[schema(value_type = Option<Object>)]
     /// If a timestamp field is available, the min / max timestamp in
     /// the split.
     pub time_range: Option<RangeInclusive<i64>>,
@@ -64,10 +65,12 @@ pub(crate) struct SplitMetadataV0_4 {
     #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
 
-    /// A set of tags for categorizing and searching group of splits.
     #[serde(default)]
+    #[schema(value_type = Vec<String>)]
+    /// A set of tags for categorizing and searching group of splits.
     pub tags: BTreeSet<String>,
 
+    #[schema(value_type = Object)]
     /// Contains the range of bytes of the footer that needs to be downloaded
     /// in order to open a split.
     ///
@@ -139,7 +142,7 @@ impl From<SplitMetadata> for SplitMetadataV0_4 {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedSplitMetadata {
     #[serde(rename = "0.4")]

@@ -126,7 +126,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sequencer() {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let test_actor = SequencerTestActor::default();
         let (test_mailbox, test_handle) = universe.spawn_builder().spawn(test_actor);
         let sequencer = Sequencer::new(test_mailbox);

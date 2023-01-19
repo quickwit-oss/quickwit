@@ -741,7 +741,7 @@ mod tests {
     fn test_uri_serialize() {
         let uri = Uri::for_test("s3://bucket/key");
         assert_eq!(
-            serde_json::to_value(&uri).unwrap(),
+            serde_json::to_value(uri).unwrap(),
             serde_json::Value::String("s3://bucket/key".to_string())
         );
     }

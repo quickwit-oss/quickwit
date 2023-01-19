@@ -24,5 +24,8 @@ rusoto_sts = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
+[dev-dependencies]
+quickwit-actors = { workspace = true }
+
 [features]
 kinesis = ["rusoto_kinesis"]

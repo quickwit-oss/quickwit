@@ -29,7 +29,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
 
     tonic_build::configure()
-        .type_attribute(".", "#[derive(Serialize, Deserialize)]")
+        .type_attribute(".", "#[derive(Serialize, Deserialize, utoipa::ToSchema)]")
+        .type_attribute("IndexingTask", "#[derive(Eq, Hash)]")
         .type_attribute("DeleteQuery", "#[serde(default)]")
         .field_attribute(
             "DeleteQuery.start_timestamp",

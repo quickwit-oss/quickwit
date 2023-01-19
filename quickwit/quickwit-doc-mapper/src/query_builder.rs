@@ -126,10 +126,15 @@ fn extract_field_name(leaf: &UserInputLeaf) -> Option<&str> {
 
 fn is_valid_field_for_range(field_entry: &FieldEntry) -> anyhow::Result<()> {
     match field_entry.field_type() {
-        FieldType::IpAddr(ip_addr_options) => {
-            if !ip_addr_options.is_fast() {
+        FieldType::Bool(_)
+        | FieldType::Date(_)
+        | FieldType::IpAddr(_)
+        | FieldType::F64(_)
+        | FieldType::I64(_)
+        | FieldType::U64(_) => {
+            if !field_entry.is_fast() {
                 bail!(
-                    "Range queries require having a fast field (Field `{}` is not declared as a \
+                    "Range queries require having a fast field (field `{}` is not declared as a \
                      fast field.)",
                     field_entry.name()
                 );
@@ -137,8 +142,8 @@ fn is_valid_field_for_range(field_entry: &FieldEntry) -> anyhow::Result<()> {
         }
         other_type => {
             anyhow::bail!(
-                "`{}` is of type `{:?}`. Range queries are only supported for IP Field at the \
-                 moment.",
+                "Field `{}` is of type `{:?}`. Range queries are only supported on boolean, \
+                 datetime, IP, and numeric fields at the moment.",
                 field_entry.name(),
                 other_type.value_type()
             );
@@ -332,7 +337,9 @@ mod test {
             "dt",
             DateOptions::default().set_fast(Cardinality::SingleValue),
         );
-        schema_builder.add_u64_field("int_fast", FAST | STORED);
+        schema_builder.add_u64_field("u64_fast", FAST | STORED);
+        schema_builder.add_i64_field("i64_fast", FAST | STORED);
+        schema_builder.add_f64_field("f64_fast", FAST | STORED);
         schema_builder.build()
     }
 
@@ -378,7 +385,8 @@ mod test {
             TestExpectation::Ok(sub_str) => {
                 assert!(
                     query_result.is_ok(),
-                    "Expected a success when parsing {sub_str}, but got error"
+                    "Expected a success when parsing {sub_str}, but got an error: {:?}",
+                    query_result.err()
                 );
                 let (query, _) = query_result.unwrap();
                 assert!(
@@ -400,21 +408,24 @@ mod test {
             "foo:bar",
             vec![],
             None,
-            TestExpectation::Err("Field does not exists: 'foo'"),
+            TestExpectation::Err("Field does not exist: 'foo'"),
         )
         .unwrap();
         check_build_query(
             "server.type:hpc server.mem:4GB",
             vec![],
             None,
-            TestExpectation::Err("Field does not exists: 'server.type'"),
+            TestExpectation::Err("Field does not exist: 'server.type'"),
         )
         .unwrap();
         check_build_query(
             "title:[a TO b]",
             vec![],
             None,
-            TestExpectation::Err(r#"`title` is of type `Str`. Range queries are only supported for IP Field at the moment."#),
+            TestExpectation::Err(
+                "Field `title` is of type `Str`. Range queries are only supported on boolean, \
+                 datetime, IP, and numeric fields",
+            ),
         )
         .unwrap();
         check_build_query(
@@ -422,8 +433,8 @@ mod test {
             vec![],
             None,
             TestExpectation::Err(
-                "`title` is of type `Str`. Range queries are only supported for IP Field at the \
-                 moment.",
+                "Field `title` is of type `Str`. Range queries are only supported on boolean, \
+                 datetime, IP, and numeric fields",
             ),
         )
         .unwrap();
@@ -432,7 +443,8 @@ mod test {
             vec![],
             None,
             TestExpectation::Err(
-                "`title` is of type `Str`. Range queries are only supported for IP Field",
+                "Field `title` is of type `Str`. Range queries are only supported on boolean, \
+                 datetime, IP, and numeric fields",
             ),
         )
         .unwrap();
@@ -447,7 +459,7 @@ mod test {
             "title:foo desc:bar",
             vec!["url".to_string()],
             None,
-            TestExpectation::Err("Field does not exists: 'url'"),
+            TestExpectation::Err("Field does not exist: 'url'"),
         )
         .unwrap();
         check_build_query(
@@ -509,7 +521,25 @@ mod test {
     }
 
     #[test]
-    fn test_range_query() {
+    fn test_datetime_range_query() {
+        check_build_query(
+            "dt:[2023-01-10T15:13:35Z TO 2023-01-10T15:13:40Z]",
+            Vec::new(),
+            None,
+            TestExpectation::Ok("RangeQuery { field: Field(10), value_type: Date"),
+        )
+        .unwrap();
+        check_build_query(
+            "dt:<2023-01-10T15:13:35Z",
+            Vec::new(),
+            None,
+            TestExpectation::Ok("RangeQuery { field: Field(10), value_type: Date"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_ip_range_query() {
         check_build_query(
             "ip:[127.0.0.1 TO 127.1.1.1]",
             Vec::new(),
@@ -534,6 +564,60 @@ mod test {
     }
 
     #[test]
+    fn test_f64_range_query() {
+        check_build_query(
+            "f64_fast:[7.7 TO 77.7]",
+            Vec::new(),
+            None,
+            TestExpectation::Ok("RangeQuery { field: Field(13), value_type: F64"),
+        )
+        .unwrap();
+        check_build_query(
+            "f64_fast:>7",
+            Vec::new(),
+            None,
+            TestExpectation::Ok("RangeQuery { field: Field(13), value_type: F64"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_i64_range_query() {
+        check_build_query(
+            "i64_fast:[-7 TO 77]",
+            Vec::new(),
+            None,
+            TestExpectation::Ok("RangeQuery { field: Field(12), value_type: I64"),
+        )
+        .unwrap();
+        check_build_query(
+            "i64_fast:>7",
+            Vec::new(),
+            None,
+            TestExpectation::Ok("RangeQuery { field: Field(12), value_type: I64"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_u64_range_query() {
+        check_build_query(
+            "u64_fast:[7 TO 77]",
+            Vec::new(),
+            None,
+            TestExpectation::Ok("RangeQuery { field: Field(11), value_type: U64"),
+        )
+        .unwrap();
+        check_build_query(
+            "u64_fast:>7",
+            Vec::new(),
+            None,
+            TestExpectation::Ok("RangeQuery { field: Field(11), value_type: U64"),
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn test_range_query_ip_fields_multivalued() {
         check_build_query(
             "ips:[127.0.0.1 TO 127.1.1.1]",
@@ -549,12 +633,12 @@ mod test {
     }
 
     #[test]
-    fn test_range_query_ip_field_no_fast_field() {
+    fn test_range_query_no_fast_field() {
         check_build_query(
             "ip_notff:[127.0.0.1 TO 127.1.1.1]",
             Vec::new(),
             None,
-            TestExpectation::Err("Field `ip_notff` is not declared as a fast field"),
+            TestExpectation::Err("field `ip_notff` is not declared as a fast field"),
         )
         .unwrap();
     }

@@ -134,7 +134,7 @@ mod tests {
     use std::iter;
     use std::sync::Arc;
 
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::Universe;
     use quickwit_common::split_file;
     use quickwit_storage::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
     use tantivy::Inventory;
@@ -167,8 +167,8 @@ mod tests {
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage))
         };
 
-        let universe = Universe::new();
-        let (merge_executor_mailbox, merge_executor_inbox) = create_test_mailbox();
+        let universe = Universe::with_accelerated_time();
+        let (merge_executor_mailbox, merge_executor_inbox) = universe.create_test_mailbox();
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory,
             split_store,
@@ -199,7 +199,7 @@ mod tests {
             let split_filepath = merge_scratch
                 .downloaded_splits_directory
                 .path()
-                .join(&split_filename);
+                .join(split_filename);
             assert!(split_filepath.try_exists().unwrap());
         }
         Ok(())

@@ -20,6 +20,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
+utoipa = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }

@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
-use quickwit_config::VrlSettings;
+use quickwit_config::TransformConfig;
 use quickwit_doc_mapper::{DocMapper, DocParsingError};
 use serde::Serialize;
 use tantivy::schema::{Field, Value};
@@ -43,7 +43,7 @@ type VrlSecrets = ::value::Secrets;
 pub enum PrepareDocumentError {
     ParsingError,
     MissingField,
-    VrlError(Terminate),
+    TransformError(Terminate),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -52,10 +52,10 @@ pub struct DocProcessorCounters {
     source_id: String,
     /// Overall number of documents received, partitioned
     /// into 4 categories:
-    /// - number of docs that did not parse correctly.
-    /// - number of docs that did not get transformed correctly (VRL Error)
-    /// - number of docs missing a timestamp (if the index has no timestamp,
-    /// then this counter is 0)
+    /// - number of docs that could not be parsed.
+    /// - number of docs that could not be transformed.
+    /// - number of docs without a timestamp (if the index has no timestamp field,
+    /// then this counter is equal to zero)
     /// - number of valid docs.
     pub num_parse_errors: u64,
     pub num_transform_errors: u64,
@@ -180,96 +180,22 @@ pub struct DocProcessor {
     timestamp_field_opt: Option<Field>,
     counters: DocProcessorCounters,
     publish_lock: PublishLock,
-    transform_layer: Option<VrlProgram>,
-}
-
-struct VrlProgram {
-    inner: Program,
-    runtime: Runtime,
-    timezone: TimeZone,
-}
-
-impl TryFrom<VrlSettings> for VrlProgram {
-    type Error = anyhow::Error;
-
-    fn try_from(settings: VrlSettings) -> Result<Self, Self::Error> {
-        settings.validate()?;
-        // Since we validated the settings, we can unwrap the return values
-        let timezone = settings.get_timezone().unwrap();
-
-        let CompilationResult {
-            program,
-            warnings,
-            config: _,
-        } = settings.compile_program().unwrap();
-
-        let compilation_warnings = warnings.warnings();
-        if !compilation_warnings.is_empty() {
-            let warning_message = Formatter::new(
-                &settings.program_source(),
-                compilation_warnings
-                    .iter()
-                    .map(|warning_ref| (*warning_ref).clone())
-                    .collect_vec(),
-            )
-            .to_string();
-            warn!(
-                vrl_warnings = warning_message,
-                "VRL program compiled successfully but returned warnings: {}", warning_message
-            );
-        }
-
-        let state = vrl::state::Runtime::default();
-        let runtime = Runtime::new(state);
-
-        Ok(VrlProgram {
-            inner: program,
-            runtime,
-            timezone,
-        })
-    }
-}
-
-impl VrlProgram {
-    pub fn process_doc(&mut self, doc_json: &str) -> Result<VrlValue, PrepareDocumentError> {
-        let mut target: VrlValue =
-            serde_json::from_str(doc_json).map_err(|_| PrepareDocumentError::ParsingError)?;
-
-        let mut metadata = VrlValue::Object(BTreeMap::new());
-        let mut secrets = VrlSecrets::new();
-        let mut target_value = TargetValueRef {
-            value: &mut target,
-            metadata: &mut metadata,
-            secrets: &mut secrets,
-        };
-
-        let runtime_result = self
-            .runtime
-            .resolve(&mut target_value, &self.inner, &self.timezone);
-
-        self.runtime.clear();
-
-        match runtime_result {
-            Ok(value) => Ok(value),
-            Err(terminate) => Err(PrepareDocumentError::VrlError(terminate)),
-        }
-    }
+    transform_opt: Option<VrlProgram>,
 }
 
 impl DocProcessor {
-    pub fn new(
+    pub fn try_new(
         index_id: String,
         source_id: String,
         doc_mapper: Arc<dyn DocMapper>,
         indexer_mailbox: Mailbox<Indexer>,
-        vrl_settings: Option<VrlSettings>,
+        transform_config_opt: Option<TransformConfig>,
     ) -> anyhow::Result<Self> {
         let schema = doc_mapper.schema();
         let timestamp_field_opt = doc_mapper.timestamp_field(&schema);
-        let vrl_program = match vrl_settings {
-            Some(settings) => Some(VrlProgram::try_from(settings)?),
-            None => None,
-        };
+        let transform = transform_config_opt
+            .map(|transform_config| VrlProgram::try_from_transform_config(transform_config))
+            .transpose()?;
 
         let doc_processor = Self {
             doc_mapper,
@@ -277,34 +203,27 @@ impl DocProcessor {
             timestamp_field_opt,
             counters: DocProcessorCounters::new(index_id, source_id),
             publish_lock: PublishLock::default(),
-            transform_layer: vrl_program,
+            transform_opt: transform,
         };
-
         Ok(doc_processor)
     }
 
     fn prepare_document(
         &mut self,
-        doc_json: &str,
+        json_doc: &str,
         ctx: &ActorContext<Self>,
     ) -> Result<PreparedDoc, PrepareDocumentError> {
         let _protect_guard = ctx.protect_zone();
 
-        let transformed_doc = if let Some(vrl_program) = self.transform_layer.as_mut() {
-            Some(vrl_program.process_doc(doc_json)?)
+        // Transform and parse the document
+        let doc_parsing_result = if let Some(vrl_program) = self.transform_opt.as_mut() {
+            let vrl_value: VrlValue = vrl_program.transform_doc(json_doc)?;
+            let json_obj: JsonObject = serde_json::to_value(value).map_err(|_| DocParsingError::ParsingError);
+            self.doc_mapper.doc_from_json_obj(json_obj)
         } else {
-            None
+            self.doc_mapper.doc_from_json_str(json_doc)
         };
-
-        let doc_parsing_result = if let Some(transformed_doc) = transformed_doc {
-            self.doc_mapper
-                .doc_from_json(&transformed_doc.to_string_lossy())
-        } else {
-            self.doc_mapper.doc_from_json(doc_json)
-        };
-
-        // Parse the document
-        let num_bytes = doc_json.len();
+        let num_bytes = json_doc.len();
         let (partition, doc) = doc_parsing_result.map_err(|doc_parsing_error| {
             warn!(err=?doc_parsing_error);
             match doc_parsing_error {
@@ -400,7 +319,7 @@ impl Handler<RawDocBatch> for DocProcessor {
                 Err(PrepareDocumentError::ParsingError) => {
                     self.counters.record_parsing_error(doc_json_num_bytes);
                 }
-                Err(PrepareDocumentError::VrlError(_)) => {
+                Err(PrepareDocumentError::TransformError(_)) => {
                     self.counters.record_transform_error(doc_json_num_bytes);
                 }
                 Err(PrepareDocumentError::MissingField) => {
@@ -435,11 +354,73 @@ impl Handler<NewPublishLock> for DocProcessor {
     }
 }
 
+struct VrlProgram {
+    runtime: Runtime,
+    program: Program,
+    timezone: TimeZone,
+}
+
+impl VrlProgram {
+    fn transform_doc(&mut self, json_doc: &str) -> Result<VrlValue, PrepareDocumentError> {
+        let mut value: VrlValue =
+            serde_json::from_str(json_doc).map_err(|_| PrepareDocumentError::ParsingError)?;
+        let mut metadata = VrlValue::Object(BTreeMap::new());
+        let mut secrets = VrlSecrets::new();
+        let mut target = TargetValueRef {
+            value: &mut value,
+            metadata: &mut metadata,
+            secrets: &mut secrets,
+        };
+        let runtime_res = self
+            .runtime
+            .resolve(&mut target, &self.program, &self.timezone)
+            .map_err(|terminate| PrepareDocumentError::TransformError(terminate));
+
+        self.runtime.clear();
+
+        runtime_res
+    }
+
+    fn try_from_transform_config(transform_config: TransformConfig) -> anyhow::Result<Self> {
+        transform_config.validate()?;
+        // Since we validated the settings, we can unwrap the return values
+        let timezone = transform_config.timezone().expect("");
+
+        let CompilationResult {
+            program, warnings, ..
+        } = transform_config.compile_vrl_program().expect("");
+
+        let compilation_warnings = warnings.warnings();
+        if !compilation_warnings.is_empty() {
+            let warning_message = Formatter::new(
+                &transform_config.vrl_program_source(),
+                compilation_warnings
+                    .iter()
+                    .map(|warning_ref| (*warning_ref).clone())
+                    .collect_vec(),
+            )
+            .to_string();
+            warn!(
+                vrl_warnings = warning_message,
+                "VRL program compiled successfully but returned warnings: {}", warning_message
+            );
+        }
+        let state = vrl::state::Runtime::default();
+        let runtime = Runtime::new(state);
+
+        Ok(VrlProgram {
+            program,
+            runtime,
+            timezone,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::Universe;
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use serde_json::Value as JsonValue;
@@ -452,9 +433,10 @@ mod tests {
     async fn test_doc_processor_simple() -> anyhow::Result<()> {
         let index_id = "my-index";
         let source_id = "my-source";
+        let universe = Universe::with_accelerated_time();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
-        let doc_processor = DocProcessor::new(
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
             doc_mapper.clone(),
@@ -462,7 +444,6 @@ mod tests {
             None,
         )
         .unwrap();
-        let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
         let checkpoint_delta = SourceCheckpointDelta::from(0..4);
@@ -542,8 +523,9 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> = Arc::new(
             serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap(),
         );
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
-        let doc_processor = DocProcessor::new(
+        let universe = Universe::with_accelerated_time();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
             doc_mapper,
@@ -551,7 +533,6 @@ mod tests {
             None,
         )
         .unwrap();
-        let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
         doc_processor_mailbox
@@ -587,9 +568,9 @@ mod tests {
     #[tokio::test]
     async fn test_doc_processor_forward_publish_lock() {
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
-        let universe = Universe::new();
-        let doc_processor = DocProcessor::new(
+        let universe = Universe::with_accelerated_time();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
             doc_mapper,
@@ -616,9 +597,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_doc_processor_ignores_messages_when_publish_lock_is_dead() {
+        let universe = Universe::with_accelerated_time();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
-        let doc_processor = DocProcessor::new(
+        let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
             doc_mapper,
@@ -626,7 +608,6 @@ mod tests {
             None,
         )
         .unwrap();
-        let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
         let publish_lock = PublishLock::default();
@@ -658,18 +639,18 @@ mod tests {
     async fn test_doc_processor_simple_vrl() -> anyhow::Result<()> {
         let index_id = "my-index";
         let source_id = "my-source";
+        let universe = Universe::with_accelerated_time();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
-        let vrl_settings = VrlSettings::for_test(".body = upcase(string!(.body))");
-        let doc_processor = DocProcessor::new(
+        let transform_config = TransformConfig::for_test(".body = upcase(string!(.body))");
+        let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
             doc_mapper.clone(),
             indexer_mailbox,
-            Some(vrl_settings),
+            Some(transform_config),
         )
         .unwrap();
-        let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
         let checkpoint_delta = SourceCheckpointDelta::from(0..4);

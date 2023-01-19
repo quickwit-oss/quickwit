@@ -20,17 +20,17 @@
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
-use super::VrlSettings;
+use super::TransformConfig;
 use crate::{
     validate_identifier, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 
 type SourceConfigForSerialization = SourceConfigV0_4;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 #[serde(tag = "version")]
-pub(crate) enum VersionedSourceConfig {
+pub enum VersionedSourceConfig {
     #[serde(rename = "0.4")]
     V0_4(SourceConfigV0_4),
 }
@@ -42,7 +42,7 @@ impl From<SourceConfig> for SourceConfigV0_4 {
             num_pipelines: source_config.num_pipelines,
             enabled: source_config.enabled,
             source_params: source_config.source_params,
-            transform: source_config.transform,
+            transform: source_config.transform_config,
         }
     }
 }
@@ -82,11 +82,10 @@ fn default_source_enabled() -> bool {
     true
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SourceConfigV0_4 {
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct SourceConfigV0_4 {
     pub source_id: String,
 
-    #[doc(hidden)]
     #[serde(default = "default_num_pipelines", skip_serializing_if = "is_one")]
     /// Number of indexing pipelines spawned for the source on each indexer.
     /// Therefore, if there exists `n` indexers in the cluster, there will be `n` * `num_pipelines`
@@ -101,7 +100,7 @@ pub(crate) struct SourceConfigV0_4 {
     pub source_params: SourceParams,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub transform: Option<VrlSettings>,
+    pub transform: Option<TransformConfig>,
 }
 
 impl SourceConfigV0_4 {
@@ -146,7 +145,7 @@ impl SourceConfigV0_4 {
             num_pipelines: self.num_pipelines,
             enabled: self.enabled,
             source_params: self.source_params,
-            transform: self.transform,
+            transform_config: self.transform,
         })
     }
 }
@@ -173,13 +172,13 @@ mod tests {
 
     #[test]
     fn test_transform_validation() {
-        let vrl_settings = VrlSettings {
-            source: "somerandomthing".to_string(),
+        let vrl_settings = TransformConfig {
+            script: "somerandomthing".to_string(),
             timezone: None,
         };
         vrl_settings.validate().unwrap_err();
-        let vrl_settings = VrlSettings {
-            source: ".message = downcase(string!(.message))".to_string(),
+        let vrl_settings = TransformConfig {
+            script: ".message = downcase(string!(.message))".to_string(),
             timezone: None,
         };
         vrl_settings.validate().unwrap();

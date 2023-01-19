@@ -56,7 +56,7 @@ The Janitor service is a maintenance service in charge of keeping Quickwit clust
 
 The metastore service exposes Quickwit metastore over the network. This is a core internal service that is needed to operate Quickwit. As such, at least one running instance of this service is required for other services to work.
 
-### Searcher service 
+### Searcher service
 Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
 where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
 The node can optionally join a cluster using the `peer_seeds` parameter.
@@ -71,7 +71,7 @@ Behind the scenes, Quickwit needs to open the following port for cluster formati
 
 If ports are already taken, the serve command will fail.
 :::
-  
+
 `quickwit  run [args]`
 
 *Synopsis*
@@ -145,7 +145,7 @@ Create your index, ingest data, search, describe... every command you need to ma
 
 ### index list
 
-List indexes.  
+List indexes.
 `quickwit index list [args]`
 `quickwit index ls [args]`
 
@@ -168,7 +168,7 @@ quickwit index list --config ./config/quickwit.yaml
 # Or with alias.
 quickwit index ls --config ./config/quickwit.yaml
 
-                                    Indexes                                     
+                                    Indexes
 +-----------+--------------------------------------------------------+
 | Index ID  |                       Index URI                        |
 +-----------+--------------------------------------------------------+
@@ -187,7 +187,7 @@ The index config lets you define the mapping of your document on the index and h
 If `index-uri` is omitted, `index-uri` will be set to `{default_index_root_uri}/{index}`, more info on [Quickwit config docs](../configuration/node-config.md).
 The command fails if an index already exists unless `overwrite` is passed.
 When `overwrite` is enabled, the command deletes all the files stored at `index-uri` before creating a new index.
-  
+
 `quickwit index create [args]`
 
 *Synopsis*
@@ -220,7 +220,7 @@ Indexes a dataset consisting of newline-delimited JSON objects located at `input
 The data is appended to the target index of ID `index` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin.
 Currently, only local datasets are supported.
 By default, Quickwit's indexer will work with a heap of 2 GiB of memory. Learn how to change `heap-size` in the [index config doc page](../configuration/index-config.md).
-  
+
 `quickwit index ingest [args]`
 
 *Synopsis*
@@ -241,8 +241,7 @@ quickwit index ingest
 `--input-path` Location of the input file. \
 `--overwrite` Overwrites pre-existing index. \
 `--keep-cache` Does not clear local cache directory upon completion. \
-`--transform-config` VRL script file location. Conflicts with `--transform-program` option. \
-`--transform-program` VRL script as a string. Conflicts with `--source-file` option. \
+`--transform-script` VRL script as a string. Conflicts with `--source-file` option. \
 
 
 *Examples*
@@ -262,20 +261,12 @@ cat hdfs-log.json | quickwit index ingest --index wikipedia --config=./config/qu
 *Downcase the article title before ingesting*
 
 ```bash
-quickwit index ingest --index wikipedia --config=./config/quickwit.yaml --input-path wiki-articles-10000.json --transform-program ".title = downcase(string!(.title))`
+quickwit index ingest --index wikipedia --config=./config/quickwit.yaml --input-path wiki-articles-10000.json --transform-script ".title = downcase(string!(.title))`
 ```
-
-*Transform Config*
-
-A VRL script can be used to transfom documents before ingesting. Config can be in JSON, TOML or YAML format. Transform config consists of two parameters: `source` and `timezone`.
-
-`source` A [VRL](https://vector.dev/docs/reference/vrl/) script. Used to tranform documents before ingesting. \
-`timezone` Timezone to use for VRL's timezone related functions. If not specified, defaults to UTC. Timezone must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). \
-
 
 ### index ingest-api
 
-Enables/disables the ingest API of an index.  
+Enables/disables the ingest API of an index.
 `quickwit index ingest-api [args]`
 
 *Synopsis*
@@ -292,9 +283,10 @@ quickwit index ingest-api
 `--index` ID of the target index \
 `--enable` Enables the ingest API. \
 `--disable` Disables the ingest API. \
+
 ### index describe
 
-Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.  
+Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.
 `quickwit index describe [args]`
 
 *Synopsis*
@@ -339,7 +331,7 @@ Quantiles [1%, 25%, 50%, 75%, 99%]: [448, 448, 448, 448, 448]
 Searches an index with ID `--index` and returns the documents matching the query specified with `--query`.
 More details on the [query language page](query-language.md).
 The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options.
-It's possible to override the default search fields `search-fields` option to define the list of fields that Quickwit will search into if 
+It's possible to override the default search fields `search-fields` option to define the list of fields that Quickwit will search into if
 the user query does not explicitly target a field in the query. Quickwit will return snippets of the matching content when requested via the `snippet-fields` options.
 Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options.
 These timestamp options are useful for boosting query performance when using a time series dataset.
@@ -347,7 +339,7 @@ These timestamp options are useful for boosting query performance when using a t
 :::warning
 The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
 :::
-  
+
 `quickwit index search [args]`
 
 *Synopsis*
@@ -412,7 +404,7 @@ quickwit index search --index wikipedia --query "search" --search-fields title -
 
 ### index gc
 
-Garbage collects stale staged splits and splits marked for deletion.  
+Garbage collects stale staged splits and splits marked for deletion.
 :::note
 Intermediate files are created while executing Quickwit commands.
 These intermediate files are always cleaned at the end of each successfully executed command.
@@ -439,7 +431,7 @@ quickwit index gc
 `--dry-run` Executes the command in dry run mode and only displays the list of splits candidates for garbage collection. \
 ### index clear
 
-Clears and index. Deletes all its splits and resets its checkpoint. This operation is destructive and cannot be undone, proceed with caution.  
+Clears and index. Deletes all its splits and resets its checkpoint. This operation is destructive and cannot be undone, proceed with caution.
 `quickwit index clear [args]`
 `quickwit index clr [args]`
 
@@ -457,7 +449,7 @@ quickwit index clear
 `--yes`  \
 ### index delete
 
-Deletes an index. This operation is destructive and cannot be undone, proceed with caution.  
+Deletes an index. This operation is destructive and cannot be undone, proceed with caution.
 `quickwit index delete [args]`
 `quickwit index del [args]`
 
@@ -486,7 +478,7 @@ Manages sources.
 
 ### source create
 
-Adds a new source to an index.  
+Adds a new source to an index.
 `quickwit source create [args]`
 
 *Synopsis*
@@ -503,7 +495,7 @@ quickwit source create
 `--source-config` Path to source config file. Please, refer to the documentation for more details. \
 ### source enable
 
-Enables a source for an index.  
+Enables a source for an index.
 `quickwit source enable [args]`
 
 *Synopsis*
@@ -520,7 +512,7 @@ quickwit source enable
 `--source` ID of the source. \
 ### source disable
 
-Disables a source for an index.  
+Disables a source for an index.
 `quickwit source disable [args]`
 
 *Synopsis*
@@ -537,7 +529,7 @@ quickwit source disable
 `--source` ID of the source. \
 ### source delete
 
-Deletes a source from an index.  
+Deletes a source from an index.
 `quickwit source delete [args]`
 `quickwit source del [args]`
 
@@ -564,7 +556,7 @@ quickwit source delete --index wikipedia --source wikipedia-source --config ./co
 
 ### source describe
 
-Describes a source.  
+Describes a source.
 `quickwit source describe [args]`
 `quickwit source desc [args]`
 
@@ -591,7 +583,7 @@ quickwit source describe --index wikipedia --source wikipedia-source --config ./
 
 ### source list
 
-Lists the sources of an index.  
+Lists the sources of an index.
 `quickwit source list [args]`
 `quickwit source ls [args]`
 
@@ -616,7 +608,7 @@ quickwit source list --index wikipedia --config ./config/quickwit.yaml
 
 ### source reset-checkpoint
 
-Resets a source checkpoint. This operation is destructive and cannot be undone. Proceed with caution.  
+Resets a source checkpoint. This operation is destructive and cannot be undone. Proceed with caution.
 `quickwit source reset-checkpoint [args]`
 `quickwit source reset [args]`
 
@@ -637,7 +629,7 @@ Performs operations on splits (list, describe, mark for deletion, extract).
 
 ### split list
 
-Lists the splits of an index.  
+Lists the splits of an index.
 `quickwit split list [args]`
 `quickwit split ls [args]`
 
@@ -665,7 +657,7 @@ quickwit split list
 `--output-format` Output format. Possible values are `table`, `json`, and `prettyjson`. \
 ### split mark-for-deletion
 
-Marks one or multiple splits of an index for deletion.  
+Marks one or multiple splits of an index for deletion.
 `quickwit split mark-for-deletion [args]`
 `quickwit split mark [args]`
 

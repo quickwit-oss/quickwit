@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use quickwit_actors::{create_test_mailbox, ActorHandle, Mailbox, Universe};
-use quickwit_config::VrlSettings;
+use quickwit_config::TransformConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::actors::DocProcessor;
 use quickwit_indexing::models::RawDocBatch;
@@ -101,7 +101,7 @@ fn doc_processor_light_transform() -> (Mailbox<DocProcessor>, ActorHandle<DocPro
         .last_name = "Doe"
         .job = upcase(string!(.job))
     "#;
-    let vrl_settings = VrlSettings::for_test(source);
+    let vrl_settings = TransformConfig::for_test(source);
     create_doc_processor(Some(vrl_settings))
 }
 
@@ -112,18 +112,18 @@ fn doc_processor_heavy_transform() -> (Mailbox<DocProcessor>, ActorHandle<DocPro
         .job = upcase(string!(.job))
         .timestamp = to_string(to_timestamp(now()))
     "#;
-    let vrl_settings = VrlSettings::for_test(source);
+    let vrl_settings = TransformConfig::for_test(source);
     create_doc_processor(Some(vrl_settings))
 }
 
 fn create_doc_processor(
-    vrl_settings: Option<VrlSettings>,
+    vrl_settings: Option<TransformConfig>,
 ) -> (Mailbox<DocProcessor>, ActorHandle<DocProcessor>, Universe) {
     let index_id = "my-index";
     let source_id = "my-source";
     let doc_mapper = Arc::new(default_doc_mapper_for_bench());
     let (indexer_mailbox, _) = create_test_mailbox();
-    let doc_processor = DocProcessor::new(
+    let doc_processor = DocProcessor::try_new(
         index_id.to_string(),
         source_id.to_string(),
         doc_mapper,

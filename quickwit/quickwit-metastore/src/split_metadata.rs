@@ -26,10 +26,10 @@ use quickwit_config::TestableForRegression;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::VersionedSplitMetadata;
+use crate::split_metadata_version::VersionedSplitMetadata;
 
 /// Carries split metadata.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Split {
     /// The state of the split.
     pub split_state: SplitState,
@@ -40,8 +40,9 @@ pub struct Split {
     /// Timestamp for tracking when the split was published.
     pub publish_timestamp: Option<i64>,
 
-    /// Immutable part of the split.
     #[serde(flatten)]
+    #[schema(value_type = VersionedSplitMetadata)]
+    /// Immutable part of the split.
     pub split_metadata: SplitMetadata,
 }
 
@@ -186,7 +187,7 @@ impl TestableForRegression for SplitMetadata {
 }
 
 /// A split state.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, utoipa::ToSchema)]
 pub enum SplitState {
     /// The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,

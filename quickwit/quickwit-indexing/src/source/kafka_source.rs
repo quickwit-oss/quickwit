@@ -107,7 +107,7 @@ impl From<BorrowedMessage<'_>> for KafkaMessage {
             doc_opt: parse_message_payload(&message),
             payload_len: message.payload_len() as u64,
             partition: message.partition(),
-            offset: message.offset() as i64,
+            offset: message.offset(),
         }
     }
 }
@@ -763,7 +763,7 @@ fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
 mod kafka_broker_tests {
     use std::path::PathBuf;
 
-    use quickwit_actors::{create_test_mailbox, ActorContext, Universe};
+    use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
@@ -878,7 +878,7 @@ mod kafka_broker_tests {
                 }),
                 enable_backfill_mode: true,
             }),
-            transform: None,
+            transform_config: None,
         };
         (source_id, source_config)
     }
@@ -1093,8 +1093,8 @@ mod kafka_broker_tests {
             .unwrap();
         kafka_source.state.num_inactive_partitions = 1;
 
-        let universe = Universe::new();
-        let (source_mailbox, _source_inbox) = create_test_mailbox();
+        let universe = Universe::with_accelerated_time();
+        let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
         let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
         let ctx: ActorContext<SourceActor> =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1152,9 +1152,9 @@ mod kafka_broker_tests {
             .await
             .unwrap();
 
-        let universe = Universe::new();
-        let (source_mailbox, _source_inbox) = create_test_mailbox();
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let universe = Universe::with_accelerated_time();
+        let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
         let ctx: ActorContext<SourceActor> =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1222,7 +1222,7 @@ mod kafka_broker_tests {
 
     #[tokio::test]
     async fn test_kafka_source() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let admin_client = create_admin_client()?;
         let topic = append_random_suffix("test-kafka-source--topic");
         create_topic(&admin_client, &topic, 3).await?;
@@ -1247,7 +1247,7 @@ mod kafka_broker_tests {
 
             setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
-            let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
+            let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
                 source,
                 doc_processor_mailbox: doc_processor_mailbox.clone(),
@@ -1309,7 +1309,7 @@ mod kafka_broker_tests {
 
             setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
-            let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
+            let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
                 source,
                 doc_processor_mailbox: doc_processor_mailbox.clone(),
@@ -1381,7 +1381,7 @@ mod kafka_broker_tests {
             )
             .await;
 
-            let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
+            let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
                 source,
                 doc_processor_mailbox: doc_processor_mailbox.clone(),

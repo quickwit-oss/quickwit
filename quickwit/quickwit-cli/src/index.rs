@@ -35,8 +35,8 @@ use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
-    VrlSettings, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
+    ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, TransformConfig,
+    VecSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexService};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
@@ -95,13 +95,10 @@ pub fn build_index_command<'a>() -> Command<'a> {
                         .required(false),
                     arg!(--overwrite "Overwrites pre-existing index.")
                         .required(false),
+                    arg!(--"transform-script" <SCRIPT> "VRL program to transform docs before ingesting.")
+                        .required(false),
                     arg!(--"keep-cache" "Does not clear local cache directory upon completion.")
                         .required(false),
-                    arg!(--"transform-config" <CONFIG_PATH> "Location of the VRL program to transform docs before ingesting.")
-                        .required(false),
-                    arg!(--"transform-program" <PROGRAM> "VRL program to transform docs before ingesting.")
-                        .required(false)
-                        .conflicts_with("transform-config")
                 ])
             )
         .subcommand(
@@ -229,8 +226,8 @@ pub struct IngestDocsArgs {
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
     pub overwrite: bool,
+    pub vrl_script: Option<TransformConfig>,
     pub clear_cache: bool,
-    pub vrl_settings: Option<VrlSettings>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -400,42 +397,19 @@ impl IndexCliCommand {
             None
         };
         let overwrite = matches.is_present("overwrite");
+        let vrl_script = matches
+            .value_of("transform-script")
+            .map(|source| source.to_string());
         let clear_cache = !matches.is_present("keep-cache");
 
-        let vrl_settings = IndexCliCommand::parse_transform_args(matches)?;
-
         Ok(Self::Ingest(IngestDocsArgs {
+            config_uri,
             index_id,
             input_path_opt,
             overwrite,
-            config_uri,
+            vrl_script,
             clear_cache,
-            vrl_settings,
         }))
-    }
-
-    fn parse_transform_args(matches: &ArgMatches) -> anyhow::Result<Option<VrlSettings>> {
-        let vrl_program = if let Some(path) = matches.value_of("transform-config") {
-            let mut reader = std::fs::File::open(path)?;
-            let mut buffer = String::new();
-            reader.read_to_string(&mut buffer)?;
-            let config_uri = Uri::from_str(path)?;
-            let config_format = ConfigFormat::sniff_from_uri(&config_uri)?;
-            let vrl_program: VrlSettings = config_format.parse_file_simple(buffer.as_bytes())?;
-            Some(vrl_program)
-        } else {
-            let vrl_source = matches
-                .value_of("transform-program")
-                .map(|source| source.to_owned());
-
-            vrl_source.map(|source| VrlSettings::new(source, None))
-        };
-
-        if let Some(vrl_program) = &vrl_program {
-            vrl_program.validate()?;
-        }
-
-        Ok(vrl_program)
     }
 
     fn parse_toggle_ingest_api_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -926,7 +900,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         num_pipelines: 1,
         enabled: true,
         source_params,
-        transform: args.vrl_settings,
+        transform_config: args.vrl_script,
     };
     run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source_config)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
@@ -1090,7 +1064,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
                 num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
-                transform: None,
+                transform_config: None,
             },
             pipeline_ord: 0,
         })
@@ -1392,7 +1366,7 @@ impl ThroughputCalculator {
             .push_back((current_instant, current_processed_bytes));
         (current_processed_bytes - first_processed_bytes) as f64
             / 1_000_000f64
-            / elapsed_time.max(1f64) as f64
+            / elapsed_time.max(1f64)
     }
 
     pub fn elapsed_time(&self) -> Duration {

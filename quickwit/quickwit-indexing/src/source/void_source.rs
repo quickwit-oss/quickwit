@@ -73,7 +73,7 @@ mod tests {
 
     use std::path::PathBuf;
 
-    use quickwit_actors::{create_test_mailbox, Health, Supervisable, Universe};
+    use quickwit_actors::{Health, Supervisable, Universe};
     use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use quickwit_metastore::metastore_for_test;
@@ -89,7 +89,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
-            transform: None,
+            transform_config: None,
         };
         let metastore = metastore_for_test();
         let ctx = SourceExecutionContext::for_test(
@@ -107,6 +107,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_void_source_running() -> anyhow::Result<()> {
+        let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let void_source = VoidSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
@@ -118,19 +119,18 @@ mod tests {
                     num_pipelines: 1,
                     enabled: true,
                     source_params: SourceParams::void(),
-                    transform: None,
+                    transform_config: None,
                 },
             ),
             VoidSourceParams,
             SourceCheckpoint::default(),
         )
         .await?;
-        let (doc_processor_mailbox, _) = create_test_mailbox();
+        let (doc_processor_mailbox, _) = universe.create_test_mailbox();
         let void_source_actor = SourceActor {
             source: Box::new(void_source),
             doc_processor_mailbox,
         };
-        let universe = Universe::new();
         let (_, void_source_handle) = universe.spawn_builder().spawn(void_source_actor);
         matches!(void_source_handle.harvest_health(), Health::Healthy);
         let (actor_termination, observed_state) = void_source_handle.quit().await;

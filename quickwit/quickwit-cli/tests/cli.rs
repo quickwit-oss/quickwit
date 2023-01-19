@@ -64,7 +64,7 @@ async fn ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Result<()
         input_path_opt: Some(input_path.to_path_buf()),
         overwrite: false,
         clear_cache: true,
-        vrl_settings: None,
+        vrl_script: None,
     };
 
     ingest_docs_cli(args).await
@@ -167,7 +167,7 @@ async fn test_cmd_ingest_on_non_existing_index() {
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
         overwrite: false,
         clear_cache: true,
-        vrl_settings: None,
+        vrl_script: None,
     };
 
     let error = ingest_docs_cli(args).await.unwrap_err();
@@ -192,7 +192,7 @@ async fn test_cmd_ingest_on_non_existing_file() {
         input_path_opt: Some(test_env.data_dir_path.join("file-does-not-exist.json")),
         overwrite: false,
         clear_cache: true,
-        vrl_settings: None,
+        vrl_script: None,
     };
 
     let error = ingest_docs_cli(args).await.unwrap_err();
@@ -217,7 +217,7 @@ async fn test_ingest_docs_cli_keep_cache() {
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
         overwrite: false,
         clear_cache: false,
-        vrl_settings: None,
+        vrl_script: None,
     };
 
     ingest_docs_cli(args).await.unwrap();
@@ -238,7 +238,7 @@ async fn test_ingest_docs_cli() {
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
         overwrite: false,
         clear_cache: true,
-        vrl_settings: None,
+        vrl_script: None,
     };
 
     ingest_docs_cli(args).await.unwrap();
@@ -595,7 +595,7 @@ async fn test_garbage_collect_cli_no_grace() {
     // On `dry_run = true` splits `MarkedForDeletion` should still exist.
     for split_id in split_ids {
         let split_file = quickwit_common::split_file(split_id);
-        let split_filepath = index_path.join(&split_file);
+        let split_filepath = index_path.join(split_file);
         assert_eq!(split_filepath.try_exists().unwrap(), true);
     }
 
@@ -606,7 +606,7 @@ async fn test_garbage_collect_cli_no_grace() {
     // If split is `MarkedForDeletion` it should be deleted after gc run
     for split_id in split_ids {
         let split_file = quickwit_common::split_file(split_id);
-        let split_filepath = index_path.join(&split_file);
+        let split_filepath = index_path.join(split_file);
         assert_eq!(split_filepath.try_exists().unwrap(), false);
     }
 

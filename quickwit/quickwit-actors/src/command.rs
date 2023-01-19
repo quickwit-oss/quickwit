@@ -17,11 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::any::Any;
-use std::fmt;
-
 use async_trait::async_trait;
-use tokio::sync::oneshot;
 
 use crate::{Actor, ActorContext, ActorExitStatus, Handler};
 
@@ -30,6 +26,7 @@ use crate::{Actor, ActorContext, ActorExitStatus, Handler};
 /// They are similar to UNIX signals.
 ///
 /// They are treated with a higher priority than regular actor messages.
+#[derive(Debug)]
 pub enum Command {
     /// Temporarily pauses the actor. A paused actor only checks
     /// on its high priority channel and still shows "progress". It appears as
@@ -54,20 +51,6 @@ pub enum Command {
     ///
     /// It is similar to `Quit`, except for the resulting exit status.
     ExitWithSuccess,
-
-    /// Asks the actor to update its ObservableState.
-    /// Since it is a command, it will be treated with a higher priority than
-    /// a normal message.
-    /// If the actor is processing message, it will finish it, and the state
-    /// observed will be the state after this message.
-    /// The Observe command also ships a oneshot channel to allow client
-    /// to wait on this observation.
-    ///
-    /// The observation is then available using the `ActorHander::last_observation()`
-    /// method.
-    // We use a `Box<dyn Any>` here to avoid adding an observablestate generic
-    // parameter to the mailbox.
-    Observe(oneshot::Sender<Box<dyn Any + Send>>),
 
     /// Asks the actor to gracefully shutdown.
     ///
@@ -102,19 +85,6 @@ pub enum Command {
     Nudge,
 }
 
-impl fmt::Debug for Command {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Command::Pause => write!(f, "Pause"),
-            Command::Resume => write!(f, "Resume"),
-            Command::Observe(_) => write!(f, "Observe"),
-            Command::ExitWithSuccess => write!(f, "Success"),
-            Command::Quit => write!(f, "Quit"),
-            Command::Nudge => write!(f, "Nudge"),
-        }
-    }
-}
-
 #[async_trait]
 impl<A: Actor> Handler<Command> for A {
     type Reply = ();
@@ -137,13 +107,26 @@ impl<A: Actor> Handler<Command> for A {
                 ctx.resume();
                 Ok(())
             }
-            Command::Observe(cb) => {
-                let obs_state = ctx.observe(self);
-                // We voluntarily ignore the error here. (An error only occurs if the
-                // sender dropped its receiver.)
-                let _ = cb.send(Box::new(obs_state));
-                Ok(())
-            }
         }
+    }
+}
+
+/// Asks the actor to update its ObservableState.
+///
+/// The observation is then available using the `ActorHander::last_observation()`
+/// method.
+#[derive(Debug)]
+pub(crate) struct Observe;
+
+#[async_trait]
+impl<A: Actor> Handler<Observe> for A {
+    type Reply = A::ObservableState;
+
+    async fn handle(
+        &mut self,
+        _observe: Observe,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(ctx.observe(self))
     }
 }

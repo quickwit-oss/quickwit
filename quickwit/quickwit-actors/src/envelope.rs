@@ -23,6 +23,7 @@ use std::fmt;
 use async_trait::async_trait;
 use tokio::sync::oneshot;
 
+use crate::scheduler::NoAdvanceTimeGuard;
 use crate::{Actor, ActorContext, ActorExitStatus, Handler};
 
 /// An `Envelope` is just a way to capture the handler
@@ -33,18 +34,21 @@ use crate::{Actor, ActorContext, ActorExitStatus, Handler};
 /// Before appending, we capture the right handler implementation
 /// in the form of a `Box<dyn Envelope>`, and append that to the queue.
 
-pub struct Envelope<A>(Box<dyn EnvelopeT<A>>);
+pub struct Envelope<A> {
+    handler_envelope: Box<dyn EnvelopeT<A>>,
+    _no_advance_time_guard: Option<NoAdvanceTimeGuard>,
+}
 
 impl<A: Actor> Envelope<A> {
     /// Returns the message as a boxed any.
     ///
     /// This method is only useful in unit tests.
     pub fn message(&mut self) -> Box<dyn Any> {
-        self.0.message()
+        self.handler_envelope.message()
     }
 
     pub fn message_typed<M: 'static>(&mut self) -> Option<M> {
-        if let Ok(boxed_msg) = self.0.message().downcast::<M>() {
+        if let Ok(boxed_msg) = self.handler_envelope.message().downcast::<M>() {
             Some(*boxed_msg)
         } else {
             None
@@ -57,13 +61,14 @@ impl<A: Actor> Envelope<A> {
         actor: &mut A,
         ctx: &ActorContext<A>,
     ) -> Result<(), ActorExitStatus> {
-        self.0.handle_message(actor, ctx).await
+        self.handler_envelope.handle_message(actor, ctx).await?;
+        Ok(())
     }
 }
 
 impl<A: Actor> fmt::Debug for Envelope<A> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let msg_str = self.0.debug_msg();
+        let msg_str = self.handler_envelope.debug_msg();
         f.debug_tuple("Envelope").field(&msg_str).finish()
     }
 }
@@ -124,12 +129,19 @@ where
     }
 }
 
-pub(crate) fn wrap_in_envelope<A, M>(msg: M) -> (Envelope<A>, oneshot::Receiver<A::Reply>)
+pub(crate) fn wrap_in_envelope<A, M>(
+    msg: M,
+    no_advance_time_guard: Option<NoAdvanceTimeGuard>,
+) -> (Envelope<A>, oneshot::Receiver<A::Reply>)
 where
     A: Handler<M>,
     M: 'static + Send + Sync + fmt::Debug,
 {
     let (response_tx, response_rx) = oneshot::channel();
-    let envelope = Some((response_tx, msg));
-    (Envelope(Box::new(envelope)), response_rx)
+    let handler_envelope = Some((response_tx, msg));
+    let envelope = Envelope {
+        handler_envelope: Box::new(handler_envelope),
+        _no_advance_time_guard: no_advance_time_guard,
+    };
+    (envelope, response_rx)
 }

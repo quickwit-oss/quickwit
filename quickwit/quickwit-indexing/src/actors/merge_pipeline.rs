@@ -23,8 +23,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use byte_unit::Byte;
 use quickwit_actors::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox,
-    Mailbox, Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox, Mailbox,
+    SpawnContext, Supervisable,
 };
 use quickwit_common::io::IoControls;
 use quickwit_common::KillSwitch;
@@ -90,11 +90,11 @@ impl Actor for MergePipeline {
 }
 
 impl MergePipeline {
-    pub fn new(params: MergePipelineParams) -> Self {
-        let (merge_planner_mailbox, merge_planner_inbox) = create_mailbox::<MergePlanner>(
-            "MergePlanner".to_string(),
-            MergePlanner::queue_capacity(),
-        );
+    // TODO improve API. Maybe it could take a spawnbuilder as argument, hence removing the need
+    // for a public create_mailbox / MessageCount.
+    pub fn new(params: MergePipelineParams, spawn_ctx: &SpawnContext) -> Self {
+        let (merge_planner_mailbox, merge_planner_inbox) = spawn_ctx
+            .create_mailbox::<MergePlanner>("MergePlanner", MergePlanner::queue_capacity());
         Self {
             params,
             previous_generations_statistics: Default::default(),
@@ -440,7 +440,6 @@ pub struct MergePipelineParams {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::time::Duration;
 
     use quickwit_actors::{ActorExitStatus, Universe};
     use quickwit_doc_mapper::default_doc_mapper_for_test;
@@ -459,7 +458,7 @@ mod tests {
             .expect_list_splits()
             .times(1)
             .returning(|_| Ok(Vec::new()));
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -478,9 +477,8 @@ mod tests {
             max_concurrent_split_uploads: 2,
             merge_max_io_num_bytes_per_sec: None,
         };
-        let pipeline = MergePipeline::new(pipeline_params);
+        let pipeline = MergePipeline::new(pipeline_params, universe.spawn_ctx());
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
-        tokio::time::sleep(Duration::from_secs(2)).await;
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.quit().await;
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1);

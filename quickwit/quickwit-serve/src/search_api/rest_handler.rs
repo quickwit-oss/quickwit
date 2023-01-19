@@ -34,7 +34,21 @@ use warp::{reply, Filter, Rejection, Reply};
 
 use crate::{with_arg, Format};
 
-#[derive(Debug, Eq, PartialEq, Deserialize)]
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(search_get_handler, search_post_handler, search_stream_handler,),
+    components(schemas(
+        SearchRequestQueryString,
+        SearchResponseRest,
+        SortByField,
+        SortOrder,
+        OutputFormat,
+        Format,
+    ),)
+)]
+pub struct SearchApi;
+
+#[derive(Debug, Eq, PartialEq, Deserialize, utoipa::ToSchema)]
 struct SortByField {
     /// Name of the field to sort by.
     pub field_name: String,
@@ -98,14 +112,19 @@ where D: Deserializer<'de> {
 
 /// This struct represents the QueryString passed to
 /// the rest API.
-#[derive(Debug, Default, Eq, PartialEq, Deserialize)]
+#[derive(Debug, Default, Eq, PartialEq, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
+    #[param(value_type = Object)]
+    #[schema(value_type = Object)]
     /// The aggregation JSON string.
     pub aggs: Option<JsonValue>,
     // Fields to search on
+    #[param(rename = "search_field")]
+    #[schema(rename = "search_field")]
     #[serde(default)]
     #[serde(rename(deserialize = "search_field"))]
     #[serde(deserialize_with = "from_simple_list")]
@@ -132,6 +151,7 @@ pub struct SearchRequestQueryString {
     #[serde(default)]
     pub format: Format,
     /// Specifies how documents are sorted.
+    #[param(value_type = Option<String>)]
     #[serde(deserialize_with = "sort_by_field_mini_dsl")]
     #[serde(default)]
     sort_by_field: Option<SortByField>,
@@ -200,9 +220,21 @@ async fn search(
         .make_rest_reply(search_endpoint(index_id, search_request, &*search_service).await)
 }
 
-/// REST GET search handler.
+#[utoipa::path(
+    get,
+    tag = "Search",
+    path = "/{index_id}/search",
+    responses(
+        (status = 200, description = "Successfully executed search.", body = SearchResponseRest)
+    ),
+    params(
+        SearchRequestQueryString,
+        ("index_id" = String, Path, description = "The index ID to search."),
+    )
+)]
+/// Search Index (GET Variant)
 ///
-/// Parses the search request from the
+/// Parses the search request from the request query string.
 pub fn search_get_handler(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
@@ -211,9 +243,23 @@ pub fn search_get_handler(
         .then(search)
 }
 
+#[utoipa::path(
+    post,
+    tag = "Search",
+    path = "/{index_id}/search",
+    request_body = SearchRequestQueryString,
+    responses(
+        (status = 200, description = "Successfully executed search.", body = SearchResponseRest)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to search."),
+    )
+)]
+/// Search Index (POST Variant)
+///
 /// REST POST search handler.
 ///
-/// Parses the search request from the
+/// Parses the search request from the request body.
 pub fn search_post_handler(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
@@ -222,6 +268,19 @@ pub fn search_post_handler(
         .then(search)
 }
 
+#[utoipa::path(
+    get,
+    tag = "Search",
+    path = "/{index_id}/search/stream",
+    responses(
+        (status = 200, description = "Successfully executed search.")
+    ),
+    params(
+        SearchStreamRequestQueryString,
+        ("index_id" = String, Path, description = "The index ID to search."),
+    )
+)]
+/// Stream Search Index
 pub fn search_stream_handler(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
@@ -232,19 +291,21 @@ pub fn search_stream_handler(
 
 /// This struct represents the search stream query passed to
 /// the REST API.
-#[derive(Deserialize, Debug, Eq, PartialEq)]
+#[derive(Deserialize, Debug, Eq, PartialEq, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 struct SearchStreamRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
     // Fields to search on.
+    #[param(rename = "search_field")]
     #[serde(default)]
     #[serde(rename(deserialize = "search_field"))]
     #[serde(deserialize_with = "from_simple_list")]
     pub search_fields: Option<Vec<String>>,
     /// Fields to extract snippet on
     #[serde(default)]
-    #[serde(rename(deserialize = "snippet_fields"))]
+    #[serde(rename(deserialize = "snippet_fields"))] // TODO: Was this supposed to be `snippet_field`? - CF
     #[serde(deserialize_with = "from_simple_list")]
     pub snippet_fields: Option<Vec<String>>,
     /// If set, restricts search to documents with a `timestamp >= start_timestamp`.

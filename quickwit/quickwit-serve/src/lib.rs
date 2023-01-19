@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![allow(opaque_hidden_inferred_bound)]
 #![deny(clippy::disallowed_methods)]
 
 mod args;
@@ -33,6 +34,7 @@ mod index_api;
 mod indexing_api;
 mod ingest_api;
 mod node_info_handler;
+mod openapi;
 mod search_api;
 #[cfg(test)]
 mod test_utils;

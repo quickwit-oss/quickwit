@@ -217,7 +217,7 @@ impl TypedSourceFactory for IngestApiSourceFactory {
 mod tests {
     use std::time::Duration;
 
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, INGEST_API_SOURCE_ID};
     use quickwit_ingest_api::{add_doc, init_ingest_api};
@@ -258,13 +258,13 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestApi,
-            transform: None,
+            transform_config: None,
         }
     }
 
     #[tokio::test]
     async fn test_ingest_api_source() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let temp_dir = tempfile::tempdir()?;
@@ -272,7 +272,7 @@ mod tests {
 
         let ingest_api_service =
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
-        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
             metastore,
@@ -293,7 +293,7 @@ mod tests {
             .ask_for_res(ingest_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        universe.sleep(Duration::from_secs(2)).await;
         let counters = ingest_api_source_handle
             .process_pending_and_observe()
             .await
@@ -315,7 +315,7 @@ mod tests {
     /// See #2310
     #[tokio::test]
     async fn test_ingest_api_source_partition_id_changes() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let partition_id_before_lost_queue_dir = {
             let temp_dir = tempfile::tempdir()?;
             let queues_dir_path = temp_dir.path();
@@ -348,7 +348,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_source_resume_from_checkpoint() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let temp_dir = tempfile::tempdir()?;
@@ -357,7 +357,7 @@ mod tests {
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
         let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
 
-        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let mut checkpoint = SourceCheckpoint::default();
         let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             partition_id.clone(),
@@ -386,7 +386,7 @@ mod tests {
             .ask_for_res(ingest_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        universe.sleep(Duration::from_secs(2)).await;
         let counters = ingest_api_source_handle
             .process_pending_and_observe()
             .await
@@ -413,7 +413,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_source_with_one_doc() -> anyhow::Result<()> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
         let temp_dir = tempfile::tempdir()?;
@@ -421,7 +421,7 @@ mod tests {
         let ingest_api_service =
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
 
-        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
             metastore,
@@ -442,7 +442,7 @@ mod tests {
             .ask_for_res(ingest_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        universe.sleep(Duration::from_secs(2)).await;
         let counters = ingest_api_source_handle
             .process_pending_and_observe()
             .await

@@ -30,9 +30,16 @@ use warp::{Filter, Rejection};
 use crate::format::Format;
 use crate::with_arg;
 
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(get_delete_tasks, post_delete_request),
+    components(schemas(DeleteQueryRequest, DeleteTask, DeleteQuery,))
+)]
+pub struct DeleteTaskApi;
+
 /// This struct represents the delete query passed to
 /// the rest API.
-#[derive(Deserialize, Debug, Eq, PartialEq, Default)]
+#[derive(Deserialize, Debug, Eq, PartialEq, Default, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteQueryRequest {
     /// Query text. The query language is that of tantivy.
@@ -62,12 +69,25 @@ pub fn get_delete_tasks_handler(
         .then(get_delete_tasks)
 }
 
-// Returns delete tasks in json format for a given `index_id`.
+#[utoipa::path(
+    get,
+    tag = "Delete Tasks",
+    path = "/{index_id}/delete-tasks",
+    responses(
+        (status = 200, description = "Successfully fetched delete tasks.", body = [DeleteTask])
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to retrieve delete tasks for."),
+    )
+)]
+/// Get Delete Tasks
+///
+/// Returns delete tasks in json format for a given `index_id`.
 // Note that `_delete_task_service_mailbox` is not used...
 // Explanation: we don't want to expose any delete tasks endpoints without a running
 // `DeleteTaskService`. This is ensured by requiring a `Mailbox<DeleteTaskService>` in
 // `get_delete_tasks_handler` and consequently we get the mailbox in `get_delete_tasks` signature.
-async fn get_delete_tasks(index_id: String, metastore: Arc<dyn Metastore>) -> impl warp::Reply {
+pub async fn get_delete_tasks(index_id: String, metastore: Arc<dyn Metastore>) -> impl warp::Reply {
     let delete_tasks = metastore.list_delete_tasks(&index_id, 0).await;
     Format::PrettyJson.make_rest_reply(delete_tasks)
 }
@@ -83,7 +103,23 @@ pub fn post_delete_tasks_handler(
         .map(|create_delete_res| Format::PrettyJson.make_rest_reply(create_delete_res))
 }
 
-async fn post_delete_request(
+#[utoipa::path(
+    post,
+    tag = "Delete Tasks",
+    path = "/{index_id}/delete-tasks",
+    request_body = DeleteQueryRequest,
+    responses(
+        (status = 200, description = "Successfully added a new delete task.", body = DeleteTask)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to add the delete task to."),
+    )
+)]
+/// Create Delete Task
+///
+/// This operation will not be immediately executed, instead it will be added to a queue
+/// and cleaned up in the near future.
+pub async fn post_delete_request(
     index_id: String,
     delete_request: DeleteQueryRequest,
     metastore: Arc<dyn Metastore>,

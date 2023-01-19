@@ -127,7 +127,7 @@ pub(crate) struct MappingLeaf {
 }
 
 impl MappingLeaf {
-    pub fn doc_from_json(
+    pub fn doc_from_str(
         &self,
         json_val: JsonValue,
         document: &mut Document,
@@ -346,7 +346,7 @@ impl MappingNode {
         field_mapping_entries
     }
 
-    pub fn doc_from_json(
+    pub fn doc_from_str(
         &self,
         json_obj: serde_json::Map<String, JsonValue>,
         mode: ModeType,
@@ -434,7 +434,7 @@ pub(crate) enum MappingTree {
 }
 
 impl MappingTree {
-    fn doc_from_json(
+    fn doc_from_str(
         &self,
         json_value: JsonValue,
         mode: ModeType,

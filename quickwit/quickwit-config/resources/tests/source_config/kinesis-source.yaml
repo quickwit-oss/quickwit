@@ -4,5 +4,5 @@ source_type: kinesis
 params:
   stream_name: emr-cluster-logs
 transform:
-  source: .message = downcase(string!(.message))
+  script: .message = downcase(string!(.message))
   timezone: local

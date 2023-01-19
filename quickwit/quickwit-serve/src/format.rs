@@ -26,7 +26,7 @@ use warp::reply::{self, WithHeader, WithStatus};
 const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 
 /// Output format for the search results.
-#[derive(Deserialize, Clone, Debug, Eq, PartialEq, Copy)]
+#[derive(Deserialize, Clone, Debug, Eq, PartialEq, Copy, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
     Json,

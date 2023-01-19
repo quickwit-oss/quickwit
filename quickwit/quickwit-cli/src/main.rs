@@ -301,7 +301,7 @@ mod tests {
                     input_path_opt: None,
                     overwrite: false,
                     clear_cache: true,
-                    vrl_settings: None
+                    vrl_script: None
                 })) if &index_id == "wikipedia"
                        && config_uri == Uri::from_str("file:///config.yaml").unwrap()
         ));
@@ -327,7 +327,7 @@ mod tests {
                     input_path_opt: None,
                     overwrite: true,
                     clear_cache: false,
-                    vrl_settings: None
+                    vrl_script: None
                 })) if &index_id == "wikipedia"
                         && config_uri == Uri::from_str("file:///config.yaml").unwrap()
         ));
@@ -335,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_ingest_transform_args() -> anyhow::Result<()> {
+    fn test_parse_ingest_transform_args() {
         let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from([
             "index",
@@ -344,7 +344,7 @@ mod tests {
             "wikipedia",
             "--config",
             "/config.yaml",
-            "--transform-program",
+            "--transform-script",
             ".message = downcase(string!(.message))",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
@@ -356,34 +356,12 @@ mod tests {
                     index_id,
                     input_path_opt: None,
                     overwrite: false,
+                    vrl_script: Some(vrl_script)
                     clear_cache: true,
-                    vrl_settings: Some(vrl_settings)
                 })) if &index_id == "wikipedia"
                        && config_uri == Uri::from_str("file:///config.yaml").unwrap()
-                       && vrl_settings.program_source() == *".message = downcase(string!(.message))\n."
+                       && vrl_script == ".message = downcase(string!(.message))"
         ));
-
-        let app = build_cli().no_binary_name(true);
-        // Try to parse with both --source and --source-file arg
-        let _ = app
-            .try_get_matches_from([
-                "index",
-                "ingest",
-                "--index",
-                "wikipedia",
-                "--config",
-                "/config.yaml",
-                "--keep-cache",
-                "--overwrite",
-                "transform",
-                "--transform-program",
-                ".message = downcase(string!(.message))",
-                "--transform-config",
-                "my_vrl_program.txt",
-            ])
-            .unwrap_err();
-
-        Ok(())
     }
 
     #[test]
@@ -400,21 +378,23 @@ mod tests {
             "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
-                index_id,
-                query,
-                max_hits: 20,
-                start_offset: 0,
-                search_fields: None,
-                snippet_fields: None,
-                start_timestamp: None,
-                end_timestamp: None,
-                aggregation: None,
-                ..
-            })) if &index_id == "wikipedia" && &query == "Barack Obama"
-        ));
+        assert!(
+            matches!(
+                command,
+                CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
+                    index_id,
+                    query,
+                    max_hits: 20,
+                    start_offset: 0,
+                    search_fields: None,
+                    snippet_fields: None,
+                    start_timestamp: None,
+                    end_timestamp: None,
+                    aggregation: None,
+                    ..
+                })) if &index_id == "wikipedia" && &query == "Barack Obama"
+            )
+        );
 
         let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from([

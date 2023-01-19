@@ -10,7 +10,7 @@
         }
     },
     "transform": {
-        "source": ".message = downcase(string!(.message))",
+        "script": ".message = downcase(string!(.message))",
         "timezone": "local"
     }
 }

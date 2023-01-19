@@ -458,7 +458,7 @@ impl IndexingService {
         {
             return Ok(merge_pipeline_mailbox_handle.mailbox.clone());
         }
-        let merge_pipeline = MergePipeline::new(merge_pipeline_params);
+        let merge_pipeline = MergePipeline::new(merge_pipeline_params, ctx.spawn_ctx());
         let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(merge_pipeline);
         let merge_pipeline_mailbox_handle = MergePipelineHandle {
@@ -686,7 +686,7 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
             .await
@@ -713,7 +713,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
-            transform: None,
+            transform_config: None,
         };
         let spawn_pipeline_msg = SpawnPipeline {
             index_id: index_id.clone(),
@@ -773,7 +773,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
-            transform: None,
+            transform_config: None,
         };
         metastore
             .add_source(&index_id, source_config_1.clone())
@@ -796,7 +796,7 @@ mod tests {
             num_pipelines: 2,
             enabled: true,
             source_params: SourceParams::void(),
-            transform: None,
+            transform_config: None,
         };
         metastore
             .add_source(&index_id, source_config_2.clone())
@@ -854,7 +854,7 @@ mod tests {
         assert_eq!(observation.num_running_pipelines, 0);
 
         // Let the service cleanup the merge pipelines.
-        universe.simulate_time_shift(HEARTBEAT).await;
+        universe.sleep(HEARTBEAT).await;
 
         // Test spawning a merge pipeline.
         let pipeline_id = indexing_server_mailbox
@@ -865,7 +865,7 @@ mod tests {
                     num_pipelines: 1,
                     enabled: true,
                     source_params: SourceParams::Vec(VecSourceParams::default()),
-                    transform: None,
+                    transform_config: None,
                 },
                 pipeline_ord: 0,
             })
@@ -895,7 +895,7 @@ mod tests {
                 batch_num_docs: 10,
                 partition: "0".to_string(),
             }),
-            transform: None,
+            transform_config: None,
         };
         indexing_server_mailbox
             .ask_for_res(SpawnPipeline {
@@ -910,7 +910,7 @@ mod tests {
             if obs.num_successful_pipelines == 2 {
                 return;
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            universe.sleep(Duration::from_millis(100)).await;
         }
         panic!("Sleep");
     }
@@ -933,7 +933,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
-            transform: None,
+            transform_config: None,
         };
         metastore.create_index(index_config).await.unwrap();
         metastore
@@ -946,7 +946,7 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
             .await
@@ -984,12 +984,12 @@ mod tests {
             .unwrap();
 
         // Let the service cleanup the merge pipelines.
-        universe.simulate_time_shift(HEARTBEAT).await;
+        universe.sleep(HEARTBEAT).await;
 
         let observation = indexing_server_handle.process_pending_and_observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_running_merge_pipelines, 0);
-        universe.simulate_time_shift(HEARTBEAT).await;
+        universe.sleep(HEARTBEAT).await;
         // Check that the merge pipeline is also shut down as they are no more indexing pipeilne on
         // the index.
         assert!(universe.get_one::<MergePipeline>().is_none());
@@ -1039,7 +1039,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
-            transform: None,
+            transform_config: None,
         };
         index_metadata
             .sources
@@ -1055,7 +1055,7 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
             .await
@@ -1089,7 +1089,7 @@ mod tests {
             .send_message(FreezePipeline)
             .await
             .unwrap();
-        tokio::time::sleep(HEARTBEAT * 5).await;
+        universe.sleep(HEARTBEAT * 5).await;
         // Check that indexing and merge pipelines are still running.
         let observation = indexing_server_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 1);

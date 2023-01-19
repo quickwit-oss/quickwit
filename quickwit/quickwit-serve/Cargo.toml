@@ -30,6 +30,7 @@ tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
+utoipa = { workspace = true }
 opentelemetry = { workspace = true }
 warp = { workspace = true }
 

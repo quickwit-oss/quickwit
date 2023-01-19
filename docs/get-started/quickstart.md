@@ -246,5 +246,5 @@ curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.c
 
 ## Next tutorials
 
-- [Search on logs with timestamp pruning](/tutorials/tutorial-hdfs-logs)
-- [Setup a distributed search on AWS S3](/tutorials/tutorial-hdfs-logs-distributed-search-aws-s3)
+- [Search on logs with timestamp pruning](/docs/tutorials/tutorial-hdfs-logs)
+- [Setup a distributed search on AWS S3](/docs/tutorials/tutorial-hdfs-logs-distributed-search-aws-s3)

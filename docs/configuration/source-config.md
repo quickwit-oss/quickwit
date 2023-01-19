@@ -197,10 +197,11 @@ When deleting a source, the checkpoint associated with the source is also remove
 Ingested documents can be transformed before being indexed using [Vector Remap Language (VRL)](https://vector.dev/docs/reference/vrl/) scripts.
 
 ### Transform parameters
+
 | Property | Description | Default value |
 | --- | --- | --- |
-| source | VRL script to transform the document | required |
-| timezone | Timezone to pass to VRL script for timezone related functions. Timezone must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | UTC |
+| script | source code of the VRL program executed to transform documents | required |
+| timezone | Timezone used in the VRL program for date and time manipulations. Must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | UTC |
 
 ```yaml
 # Version of the index config file format
@@ -208,12 +209,12 @@ version: 0.4
 
 # Sources
 sources:
-  # ... 
+  # ...
   transform:
     source: |
       .message = downcase(string!(.message))
       .timestamp = now()
-      del(.user_name)
+      del(.username)
     timezone: local
 
 # The rest of your index config here

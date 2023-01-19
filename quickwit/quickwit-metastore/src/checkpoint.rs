@@ -441,12 +441,12 @@ impl From<Range<u64>> for SourceCheckpointDelta {
         let from_position = if range.start == 0 {
             Position::Beginning
         } else {
-            Position::from(range.start as u64 - 1)
+            Position::from(range.start - 1)
         };
         let to_position = if range.end == 0 {
             Position::Beginning
         } else {
-            Position::from(range.end as u64 - 1)
+            Position::from(range.end - 1)
         };
         SourceCheckpointDelta::from_partition_delta(
             PartitionId::default(),

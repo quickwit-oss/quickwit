@@ -217,7 +217,7 @@ mod tests {
             data_dir_path,
             4,
         );
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let (_delete_task_service_mailbox, delete_task_service_handler) =
             universe.spawn_builder().spawn(delete_task_service);
         let state = delete_task_service_handler
@@ -242,16 +242,14 @@ mod tests {
             1
         );
         metastore.delete_index(index_id).await.unwrap();
-        tokio::time::sleep(HEARTBEAT * 2).await;
+        universe.sleep(HEARTBEAT * 2).await;
         let state_after_deletion = delete_task_service_handler
             .process_pending_and_observe()
             .await;
         assert_eq!(state_after_deletion.num_running_pipelines, 0);
         assert!(universe.get_one::<DeleteTaskService>().is_some());
         let actors_observations = universe.observe(HEARTBEAT).await;
-        // Once the pipeline is properly shut down, the only remaining actors are the scheduler and
-        // the delete service.
-        assert_eq!(actors_observations.len(), 2);
+        assert_eq!(actors_observations.len(), 1);
         assert!(universe.get_one::<DeleteTaskService>().is_some());
         Ok(())
     }

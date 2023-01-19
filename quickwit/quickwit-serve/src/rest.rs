@@ -47,6 +47,11 @@ pub(crate) async fn start_rest_server(
         crate::SERVE_METRICS.http_requests_total.inc();
     });
 
+    // Docs routes
+    let api_doc = warp::path("openapi.json")
+        .and(warp::get())
+        .map(|| warp::reply::json(&crate::openapi::build_docs()));
+
     // `/health/*` routes.
     let health_check_routes = health_check_handlers(
         quickwit_services.cluster.clone(),
@@ -95,6 +100,7 @@ pub(crate) async fn start_rest_server(
 
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
+        .or(api_doc)
         .or(redirect_root_to_ui_route)
         .or(ui_handler())
         .or(health_check_routes)

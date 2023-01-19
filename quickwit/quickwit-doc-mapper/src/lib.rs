@@ -41,6 +41,9 @@ pub mod tag_pruning;
 pub use default_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType, QuickwitJsonOptions,
 };
+use default_doc_mapper::{
+    FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
+};
 pub use doc_mapper::{DocMapper, NamedField, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
 pub use tokenizers::QUICKWIT_TOKENIZER_MANAGER;
@@ -50,6 +53,17 @@ pub const SOURCE_FIELD_NAME: &str = "_source";
 
 /// Field name reserved for storing the dynamically indexed fields.
 pub const DYNAMIC_FIELD_NAME: &str = "_dynamic";
+
+#[derive(utoipa::OpenApi)]
+#[openapi(components(schemas(
+    QuickwitJsonOptions,
+    ModeType,
+    QuickwitTextTokenizer,
+    IndexRecordOptionSchema,
+    FieldMappingEntryForSerialization,
+)))]
+/// Schema used for the OpenAPI generation which are apart of this crate.
+pub struct DocMapperApiSchemas;
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]
