@@ -337,17 +337,19 @@ mod tests {
     #[test]
     fn test_parse_ingest_transform_args() {
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from([
-            "index",
-            "ingest",
-            "--index",
-            "wikipedia",
-            "--config",
-            "/config.yaml",
-            "--transform-script",
-            ".message = downcase(string!(.message))",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let matches = app
+            .try_get_matches_from([
+                "index",
+                "ingest",
+                "--index",
+                "wikipedia",
+                "--config",
+                "/config.yaml",
+                "--transform-script",
+                ".message = downcase(string!(.message))",
+            ])
+            .unwrap();
+        let command = CliCommand::parse_cli_args(&matches).unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
@@ -356,7 +358,7 @@ mod tests {
                     index_id,
                     input_path_opt: None,
                     overwrite: false,
-                    vrl_script: Some(vrl_script)
+                    vrl_script: Some(vrl_script),
                     clear_cache: true,
                 })) if &index_id == "wikipedia"
                        && config_uri == Uri::from_str("file:///config.yaml").unwrap()
@@ -378,23 +380,21 @@ mod tests {
             "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(
-            matches!(
-                command,
-                CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
-                    index_id,
-                    query,
-                    max_hits: 20,
-                    start_offset: 0,
-                    search_fields: None,
-                    snippet_fields: None,
-                    start_timestamp: None,
-                    end_timestamp: None,
-                    aggregation: None,
-                    ..
-                })) if &index_id == "wikipedia" && &query == "Barack Obama"
-            )
-        );
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
+                index_id,
+                query,
+                max_hits: 20,
+                start_offset: 0,
+                search_fields: None,
+                snippet_fields: None,
+                start_timestamp: None,
+                end_timestamp: None,
+                aggregation: None,
+                ..
+            })) if &index_id == "wikipedia" && &query == "Barack Obama"
+        ));
 
         let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from([

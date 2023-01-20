@@ -19,7 +19,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
-use std::io::{stdout, Read, Stdout, Write};
+use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -226,7 +226,7 @@ pub struct IngestDocsArgs {
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
     pub overwrite: bool,
-    pub vrl_script: Option<TransformConfig>,
+    pub vrl_script: Option<String>,
     pub clear_cache: bool,
 }
 
@@ -895,12 +895,15 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     } else {
         SourceParams::stdin()
     };
+    let transform_config = args
+        .vrl_script
+        .map(|vrl_script| TransformConfig::new(vrl_script, None));
     let source_config = SourceConfig {
         source_id: CLI_INGEST_SOURCE_ID.to_string(),
         num_pipelines: 1,
         enabled: true,
         source_params,
-        transform_config: args.vrl_script,
+        transform_config,
     };
     run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source_config)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();

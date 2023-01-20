@@ -110,7 +110,7 @@ impl SourceConfigV0_4 {
     /// - This does not check connectivity. (See `check_connectivity(..)`)
     /// This just validate configuration, without performing any IO.
     /// - This is only here to validate user input.
-    /// When ingesting from StdIn, we programmatically create an invalid `SourceConfig`.
+    /// When ingesting from stdin, we programmatically create an invalid `SourceConfig`.
     ///
     /// TODO refactor #1065
     pub(crate) fn validate_and_build(self) -> anyhow::Result<SourceConfig> {
@@ -122,7 +122,7 @@ impl SourceConfigV0_4 {
             SourceParams::File(file_params) => {
                 if file_params.filepath.is_none() {
                     bail!(
-                        "Source `{}` of type `file` must contain a `filepath`",
+                        "Source `{}` of type `file` must contain a filepath.",
                         self.source_id
                     )
                 }
@@ -136,8 +136,8 @@ impl SourceConfigV0_4 {
             | SourceParams::IngestCli => {}
         }
 
-        if let Some(vrl_settings) = &self.transform {
-            vrl_settings.compile_vrl_script()?;
+        if let Some(transform_config) = &self.transform {
+            transform_config.compile_vrl_script()?;
         }
 
         Ok(SourceConfig {
@@ -156,31 +156,33 @@ mod tests {
 
     #[test]
     fn test_source_config_validation() {
-        let source_config_for_serialization = SourceConfigForSerialization {
-            source_id: "file_params_1".to_string(),
-            num_pipelines: 1,
-            enabled: true,
-            source_params: SourceParams::stdin(),
-            transform: None,
-        };
-        assert!(source_config_for_serialization
-            .validate_and_build()
-            .unwrap_err()
-            .to_string()
-            .contains("must contain a `filepath`"));
-    }
-
-    #[test]
-    fn test_transform_validation() {
-        let vrl_settings = TransformConfig {
-            script: "somerandomthing".to_string(),
-            timezone: None,
-        };
-        vrl_settings.validate().unwrap_err();
-        let vrl_settings = TransformConfig {
-            script: ".message = downcase(string!(.message))".to_string(),
-            timezone: None,
-        };
-        vrl_settings.validate().unwrap();
+        {
+            let source_config = SourceConfigForSerialization {
+                source_id: "file_source".to_string(),
+                num_pipelines: 1,
+                enabled: true,
+                source_params: SourceParams::stdin(),
+                transform: None,
+            };
+            assert!(source_config
+                .validate_and_build()
+                .unwrap_err()
+                .to_string()
+                .contains("must contain a filepath"));
+        }
+        {
+            let source_config = SourceConfigForSerialization {
+                source_id: "kafka_source".to_string(),
+                num_pipelines: 1,
+                enabled: true,
+                source_params: SourceParams::void(),
+                transform: Some(TransformConfig::for_test("foo")),
+            };
+            assert!(source_config
+                .validate_and_build()
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to compile"));
+        }
     }
 }

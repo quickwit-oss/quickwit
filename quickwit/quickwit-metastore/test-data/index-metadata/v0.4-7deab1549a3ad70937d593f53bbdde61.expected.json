@@ -98,7 +98,7 @@
       "source_id": "kafka-source",
       "source_type": "kafka",
       "transform": {
-        "source": ".message = downcase(string!(.message))"
+        "script": ".message = downcase(string!(.message))"
       },
       "version": "0.4"
     }

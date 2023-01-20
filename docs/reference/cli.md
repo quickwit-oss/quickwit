@@ -231,8 +231,7 @@ quickwit index ingest
     [--input-path <input-path>]
     [--overwrite]
     [--keep-cache]
-    [--transform-config <config-path>]
-    [--transform-program <vrl-program>]
+    [--transform-script <vrl-script>]
 ```
 
 *Options*
@@ -241,7 +240,7 @@ quickwit index ingest
 `--input-path` Location of the input file. \
 `--overwrite` Overwrites pre-existing index. \
 `--keep-cache` Does not clear local cache directory upon completion. \
-`--transform-script` VRL script as a string. Conflicts with `--source-file` option. \
+`--transform-script` VRL script as a string.
 
 
 *Examples*
@@ -258,7 +257,7 @@ quickwit index ingest --index wikipedia --config=./config/quickwit.yaml --input-
 cat hdfs-log.json | quickwit index ingest --index wikipedia --config=./config/quickwit.yaml
 ```
 
-*Downcase the article title before ingesting*
+*Applying a transform*
 
 ```bash
 quickwit index ingest --index wikipedia --config=./config/quickwit.yaml --input-path wiki-articles-10000.json --transform-script ".title = downcase(string!(.title))`

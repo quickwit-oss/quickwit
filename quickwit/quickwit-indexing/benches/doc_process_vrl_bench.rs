@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use quickwit_actors::{create_test_mailbox, ActorHandle, Mailbox, Universe};
+use quickwit_actors::{ActorHandle, Mailbox, Universe};
 use quickwit_config::TransformConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::actors::DocProcessor;
@@ -97,41 +97,41 @@ fn doc_processor_no_transform() -> (Mailbox<DocProcessor>, ActorHandle<DocProces
 }
 
 fn doc_processor_light_transform() -> (Mailbox<DocProcessor>, ActorHandle<DocProcessor>, Universe) {
-    let source = r#"
+    let vrl_script = r#"
         .last_name = "Doe"
         .job = upcase(string!(.job))
     "#;
-    let vrl_settings = TransformConfig::for_test(source);
-    create_doc_processor(Some(vrl_settings))
+    let transform_config = TransformConfig::for_test(vrl_script);
+    create_doc_processor(Some(transform_config))
 }
 
 fn doc_processor_heavy_transform() -> (Mailbox<DocProcessor>, ActorHandle<DocProcessor>, Universe) {
-    let source = r#"
+    let vrl_script = r#"
         . = parse_json!(.body)
         .last_name = "Doe"
         .job = upcase(string!(.job))
         .timestamp = to_string(to_timestamp(now()))
     "#;
-    let vrl_settings = TransformConfig::for_test(source);
-    create_doc_processor(Some(vrl_settings))
+    let transform_config = TransformConfig::for_test(vrl_script);
+    create_doc_processor(Some(transform_config))
 }
 
 fn create_doc_processor(
-    vrl_settings: Option<TransformConfig>,
+    transform_config_opt: Option<TransformConfig>,
 ) -> (Mailbox<DocProcessor>, ActorHandle<DocProcessor>, Universe) {
-    let index_id = "my-index";
-    let source_id = "my-source";
+    let index_id = "my-index".to_string();
+    let source_id = "my-source".to_string();
     let doc_mapper = Arc::new(default_doc_mapper_for_bench());
-    let (indexer_mailbox, _) = create_test_mailbox();
+    let universe = Universe::new();
+    let (indexer_mailbox, _) = universe.create_test_mailbox();
     let doc_processor = DocProcessor::try_new(
-        index_id.to_string(),
-        source_id.to_string(),
+        index_id,
+        source_id,
         doc_mapper,
         indexer_mailbox,
-        vrl_settings,
+        transform_config_opt,
     )
     .unwrap();
-    let universe = Universe::new();
     let (mailbox, handle) = universe.spawn_builder().spawn(doc_processor);
     (mailbox, handle, universe)
 }

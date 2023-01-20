@@ -193,7 +193,7 @@ impl DocProcessor {
         let schema = doc_mapper.schema();
         let timestamp_field_opt = doc_mapper.timestamp_field(&schema);
         let transform_opt = transform_config_opt
-            .map(|transform_config| VrlProgram::try_from_transform_config(transform_config))
+            .map(VrlProgram::try_from_transform_config)
             .transpose()?;
 
         let doc_processor = Self {
@@ -377,7 +377,7 @@ impl VrlProgram {
         let runtime_res = self
             .runtime
             .resolve(&mut target, &self.program, &self.timezone)
-            .map_err(|terminate| PrepareDocumentError::TransformError(terminate));
+            .map_err(PrepareDocumentError::TransformError);
 
         self.runtime.clear();
 

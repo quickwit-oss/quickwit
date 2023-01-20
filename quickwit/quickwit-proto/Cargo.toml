@@ -21,6 +21,6 @@ utoipa = { workspace = true }
 
 
 [build-dependencies]
-glob = "0.3.0"
+glob = "0.3.1"
 prost-build = { workspace = true }
 tonic-build = { workspace = true }

@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
+use quickwit_common::no_color;
 use quickwit_common::uri::Uri;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -303,23 +304,30 @@ pub struct VoidSourceParams;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TransformConfig {
-    /// [VRL] source code of the transform compiled to a VRL [Program].
+    /// [VRL] source code of the transform compiled to a VRL [`Program`].
     ///
     /// [VRL]: https://vector.dev/docs/reference/vrl/
-    /// [Program]: vrl::Program
     #[serde(rename = "script")]
     vrl_script: String,
 
-    /// Timezone used in the VRL [Program] for date and time manipulations.
+    /// Timezone used in the VRL [`Program`] for date and time manipulations.
     /// Defaults to `UTC` if not timezone is specified.
-    ///
-    /// [Program]: vrl::Program
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "timezone")]
     timezone_opt: Option<String>,
 }
 
 impl TransformConfig {
+    /// Creates a new [`TransformConfig`] instance from the provided VRL script and optional
+    /// timezone.
+    pub fn new(vrl_script: String, timezone_opt: Option<String>) -> Self {
+        Self {
+            vrl_script,
+            timezone_opt,
+        }
+    }
+
+    /// Compiles the VRL script to a VRL [`Program`] and returns it along with the timezone.
     pub fn compile_vrl_script(&self) -> anyhow::Result<(Program, TimeZone)> {
         let timezone_str = self.timezone_opt.as_deref().unwrap_or("UTC");
         let timezone = TimeZone::parse(timezone_str).with_context(|| {
@@ -328,13 +336,16 @@ impl TransformConfig {
             in the TZ database: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
         )
         })?;
+        // Append "\n." to the script to return the entire document and not only the modified
+        // fields.
         let vrl_script = self.vrl_script.clone() + "\n.";
         let functions = vrl_stdlib::all();
 
         let compilation_res = match vrl::compile(&vrl_script, &functions) {
             Ok(compilation_res) => compilation_res,
             Err(diagnostics) => {
-                let formatter = Formatter::new(&vrl_script, diagnostics);
+                let mut formatter = Formatter::new(&vrl_script, diagnostics);
+                formatter.enable_colors(!no_color());
                 bail!("Failed to compile VRL script:\n {formatter}")
             }
         };
@@ -344,7 +355,8 @@ impl TransformConfig {
         } = compilation_res;
 
         if !warnings.is_empty() {
-            let formatter = Formatter::new(&vrl_script, warnings);
+            let mut formatter = Formatter::new(&vrl_script, warnings);
+            formatter.enable_colors(!no_color());
             warn!("VRL program compiled with some warnings: {formatter}");
         }
         Ok((program, timezone))
@@ -620,7 +632,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transform_params_serialization() {
+    fn test_transform_config_serialization() {
         {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
@@ -629,7 +641,7 @@ mod tests {
             let transform_config_yaml = serde_yaml::to_string(&transform_config).unwrap();
             assert_eq!(
                 serde_yaml::from_str::<TransformConfig>(&transform_config_yaml).unwrap(),
-                transform_config
+                transform_config,
             );
         }
         {
@@ -646,44 +658,44 @@ mod tests {
     }
 
     #[test]
-    fn test_transform_params_deserialization() {
+    fn test_transform_config_deserialization() {
         {
             let transform_config_yaml = r#"
                 script: .message = downcase(string!(.message))
             "#;
-            let vrl_settings =
+            let transform_config =
                 serde_yaml::from_str::<TransformConfig>(transform_config_yaml).unwrap();
 
             let expected_transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone_opt: None,
             };
-            assert_eq!(vrl_settings, expected_transform_config);
+            assert_eq!(transform_config, expected_transform_config);
         }
         {
             let transform_config_yaml = r#"
                 script: .message = downcase(string!(.message))
                 timezone: Turkey
             "#;
-            let vrl_settings =
+            let transform_config =
                 serde_yaml::from_str::<TransformConfig>(transform_config_yaml).unwrap();
 
             let expected_transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone_opt: Some("Turkey".to_string()),
             };
-            assert_eq!(vrl_settings, expected_transform_config);
+            assert_eq!(transform_config, expected_transform_config);
         }
     }
 
     #[test]
-    fn test_transform_params_validate() {
+    fn test_transform_config_compile_vrl_script() {
         {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone_opt: Some("Turkey".to_string()),
             };
-            transform_config.validate().unwrap();
+            transform_config.compile_vrl_script().unwrap();
         }
         {
             let transform_config = TransformConfig {
@@ -696,21 +708,23 @@ mod tests {
                 .to_string(),
                 timezone_opt: None,
             };
-            transform_config.validate().unwrap();
+            transform_config.compile_vrl_script().unwrap();
         }
         {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone_opt: Some("foo".to_string()),
             };
-            transform_config.validate().unwrap_err();
+            let error = transform_config.compile_vrl_script().unwrap_err();
+            assert!(error.to_string().starts_with("Failed to parse timezone"));
         }
         {
             let transform_config = TransformConfig {
                 vrl_script: "foo".to_string(),
                 timezone_opt: Some("Turkey".to_string()),
             };
-            transform_config.validate().unwrap_err();
+            let error = transform_config.compile_vrl_script().unwrap_err();
+            assert!(error.to_string().starts_with("Failed to compile"));
         }
     }
 }
