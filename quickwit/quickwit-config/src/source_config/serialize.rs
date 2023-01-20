@@ -137,7 +137,7 @@ impl SourceConfigV0_4 {
         }
 
         if let Some(vrl_settings) = &self.transform {
-            vrl_settings.validate()?
+            vrl_settings.compile_vrl_script()?;
         }
 
         Ok(SourceConfig {

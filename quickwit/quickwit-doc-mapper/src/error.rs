@@ -35,11 +35,11 @@ impl From<tantivy::query::QueryParserError> for QueryParserError {
 /// a document from JSON.
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum DocParsingError {
-    /// The provided string is not valid JSON.
-    #[error("The provided string is not a valid JSON object. {0}")]
+    /// The provided string is not a syntactically valid JSON object.
+    #[error("The provided string is not a syntactically valid JSON object: {0}")]
     NotJsonObject(String),
     /// One of the value could not be parsed.
-    #[error("The field '{0}' could not be parsed: {1}")]
+    #[error("The field `{0}` could not be parsed: {1}")]
     ValueError(String, String),
     /// The json-document contains a field that is not declared in the schema.
     #[error("The document contains a field that is not declared in the schema: {0:?}")]

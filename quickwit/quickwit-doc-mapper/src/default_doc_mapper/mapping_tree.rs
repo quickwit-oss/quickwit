@@ -127,7 +127,7 @@ pub(crate) struct MappingLeaf {
 }
 
 impl MappingLeaf {
-    pub fn doc_from_str(
+    pub fn doc_from_json(
         &self,
         json_val: JsonValue,
         document: &mut Document,
@@ -346,7 +346,7 @@ impl MappingNode {
         field_mapping_entries
     }
 
-    pub fn doc_from_str(
+    pub fn doc_from_json(
         &self,
         json_obj: serde_json::Map<String, JsonValue>,
         mode: ModeType,
@@ -434,7 +434,7 @@ pub(crate) enum MappingTree {
 }
 
 impl MappingTree {
-    fn doc_from_str(
+    fn doc_from_json(
         &self,
         json_value: JsonValue,
         mode: ModeType,
@@ -986,7 +986,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             parse_err.to_string(),
-            "The field 'root.my_field' could not be parsed: Expected JSON number, got `[1,2]`."
+            "The field `root.my_field` could not be parsed: Expected JSON number, got `[1,2]`."
         );
     }
 

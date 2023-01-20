@@ -21,17 +21,16 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::TransformConfig;
 use quickwit_doc_mapper::{DocMapper, DocParsingError};
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 use tantivy::schema::{Field, Value};
 use tokio::runtime::Handle;
 use tracing::warn;
-use vrl::diagnostic::Formatter;
-use vrl::{CompilationResult, Program, Runtime, TargetValueRef, Terminate, TimeZone};
+use vrl::{Program, Runtime, TargetValueRef, Terminate, TimeZone};
 
 use crate::actors::Indexer;
 use crate::models::{NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, RawDocBatch};
@@ -193,7 +192,7 @@ impl DocProcessor {
     ) -> anyhow::Result<Self> {
         let schema = doc_mapper.schema();
         let timestamp_field_opt = doc_mapper.timestamp_field(&schema);
-        let transform = transform_config_opt
+        let transform_opt = transform_config_opt
             .map(|transform_config| VrlProgram::try_from_transform_config(transform_config))
             .transpose()?;
 
@@ -203,7 +202,7 @@ impl DocProcessor {
             timestamp_field_opt,
             counters: DocProcessorCounters::new(index_id, source_id),
             publish_lock: PublishLock::default(),
-            transform_opt: transform,
+            transform_opt,
         };
         Ok(doc_processor)
     }
@@ -217,13 +216,15 @@ impl DocProcessor {
 
         // Transform and parse the document
         let doc_parsing_result = if let Some(vrl_program) = self.transform_opt.as_mut() {
-            let vrl_value: VrlValue = vrl_program.transform_doc(json_doc)?;
-            let json_obj: JsonObject = serde_json::to_value(value).map_err(|_| DocParsingError::ParsingError);
+            let vrl_value = vrl_program.transform_doc(json_doc)?;
+            let json_obj = match serde_json::to_value(vrl_value) {
+                Ok(JsonValue::Object(json_obj)) => json_obj,
+                _ => return Err(PrepareDocumentError::ParsingError),
+            };
             self.doc_mapper.doc_from_json_obj(json_obj)
         } else {
             self.doc_mapper.doc_from_json_str(json_doc)
         };
-        let num_bytes = json_doc.len();
         let (partition, doc) = doc_parsing_result.map_err(|doc_parsing_error| {
             warn!(err=?doc_parsing_error);
             match doc_parsing_error {
@@ -238,7 +239,7 @@ impl DocProcessor {
                 doc,
                 timestamp_opt: None,
                 partition,
-                num_bytes,
+                num_bytes: json_doc.len(),
             });
         };
         let timestamp = doc
@@ -252,7 +253,7 @@ impl DocProcessor {
             doc,
             timestamp_opt: Some(timestamp),
             partition,
-            num_bytes,
+            num_bytes: json_doc.len(),
         })
     }
 }
@@ -309,21 +310,21 @@ impl Handler<RawDocBatch> for DocProcessor {
             return Ok(());
         }
         let mut prepared_docs: Vec<PreparedDoc> = Vec::with_capacity(raw_doc_batch.docs.len());
-        for doc_json in raw_doc_batch.docs {
-            let doc_json_num_bytes = doc_json.len() as u64;
-            match self.prepare_document(&doc_json, ctx) {
+        for json_doc in raw_doc_batch.docs {
+            let json_doc_num_bytes = json_doc.len() as u64;
+            match self.prepare_document(&json_doc, ctx) {
                 Ok(document) => {
-                    self.counters.record_valid(doc_json_num_bytes);
+                    self.counters.record_valid(json_doc_num_bytes);
                     prepared_docs.push(document);
                 }
                 Err(PrepareDocumentError::ParsingError) => {
-                    self.counters.record_parsing_error(doc_json_num_bytes);
+                    self.counters.record_parsing_error(json_doc_num_bytes);
                 }
                 Err(PrepareDocumentError::TransformError(_)) => {
-                    self.counters.record_transform_error(doc_json_num_bytes);
+                    self.counters.record_transform_error(json_doc_num_bytes);
                 }
                 Err(PrepareDocumentError::MissingField) => {
-                    self.counters.record_missing_field(doc_json_num_bytes);
+                    self.counters.record_missing_field(json_doc_num_bytes);
                 }
             }
             ctx.record_progress();
@@ -362,8 +363,10 @@ struct VrlProgram {
 
 impl VrlProgram {
     fn transform_doc(&mut self, json_doc: &str) -> Result<VrlValue, PrepareDocumentError> {
-        let mut value: VrlValue =
-            serde_json::from_str(json_doc).map_err(|_| PrepareDocumentError::ParsingError)?;
+        let mut value = match serde_json::from_str::<VrlValue>(json_doc) {
+            Ok(value) if value.is_object() => value,
+            _ => return Err(PrepareDocumentError::ParsingError),
+        };
         let mut metadata = VrlValue::Object(BTreeMap::new());
         let mut secrets = VrlSecrets::new();
         let mut target = TargetValueRef {
@@ -382,29 +385,7 @@ impl VrlProgram {
     }
 
     fn try_from_transform_config(transform_config: TransformConfig) -> anyhow::Result<Self> {
-        transform_config.validate()?;
-        // Since we validated the settings, we can unwrap the return values
-        let timezone = transform_config.timezone().expect("");
-
-        let CompilationResult {
-            program, warnings, ..
-        } = transform_config.compile_vrl_program().expect("");
-
-        let compilation_warnings = warnings.warnings();
-        if !compilation_warnings.is_empty() {
-            let warning_message = Formatter::new(
-                &transform_config.vrl_program_source(),
-                compilation_warnings
-                    .iter()
-                    .map(|warning_ref| (*warning_ref).clone())
-                    .collect_vec(),
-            )
-            .to_string();
-            warn!(
-                vrl_warnings = warning_message,
-                "VRL program compiled successfully but returned warnings: {}", warning_message
-            );
-        }
+        let (program, timezone) = transform_config.compile_vrl_script()?;
         let state = vrl::state::Runtime::default();
         let runtime = Runtime::new(state);
 

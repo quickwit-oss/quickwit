@@ -24,7 +24,6 @@ use std::num::NonZeroU32;
 use anyhow::Context;
 use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
-use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, Schema, Value};
@@ -32,41 +31,35 @@ use tantivy::{Document, Term};
 
 pub type Partition = u64;
 
+pub type JsonObject = serde_json::Map<String, JsonValue>;
+
 use crate::{DocParsingError, QueryParserError};
-
-enum Parseable<'a> {
-    Str(&'a str),
-    String(String),
-
-}
 
 /// The `DocMapper` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
 ///
 /// The `DocMapper` trait is in charge of implementing :
 ///
-/// - a way to build a tantivy::Document from a json payload
-/// - a way to build a tantivy::Query from a SearchRequest
-/// - a way to build a tantivy:Schema
+/// - a way to build a tantivy [`Document`] from a JSON payload
+/// - a way to build a tantivy [`Query`] from a [`SearchRequest`]
+/// - a way to build a tantivy [`Schema`] from a
 #[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
-    fn doc_from_json_obj(&self, json_obj: serde_json::Map<String, JsonValue>) -> Result<(Partition, Document), DocParsingError>;
-
-    /// Returns the document built from an owned string slice.
-    fn doc_from_json_str(&self, doc_json: &str) -> Result<(Partition, Document), DocParsingError> {
-        let json_value = serde_json::from_str(doc_json)
-        let json_obj: serde_json::Map<String, JsonValue> =
-            serde_json::from_str(doc_json).map_err(|_| {
-                let doc_json_sample = doc_json.chars().take(20).collect();
-                DocParsingError::NotJsonObject(doc_json_sample)
-            })?;
-
-    }
-
-    fn doc_from_vrl_value(
+    /// Builds a tantivy [`Document`] from a JSON object.
+    fn doc_from_json_obj(
         &self,
-        vrl_value: &vrl::Value,
+        json_obj: JsonObject,
     ) -> Result<(Partition, Document), DocParsingError>;
+
+    /// Parses a JSON string and returns a tantivy [`Document`].
+    fn doc_from_json_str(&self, json_doc: &str) -> Result<(Partition, Document), DocParsingError> {
+        let json_obj: JsonObject = serde_json::from_str(json_doc).map_err(|_| {
+            let mut json_doc_sample: String = json_doc.chars().take(20).collect();
+            json_doc_sample.push_str("...");
+            DocParsingError::NotJsonObject(json_doc_sample)
+        })?;
+        self.doc_from_json_obj(json_obj)
+    }
 
     /// Converts a tantivy named Document to the json format.
     ///
