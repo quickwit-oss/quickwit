@@ -215,9 +215,9 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.61"
+version = "0.1.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "705339e0e4a9690e2908d2b3d049d85682cf19fbd5782494498fbf7003a6a282"
+checksum = "689894c2db1ea643a50834b999abf1c110887402542955ff5451dab8f861f9ed"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1151,9 +1151,9 @@ dependencies = [
 
 [[package]]
 name = "cxx"
-version = "1.0.86"
+version = "1.0.87"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d1075c37807dcf850c379432f0df05ba52cc30f279c5cfc43cc221ce7f8579"
+checksum = "b61a7545f753a88bcbe0a70de1fcc0221e10bfc752f576754fa91e663db1622e"
 dependencies = [
  "cc",
  "cxxbridge-flags",
@@ -1163,9 +1163,9 @@ dependencies = [
 
 [[package]]
 name = "cxx-build"
-version = "1.0.86"
+version = "1.0.87"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5044281f61b27bc598f2f6647d480aed48d2bf52d6eb0b627d84c0361b17aa70"
+checksum = "f464457d494b5ed6905c63b0c4704842aba319084a0a3561cdc1359536b53200"
 dependencies = [
  "cc",
  "codespan-reporting",
@@ -1178,15 +1178,15 @@ dependencies = [
 
 [[package]]
 name = "cxxbridge-flags"
-version = "1.0.86"
+version = "1.0.87"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61b50bc93ba22c27b0d31128d2d130a0a6b3d267ae27ef7e4fae2167dfe8781c"
+checksum = "43c7119ce3a3701ed81aca8410b9acf6fc399d2629d057b87e2efa4e63a3aaea"
 
 [[package]]
 name = "cxxbridge-macro"
-version = "1.0.86"
+version = "1.0.87"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39e61fda7e62115119469c7b3591fd913ecca96fb766cfd3f2e2502ab7bc87a5"
+checksum = "65e07508b90551e610910fa648a1878991d367064997a596135b86df30daf07e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4137,7 +4137,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "serde_yaml 0.9.16",
+ "serde_yaml 0.9.17",
  "tokio",
  "toml",
  "tracing",
@@ -4199,7 +4199,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "serde_yaml 0.9.16",
+ "serde_yaml 0.9.17",
  "tantivy",
  "tempfile",
  "thiserror",
@@ -4473,7 +4473,10 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.21.0",
+ "once_cell",
+ "prost",
  "quickwit-actors",
+ "quickwit-common",
  "quickwit-ingest-api",
  "quickwit-proto",
  "serde",
@@ -5550,9 +5553,9 @@ dependencies = [
 
 [[package]]
 name = "serde_yaml"
-version = "0.9.16"
+version = "0.9.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92b5b431e8907b50339b51223b97d102db8d987ced36f6e4d03621db9316c834"
+checksum = "8fb06d4b6cdaef0e0c51fa881acb721bed3c924cfaa71d9c94a3b771dfdf6567"
 dependencies = [
  "indexmap",
  "itoa 1.0.5",
@@ -6563,9 +6566,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.5.10"
+version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1333c76748e868a4d9d1017b5ab53171dfd095f70c712fdb4653a406547f598f"
+checksum = "f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234"
 dependencies = [
  "serde",
 ]
@@ -6859,9 +6862,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-bidi"
-version = "0.3.9"
+version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0046be40136ef78dc325e0edefccf84ccddacd0afcc1ca54103fa3c61bbdab1d"
+checksum = "d54675592c1dbefd78cbd98db9bacd89886e1ca50692a0692baefffdeb92dd58"
 
 [[package]]
 name = "unicode-ident"
@@ -7498,9 +7501,9 @@ dependencies = [
 
 [[package]]
 name = "which"
-version = "4.3.0"
+version = "4.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c831fbbee9e129a8cf93e7747a82da9d95ba8e16621cae60ec2cdc849bacb7b"
+checksum = "2441c784c52b289a054b7201fc93253e288f094e2f4be9058343127c4226a269"
 dependencies = [
  "either",
  "libc",
