@@ -34,7 +34,7 @@ use quickwit_proto::control_plane_api::NotifyIndexChangeRequest;
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
 use serde::Serialize;
 use time::OffsetDateTime;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::indexing_plan::{
     build_indexing_plan, build_physical_indexing_plan, IndexSourceId, PhysicalIndexingPlan,
@@ -231,7 +231,7 @@ impl IndexingScheduler {
         indexers: &[ClusterMember],
         new_physical_plan: PhysicalIndexingPlan,
     ) {
-        info!("Apply physical indexing plan: {:?}", new_physical_plan);
+        debug!("Apply physical indexing plan: {:?}", new_physical_plan);
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_node() {
             let indexer = indexers
                 .iter()
