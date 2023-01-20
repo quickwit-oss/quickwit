@@ -447,6 +447,7 @@ mod tests {
                 }),
                 enable_backfill_mode: true,
             }),
+            transform_config: None,
         };
         index_metadata
             .sources

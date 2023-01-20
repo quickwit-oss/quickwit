@@ -329,6 +329,7 @@ mod tests {
                 batch_num_docs: 10,
                 partition: "".to_string(),
             }),
+            transform_config: None,
         };
         mocked_metastore
             .expect_create_index()

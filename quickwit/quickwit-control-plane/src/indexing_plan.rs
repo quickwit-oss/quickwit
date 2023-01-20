@@ -391,6 +391,7 @@ mod tests {
                 desired_num_pipelines: 3,
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
+                transform_config: None,
             },
         );
 
@@ -424,6 +425,7 @@ mod tests {
                 desired_num_pipelines: 3,
                 enabled: true,
                 source_params: SourceParams::IngestApi,
+                transform_config: None,
             },
         );
 
@@ -465,6 +467,7 @@ mod tests {
                 desired_num_pipelines: 3,
                 enabled: true,
                 source_params: SourceParams::File(FileSourceParams { filepath: None }),
+                transform_config: None,
             },
         );
         source_configs_map.insert(
@@ -475,6 +478,7 @@ mod tests {
                 desired_num_pipelines: 3,
                 enabled: true,
                 source_params: SourceParams::IngestCli,
+                transform_config: None,
             },
         );
         source_configs_map.insert(
@@ -485,6 +489,7 @@ mod tests {
                 desired_num_pipelines: 3,
                 enabled: false,
                 source_params: kafka_source_params_for_test(),
+                transform_config: None,
             },
         );
         let indexing_tasks = build_indexing_plan(&indexers, &source_configs_map);
@@ -516,6 +521,7 @@ mod tests {
                 desired_num_pipelines: 4,
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
+                transform_config: None,
             },
         );
         source_configs_map.insert(
@@ -526,6 +532,7 @@ mod tests {
                 desired_num_pipelines: 2,
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
+                transform_config: None,
             },
         );
         let mut indexing_tasks = Vec::new();
@@ -589,6 +596,7 @@ mod tests {
                 desired_num_pipelines: 2,
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
+                transform_config: None,
             },
         );
         let indexing_tasks = vec![
@@ -649,6 +657,7 @@ mod tests {
               max_num_pipelines_per_indexer,
               enabled: true,
               source_params: kafka_source_params_for_test(),
+              transform_config: None,
           })
       }
     }
