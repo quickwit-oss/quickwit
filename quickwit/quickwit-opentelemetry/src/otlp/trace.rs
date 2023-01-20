@@ -54,15 +54,27 @@ doc_mapping:
     - name: trace_state
       type: text
       indexed: false
+    - name: service_name
+      type: text
+      tokenizer: raw
     - name: resource_attributes
       type: json
       tokenizer: raw
     - name: resource_dropped_attributes_count
       type: u64
       indexed: false
-    - name: service_name
+    - name: scope_name
       type: text
-      tokenizer: raw
+      indexed: false
+    - name: scope_version
+      type: text
+      indexed: false
+    - name: scope_attributes
+      type: json
+      indexed: false
+    - name: scope_dropped_attributes_count
+      type: u64
+      indexed: false
     - name: span_id
       type: text
       tokenizer: raw
@@ -133,9 +145,13 @@ pub type Base64 = String;
 pub struct Span {
     pub trace_id: Base64,
     pub trace_state: Option<String>,
+    pub service_name: String,
     pub resource_attributes: HashMap<String, JsonValue>,
     pub resource_dropped_attributes_count: u64,
-    pub service_name: String,
+    pub scope_name: Option<String>,
+    pub scope_version: Option<String>,
+    pub scope_attributes: HashMap<String, JsonValue>,
+    pub scope_dropped_attributes_count: u64,
     pub span_id: Base64,
     pub span_kind: u64,
     pub span_name: String,
@@ -233,6 +249,20 @@ impl OtlpGrpcTraceService {
                 _ => "unknown".to_string(),
             };
             for scope_span in resource_span.scope_spans {
+                let scope_name = scope_span.scope.as_ref().map(|scope| &scope.name);
+                let scope_version = scope_span.scope.as_ref().map(|scope| &scope.version);
+                let scope_attributes = extract_attributes(
+                    scope_span
+                        .scope
+                        .clone()
+                        .map(|scope| scope.attributes)
+                        .unwrap_or_else(Vec::new),
+                );
+                let scope_dropped_attributes_count = scope_span
+                    .scope
+                    .as_ref()
+                    .map(|scope| scope.dropped_attributes_count)
+                    .unwrap_or(0) as u64;
                 for span in scope_span.spans {
                     num_spans += 1;
 
@@ -282,9 +312,13 @@ impl OtlpGrpcTraceService {
                     let span = Span {
                         trace_id,
                         trace_state,
+                        service_name: service_name.clone(),
                         resource_attributes: resource_attributes.clone(),
                         resource_dropped_attributes_count,
-                        service_name: service_name.clone(),
+                        scope_name: scope_name.cloned(),
+                        scope_version: scope_version.cloned(),
+                        scope_attributes: scope_attributes.clone(),
+                        scope_dropped_attributes_count,
                         span_id,
                         span_kind: span.kind as u64,
                         span_name,
