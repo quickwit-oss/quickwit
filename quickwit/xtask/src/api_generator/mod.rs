@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::hash::{Hash, Hasher};
@@ -41,16 +41,37 @@ use crate::{
 };
 
 pub mod code_gen;
-pub mod output;
 
 use std::cmp::Ordering;
 
 use itertools::Itertools;
-use output::{merge_file, write_file};
 
 lazy_static! {
     static ref VERSION: Version = semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
 }
+
+const GENERATED_FILE_HEADER: &str = r#"
+// Copyright (C) 2022 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+/// This file is auto-genearted, any change can be overriden.
+"#;
 
 /// Record of generated files
 #[derive(Deserialize, Serialize, Default)]
@@ -58,9 +79,6 @@ pub struct GeneratedFiles {
     pub written: BTreeSet<String>,
     pub merged: BTreeSet<String>,
 }
-
-/// Location of the record of generated files in the `src` directory.
-pub const GENERATED_TOML: &str = ".generated.toml";
 
 /// A complete API specification parsed from the REST API specs
 #[derive(Debug)]
@@ -108,6 +126,19 @@ pub enum HttpMethod {
     Patch,
     #[serde(rename = "DELETE")]
     Delete,
+}
+
+impl HttpMethod {
+    fn to_str(&self) -> &str {
+        match *self {
+            HttpMethod::Head => "head",
+            HttpMethod::Get => "get",
+            HttpMethod::Post => "post",
+            HttpMethod::Put => "put",
+            HttpMethod::Patch => "patch",
+            HttpMethod::Delete => "delete",
+        }
+    }
 }
 
 /// Converts a `HttpMethod` in the REST spec, into the AST for
@@ -527,8 +558,7 @@ pub fn generate_api() -> anyhow::Result<()> {
         ));
     }
 
-    // TODO
-    // think of versioning
+    // TODO: Think of versioning
 
     // read the Api from files
     let api = read_api(&download_dir, SELECTED_SPEC_FILES)?;
@@ -540,22 +570,17 @@ pub fn generate_api() -> anyhow::Result<()> {
         .open(&target_file)?;
     let mut writer = BufWriter::new(file);
 
-    // Endpoints Params types
-    writer
-        .write(code_gen::root::generate(&api)?.as_bytes())
-        .unwrap();
+    // file header
+    writer.write(GENERATED_FILE_HEADER.as_bytes())?;
 
-    // Helper Types
-    writer
-        .write(code_gen::params::generate(&api)?.as_bytes())
-        .unwrap();
+    // endpoints params types
+    writer.write(code_gen::root::generate(&api)?.as_bytes())?;
 
-    //  merge_file(
-    //      |section| sections.remove(section),
-    //      generated_dir.as_path(),
-    //      GENERATED_FILE_NAME,
-    //      &mut tracker,
-    //  )?;
+    // helper types
+    writer.write(code_gen::params::generate(&api)?.as_bytes())?;
+
+    // warp endpoint filters
+    writer.write(code_gen::warp::generate(&api)?.as_bytes())?;
 
     Ok(())
 }

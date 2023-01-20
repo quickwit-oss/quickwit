@@ -1,7 +1,73 @@
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+// Copyright (C) 2022 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod api_specs;
+mod rest_handler;
+
+use std::convert::Infallible;
+use std::str::FromStr;
+
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use warp::{Filter, Rejection};
+
+use self::rest_handler::{
+    elastic_get_index_search_handler, elastic_get_search_handler,
+    elastic_post_index_search_handler, elastic_post_search_handler,
+};
+
+/// Setup elastic handlers
+pub fn elastic_api_handlers() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone
+{
+    // Add newly created handlers
+    elastic_get_search_handler()
+        .or(elastic_post_search_handler())
+        .or(elastic_get_index_search_handler())
+        .or(elastic_post_index_search_handler())
+}
+
+fn from_comma_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where D: Deserializer<'de> {
+    let str_sequence = String::deserialize(deserializer)?;
+    let list = str_sequence
+        .trim_matches(',')
+        .split(',')
+        .map(|item| item.to_owned())
+        .collect::<Vec<_>>();
+    Ok(list)
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SimpleList(#[serde(deserialize_with = "from_comma_list")] Vec<String>);
+
+impl FromStr for SimpleList {
+    type Err = Infallible;
+
+    fn from_str(str_sequence: &str) -> Result<Self, Self::Err> {
+        let items = str_sequence
+            .trim_matches(',')
+            .split(',')
+            .map(|item| item.to_owned())
+            .collect::<Vec<_>>();
+        Ok(Self(items))
+    }
+}
 
 /// Serializes an `Option<&[Serialize]>` with
 /// `Some(value)` to a comma separated string of values.

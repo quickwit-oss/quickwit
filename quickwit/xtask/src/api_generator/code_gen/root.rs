@@ -14,7 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-use std::path::PathBuf;
 
 use inflector::Inflector;
 use quote::Tokens;
@@ -27,7 +26,8 @@ use crate::api_generator::*;
 pub fn generate(api: &Api) -> anyhow::Result<String> {
     let mut tokens = quote!(
         use serde::{Serialize, Deserialize};
-        use super::{from_simple_list, to_simple_list, TrackTotalHits};
+        use super::{from_simple_list, to_simple_list, SimpleList, TrackTotalHits};
+        use warp::{Filter, Rejection};
     );
 
     // AST for builder structs and methods
@@ -58,7 +58,8 @@ fn generate_endpoint(
         enum_builder = enum_builder.with_path(path);
     }
 
-    let accepts_nd_body = endpoint.supports_nd_body();
+    // TODO: generate body struct if needed.
+    // let accepts_nd_body = endpoint.supports_nd_body();
 
     let query_string_params = {
         let mut p = endpoint.params.clone();
@@ -106,20 +107,14 @@ fn create_query_string_struct_type(name: &str, endpoint_params: &BTreeMap<String
             quote! {
                 #serde_rename
                 #serialize_with
+                #[serde(default)]
                 #field
             }
         });
 
-        // let query_ctor = endpoint_params.iter().map(|(param_name, _)| {
-        //     let field_name = ident(valid_name(param_name).to_lowercase());
-        //     quote! {
-        //         #field_name: self.#field_name
-        //     }
-        // });
-
         quote! {
             #[serde_with::skip_serializing_none]
-            #[derive(Default, Serialize, Deserialize)]
+            #[derive(Default, Debug, Serialize, Deserialize)]
             pub struct #query_struct_ty {
                 #(#struct_fields,)*
             }
