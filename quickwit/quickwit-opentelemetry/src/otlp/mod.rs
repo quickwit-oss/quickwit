@@ -31,6 +31,7 @@ mod trace;
 pub use logs::OtlpGrpcLogsService;
 pub use trace::{
     Base64, Event, Link, OtlpGrpcTraceService, Span, SpanStatus, OTEL_TRACE_INDEX_CONFIG,
+    OTEL_TRACE_INDEX_ID,
 };
 
 pub(crate) fn extract_attributes(attributes: Vec<KeyValue>) -> HashMap<String, JsonValue> {
