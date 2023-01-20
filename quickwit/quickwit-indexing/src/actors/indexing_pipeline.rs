@@ -340,12 +340,13 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(indexer);
 
-        let doc_processor = DocProcessor::new(
+        let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
             self.params.doc_mapper.clone(),
             indexer_mailbox,
-        );
+            self.params.source_config.transform_config.clone(),
+        )?;
         let (doc_processor_mailbox, doc_processor_handler) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
@@ -605,6 +606,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
+            transform_config: None,
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
@@ -695,6 +697,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
+            transform_config: None,
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
@@ -751,6 +754,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::Void(VoidSourceParams),
+            transform_config: None,
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());

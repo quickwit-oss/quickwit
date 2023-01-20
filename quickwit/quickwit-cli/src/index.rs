@@ -35,8 +35,8 @@ use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
-    CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
+    ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, TransformConfig,
+    VecSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexService};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
@@ -94,6 +94,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
                     arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
                         .required(false),
                     arg!(--overwrite "Overwrites pre-existing index.")
+                        .required(false),
+                    arg!(--"transform-script" <SCRIPT> "VRL program to transform docs before ingesting.")
                         .required(false),
                     arg!(--"keep-cache" "Does not clear local cache directory upon completion.")
                         .required(false),
@@ -224,6 +226,7 @@ pub struct IngestDocsArgs {
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
     pub overwrite: bool,
+    pub vrl_script: Option<String>,
     pub clear_cache: bool,
 }
 
@@ -394,13 +397,17 @@ impl IndexCliCommand {
             None
         };
         let overwrite = matches.is_present("overwrite");
+        let vrl_script = matches
+            .value_of("transform-script")
+            .map(|source| source.to_string());
         let clear_cache = !matches.is_present("keep-cache");
 
         Ok(Self::Ingest(IngestDocsArgs {
+            config_uri,
             index_id,
             input_path_opt,
             overwrite,
-            config_uri,
+            vrl_script,
             clear_cache,
         }))
     }
@@ -888,11 +895,15 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     } else {
         SourceParams::stdin()
     };
+    let transform_config = args
+        .vrl_script
+        .map(|vrl_script| TransformConfig::new(vrl_script, None));
     let source_config = SourceConfig {
         source_id: CLI_INGEST_SOURCE_ID.to_string(),
         num_pipelines: 1,
         enabled: true,
         source_params,
+        transform_config,
     };
     run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source_config)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
@@ -1056,6 +1067,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
                 num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
+                transform_config: None,
             },
             pipeline_ord: 0,
         })

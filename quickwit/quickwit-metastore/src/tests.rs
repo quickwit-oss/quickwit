@@ -242,6 +242,7 @@ pub mod test_suite {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
+            transform_config: None,
         };
 
         assert_eq!(
@@ -303,6 +304,7 @@ pub mod test_suite {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
+            transform_config: None,
         };
         metastore
             .add_source(&index_id, source.clone())
@@ -345,6 +347,7 @@ pub mod test_suite {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
+            transform_config: None,
         };
 
         let index_config = IndexConfig::for_test(&index_id, index_uri.as_str());
@@ -395,6 +398,7 @@ pub mod test_suite {
                 num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::void(),
+                transform_config: None,
             };
             metastore
                 .add_source(&index_id, source.clone())

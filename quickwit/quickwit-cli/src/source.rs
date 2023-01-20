@@ -739,6 +739,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::file("path/to/file"),
+            transform_config: None,
         }];
         let expected_source = vec![SourceRow {
             source_id: "foo-source".to_string(),
@@ -804,12 +805,14 @@ mod tests {
                 num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::stdin(),
+                transform_config: None,
             },
             SourceConfig {
                 source_id: "bar-source".to_string(),
                 num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::stdin(),
+                transform_config: None,
             },
         ];
         let expected_sources = [

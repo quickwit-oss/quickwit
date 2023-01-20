@@ -40,9 +40,9 @@ use crate::{DocParsingError, QueryParserError};
 ///
 /// The `DocMapper` trait is in charge of implementing :
 ///
-/// - a way to build a tantivy::Document from a json payload
-/// - a way to build a tantivy::Query from a SearchRequest
-/// - a way to build a tantivy:Schema
+/// - a way to build a tantivy [`Document`] from a JSON payload
+/// - a way to build a tantivy [`Query`] from a [`SearchRequest`]
+/// - a way to build a tantivy [`Schema`] from a
 #[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Builds a tantivy [`Document`] from a JSON object.
@@ -52,11 +52,11 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     ) -> Result<(Partition, Document), DocParsingError>;
 
     /// Parses a JSON string and returns a tantivy [`Document`].
-    fn doc_from_json_str(&self, doc_json: &str) -> Result<(Partition, Document), DocParsingError> {
-        let json_obj: JsonObject = serde_json::from_str(doc_json).map_err(|_| {
-            let mut doc_json_sample: String = doc_json.chars().take(20).collect();
-            doc_json_sample.push_str("...");
-            DocParsingError::NotJsonObject(doc_json_sample)
+    fn doc_from_json_str(&self, json_doc: &str) -> Result<(Partition, Document), DocParsingError> {
+        let json_obj: JsonObject = serde_json::from_str(json_doc).map_err(|_| {
+            let mut json_doc_sample: String = json_doc.chars().take(20).collect();
+            json_doc_sample.push_str("...");
+            DocParsingError::NotJsonObject(json_doc_sample)
         })?;
         self.doc_from_json_obj(json_obj)
     }

@@ -32,6 +32,7 @@ pub mod rand;
 pub mod runtimes;
 pub mod uri;
 
+use std::env;
 use std::fmt::Debug;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
@@ -113,6 +114,10 @@ pub fn extract_time_range(
 /// Takes 2 intervals and returns true iff their intersection is empty
 pub fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
     left.end <= *right.start() || *right.end() < left.start
+}
+
+pub fn no_color() -> bool {
+    matches!(env::var("NO_COLOR"), Ok(value) if !value.is_empty())
 }
 
 #[macro_export]

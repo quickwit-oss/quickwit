@@ -258,6 +258,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestApi,
+            transform_config: None,
         }
     }
 

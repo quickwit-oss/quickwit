@@ -136,6 +136,7 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::void(),
+            transform_config: None,
         };
         source_loader
             .load_source(

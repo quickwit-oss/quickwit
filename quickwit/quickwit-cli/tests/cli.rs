@@ -64,6 +64,7 @@ async fn ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Result<()
         input_path_opt: Some(input_path.to_path_buf()),
         overwrite: false,
         clear_cache: true,
+        vrl_script: None,
     };
 
     ingest_docs_cli(args).await
@@ -166,6 +167,7 @@ async fn test_cmd_ingest_on_non_existing_index() {
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
         overwrite: false,
         clear_cache: true,
+        vrl_script: None,
     };
 
     let error = ingest_docs_cli(args).await.unwrap_err();
@@ -190,6 +192,7 @@ async fn test_cmd_ingest_on_non_existing_file() {
         input_path_opt: Some(test_env.data_dir_path.join("file-does-not-exist.json")),
         overwrite: false,
         clear_cache: true,
+        vrl_script: None,
     };
 
     let error = ingest_docs_cli(args).await.unwrap_err();
@@ -214,6 +217,7 @@ async fn test_ingest_docs_cli_keep_cache() {
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
         overwrite: false,
         clear_cache: false,
+        vrl_script: None,
     };
 
     ingest_docs_cli(args).await.unwrap();
@@ -234,6 +238,7 @@ async fn test_ingest_docs_cli() {
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
         overwrite: false,
         clear_cache: true,
+        vrl_script: None,
     };
 
     ingest_docs_cli(args).await.unwrap();

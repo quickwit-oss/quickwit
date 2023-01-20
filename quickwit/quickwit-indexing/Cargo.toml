@@ -38,6 +38,9 @@ tokio-stream = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
+value = { workspace = true }
+vrl = { workspace = true }
+vrl-stdlib = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }
@@ -61,6 +64,7 @@ testsuite = []
 
 [dev-dependencies]
 bytes = { workspace = true }
+criterion = { workspace = true, features = ["async_tokio"] }
 mockall = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }
@@ -77,3 +81,7 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 name = "failpoints"
 path = "failpoints/mod.rs"
 required-features = ["fail/failpoints"]
+
+[[bench]]
+name = "doc_process_vrl_bench"
+harness = false

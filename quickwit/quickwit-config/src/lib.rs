@@ -48,7 +48,8 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 pub use source_config::{
     FileSourceParams, KafkaSourceParams, KinesisSourceParams, RegionOrEndpoint, SourceConfig,
-    SourceParams, VecSourceParams, VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
+    SourceParams, TransformConfig, VecSourceParams, VoidSourceParams, CLI_INGEST_SOURCE_ID,
+    INGEST_API_SOURCE_ID,
 };
 use tracing::warn;
 

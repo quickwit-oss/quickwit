@@ -365,6 +365,7 @@ mod tests {
                 num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::void(),
+                transform_config: None,
             };
             check_source_connectivity(&source_config).await?;
         }
@@ -374,6 +375,7 @@ mod tests {
                 num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
+                transform_config: None,
             };
             check_source_connectivity(&source_config).await?;
         }
@@ -383,6 +385,7 @@ mod tests {
                 num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::file("file-does-not-exist.json"),
+                transform_config: None,
             };
             assert!(check_source_connectivity(&source_config).await.is_err());
         }
@@ -392,6 +395,7 @@ mod tests {
                 num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::file("data/test_corpus.json"),
+                transform_config: None,
             };
             assert!(check_source_connectivity(&source_config).await.is_ok());
         }

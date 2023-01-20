@@ -878,6 +878,7 @@ mod kafka_broker_tests {
                 }),
                 enable_backfill_mode: true,
             }),
+            transform_config: None,
         };
         (source_id, source_config)
     }

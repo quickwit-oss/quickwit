@@ -8,5 +8,9 @@
         "client_params": {
             "bootstrap.servers": "localhost:9092"
         }
+    },
+    "transform": {
+        "script": ".message = downcase(string!(.message))",
+        "timezone": "local"
     }
 }
