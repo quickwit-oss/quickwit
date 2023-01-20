@@ -23,6 +23,7 @@ use std::net::IpAddr;
 use std::str::FromStr;
 
 use anyhow::bail;
+use base64::prelude::{Engine, BASE64_STANDARD};
 use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
@@ -103,9 +104,11 @@ impl LeafType {
                 } else {
                     return Err(format!("Expected base64 string, got `{}`.", json_val));
                 };
-                let payload = base64::decode(&base64_str).map_err(|base64_decode_err| {
-                    format!("Expected Base64 string, got `{base64_str}`: {base64_decode_err}")
-                })?;
+                let payload = BASE64_STANDARD
+                    .decode(&base64_str)
+                    .map_err(|base64_decode_err| {
+                        format!("Expected Base64 string, got `{base64_str}`: {base64_decode_err}")
+                    })?;
                 Ok(TantivyValue::Bytes(payload))
             }
             LeafType::Json(_) => {
