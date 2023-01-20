@@ -25,6 +25,7 @@ use serde_json::{Number as JsonNumber, Value as JsonValue};
 use tracing::warn;
 
 mod logs;
+mod metrics;
 mod trace;
 
 pub use logs::OtlpGrpcLogsService;

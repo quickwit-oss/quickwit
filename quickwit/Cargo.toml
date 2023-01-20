@@ -159,7 +159,7 @@ time = { version = "0.3.17", features = ["std", "formatting", "macros"] }
 tokio = { version = "1.24", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
-toml = "0.5.10"
+toml = "0.5.11"
 tonic = { version = "0.8.3", features = ["gzip"] }
 tonic-build = "0.8.4"
 tower = "0.4.13"

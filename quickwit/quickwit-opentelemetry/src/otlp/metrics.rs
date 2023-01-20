@@ -20,37 +20,50 @@
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{new_counter_vec, new_histogram_vec, HistogramVec, IntCounterVec};
 
-pub struct MetastoreMetrics {
-    pub requests_total: IntCounterVec<2>,
-    pub request_errors_total: IntCounterVec<2>,
-    pub request_duration_seconds: HistogramVec<3>,
+pub struct OtlpServiceMetrics {
+    pub requests_total: IntCounterVec<4>,
+    pub request_errors_total: IntCounterVec<4>,
+    pub request_duration_seconds: HistogramVec<5>,
+    pub ingested_spans_total: IntCounterVec<4>,
+    pub ingested_bytes_total: IntCounterVec<4>,
 }
 
-impl Default for MetastoreMetrics {
+impl Default for OtlpServiceMetrics {
     fn default() -> Self {
         Self {
             requests_total: new_counter_vec(
                 "requests_total",
                 "Number of requests",
-                "quickwit_metastore",
-                ["operation", "index"],
+                "quickwit_otel",
+                ["service", "index", "transport", "format"],
             ),
             request_errors_total: new_counter_vec(
                 "request_errors_total",
                 "Number of failed requests",
-                "quickwit_metastore",
-                ["operation", "index"],
+                "quickwit_otel",
+                ["service", "index", "transport", "format"],
             ),
             request_duration_seconds: new_histogram_vec(
                 "request_duration_seconds",
                 "Duration of requests",
-                "quickwit_metastore",
-                ["operation", "index", "error"],
+                "quickwit_otel",
+                ["service", "index", "transport", "format", "error"],
+            ),
+            ingested_spans_total: new_counter_vec(
+                "ingested_spans_total",
+                "Number of spans ingested",
+                "quickwit_otel",
+                ["service", "index", "transport", "format"],
+            ),
+            ingested_bytes_total: new_counter_vec(
+                "ingested_bytes_total",
+                "Number of bytes ingested",
+                "quickwit_otel",
+                ["service", "index", "transport", "format"],
             ),
         }
     }
 }
 
-/// `METASTORE_METRICS` exposes a bunch of metastore-related metrics through a Prometheus
-/// endpoint.
-pub static METASTORE_METRICS: Lazy<MetastoreMetrics> = Lazy::new(MetastoreMetrics::default);
+/// `OTLP_SERVICE_METRICS` exposes metrics for each OTLP service.
+pub static OTLP_SERVICE_METRICS: Lazy<OtlpServiceMetrics> = Lazy::new(OtlpServiceMetrics::default);

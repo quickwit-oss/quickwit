@@ -21,6 +21,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
+use prost::Message;
 use quickwit_actors::Mailbox;
 use quickwit_ingest_api::IngestApiService;
 use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
@@ -34,6 +35,7 @@ use serde_json::Value as JsonValue;
 use tracing::error;
 
 use crate::otlp::extract_attributes;
+use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
 pub const OTEL_TRACE_INDEX_ID: &str = "otel-trace-v0";
 
@@ -125,18 +127,6 @@ search_settings:
   default_search_fields: []
 "#;
 
-#[derive(Clone)]
-pub struct OtlpGrpcTraceService {
-    ingest_api_service: Mailbox<IngestApiService>,
-}
-
-impl OtlpGrpcTraceService {
-    // TODO: remove and use registry
-    pub fn new(ingest_api_service: Mailbox<IngestApiService>) -> Self {
-        Self { ingest_api_service }
-    }
-}
-
 pub type Base64 = String;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -203,13 +193,21 @@ pub struct Link {
     pub link_dropped_attributes_count: u64,
 }
 
-#[async_trait]
-impl TraceService for OtlpGrpcTraceService {
-    async fn export(
+#[derive(Clone)]
+pub struct OtlpGrpcTraceService {
+    ingest_api_service: Mailbox<IngestApiService>,
+}
+
+impl OtlpGrpcTraceService {
+    // TODO: remove and use registry
+    pub fn new(ingest_api_service: Mailbox<IngestApiService>) -> Self {
+        Self { ingest_api_service }
+    }
+
+    async fn export_inner(
         &self,
-        request: tonic::Request<ExportTraceServiceRequest>,
+        request: ExportTraceServiceRequest,
     ) -> Result<tonic::Response<ExportTraceServiceResponse>, tonic::Status> {
-        let request = request.into_inner();
         let mut doc_batch = DocBatch {
             index_id: OTEL_TRACE_INDEX_ID.to_string(),
             ..Default::default()
@@ -336,5 +334,65 @@ impl TraceService for OtlpGrpcTraceService {
             }),
         };
         Ok(tonic::Response::new(response))
+    }
+
+    async fn export_instrumented(
+        &self,
+        request: tonic::Request<ExportTraceServiceRequest>,
+    ) -> Result<tonic::Response<ExportTraceServiceResponse>, tonic::Status> {
+        let start = std::time::Instant::now();
+
+        let request = request.into_inner();
+        let num_spans = request
+            .resource_spans
+            .iter()
+            .flat_map(|resource_span| &resource_span.scope_spans)
+            .map(|scope_span| scope_span.spans.len())
+            .sum::<usize>() as u64;
+        let num_bytes = request.encoded_len() as u64;
+
+        let labels = ["trace", "grpc", OTEL_TRACE_INDEX_ID, "protobuf"];
+
+        OTLP_SERVICE_METRICS
+            .requests_total
+            .with_label_values(labels)
+            .inc();
+        OTLP_SERVICE_METRICS
+            .ingested_spans_total
+            .with_label_values(labels)
+            .inc_by(num_spans);
+        OTLP_SERVICE_METRICS
+            .ingested_bytes_total
+            .with_label_values(labels)
+            .inc_by(num_bytes);
+
+        let (export_res, is_error) = match self.export_inner(request).await {
+            ok @ Ok(_) => (ok, "false"),
+            err @ Err(_) => {
+                OTLP_SERVICE_METRICS
+                    .request_errors_total
+                    .with_label_values(labels)
+                    .inc();
+                (err, "true")
+            }
+        };
+        let elapsed = start.elapsed();
+        let labels = ["trace", "grpc", OTEL_TRACE_INDEX_ID, "protobuf", is_error];
+        OTLP_SERVICE_METRICS
+            .request_duration_seconds
+            .with_label_values(labels)
+            .observe(elapsed.as_secs_f64());
+
+        export_res
+    }
+}
+
+#[async_trait]
+impl TraceService for OtlpGrpcTraceService {
+    async fn export(
+        &self,
+        request: tonic::Request<ExportTraceServiceRequest>,
+    ) -> Result<tonic::Response<ExportTraceServiceResponse>, tonic::Status> {
+        self.export_instrumented(request).await
     }
 }
