@@ -43,10 +43,12 @@ version: 0.4
 index_id: otel-trace-v0
 
 doc_mapping:
-  mode: lenient
+  mode: strict
   field_mappings:
     - name: trace_id
-      type: bytes
+      type: text
+      tokenizer: raw
+      fast: true
     - name: trace_state
       type: text
       indexed: false
@@ -60,7 +62,8 @@ doc_mapping:
       type: text
       tokenizer: raw
     - name: span_id
-      type: bytes
+      type: text
+      tokenizer: raw
     - name: span_kind
       type: u64
     - name: span_name
@@ -68,20 +71,23 @@ doc_mapping:
       tokenizer: raw
     - name: span_start_timestamp_secs
       type: datetime
-      indexed: true
-      precision: seconds
+      input_formats:
+        - unix_timestamp
+      stored: false
+      indexed: false
       fast: true
-      input_formats: [unix_timestamp]
-      output_format: unix_timestamp_secs
+      precision: seconds
     - name: span_start_timestamp_nanos
-      type: i64
+      type: u64
       indexed: false
     - name: span_end_timestamp_nanos
-      type: i64
+      type: u64
       indexed: false
-    - name: span_duration_secs
-      type: i64
+    - name: span_duration_millis
+      type: u64
+      stored: false
       indexed: false
+      fast: true
     - name: span_attributes
       type: json
       tokenizer: raw
@@ -98,7 +104,8 @@ doc_mapping:
       type: json
       indexed: false
     - name: parent_span_id
-      type: bytes
+      type: text
+      indexed: false
     - name: events
       type: array<json>
       tokenizer: raw
@@ -109,7 +116,7 @@ doc_mapping:
   timestamp_field: span_start_timestamp_secs
 
   partition_key: service_name
-  max_num_partitions: 100
+  max_num_partitions: 200
 
 indexing_settings:
   commit_timeout_secs: 30
@@ -130,28 +137,29 @@ impl OtlpGrpcTraceService {
     }
 }
 
-pub type B64String = String;
+pub type Base64 = String;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Span {
-    pub trace_id: B64String,
-    pub trace_state: String,
+    pub trace_id: Base64,
+    pub trace_state: Option<String>,
     pub resource_attributes: HashMap<String, JsonValue>,
     pub resource_dropped_attributes_count: u64,
     pub service_name: String,
-    pub span_id: B64String,
+    pub span_id: Base64,
     pub span_kind: u64,
     pub span_name: String,
-    pub span_start_timestamp_secs: i64,
-    pub span_start_timestamp_nanos: i64,
-    pub span_end_timestamp_nanos: i64,
-    pub span_duration_secs: i64,
+    pub span_start_timestamp_nanos: u64,
+    pub span_end_timestamp_nanos: u64,
+    // TODO: Explain why those two fields are optional.
+    pub span_start_timestamp_secs: Option<u64>,
+    pub span_duration_millis: Option<u64>,
     pub span_attributes: HashMap<String, JsonValue>,
     pub span_dropped_attributes_count: u64,
     pub span_dropped_events_count: u64,
     pub span_dropped_links_count: u64,
-    pub span_status: Option<Status>,
-    pub parent_span_id: Option<B64String>,
+    pub span_status: Option<SpanStatus>,
+    pub parent_span_id: Option<Base64>,
     #[serde(default)]
     pub events: Vec<Event>,
     #[serde(default)]
@@ -159,8 +167,28 @@ pub struct Span {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct SpanStatus {
+    pub code: i32,
+    pub message: Option<String>,
+}
+
+impl From<Status> for SpanStatus {
+    fn from(value: Status) -> Self {
+        let message = if value.message.is_empty() {
+            None
+        } else {
+            Some(value.message)
+        };
+        Self {
+            code: value.code,
+            message,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Event {
-    pub event_timestamp_nanos: i64,
+    pub event_timestamp_nanos: u64,
     pub event_name: String,
     pub event_attributes: HashMap<String, JsonValue>,
     pub event_dropped_attributes_count: u64,
@@ -168,9 +196,9 @@ pub struct Event {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Link {
-    pub link_trace_id: B64String,
+    pub link_trace_id: Base64,
     pub link_trace_state: String,
-    pub link_span_id: B64String,
+    pub link_span_id: Base64,
     pub link_attributes: HashMap<String, JsonValue>,
     pub link_dropped_attributes_count: u64,
 }
@@ -222,18 +250,16 @@ impl TraceService for OtlpGrpcTraceService {
                     } else {
                         "unknown".to_string()
                     };
-                    let span_start_timestamp_nanos = span.start_time_unix_nano as i64;
-                    let span_start_timestamp_secs = span_start_timestamp_nanos / 1_000_000_000;
-                    let span_end_timestamp_nanos = span.end_time_unix_nano as i64;
-                    let span_duration_nanos = span_end_timestamp_nanos - span_start_timestamp_nanos;
-                    let span_duration_secs = span_duration_nanos / 1_000_000_000 + 1;
+                    let span_start_timestamp_secs = Some(span.start_time_unix_nano / 1_000_000_000);
+                    let span_duration_nanos = span.end_time_unix_nano - span.start_time_unix_nano;
+                    let span_duration_millis = Some(span_duration_nanos / 1_000_000);
                     let span_attributes = extract_attributes(span.attributes);
 
                     let events = span
                         .events
                         .into_iter()
                         .map(|event| Event {
-                            event_timestamp_nanos: event.time_unix_nano as i64,
+                            event_timestamp_nanos: event.time_unix_nano,
                             event_name: event.name,
                             event_attributes: extract_attributes(event.attributes),
                             event_dropped_attributes_count: event.dropped_attributes_count as u64,
@@ -250,24 +276,29 @@ impl TraceService for OtlpGrpcTraceService {
                             link_dropped_attributes_count: link.dropped_attributes_count as u64,
                         })
                         .collect();
+                    let trace_state = if span.trace_state.is_empty() {
+                        None
+                    } else {
+                        Some(span.trace_state)
+                    };
                     let span = Span {
                         trace_id,
-                        trace_state: span.trace_state,
+                        trace_state,
                         resource_attributes: resource_attributes.clone(),
                         resource_dropped_attributes_count,
                         service_name: service_name.clone(),
                         span_id,
                         span_kind: span.kind as u64,
                         span_name,
+                        span_start_timestamp_nanos: span.start_time_unix_nano,
+                        span_end_timestamp_nanos: span.end_time_unix_nano,
                         span_start_timestamp_secs,
-                        span_start_timestamp_nanos,
-                        span_end_timestamp_nanos,
-                        span_duration_secs,
+                        span_duration_millis,
                         span_attributes,
                         span_dropped_attributes_count: span.dropped_attributes_count as u64,
                         span_dropped_events_count: span.dropped_events_count as u64,
                         span_dropped_links_count: span.dropped_links_count as u64,
-                        span_status: span.status,
+                        span_status: span.status.map(|status| status.into()),
                         parent_span_id,
                         events,
                         links,

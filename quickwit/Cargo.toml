@@ -202,14 +202,14 @@ quickwit-serve = { version = "0.4.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.4.0", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.4.0", path = "./quickwit-telemetry" }
 
-fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "f8d111a" }
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "f8d111a", default-features = false, features = [
+fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c9cb3d0" }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c9cb3d0", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
   "quickwit",
 ] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "f8d111a" }
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c9cb3d0" }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.
