@@ -34,7 +34,7 @@ use quickwit_metastore::{
 };
 use quickwit_proto::metastore_api::DeleteTask;
 use quickwit_proto::SearchRequest;
-use quickwit_search::{jobs_to_leaf_request, SearchClientPool, SearchJob};
+use quickwit_search::{jobs_to_leaf_request, SearchJob, SearchJobPlacer};
 use serde::Serialize;
 use tantivy::Inventory;
 use tracing::{debug, info};
@@ -78,7 +78,7 @@ pub struct DeleteTaskPlanner {
     index_uri: Uri,
     doc_mapper_str: String,
     metastore: Arc<dyn Metastore>,
-    search_client_pool: SearchClientPool,
+    search_job_placer: SearchJobPlacer,
     merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     /// Inventory of ongoing delete operations. If everything goes well,
@@ -123,7 +123,7 @@ impl DeleteTaskPlanner {
         index_uri: Uri,
         doc_mapper_str: String,
         metastore: Arc<dyn Metastore>,
-        search_client_pool: SearchClientPool,
+        search_job_placer: SearchJobPlacer,
         merge_policy: Arc<dyn MergePolicy>,
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> Self {
@@ -132,7 +132,7 @@ impl DeleteTaskPlanner {
             index_uri,
             doc_mapper_str,
             metastore,
-            search_client_pool,
+            search_job_placer,
             merge_policy,
             merge_split_downloader_mailbox,
             ongoing_delete_operations_inventory: Inventory::new(),
@@ -283,7 +283,7 @@ impl DeleteTaskPlanner {
     ) -> anyhow::Result<bool> {
         let search_job = SearchJob::from(&stale_split.split_metadata);
         let mut search_client = self
-            .search_client_pool
+            .search_job_placer
             .assign_job(search_job.clone(), &HashSet::new())?;
         for delete_task in delete_tasks {
             let delete_query = delete_task
@@ -400,12 +400,13 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 mod tests {
     use quickwit_actors::{ActorState, Universe};
     use quickwit_config::build_doc_mapper;
+    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::merge_policy::{MergeOperation, NopMergePolicy};
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
-    use quickwit_search::MockSearchService;
+    use quickwit_search::{MockSearchService, SearchServiceClient};
     use tantivy::TrackedObject;
 
     use super::*;
@@ -493,14 +494,19 @@ mod tests {
                 })
             },
         );
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+        let client_pool =
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(mock_search_service),
+                ([127, 0, 0, 1], 1000).into(),
+            )]);
+        let search_job_placer = SearchJobPlacer::new(client_pool);
         let (downloader_mailbox, downloader_inbox) = universe.create_test_mailbox();
         let delete_planner_executor = DeleteTaskPlanner::new(
             index_id.to_string(),
             index_config.index_uri.clone(),
             doc_mapper_str,
             metastore.clone(),
-            client_pool,
+            search_job_placer,
             Arc::new(NopMergePolicy),
             downloader_mailbox,
         );

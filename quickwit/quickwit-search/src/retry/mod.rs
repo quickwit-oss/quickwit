@@ -22,8 +22,8 @@ pub mod search_stream;
 
 use std::collections::HashSet;
 
-use crate::search_client_pool::Job;
-use crate::{SearchClientPool, SearchServiceClient};
+use crate::search_job_placer::Job;
+use crate::{SearchJobPlacer, SearchServiceClient};
 
 /// A retry policy to evaluate if a request should be retried.
 /// A retry can be made either on an error or on a partial success.
@@ -68,13 +68,13 @@ impl<'a> Job for &'a str {
 // 1. Take the first split_id of the request
 // 2. Ask for a relevant client for that split while excluding the failing client.
 pub fn retry_client(
-    client_pool: &SearchClientPool,
+    search_job_placer: &SearchJobPlacer,
     failing_client: &SearchServiceClient,
     split_id: &str,
 ) -> anyhow::Result<SearchServiceClient> {
     let mut exclude_addresses = HashSet::new();
     exclude_addresses.insert(failing_client.grpc_addr());
-    client_pool.assign_job(split_id, &exclude_addresses)
+    search_job_placer.assign_job(split_id, &exclude_addresses)
 }
 
 #[cfg(test)]
@@ -82,10 +82,11 @@ mod tests {
     use std::net::SocketAddr;
     use std::sync::Arc;
 
+    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_proto::{FetchDocsResponse, SplitIdAndFooterOffsets};
 
     use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
-    use crate::{MockSearchService, SearchClientPool, SearchError};
+    use crate::{MockSearchService, SearchError, SearchJobPlacer, SearchServiceClient};
 
     #[test]
     fn test_should_retry_on_error() {
@@ -106,12 +107,19 @@ mod tests {
     async fn test_retry_client_should_return_another_client() -> anyhow::Result<()> {
         let mock_service_1 = MockSearchService::new();
         let mock_service_2 = MockSearchService::new();
-        let client_pool = Arc::new(
-            SearchClientPool::from_mocks(vec![Arc::new(mock_service_1), Arc::new(mock_service_2)])
-                .await?,
-        );
-        let client_hashmap = client_pool.clients();
-        let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
+        let client_pool = ServiceClientPool::for_clients_list(vec![
+            SearchServiceClient::from_service(
+                Arc::new(mock_service_1),
+                ([127, 0, 0, 1], 1000).into(),
+            ),
+            SearchServiceClient::from_service(
+                Arc::new(mock_service_2),
+                ([127, 0, 0, 1], 1001).into(),
+            ),
+        ]);
+        let client_hashmap = client_pool.all();
+        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let first_grpc_addr: SocketAddr = "127.0.0.1:1000".parse()?;
         let failing_client = client_hashmap.get(&first_grpc_addr).unwrap();
         let split_id_and_footer_offsets = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),
@@ -119,12 +127,12 @@ mod tests {
             split_footer_start: 0,
         };
         let client_for_retry = retry_client(
-            &client_pool,
+            &search_job_placer,
             failing_client,
             &split_id_and_footer_offsets.split_id,
         )
         .unwrap();
-        assert_eq!(client_for_retry.grpc_addr().to_string(), "127.0.0.1:20010");
+        assert_eq!(client_for_retry.grpc_addr().to_string(), "127.0.0.1:1001");
         Ok(())
     }
 }

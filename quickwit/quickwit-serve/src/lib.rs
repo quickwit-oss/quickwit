@@ -57,6 +57,7 @@ use quickwit_config::{load_index_config_from_user_config, ConfigFormat, Quickwit
 use quickwit_control_plane::scheduler::IndexingScheduler;
 use quickwit_control_plane::start_control_plane_service;
 use quickwit_core::{IndexService, IndexServiceError};
+use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 use quickwit_grpc_clients::ControlPlaneGrpcClient;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
@@ -67,7 +68,7 @@ use quickwit_metastore::{
     MetastoreWithControlPlaneTriggers, RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::OTEL_TRACE_INDEX_CONFIG;
-use quickwit_search::{start_searcher_service, SearchClientPool, SearchService};
+use quickwit_search::{start_searcher_service, SearchJobPlacer, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
 use tracing::{error, warn};
@@ -207,15 +208,16 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         (None, None)
     };
 
-    let search_client_pool =
-        SearchClientPool::create_and_keep_updated(cluster.ready_member_change_watcher()).await?;
+    let search_job_placer = SearchJobPlacer::new(
+        ServiceClientPool::create_and_update_members(cluster.ready_member_change_watcher()).await?,
+    );
 
     let janitor_service = if config.enabled_services.contains(&QuickwitService::Janitor) {
         let janitor_service = start_janitor_service(
             &universe,
             &config,
             metastore.clone(),
-            search_client_pool.clone(),
+            search_job_placer.clone(),
             storage_resolver.clone(),
         )
         .await?;
@@ -228,7 +230,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         &config,
         metastore.clone(),
         storage_resolver,
-        search_client_pool,
+        search_job_placer,
     )
     .await?;
 
