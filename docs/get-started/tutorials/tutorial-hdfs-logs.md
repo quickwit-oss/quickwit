@@ -3,6 +3,7 @@ title: Index a logging dataset locally
 description: Index log entries and start a three-node cluster on a local machine.
 tags: [self-hosted, setup]
 icon_url: /img/quickwit-icon.svg
+sidebar_position: 1
 ---
 
 import Tabs from '@theme/Tabs';
