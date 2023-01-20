@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use base64;
+use base64::prelude::{Engine, BASE64_STANDARD};
 use quickwit_actors::Mailbox;
 use quickwit_ingest_api::IngestApiService;
 use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
@@ -238,10 +238,10 @@ impl TraceService for OtlpGrpcTraceService {
                 for span in scope_span.spans {
                     num_spans += 1;
 
-                    let trace_id = base64::encode(span.trace_id);
-                    let span_id = base64::encode(span.span_id);
+                    let trace_id = BASE64_STANDARD.encode(span.trace_id);
+                    let span_id = BASE64_STANDARD.encode(span.span_id);
                     let parent_span_id = if !span.parent_span_id.is_empty() {
-                        Some(base64::encode(span.parent_span_id))
+                        Some(BASE64_STANDARD.encode(span.parent_span_id))
                     } else {
                         None
                     };
@@ -269,9 +269,9 @@ impl TraceService for OtlpGrpcTraceService {
                         .links
                         .into_iter()
                         .map(|link| Link {
-                            link_trace_id: base64::encode(link.trace_id),
+                            link_trace_id: BASE64_STANDARD.encode(link.trace_id),
                             link_trace_state: link.trace_state,
-                            link_span_id: base64::encode(link.span_id),
+                            link_span_id: BASE64_STANDARD.encode(link.span_id),
                             link_attributes: extract_attributes(link.attributes),
                             link_dropped_attributes_count: link.dropped_attributes_count as u64,
                         })

@@ -24,6 +24,7 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use base64::prelude::{Engine, BASE64_STANDARD};
 use itertools::Itertools;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_opentelemetry::otlp::{
@@ -282,7 +283,7 @@ impl SpanReaderPlugin for JaegerService {
             .find_trace_ids(trace_query)
             .await?
             .into_iter()
-            .map(|trace_id| base64::decode(trace_id).expect("Failed to Base64 decode trace ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
+            .map(|trace_id| BASE64_STANDARD.decode(trace_id).expect("Failed to Base64 decode trace ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
             .collect();
         let response = FindTraceIDsResponse { trace_ids };
         debug!(response=?response, "`find_trace_ids` response");
@@ -320,7 +321,7 @@ impl SpanReaderPlugin for JaegerService {
     ) -> Result<Response<Self::GetTraceStream>, Status> {
         let request = request.into_inner();
         debug!(request=?request, "`get_trace` request");
-        let trace_id = base64::encode(request.trace_id);
+        let trace_id = BASE64_STANDARD.encode(request.trace_id);
         let spans = self.fetch_spans(&[trace_id]).await?;
         let (tx, rx) = mpsc::channel(1);
         tx.send(Ok(SpansResponseChunk { spans }))
@@ -501,10 +502,11 @@ fn build_aggregations_query(num_traces: usize) -> String {
 fn qw_span_to_jaeger_span(qw_span: &str) -> Result<JaegerSpan, Status> {
     let mut span = serde_json::from_str::<QwSpan>(qw_span)
         .map_err(|error| Status::internal(format!("Failed to deserialize span: {error:?}")))?;
-    let trace_id = base64::decode(span.trace_id).map_err(|error| {
+    let trace_id = BASE64_STANDARD.decode(span.trace_id).map_err(|error| {
         Status::internal(format!("Failed to Base64 decode trace ID: {error:?}"))
     })?;
-    let span_id = base64::decode(span.span_id)
+    let span_id = BASE64_STANDARD
+        .decode(span.span_id)
         .map_err(|error| Status::internal(format!("Failed to Base64 decode span ID: {error:?}")))?;
 
     let start_time = Some(to_well_known_timestamp(span.span_start_timestamp_nanos));
@@ -727,7 +729,7 @@ fn otlp_links_to_jaeger_references(
     let mut references = Vec::with_capacity(parent_span_id_opt.is_some() as usize + links.len());
 
     if let Some(parent_span_id) = parent_span_id_opt {
-        let parent_span_id = base64::decode(parent_span_id).map_err(|error| {
+        let parent_span_id = BASE64_STANDARD.decode(parent_span_id).map_err(|error| {
             Status::internal(format!("Failed to Base64 decode parent span ID: {error:?}"))
         })?;
         let reference = JaegerSpanRef {
@@ -740,10 +742,12 @@ fn otlp_links_to_jaeger_references(
     // "Span references generated from Link(s) MUST be added after the span reference generated from
     // Parent ID, if any."
     for link in links {
-        let trace_id = base64::decode(link.link_trace_id).map_err(|error| {
-            Status::internal(format!("Failed to Base64 decode parent span ID: {error:?}"))
-        })?;
-        let span_id = base64::decode(link.link_span_id).map_err(|error| {
+        let trace_id = BASE64_STANDARD
+            .decode(link.link_trace_id)
+            .map_err(|error| {
+                Status::internal(format!("Failed to Base64 decode parent span ID: {error:?}"))
+            })?;
+        let span_id = BASE64_STANDARD.decode(link.link_span_id).map_err(|error| {
             Status::internal(format!("Failed to Base64 decode parent span ID: {error:?}"))
         })?;
         let reference = JaegerSpanRef {
