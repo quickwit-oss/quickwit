@@ -33,7 +33,7 @@ const PATH_PATTERN: &str = r#"(^static|\.(png|json|txt|ico|js|map)$)"#;
 #[folder = "../quickwit-ui/build/"]
 struct Asset;
 
-pub fn ui_handler() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+pub fn ui_handler() -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path("ui")
         .and(warp::path::tail())
         .and_then(serve_file)

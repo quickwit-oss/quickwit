@@ -49,7 +49,7 @@ fn indexing_get_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone
 
 pub fn indexing_get_handler(
     indexing_service_mailbox_opt: Option<Mailbox<IndexingService>>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     indexing_get_filter()
         .and(require(indexing_service_mailbox_opt))
         .then(indexing_endpoint)

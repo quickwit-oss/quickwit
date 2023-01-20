@@ -22,6 +22,7 @@ use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
@@ -31,6 +32,7 @@ use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
+use quickwit_cluster::create_fake_cluster_for_cli;
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
@@ -900,7 +902,8 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .map(|vrl_script| TransformConfig::new(vrl_script, None));
     let source_config = SourceConfig {
         source_id: CLI_INGEST_SOURCE_ID.to_string(),
-        num_pipelines: 1,
+        max_num_pipelines_per_indexer: 1,
+        desired_num_pipelines: 1,
         enabled: true,
         source_params,
         transform_config,
@@ -915,6 +918,10 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         let index_service = IndexService::from_config(config.clone()).await?;
         index_service.clear_index(&args.index_id).await?;
     }
+    // The indexing service needs to update its cluster chitchat state so that the control plane is
+    // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
+    // and avoid impacting potential control plane running on the cluster.
+    let fake_cluster = create_fake_cluster_for_cli().await?;
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
@@ -924,6 +931,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         config.node_id.clone(),
         config.data_dir_path.clone(),
         indexer_config,
+        Arc::new(fake_cluster),
         metastore,
         quickwit_storage_uri_resolver().clone(),
     )
@@ -1042,6 +1050,10 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
+    // The indexing service needs to update its cluster chitchat state so that the control plane is
+    // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
+    // and avoid impacting potential control plane running on the cluster.
+    let fake_cluster = create_fake_cluster_for_cli().await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&config.metastore_uri)
@@ -1052,6 +1064,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         config.node_id,
         config.data_dir_path,
         indexer_config,
+        Arc::new(fake_cluster),
         metastore,
         storage_resolver,
     )
@@ -1064,7 +1077,8 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
             index_id: args.index_id,
             source_config: SourceConfig {
                 source_id: args.source_id,
-                num_pipelines: 1,
+                max_num_pipelines_per_indexer: 1,
+                desired_num_pipelines: 1,
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
                 transform_config: None,

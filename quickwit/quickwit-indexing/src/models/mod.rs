@@ -40,7 +40,7 @@ pub use indexed_split::{
 pub use indexing_pipeline_id::IndexingPipelineId;
 pub use indexing_service_message::{
     DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, ShutdownPipeline,
-    ShutdownPipelines, SpawnPipeline, SpawnPipelines,
+    ShutdownPipelines, SpawnPipeline,
 };
 pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::NewSplits;

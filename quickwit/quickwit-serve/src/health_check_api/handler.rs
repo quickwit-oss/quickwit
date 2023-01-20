@@ -39,14 +39,14 @@ pub(crate) fn health_check_handlers(
     cluster: Arc<Cluster>,
     indexer_service_opt: Option<Mailbox<IndexingService>>,
     janitor_service_opt: Option<Mailbox<JanitorService>>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     liveness_handler(indexer_service_opt, janitor_service_opt).or(readiness_handler(cluster))
 }
 
 fn liveness_handler(
     indexer_service_opt: Option<Mailbox<IndexingService>>,
     janitor_service_opt: Option<Mailbox<JanitorService>>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("health" / "livez")
         .and(warp::get())
         .and(with_arg(indexer_service_opt))
@@ -56,7 +56,7 @@ fn liveness_handler(
 
 fn readiness_handler(
     cluster: Arc<Cluster>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("health" / "readyz")
         .and(warp::get())
         .and(with_arg(cluster))

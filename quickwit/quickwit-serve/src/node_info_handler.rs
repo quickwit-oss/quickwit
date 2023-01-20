@@ -28,13 +28,13 @@ use crate::{with_arg, QuickwitBuildInfo};
 pub fn node_info_handler(
     build_info: &'static QuickwitBuildInfo,
     config: Arc<QuickwitConfig>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     node_version_handler(build_info).or(node_config_handler(config))
 }
 
 fn node_version_handler(
     build_info: &'static QuickwitBuildInfo,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path("version")
         .and(warp::path::end())
         .and(with_arg(build_info))
@@ -47,7 +47,7 @@ async fn get_version(build_info: &'static QuickwitBuildInfo) -> impl warp::Reply
 
 fn node_config_handler(
     config: Arc<QuickwitConfig>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path("config")
         .and(warp::path::end())
         .and(with_arg(config))

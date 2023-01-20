@@ -21,3 +21,24 @@ pub mod balance_channel;
 pub mod control_plane_client;
 
 pub use balance_channel::create_balance_channel_from_watched_members;
+pub use control_plane_client::ControlPlaneGrpcClient;
+use tonic::transport::{Channel, Endpoint, Uri};
+use tower::service_fn;
+
+// For tests.
+pub async fn create_channel_from_duplex_stream(
+    client: tokio::io::DuplexStream,
+) -> anyhow::Result<Channel> {
+    let mut client = Some(client);
+    let channel = Endpoint::try_from("http://test.server")?
+        .connect_with_connector(service_fn(move |_: Uri| {
+            let client = client.take();
+            async move {
+                client.ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::Other, "Client already taken")
+                })
+            }
+        }))
+        .await?;
+    Ok(channel)
+}

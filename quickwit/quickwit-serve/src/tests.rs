@@ -89,15 +89,17 @@ async fn test_standalone_server_no_indexer() {
 
 #[tokio::test]
 async fn test_multi_nodes_cluster() {
+    quickwit_common::setup_logging_for_tests();
     let nodes_services = vec![
         HashSet::from_iter([QuickwitService::Searcher]),
         HashSet::from_iter([QuickwitService::Metastore]),
         HashSet::from_iter([QuickwitService::Indexer]),
+        HashSet::from_iter([QuickwitService::ControlPlane]),
     ];
     let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
         .await
         .unwrap();
-    sandbox.wait_for_cluster_num_ready_nodes(2).await.unwrap();
+    sandbox.wait_for_cluster_num_ready_nodes(3).await.unwrap();
     let mut search_client = sandbox.get_random_search_client();
     search_client
         .root_search(SearchRequest {
@@ -118,6 +120,9 @@ async fn test_multi_nodes_cluster() {
 
     assert!(sandbox.rest_client.is_live().await.unwrap());
 
+    // Wait until indexing pipelines are started.
+    // TODO(fmassot): try to reduce the duration or use a wait until condition.
+    tokio::time::sleep(Duration::from_secs(3)).await;
     let indexing_service_counters = sandbox
         .rest_client
         .indexing_service_counters()
