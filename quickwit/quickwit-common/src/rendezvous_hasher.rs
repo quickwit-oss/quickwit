@@ -21,20 +21,20 @@ use std::cmp::Reverse;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-/// Computes the affinity of a node with a given `split_id`.
+/// Computes the affinity of a node with a given `key`.
 ///
 /// We rely on rendez-vous hashing here.
-fn node_affinity<T: Hash>(node: T, split_id: &str) -> u64 {
+fn node_affinity<T: Hash, U: Hash>(node: T, key: &U) -> u64 {
     let mut state = DefaultHasher::new();
-    split_id.hash(&mut state);
+    key.hash(&mut state);
     node.hash(&mut state);
     state.finish()
 }
 
 /// Sorts the list of node base on rendez-vous-hashing.
 /// Nodes are ordered by decreasing order of computed `hash_key`
-pub(crate) fn sort_by_rendez_vous_hash<T: Hash>(nodes: &mut [T], split_id: &str) {
-    nodes.sort_by_cached_key(|node| Reverse(node_affinity(node, split_id)));
+pub fn sort_by_rendez_vous_hash<T: Hash, U: Hash>(nodes: &mut [T], key: U) {
+    nodes.sort_by_cached_key(|node| Reverse(node_affinity(node, &key)));
 }
 
 #[cfg(test)]

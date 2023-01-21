@@ -29,6 +29,7 @@ pub mod metrics;
 pub mod net;
 mod progress;
 pub mod rand;
+pub mod rendezvous_hasher;
 pub mod runtimes;
 pub mod uri;
 

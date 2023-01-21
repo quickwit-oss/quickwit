@@ -23,10 +23,10 @@ use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 
 use anyhow::bail;
+use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
 use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 use tracing::error;
 
-use crate::rendezvous_hasher::sort_by_rendez_vous_hash;
 use crate::SearchServiceClient;
 
 /// Job.

@@ -19,9 +19,11 @@
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::hash::Hash;
 
 use itertools::Itertools;
 use quickwit_cluster::ClusterMember;
+use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
 use quickwit_config::{SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID};
 use quickwit_proto::indexing_api::IndexingTask;
 use serde::Serialize;
@@ -117,43 +119,17 @@ impl PhysicalIndexingPlan {
     }
 }
 
-#[derive(Debug)]
-struct NodeScore<'a> {
-    pub node_id: &'a str,
-    pub score: f32,
-}
-
-impl<'a> PartialEq for NodeScore<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        self.score == other.score
-    }
-}
-
-impl<'a> Eq for NodeScore<'a> {}
-
-// Sort by score and then node_id.
-impl<'a> PartialOrd for NodeScore<'a> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        (self.score, self.node_id).partial_cmp(&(other.score, other.node_id))
-    }
-}
-
-impl<'a> Ord for NodeScore<'a> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // Score is never NaN.
-        self.partial_cmp(other).unwrap_or(Ordering::Equal)
-    }
-}
-
 /// Builds a [`PhysicalIndexingPlan`] by assigning each indexing tasks to a node ID.
-/// The algorithm first sort indexing tasks by (index_id, source_id) and sort indexers
-/// by node ID to make the algorithm deterministic.
+/// The algorithm first sort indexing tasks by (index_id, source_id).
 /// Then for each indexing tasks, it performs the following steps:
-/// 1. Select node candidates that can run the task, see [`select_node_candidates`]
+/// 1. Sort node by rendez-vous hashing to make the assigment stable (it makes it
+///    deterministic too). This is not bullet proof as the node score has an impact
+///    on the assigment too.
+/// 2. Select node candidates that can run the task, see [`select_node_candidates`]
 ///    function.
-/// 2. For each node, compute a score for this task, the higher, the better, see
+/// 3. For each node, compute a score for this task, the higher, the better, see
 ///    `compute_node_score` function.
-/// 3. Select the best node (highest score) and assign the task to
+/// 4. Select the best node (highest score) and assign the task to
 ///    this node.
 /// Additional notes(fmassot): it's nice to have the cluster members as they contain the running
 /// tasks. We can potentially use this info to assign an indexing task to a node running the same
@@ -163,21 +139,19 @@ pub(crate) fn build_physical_indexing_plan(
     source_configs: &HashMap<IndexSourceId, SourceConfig>,
     mut indexing_tasks: Vec<IndexingTask>,
 ) -> PhysicalIndexingPlan {
-    // Sort by (index_id, source_id)...
+    // Sort by (index_id, source_id) to make the algorithm deterministic.
     indexing_tasks.sort_by(|left, right| {
         (&left.index_id, &left.source_id).cmp(&(&right.index_id, &right.source_id))
     });
-    // ...and sort by node ID to make the algorithm deterministic.
-    let node_ids = indexers
+    let mut node_ids = indexers
         .iter()
         .map(|indexer| indexer.node_id.to_string())
-        .sorted()
         .collect_vec();
 
     // Build the plan.
     let mut plan = PhysicalIndexingPlan::new(node_ids.clone());
     for indexing_task in indexing_tasks {
-        // Get candidates.
+        sort_by_rendez_vous_hash(&mut node_ids, &indexing_task);
         let source_config = source_configs
             // TODO(fmassot): remove this lame allocation to access the source...
             .get(&IndexSourceId::from(indexing_task.clone()))
@@ -192,22 +166,27 @@ pub(crate) fn build_physical_indexing_plan(
         // source.
         let best_node_opt: Option<&str> = candidates
             .iter()
-            // NodeScore implements Ord and can be used easily for sorting.
-            .map(|node_id| NodeScore {
-                node_id,
-                score: -compute_node_score(node_id, &plan),
-            })
-            .sorted()
+            .map(|&node_id| (node_id, compute_node_score(node_id, &plan)))
+            // Note(fmassot): we can't use max_by as, in case of equality, it returns the last
+            // element and we want to preserve the order given by the rendez-vous hashing.
+            .sorted_by(cmp_node_by_reverse_score)
             .next()
-            .map(|node_score| node_score.node_id);
+            .map(|(node_id, _)| node_id);
         if let Some(best_node) = best_node_opt {
             plan.assign_indexing_task(best_node.to_string(), indexing_task);
         } else {
             tracing::warn!(indexing_task=?indexing_task, "No indexer candidate available for the indexing task, cannot assign it to an indexer. This should not happen.");
         };
     }
-
     plan
+}
+
+// Order by score between two tuples (node ID, score).
+fn cmp_node_by_reverse_score(left: &(&str, f32), right: &(&str, f32)) -> Ordering {
+    left.1
+        .partial_cmp(&right.1)
+        .unwrap_or(Ordering::Equal)
+        .reverse()
 }
 
 /// Returns node candidates IDs that can run the given [`IndexingTask`].
@@ -349,7 +328,7 @@ mod tests {
         for idx in 0..num_members {
             let addr: SocketAddr = ([127, 0, 0, 1], 10).into();
             members.push(ClusterMember::new(
-                idx.to_string(),
+                (1 + idx).to_string(),
                 0,
                 HashSet::from_iter([quickwit_service].into_iter()),
                 addr,
@@ -500,10 +479,12 @@ mod tests {
     #[test]
     fn test_build_physical_indexing_plan_simple() {
         quickwit_common::setup_logging_for_tests();
-        let index_1 = "test-indexing-plan-1";
-        let source_1 = "source-1";
-        let index_2 = "test-indexing-plan-2";
-        let source_2 = "source-2";
+        // Rdv hashing for (index 1, source) returns [node 2, node 1].
+        let index_1 = "1";
+        let source_1 = "1";
+        // Rdv hashing for (index 2, source) returns [node 1, node 2].
+        let index_2 = "2";
+        let source_2 = "0";
         let mut source_configs_map = HashMap::new();
         let kafka_index_source_id_1 = IndexSourceId {
             index_id: index_1.to_string(),
@@ -536,7 +517,7 @@ mod tests {
             },
         );
         let mut indexing_tasks = Vec::new();
-        for _ in 0..4 {
+        for _ in 0..3 {
             indexing_tasks.push(IndexingTask {
                 index_id: index_1.to_string(),
                 source_id: source_1.to_string(),
@@ -561,18 +542,21 @@ mod tests {
             .indexing_tasks_per_node_id
             .get(&indexers[1].node_id)
             .unwrap();
+        // (index 1, source) tasks are first placed on indexer 2 by rdv hashing.
+        // Thus task 0 => indexer 2, task 1 => indexer 1, task 2 => indexer 2, task 3 => indexer 1.
         let expected_indexer_1_tasks = indexing_tasks
             .iter()
             .cloned()
             .enumerate()
-            .filter(|(idx, _)| idx % 2 == 0)
+            .filter(|(idx, _)| idx % 2 == 1)
             .map(|(_, task)| task)
             .collect_vec();
         assert_eq!(indexer_1_tasks, &expected_indexer_1_tasks);
+        // (index 1, source) tasks are first placed on node 1 by rdv hashing.
         let expected_indexer_2_tasks = indexing_tasks
             .into_iter()
             .enumerate()
-            .filter(|(idx, _)| idx % 2 != 0)
+            .filter(|(idx, _)| idx % 2 == 0)
             .map(|(_, task)| task)
             .collect_vec();
         assert_eq!(indexer_2_tasks, &expected_indexer_2_tasks);
