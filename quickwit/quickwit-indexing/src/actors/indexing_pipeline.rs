@@ -244,7 +244,10 @@ impl IndexingPipeline {
             gen=self.generation()
         ))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
-        let _spawn_pipeline_permit = SPAWN_PIPELINE_SEMAPHORE.acquire().await.expect("Failed to acquire spawn pipeline permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+        let _spawn_pipeline_permit = ctx
+            .protect_future(SPAWN_PIPELINE_SEMAPHORE.acquire())
+            .await
+            .expect("The semaphore should not be closed.");
         self.statistics.num_spawn_attempts += 1;
         let index_id = self.params.pipeline_id.index_id.as_str();
         let source_id = self.params.pipeline_id.source_id.as_str();
@@ -353,7 +356,9 @@ impl IndexingPipeline {
             .spawn(doc_processor);
 
         // Fetch index_metadata to be sure to have the last updated checkpoint.
-        let index_metadata = self.params.metastore.index_metadata(index_id).await?;
+        let index_metadata = ctx
+            .protect_future(self.params.metastore.index_metadata(index_id))
+            .await?;
         let source_checkpoint = index_metadata
             .checkpoint
             .source_checkpoint(source_id)
