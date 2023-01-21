@@ -385,7 +385,7 @@ impl OtlpGrpcTraceService {
             .sum::<usize>() as u64;
         let num_bytes = request.encoded_len() as u64;
 
-        let labels = ["trace", "grpc", OTEL_TRACE_INDEX_ID, "protobuf"];
+        let labels = ["trace", OTEL_TRACE_INDEX_ID, "grpc", "protobuf"];
 
         OTLP_SERVICE_METRICS
             .requests_total
@@ -411,7 +411,7 @@ impl OtlpGrpcTraceService {
             }
         };
         let elapsed = start.elapsed();
-        let labels = ["trace", "grpc", OTEL_TRACE_INDEX_ID, "protobuf", is_error];
+        let labels = ["trace", OTEL_TRACE_INDEX_ID, "grpc", "protobuf", is_error];
         OTLP_SERVICE_METRICS
             .request_duration_seconds
             .with_label_values(labels)

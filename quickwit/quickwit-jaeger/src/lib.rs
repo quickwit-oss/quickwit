@@ -21,14 +21,18 @@
 
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::mem;
 use std::sync::Arc;
+use std::time::Instant;
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use itertools::Itertools;
+use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_opentelemetry::otlp::{
     Event as QwEvent, Link as QwLink, Span as QwSpan, SpanStatus as QwSpanStatus,
+    OTEL_TRACE_INDEX_ID,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -50,6 +54,10 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 use tracing::{debug, warn};
 
+use crate::metrics::JAEGER_SERVICE_METRICS;
+
+mod metrics;
+
 // OpenTelemetry to Jaeger Transformation
 // <https://opentelemetry.io/docs/reference/specification/trace/sdk_exporters/jaeger/>
 
@@ -58,6 +66,10 @@ const TRACE_INDEX_ID: &str = "otel-trace-v0";
 /// A base64-encoded 16-byte array.
 type TraceId = String;
 
+type JaegerResult<T> = Result<T, Status>;
+
+type SpanStream = ReceiverStream<Result<SpansResponseChunk, Status>>;
+
 pub struct JaegerService {
     search_service: Arc<dyn SearchService>,
 }
@@ -65,6 +77,157 @@ pub struct JaegerService {
 impl JaegerService {
     pub fn new(search_service: Arc<dyn SearchService>) -> Self {
         Self { search_service }
+    }
+
+    async fn get_services_inner(
+        &self,
+        request: Request<GetServicesRequest>,
+    ) -> JaegerResult<GetServicesResponse> {
+        let request = request.into_inner();
+        debug!(request=?request, "`get_services` request");
+
+        let index_id = TRACE_INDEX_ID.to_string();
+        let query = "*".to_string();
+        let max_hits = 1_000;
+        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
+
+        let search_request = SearchRequest {
+            index_id,
+            query,
+            max_hits,
+            start_timestamp,
+            end_timestamp: None,
+            search_fields: Vec::new(),
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+            aggregation_request: None,
+            snippet_fields: Vec::new(),
+        };
+        let search_response = self.search_service.root_search(search_request).await?;
+        let services: Vec<String> = search_response
+            .hits
+            .into_iter()
+            .map(|hit| {
+                serde_json::from_str::<JsonValue>(&hit.json)
+                    .expect("Failed to deserialize hit. This should never happen!")
+            })
+            .flat_map(extract_service_name)
+            .sorted()
+            .dedup()
+            .collect();
+        debug!(services=?services, "`get_services` response");
+        let response = GetServicesResponse { services };
+        Ok(response)
+    }
+
+    async fn get_operations_inner(
+        &self,
+        request: Request<GetOperationsRequest>,
+    ) -> JaegerResult<GetOperationsResponse> {
+        let request = request.into_inner();
+        debug!(request=?request, "`get_operations` request");
+
+        let index_id = TRACE_INDEX_ID.to_string();
+        let query = build_search_query(
+            &request.service,
+            &request.span_kind,
+            "",
+            HashMap::new(),
+            None,
+            None,
+            None,
+            None,
+        );
+        let max_hits = 1_000;
+        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
+
+        let search_request = SearchRequest {
+            index_id,
+            query,
+            max_hits,
+            start_timestamp,
+            end_timestamp: None,
+            search_fields: Vec::new(),
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+            aggregation_request: None,
+            snippet_fields: Vec::new(),
+        };
+        let search_response = self.search_service.root_search(search_request).await?;
+        let operations: Vec<Operation> = search_response
+            .hits
+            .into_iter()
+            .map(|hit| {
+                serde_json::from_str::<JsonValue>(&hit.json)
+                    .expect("Failed to deserialize hit. This should never happen!")
+            })
+            .flat_map(extract_operation)
+            .sorted()
+            .dedup()
+            .collect();
+        debug!(operations=?operations, "`get_operations` response");
+        let response = GetOperationsResponse {
+            operations,
+            operation_names: Vec::new(), // `operation_names` is deprecated.
+        };
+        Ok(response)
+    }
+
+    async fn find_trace_ids_inner(
+        &self,
+        request: Request<FindTraceIDsRequest>,
+    ) -> JaegerResult<FindTraceIDsResponse> {
+        let request = request.into_inner();
+        debug!(request=?request, "`find_trace_ids` request");
+
+        let trace_query = request
+            .query
+            .ok_or_else(|| Status::invalid_argument("Query is empty."))?;
+        let trace_ids = self
+            .find_trace_ids(trace_query)
+            .await?
+            .into_iter()
+            .map(|trace_id| BASE64_STANDARD.decode(trace_id).expect("Failed to Base64 decode trace ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
+            .collect();
+        debug!(trace_ids=?trace_ids, "`find_trace_ids` response");
+        let response = FindTraceIDsResponse { trace_ids };
+        Ok(response)
+    }
+
+    async fn find_traces_inner(
+        &self,
+        request: Request<FindTracesRequest>,
+        operation_name: &'static str,
+        request_start: Instant,
+    ) -> JaegerResult<SpanStream> {
+        let request = request.into_inner();
+        debug!(request=?request, "`find_traces` request");
+
+        let trace_query = request
+            .query
+            .ok_or_else(|| Status::invalid_argument("Trace query is empty."))?;
+        let trace_ids = self.find_trace_ids(trace_query).await?;
+        let response = self
+            .stream_spans(&trace_ids, operation_name, request_start)
+            .await;
+        Ok(response)
+    }
+
+    async fn get_trace_inner(
+        &self,
+        request: Request<GetTraceRequest>,
+        operation_name: &'static str,
+        request_start: Instant,
+    ) -> JaegerResult<SpanStream> {
+        let request = request.into_inner();
+        debug!(request=?request, "`get_trace` request");
+        let trace_id = BASE64_STANDARD.encode(request.trace_id);
+        let response = self
+            .stream_spans(&[trace_id], operation_name, request_start)
+            .await;
+        Ok(response)
     }
 
     async fn find_trace_ids(
@@ -109,7 +272,7 @@ impl JaegerService {
 
         let Some(aggregations_json) = search_response.aggregation else {
             debug!("The query matched no traces.");
-            return Ok(Vec::new())
+            return Ok(Vec::new());
         };
         if let Ok(JsonValue::Object(mut aggregations)) = serde_json::from_str(&aggregations_json) {
             if let Some(JsonValue::Object(mut aggregation)) = aggregations.remove("trace_ids") {
@@ -130,7 +293,13 @@ impl JaegerService {
         Err(Status::internal("Failed to parse aggregations response."))
     }
 
-    async fn fetch_spans(&self, trace_ids: &[TraceId]) -> Result<Vec<JaegerSpan>, Status> {
+    async fn stream_spans(
+        &self,
+        trace_ids: &[TraceId],
+        operation_name: &'static str,
+        request_start: Instant,
+    ) -> SpanStream {
+        let num_traces = trace_ids.len() as u64;
         let mut query = String::new();
 
         for (i, trace_id) in trace_ids.iter().enumerate() {
@@ -146,26 +315,129 @@ impl JaegerService {
             search_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
-            max_hits: 10_000, // TODO: self.max_fetched_spans
+            max_hits: 10_000, // TODO: self.max_spans_retrieved;
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,
             aggregation_request: None,
             snippet_fields: Vec::new(),
         };
-        // TODO: switch to streaming search when available.
-        let search_response = self.search_service.root_search(search_request).await?;
-        let spans: Vec<JaegerSpan> = search_response
-            .hits
-            .into_iter()
-            .map(|hit| qw_span_to_jaeger_span(&hit.json))
-            .collect::<Result<_, _>>()?;
-        debug!(spans=?spans, "`find_traces` response");
-        Ok(spans)
+
+        let search_service = self.search_service.clone();
+        let (tx, rx) = mpsc::channel(1);
+
+        tokio::task::spawn(async move {
+            let search_response = match search_service.root_search(search_request).await {
+                Ok(search_response) => search_response,
+                Err(search_error) => {
+                    warn!(error=?search_error, "Failed to retrieve spans.");
+                    record_error(operation_name, request_start);
+                    if let Err(error) = tx.send(Err(search_error.into())).await {
+                        debug!(error=?error, "Client disconnected.");
+                    }
+                    return;
+                }
+            };
+            // I attempted to do this with `itertools::Chunks`, but it panics if the iterator is
+            // empty and `Peekable` is not `Sync`...
+            const CHUNK_SIZE: usize = 500;
+            let mut spans = Vec::with_capacity(CHUNK_SIZE);
+            let mut num_bytes = 0;
+
+            for hit in search_response.hits {
+                let span = match qw_span_to_jaeger_span(&hit.json) {
+                    Ok(span) => span,
+                    Err(status) => {
+                        warn!(error=?status, span=?hit, "Failed to parse span.");
+                        record_error(operation_name, request_start);
+                        if let Err(error) = tx.send(Err(status)).await {
+                            debug!(error=?error, "Client disconnected.");
+                        }
+                        return;
+                    }
+                };
+                num_bytes += span.encoded_len();
+                spans.push(span);
+
+                if spans.len() == CHUNK_SIZE {
+                    let spans = mem::replace(&mut spans, Vec::with_capacity(CHUNK_SIZE));
+                    if let Err(error) = tx.send(Ok(SpansResponseChunk { spans })).await {
+                        debug!(error=?error, "Client disconnected.");
+                        return;
+                    }
+                    record_send(operation_name, CHUNK_SIZE, num_bytes);
+                    num_bytes = 0;
+                }
+            }
+            if !spans.is_empty() {
+                let num_spans = spans.len();
+                if let Err(error) = tx.send(Ok(SpansResponseChunk { spans })).await {
+                    warn!(error=?error, "Client disconnected.");
+                    return;
+                }
+                record_send(operation_name, num_spans, num_bytes);
+            }
+            JAEGER_SERVICE_METRICS
+                .retrieved_traces_total
+                .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+                .inc_by(num_traces);
+
+            let elapsed = request_start.elapsed().as_secs_f64();
+            JAEGER_SERVICE_METRICS
+                .request_duration_seconds
+                .with_label_values([operation_name, OTEL_TRACE_INDEX_ID, "false"])
+                .observe(elapsed);
+        });
+
+        ReceiverStream::new(rx)
     }
 }
 
-type SpanStream = ReceiverStream<Result<SpansResponseChunk, Status>>;
+macro_rules! instrument {
+    ($expr:expr, [$operation:ident, $($label:expr),*]) => {
+        let start = std::time::Instant::now();
+        let labels = [stringify!($operation), $($label,)*];
+        JAEGER_SERVICE_METRICS.requests_total.with_label_values(labels).inc();
+        let (res, is_error) = match $expr {
+            ok @ Ok(_) => {
+                (ok, "false")
+            },
+            err @ Err(_) => {
+                JAEGER_SERVICE_METRICS.request_errors_total.with_label_values(labels).inc();
+                (err, "true")
+            },
+        };
+        let elapsed = start.elapsed().as_secs_f64();
+        let labels = [stringify!($operation), $($label,)* is_error];
+        JAEGER_SERVICE_METRICS.request_duration_seconds.with_label_values(labels).observe(elapsed);
+
+        return res.map(Response::new);
+    };
+}
+
+fn record_error(operation_name: &'static str, request_start: Instant) {
+    JAEGER_SERVICE_METRICS
+        .request_errors_total
+        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+        .inc();
+
+    let elapsed = request_start.elapsed().as_secs_f64();
+    JAEGER_SERVICE_METRICS
+        .request_duration_seconds
+        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID, "true"])
+        .observe(elapsed);
+}
+
+fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
+    JAEGER_SERVICE_METRICS
+        .retrieved_spans_total
+        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+        .inc_by(num_spans as u64);
+    JAEGER_SERVICE_METRICS
+        .transferred_bytes_total
+        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+        .inc_by(num_bytes as u64);
+}
 
 #[async_trait]
 impl SpanReaderPlugin for JaegerService {
@@ -177,158 +449,48 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<GetServicesRequest>,
     ) -> Result<Response<GetServicesResponse>, Status> {
-        let request = request.into_inner();
-        debug!(request=?request, "`get_services` request");
-
-        let index_id = TRACE_INDEX_ID.to_string();
-        let query = "*".to_string();
-        let max_hits = 1_000;
-        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
-
-        let search_request = SearchRequest {
-            index_id,
-            query,
-            max_hits,
-            start_timestamp,
-            end_timestamp: None,
-            search_fields: Vec::new(),
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
-        };
-        let search_response = self.search_service.root_search(search_request).await?;
-        let services: Vec<String> = search_response
-            .hits
-            .into_iter()
-            .map(|hit| {
-                serde_json::from_str::<JsonValue>(&hit.json)
-                    .expect("Failed to deserialize hit. This should never happen!")
-            })
-            .flat_map(extract_service_name)
-            .sorted()
-            .dedup()
-            .collect();
-        let response = GetServicesResponse { services };
-        debug!(response=?response, "`get_services` response");
-        Ok(Response::new(response))
+        instrument!(
+            self.get_services_inner(request).await,
+            [get_services, OTEL_TRACE_INDEX_ID]
+        );
     }
 
     async fn get_operations(
         &self,
         request: Request<GetOperationsRequest>,
     ) -> Result<Response<GetOperationsResponse>, Status> {
-        let request = request.into_inner();
-        debug!(request=?request, "`get_operations` request");
-
-        let index_id = TRACE_INDEX_ID.to_string();
-        let query = build_search_query(
-            &request.service,
-            &request.span_kind,
-            "",
-            HashMap::new(),
-            None,
-            None,
-            None,
-            None,
+        instrument!(
+            self.get_operations_inner(request).await,
+            [get_operations, OTEL_TRACE_INDEX_ID]
         );
-        let max_hits = 1_000;
-        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
-
-        let search_request = SearchRequest {
-            index_id,
-            query,
-            max_hits,
-            start_timestamp,
-            end_timestamp: None,
-            search_fields: Vec::new(),
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
-        };
-        let search_response = self.search_service.root_search(search_request).await?;
-        let operations: Vec<Operation> = search_response
-            .hits
-            .into_iter()
-            .map(|hit| {
-                serde_json::from_str::<JsonValue>(&hit.json)
-                    .expect("Failed to deserialize hit. This should never happen!")
-            })
-            .flat_map(extract_operation)
-            .sorted()
-            .dedup()
-            .collect();
-        let response = GetOperationsResponse {
-            operations,
-            operation_names: Vec::new(), // `operation_names` is deprecated.
-        };
-        debug!(response=?response, "`get_operations` response");
-        Ok(Response::new(response))
     }
 
     async fn find_trace_i_ds(
         &self,
         request: Request<FindTraceIDsRequest>,
     ) -> Result<Response<FindTraceIDsResponse>, Status> {
-        let request = request.into_inner();
-        debug!(request=?request, "`find_trace_ids` request");
-
-        let trace_query = request
-            .query
-            .ok_or_else(|| Status::invalid_argument("Query is empty."))?;
-        let trace_ids = self
-            .find_trace_ids(trace_query)
-            .await?
-            .into_iter()
-            .map(|trace_id| BASE64_STANDARD.decode(trace_id).expect("Failed to Base64 decode trace ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
-            .collect();
-        let response = FindTraceIDsResponse { trace_ids };
-        debug!(response=?response, "`find_trace_ids` response");
-        Ok(Response::new(response))
+        instrument!(
+            self.find_trace_ids_inner(request).await,
+            [find_trace_ids, OTEL_TRACE_INDEX_ID]
+        );
     }
 
     async fn find_traces(
         &self,
         request: Request<FindTracesRequest>,
     ) -> Result<Response<Self::FindTracesStream>, Status> {
-        let request = request.into_inner();
-        debug!(request=?request, "`find_traces` request");
-
-        let trace_query = request
-            .query
-            .ok_or_else(|| Status::invalid_argument("Trace query is empty."))?;
-
-        let trace_ids = self.find_trace_ids(trace_query).await?;
-        let (tx, rx) = mpsc::channel(1);
-
-        if trace_ids.is_empty() {
-            return Ok(Response::new(ReceiverStream::new(rx)));
-        }
-        let spans = self.fetch_spans(&trace_ids).await?;
-        tx.send(Ok(SpansResponseChunk { spans }))
+        self.find_traces_inner(request, "find_traces", Instant::now())
             .await
-            .expect("The channel should be opened and empty.");
-        let response = ReceiverStream::new(rx);
-        Ok(Response::new(response))
+            .map(Response::new)
     }
 
     async fn get_trace(
         &self,
         request: Request<GetTraceRequest>,
     ) -> Result<Response<Self::GetTraceStream>, Status> {
-        let request = request.into_inner();
-        debug!(request=?request, "`get_trace` request");
-        let trace_id = BASE64_STANDARD.encode(request.trace_id);
-        let spans = self.fetch_spans(&[trace_id]).await?;
-        let (tx, rx) = mpsc::channel(1);
-        tx.send(Ok(SpansResponseChunk { spans }))
+        self.get_trace_inner(request, "get_trace", Instant::now())
             .await
-            .expect("The channel should be opened and empty.");
-        let response = ReceiverStream::new(rx);
-        Ok(Response::new(response))
+            .map(Response::new)
     }
 }
 
