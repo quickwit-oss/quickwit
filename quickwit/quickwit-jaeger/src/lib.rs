@@ -348,9 +348,9 @@ impl JaegerService {
                 let span = match qw_span_to_jaeger_span(&hit.json) {
                     Ok(span) => span,
                     Err(status) => {
-                        warn!(error=?status, span=?hit, "Failed to parse spans");
+                        warn!(error=?status, span=?hit, "Failed to parse span.");
                         record_error(operation_name, request_start);
-                        if let Err(error) = tx.send(Err(status.into())).await {
+                        if let Err(error) = tx.send(Err(status)).await {
                             debug!(error=?error, "Client disconnected.");
                         }
                         return;
@@ -388,8 +388,8 @@ impl JaegerService {
                 .with_label_values([operation_name, OTEL_TRACE_INDEX_ID, "false"])
                 .observe(elapsed);
         });
-        let response = ReceiverStream::new(rx);
-        response
+
+        ReceiverStream::new(rx)
     }
 }
 
@@ -407,9 +407,9 @@ macro_rules! instrument {
                 (err, "true")
             },
         };
-        let elapsed = start.elapsed();
+        let elapsed = start.elapsed().as_secs_f64();
         let labels = [stringify!($operation), $($label,)* is_error];
-        JAEGER_SERVICE_METRICS.request_duration_seconds.with_label_values(labels).observe(elapsed.as_secs_f64());
+        JAEGER_SERVICE_METRICS.request_duration_seconds.with_label_values(labels).observe(elapsed);
 
         return res.map(Response::new);
     };
