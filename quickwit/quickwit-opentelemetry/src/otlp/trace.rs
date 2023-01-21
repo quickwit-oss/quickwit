@@ -21,7 +21,6 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
-use prost::Message;
 use quickwit_actors::Mailbox;
 use quickwit_ingest_api::IngestApiService;
 use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
@@ -29,10 +28,12 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_se
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
     ExportTracePartialSuccess, ExportTraceServiceRequest, ExportTraceServiceResponse,
 };
-use quickwit_proto::opentelemetry::proto::trace::v1::Status;
+use quickwit_proto::opentelemetry::proto::trace::v1::Status as OtlpStatus;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use tracing::error;
+use tonic::{Request, Response, Status};
+use tracing::field::Empty;
+use tracing::{error, instrument, Span as RuntimeSpan};
 
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
@@ -178,8 +179,8 @@ pub struct SpanStatus {
     pub message: Option<String>,
 }
 
-impl From<Status> for SpanStatus {
-    fn from(value: Status) -> Self {
+impl From<OtlpStatus> for SpanStatus {
+    fn from(value: OtlpStatus) -> Self {
         let message = if value.message.is_empty() {
             None
         } else {
@@ -209,6 +210,13 @@ pub struct Link {
     pub link_dropped_attributes_count: u64,
 }
 
+struct ParsedSpans {
+    doc_batch: DocBatch,
+    num_spans: u64,
+    num_parse_errors: u64,
+    error_message: String,
+}
+
 #[derive(Clone)]
 pub struct OtlpGrpcTraceService {
     ingest_api_service: Mailbox<IngestApiService>,
@@ -223,13 +231,48 @@ impl OtlpGrpcTraceService {
     async fn export_inner(
         &self,
         request: ExportTraceServiceRequest,
-    ) -> Result<tonic::Response<ExportTraceServiceResponse>, tonic::Status> {
+        labels: [&'static str; 4],
+    ) -> Result<ExportTraceServiceResponse, Status> {
+        let ParsedSpans {
+            doc_batch,
+            num_spans,
+            num_parse_errors,
+            error_message,
+        } = self.parse_spans(request)?;
+
+        if num_spans == num_parse_errors {
+            return Err(tonic::Status::internal(error_message));
+        }
+        let num_bytes = doc_batch.concat_docs.len() as u64;
+        self.store_spans(doc_batch).await?;
+
+        OTLP_SERVICE_METRICS
+            .ingested_spans_total
+            .with_label_values(labels)
+            .inc_by(num_spans);
+        OTLP_SERVICE_METRICS
+            .ingested_bytes_total
+            .with_label_values(labels)
+            .inc_by(num_bytes);
+
+        let response = ExportTraceServiceResponse {
+            // `rejected_spans=0` and `error_message=""` is consided a "full" success.
+            partial_success: Some(ExportTracePartialSuccess {
+                rejected_spans: num_parse_errors as i64,
+                error_message,
+            }),
+        };
+        Ok(response)
+    }
+
+    #[instrument(skip_all, fields(num_spans = Empty, num_bytes = Empty, num_parse_errors = Empty))]
+    fn parse_spans(&self, request: ExportTraceServiceRequest) -> Result<ParsedSpans, Status> {
         let mut doc_batch = DocBatch {
             index_id: OTEL_TRACE_INDEX_ID.to_string(),
             ..Default::default()
         };
         let mut num_spans = 0;
-        let mut rejected_spans = 0;
+        let mut num_parse_errors = 0;
         let mut error_message = String::new();
 
         for resource_span in request.resource_spans {
@@ -338,9 +381,9 @@ impl OtlpGrpcTraceService {
                     let span_json = match serde_json::to_vec(&span) {
                         Ok(span_json) => span_json,
                         Err(err) => {
-                            error!(error=?err, "Failed to serialize span.");
-                            error_message = format!("Failed to serialize span: {err:?}");
-                            rejected_spans += 1;
+                            error!(error=?err, "Failed to JSON serialize span.");
+                            error_message = format!("Failed to JSON serialize span: {err:?}");
+                            num_parse_errors += 1;
                             continue;
                         }
                     };
@@ -350,40 +393,40 @@ impl OtlpGrpcTraceService {
                 }
             }
         }
-        if rejected_spans == num_spans {
-            return Err(tonic::Status::internal(error_message));
-        }
+        let current_span = RuntimeSpan::current();
+        current_span.record("num_spans", num_spans);
+        current_span.record("num_bytes", doc_batch.concat_docs.len());
+        current_span.record("num_parse_errors", num_parse_errors);
+
+        let parsed_spans = ParsedSpans {
+            doc_batch,
+            num_spans,
+            num_parse_errors,
+            error_message,
+        };
+        Ok(parsed_spans)
+    }
+
+    #[instrument(skip_all, fields(num_bytes = doc_batch.concat_docs.len()))]
+    async fn store_spans(&self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],
         };
         self.ingest_api_service
             .ask_for_res(ingest_request)
             .await
-            .map_err(|error| tonic::Status::internal(error.to_string()))?;
-        let response = ExportTraceServiceResponse {
-            // `rejected_spans=0` and `error_message=""` is consided a "full" success.
-            partial_success: Some(ExportTracePartialSuccess {
-                rejected_spans,
-                error_message,
-            }),
-        };
-        Ok(tonic::Response::new(response))
+            .map_err(|error| {
+                error!(error=?error, "Failed to store spans.");
+                tonic::Status::internal(format!("Failed to store spans: {error:?}"))
+            })?;
+        Ok(())
     }
 
     async fn export_instrumented(
         &self,
-        request: tonic::Request<ExportTraceServiceRequest>,
-    ) -> Result<tonic::Response<ExportTraceServiceResponse>, tonic::Status> {
+        request: ExportTraceServiceRequest,
+    ) -> Result<ExportTraceServiceResponse, Status> {
         let start = std::time::Instant::now();
-
-        let request = request.into_inner();
-        let num_spans = request
-            .resource_spans
-            .iter()
-            .flat_map(|resource_span| &resource_span.scope_spans)
-            .map(|scope_span| scope_span.spans.len())
-            .sum::<usize>() as u64;
-        let num_bytes = request.encoded_len() as u64;
 
         let labels = ["trace", OTEL_TRACE_INDEX_ID, "grpc", "protobuf"];
 
@@ -391,16 +434,7 @@ impl OtlpGrpcTraceService {
             .requests_total
             .with_label_values(labels)
             .inc();
-        OTLP_SERVICE_METRICS
-            .ingested_spans_total
-            .with_label_values(labels)
-            .inc_by(num_spans);
-        OTLP_SERVICE_METRICS
-            .ingested_bytes_total
-            .with_label_values(labels)
-            .inc_by(num_bytes);
-
-        let (export_res, is_error) = match self.export_inner(request).await {
+        let (export_res, is_error) = match self.export_inner(request, labels).await {
             ok @ Ok(_) => (ok, "false"),
             err @ Err(_) => {
                 OTLP_SERVICE_METRICS
@@ -410,12 +444,12 @@ impl OtlpGrpcTraceService {
                 (err, "true")
             }
         };
-        let elapsed = start.elapsed();
+        let elapsed = start.elapsed().as_secs_f64();
         let labels = ["trace", OTEL_TRACE_INDEX_ID, "grpc", "protobuf", is_error];
         OTLP_SERVICE_METRICS
             .request_duration_seconds
             .with_label_values(labels)
-            .observe(elapsed.as_secs_f64());
+            .observe(elapsed);
 
         export_res
     }
@@ -423,10 +457,12 @@ impl OtlpGrpcTraceService {
 
 #[async_trait]
 impl TraceService for OtlpGrpcTraceService {
+    #[instrument(name = "ingest_spans", skip_all)]
     async fn export(
         &self,
-        request: tonic::Request<ExportTraceServiceRequest>,
-    ) -> Result<tonic::Response<ExportTraceServiceResponse>, tonic::Status> {
-        self.export_instrumented(request).await
+        request: Request<ExportTraceServiceRequest>,
+    ) -> Result<Response<ExportTraceServiceResponse>, Status> {
+        let request = request.into_inner();
+        self.export_instrumented(request).await.map(Response::new)
     }
 }
