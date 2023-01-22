@@ -35,8 +35,10 @@ use quickwit_metastore::{Metastore, MetastoreUriResolver, Split, SplitMetadata, 
 use quickwit_storage::{Storage, StorageUriResolver};
 use serde_json::Value as JsonValue;
 
-use crate::actors::IndexingService;
-use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
+use crate::actors::{IndexingService, MergePipelineId};
+use crate::models::{
+    DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
+};
 
 /// Creates a Test environment.
 ///
@@ -162,9 +164,18 @@ impl TestSandbox {
             .await?;
         let pipeline_handle = self
             .indexing_service
-            .ask_for_res(DetachIndexingPipeline { pipeline_id })
+            .ask_for_res(DetachIndexingPipeline {
+                pipeline_id: pipeline_id.clone(),
+            })
+            .await?;
+        let merge_pipeline_handle = self
+            .indexing_service
+            .ask_for_res(DetachMergePipeline {
+                pipeline_id: MergePipelineId::from(&pipeline_id),
+            })
             .await?;
         let (_pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
+        let _ = merge_pipeline_handle.quit().await;
         Ok(pipeline_statistics)
     }
 
