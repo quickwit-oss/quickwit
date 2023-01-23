@@ -27,7 +27,7 @@ use super::SimpleList;
 
 /// GET _elastic/_search
 pub fn elastic_get_search_handler(
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_get_search_filter().then(|params: SearchQueryParams| async move {
         // TODO: implement
         let resp = serde_json::json!({
@@ -40,7 +40,7 @@ pub fn elastic_get_search_handler(
 
 /// POST _elastic/_search
 pub fn elastic_post_search_handler(
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_post_search_filter().then(|params: SearchQueryParams| async move {
         // TODO: implement
         let resp = serde_json::json!({
@@ -53,7 +53,7 @@ pub fn elastic_post_search_handler(
 
 /// GET _elastic/{index}/_search
 pub fn elastic_get_index_search_handler(
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_get_index_search_filter().then(
         |index: SimpleList, params: SearchQueryParams| async move {
             // TODO: implement
@@ -68,7 +68,7 @@ pub fn elastic_get_index_search_handler(
 
 /// POST api/_elastic/{index}/_search
 pub fn elastic_post_index_search_handler(
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_post_index_search_filter().then(
         |index: SimpleList, params: SearchQueryParams| async move {
             // TODO: implement

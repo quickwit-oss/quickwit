@@ -36,8 +36,8 @@ use self::rest_handler::{
 ///
 /// This is where all newly supported Elasticsearch handlers
 /// should be registered.
-pub fn elastic_api_handlers() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone
-{
+pub fn elastic_api_handlers(
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_get_search_handler()
         .or(elastic_post_search_handler())
         .or(elastic_get_index_search_handler())
