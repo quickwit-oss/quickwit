@@ -66,7 +66,7 @@ pub fn elastic_get_index_search_handler(
     )
 }
 
-/// POST _elastic/{index}/_search
+/// POST api/_elastic/{index}/_search
 pub fn elastic_post_index_search_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     elastic_post_index_search_filter().then(

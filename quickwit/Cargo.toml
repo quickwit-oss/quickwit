@@ -24,7 +24,6 @@ members = [
   "quickwit-serve",
   "quickwit-storage",
   "quickwit-telemetry",
-  "xtask",
 ]
 
 [profile.dev]
@@ -106,6 +105,7 @@ prost = { version = "0.11.6", default-features = false, features = [
 ] }
 prost-build = "0.11.6"
 prost-types = "0.11.6"
+quickwit_elastic_api_generation = { git = "https://github.com/quickwit-oss/elasticsearch-rs", rev = "8c75ad6" }
 rand = "0.8"
 rand_distr = "0.4"
 rayon = "1"
@@ -216,6 +216,7 @@ tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.
 encoding_rs = "=0.8.29"
+
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }

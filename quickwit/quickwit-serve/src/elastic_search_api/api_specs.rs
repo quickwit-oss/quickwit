@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-/// This file is auto-genearted, any change can be overriden.
+/// This file is auto-generated, any change can be overriden.
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
