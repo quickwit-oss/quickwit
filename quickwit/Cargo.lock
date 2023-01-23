@@ -148,7 +148,7 @@ checksum = "8f1f8f5a6f3d50d89e3797d7593a50f96bb2aaa20ca0cc7be1fb673232c91d72"
 [[package]]
 name = "api_generator"
 version = "8.7.0-alpha.1"
-source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=8c75ad6#8c75ad66f7154c419b0ca81895c3f727a92e77ce"
+source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=752134f#752134fdeb900f3a08fb92a7f1beea8bcf9a9152"
 dependencies = [
  "Inflector",
  "anyhow",
@@ -5277,7 +5277,7 @@ dependencies = [
 [[package]]
 name = "quickwit_elastic_api_generation"
 version = "8.7.0-alpha.1"
-source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=8c75ad6#8c75ad66f7154c419b0ca81895c3f727a92e77ce"
+source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=752134f#752134fdeb900f3a08fb92a7f1beea8bcf9a9152"
 dependencies = [
  "anyhow",
  "api_generator",
