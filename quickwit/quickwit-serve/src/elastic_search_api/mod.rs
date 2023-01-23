@@ -103,7 +103,7 @@ where
 }
 
 /// Deserializes a comma separated string of values
-/// into a Vec<T>.
+/// into a [`Vec<T>`].
 /// Used to deserialize list of values from the query string.
 pub(crate) fn from_simple_list<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
 where
