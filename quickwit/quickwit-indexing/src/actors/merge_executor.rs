@@ -323,9 +323,11 @@ impl MergeExecutor {
         merge_scratch_directory: ScratchDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<Option<IndexedSplit>> {
-        let delete_tasks = self
-            .metastore
-            .list_delete_tasks(&split.index_id, split.delete_opstamp)
+        let delete_tasks = ctx
+            .protect_future(
+                self.metastore
+                    .list_delete_tasks(&split.index_id, split.delete_opstamp),
+            )
             .await?;
         if delete_tasks.is_empty() {
             warn!(

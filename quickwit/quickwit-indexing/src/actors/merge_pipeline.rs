@@ -199,10 +199,8 @@ impl MergePipeline {
         );
         let query = ListSplitsQuery::for_index(&self.params.pipeline_id.index_id)
             .with_split_state(SplitState::Published);
-        let published_splits = self
-            .params
-            .metastore
-            .list_splits(query)
+        let published_splits = ctx
+            .protect_future(self.params.metastore.list_splits(query))
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
