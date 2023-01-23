@@ -32,14 +32,17 @@ use self::rest_handler::{
     elastic_post_index_search_handler, elastic_post_search_handler,
 };
 
-/// Setup elastic handlers
+/// Setup Elasticsearch API handlers
+///
+/// This is where all newly supported Elasticsearch handlers
+/// should be registered.
 pub fn elastic_api_handlers() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone
 {
-    // Add newly created handlers
     elastic_get_search_handler()
         .or(elastic_post_search_handler())
         .or(elastic_get_index_search_handler())
         .or(elastic_post_index_search_handler())
+    // Register newly created handlers here.
 }
 
 fn from_comma_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
@@ -53,6 +56,7 @@ where D: Deserializer<'de> {
     Ok(list)
 }
 
+/// A helper struct to serialize/deserialize a comma separated list.
 #[derive(Debug, Deserialize)]
 pub(crate) struct SimpleList(#[serde(deserialize_with = "from_comma_list")] Vec<String>);
 
@@ -98,10 +102,13 @@ where
     serializer.serialize_str(&target)
 }
 
+/// Deserializes a comma separated string of values
+/// into a Vec<T>.
+/// Used to deserialize list of values from the query string.
 pub(crate) fn from_simple_list<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
 where
     D: Deserializer<'de>,
-    T: DeserializeOwned, // TODO find fix for Deserialize<'a>
+    T: DeserializeOwned,
 {
     let str_sequence = String::deserialize(deserializer)?;
 
@@ -114,6 +121,7 @@ where
     Ok(Some(list))
 }
 
+/// Helper type needed by the Elasticsearch endpoints.
 /// Control how the total number of hits should be tracked.
 ///
 /// When set to `Track` with a value `true`, the response will always track the number of hits that
@@ -124,9 +132,9 @@ where
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TrackTotalHits {
-    /// Whether to accurately track the number of hits that match the query accurately
+    /// Track the number of hits that match the query accurately.
     Track(bool),
-    /// Accurately track the number of hits up to the specified value
+    /// Track the number of hits up to the specified value.
     Count(i64),
 }
 

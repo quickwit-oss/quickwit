@@ -217,6 +217,5 @@ tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev 
 # used by reqwest. 0.8.30 has an unclear license.
 encoding_rs = "=0.8.29"
 
-
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }

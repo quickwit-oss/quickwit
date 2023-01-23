@@ -65,10 +65,10 @@ pub const SELECTED_SPEC_FILES: &[&str] = &[
 
 fn main() -> anyhow::Result<()> {
     let command_opt = Command::new("elastic-api-generator")
-        .about("Elastic API type generator CLI")
+        .about("Quickwit Elasticsearch compatible API generator CLI")
         .subcommand_required(true)
-        .subcommand(Command::new("download").about("Download the elastic API spec files."))
-        .subcommand(Command::new("generate").about("Generates elastic API types."));
+        .subcommand(Command::new("download").about("Download the Elasticsearch API spec files."))
+        .subcommand(Command::new("generate").about("Generates the Elasticsearch API types."));
 
     let matches = command_opt.get_matches();
     let artifact_download_dir = ROOT_DIR.join(ES_ARTIFACTS_DIR_NAME);
@@ -80,13 +80,10 @@ fn main() -> anyhow::Result<()> {
         Some(("generate", _)) => {
             let api_spec_dir = artifact_download_dir
                 .join(&*ES_STACK_VERSION)
-                .join("rest-api-spec")
-                .join("api");
+                .join("rest-api-spec/api");
 
             let target_file = ROOT_DIR
-                .join("quickwit-serve")
-                .join("src")
-                .join("elastic_search_api")
+                .join("quickwit-serve/src/elastic_search_api")
                 .join(GENERATED_FILE_NAME);
 
             generate_api(
