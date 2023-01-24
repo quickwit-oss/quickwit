@@ -241,6 +241,86 @@ pub struct FetchDocsResponse {
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListTermsRequest {
+    /// Index ID
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    /// Fields to search on
+    #[prost(string, tag = "3")]
+    pub field: ::prost::alloc::string::String,
+    /// Time filter
+    #[prost(int64, optional, tag = "4")]
+    pub start_timestamp: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "5")]
+    pub end_timestamp: ::core::option::Option<i64>,
+    /// Maximum number of hits to return.
+    #[prost(uint64, tag = "6")]
+    pub max_hits: u64,
+    /// start_key is included, end_key is excluded
+    #[prost(string, optional, tag = "7")]
+    pub start_key: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "8")]
+    pub end_key: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListTermsResponse {
+    /// Number of hits matching the query.
+    #[prost(uint64, tag = "1")]
+    pub num_hits: u64,
+    /// Matched hits
+    #[prost(string, repeated, tag = "2")]
+    pub terms: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Elapsed time to perform the request. This time is measured
+    /// server-side and expressed in microseconds.
+    #[prost(uint64, tag = "3")]
+    pub elapsed_time_micros: u64,
+    /// The searcherrors that occured formatted as string.
+    #[prost(string, repeated, tag = "4")]
+    pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafListTermsRequest {
+    /// Search request. This is a perfect copy of the original search request,
+    /// that was sent to root apart from the start_offset & max_hits params.
+    #[prost(message, optional, tag = "1")]
+    pub list_terms_request: ::core::option::Option<ListTermsRequest>,
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the search_request.
+    #[prost(message, repeated, tag = "4")]
+    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    /// `DocMapper` as json serialized trait.
+    #[prost(string, tag = "5")]
+    pub doc_mapper: ::prost::alloc::string::String,
+    /// Index URI. The index URI defines the location of the storage that contains the
+    /// split files.
+    #[prost(string, tag = "6")]
+    pub index_uri: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafListTermsResponse {
+    /// Total number of documents matched by the query.
+    #[prost(uint64, tag = "1")]
+    pub num_hits: u64,
+    /// List of the best top-K candidates for the given leaf query.
+    #[prost(string, repeated, tag = "2")]
+    pub terms: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
+    #[prost(message, repeated, tag = "3")]
+    pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
+    /// Total number of splits the leaf(s) were in charge of.
+    /// num_attempted_splits = num_successful_splits + num_failed_splits.
+    #[prost(uint64, tag = "4")]
+    pub num_attempted_splits: u64,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchStreamRequest {
     /// Index ID
     #[prost(string, tag = "1")]
@@ -528,6 +608,55 @@ pub mod search_service_client {
             );
             self.inner.server_streaming(request.into_request(), path, codec).await
         }
+        /// Root list term API.
+        /// This RPC identifies the set of splits on which the query should run on,
+        /// and dispatch the several calls to `LeafListTerm`.
+        ///
+        /// It is also in charge of merging back the results.
+        pub async fn root_list_terms(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListTermsRequest>,
+        ) -> Result<tonic::Response<super::ListTermsResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.SearchService/RootListTerms",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// Perform a leaf list terms on a given set of splits.
+        ///
+        /// It is like a regular list term except that:
+        /// - the node should perform the listing locally instead of dispatching
+        /// it to other nodes.
+        /// - it should be applied on the given subset of splits
+        pub async fn leaf_list_terms(
+            &mut self,
+            request: impl tonic::IntoRequest<super::LeafListTermsRequest>,
+        ) -> Result<tonic::Response<super::LeafListTermsResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.SearchService/LeafListTerms",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -574,6 +703,25 @@ pub mod search_service_server {
             &self,
             request: tonic::Request<super::LeafSearchStreamRequest>,
         ) -> Result<tonic::Response<Self::LeafSearchStreamStream>, tonic::Status>;
+        /// Root list term API.
+        /// This RPC identifies the set of splits on which the query should run on,
+        /// and dispatch the several calls to `LeafListTerm`.
+        ///
+        /// It is also in charge of merging back the results.
+        async fn root_list_terms(
+            &self,
+            request: tonic::Request<super::ListTermsRequest>,
+        ) -> Result<tonic::Response<super::ListTermsResponse>, tonic::Status>;
+        /// Perform a leaf list terms on a given set of splits.
+        ///
+        /// It is like a regular list term except that:
+        /// - the node should perform the listing locally instead of dispatching
+        /// it to other nodes.
+        /// - it should be applied on the given subset of splits
+        async fn leaf_list_terms(
+            &self,
+            request: tonic::Request<super::LeafListTermsRequest>,
+        ) -> Result<tonic::Response<super::LeafListTermsResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct SearchServiceServer<T: SearchService> {
@@ -786,6 +934,86 @@ pub mod search_service_server {
                                 send_compression_encodings,
                             );
                         let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.SearchService/RootListTerms" => {
+                    #[allow(non_camel_case_types)]
+                    struct RootListTermsSvc<T: SearchService>(pub Arc<T>);
+                    impl<
+                        T: SearchService,
+                    > tonic::server::UnaryService<super::ListTermsRequest>
+                    for RootListTermsSvc<T> {
+                        type Response = super::ListTermsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListTermsRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).root_list_terms(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RootListTermsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.SearchService/LeafListTerms" => {
+                    #[allow(non_camel_case_types)]
+                    struct LeafListTermsSvc<T: SearchService>(pub Arc<T>);
+                    impl<
+                        T: SearchService,
+                    > tonic::server::UnaryService<super::LeafListTermsRequest>
+                    for LeafListTermsSvc<T> {
+                        type Response = super::LeafListTermsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::LeafListTermsRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).leaf_list_terms(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = LeafListTermsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

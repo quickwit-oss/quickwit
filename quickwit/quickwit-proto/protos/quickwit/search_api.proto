@@ -44,6 +44,21 @@ service SearchService {
 
   // Perform a leaf stream on a given set of splits.
   rpc LeafSearchStream(LeafSearchStreamRequest) returns (stream LeafSearchStreamResponse);
+
+  // Root list term API.
+  // This RPC identifies the set of splits on which the query should run on,
+  // and dispatch the several calls to `LeafListTerm`.
+  //
+  // It is also in charge of merging back the results.
+  rpc RootListTerms(ListTermsRequest) returns (ListTermsResponse);
+
+  // Perform a leaf list terms on a given set of splits.
+  //
+  // It is like a regular list term except that:
+  // - the node should perform the listing locally instead of dispatching
+  // it to other nodes.
+  // - it should be applied on the given subset of splits
+  rpc LeafListTerms(LeafListTermsRequest) returns (LeafListTermsResponse);
 }
 
 // -- Search -------------------
@@ -257,6 +272,70 @@ message FetchDocsResponse {
   repeated LeafHit hits = 1;
 }
 
+message ListTermsRequest {
+  // Index ID
+  string index_id = 1;
+
+  // Fields to search on
+  string field = 3;
+
+  // Time filter
+  optional int64 start_timestamp = 4;
+  optional int64 end_timestamp = 5;
+
+  // Maximum number of hits to return.
+  uint64 max_hits = 6;
+
+  // start_key is included, end_key is excluded
+  optional string start_key = 7;
+  optional string end_key = 8;
+}
+
+message ListTermsResponse {
+  // Number of hits matching the query.
+  uint64 num_hits = 1;
+  // Matched hits
+  repeated string terms = 2;
+  // Elapsed time to perform the request. This time is measured
+  // server-side and expressed in microseconds.
+  uint64 elapsed_time_micros = 3;
+
+  // The searcherrors that occured formatted as string.
+  repeated string errors = 4;
+}
+
+message LeafListTermsRequest {
+  // Search request. This is a perfect copy of the original search request,
+  // that was sent to root apart from the start_offset & max_hits params.
+  ListTermsRequest list_terms_request = 1;
+
+  // Index split ids to apply the query on.
+  // This ids are resolved from the index_uri defined in the search_request.
+  repeated SplitIdAndFooterOffsets split_offsets = 4;
+
+  // `DocMapper` as json serialized trait.
+  string doc_mapper = 5;
+
+  // Index URI. The index URI defines the location of the storage that contains the
+  // split files.
+  string index_uri = 6;
+
+}
+
+message LeafListTermsResponse {
+  // Total number of documents matched by the query.
+  uint64 num_hits = 1;
+
+  // List of the best top-K candidates for the given leaf query.
+  repeated string terms = 2;
+
+  // The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
+  repeated SplitSearchError failed_splits = 3;
+
+  // Total number of splits the leaf(s) were in charge of.
+  // num_attempted_splits = num_successful_splits + num_failed_splits.
+  uint64 num_attempted_splits = 4;
+}
 
 // -- Stream -------------------
 

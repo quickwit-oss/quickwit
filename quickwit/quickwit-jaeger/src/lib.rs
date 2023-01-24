@@ -44,7 +44,7 @@ use quickwit_proto::jaeger::storage::v1::{
     GetOperationsResponse, GetServicesRequest, GetServicesResponse, GetTraceRequest, Operation,
     SpansResponseChunk, TraceQueryParameters,
 };
-use quickwit_proto::SearchRequest;
+use quickwit_proto::{ListTermsRequest, SearchRequest};
 use quickwit_search::SearchService;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -484,6 +484,37 @@ impl SpanReaderPlugin for JaegerService {
             self.get_services_inner(request.into_inner()).await,
             [get_services, OTEL_TRACE_INDEX_ID]
         );
+        let request = request.into_inner();
+        debug!(request=?request, "`get_services` request");
+
+        let index_id = TRACE_INDEX_ID.to_string();
+        let max_hits = 1_000;
+        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
+
+        let search_request = ListTermsRequest {
+            index_id,
+            field: "service_name".to_owned(),
+            max_hits,
+            start_timestamp,
+            end_timestamp: None,
+            start_key: None,
+            end_key: None,
+        };
+        let search_response = self.search_service.root_list_terms(search_request).await?;
+        let services: Vec<String> = search_response
+            .terms
+            .into_iter()
+            .map(|term| {
+                serde_json::from_str::<JsonValue>(&term)
+                    .expect("Failed to deserialize hit. This should never happen!")
+                    .as_str()
+                    .expect("Expected string term")
+                    .to_string()
+            })
+            .collect();
+        let response = GetServicesResponse { services };
+        debug!(response=?response, "`get_services` response");
+        Ok(Response::new(response))
     }
 
     async fn get_operations(
@@ -522,13 +553,6 @@ impl SpanReaderPlugin for JaegerService {
         self.get_trace_inner(request.into_inner(), "get_trace", Instant::now())
             .await
             .map(Response::new)
-    }
-}
-
-fn extract_service_name(mut doc: JsonValue) -> Option<String> {
-    match doc["service_name"].take() {
-        JsonValue::String(service_name) => Some(service_name),
-        _ => None,
     }
 }
 
@@ -1826,27 +1850,22 @@ mod tests {
     async fn test_get_service() {
         let mut service = quickwit_search::MockSearchService::new();
         service
-            .expect_root_search()
+            .expect_root_list_terms()
             .withf(|req| {
                 req.index_id == "otel-trace-v0"
-                    && req.query == "*"
+                    && req.field == "service_name"
                     && req.start_timestamp.is_some()
-                    && req.start_offset == 0
             })
             .return_once(|_| {
-                Ok(quickwit_proto::SearchResponse {
+                Ok(quickwit_proto::ListTermsResponse {
                     num_hits: 5,
-                    hits: hit(&[
-                        r#"{"service_name": "service1"}"#,
-                        r#"{"service_name": "service1"}"#,
-                        r#"{"service_name": "service1"}"#,
-                        r#"{"service_name": "service2"}"#,
-                        r#"{"service_name": "service2"}"#,
-                        r#"{"service_name": "service3"}"#,
-                    ]),
+                    terms: vec![
+                        "\"service1\"".to_string(),
+                        "\"service2\"".to_string(),
+                        "\"service3\"".to_string(),
+                    ],
                     elapsed_time_micros: 0,
                     errors: Vec::new(),
-                    aggregation: None,
                 })
             });
 
