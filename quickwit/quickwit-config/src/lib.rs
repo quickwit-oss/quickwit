@@ -109,6 +109,14 @@ pub enum ConfigFormat {
 }
 
 impl ConfigFormat {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ConfigFormat::Json => "json",
+            ConfigFormat::Toml => "toml",
+            ConfigFormat::Yaml => "yaml",
+        }
+    }
+
     pub fn sniff_from_uri(uri: &Uri) -> anyhow::Result<ConfigFormat> {
         let extension_str: &str = uri.extension().with_context(|| {
             anyhow::anyhow!(

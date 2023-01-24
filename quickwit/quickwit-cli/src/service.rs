@@ -28,11 +28,12 @@ use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
 
-use crate::{load_quickwit_config, start_actor_runtimes};
+use crate::{config_cli_arg, load_quickwit_config, start_actor_runtimes};
 
 pub fn build_run_command<'a>() -> Command<'a> {
     Command::new("run")
         .about("Runs quickwit services. By default, `metastore`, `indexer`, `searcher` `control_plane` and `janitor` are started.")
+        .arg(config_cli_arg())
         .args(&[
             arg!(--"service" <SERVICE> "Services (indexer|searcher|janitor|metastore|control_plane) to run. If unspecified, all the supported services are started.")
                 .multiple_occurrences(true)

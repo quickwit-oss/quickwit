@@ -19,7 +19,6 @@
 
 use anyhow::bail;
 use clap::{Arg, ArgMatches, Command};
-use quickwit_config::DEFAULT_QW_CONFIG_PATH;
 use tracing::Level;
 
 use crate::index::{build_index_command, IndexCliCommand};
@@ -30,15 +29,6 @@ use crate::split::{build_split_command, SplitCliCommand};
 pub fn build_cli<'a>() -> Command<'a> {
     Command::new("Quickwit")
         .arg(
-            Arg::new("config")
-                .long("config")
-                .help("Config file location")
-                .env("QW_CONFIG")
-                .default_value(DEFAULT_QW_CONFIG_PATH)
-                .global(true)
-                .display_order(1),
-        )
-        .arg(
             Arg::new("no-color")
                 .long("no-color")
                 .help(
@@ -47,7 +37,6 @@ pub fn build_cli<'a>() -> Command<'a> {
                 )
                 .env("NO_COLOR")
                 .global(true)
-                .display_order(2)
                 .takes_value(false),
         )
         .subcommand(build_run_command().display_order(1))

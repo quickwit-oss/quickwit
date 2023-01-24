@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use quickwit_common::FileEntry;
-use quickwit_config::SourceConfig;
+use quickwit_config::{ConfigFormat, SourceConfig};
 use quickwit_metastore::{IndexMetadata, Split};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString};
@@ -71,6 +71,7 @@ impl Transport {
         &self,
         method: Method,
         path: &str,
+        header_map: Option<HeaderMap>,
         query_string: Option<&Q>,
         body: Option<Bytes>,
     ) -> Result<ApiResponse, Error> {
@@ -82,6 +83,9 @@ impl Transport {
         request_builder = request_builder.timeout(Duration::from_secs(10));
         let mut request_headers = HeaderMap::new();
         request_headers.insert(CONTENT_TYPE, HeaderValue::from_static(DEFAULT_CONTENT_TYPE));
+        if let Some(header_map_val) = header_map {
+            request_headers.extend(header_map_val.into_iter());
+        }
         request_builder = request_builder.headers(request_headers);
         if let Some(bytes) = body {
             request_builder = request_builder.body(bytes);
@@ -118,7 +122,7 @@ impl QuickwitClient {
         let body = Bytes::from(bytes);
         let response = self
             .transport
-            .send::<()>(Method::POST, &path, None, Some(body))
+            .send::<()>(Method::POST, &path, None, None, Some(body))
             .await?;
         let search_response = response.deserialize().await?;
         Ok(search_response)
@@ -166,7 +170,7 @@ impl QuickwitClient {
             loop {
                 let response = self
                     .transport
-                    .send::<()>(Method::POST, &ingest_path, None, Some(body.clone()))
+                    .send::<()>(Method::POST, &ingest_path, None, None, Some(body.clone()))
                     .await?;
 
                 if response.status_code() == StatusCode::TOO_MANY_REQUESTS {
@@ -198,12 +202,19 @@ impl<'a> IndexClient<'a> {
         Self { transport }
     }
 
-    pub async fn create(&self, body: Bytes, overwrite: bool) -> Result<IndexMetadata, Error> {
+    pub async fn create(
+        &self,
+        body: Bytes,
+        config_format: ConfigFormat,
+        overwrite: bool,
+    ) -> Result<IndexMetadata, Error> {
+        let header_map = header_from_config_format(config_format);
         let response = self
             .transport
             .send(
                 Method::POST,
                 "indexes",
+                Some(header_map),
                 Some(&[("overwrite", overwrite)]),
                 Some(body),
             )
@@ -215,7 +226,7 @@ impl<'a> IndexClient<'a> {
     pub async fn list(&self) -> Result<Vec<IndexMetadata>, Error> {
         let response = self
             .transport
-            .send::<()>(Method::GET, "indexes", None, None)
+            .send::<()>(Method::GET, "indexes", None, None, None)
             .await?;
         let indexes_metadatas = response.deserialize().await?;
         Ok(indexes_metadatas)
@@ -225,7 +236,7 @@ impl<'a> IndexClient<'a> {
         let path = format!("indexes/{index_id}");
         let response = self
             .transport
-            .send::<()>(Method::GET, &path, None, None)
+            .send::<()>(Method::GET, &path, None, None, None)
             .await?;
         let index_metadata = response.deserialize().await?;
         Ok(index_metadata)
@@ -234,7 +245,7 @@ impl<'a> IndexClient<'a> {
     pub async fn clear(&self, index_id: &str) -> Result<(), Error> {
         let path = format!("indexes/{index_id}/clear");
         self.transport
-            .send::<()>(Method::PUT, &path, None, None)
+            .send::<()>(Method::PUT, &path, None, None, None)
             .await?;
         Ok(())
     }
@@ -243,7 +254,13 @@ impl<'a> IndexClient<'a> {
         let path = format!("indexes/{index_id}");
         let response = self
             .transport
-            .send(Method::DELETE, &path, Some(&[("dry_run", dry_run)]), None)
+            .send(
+                Method::DELETE,
+                &path,
+                None,
+                Some(&[("dry_run", dry_run)]),
+                None,
+            )
             .await?;
         let file_entries = response.deserialize().await?;
         Ok(file_entries)
@@ -275,7 +292,13 @@ impl<'a, 'b> SplitClient<'a, 'b> {
         let path = self.splits_root_url();
         let response = self
             .transport
-            .send(Method::GET, &path, Some(&list_splits_query_params), None)
+            .send(
+                Method::GET,
+                &path,
+                None,
+                Some(&list_splits_query_params),
+                None,
+            )
             .await?;
 
         let splits = response.deserialize().await?;
@@ -286,7 +309,7 @@ impl<'a, 'b> SplitClient<'a, 'b> {
         let path = format!("{}/mark-for-deletion", self.splits_root_url());
         let body = Bytes::from(serde_json::to_vec(&json!({ "split_ids": split_ids }))?);
         self.transport
-            .send::<()>(Method::PUT, &path, None, Some(body))
+            .send::<()>(Method::PUT, &path, None, None, Some(body))
             .await?;
         Ok(())
     }
@@ -310,10 +333,21 @@ impl<'a, 'b> SourceClient<'a, 'b> {
         format!("indexes/{}/sources", self.index_id)
     }
 
-    pub async fn create(&self, body: Bytes) -> Result<SourceConfig, Error> {
+    pub async fn create(
+        &self,
+        body: Bytes,
+        config_format: ConfigFormat,
+    ) -> Result<SourceConfig, Error> {
+        let header_map = header_from_config_format(config_format);
         let response = self
             .transport
-            .send::<()>(Method::POST, &self.sources_root_url(), None, Some(body))
+            .send::<()>(
+                Method::POST,
+                &self.sources_root_url(),
+                Some(header_map),
+                None,
+                Some(body),
+            )
             .await?;
         let source_config = response.deserialize().await?;
         Ok(source_config)
@@ -323,7 +357,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
         let path = format!("{}/{source_id}", self.sources_root_url());
         let response = self
             .transport
-            .send::<()>(Method::GET, &path, None, None)
+            .send::<()>(Method::GET, &path, None, None, None)
             .await?;
         let source_config = response.deserialize().await?;
         Ok(source_config)
@@ -332,7 +366,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     pub async fn toggle(&self, source_id: &str, enable: bool) -> Result<(), Error> {
         let path = format!("{}/{source_id}", self.sources_root_url());
         self.transport
-            .send(Method::PUT, &path, Some(&[("enable", enable)]), None)
+            .send(Method::PUT, &path, None, Some(&[("enable", enable)]), None)
             .await?;
         Ok(())
     }
@@ -340,7 +374,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     pub async fn reset_checkpoint(&self, source_id: &str) -> Result<(), Error> {
         let path = format!("{}/{source_id}/reset-checkpoint", self.sources_root_url());
         self.transport
-            .send::<()>(Method::PUT, &path, None, None)
+            .send::<()>(Method::PUT, &path, None, None, None)
             .await?;
         Ok(())
     }
@@ -348,7 +382,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     pub async fn list(&self) -> Result<Vec<SourceConfig>, Error> {
         let response = self
             .transport
-            .send::<()>(Method::GET, &self.sources_root_url(), None, None)
+            .send::<()>(Method::GET, &self.sources_root_url(), None, None, None)
             .await?;
 
         let source_configs = response.deserialize().await?;
@@ -358,10 +392,20 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     pub async fn delete(&self, source_id: &str) -> Result<(), Error> {
         let path = format!("{}/{source_id}", self.sources_root_url());
         self.transport
-            .send::<()>(Method::DELETE, &path, None, None)
+            .send::<()>(Method::DELETE, &path, None, None, None)
             .await?;
         Ok(())
     }
+}
+
+fn header_from_config_format(config_format: ConfigFormat) -> HeaderMap {
+    let mut header_map = HeaderMap::new();
+    let content_type_value = format!("application/{}", config_format.as_str());
+    header_map.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_str(&content_type_value).expect("Content type should always be valid."),
+    );
+    header_map
 }
 
 #[cfg(test)]
@@ -370,16 +414,17 @@ mod test {
     use std::str::FromStr;
 
     use bytes::Bytes;
-    use quickwit_config::SourceConfig;
+    use quickwit_config::{ConfigFormat, SourceConfig};
     use quickwit_indexing::mock_split;
     use quickwit_metastore::IndexMetadata;
     use quickwit_search::SearchResponseRest;
     use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString};
+    use reqwest::header::CONTENT_TYPE;
     use reqwest::{StatusCode, Url};
     use serde_json::json;
     use tokio::fs::File;
     use tokio::io::AsyncReadExt;
-    use wiremock::matchers::{body_bytes, body_json, method, path, query_param};
+    use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{QuickwitClient, Transport};
@@ -539,7 +584,29 @@ mod test {
             .await;
         let post_body = Bytes::from(serde_json::to_vec(&index_config_to_create).unwrap());
         assert_eq!(
-            qw_client.indexes().create(post_body, false).await.unwrap(),
+            qw_client
+                .indexes()
+                .create(post_body, ConfigFormat::Json, false)
+                .await
+                .unwrap(),
+            index_metadata
+        );
+
+        // POST create index with yaml
+        Mock::given(method("POST"))
+            .and(path("/api/v1/indexes"))
+            .and(header(CONTENT_TYPE.as_str(), "application/yaml"))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK).set_body_json(index_metadata.clone()),
+            )
+            .mount(&mock_server)
+            .await;
+        assert_eq!(
+            qw_client
+                .indexes()
+                .create(Bytes::from("".as_bytes()), ConfigFormat::Yaml, false)
+                .await
+                .unwrap(),
             index_metadata
         );
 
@@ -611,6 +678,24 @@ mod test {
         let server_url = Url::parse(&mock_server.uri()).unwrap();
         let qw_client = QuickwitClient::new(Transport::new(server_url));
         let source_config = SourceConfig::ingest_api_default();
+        // POST create source with toml
+        Mock::given(method("POST"))
+            .and(path("/api/v1/indexes/my-index/sources"))
+            .and(header(CONTENT_TYPE.as_str(), "application/toml"))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK).set_body_json(source_config.clone()),
+            )
+            .mount(&mock_server)
+            .await;
+        assert_eq!(
+            qw_client
+                .sources("my-index")
+                .create(Bytes::from("".as_bytes()), ConfigFormat::Toml)
+                .await
+                .unwrap(),
+            source_config
+        );
+
         // GET sources
         Mock::given(method("GET"))
             .and(path("/api/v1/indexes/my-index/sources"))
