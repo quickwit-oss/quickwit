@@ -14,7 +14,10 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 itertools = { workspace = true }
+once_cell = { workspace = true }
+prost = { workspace = true }
 prost-types = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
@@ -22,8 +25,10 @@ tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 
+quickwit-common = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-search = { workspace = true }
 
 [dev-dependencies]
+tantivy = { workspace = true }

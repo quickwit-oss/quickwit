@@ -69,12 +69,12 @@ The region or custom endpoint will be detected using the first successful method
 - `AWS_REGION` environment variable
 - Amazon’s instance metadata API [https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html)
 
-### S3-compatible Object Storage like Minio, Google Cloud Storage, and more.
+## S3-compatible Object Storage
 
 Quickwit can target other S3-compatible storage.
 This is done by setting an endpoint url in the `QW_S3_ENDPOINT` environment variable.
 
-In this case, the region will be ignored.
+Depending on the object storage, you will also need to set the region.
 
 Example:
 
@@ -82,19 +82,51 @@ Example:
 export QW_S3_ENDPOINT=http://localhost:9000/
 ```
 
+### Google Cloud Storage
+
 Example for Google Cloud Storage:
 
 ```bash
 export QW_S3_ENDPOINT=https://storage.googleapis.com
 ```
 
-Get an access key & a secret key from the object storage of your preference and run the following commands:
+See our [Google Cloud Storage Setup Guide](../guides/storage-setup/gcs-setup.md) for the detailed steps to configure Quickwit with Google Cloud Storage.
+
+
+### Scaleway object storage
+
+Example:
 
 ```bash
-export AWS_SECRET_ACCESS_KEY=***
-export AWS_ACCESS_KEY_ID=***
+export QW_S3_ENDPOINT=https://s3.{your-region}.scw.cloud
+export AWS_REGION={your-region}
 ```
 
-:::note
-We also support Azure storage, however since it is not S3-Compatible, you can refer to our [Azure Setup Guide](../guides/storage-setup/azure-setup) for more info and steps to connect.
-:::
+See our [Scaleway Setup Guide](../guides/storage-setup/scaleway-setup.md) for the detailed steps to configure Quickwit with Scaleway object storage.
+
+### Garage
+
+[Garage](https://garagehq.deuxfleurs.fr/) is an Open-Souce lightweight and efficient object storage.
+
+To use it with Quickwit, you will need to setup the region, as mentioned in [Garage documentation](https://garagehq.deuxfleurs.fr/documentation/connect/), it's often set just to `garage`.
+
+Example for a local garage server:
+
+```bash
+export QW_S3_ENDPOINT=http://127.0.0.1:3900
+export AWS_REGION=garage
+```
+
+### MinIO, Ceph and more!
+
+We support other S3-compatible storages and are [welcoming PRs](http://github.com/quickwit-oss/quickwit) to enrich the documentation with new storage backends.
+
+## Azure blob storage
+
+Quickwit supports Azure URIs formatted as `azure://{storage-account}/{container}/{prefix}` where:
+- `storage-account` is your Azure storage account name. 
+- `container` is the container name (or bucket in S3 parlance).
+- `prefix` is optional and can be any prefix.
+
+See our [Azure Setup Guide](../guides/storage-setup/azure-setup.md) for the detailed steps to configure Quickwit with Azure.
+

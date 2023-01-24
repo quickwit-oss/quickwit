@@ -86,9 +86,11 @@ mod tests {
     async fn test_void_source_loading() {
         let source_config = SourceConfig {
             source_id: "test-void-source".to_string(),
-            num_pipelines: 1,
+            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
             enabled: true,
             source_params: SourceParams::void(),
+            transform_config: None,
         };
         let metastore = metastore_for_test();
         let ctx = SourceExecutionContext::for_test(
@@ -115,9 +117,11 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-void-source".to_string(),
-                    num_pipelines: 1,
+                    desired_num_pipelines: 1,
+                    max_num_pipelines_per_indexer: 1,
                     enabled: true,
                     source_params: SourceParams::void(),
+                    transform_config: None,
                 },
             ),
             VoidSourceParams,

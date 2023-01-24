@@ -5,11 +5,12 @@ sidebar_position: 4
 
 Quickwit can insert data into an index from one or multiple sources. When creating an index, sources are declared in the [index config](index-config.md). Additional sources can be added later using the [CLI command](../reference/cli.md#source) `quickwit source create`.
 
-A source is declared using an object called source config. A source config uniquely identifies and defines a source. It consists of three parameters:
+A source is declared using an object called source config. A source config uniquely identifies and defines a source. It consists of four parameters:
 
 - source ID
 - source type
 - source parameters
+- transform parameters (optional)
 
 *Source ID*
 
@@ -190,3 +191,32 @@ quickwit source delete --index my-index --source my-source
 ```
 
 When deleting a source, the checkpoint associated with the source is also removed.
+
+*Transform parameters*
+
+Ingested documents can be transformed before being indexed using [Vector Remap Language (VRL)](https://vector.dev/docs/reference/vrl/) scripts.
+
+### Transform parameters
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| script | source code of the VRL program executed to transform documents | required |
+| timezone | Timezone used in the VRL program for date and time manipulations. Must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | UTC |
+
+```yaml
+# Version of the index config file format
+version: 0.4
+
+# Sources
+sources:
+  # ...
+  transform:
+    source: |
+      .message = downcase(string!(.message))
+      .timestamp = now()
+      del(.username)
+    timezone: local
+
+# The rest of your index config here
+# ...
+```

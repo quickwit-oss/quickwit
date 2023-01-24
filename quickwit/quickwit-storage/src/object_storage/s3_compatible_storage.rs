@@ -24,6 +24,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use base64::prelude::{Engine, BASE64_STANDARD};
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
 use quickwit_aws::error::RusotoErrorWrapper;
@@ -320,7 +321,7 @@ impl S3CompatibleObjectStorage {
             .await
             .map_err(StorageError::from)
             .map_err(Retry::Permanent)?;
-        let md5 = base64::encode(part.md5.0);
+        let md5 = BASE64_STANDARD.encode(part.md5.0);
         let upload_part_req = UploadPartRequest {
             bucket: self.bucket.clone(),
             key: key.to_string(),

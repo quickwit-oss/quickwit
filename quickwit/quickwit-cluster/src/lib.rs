@@ -32,11 +32,11 @@ use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
 
 pub use crate::cluster::{
-    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterSnapshot,
-    NodeIdSchema,
+    create_cluster_for_test, create_fake_cluster_for_cli, grpc_addr_from_listen_addr_for_test,
+    Cluster, ClusterSnapshot, NodeIdSchema,
 };
 pub use crate::error::{ClusterError, ClusterResult};
-pub use crate::member::ClusterMember;
+pub use crate::member::{ClusterMember, RunningIndexingPlan};
 
 fn unix_timestamp() -> u64 {
     let duration_since_epoch = std::time::SystemTime::now()

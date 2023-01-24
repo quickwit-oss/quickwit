@@ -153,10 +153,15 @@ impl IndexerState {
         }
     }
 
-    async fn create_workbench(&self) -> anyhow::Result<IndexingWorkbench> {
-        let last_delete_opstamp = self
-            .metastore
-            .last_delete_opstamp(&self.pipeline_id.index_id)
+    async fn create_workbench(
+        &self,
+        ctx: &ActorContext<Indexer>,
+    ) -> anyhow::Result<IndexingWorkbench> {
+        let last_delete_opstamp = ctx
+            .protect_future(
+                self.metastore
+                    .last_delete_opstamp(&self.pipeline_id.index_id),
+            )
             .await?;
         let batch_parent_span = info_span!(target: "quickwit-indexing", "index_batch",
             index_id=%self.pipeline_id.index_id,
@@ -191,7 +196,7 @@ impl IndexerState {
         ctx: &'a ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexingWorkbench> {
         if indexing_workbench_opt.is_none() {
-            let indexing_workbench = self.create_workbench().await?;
+            let indexing_workbench = self.create_workbench(ctx).await?;
             let commit_timeout_message = CommitTimeout {
                 workbench_id: indexing_workbench.workbench_id,
             };

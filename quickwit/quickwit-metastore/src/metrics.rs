@@ -28,7 +28,7 @@ pub struct MetastoreMetrics {
 
 impl Default for MetastoreMetrics {
     fn default() -> Self {
-        MetastoreMetrics {
+        Self {
             requests_total: new_counter_vec(
                 "requests_total",
                 "Number of requests",

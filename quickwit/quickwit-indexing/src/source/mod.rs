@@ -368,36 +368,44 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "void".to_string(),
-                num_pipelines: 1,
+                desired_num_pipelines: 1,
+                max_num_pipelines_per_indexer: 1,
                 enabled: true,
                 source_params: SourceParams::void(),
+                transform_config: None,
             };
             check_source_connectivity(&source_config).await?;
         }
         {
             let source_config = SourceConfig {
                 source_id: "vec".to_string(),
-                num_pipelines: 1,
+                desired_num_pipelines: 1,
+                max_num_pipelines_per_indexer: 1,
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
+                transform_config: None,
             };
             check_source_connectivity(&source_config).await?;
         }
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                num_pipelines: 1,
+                desired_num_pipelines: 1,
+                max_num_pipelines_per_indexer: 1,
                 enabled: true,
                 source_params: SourceParams::file("file-does-not-exist.json"),
+                transform_config: None,
             };
             assert!(check_source_connectivity(&source_config).await.is_err());
         }
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                num_pipelines: 1,
+                desired_num_pipelines: 1,
+                max_num_pipelines_per_indexer: 1,
                 enabled: true,
                 source_params: SourceParams::file("data/test_corpus.json"),
+                transform_config: None,
             };
             assert!(check_source_connectivity(&source_config).await.is_ok());
         }

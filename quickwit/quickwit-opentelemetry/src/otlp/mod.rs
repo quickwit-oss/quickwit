@@ -25,10 +25,14 @@ use serde_json::{Number as JsonNumber, Value as JsonValue};
 use tracing::warn;
 
 mod logs;
+mod metrics;
 mod trace;
 
 pub use logs::OtlpGrpcLogsService;
-pub use trace::{B64String, Event, Link, OtlpGrpcTraceService, Span, OTEL_TRACE_INDEX_CONFIG};
+pub use trace::{
+    Base64, Event, Link, OtlpGrpcTraceService, Span, SpanStatus, OTEL_TRACE_INDEX_CONFIG,
+    OTEL_TRACE_INDEX_ID,
+};
 
 pub(crate) fn extract_attributes(attributes: Vec<KeyValue>) -> HashMap<String, JsonValue> {
     let mut attrs = HashMap::new();

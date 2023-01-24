@@ -1,8 +1,9 @@
 ---
-title: Send logs from Vector to Quickwit
+title: Send logs from Vector
 description: A simple tutorial to send logs from Vector to Quickwit in a few minutes.
 icon_url: /img/tutorials/vector-logo.png
 tags: [logs, ingestion]
+sidebar_position: 3
 ---
 
 import Tabs from '@theme/Tabs';

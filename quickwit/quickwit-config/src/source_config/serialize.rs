@@ -20,6 +20,7 @@
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
+use super::TransformConfig;
 use crate::{
     validate_identifier, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
@@ -38,9 +39,11 @@ impl From<SourceConfig> for SourceConfigV0_4 {
     fn from(source_config: SourceConfig) -> Self {
         SourceConfigV0_4 {
             source_id: source_config.source_id,
-            num_pipelines: source_config.num_pipelines,
+            max_num_pipelines_per_indexer: source_config.max_num_pipelines_per_indexer,
+            desired_num_pipelines: source_config.desired_num_pipelines,
             enabled: source_config.enabled,
             source_params: source_config.source_params,
+            transform: source_config.transform_config,
         }
     }
 }
@@ -68,12 +71,12 @@ impl From<VersionedSourceConfig> for SourceConfigForSerialization {
     }
 }
 
-fn default_num_pipelines() -> usize {
+fn default_max_num_pipelines_per_indexer() -> usize {
     1
 }
 
-fn is_one(num: &usize) -> bool {
-    *num == 1
+fn default_desired_num_pipelines() -> usize {
+    1
 }
 
 fn default_source_enabled() -> bool {
@@ -84,11 +87,14 @@ fn default_source_enabled() -> bool {
 pub struct SourceConfigV0_4 {
     pub source_id: String,
 
-    #[serde(default = "default_num_pipelines", skip_serializing_if = "is_one")]
-    /// Number of indexing pipelines spawned for the source on each indexer.
-    /// Therefore, if there exists `n` indexers in the cluster, there will be `n` * `num_pipelines`
-    /// indexing pipelines running for the source.
-    pub num_pipelines: usize,
+    #[serde(
+        default = "default_max_num_pipelines_per_indexer",
+        alias = "num_pipelines"
+    )]
+    pub max_num_pipelines_per_indexer: usize,
+
+    #[serde(default = "default_desired_num_pipelines")]
+    pub desired_num_pipelines: usize,
 
     // Denotes if this source is enabled.
     #[serde(default = "default_source_enabled")]
@@ -96,6 +102,9 @@ pub struct SourceConfigV0_4 {
 
     #[serde(flatten)]
     pub source_params: SourceParams,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform: Option<TransformConfig>,
 }
 
 impl SourceConfigV0_4 {
@@ -105,7 +114,7 @@ impl SourceConfigV0_4 {
     /// - This does not check connectivity. (See `check_connectivity(..)`)
     /// This just validate configuration, without performing any IO.
     /// - This is only here to validate user input.
-    /// When ingesting from StdIn, we programmatically create an invalid `SourceConfig`.
+    /// When ingesting from stdin, we programmatically create an invalid `SourceConfig`.
     ///
     /// TODO refactor #1065
     pub(crate) fn validate_and_build(self) -> anyhow::Result<SourceConfig> {
@@ -117,7 +126,7 @@ impl SourceConfigV0_4 {
             SourceParams::File(file_params) => {
                 if file_params.filepath.is_none() {
                     bail!(
-                        "Source `{}` of type `file` must contain a `filepath`",
+                        "Source `{}` of type `file` must contain a filepath.",
                         self.source_id
                     )
                 }
@@ -130,11 +139,18 @@ impl SourceConfigV0_4 {
             | SourceParams::IngestApi
             | SourceParams::IngestCli => {}
         }
+
+        if let Some(transform_config) = &self.transform {
+            transform_config.compile_vrl_script()?;
+        }
+
         Ok(SourceConfig {
             source_id: self.source_id,
-            num_pipelines: self.num_pipelines,
+            max_num_pipelines_per_indexer: self.max_num_pipelines_per_indexer,
+            desired_num_pipelines: self.desired_num_pipelines,
             enabled: self.enabled,
             source_params: self.source_params,
+            transform_config: self.transform,
         })
     }
 }
@@ -145,16 +161,35 @@ mod tests {
 
     #[test]
     fn test_source_config_validation() {
-        let source_config_for_serialization = SourceConfigForSerialization {
-            source_id: "file_params_1".to_string(),
-            num_pipelines: 1,
-            enabled: true,
-            source_params: SourceParams::stdin(),
-        };
-        assert!(source_config_for_serialization
-            .validate_and_build()
-            .unwrap_err()
-            .to_string()
-            .contains("must contain a `filepath`"));
+        {
+            let source_config = SourceConfigForSerialization {
+                source_id: "file_source".to_string(),
+                max_num_pipelines_per_indexer: 1,
+                desired_num_pipelines: 1,
+                enabled: true,
+                source_params: SourceParams::stdin(),
+                transform: None,
+            };
+            assert!(source_config
+                .validate_and_build()
+                .unwrap_err()
+                .to_string()
+                .contains("must contain a filepath"));
+        }
+        {
+            let source_config = SourceConfigForSerialization {
+                source_id: "kafka_source".to_string(),
+                max_num_pipelines_per_indexer: 1,
+                desired_num_pipelines: 1,
+                enabled: true,
+                source_params: SourceParams::void(),
+                transform: Some(TransformConfig::for_test("foo")),
+            };
+            assert!(source_config
+                .validate_and_build()
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to compile"));
+        }
     }
 }

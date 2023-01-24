@@ -3,6 +3,7 @@ title: Deploy Quickwit with Helm and search your k8s logs
 description: Deploy Quickwit and OTEL collectors with Helm and search your kubernetes logs.
 tags: [k8s, helm]
 icon_url: /img/tutorials/helm-otel-k8s-tutorial-illustation.jpg
+sidebar_position: 9
 ---
 
 This guide will help you to unlock log search on your k8s cluster. We will first deploy Quickwit and OTEL collectors with Helm and then see how to index and search them.
@@ -267,7 +268,7 @@ Example of queries:
 - [resource.k8s.container.restart_count:1](http://localhost:7280/ui/search?query=resource.k8s.container.restart_count%3A1&index_id=otel-log-v0&max_hits=10&sort_by_field=-timestamp)
 
  
-![UI screenshot](../assets/screenshot-ui-otel-logs.png)
+![UI screenshot](../../assets/screenshot-ui-otel-logs.png)
 
 And that's all folks!
 

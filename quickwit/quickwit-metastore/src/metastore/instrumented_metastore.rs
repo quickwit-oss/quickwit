@@ -27,9 +27,9 @@ use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, S
 
 macro_rules! instrument {
     ($expr:expr, [$operation:ident, $($label:expr),*]) => {
+        let start = std::time::Instant::now();
         let labels = [stringify!($operation), $($label,)*];
         crate::metrics::METASTORE_METRICS.requests_total.with_label_values(labels).inc();
-        let start = std::time::Instant::now();
         let (res, is_error) = match $expr {
             ok @ Ok(_) => {
                 (ok, "false")
@@ -83,7 +83,6 @@ impl Metastore for InstrumentedMetastore {
     }
 
     // Index API
-
     async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()> {
         let index_id = index_config.index_id.to_string();
         instrument!(

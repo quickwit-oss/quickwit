@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use chitchat::transport::Transport;
+use chitchat::transport::{ChannelTransport, Transport};
 use chitchat::{
     spawn_chitchat, ChitchatConfig, ChitchatHandle, ClusterStateSnapshot, FailureDetectorConfig,
     NodeId, NodeState,
@@ -442,6 +442,11 @@ pub async fn create_cluster_for_test(
     )
     .await?;
     Ok(cluster)
+}
+
+/// Creates a fake cluster for the CLI indexing commands.
+pub async fn create_fake_cluster_for_cli() -> anyhow::Result<Cluster> {
+    create_cluster_for_test(Vec::new(), &[], &ChannelTransport::default(), false).await
 }
 
 #[cfg(test)]

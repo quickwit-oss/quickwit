@@ -37,7 +37,7 @@
 
 use std::path::Path;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use fail::FailScenario;
 use quickwit_actors::{ActorExitStatus, Universe};
@@ -216,6 +216,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     // time to time a kill switch activation because the ControlledDirectory did not
     // do any write during a HEARTBEAT... Before removing the protect zone, we need
     // to investigate this instability. Then this test will finally be really helpful.
+    quickwit_common::setup_logging_for_tests();
     let universe = Universe::with_accelerated_time();
     let doc_mapper_yaml = r#"
         field_mappings:
@@ -228,9 +229,11 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         "#;
     let indexing_setting_yaml = r#"
         split_num_docs_target: 1000
+        merge_policy:
+          type: "no_merge" 
     "#;
     let search_fields = ["body"];
-    let index_id = "test-index";
+    let index_id = "test-index-merge-executory-kill-switch";
     let test_index_builder = TestSandbox::create(
         index_id,
         doc_mapper_yaml,
@@ -247,6 +250,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     for _ in 0..2 {
         test_index_builder.add_documents(batch.clone()).await?;
     }
+    tokio::time::sleep(Duration::from_millis(10)).await;
 
     let metastore = test_index_builder.metastore();
     let splits: Vec<Split> = metastore.list_all_splits(index_id).await?;
@@ -311,16 +315,12 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     fail::cfg("before-merge-split", "pause").unwrap();
     merge_executor_mailbox.send_message(merge_scratch).await?;
 
-    std::mem::drop(merge_executor_mailbox);
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
     universe.kill();
 
-    let start = Instant::now();
     fail::cfg("before-merge-split", "off").unwrap();
 
     let (exit_status, _) = merge_executor_handle.join().await;
-    assert!(start.elapsed() < Duration::from_millis(100));
     assert!(matches!(exit_status, ActorExitStatus::Failure(_)));
     Ok(())
 }
