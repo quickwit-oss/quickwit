@@ -17,31 +17,36 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-
 use std::mem;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::time;
+
+use anyhow::{anyhow, Context};
 use async_trait::async_trait;
-use pulsar::{Authentication, Consumer, DeserializeMessage, Payload, Pulsar, TokioExecutor};
+use futures::StreamExt;
 use pulsar::authentication::oauth2::{OAuth2Authentication, OAuth2Params};
 use pulsar::consumer::Message;
-use serde_json::{json, Value as JsonValue};
-use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
-use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta};
-use quickwit_config::{PulsarSourceParams, PulsarSourceAuth};
-use pulsar::SubType;
-use anyhow::{anyhow, Context};
-use futures::StreamExt;
 use pulsar::message::proto::MessageIdData;
+use pulsar::{
+    Authentication, Consumer, DeserializeMessage, Payload, Pulsar, SubType, TokioExecutor,
+};
+use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
+use quickwit_config::{PulsarSourceAuth, PulsarSourceParams};
+use quickwit_metastore::checkpoint::{
+    PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
+};
+use serde_json::{json, Value as JsonValue};
 use tokio::sync::{mpsc, watch};
 use tokio::task::LocalSet;
+use tokio::time;
 use tokio::time::timeout;
 use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
-use crate::source::{Source, SourceActor, SourceContext, SourceExecutionContext, TypedSourceFactory};
+use crate::source::{
+    Source, SourceActor, SourceContext, SourceExecutionContext, TypedSourceFactory,
+};
 
 /// Number of bytes after which we cut a new batch.
 ///
@@ -78,7 +83,6 @@ impl TypedSourceFactory for PulsarSourceFactory {
     }
 }
 
-
 #[derive(Default)]
 pub struct PulsarSourceState {
     /// Number of bytes processed by the source.
@@ -88,7 +92,6 @@ pub struct PulsarSourceState {
     /// Number of invalid messages, i.e., that were empty or could not be parsed.
     pub num_invalid_messages: u64,
 }
-
 
 pub struct PulsarSource {
     ctx: Arc<SourceExecutionContext>,
@@ -109,7 +112,7 @@ impl PulsarSource {
         let mut builder = Pulsar::builder(&params.address, TokioExecutor);
 
         match params.authentication.clone() {
-            None => {},
+            None => {}
             Some(PulsarSourceAuth::Token(token)) => {
                 let auth = Authentication {
                     name: "token".to_string(),
@@ -117,21 +120,22 @@ impl PulsarSource {
                 };
 
                 builder = builder.with_auth(auth);
-            },
+            }
             Some(PulsarSourceAuth::Oauth2 {
-                     issuer_url,
-                     credentials_url,
-                     audience,
-                     scope,
-                 }) => {
+                issuer_url,
+                credentials_url,
+                audience,
+                scope,
+            }) => {
                 let auth = OAuth2Params {
                     issuer_url,
                     credentials_url,
                     audience,
                     scope,
                 };
-                builder = builder.with_auth_provider(OAuth2Authentication::client_credentials(auth));
-            },
+                builder =
+                    builder.with_auth_provider(OAuth2Authentication::client_credentials(auth));
+            }
         }
 
         info!(
@@ -163,26 +167,35 @@ impl PulsarSource {
         })
     }
 
-    fn process_message(&mut self, message: Message<PulsarMessage>, batch: &mut BatchBuilder) -> anyhow::Result<()> {
+    fn process_message(
+        &mut self,
+        message: Message<PulsarMessage>,
+        batch: &mut BatchBuilder,
+    ) -> anyhow::Result<()> {
         let current_position = msg_id_to_position(message.message_id());
 
         let doc = match message.deserialize() {
             Err(e) => {
                 warn!(error = ?e, "Failed to parse message from queue.");
                 self.state.num_invalid_messages += 1;
-                return Ok(())
-            },
+                return Ok(());
+            }
             Ok(doc) => doc,
         };
 
         self.add_doc_to_batch(current_position, doc, batch)
     }
 
-    fn add_doc_to_batch(&mut self, position: Position, doc: String, batch: &mut BatchBuilder) -> anyhow::Result<()> {
+    fn add_doc_to_batch(
+        &mut self,
+        position: Position,
+        doc: String,
+        batch: &mut BatchBuilder,
+    ) -> anyhow::Result<()> {
         if doc.is_empty() {
             warn!("Message received from queue was empty.");
             self.state.num_invalid_messages += 1;
-            return Ok(())
+            return Ok(());
         }
 
         let num_bytes = doc.as_bytes().len();
@@ -245,7 +258,11 @@ impl Source for PulsarSource {
         Ok(Duration::default())
     }
 
-    async fn suggest_truncate(&self, checkpoint: SourceCheckpoint, _ctx: &ActorContext<SourceActor>) -> anyhow::Result<()> {
+    async fn suggest_truncate(
+        &self,
+        checkpoint: SourceCheckpoint,
+        _ctx: &ActorContext<SourceActor>,
+    ) -> anyhow::Result<()> {
         debug!(ckpt = ?checkpoint, "Truncating message queue.");
         let _ = self.pulsar.last_ack.send(checkpoint);
         Ok(())
@@ -270,7 +287,6 @@ impl Source for PulsarSource {
             "num_invalid_messages": self.state.num_invalid_messages,
         })
     }
-
 }
 
 #[derive(Debug)]
@@ -280,7 +296,7 @@ impl DeserializeMessage for PulsarMessage {
     type Output = anyhow::Result<String>;
 
     fn deserialize_message(payload: &Payload) -> Self::Output {
-       String::from_utf8(payload.data.clone()).map_err(anyhow::Error::from)
+        String::from_utf8(payload.data.clone()).map_err(anyhow::Error::from)
     }
 }
 
@@ -304,7 +320,6 @@ impl BatchBuilder {
         self.num_bytes += num_bytes;
     }
 }
-
 
 struct PulsarConsumer {
     messages: mpsc::Receiver<ConsumerMessage>,
@@ -356,9 +371,9 @@ async fn spawn_message_listener(
                         None => break 'outer,
                         Some(msg) => {
                             if messages_tx.send(msg).await.is_err() {
-                                break 'outer
+                                break 'outer;
                             }
-                        },
+                        }
                     };
                 }
 
@@ -389,7 +404,6 @@ async fn spawn_message_listener(
     })
 }
 
-
 fn msg_id_to_position(msg: &MessageIdData) -> Position {
     // The order of these fields are important as they affect the sorting
     // of the checkpoint positions.
@@ -398,9 +412,15 @@ fn msg_id_to_position(msg: &MessageIdData) -> Position {
         "{:0>20},{:0>20},{},{},{}",
         msg.ledger_id,
         msg.entry_id,
-        msg.batch_index.map(|v| format!("{:010}", v)).unwrap_or_default(),
-        msg.partition.map(|v| format!("{:010}", v)).unwrap_or_default(),
-        msg.batch_size.map(|v| format!("{:010}", v)).unwrap_or_default(),
+        msg.batch_index
+            .map(|v| format!("{:010}", v))
+            .unwrap_or_default(),
+        msg.partition
+            .map(|v| format!("{:010}", v))
+            .unwrap_or_default(),
+        msg.batch_size
+            .map(|v| format!("{:010}", v))
+            .unwrap_or_default(),
     );
 
     Position::from(id_str)
@@ -431,12 +451,15 @@ fn msg_id_from_position(pos: &Position) -> Option<MessageIdData> {
 mod pulsar_broker_tests {
     use std::path::PathBuf;
     use std::sync::Arc;
+
     use futures::future::join_all;
     use pulsar::SerializeMessage;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
-    use quickwit_metastore::{Metastore, metastore_for_test, SplitMetadata};
-    use quickwit_metastore::checkpoint::{IndexCheckpointDelta, PartitionId, Position, SourceCheckpointDelta};
+    use quickwit_metastore::checkpoint::{
+        IndexCheckpointDelta, PartitionId, Position, SourceCheckpointDelta,
+    };
+    use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
 
     use super::*;
     use crate::new_split_id;
@@ -484,7 +507,6 @@ mod pulsar_broker_tests {
             .unwrap();
     }
 
-
     fn get_source_config(topic: &str) -> (String, SourceConfig) {
         let source_id = append_random_suffix("test-pulsar-source--source");
         let source_config = SourceConfig {
@@ -528,7 +550,11 @@ mod pulsar_broker_tests {
         let mut message_ids = Vec::with_capacity(receipts.len());
         for receipt in receipts {
             let receipt = receipt?;
-            message_ids.push(receipt.message_id.expect("Receipt should contain message ID."));
+            message_ids.push(
+                receipt
+                    .message_id
+                    .expect("Receipt should contain message ID."),
+            );
         }
 
         Ok(message_ids)
@@ -549,7 +575,10 @@ mod pulsar_broker_tests {
         };
 
         let position = msg_id_to_position(&populated_id);
-        assert_eq!(position.as_str(), format!("{:0>20},{:0>20},{:010},{:010},{:010}", 1, 134, 3, -1, 6));
+        assert_eq!(
+            position.as_str(),
+            format!("{:0>20},{:0>20},{:010},{:010},{:010}", 1, 134, 3, -1, 6)
+        );
         let retrieved_id = msg_id_from_position(&position)
             .expect("Successfully deserialize message ID from position.");
         assert_eq!(retrieved_id, populated_id);
@@ -567,7 +596,10 @@ mod pulsar_broker_tests {
         };
 
         let position = msg_id_to_position(&sparse_id);
-        assert_eq!(position.as_str(), format!("{:0>20},{:0>20},,,{:010}", 1, 4, 0));
+        assert_eq!(
+            position.as_str(),
+            format!("{:0>20},{:0>20},,,{:010}", 1, 4, 0)
+        );
         let retrieved_id = msg_id_from_position(&position)
             .expect("Successfully deserialize message ID from position.");
         assert_eq!(retrieved_id, sparse_id);
@@ -610,7 +642,7 @@ mod pulsar_broker_tests {
         assert_eq!(batch.num_bytes, 0);
         assert!(batch.docs.is_empty());
 
-        let position = Position::from(1u64);  // Used for testing simplicity.
+        let position = Position::from(1u64); // Used for testing simplicity.
         let mut batch = BatchBuilder::default();
         let doc = "some-demo-data".to_string();
         pulsar_source
@@ -623,7 +655,7 @@ mod pulsar_broker_tests {
         assert_eq!(batch.num_bytes, 14);
         assert_eq!(batch.docs.len(), 1);
 
-        let position = Position::from(4u64);  // Used for testing simplicity.
+        let position = Position::from(4u64); // Used for testing simplicity.
         let mut batch = BatchBuilder::default();
         let doc = "some-demo-data-2".to_string();
         pulsar_source
@@ -638,7 +670,11 @@ mod pulsar_broker_tests {
 
         let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
         expected_checkpoint_delta
-            .record_partition_delta(PartitionId::from(topic.as_str()), Position::from(1u64), Position::from(4u64))
+            .record_partition_delta(
+                PartitionId::from(topic.as_str()),
+                Position::from(1u64),
+                Position::from(4u64),
+            )
             .unwrap();
         assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
     }

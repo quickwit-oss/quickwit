@@ -350,7 +350,6 @@ pub struct VecSourceParams {
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
 
-
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PulsarSourceParams {
@@ -376,7 +375,7 @@ pub enum PulsarSourceAuth {
         credentials_url: String,
         audience: Option<String>,
         scope: Option<String>,
-    }
+    },
 }
 
 fn default_consumer_name() -> String {

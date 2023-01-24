@@ -63,11 +63,11 @@ mod ingest_api_source;
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
+#[cfg(feature = "pulsar")]
+mod pulsar_source;
 mod source_factory;
 mod vec_source;
 mod void_source;
-#[cfg(feature = "pulsar")]
-mod pulsar_source;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -80,9 +80,9 @@ pub use file_source::{FileSource, FileSourceFactory};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
+use once_cell::sync::OnceCell;
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
-use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
