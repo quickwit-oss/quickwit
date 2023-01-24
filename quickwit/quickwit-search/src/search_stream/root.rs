@@ -30,15 +30,15 @@ use tracing::*;
 
 use crate::cluster_client::ClusterClient;
 use crate::root::SearchJob;
-use crate::{list_relevant_splits, SearchClientPool, SearchError, SearchServiceClient};
+use crate::{list_relevant_splits, SearchError, SearchJobPlacer, SearchServiceClient};
 
 /// Perform a distributed search stream.
-#[instrument(skip(metastore, cluster_client, client_pool))]
+#[instrument(skip(metastore, cluster_client, search_job_placer))]
 pub async fn root_search_stream(
     search_stream_request: SearchStreamRequest,
     metastore: &dyn Metastore,
     cluster_client: ClusterClient,
-    client_pool: &SearchClientPool,
+    search_job_placer: &SearchJobPlacer,
 ) -> crate::Result<impl futures::Stream<Item = crate::Result<Bytes>>> {
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
@@ -65,7 +65,7 @@ pub async fn root_search_stream(
     let leaf_search_jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
 
     let assigned_leaf_search_jobs: Vec<(SearchServiceClient, Vec<SearchJob>)> =
-        client_pool.assign_jobs(leaf_search_jobs, &HashSet::default())?;
+        search_job_placer.assign_jobs(leaf_search_jobs, &HashSet::default())?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
 
     let mut stream_map: StreamMap<usize, _> = StreamMap::new();
@@ -104,6 +104,7 @@ fn jobs_to_leaf_request(
 mod tests {
     use std::sync::Arc;
 
+    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::OutputFormat;
@@ -154,11 +155,16 @@ mod tests {
         );
         // The test will hang on indefinitely if we don't drop the receiver.
         drop(result_sender);
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+        let client_pool =
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(mock_search_service),
+                ([127, 0, 0, 1], 1000).into(),
+            )]);
+        let search_job_placer = SearchJobPlacer::new(client_pool);
 
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterClient::new(search_job_placer.clone());
         let result: Vec<Bytes> =
-            root_search_stream(request, &metastore, cluster_client, &client_pool)
+            root_search_stream(request, &metastore, cluster_client, &search_job_placer)
                 .await?
                 .try_collect()
                 .await?;
@@ -210,9 +216,15 @@ mod tests {
         );
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
-        let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
+        let client_pool =
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(mock_search_service),
+                ([127, 0, 0, 1], 1000).into(),
+            )]);
+        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let cluster_client = ClusterClient::new(search_job_placer.clone());
+        let stream =
+            root_search_stream(request, &metastore, cluster_client, &search_job_placer).await?;
         let result: Vec<_> = stream.try_collect().await?;
         assert_eq!(result.len(), 2);
         assert_eq!(&result[0], &b"123"[..]);
@@ -270,9 +282,15 @@ mod tests {
             );
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
-        let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
+        let client_pool =
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(mock_search_service),
+                ([127, 0, 0, 1], 1000).into(),
+            )]);
+        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let cluster_client = ClusterClient::new(search_job_placer.clone());
+        let stream =
+            root_search_stream(request, &metastore, cluster_client, &search_job_placer).await?;
         let result: Result<Vec<_>, SearchError> = stream.try_collect().await;
         assert_eq!(result.is_err(), true);
         assert_eq!(result.unwrap_err().to_string(), "Internal error: `error`.");
@@ -295,7 +313,11 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split")]));
 
         let client_pool =
-            SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(MockSearchService::new()),
+                ([127, 0, 0, 1], 1000).into(),
+            )]);
+        let search_job_placer = SearchJobPlacer::new(client_pool);
 
         assert!(root_search_stream(
             quickwit_proto::SearchStreamRequest {
@@ -310,8 +332,8 @@ mod tests {
                 partition_by_field: Some("timestamp".to_string()),
             },
             &metastore,
-            ClusterClient::new(client_pool.clone()),
-            &client_pool,
+            ClusterClient::new(search_job_placer.clone()),
+            &search_job_placer,
         )
         .await
         .is_err());
@@ -329,8 +351,8 @@ mod tests {
                 partition_by_field: Some("timestamp".to_string()),
             },
             &metastore,
-            ClusterClient::new(client_pool.clone()),
-            &client_pool
+            ClusterClient::new(search_job_placer.clone()),
+            &search_job_placer
         )
         .await
         .is_err());

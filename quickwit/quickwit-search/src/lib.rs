@@ -32,7 +32,7 @@ mod leaf;
 mod rendezvous_hasher;
 mod retry;
 mod root;
-mod search_client_pool;
+mod search_job_placer;
 mod search_response_rest;
 mod search_stream;
 mod service;
@@ -66,13 +66,13 @@ use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::DocAddress;
 
-pub use crate::client::SearchServiceClient;
+pub use crate::client::{create_search_service_client, SearchServiceClient};
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
 pub use crate::root::{jobs_to_leaf_request, root_search, SearchJob};
-pub use crate::search_client_pool::{create_search_service_client, SearchClientPool};
+pub use crate::search_job_placer::SearchJobPlacer;
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
@@ -255,14 +255,14 @@ pub async fn start_searcher_service(
     quickwit_config: &QuickwitConfig,
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
-    search_client_pool: SearchClientPool,
+    search_job_placer: SearchJobPlacer,
 ) -> anyhow::Result<Arc<dyn SearchService>> {
-    let cluster_client = ClusterClient::new(search_client_pool.clone());
+    let cluster_client = ClusterClient::new(search_job_placer.clone());
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore,
         storage_uri_resolver,
         cluster_client,
-        search_client_pool,
+        search_job_placer,
         quickwit_config.searcher_config.clone(),
     ));
     Ok(search_service)

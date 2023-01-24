@@ -35,7 +35,7 @@ use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::models::{IndexingPipelineId, ScratchDirectory};
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::Metastore;
-use quickwit_search::SearchClientPool;
+use quickwit_search::SearchJobPlacer;
 use quickwit_storage::Storage;
 use serde::Serialize;
 use tokio::join;
@@ -66,7 +66,7 @@ pub struct DeleteTaskPipelineState {
 pub struct DeleteTaskPipeline {
     index_id: String,
     metastore: Arc<dyn Metastore>,
-    search_client_pool: SearchClientPool,
+    search_job_placer: SearchJobPlacer,
     indexing_settings: IndexingSettings,
     index_storage: Arc<dyn Storage>,
     delete_service_dir_path: PathBuf,
@@ -116,7 +116,7 @@ impl DeleteTaskPipeline {
     pub fn new(
         index_id: String,
         metastore: Arc<dyn Metastore>,
-        search_client_pool: SearchClientPool,
+        search_job_placer: SearchJobPlacer,
         indexing_settings: IndexingSettings,
         index_storage: Arc<dyn Storage>,
         delete_service_dir_path: PathBuf,
@@ -125,7 +125,7 @@ impl DeleteTaskPipeline {
         Self {
             index_id,
             metastore,
-            search_client_pool,
+            search_job_placer,
             indexing_settings,
             index_storage,
             delete_service_dir_path,
@@ -216,7 +216,7 @@ impl DeleteTaskPipeline {
             index_uri.clone(),
             doc_mapper_str,
             self.metastore.clone(),
-            self.search_client_pool.clone(),
+            self.search_job_placer.clone(),
             merge_policy,
             downloader_mailbox,
         );
@@ -283,11 +283,12 @@ mod tests {
     use quickwit_actors::{Handler, Universe, HEARTBEAT};
     use quickwit_config::merge_policy_config::MergePolicyConfig;
     use quickwit_config::IndexingSettings;
+    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitState;
     use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
-    use quickwit_search::{MockSearchService, SearchClientPool, SearchError};
+    use quickwit_search::{MockSearchService, SearchError, SearchJobPlacer, SearchServiceClient};
 
     use super::{ActorContext, ActorExitStatus, DeleteTaskPipeline};
 
@@ -362,8 +363,12 @@ mod tests {
                     ..Default::default()
                 })
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
-
+        let client_pool =
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(mock_search_service),
+                ([127, 0, 0, 1], 1000).into(),
+            )]);
+        let search_job_placer = SearchJobPlacer::new(client_pool);
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let mut indexing_settings = IndexingSettings::for_test();
@@ -371,7 +376,7 @@ mod tests {
         let pipeline = DeleteTaskPipeline::new(
             index_id.to_string(),
             metastore.clone(),
-            client_pool,
+            search_job_placer,
             indexing_settings,
             test_sandbox.storage(),
             data_dir_path,
@@ -433,15 +438,19 @@ mod tests {
                     ..Default::default()
                 })
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
-
+        let client_pool =
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(mock_search_service),
+                ([127, 0, 0, 1], 1000).into(),
+            )]);
+        let search_job_placer = SearchJobPlacer::new(client_pool);
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexing_settings = IndexingSettings::for_test();
         let pipeline = DeleteTaskPipeline::new(
             index_id.to_string(),
             metastore.clone(),
-            client_pool,
+            search_job_placer,
             indexing_settings,
             test_sandbox.storage(),
             data_dir_path,
