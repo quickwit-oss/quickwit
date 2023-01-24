@@ -174,12 +174,23 @@ impl PulsarSource {
             },
             Ok(doc) => doc,
         };
+
+        self.add_doc_to_batch(current_position, doc, batch)
+    }
+
+    fn add_doc_to_batch(&mut self, position: Position, doc: String, batch: &mut BatchBuilder) -> anyhow::Result<()> {
+        if doc.is_empty() {
+            warn!("Message received from queue was empty.");
+            self.state.num_invalid_messages += 1;
+            return Ok(())
+        }
+
         let num_bytes = doc.as_bytes().len();
 
-        let previous_position = mem::replace(&mut self.previous_position, current_position.clone());
+        let previous_position = mem::replace(&mut self.previous_position, position.clone());
         batch
             .checkpoint_delta
-            .record_partition_delta(self.partition_id.clone(), previous_position, current_position)
+            .record_partition_delta(self.partition_id.clone(), previous_position, position)
             .context("Failed to record partition delta.")?;
         batch.push(doc, num_bytes as u64);
 
@@ -235,7 +246,7 @@ impl Source for PulsarSource {
     }
 
     async fn suggest_truncate(&self, checkpoint: SourceCheckpoint, _ctx: &ActorContext<SourceActor>) -> anyhow::Result<()> {
-        info!(ckpt = ?checkpoint, "Truncating message queue.");
+        debug!(ckpt = ?checkpoint, "Truncating message queue.");
         let _ = self.pulsar.last_ack.send(checkpoint);
         Ok(())
     }
@@ -478,7 +489,8 @@ mod pulsar_broker_tests {
         let source_id = append_random_suffix("test-pulsar-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
-            num_pipelines: 1,
+            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::Pulsar(PulsarSourceParams {
                 topic: topic.to_string(),
@@ -487,6 +499,7 @@ mod pulsar_broker_tests {
                 consumer_name: "quickwit-tester".to_string(),
                 authentication: None,
             }),
+            transform_config: None,
         };
         (source_id, source_config)
     }
@@ -524,10 +537,10 @@ mod pulsar_broker_tests {
     #[test]
     fn test_position_serialization() {
         let populated_id = MessageIdData {
+            ledger_id: 1,
             entry_id: 134,
             batch_index: Some(3),
             partition: Some(-1),
-            ledger_id: 1,
             batch_size: Some(6),
 
             // We never serialize these fields.
@@ -536,16 +549,16 @@ mod pulsar_broker_tests {
         };
 
         let position = msg_id_to_position(&populated_id);
-        assert_eq!(position.as_str(), "134,3,-1,1,6");
+        assert_eq!(position.as_str(), format!("{:0>20},{:0>20},{:010},{:010},{:010}", 1, 134, 3, -1, 6));
         let retrieved_id = msg_id_from_position(&position)
             .expect("Successfully deserialize message ID from position.");
         assert_eq!(retrieved_id, populated_id);
 
         let sparse_id = MessageIdData {
+            ledger_id: 1,
             entry_id: 4,
             batch_index: None,
             partition: None,
-            ledger_id: 1,
             batch_size: Some(0),
 
             // We never serialize these fields.
@@ -554,14 +567,14 @@ mod pulsar_broker_tests {
         };
 
         let position = msg_id_to_position(&sparse_id);
-        assert_eq!(position.as_str(), "4,,,1,0");
+        assert_eq!(position.as_str(), format!("{:0>20},{:0>20},,,{:010}", 1, 4, 0));
         let retrieved_id = msg_id_from_position(&position)
             .expect("Successfully deserialize message ID from position.");
         assert_eq!(retrieved_id, sparse_id);
     }
 
     #[tokio::test]
-    async fn test_basic_indexing_behaviour() {
+    async fn test_doc_batching_logic() {
         let metastore = metastore_for_test();
         let topic = append_random_suffix("test-pulsar-source--basic-indexing-behaviour--topic");
 
@@ -581,12 +594,52 @@ mod pulsar_broker_tests {
         );
         let start_checkpoint = SourceCheckpoint::default();
 
-        let pulsar_source = PulsarSource::try_new(ctx, params, start_checkpoint)
+        let mut pulsar_source = PulsarSource::try_new(ctx, params, start_checkpoint)
             .await
             .expect("Setup pulsar source");
 
+        let position = Position::Beginning;
+        let mut batch = BatchBuilder::default();
+        pulsar_source
+            .add_doc_to_batch(position, "".to_string(), &mut batch)
+            .expect("Add batch should not error on empty doc.");
+        assert_eq!(pulsar_source.state.num_invalid_messages, 1);
+        assert_eq!(pulsar_source.state.num_messages_processed, 0);
+        assert_eq!(pulsar_source.state.num_bytes_processed, 0);
+        assert_eq!(pulsar_source.previous_position, Position::Beginning);
+        assert_eq!(batch.num_bytes, 0);
+        assert!(batch.docs.is_empty());
 
+        let position = Position::from(1u64);  // Used for testing simplicity.
+        let mut batch = BatchBuilder::default();
+        let doc = "some-demo-data".to_string();
+        pulsar_source
+            .add_doc_to_batch(position, doc, &mut batch)
+            .expect("Add batch should not error on empty doc.");
+        assert_eq!(pulsar_source.state.num_invalid_messages, 1);
+        assert_eq!(pulsar_source.state.num_messages_processed, 1);
+        assert_eq!(pulsar_source.state.num_bytes_processed, 14);
+        assert_eq!(pulsar_source.previous_position, Position::from(1u64));
+        assert_eq!(batch.num_bytes, 14);
+        assert_eq!(batch.docs.len(), 1);
 
+        let position = Position::from(4u64);  // Used for testing simplicity.
+        let mut batch = BatchBuilder::default();
+        let doc = "some-demo-data-2".to_string();
+        pulsar_source
+            .add_doc_to_batch(position, doc, &mut batch)
+            .expect("Add batch should not error on empty doc.");
+        assert_eq!(pulsar_source.state.num_invalid_messages, 1);
+        assert_eq!(pulsar_source.state.num_messages_processed, 2);
+        assert_eq!(pulsar_source.state.num_bytes_processed, 30);
+        assert_eq!(pulsar_source.previous_position, Position::from(4u64));
+        assert_eq!(batch.num_bytes, 16);
+        assert_eq!(batch.docs.len(), 1);
 
+        let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
+        expected_checkpoint_delta
+            .record_partition_delta(PartitionId::from(topic.as_str()), Position::from(1u64), Position::from(4u64))
+            .unwrap();
+        assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
     }
 }
