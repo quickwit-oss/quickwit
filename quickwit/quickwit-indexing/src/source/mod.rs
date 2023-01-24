@@ -66,6 +66,8 @@ mod kinesis;
 mod source_factory;
 mod vec_source;
 mod void_source;
+#[cfg(feature = "pulsar")]
+mod pulsar_source;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -78,6 +80,8 @@ pub use file_source::{FileSource, FileSourceFactory};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
+#[cfg(feature = "pulsar")]
+pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::runtimes::RuntimeType;
@@ -286,6 +290,8 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source("kafka", KafkaSourceFactory);
         #[cfg(feature = "kinesis")]
         source_factory.add_source("kinesis", KinesisSourceFactory);
+        #[cfg(feature = "pulsar")]
+        source_factory.add_source("pulsar", PulsarSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
         source_factory.add_source("void", VoidSourceFactory);
         source_factory.add_source("ingest-api", IngestApiSourceFactory);

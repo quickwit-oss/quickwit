@@ -122,7 +122,7 @@ impl SourceConfigV0_4 {
                     )
                 }
             }
-            SourceParams::Kafka(_) | SourceParams::Kinesis(_) => {
+            SourceParams::Kafka(_) | SourceParams::Kinesis(_) | SourceParams::Pulsar(_) => {
                 // TODO consider any validation opportunity
             }
             SourceParams::Vec(_)

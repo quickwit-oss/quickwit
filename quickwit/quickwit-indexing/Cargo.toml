@@ -13,6 +13,7 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
+base64 = { workspace = true }
 backoff = { workspace = true, optional = true }
 byte-unit = { workspace = true }
 fail = { workspace = true }
@@ -24,6 +25,7 @@ libz-sys = { workspace = true, optional = true }
 once_cell = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
+pulsar = { workspace = true, optional = true }
 rdkafka = { workspace = true, optional = true }
 rusoto_core = { workspace = true, optional = true }
 rusoto_kinesis = { workspace = true, optional = true }
@@ -53,6 +55,7 @@ quickwit-storage = { workspace = true }
 [features]
 kafka = ["rdkafka", "backoff"]
 kafka-broker-tests = []
+pulsar-broker-tests = []
 vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored", "rdkafka/gssapi-vendored"]
 vendored-kafka-macos = ["kafka", "libz-sys/static", "openssl/vendored"]
 kinesis = ["rusoto_core", "rusoto_kinesis", "quickwit-aws/kinesis"]
