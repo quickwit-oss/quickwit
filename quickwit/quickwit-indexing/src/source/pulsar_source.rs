@@ -144,7 +144,9 @@ impl PulsarSource {
         let pulsar: Pulsar<_> = builder.build().await?;
 
         let partition_id = PartitionId::from(params.topic.as_str());
-        let seek_to = checkpoint.position_for_partition(&partition_id).and_then(msg_id_from_position_and_partition);
+        let seek_to = checkpoint
+            .position_for_partition(&partition_id)
+            .and_then(msg_id_from_position);
         let pulsar = spawn_message_listener(params.clone(), pulsar, seek_to).await?;
 
         Ok(Self {
@@ -162,7 +164,7 @@ impl PulsarSource {
     }
 
     fn process_message(&mut self, message: Message<PulsarMessage>, batch: &mut BatchBuilder) -> anyhow::Result<()> {
-        let current_position = msg_id_to_position_and_partition(message.message_id());
+        let current_position = msg_id_to_position(message.message_id());
 
         let doc = match message.deserialize() {
             Err(e) => {
@@ -377,37 +379,38 @@ async fn spawn_message_listener(
 }
 
 
-fn msg_id_to_position_and_partition(msg: &MessageIdData) -> Position {
+fn msg_id_to_position(msg: &MessageIdData) -> Position {
     // The order of these fields are important as they affect the sorting
     // of the checkpoint positions.
     // TODO: Confirm this layout is correct?
     let id_str = format!(
-        "{:0>20},{:0>20},{},{}",
+        "{:0>20},{:0>20},{},{},{}",
         msg.ledger_id,
         msg.entry_id,
         msg.batch_index.map(|v| format!("{:010}", v)).unwrap_or_default(),
+        msg.partition.map(|v| format!("{:010}", v)).unwrap_or_default(),
         msg.batch_size.map(|v| format!("{:010}", v)).unwrap_or_default(),
     );
 
     Position::from(id_str)
 }
 
-fn msg_id_from_position_and_partition(partition: &PartitionId, pos: &Position) -> Option<MessageIdData> {
+fn msg_id_from_position(pos: &Position) -> Option<MessageIdData> {
     let id_str = pos.as_str();
     let mut parts = id_str.split(',');
 
     let ledger_id = parts.next()?.parse::<u64>().ok()?;
     let entry_id = parts.next()?.parse::<u64>().ok()?;
     let batch_index = parts.next()?.parse::<i32>().ok();
+    let partition = parts.next()?.parse::<i32>().ok();
     let batch_size = parts.next()?.parse::<i32>().ok();
-
-    // TODO: Add partition handling.
 
     Some(MessageIdData {
         ledger_id,
         entry_id,
         batch_index,
         batch_size,
+        partition,
         ack_set: Vec::new(),
         first_chunk_message_id: None,
     })
