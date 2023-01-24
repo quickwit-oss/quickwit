@@ -1810,4 +1810,51 @@ mod tests {
             assert_eq!(span_timestamps_range, 1674611388..=1674611393);
         }
     }
+
+    fn hit(responses: &[&str]) -> Vec<quickwit_proto::Hit> {
+        responses
+            .iter()
+            .map(|resp| quickwit_proto::Hit {
+                json: resp.to_string(),
+                partial_hit: None,
+                snippet: None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn test_get_service() {
+        let mut service = quickwit_search::MockSearchService::new();
+        service
+            .expect_root_search()
+            .withf(|req| {
+                req.index_id == "otel-trace-v0"
+                    && req.query == "*"
+                    && req.start_timestamp.is_some()
+                    && req.start_offset == 0
+            })
+            .return_once(|_| {
+                Ok(quickwit_proto::SearchResponse {
+                    num_hits: 5,
+                    hits: hit(&[
+                        r#"{"service_name": "service1"}"#,
+                        r#"{"service_name": "service1"}"#,
+                        r#"{"service_name": "service1"}"#,
+                        r#"{"service_name": "service2"}"#,
+                        r#"{"service_name": "service2"}"#,
+                        r#"{"service_name": "service3"}"#,
+                    ]),
+                    elapsed_time_micros: 0,
+                    errors: Vec::new(),
+                    aggregation: None,
+                })
+            });
+
+        let service = Arc::new(service);
+        let jaeger = JaegerService::new(service);
+
+        let request = tonic::Request::new(crate::GetServicesRequest {});
+        let result = jaeger.get_services(request).await.unwrap();
+        assert_eq!(result.get_ref().services.len(), 3);
+    }
 }
