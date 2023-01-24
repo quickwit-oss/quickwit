@@ -44,7 +44,7 @@ During development, the server will serve the local files. When building the bin
 
 ## Elastic Compatible API
 
-To help implement Elasticsearch compatible API in Quickwit, we generate endpoints and related types using the [elastic-api-generator](../quickwit-cli/src/elastic_api_generator.rs) binary.
+To help implement Elasticsearch compatible API in Quickwit, we generate endpoints and related types using the [elastic-api-generator](./src/elastic_api_generator.rs) binary.
 
 To update the generated file, you will have to: 
 - Download the spec files from the official Elasticsearch repository by running `cargo run --bin elastic-api-generator download` command.
