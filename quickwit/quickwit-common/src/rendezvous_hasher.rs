@@ -17,24 +17,21 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::cmp::Reverse;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-/// Computes the affinity of a node with a given `key`.
-///
-/// We rely on rendez-vous hashing here.
-fn node_affinity<T: Hash, U: Hash>(node: T, key: &U) -> u64 {
+/// Computes the hash of the `node` and `key`.
+fn node_key_hash<T: Hash, U: Hash>(node: T, key: &U) -> u64 {
     let mut state = DefaultHasher::new();
     key.hash(&mut state);
     node.hash(&mut state);
     state.finish()
 }
 
-/// Sorts the list of node base on rendez-vous-hashing.
-/// Nodes are ordered by decreasing order of computed `hash_key`
+/// Sorts the list of node by (node, key) hashes.
+/// This is called rendezvous hashing.
 pub fn sort_by_rendez_vous_hash<T: Hash, U: Hash>(nodes: &mut [T], key: U) {
-    nodes.sort_by_cached_key(|node| Reverse(node_affinity(node, &key)));
+    nodes.sort_by_cached_key(|node| node_key_hash(node, &key));
 }
 
 #[cfg(test)]
@@ -44,7 +41,7 @@ mod tests {
     use super::*;
 
     fn test_socket_addr(last_byte: u8) -> SocketAddr {
-        ([127, 0, 0, last_byte], 10_000u16).into()
+        ([127, 0, 0, last_byte], 30u16).into()
     }
 
     #[test]

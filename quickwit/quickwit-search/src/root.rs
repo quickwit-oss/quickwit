@@ -757,11 +757,11 @@ mod tests {
         let client_pool = ServiceClientPool::for_clients_list(vec![
             SearchServiceClient::from_service(
                 Arc::new(mock_search_service1),
-                ([127, 0, 0, 1], 1000).into(),
+                ([127, 0, 0, 1], 30).into(),
             ),
             SearchServiceClient::from_service(
                 Arc::new(mock_search_service2),
-                ([127, 0, 0, 1], 1001).into(),
+                ([127, 0, 0, 1], 10).into(),
             ),
         ]);
         let search_job_placer = SearchJobPlacer::new(client_pool);

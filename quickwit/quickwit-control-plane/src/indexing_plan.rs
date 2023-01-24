@@ -481,10 +481,10 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         // Rdv hashing for (index 1, source) returns [node 2, node 1].
         let index_1 = "1";
-        let source_1 = "1";
+        let source_1 = "source-1";
         // Rdv hashing for (index 2, source) returns [node 1, node 2].
         let index_2 = "2";
-        let source_2 = "0";
+        let source_2 = "source-2";
         let mut source_configs_map = HashMap::new();
         let kafka_index_source_id_1 = IndexSourceId {
             index_id: index_1.to_string(),
