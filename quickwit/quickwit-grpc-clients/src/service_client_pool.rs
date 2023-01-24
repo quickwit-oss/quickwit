@@ -111,7 +111,7 @@ impl<T: ServiceClient> ServiceClientPool<T> {
         Ok(pool)
     }
 
-    /// Creates a [`ServiceClientPool`] from a static list of addresses.
+    /// Creates a [`ServiceClientPool`] from a static list of socket addresses.
     pub async fn for_addrs(grpc_addrs: &[SocketAddr]) -> anyhow::Result<Self> {
         let mut clients_map = HashMap::default();
         for &grpc_addr in grpc_addrs {
@@ -121,7 +121,7 @@ impl<T: ServiceClient> ServiceClientPool<T> {
         Ok(Self::new(clients_map))
     }
 
-    /// Creates a [`ServiceClientPool`] from a static list of addresses.
+    /// Creates a [`ServiceClientPool`] from a static list of service clients.
     pub fn for_clients_list(clients: Vec<T>) -> Self {
         let mut clients_map = HashMap::default();
         for client in clients {
