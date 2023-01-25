@@ -88,10 +88,10 @@ doc_mapping:
       type: datetime
       input_formats:
         - unix_timestamp
-      stored: false
       indexed: false
       fast: true
       precision: seconds
+      stored: false
     - name: span_start_timestamp_nanos
       type: u64
       indexed: false
@@ -100,9 +100,9 @@ doc_mapping:
       indexed: false
     - name: span_duration_millis
       type: u64
-      stored: false
       indexed: false
       fast: true
+      stored: false
     - name: span_attributes
       type: json
       tokenizer: raw
@@ -124,6 +124,11 @@ doc_mapping:
     - name: events
       type: array<json>
       tokenizer: raw
+    - name: event_names
+      type: array<text>
+      tokenizer: default
+      record: position
+      stored: false
     - name: links
       type: array<json>
       tokenizer: raw
@@ -169,6 +174,8 @@ pub struct Span {
     pub parent_span_id: Option<Base64>,
     #[serde(default)]
     pub events: Vec<Event>,
+    #[serde(default)]
+    pub event_names: Vec<String>,
     #[serde(default)]
     pub links: Vec<Link>,
 }
@@ -326,7 +333,7 @@ impl OtlpGrpcTraceService {
                     let span_duration_millis = Some(span_duration_nanos / 1_000_000);
                     let span_attributes = extract_attributes(span.attributes);
 
-                    let events = span
+                    let events: Vec<Event> = span
                         .events
                         .into_iter()
                         .map(|event| Event {
@@ -336,7 +343,11 @@ impl OtlpGrpcTraceService {
                             event_dropped_attributes_count: event.dropped_attributes_count as u64,
                         })
                         .collect();
-                    let links = span
+                    let event_names: Vec<String> = events
+                        .iter()
+                        .map(|event| event.event_name.clone())
+                        .collect();
+                    let links: Vec<Link> = span
                         .links
                         .into_iter()
                         .map(|link| Link {
@@ -376,6 +387,7 @@ impl OtlpGrpcTraceService {
                         span_status: span.status.map(|status| status.into()),
                         parent_span_id,
                         events,
+                        event_names,
                         links,
                     };
                     let span_json = match serde_json::to_vec(&span) {
