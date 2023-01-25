@@ -466,7 +466,6 @@ mod pulsar_broker_tests {
     use std::sync::Arc;
 
     use futures::future::join_all;
-    use pulsar::SerializeMessage;
     use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
@@ -582,7 +581,6 @@ mod pulsar_broker_tests {
             let msg = (message_fn)(id).to_string();
             pending_messages.push(msg);
         }
-        info!(msgs = ?pending_messages, "Data messages being sent??");
 
         let futures = producer.send_all(pending_messages.clone()).await?;
         let receipts = join_all(futures).await;
@@ -754,7 +752,6 @@ mod pulsar_broker_tests {
             doc_processor_mailbox: doc_processor_mailbox.clone(),
         };
         let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
-        info!("Creating source handle.");
 
         let expected_docs = populate_topic(&topic, 10, move |id| {
             json!({
