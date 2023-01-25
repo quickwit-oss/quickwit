@@ -299,6 +299,11 @@ impl JaegerService {
         operation_name: &'static str,
         request_start: Instant,
     ) -> SpanStream {
+        let (tx, rx) = mpsc::channel(1);
+
+        if trace_ids.is_empty() {
+            return ReceiverStream::new(rx);
+        }
         let num_traces = trace_ids.len() as u64;
         let mut query = String::new();
 
@@ -324,7 +329,6 @@ impl JaegerService {
         };
 
         let search_service = self.search_service.clone();
-        let (tx, rx) = mpsc::channel(1);
 
         tokio::task::spawn(async move {
             let search_response = match search_service.root_search(search_request).await {
