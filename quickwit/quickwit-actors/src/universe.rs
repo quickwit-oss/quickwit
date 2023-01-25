@@ -19,8 +19,6 @@
 
 use std::time::Duration;
 
-use futures::Future;
-
 use crate::mailbox::create_mailbox;
 use crate::registry::ActorObservation;
 use crate::scheduler::start_scheduler;
@@ -104,19 +102,6 @@ impl Universe {
     /// universe.
     pub async fn sleep(&self, duration: Duration) {
         self.spawn_ctx.scheduler_client.sleep(duration).await;
-    }
-
-    /// This function acts as a drop-in replacement of
-    /// `tokio::time::sleep`.
-    ///
-    /// It can however be accelerated when using a time-accelerated
-    /// universe.
-    pub async fn timeout<O>(
-        &self,
-        duration: Duration,
-        fut: impl Future<Output = O>,
-    ) -> Result<O, ()> {
-        self.spawn_ctx.scheduler_client.timeout(duration, fut).await
     }
 
     pub fn spawn_builder<A: Actor>(&self) -> SpawnBuilder<A> {
