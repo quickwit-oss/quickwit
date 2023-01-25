@@ -154,7 +154,8 @@ impl PulsarSource {
                 previous_positions.insert(partition_id, position);
             }
         }
-        let pulsar = spawn_message_listener(params.clone(), pulsar, previous_positions.clone()).await?;
+        let pulsar =
+            spawn_message_listener(params.clone(), pulsar, previous_positions.clone()).await?;
 
         Ok(Self {
             ctx,
@@ -181,7 +182,6 @@ impl PulsarSource {
             Ok(doc) => doc,
         };
 
-        info!(doc = %doc, "Message Data");
         self.add_doc_to_batch(&message.topic, current_position, doc, batch)
     }
 
@@ -198,12 +198,11 @@ impl PulsarSource {
             return Ok(());
         }
 
-        info!(position = ?position, doc = %doc, "Message!");
-
         let partition = PartitionId::from(topic);
         let num_bytes = doc.as_bytes().len();
 
-        let previous_position = self.previous_positions
+        let previous_position = self
+            .previous_positions
             .insert(partition.clone(), position.clone())
             .unwrap_or(Position::Beginning);
 
@@ -368,7 +367,9 @@ async fn spawn_message_listener(
             debug!("Seeking to last checkpoint position.");
             for topic in params.topics.iter() {
                 let partition = PartitionId::from(topic.as_str());
-                let seek_to = previous_positions.get(&partition).and_then(msg_id_from_position);
+                let seek_to = previous_positions
+                    .get(&partition)
+                    .and_then(msg_id_from_position);
 
                 if seek_to.is_some() {
                     consumer.seek(None, seek_to, None, pulsar.clone()).await?;
@@ -379,7 +380,6 @@ async fn spawn_message_listener(
 
             'outer: loop {
                 while let Ok(msg_opt) = timeout(MESSAGE_WAIT_TIMEOUT, consumer.next()).await {
-                    info!("Got message!");
                     match msg_opt {
                         None => break 'outer,
                         Some(msg) => {
@@ -484,7 +484,6 @@ mod pulsar_broker_tests {
     static SUBSCRIPTION: &str = "quickwit-test";
     static CONSUMER_NAME: &str = "quickwit-tester";
 
-
     macro_rules! positions {
         ($($partition:expr => $position:expr $(,)?)*) => {{
             let mut positions = BTreeMap::new();
@@ -583,6 +582,7 @@ mod pulsar_broker_tests {
             let msg = (message_fn)(id).to_string();
             pending_messages.push(msg);
         }
+        info!(msgs = ?pending_messages, "Data messages being sent??");
 
         let futures = producer.send_all(pending_messages.clone()).await?;
         let receipts = join_all(futures).await;
@@ -643,9 +643,9 @@ mod pulsar_broker_tests {
     #[tokio::test]
     async fn test_doc_batching_logic() {
         let metastore = metastore_for_test();
-        let topic = append_random_suffix("test-pulsar-source--basic-indexing-behaviour--topic");
+        let topic = append_random_suffix("test-pulsar-source-topic");
 
-        let index_id = append_random_suffix("test-pulsar-source--basic-indexing-behaviour--index");
+        let index_id = append_random_suffix("test-pulsar-source-index");
         let (_source_id, source_config) = get_source_config(&topic);
         let params = if let SourceParams::Pulsar(params) = source_config.clone().source_params {
             params
@@ -687,7 +687,10 @@ mod pulsar_broker_tests {
         assert_eq!(pulsar_source.state.num_invalid_messages, 1);
         assert_eq!(pulsar_source.state.num_messages_processed, 1);
         assert_eq!(pulsar_source.state.num_bytes_processed, 14);
-        assert_eq!(pulsar_source.previous_positions, positions!(topic.as_str() => 1u64));
+        assert_eq!(
+            pulsar_source.previous_positions,
+            positions!(topic.as_str() => 1u64)
+        );
         assert_eq!(batch.num_bytes, 14);
         assert_eq!(batch.docs.len(), 1);
 
@@ -700,7 +703,10 @@ mod pulsar_broker_tests {
         assert_eq!(pulsar_source.state.num_invalid_messages, 1);
         assert_eq!(pulsar_source.state.num_messages_processed, 2);
         assert_eq!(pulsar_source.state.num_bytes_processed, 30);
-        assert_eq!(pulsar_source.previous_positions, positions!(topic.as_str() => 4u64));
+        assert_eq!(
+            pulsar_source.previous_positions,
+            positions!(topic.as_str() => 4u64)
+        );
         assert_eq!(batch.num_bytes, 16);
         assert_eq!(batch.docs.len(), 1);
 
@@ -727,16 +733,6 @@ mod pulsar_broker_tests {
         let (source_id, source_config) = get_source_config(&topic);
 
         setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
-        let expected_docs = populate_topic(
-            &topic,
-            10,
-            move |id| {
-                json!({
-                    "id": id,
-                    "timestamp": 1674515715,
-                    "body": "Hello, world! This is some test data.",
-                })
-        }).await.unwrap();
 
         let ctx = SourceExecutionContext::for_test(
             metastore,
@@ -747,7 +743,10 @@ mod pulsar_broker_tests {
         let start_checkpoint = SourceCheckpoint::default();
 
         let source_loader = quickwit_supported_sources();
-        let source = source_loader.load_source(ctx, start_checkpoint).await.expect("Load source.");
+        let source = source_loader
+            .load_source(ctx, start_checkpoint)
+            .await
+            .expect("Load source.");
 
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_actor = SourceActor {
@@ -757,11 +756,21 @@ mod pulsar_broker_tests {
         let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
         info!("Creating source handle.");
 
+        let expected_docs = populate_topic(&topic, 10, move |id| {
+            json!({
+                "id": id,
+                "timestamp": 1674515715,
+                "body": "Hello, world! This is some test data.",
+            })
+        })
+        .await
+        .unwrap();
+
         loop {
             let observation = source_handle.observe().await;
             let value = observation.state;
-            info!(value = ?value, "Data");
-            let num_messages_processed = value.get("num_messages_processed")
+            let num_messages_processed = value
+                .get("num_messages_processed")
                 .unwrap()
                 .as_u64()
                 .unwrap();
@@ -777,7 +786,8 @@ mod pulsar_broker_tests {
         let batch = merge_doc_batches(messages);
         assert_eq!(batch.docs, expected_docs);
 
-        let num_bytes = expected_docs.iter()
+        let num_bytes = expected_docs
+            .iter()
             .map(|v| v.as_bytes().len())
             .sum::<usize>();
         let expected_state = json!({
