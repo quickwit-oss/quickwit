@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::mem;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -97,10 +97,8 @@ pub struct PulsarSource {
     ctx: Arc<SourceExecutionContext>,
     pulsar: PulsarConsumer,
     params: PulsarSourceParams,
+    previous_positions: BTreeMap<PartitionId, Position>,
     state: PulsarSourceState,
-
-    partition_id: PartitionId,
-    previous_position: Position,
 }
 
 impl PulsarSource {
@@ -141,29 +139,29 @@ impl PulsarSource {
         info!(
             index_id=%ctx.index_id,
             source_id=%ctx.source_config.source_id,
-            topic=%params.topic,
+            topics=?params.topics,
             "Starting Pulsar source."
         );
 
         let pulsar: Pulsar<_> = builder.build().await?;
 
-        let partition_id = PartitionId::from(params.topic.as_str());
-        let seek_to = checkpoint
-            .position_for_partition(&partition_id)
-            .and_then(msg_id_from_position);
-        let pulsar = spawn_message_listener(params.clone(), pulsar, seek_to).await?;
+        let mut previous_positions = BTreeMap::new();
+        for topic in params.topics.iter() {
+            let partition_id = PartitionId::from(topic.as_str());
+            let position_opt = checkpoint.position_for_partition(&partition_id).cloned();
+
+            if let Some(position) = position_opt {
+                previous_positions.insert(partition_id, position);
+            }
+        }
+        let pulsar = spawn_message_listener(params.clone(), pulsar, previous_positions.clone()).await?;
 
         Ok(Self {
             ctx,
             pulsar,
             params,
+            previous_positions,
             state: PulsarSourceState::default(),
-
-            previous_position: checkpoint
-                .position_for_partition(&partition_id)
-                .cloned()
-                .unwrap_or(Position::Beginning),
-            partition_id,
         })
     }
 
@@ -183,11 +181,12 @@ impl PulsarSource {
             Ok(doc) => doc,
         };
 
-        self.add_doc_to_batch(current_position, doc, batch)
+        self.add_doc_to_batch(&message.topic, current_position, doc, batch)
     }
 
     fn add_doc_to_batch(
         &mut self,
+        topic: &str,
         position: Position,
         doc: String,
         batch: &mut BatchBuilder,
@@ -198,12 +197,16 @@ impl PulsarSource {
             return Ok(());
         }
 
+        let partition = PartitionId::from(topic);
         let num_bytes = doc.as_bytes().len();
 
-        let previous_position = mem::replace(&mut self.previous_position, position.clone());
+        let previous_position = self.previous_positions
+            .insert(partition.clone(), position.clone())
+            .unwrap_or(Position::Beginning);
+
         batch
             .checkpoint_delta
-            .record_partition_delta(self.partition_id.clone(), previous_position, position)
+            .record_partition_delta(partition, previous_position, position)
             .context("Failed to record partition delta.")?;
         batch.push(doc, num_bytes as u64);
 
@@ -279,7 +282,7 @@ impl Source for PulsarSource {
         json!({
             "index_id": self.ctx.index_id,
             "source_id": self.ctx.source_config.source_id,
-            "topic": self.params.topic,
+            "topics": self.params.topics,
             "subscription": self.params.subscription,
             "consumer_name": self.params.consumer_name,
             "num_bytes_processed": self.state.num_bytes_processed,
@@ -326,6 +329,7 @@ struct PulsarConsumer {
     last_ack: watch::Sender<SourceCheckpoint>,
 }
 
+#[tracing::instrument(name = "pulsar-consumer", skip(pulsar))]
 /// Spawns a background task listening for incoming messages to
 /// process.
 ///
@@ -336,7 +340,7 @@ struct PulsarConsumer {
 async fn spawn_message_listener(
     params: PulsarSourceParams,
     pulsar: Pulsar<TokioExecutor>,
-    seek_to: Option<MessageIdData>,
+    previous_positions: BTreeMap<PartitionId, Position>,
 ) -> anyhow::Result<PulsarConsumer> {
     let (messages_tx, messages_rx) = mpsc::channel(100);
     let (last_ack_tx, last_ack_rx) = watch::channel(SourceCheckpoint::default());
@@ -351,16 +355,21 @@ async fn spawn_message_listener(
         let fut = set.run_until(async move {
             let mut consumer: Consumer<PulsarMessage, _> = pulsar
                 .consumer()
-                .with_topic(&params.topic)
+                .with_topics(&params.topics)
                 .with_consumer_name(&params.consumer_name)
                 .with_subscription(&params.subscription)
-                .with_subscription_type(SubType::Failover)
+                .with_subscription_type(SubType::Shared)
                 .build()
                 .await?;
 
-            if seek_to.is_some() {
-                debug!(seek_to = ?seek_to, "Seeking to last checkpoint position.");
-                consumer.seek(None, seek_to, None, pulsar).await?;
+            debug!("Seeking to last checkpoint position.");
+            for topic in params.topics.iter() {
+                let partition = PartitionId::from(topic.as_str());
+                let seek_to = previous_positions.get(&partition).and_then(msg_id_from_position);
+
+                if seek_to.is_some() {
+                    consumer.seek(None, seek_to, None, pulsar.clone()).await?;
+                }
             }
 
             let _ = ready.send(());
@@ -467,6 +476,16 @@ mod pulsar_broker_tests {
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
 
+    macro_rules! positions {
+        ($($partition:expr => $position:expr $(,)?)*) => {{
+            let mut positions = BTreeMap::new();
+            $(
+                positions.insert(PartitionId::from($partition), Position::from($position));
+            )*
+            positions
+        }};
+    }
+
     async fn setup_index(
         metastore: Arc<dyn Metastore>,
         index_id: &str,
@@ -515,7 +534,7 @@ mod pulsar_broker_tests {
             desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::Pulsar(PulsarSourceParams {
-                topic: topic.to_string(),
+                topics: vec![topic.to_string()],
                 subscription: "quickwit-test".to_string(),
                 address: PULSAR_URI.to_string(),
                 consumer_name: "quickwit-tester".to_string(),
@@ -633,12 +652,12 @@ mod pulsar_broker_tests {
         let position = Position::Beginning;
         let mut batch = BatchBuilder::default();
         pulsar_source
-            .add_doc_to_batch(position, "".to_string(), &mut batch)
+            .add_doc_to_batch(&topic, position, "".to_string(), &mut batch)
             .expect("Add batch should not error on empty doc.");
         assert_eq!(pulsar_source.state.num_invalid_messages, 1);
         assert_eq!(pulsar_source.state.num_messages_processed, 0);
         assert_eq!(pulsar_source.state.num_bytes_processed, 0);
-        assert_eq!(pulsar_source.previous_position, Position::Beginning);
+        assert!(pulsar_source.previous_positions.is_empty());
         assert_eq!(batch.num_bytes, 0);
         assert!(batch.docs.is_empty());
 
@@ -646,12 +665,13 @@ mod pulsar_broker_tests {
         let mut batch = BatchBuilder::default();
         let doc = "some-demo-data".to_string();
         pulsar_source
-            .add_doc_to_batch(position, doc, &mut batch)
+            .add_doc_to_batch(&topic, position, doc, &mut batch)
             .expect("Add batch should not error on empty doc.");
+
         assert_eq!(pulsar_source.state.num_invalid_messages, 1);
         assert_eq!(pulsar_source.state.num_messages_processed, 1);
         assert_eq!(pulsar_source.state.num_bytes_processed, 14);
-        assert_eq!(pulsar_source.previous_position, Position::from(1u64));
+        assert_eq!(pulsar_source.previous_positions, positions!(topic.as_str() => 1u64));
         assert_eq!(batch.num_bytes, 14);
         assert_eq!(batch.docs.len(), 1);
 
@@ -659,12 +679,12 @@ mod pulsar_broker_tests {
         let mut batch = BatchBuilder::default();
         let doc = "some-demo-data-2".to_string();
         pulsar_source
-            .add_doc_to_batch(position, doc, &mut batch)
+            .add_doc_to_batch(&topic, position, doc, &mut batch)
             .expect("Add batch should not error on empty doc.");
         assert_eq!(pulsar_source.state.num_invalid_messages, 1);
         assert_eq!(pulsar_source.state.num_messages_processed, 2);
         assert_eq!(pulsar_source.state.num_bytes_processed, 30);
-        assert_eq!(pulsar_source.previous_position, Position::from(4u64));
+        assert_eq!(pulsar_source.previous_positions, positions!(topic.as_str() => 4u64));
         assert_eq!(batch.num_bytes, 16);
         assert_eq!(batch.docs.len(), 1);
 

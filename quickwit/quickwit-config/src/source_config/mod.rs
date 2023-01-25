@@ -353,8 +353,8 @@ pub struct VoidSourceParams;
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PulsarSourceParams {
-    /// Name of the topic that the source consumes.
-    pub topic: String,
+    /// List of the topics that the source consumes.
+    pub topics: Vec<String>,
     /// The name of the topic subscription.
     pub subscription: String,
     /// The connection URI for pulsar.

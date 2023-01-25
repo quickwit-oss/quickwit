@@ -4417,7 +4417,6 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "backoff",
- "base64 0.21.0",
  "byte-unit",
  "bytes",
  "chitchat",
