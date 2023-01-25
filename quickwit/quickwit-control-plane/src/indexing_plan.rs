@@ -164,16 +164,15 @@ pub(crate) fn build_physical_indexing_plan(
         // `build_indexing_plan`, we make sure to always respect the constraint
         // `max_num_pipelines_per_indexer` by limiting the number of indexing tasks per
         // source.
-        let best_node_opt: Option<&str> = candidates
+        let best_node_score_opt =
+            candidates
             .iter()
-            .map(|&node_id| (node_id, compute_node_score(node_id, &plan)))
-            // Note(fmassot): we can't use max_by as, in case of equality, it returns the last
-            // element and we want to preserve the order given by the rendez-vous hashing.
-            .sorted_by(cmp_node_by_reverse_score)
-            .next()
-            .map(|(node_id, _)| node_id);
-        if let Some(best_node) = best_node_opt {
-            plan.assign_indexing_task(best_node.to_string(), indexing_task);
+            .rev() //< we use the reverse iterator, because in case of a tie, max picks the last element.
+            // we want the first one in order to maximize affinity.
+            .map(|&node_id| NodeScore { node_id, score: compute_node_score(node_id, &plan) })
+            .max();
+        if let Some(best_node_score) = best_node_score_opt {
+            plan.assign_indexing_task(best_node_score.node_id.to_string(), indexing_task);
         } else {
             tracing::warn!(indexing_task=?indexing_task, "No indexer candidate available for the indexing task, cannot assign it to an indexer. This should not happen.");
         };
@@ -181,12 +180,30 @@ pub(crate) fn build_physical_indexing_plan(
     plan
 }
 
-// Order by score between two tuples (node ID, score).
-fn cmp_node_by_reverse_score(left: &(&str, f32), right: &(&str, f32)) -> Ordering {
-    left.1
-        .partial_cmp(&right.1)
-        .unwrap_or(Ordering::Equal)
-        .reverse()
+struct NodeScore<'a> {
+    node_id: &'a str,
+    score: f32,
+}
+
+impl<'a> PartialEq for NodeScore<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.score == other.score
+    }
+}
+
+impl<'a> Eq for NodeScore<'a> {}
+
+// Sort by score and then node_id.
+impl<'a> PartialOrd for NodeScore<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        (self.score, self.node_id).partial_cmp(&(other.score, other.node_id))
+    }
+}
+
+impl<'a> Ord for NodeScore<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+    }
 }
 
 /// Returns node candidates IDs that can run the given [`IndexingTask`].
@@ -481,10 +498,10 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         // Rdv hashing for (index 1, source) returns [node 2, node 1].
         let index_1 = "1";
-        let source_1 = "source-1";
+        let source_1 = "1";
         // Rdv hashing for (index 2, source) returns [node 1, node 2].
         let index_2 = "2";
-        let source_2 = "source-2";
+        let source_2 = "0";
         let mut source_configs_map = HashMap::new();
         let kafka_index_source_id_1 = IndexSourceId {
             index_id: index_1.to_string(),
