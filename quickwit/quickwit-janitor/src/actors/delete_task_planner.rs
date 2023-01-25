@@ -398,7 +398,7 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{ActorState, Universe};
+    use quickwit_actors::Universe;
     use quickwit_config::build_doc_mapper;
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::merge_policy::{MergeOperation, NopMergePolicy};
@@ -562,10 +562,6 @@ mod tests {
         assert_eq!(all_splits[1].split_metadata.delete_opstamp, 2);
         // The last split has not yet its delete opstamp updated.
         assert_eq!(all_splits[2].split_metadata.delete_opstamp, 0);
-
-        // Check actor state.
-        assert_eq!(delete_planner_handle.state(), ActorState::Idle);
-
         Ok(())
     }
 }

@@ -37,6 +37,14 @@ impl<T> LockedOption<T> {
         }
     }
 
+    pub fn is_some(&self) -> bool {
+        self.has_val.load(Ordering::Acquire)
+    }
+
+    pub fn is_none(&self) -> bool {
+        !self.is_some()
+    }
+
     pub fn take(&self) -> Option<T> {
         if !self.has_val.load(Ordering::Acquire) {
             return None;
@@ -174,6 +182,12 @@ pub struct Receiver<T> {
 }
 
 impl<T> Receiver<T> {
+    pub fn is_empty(&self) -> bool {
+        self.low_priority_rx.is_empty()
+            && self.pending_low_priority_message.is_none()
+            && self.high_priority_rx.is_empty()
+    }
+
     pub fn try_recv_high_priority_message(&self) -> Result<T, RecvError> {
         match self.high_priority_rx.try_recv() {
             Ok(msg) => Ok(msg),
@@ -198,7 +212,6 @@ impl<T> Receiver<T> {
         }
     }
 
-    #[allow(dead_code)] // temporary
     pub fn try_recv(&self) -> Result<T, RecvError> {
         if let Ok(msg) = self.high_priority_rx.try_recv() {
             return Ok(msg);

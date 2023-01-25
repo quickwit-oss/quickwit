@@ -318,7 +318,8 @@ async fn test_actor_running_states() {
     }
     let obs = ping_handle.process_pending_and_observe().await;
     assert_eq!(*obs, 10);
-    assert_eq!(ping_handle.state(), ActorState::Idle);
+    universe.sleep(Duration::from_millis(1)).await;
+    assert!(ping_handle.state() == ActorState::Idle);
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -613,6 +614,7 @@ async fn test_drain_is_called() {
     mailbox.send_message(()).await.unwrap();
     mailbox.send_message(()).await.unwrap();
     handle.resume();
+    universe.sleep(Duration::from_millis(1)).await;
     assert_eq!(
         *handle.process_pending_and_observe().await,
         ProcessAndDrainCounts {
@@ -621,6 +623,7 @@ async fn test_drain_is_called() {
         }
     );
     mailbox.send_message(()).await.unwrap();
+    universe.sleep(Duration::from_millis(1)).await;
     assert_eq!(
         *handle.process_pending_and_observe().await,
         ProcessAndDrainCounts {

@@ -99,7 +99,7 @@ impl Universe {
     /// `tokio::time::sleep`.
     ///
     /// It can however be accelerated when using a time-accelerated
-    /// Universe.
+    /// universe.
     pub async fn sleep(&self, duration: Duration) {
         self.spawn_ctx.scheduler_client.sleep(duration).await;
     }
