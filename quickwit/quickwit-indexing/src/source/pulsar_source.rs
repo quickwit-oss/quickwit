@@ -181,6 +181,7 @@ impl PulsarSource {
             Ok(doc) => doc,
         };
 
+        info!(doc = %doc, "Message Data");
         self.add_doc_to_batch(&message.topic, current_position, doc, batch)
     }
 
@@ -196,6 +197,8 @@ impl PulsarSource {
             self.state.num_invalid_messages += 1;
             return Ok(());
         }
+
+        info!(position = ?position, doc = %doc, "Message!");
 
         let partition = PartitionId::from(topic);
         let num_bytes = doc.as_bytes().len();
@@ -376,6 +379,7 @@ async fn spawn_message_listener(
 
             'outer: loop {
                 while let Ok(msg_opt) = timeout(MESSAGE_WAIT_TIMEOUT, consumer.next()).await {
+                    info!("Got message!");
                     match msg_opt {
                         None => break 'outer,
                         Some(msg) => {
@@ -463,6 +467,7 @@ mod pulsar_broker_tests {
 
     use futures::future::join_all;
     use pulsar::SerializeMessage;
+    use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{
@@ -473,8 +478,12 @@ mod pulsar_broker_tests {
     use super::*;
     use crate::new_split_id;
     use crate::source::pulsar_source::{msg_id_from_position, msg_id_to_position};
+    use crate::source::quickwit_supported_sources;
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
+    static SUBSCRIPTION: &str = "quickwit-test";
+    static CONSUMER_NAME: &str = "quickwit-tester";
+
 
     macro_rules! positions {
         ($($partition:expr => $position:expr $(,)?)*) => {{
@@ -535,9 +544,9 @@ mod pulsar_broker_tests {
             enabled: true,
             source_params: SourceParams::Pulsar(PulsarSourceParams {
                 topics: vec![topic.to_string()],
-                subscription: "quickwit-test".to_string(),
+                subscription: SUBSCRIPTION.to_string(),
                 address: PULSAR_URI.to_string(),
-                consumer_name: "quickwit-tester".to_string(),
+                consumer_name: CONSUMER_NAME.to_string(),
                 authentication: None,
             }),
             transform_config: None,
@@ -545,38 +554,45 @@ mod pulsar_broker_tests {
         (source_id, source_config)
     }
 
-    async fn populate_topic<M, P>(
+    fn merge_doc_batches(batches: Vec<RawDocBatch>) -> RawDocBatch {
+        let mut merged_batch = RawDocBatch::default();
+        for batch in batches {
+            merged_batch.docs.extend(batch.docs);
+            merged_batch
+                .checkpoint_delta
+                .extend(batch.checkpoint_delta)
+                .expect("Merge batches.");
+        }
+        merged_batch.docs.sort();
+        merged_batch
+    }
+
+    async fn populate_topic<M>(
         topic: &str,
         num_messages: usize,
-        message_fn: &M,
-    ) -> anyhow::Result<Vec<MessageIdData>>
+        message_fn: M,
+    ) -> anyhow::Result<Vec<String>>
     where
-        M: Fn(usize) -> P,
-        P: SerializeMessage,
+        M: Fn(usize) -> JsonValue,
     {
         let client = Pulsar::builder(PULSAR_URI, TokioExecutor).build().await?;
         let mut producer = client.producer().with_topic(topic).build().await?;
 
         let mut pending_messages = Vec::with_capacity(num_messages);
         for id in 0..num_messages {
-            let msg = (message_fn)(id);
+            let msg = (message_fn)(id).to_string();
             pending_messages.push(msg);
         }
 
-        let futures = producer.send_all(pending_messages).await?;
+        let futures = producer.send_all(pending_messages.clone()).await?;
         let receipts = join_all(futures).await;
 
-        let mut message_ids = Vec::with_capacity(receipts.len());
         for receipt in receipts {
-            let receipt = receipt?;
-            message_ids.push(
-                receipt
-                    .message_id
-                    .expect("Receipt should contain message ID."),
-            );
+            receipt?;
         }
 
-        Ok(message_ids)
+        pending_messages.sort();
+        Ok(pending_messages)
     }
 
     #[test]
@@ -697,5 +713,83 @@ mod pulsar_broker_tests {
             )
             .unwrap();
         assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
+    }
+
+    #[tokio::test]
+    async fn test_topic_ingestion() {
+        tracing_subscriber::fmt::init();
+
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let topic = append_random_suffix("test-pulsar-source--topic-ingestion--topic");
+
+        let index_id = append_random_suffix("test-pulsar-source--topic-ingestion--index");
+        let (source_id, source_config) = get_source_config(&topic);
+
+        setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+        let expected_docs = populate_topic(
+            &topic,
+            10,
+            move |id| {
+                json!({
+                    "id": id,
+                    "timestamp": 1674515715,
+                    "body": "Hello, world! This is some test data.",
+                })
+        }).await.unwrap();
+
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            &index_id,
+            PathBuf::from("./queues"),
+            source_config,
+        );
+        let start_checkpoint = SourceCheckpoint::default();
+
+        let source_loader = quickwit_supported_sources();
+        let source = source_loader.load_source(ctx, start_checkpoint).await.expect("Load source.");
+
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let source_actor = SourceActor {
+            source,
+            doc_processor_mailbox: doc_processor_mailbox.clone(),
+        };
+        let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
+        info!("Creating source handle.");
+
+        loop {
+            let observation = source_handle.observe().await;
+            let value = observation.state;
+            info!(value = ?value, "Data");
+            let num_messages_processed = value.get("num_messages_processed")
+                .unwrap()
+                .as_u64()
+                .unwrap();
+            if num_messages_processed >= expected_docs.len() as u64 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        let (_exit_status, exit_state) = source_handle.quit().await;
+        let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
+        assert!(!messages.is_empty());
+
+        let batch = merge_doc_batches(messages);
+        assert_eq!(batch.docs, expected_docs);
+
+        let num_bytes = expected_docs.iter()
+            .map(|v| v.as_bytes().len())
+            .sum::<usize>();
+        let expected_state = json!({
+            "index_id": index_id,
+            "source_id": source_id,
+            "topics": vec![topic],
+            "subscription": SUBSCRIPTION,
+            "consumer_name": CONSUMER_NAME,
+            "num_bytes_processed": num_bytes,
+            "num_messages_processed": 10,
+            "num_invalid_messages": 0,
+        });
+        assert_eq!(exit_state, expected_state);
     }
 }

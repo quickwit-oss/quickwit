@@ -4458,6 +4458,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "tracing-subscriber",
  "ulid",
  "utoipa",
  "value",
