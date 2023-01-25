@@ -28,7 +28,8 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, HEARTBEAT};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::SourceConfig;
-use quickwit_indexing::indexing_client_pool::IndexingClientPool;
+use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
+use quickwit_indexing::indexing_client::IndexingServiceClient;
 use quickwit_metastore::Metastore;
 use quickwit_proto::control_plane_api::NotifyIndexChangeRequest;
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
@@ -95,7 +96,7 @@ pub struct IndexingSchedulerState {
 pub struct IndexingScheduler {
     cluster: Arc<Cluster>,
     metastore: Arc<dyn Metastore>,
-    indexing_client_pool: IndexingClientPool,
+    indexing_client_pool: ServiceClientPool<IndexingServiceClient>,
     state: IndexingSchedulerState,
 }
 
@@ -122,7 +123,7 @@ impl IndexingScheduler {
     pub fn new(
         cluster: Arc<Cluster>,
         metastore: Arc<dyn Metastore>,
-        indexing_client_pool: IndexingClientPool,
+        indexing_client_pool: ServiceClientPool<IndexingServiceClient>,
     ) -> Self {
         Self {
             cluster,
@@ -237,12 +238,8 @@ impl IndexingScheduler {
                 .iter()
                 .find(|indexer| &indexer.node_id == node_id)
                 .expect("This should never happen as the plan was built from these indexers.");
-            match self
-                .indexing_client_pool
-                .get_or_create(indexer.grpc_advertise_addr)
-                .await
-            {
-                Ok(mut indexing_client) => {
+            match self.indexing_client_pool.get(indexer.grpc_advertise_addr) {
+                Some(mut indexing_client) => {
                     if let Err(error) = indexing_client
                         .apply_indexing_plan(ApplyIndexingPlanRequest {
                             indexing_tasks: indexing_tasks.clone(),
@@ -252,9 +249,9 @@ impl IndexingScheduler {
                         error!(indexer_node_id=%indexer.node_id, err=?error, "Error occured when appling indexing plan to indexer.");
                     }
                 }
-                Err(error) => {
-                    error!(indexer_node_id=%indexer.node_id, err=?error,
-                        "Cannot create indexing service client for indexer, skip indexing plan.",
+                None => {
+                    error!(indexer_node_id=%indexer.node_id,
+                        "Indexing service client not found in pool for indexer, it should never happened, skip indexing plan.",
                     );
                 }
             }
@@ -419,8 +416,8 @@ mod tests {
         create_cluster_for_test, grpc_addr_from_listen_addr_for_test, RunningIndexingPlan,
     };
     use quickwit_config::{KafkaSourceParams, SourceConfig, SourceParams};
+    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::indexing_client::IndexingServiceClient;
-    use quickwit_indexing::indexing_client_pool::IndexingClientPool;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
     use serde_json::json;
@@ -478,11 +475,9 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (indexing_service_mailbox, indexing_service_inbox) = universe.create_test_mailbox();
         let client_grpc_addr = grpc_addr_from_listen_addr_for_test(cluster.gossip_listen_addr);
-        let indexing_client_pool =
-            IndexingClientPool::new(vec![IndexingServiceClient::from_service(
-                indexing_service_mailbox,
-                client_grpc_addr,
-            )]);
+        let indexing_client =
+            IndexingServiceClient::from_service(indexing_service_mailbox, client_grpc_addr);
+        let indexing_client_pool = ServiceClientPool::for_clients_list(vec![indexing_client]);
         let indexing_scheduler =
             IndexingScheduler::new(cluster.clone(), Arc::new(metastore), indexing_client_pool);
         let (_, scheduler_handler) = universe.spawn_builder().spawn(indexing_scheduler);

@@ -56,7 +56,7 @@ impl grpc::ControlPlaneService for GrpcControlPlaneAdapter {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::net::SocketAddr;
     use std::sync::Arc;
 
@@ -64,8 +64,8 @@ mod tests {
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_cluster::{create_cluster_for_test, ClusterMember};
     use quickwit_config::service::QuickwitService;
+    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_grpc_clients::ControlPlaneGrpcClient;
-    use quickwit_indexing::indexing_client_pool::IndexingClientPool;
     use quickwit_metastore::MockMetastore;
     use quickwit_proto::control_plane_api::control_plane_service_server::ControlPlaneServiceServer;
     use quickwit_proto::tonic::transport::Server;
@@ -107,7 +107,7 @@ mod tests {
         let scheduler = IndexingScheduler::new(
             cluster,
             Arc::new(metastore),
-            IndexingClientPool::new(Vec::new()),
+            ServiceClientPool::new(HashMap::new()),
         );
         let (_, scheduler_handler) = universe.spawn_builder().spawn(scheduler);
         let control_plane_grpc_addr_port = quickwit_common::net::find_available_tcp_port().unwrap();

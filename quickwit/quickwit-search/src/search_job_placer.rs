@@ -18,45 +18,16 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp::Reverse;
-use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
-use std::sync::{Arc, RwLock};
 
 use anyhow::bail;
-use http::Uri;
-use itertools::Itertools;
-use quickwit_cluster::ClusterMember;
-use quickwit_config::service::QuickwitService;
-use quickwit_proto::{tonic, SpanContextInterceptor};
-use tokio_stream::wrappers::WatchStream;
-use tokio_stream::StreamExt;
-use tonic::transport::Endpoint;
-use tracing::*;
+use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
+use tracing::error;
 
 use crate::rendezvous_hasher::sort_by_rendez_vous_hash;
 use crate::SearchServiceClient;
-
-/// Create a SearchServiceClient with SocketAddr as an argument.
-/// It will try to reconnect to the node automatically.
-pub async fn create_search_service_client(
-    grpc_addr: SocketAddr,
-) -> anyhow::Result<SearchServiceClient> {
-    let uri = Uri::builder()
-        .scheme("http")
-        .authority(grpc_addr.to_string().as_str())
-        .path_and_query("/")
-        .build()?;
-    // Create a channel with connect_lazy to automatically reconnect to the node.
-    let channel = Endpoint::from(uri).connect_lazy();
-    let client = quickwit_proto::search_service_client::SearchServiceClient::with_interceptor(
-        channel,
-        SpanContextInterceptor,
-    );
-    let client = SearchServiceClient::from_grpc_client(client, grpc_addr);
-    Ok(client)
-}
 
 /// Job.
 /// The unit in which distributed search is performed.
@@ -73,120 +44,23 @@ pub trait Job {
     fn cost(&self) -> u32;
 }
 
-/// Search client pool implementation.
+/// Search job placer.
+/// It assigns jobs to search clients.
 #[derive(Clone, Default)]
-pub struct SearchClientPool {
-    /// Search clients.
-    /// A hash map with gRPC's SocketAddr as the key and SearchServiceClient as the value.
-    /// It is not the cluster listen address.
-    clients: Arc<RwLock<HashMap<SocketAddr, SearchServiceClient>>>,
+pub struct SearchJobPlacer {
+    /// Search clients pool.
+    clients_pool: ServiceClientPool<SearchServiceClient>,
 }
 
-/// Update the client pool given a new list of members.
-async fn update_client_map(
-    members_grpc_addresses: &[SocketAddr],
-    new_clients: &mut HashMap<SocketAddr, crate::SearchServiceClient>,
-) {
-    // Create a list of addresses to be removed.
-    let members_addresses = members_grpc_addresses.iter().collect::<HashSet<_>>();
-    let addresses_to_remove: Vec<SocketAddr> = new_clients
-        .keys()
-        .filter(|socket_addr| !members_addresses.contains(*socket_addr))
-        .cloned()
-        .collect();
-
-    // Remove clients from the client pool.
-    for grpc_address in addresses_to_remove {
-        let removed = new_clients.remove(&grpc_address).is_some();
-        if removed {
-            debug!(grpc_address=?grpc_address, "Remove a client that is connecting to the node that has been downed or left the cluster.");
-        }
+impl SearchJobPlacer {
+    /// Returns an [`SearchJobPlacer`] from a search service client pool.
+    pub fn new(clients_pool: ServiceClientPool<SearchServiceClient>) -> Self {
+        Self { clients_pool }
     }
 
-    // Add clients to the client pool.
-    for grpc_address in members_grpc_addresses {
-        if let Entry::Vacant(_entry) = new_clients.entry(*grpc_address) {
-            match create_search_service_client(*grpc_address).await {
-                Ok(client) => {
-                    debug!(grpc_address=?grpc_address, "Add a new client that is connecting to the node that has been joined the cluster.");
-                    new_clients.insert(*grpc_address, client);
-                }
-                Err(err) => {
-                    error!(grpc_address=?grpc_address, err=?err, "Failed to create search client.")
-                }
-            };
-        }
-    }
-}
-
-impl SearchClientPool {
-    /// Creates a search client pool for a static list of addresses.
-    pub async fn for_addrs(grpc_addrs: &[SocketAddr]) -> anyhow::Result<SearchClientPool> {
-        let mut clients_map = HashMap::default();
-        for &grpc_addr in grpc_addrs {
-            let search_service_client = create_search_service_client(grpc_addr).await?;
-            clients_map.insert(grpc_addr, search_service_client);
-        }
-        Ok(SearchClientPool {
-            clients: Arc::new(RwLock::from(clients_map)),
-        })
-    }
-
-    async fn update_members(&self, cluster_members: &[ClusterMember]) {
-        let members_grpc_addrs = cluster_members
-            .iter()
-            .filter(|member| member.enabled_services.contains(&QuickwitService::Searcher))
-            .map(|member| member.grpc_advertise_addr)
-            .collect_vec();
-        let mut new_clients = self.clients();
-        update_client_map(&members_grpc_addrs, &mut new_clients).await;
-        *self.clients.write().unwrap() = new_clients;
-    }
-
-    /// Returns a copy of the entire member map.
+    /// Returns a copy of the entire clients map.
     pub fn clients(&self) -> HashMap<SocketAddr, SearchServiceClient> {
-        self.clients
-            .read()
-            .expect("Client pool lock is poisoned.")
-            .clone()
-    }
-
-    /// Returns a [`SearchClientPool`] from a list of `SearchService`. Used for tests.
-    #[cfg(any(test, feature = "testsuite"))]
-    pub async fn from_mocks(
-        mock_services: Vec<Arc<dyn crate::SearchService>>,
-    ) -> anyhow::Result<Self> {
-        let mut mock_clients = HashMap::new();
-        for (mock_ord, mock_service) in mock_services.into_iter().enumerate() {
-            let grpc_addr: SocketAddr =
-                format!("127.0.0.1:{}", 20000 + mock_ord as u16 * 10).parse()?;
-            let mock_client = SearchServiceClient::from_service(mock_service, grpc_addr);
-            mock_clients.insert(grpc_addr, mock_client);
-        }
-
-        Ok(SearchClientPool {
-            clients: Arc::new(RwLock::new(mock_clients)),
-        })
-    }
-
-    /// Create a search client pool given a cluster.
-    /// When a client pool is created, the thread that monitors cluster members
-    /// will be started at the same time.
-    pub async fn create_and_keep_updated(
-        mut members_watch_channel: WatchStream<Vec<ClusterMember>>,
-    ) -> anyhow::Result<Self> {
-        let search_client_pool = SearchClientPool::default();
-        let search_clients_pool_clone = search_client_pool.clone();
-
-        // Start to monitor cluster member changes.
-        tokio::spawn(async move {
-            while let Some(new_members) = members_watch_channel.next().await {
-                search_clients_pool_clone.update_members(&new_members).await;
-            }
-            Result::<(), anyhow::Error>::Ok(())
-        });
-
-        Ok(search_client_pool)
+        self.clients_pool.all()
     }
 }
 
@@ -208,7 +82,7 @@ impl Hash for Node {
     }
 }
 
-impl SearchClientPool {
+impl SearchJobPlacer {
     /// Assign the given job to the clients.
     /// Returns a list of pair (SocketAddr, `Vec<Job>`)
     ///
@@ -320,10 +194,11 @@ mod tests {
     use chitchat::transport::{ChannelTransport, Transport};
     use itertools::Itertools;
     use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster};
+    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 
-    use super::create_search_service_client;
+    use crate::client::create_search_service_client;
     use crate::root::SearchJob;
-    use crate::SearchClientPool;
+    use crate::SearchJobPlacer;
 
     async fn create_cluster_simple_for_test(
         transport: &dyn Transport,
@@ -336,11 +211,13 @@ mod tests {
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_simple_for_test(&transport).await?;
-        let client_pool =
-            SearchClientPool::create_and_keep_updated(cluster.ready_member_change_watcher())
-                .await?;
+        let job_placer = SearchJobPlacer::new(
+            ServiceClientPool::create_and_update_members(cluster.ready_member_change_watcher())
+                .await
+                .unwrap(),
+        );
         tokio::time::sleep(Duration::from_millis(1)).await;
-        let clients = client_pool.clients();
+        let clients = job_placer.clients();
         let addrs: Vec<SocketAddr> = clients.into_keys().collect();
         let expected_addrs = vec![grpc_addr_from_listen_addr_for_test(
             cluster.gossip_listen_addr,
@@ -350,7 +227,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_search_client_pool_multiple_nodes() -> anyhow::Result<()> {
+    async fn test_search_job_placer_multiple_nodes() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster1 = create_cluster_simple_for_test(&transport).await?;
         let node_1 = cluster1.gossip_listen_addr.to_string();
@@ -361,11 +238,13 @@ mod tests {
             .wait_for_members(|members| members.len() == 2, Duration::from_secs(5))
             .await?;
 
-        let client_pool =
-            SearchClientPool::create_and_keep_updated(cluster1.ready_member_change_watcher())
-                .await?;
+        let job_placer = SearchJobPlacer::new(
+            ServiceClientPool::create_and_update_members(cluster1.ready_member_change_watcher())
+                .await
+                .unwrap(),
+        );
         tokio::time::sleep(Duration::from_millis(1)).await;
-        let clients = client_pool.clients();
+        let clients = job_placer.clients();
 
         let addrs: Vec<SocketAddr> = clients.into_keys().sorted().collect();
         let mut expected_addrs = vec![
@@ -378,12 +257,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_search_client_pool_single_node_assign_jobs() -> anyhow::Result<()> {
+    async fn test_search_job_placer_single_node_assign_jobs() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_simple_for_test(&transport).await?;
-        let client_pool =
-            SearchClientPool::create_and_keep_updated(cluster.ready_member_change_watcher())
-                .await?;
+        let job_placer = SearchJobPlacer::new(
+            ServiceClientPool::create_and_update_members(cluster.ready_member_change_watcher())
+                .await
+                .unwrap(),
+        );
         tokio::time::sleep(Duration::from_millis(1)).await;
         let jobs = vec![
             SearchJob::for_test("split1", 1),
@@ -392,7 +273,7 @@ mod tests {
             SearchJob::for_test("split4", 4),
         ];
 
-        let assigned_jobs = client_pool.assign_jobs(jobs, &HashSet::default())?;
+        let assigned_jobs = job_placer.assign_jobs(jobs, &HashSet::default())?;
         let expected_assigned_jobs = vec![(
             create_search_service_client(grpc_addr_from_listen_addr_for_test(
                 cluster.gossip_listen_addr,

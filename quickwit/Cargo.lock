@@ -4268,6 +4268,7 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "itertools",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
@@ -4401,6 +4402,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-directories",
  "quickwit-doc-mapper",
+ "quickwit-grpc-clients",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
@@ -4531,6 +4533,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-directories",
  "quickwit-doc-mapper",
+ "quickwit-grpc-clients",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
