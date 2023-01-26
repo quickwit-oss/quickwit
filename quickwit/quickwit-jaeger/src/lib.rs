@@ -53,7 +53,8 @@ use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
-use tracing::{debug, error, warn};
+use tracing::field::Empty;
+use tracing::{debug, error, instrument, warn, Span as RuntimeSpan};
 
 use crate::metrics::JAEGER_SERVICE_METRICS;
 
@@ -90,11 +91,11 @@ impl JaegerService {
         }
     }
 
+    #[instrument("get_services", skip_all)]
     async fn get_services_inner(
         &self,
-        request: Request<GetServicesRequest>,
+        request: GetServicesRequest,
     ) -> JaegerResult<GetServicesResponse> {
-        let request = request.into_inner();
         debug!(request=?request, "`get_services` request");
 
         let index_id = TRACE_INDEX_ID.to_string();
@@ -133,12 +134,15 @@ impl JaegerService {
         Ok(response)
     }
 
+    #[instrument("get_operations", skip_all, fields(service=%request.service, span_kind=%request.span_kind))]
     async fn get_operations_inner(
         &self,
-        request: Request<GetOperationsRequest>,
+        request: GetOperationsRequest,
     ) -> JaegerResult<GetOperationsResponse> {
-        let request = request.into_inner();
         debug!(request=?request, "`get_operations` request");
+
+        let current_span = RuntimeSpan::current();
+        current_span.record("service", &request.service);
 
         let index_id = TRACE_INDEX_ID.to_string();
         let query = build_search_query(
@@ -188,11 +192,11 @@ impl JaegerService {
         Ok(response)
     }
 
+    // Instrumentation happens in `find_trace_ids`.
     async fn find_trace_ids_inner(
         &self,
-        request: Request<FindTraceIDsRequest>,
+        request: FindTraceIDsRequest,
     ) -> JaegerResult<FindTraceIDsResponse> {
-        let request = request.into_inner();
         debug!(request=?request, "`find_trace_ids` request");
 
         let trace_query = request
@@ -204,19 +208,23 @@ impl JaegerService {
 
         let trace_ids = trace_ids_b64
             .into_iter()
-            .map(|trace_id_b64| BASE64_STANDARD.decode(trace_id_b64).expect("Failed to Base64 decode trace ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
-            .collect();
+            .map(|trace_id_b64| BASE64_STANDARD.decode(trace_id_b64))
+            .collect::<Result<_, _>>()
+            .map_err(|error| {
+                error!(error=?error, "Failed to base64 decode trace ID.");
+                Status::internal("Failed to base64 decode trace ID.")
+            })?;
         let response = FindTraceIDsResponse { trace_ids };
         Ok(response)
     }
 
+    #[instrument("find_traces", skip_all)]
     async fn find_traces_inner(
         &self,
-        request: Request<FindTracesRequest>,
+        request: FindTracesRequest,
         operation_name: &'static str,
         request_start: Instant,
     ) -> JaegerResult<SpanStream> {
-        let request = request.into_inner();
         debug!(request=?request, "`find_traces` request");
 
         let trace_query = request
@@ -232,13 +240,13 @@ impl JaegerService {
         Ok(response)
     }
 
+    #[instrument("find_traces", skip_all)]
     async fn get_trace_inner(
         &self,
-        request: Request<GetTraceRequest>,
+        request: GetTraceRequest,
         operation_name: &'static str,
         request_start: Instant,
     ) -> JaegerResult<SpanStream> {
-        let request = request.into_inner();
         debug!(request=?request, "`get_trace` request");
         let trace_id = BASE64_STANDARD.encode(request.trace_id);
         let end = OffsetDateTime::now_utc().unix_timestamp();
@@ -250,6 +258,7 @@ impl JaegerService {
         Ok(response)
     }
 
+    #[instrument("find_trace_ids", skip_all fields(service_name=%trace_query.service_name, operation_name=%trace_query.operation_name))]
     async fn find_trace_ids(
         &self,
         trace_query: TraceQueryParameters,
@@ -300,6 +309,7 @@ impl JaegerService {
         Ok(trace_ids)
     }
 
+    #[instrument("stream_spans", skip_all, fields(num_traces=%trace_ids.len(), num_spans=Empty))]
     async fn stream_spans(
         &self,
         trace_ids: &[TraceId],
@@ -337,6 +347,7 @@ impl JaegerService {
         };
         let search_service = self.search_service.clone();
 
+        let current_span = RuntimeSpan::current();
         tokio::task::spawn(async move {
             let search_response = match search_service.root_search(search_request).await {
                 Ok(search_response) => search_response,
@@ -351,10 +362,13 @@ impl JaegerService {
             };
             // I attempted to do this with `itertools::Chunks`, but it panics if the iterator is
             // empty and `Peekable` is not `Sync`...
-            const CHUNK_SIZE: usize = 500;
-            let mut spans = Vec::with_capacity(CHUNK_SIZE);
-            let mut num_bytes = 0;
+            const CHUNK_SIZE: usize = 100;
+            let mut chunk = Vec::with_capacity(search_response.hits.len().min(CHUNK_SIZE));
+            let mut chunk_num_bytes = 0;
+            let mut num_spans_total = 0;
+            let mut num_bytes_total = 0;
 
+            // TODO: investigate whether this should be moved to a blocking task.
             for hit in search_response.hits {
                 let span = match qw_span_to_jaeger_span(&hit.json) {
                     Ok(span) => span,
@@ -367,29 +381,38 @@ impl JaegerService {
                         return;
                     }
                 };
-                num_bytes += span.encoded_len();
-                spans.push(span);
+                chunk_num_bytes += span.encoded_len();
+                chunk.push(span);
 
-                if spans.len() == CHUNK_SIZE {
-                    let spans = mem::replace(&mut spans, Vec::with_capacity(CHUNK_SIZE));
-                    if let Err(error) = tx.send(Ok(SpansResponseChunk { spans })).await {
+                if chunk.len() == CHUNK_SIZE {
+                    num_spans_total += chunk.len();
+                    num_bytes_total += chunk_num_bytes;
+
+                    let chunk = mem::replace(&mut chunk, Vec::with_capacity(CHUNK_SIZE));
+                    if let Err(error) = tx.send(Ok(SpansResponseChunk { spans: chunk })).await {
                         debug!(error=?error, "Client disconnected.");
                         return;
                     }
-                    record_send(operation_name, CHUNK_SIZE, num_bytes);
-                    num_bytes = 0;
+                    record_send(operation_name, CHUNK_SIZE, chunk_num_bytes);
+                    chunk_num_bytes = 0;
                 }
             }
-            if !spans.is_empty() {
-                let num_spans = spans.len();
-                if let Err(error) = tx.send(Ok(SpansResponseChunk { spans })).await {
+            if !chunk.is_empty() {
+                num_spans_total += chunk.len();
+                num_bytes_total += chunk_num_bytes;
+
+                let num_spans = chunk.len();
+                if let Err(error) = tx.send(Ok(SpansResponseChunk { spans: chunk })).await {
                     warn!(error=?error, "Client disconnected.");
                     return;
                 }
-                record_send(operation_name, num_spans, num_bytes);
+                record_send(operation_name, num_spans, chunk_num_bytes);
             }
+            current_span.record("num_spans", num_spans_total);
+            current_span.record("num_bytes", num_bytes_total);
+
             JAEGER_SERVICE_METRICS
-                .retrieved_traces_total
+                .fetched_traces_total
                 .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
                 .inc_by(num_traces);
 
@@ -404,7 +427,7 @@ impl JaegerService {
     }
 }
 
-macro_rules! instrument {
+macro_rules! metrics {
     ($expr:expr, [$operation:ident, $($label:expr),*]) => {
         let start = std::time::Instant::now();
         let labels = [stringify!($operation), $($label,)*];
@@ -441,7 +464,7 @@ fn record_error(operation_name: &'static str, request_start: Instant) {
 
 fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
     JAEGER_SERVICE_METRICS
-        .retrieved_spans_total
+        .fetched_spans_total
         .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
         .inc_by(num_spans as u64);
     JAEGER_SERVICE_METRICS
@@ -460,8 +483,8 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<GetServicesRequest>,
     ) -> Result<Response<GetServicesResponse>, Status> {
-        instrument!(
-            self.get_services_inner(request).await,
+        metrics!(
+            self.get_services_inner(request.into_inner()).await,
             [get_services, OTEL_TRACE_INDEX_ID]
         );
     }
@@ -470,8 +493,8 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<GetOperationsRequest>,
     ) -> Result<Response<GetOperationsResponse>, Status> {
-        instrument!(
-            self.get_operations_inner(request).await,
+        metrics!(
+            self.get_operations_inner(request.into_inner()).await,
             [get_operations, OTEL_TRACE_INDEX_ID]
         );
     }
@@ -480,8 +503,8 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<FindTraceIDsRequest>,
     ) -> Result<Response<FindTraceIDsResponse>, Status> {
-        instrument!(
-            self.find_trace_ids_inner(request).await,
+        metrics!(
+            self.find_trace_ids_inner(request.into_inner()).await,
             [find_trace_ids, OTEL_TRACE_INDEX_ID]
         );
     }
@@ -490,7 +513,7 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<FindTracesRequest>,
     ) -> Result<Response<Self::FindTracesStream>, Status> {
-        self.find_traces_inner(request, "find_traces", Instant::now())
+        self.find_traces_inner(request.into_inner(), "find_traces", Instant::now())
             .await
             .map(Response::new)
     }
@@ -499,7 +522,7 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<GetTraceRequest>,
     ) -> Result<Response<Self::GetTraceStream>, Status> {
-        self.get_trace_inner(request, "get_trace", Instant::now())
+        self.get_trace_inner(request.into_inner(), "get_trace", Instant::now())
             .await
             .map(Response::new)
     }
@@ -680,11 +703,11 @@ fn qw_span_to_jaeger_span(qw_span: &str) -> Result<JaegerSpan, Status> {
     let mut span = serde_json::from_str::<QwSpan>(qw_span)
         .map_err(|error| Status::internal(format!("Failed to deserialize span: {error:?}")))?;
     let trace_id = BASE64_STANDARD.decode(span.trace_id).map_err(|error| {
-        Status::internal(format!("Failed to Base64 decode trace ID: {error:?}"))
+        Status::internal(format!("Failed to base64 decode trace ID: {error:?}"))
     })?;
     let span_id = BASE64_STANDARD
         .decode(span.span_id)
-        .map_err(|error| Status::internal(format!("Failed to Base64 decode span ID: {error:?}")))?;
+        .map_err(|error| Status::internal(format!("Failed to base64 decode span ID: {error:?}")))?;
 
     let start_time = Some(to_well_known_timestamp(span.span_start_timestamp_nanos));
     let duration = Some(to_well_known_duration(
@@ -907,7 +930,7 @@ fn otlp_links_to_jaeger_references(
 
     if let Some(parent_span_id) = parent_span_id_opt {
         let parent_span_id = BASE64_STANDARD.decode(parent_span_id).map_err(|error| {
-            Status::internal(format!("Failed to Base64 decode parent span ID: {error:?}"))
+            Status::internal(format!("Failed to base64 decode parent span ID: {error:?}"))
         })?;
         let reference = JaegerSpanRef {
             trace_id: trace_id.to_vec(),
@@ -922,10 +945,10 @@ fn otlp_links_to_jaeger_references(
         let trace_id = BASE64_STANDARD
             .decode(link.link_trace_id)
             .map_err(|error| {
-                Status::internal(format!("Failed to Base64 decode parent span ID: {error:?}"))
+                Status::internal(format!("Failed to base64 decode parent span ID: {error:?}"))
             })?;
         let span_id = BASE64_STANDARD.decode(link.link_span_id).map_err(|error| {
-            Status::internal(format!("Failed to Base64 decode parent span ID: {error:?}"))
+            Status::internal(format!("Failed to base64 decode parent span ID: {error:?}"))
         })?;
         let reference = JaegerSpanRef {
             trace_id,
