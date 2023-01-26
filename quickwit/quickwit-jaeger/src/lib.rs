@@ -17,13 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-#![deny(clippy::disallowed_methods)]
-
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::mem;
+use std::ops::RangeInclusive;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
@@ -46,13 +45,14 @@ use quickwit_proto::jaeger::storage::v1::{
 };
 use quickwit_proto::SearchRequest;
 use quickwit_search::SearchService;
+use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 use crate::metrics::JAEGER_SERVICE_METRICS;
 
@@ -66,17 +66,27 @@ const TRACE_INDEX_ID: &str = "otel-trace-v0";
 /// A base64-encoded 16-byte array.
 type TraceId = String;
 
+type TimeIntervalSecs = RangeInclusive<i64>;
+
 type JaegerResult<T> = Result<T, Status>;
 
 type SpanStream = ReceiverStream<Result<SpansResponseChunk, Status>>;
 
 pub struct JaegerService {
     search_service: Arc<dyn SearchService>,
+    lookback_period: Duration,
+    max_trace_duration: Duration,
+    max_retrieved_spans: u64,
 }
 
 impl JaegerService {
     pub fn new(search_service: Arc<dyn SearchService>) -> Self {
-        Self { search_service }
+        Self {
+            search_service,
+            lookback_period: Duration::from_secs(3 * 24 * 3600),
+            max_trace_duration: Duration::from_secs(3600),
+            max_retrieved_spans: 10_000,
+        }
     }
 
     async fn get_services_inner(
@@ -185,13 +195,14 @@ impl JaegerService {
         let trace_query = request
             .query
             .ok_or_else(|| Status::invalid_argument("Query is empty."))?;
-        let trace_ids = self
-            .find_trace_ids(trace_query)
-            .await?
+
+        let (trace_ids_b64, _) = self.find_trace_ids(trace_query).await?;
+        debug!(trace_ids=?trace_ids_b64, "`find_trace_ids` response");
+
+        let trace_ids = trace_ids_b64
             .into_iter()
-            .map(|trace_id| BASE64_STANDARD.decode(trace_id).expect("Failed to Base64 decode trace ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
+            .map(|trace_id_b64| BASE64_STANDARD.decode(trace_id_b64).expect("Failed to Base64 decode trace ID. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
             .collect();
-        debug!(trace_ids=?trace_ids, "`find_trace_ids` response");
         let response = FindTraceIDsResponse { trace_ids };
         Ok(response)
     }
@@ -208,9 +219,12 @@ impl JaegerService {
         let trace_query = request
             .query
             .ok_or_else(|| Status::invalid_argument("Trace query is empty."))?;
-        let trace_ids = self.find_trace_ids(trace_query).await?;
+        let (trace_ids, span_timestamps_range) = self.find_trace_ids(trace_query).await?;
+        let start = span_timestamps_range.start() - self.max_trace_duration.as_secs() as i64;
+        let end = span_timestamps_range.end() + self.max_trace_duration.as_secs() as i64;
+        let search_window = start..=end;
         let response = self
-            .stream_spans(&trace_ids, operation_name, request_start)
+            .stream_spans(&trace_ids, search_window, operation_name, request_start)
             .await;
         Ok(response)
     }
@@ -224,8 +238,11 @@ impl JaegerService {
         let request = request.into_inner();
         debug!(request=?request, "`get_trace` request");
         let trace_id = BASE64_STANDARD.encode(request.trace_id);
+        let end = OffsetDateTime::now_utc().unix_timestamp();
+        let start = end - self.lookback_period.as_secs() as i64;
+        let search_window = start..=end;
         let response = self
-            .stream_spans(&[trace_id], operation_name, request_start)
+            .stream_spans(&[trace_id], search_window, operation_name, request_start)
             .await;
         Ok(response)
     }
@@ -233,7 +250,7 @@ impl JaegerService {
     async fn find_trace_ids(
         &self,
         trace_query: TraceQueryParameters,
-    ) -> Result<Vec<TraceId>, Status> {
+    ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
         let index_id = TRACE_INDEX_ID.to_string();
         let min_span_start_timestamp_secs_opt = trace_query.start_time_min.map(|ts| ts.seconds);
         let max_span_start_timestamp_secs_opt = trace_query.start_time_max.map(|ts| ts.seconds);
@@ -270,35 +287,28 @@ impl JaegerService {
         };
         let search_response = self.search_service.root_search(search_request).await?;
 
-        let Some(aggregations_json) = search_response.aggregation else {
+        let Some(agg_result_json) = search_response.aggregation else {
             debug!("The query matched no traces.");
-            return Ok(Vec::new());
+            return Ok((Vec::new(), 0..=0));
         };
-        if let Ok(JsonValue::Object(mut aggregations)) = serde_json::from_str(&aggregations_json) {
-            if let Some(JsonValue::Object(mut aggregation)) = aggregations.remove("trace_ids") {
-                if let Some(JsonValue::Array(buckets)) = aggregation.remove("buckets") {
-                    let mut trace_ids = Vec::with_capacity(buckets.len());
-                    for bucket in buckets {
-                        if let JsonValue::Object(mut bucket) = bucket {
-                            if let Some(JsonValue::String(trace_id)) = bucket.remove("key") {
-                                trace_ids.push(trace_id);
-                            }
-                        }
-                    }
-                    debug!(trace_ids=?trace_ids, "The query matched {} traces.", trace_ids.len());
-                    return Ok(trace_ids);
-                }
-            }
-        }
-        Err(Status::internal("Failed to parse aggregations response."))
+        let trace_ids = collect_trace_ids(&agg_result_json)?;
+        debug!(trace_ids=?trace_ids.0, "The query matched {} traces.", trace_ids.0.len());
+
+        Ok(trace_ids)
     }
 
     async fn stream_spans(
         &self,
         trace_ids: &[TraceId],
+        search_window: TimeIntervalSecs,
         operation_name: &'static str,
         request_start: Instant,
     ) -> SpanStream {
+        let (tx, rx) = mpsc::channel(1);
+
+        if trace_ids.is_empty() {
+            return ReceiverStream::new(rx);
+        }
         let num_traces = trace_ids.len() as u64;
         let mut query = String::new();
 
@@ -313,18 +323,16 @@ impl JaegerService {
             index_id: TRACE_INDEX_ID.to_string(),
             query,
             search_fields: Vec::new(),
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 10_000, // TODO: self.max_spans_retrieved;
+            start_timestamp: Some(*search_window.start()),
+            end_timestamp: Some(*search_window.end()),
+            max_hits: self.max_retrieved_spans,
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,
             aggregation_request: None,
             snippet_fields: Vec::new(),
         };
-
         let search_service = self.search_service.clone();
-        let (tx, rx) = mpsc::channel(1);
 
         tokio::task::spawn(async move {
             let search_response = match search_service.root_search(search_request).await {
@@ -616,14 +624,16 @@ fn build_search_query(
         query.push_str("span_duration_millis:[");
 
         if let Some(min_span_duration_millis) = min_span_duration_millis_opt {
-            write!(query, "{}", min_span_duration_millis).expect("");
+            write!(query, "{}", min_span_duration_millis)
+                .expect("Writing to a string should not fail.");
         } else {
             query.push('*');
         }
         query.push_str(" TO ");
 
         if let Some(max_span_duration_millis) = max_span_duration_millis_opt {
-            write!(query, "{}", max_span_duration_millis).expect("");
+            write!(query, "{}", max_span_duration_millis)
+                .expect("Writing to a string should not fail.");
         } else {
             query.push('*');
         }
@@ -637,6 +647,8 @@ fn build_search_query(
 }
 
 fn build_aggregations_query(num_traces: usize) -> String {
+    // DANGER: The fast field is truncated to seconds but the aggregation returns timestamps in
+    // microseconds by appending a bunch of zeros.
     let query = format!(
         r#"{{
         "trace_ids": {{
@@ -644,11 +656,11 @@ fn build_aggregations_query(num_traces: usize) -> String {
                 "field": "trace_id",
                 "size": {num_traces},
                 "order": {{
-                    "max_span_start_timestamp_secs": "desc"
+                    "max_span_start_timestamp_micros": "desc"
                 }}
             }},
             "aggs": {{
-                "max_span_start_timestamp_secs": {{
+                "max_span_start_timestamp_micros": {{
                     "max": {{
                         "field": "span_start_timestamp_secs"
                     }}
@@ -975,6 +987,52 @@ fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
         fields,
     };
     Ok(log)
+}
+
+#[derive(Deserialize)]
+struct TraceIdsAggResult {
+    trace_ids: TraceIdBuckets,
+}
+
+#[derive(Deserialize)]
+struct TraceIdBuckets {
+    #[serde(default)]
+    buckets: Vec<TraceIdBucket>,
+}
+
+#[derive(Deserialize)]
+struct TraceIdBucket {
+    key: String,
+    max_span_start_timestamp_micros: MetricValue,
+}
+
+#[derive(Deserialize)]
+struct MetricValue {
+    value: f64,
+}
+
+fn collect_trace_ids(agg_result_json: &str) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
+    let agg_result: TraceIdsAggResult = serde_json::from_str(agg_result_json).map_err(|error| {
+        error!("Failed to deserialize trace IDs aggregation: {error:?}",);
+        Status::internal(format!(
+            "Failed to deserialize trace IDs aggregation: {error:?}"
+        ))
+    })?;
+    if agg_result.trace_ids.buckets.is_empty() {
+        return Ok((Vec::new(), 0..=0));
+    }
+    let mut trace_ids = Vec::with_capacity(agg_result.trace_ids.buckets.len());
+    let mut start = i64::MAX;
+    let mut end = i64::MIN;
+
+    for bucket in agg_result.trace_ids.buckets {
+        trace_ids.push(bucket.key);
+        start = start.min(bucket.max_span_start_timestamp_micros.value as i64);
+        end = end.max(bucket.max_span_start_timestamp_micros.value as i64);
+    }
+    let start = start / 1_000_000;
+    let end = end / 1_000_000;
+    Ok((trace_ids, start..=end))
 }
 
 #[cfg(test)]
@@ -1448,7 +1506,7 @@ mod tests {
         assert_eq!(terms_aggregation.field, "trace_id");
         assert_eq!(terms_aggregation.size.unwrap(), 77);
 
-        let Aggregation::Metric(MetricAggregation::Max(max_aggregation)) = bucket_aggregation.sub_aggregation.get("max_span_start_timestamp_secs").unwrap() else {
+        let Aggregation::Metric(MetricAggregation::Max(max_aggregation)) = bucket_aggregation.sub_aggregation.get("max_span_start_timestamp_micros").unwrap() else {
             panic!("Expected a max metric aggregation!");
         };
         assert_eq!(max_aggregation.field, "span_start_timestamp_secs");
@@ -1691,6 +1749,37 @@ mod tests {
             assert_eq!(log.fields[0].key, "event");
             assert_eq!(log.fields[0].v_type(), ValueType::String);
             assert_eq!(log.fields[0].v_str, "foo");
+        }
+    }
+
+    #[test]
+    fn test_collect_trace_ids() {
+        {
+            let agg_result_json = r#"{"trace_ids": {}}"#;
+            let (trace_ids, _span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
+            assert!(trace_ids.is_empty());
+        }
+        {
+            let agg_result_json = r#"{
+                "trace_ids": {
+                    "buckets": [
+                        {"key": "jIr1E97+2DJBcBnOb/wjQg==", "doc_count": 3, "max_span_start_timestamp_micros": {"value": 1674611393000000.0 }}]}}"#;
+            let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
+            assert_eq!(trace_ids, &["jIr1E97+2DJBcBnOb/wjQg=="]);
+            assert_eq!(span_timestamps_range, 1674611393..=1674611393);
+        }
+        {
+            let agg_result_json = r#"{
+                "trace_ids": {
+                    "buckets": [
+                        {"key": "FKvicG794620BNsewGCknA==", "doc_count": 7, "max_span_start_timestamp_micros": { "value": 1674611388000000.0 }},
+                        {"key": "jIr1E97+2DJBcBnOb/wjQg==", "doc_count": 3, "max_span_start_timestamp_micros": { "value": 1674611393000000.0 }}]}}"#;
+            let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
+            assert_eq!(
+                trace_ids,
+                &["FKvicG794620BNsewGCknA==", "jIr1E97+2DJBcBnOb/wjQg=="]
+            );
+            assert_eq!(span_timestamps_range, 1674611388..=1674611393);
         }
     }
 }

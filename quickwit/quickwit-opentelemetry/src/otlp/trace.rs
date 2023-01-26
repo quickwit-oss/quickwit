@@ -84,6 +84,12 @@ doc_mapping:
     - name: span_name
       type: text
       tokenizer: raw
+    - name: span_start_timestamp_nanos
+      type: u64
+      indexed: false
+    - name: span_end_timestamp_nanos
+      type: u64
+      indexed: false
     - name: span_start_timestamp_secs
       type: datetime
       input_formats:
@@ -92,12 +98,6 @@ doc_mapping:
       fast: true
       precision: seconds
       stored: false
-    - name: span_start_timestamp_nanos
-      type: u64
-      indexed: false
-    - name: span_end_timestamp_nanos
-      type: u64
-      indexed: false
     - name: span_duration_millis
       type: u64
       indexed: false
@@ -161,9 +161,14 @@ pub struct Span {
     pub span_id: Base64,
     pub span_kind: u64,
     pub span_name: String,
+    /// Span start timestamp in nanoseconds. Stored as a `u64` instead of a `datetime` to avoid the
+    /// truncation to microseconds. This field is stored but not indexed.
     pub span_start_timestamp_nanos: u64,
+    /// Span start timestamp in nanoseconds. Stored as a `u64` instead of a `datetime` to avoid the
+    /// truncation to microseconds. This field is stored but not indexed.
     pub span_end_timestamp_nanos: u64,
-    // TODO: Explain why those two fields are optional.
+    /// Span start timestamp in seconds used for aggregations and range queries. This field is
+    /// stored as a fast field but not indexed.
     pub span_start_timestamp_secs: Option<u64>,
     pub span_duration_millis: Option<u64>,
     pub span_attributes: HashMap<String, JsonValue>,
