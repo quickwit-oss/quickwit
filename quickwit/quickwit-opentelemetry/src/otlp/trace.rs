@@ -250,8 +250,15 @@ impl OtlpGrpcTraceService {
             num_spans,
             num_parse_errors,
             error_message,
-        } = self.parse_spans(request)?;
-
+        } = tokio::task::spawn_blocking({
+            let parent_span = RuntimeSpan::current();
+            || Self::parse_spans(request, parent_span)
+        })
+        .await
+        .map_err(|join_error| {
+            error!(error=?join_error, "Failed to parse spans.");
+            Status::internal("Failed to parse spans.".to_string())
+        })??;
         if num_spans == num_parse_errors {
             return Err(tonic::Status::internal(error_message));
         }
@@ -277,8 +284,11 @@ impl OtlpGrpcTraceService {
         Ok(response)
     }
 
-    #[instrument(skip_all, fields(num_spans = Empty, num_bytes = Empty, num_parse_errors = Empty))]
-    fn parse_spans(&self, request: ExportTraceServiceRequest) -> Result<ParsedSpans, Status> {
+    #[instrument(skip_all, parent = parent_span, fields(num_spans = Empty, num_bytes = Empty, num_parse_errors = Empty))]
+    fn parse_spans(
+        request: ExportTraceServiceRequest,
+        parent_span: RuntimeSpan,
+    ) -> Result<ParsedSpans, Status> {
         let mut doc_batch = DocBatch {
             index_id: OTEL_TRACE_INDEX_ID.to_string(),
             ..Default::default()
