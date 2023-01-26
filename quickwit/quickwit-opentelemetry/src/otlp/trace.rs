@@ -395,18 +395,19 @@ impl OtlpGrpcTraceService {
                         event_names,
                         links,
                     };
-                    let span_json = match serde_json::to_vec(&span) {
+                    let doc_batch_len = doc_batch.concat_docs.len();
+
+                    match serde_json::to_writer(&mut doc_batch.concat_docs, &span) {
                         Ok(span_json) => span_json,
-                        Err(err) => {
-                            error!(error=?err, "Failed to JSON serialize span.");
-                            error_message = format!("Failed to JSON serialize span: {err:?}");
+                        Err(error) => {
+                            error!(error=?error, "Failed to JSON serialize span.");
+                            error_message = format!("Failed to JSON serialize span: {error:?}");
                             num_parse_errors += 1;
                             continue;
                         }
-                    };
-                    let span_json_len = span_json.len() as u64;
-                    doc_batch.concat_docs.extend_from_slice(&span_json);
-                    doc_batch.doc_lens.push(span_json_len);
+                    }
+                    let span_json_len = doc_batch.concat_docs.len() - doc_batch_len;
+                    doc_batch.doc_lens.push(span_json_len as u64);
                 }
             }
         }
