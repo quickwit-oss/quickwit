@@ -55,6 +55,7 @@ services:
   pulsar-broker:
     image: apachepulsar/pulsar:2.11.0
     container_name: pulsar-broker
+    command: bin/pulsar standalone
     ports:
       - "6650:6650"
       - "8080:8080"
