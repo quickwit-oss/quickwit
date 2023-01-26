@@ -466,7 +466,7 @@ mod pulsar_broker_tests {
     use std::sync::Arc;
 
     use futures::future::join_all;
-    use quickwit_actors::Universe;
+    use quickwit_actors::{ActorHandle, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{
@@ -533,7 +533,9 @@ mod pulsar_broker_tests {
             .unwrap();
     }
 
-    fn get_source_config(topic: &str) -> (String, SourceConfig) {
+    fn get_source_config<S: AsRef<str>>(
+        topics: impl IntoIterator<Item = S>,
+    ) -> (String, SourceConfig) {
         let source_id = append_random_suffix("test-pulsar-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
@@ -541,7 +543,7 @@ mod pulsar_broker_tests {
             desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::Pulsar(PulsarSourceParams {
-                topics: vec![topic.to_string()],
+                topics: topics.into_iter().map(|v| v.as_ref().to_string()).collect(),
                 subscription: SUBSCRIPTION.to_string(),
                 address: PULSAR_URI.to_string(),
                 consumer_name: CONSUMER_NAME.to_string(),
@@ -591,6 +593,27 @@ mod pulsar_broker_tests {
 
         pending_messages.sort();
         Ok(pending_messages)
+    }
+
+    async fn wait_for_completion(
+        source_handle: ActorHandle<SourceActor>,
+        num_expected: usize,
+    ) -> JsonValue {
+        loop {
+            let observation = source_handle.observe().await;
+            let value = observation.state;
+            let num_messages_processed = value
+                .get("num_messages_processed")
+                .unwrap()
+                .as_u64()
+                .unwrap();
+            if num_messages_processed >= num_expected as u64 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        let (_exit_status, exit_state) = source_handle.quit().await;
+        exit_state
     }
 
     #[test]
@@ -644,7 +667,7 @@ mod pulsar_broker_tests {
         let topic = append_random_suffix("test-pulsar-source-topic");
 
         let index_id = append_random_suffix("test-pulsar-source-index");
-        let (_source_id, source_config) = get_source_config(&topic);
+        let (_source_id, source_config) = get_source_config([&topic]);
         let params = if let SourceParams::Pulsar(params) = source_config.clone().source_params {
             params
         } else {
@@ -721,14 +744,12 @@ mod pulsar_broker_tests {
 
     #[tokio::test]
     async fn test_topic_ingestion() {
-        tracing_subscriber::fmt::init();
-
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let topic = append_random_suffix("test-pulsar-source--topic-ingestion--topic");
 
         let index_id = append_random_suffix("test-pulsar-source--topic-ingestion--index");
-        let (source_id, source_config) = get_source_config(&topic);
+        let (source_id, source_config) = get_source_config([&topic]);
 
         setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
@@ -763,20 +784,7 @@ mod pulsar_broker_tests {
         .await
         .unwrap();
 
-        loop {
-            let observation = source_handle.observe().await;
-            let value = observation.state;
-            let num_messages_processed = value
-                .get("num_messages_processed")
-                .unwrap()
-                .as_u64()
-                .unwrap();
-            if num_messages_processed >= expected_docs.len() as u64 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-        let (_exit_status, exit_state) = source_handle.quit().await;
+        let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(!messages.is_empty());
 
@@ -795,6 +803,89 @@ mod pulsar_broker_tests {
             "consumer_name": CONSUMER_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
+            "num_invalid_messages": 0,
+        });
+        assert_eq!(exit_state, expected_state);
+    }
+
+    #[tokio::test]
+    async fn test_multi_topic_ingestion() {
+        tracing_subscriber::fmt::init();
+
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let topic1 = append_random_suffix("test-pulsar-source--topic-ingestion--topic");
+        let topic2 = append_random_suffix("test-pulsar-source--topic-ingestion--topic");
+
+        let index_id = append_random_suffix("test-pulsar-source--topic-ingestion--index");
+        let (source_id, source_config) = get_source_config([&topic1, &topic2]);
+
+        setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            &index_id,
+            PathBuf::from("./queues"),
+            source_config,
+        );
+        let start_checkpoint = SourceCheckpoint::default();
+
+        let source_loader = quickwit_supported_sources();
+        let source = source_loader
+            .load_source(ctx, start_checkpoint)
+            .await
+            .expect("Load source.");
+
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let source_actor = SourceActor {
+            source,
+            doc_processor_mailbox: doc_processor_mailbox.clone(),
+        };
+        let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
+
+        let mut expected_docs = Vec::new();
+        let expected_docs_topic1 = populate_topic(&topic1, 10, move |id| {
+            json!({
+                "id": id,
+                "timestamp": 1674515715,
+                "body": "Hello, world! This is some test data. From topic 1",
+            })
+        })
+        .await
+        .unwrap();
+        expected_docs.extend(expected_docs_topic1);
+
+        let expected_docs_topic2 = populate_topic(&topic2, 10, move |id| {
+            json!({
+                "id": id,
+                "timestamp": 1674515715,
+                "body": "Hello, world! This is some test data. From topic 2.",
+            })
+        })
+        .await
+        .unwrap();
+        expected_docs.extend(expected_docs_topic2);
+        expected_docs.sort();
+
+        let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
+        let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
+        assert!(!messages.is_empty());
+
+        let batch = merge_doc_batches(messages);
+        assert_eq!(batch.docs, expected_docs);
+
+        let num_bytes = expected_docs
+            .iter()
+            .map(|v| v.as_bytes().len())
+            .sum::<usize>();
+        let expected_state = json!({
+            "index_id": index_id,
+            "source_id": source_id,
+            "topics": vec![topic1, topic2],
+            "subscription": SUBSCRIPTION,
+            "consumer_name": CONSUMER_NAME,
+            "num_bytes_processed": num_bytes,
+            "num_messages_processed": 20,
             "num_invalid_messages": 0,
         });
         assert_eq!(exit_state, expected_state);
