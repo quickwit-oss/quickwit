@@ -48,13 +48,14 @@ pub struct IndexerConfig {
     pub split_store_max_num_splits: usize,
     #[serde(default = "IndexerConfig::default_max_concurrent_split_uploads")]
     pub max_concurrent_split_uploads: usize,
-    #[doc(hidden)]
-    #[serde(default = "IndexerConfig::default_enable_opentelemetry_otlp_service")]
-    pub enable_opentelemetry_otlp_service: bool,
+    /// Enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry
+    /// Protocol (OTLP).
+    #[serde(default = "IndexerConfig::default_enable_otlp_endpoint")]
+    pub enable_otlp_endpoint: bool,
 }
 
 impl IndexerConfig {
-    fn default_enable_opentelemetry_otlp_service() -> bool {
+    fn default_enable_otlp_endpoint() -> bool {
         !(cfg!(feature = "test") || cfg!(feature = "testsuite"))
     }
 
@@ -73,7 +74,7 @@ impl IndexerConfig {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> anyhow::Result<Self> {
         let indexer_config = IndexerConfig {
-            enable_opentelemetry_otlp_service: true,
+            enable_otlp_endpoint: true,
             split_store_max_num_bytes: Byte::from_bytes(1_000_000),
             split_store_max_num_splits: 3,
             max_concurrent_split_uploads: 4,
@@ -85,7 +86,7 @@ impl IndexerConfig {
 impl Default for IndexerConfig {
     fn default() -> Self {
         Self {
-            enable_opentelemetry_otlp_service: Self::default_enable_opentelemetry_otlp_service(),
+            enable_otlp_endpoint: Self::default_enable_otlp_endpoint(),
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
@@ -166,14 +167,26 @@ impl Default for IngestApiConfig {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JaegerConfig {
-    #[serde(default = "JaegerConfig::default_enable_jaeger_service")]
-    pub enable_service: bool,
+    /// Enables the gRPC endpoint that allows the Jaeger Query Service to connect and retrieve
+    /// traces.
+    #[serde(default = "JaegerConfig::default_enable_endpoint")]
+    pub enable_endpoint: bool,
+    /// How far back in time we look for spans when queries at not time-bound (`get_services`,
+    /// `get_operations`, `get_trace` operations).
     #[serde(default = "JaegerConfig::default_lookback_period_hours")]
     lookback_period_hours: NonZeroU64,
+    /// The assumed maximum duration of a trace in seconds.
+    ///
+    /// Finding a trace happens in two phases: the first phase identifies at least one span that
+    /// matches the query, while the second phase retrieves the spans that belong to the trace.
+    /// The `max_trace_duration_secs` parameter is used during the second phase to restrict the
+    /// search time interval to [span.end_timestamp - max_trace_duration, span.start_timestamp
+    /// + max_trace_duration].
     #[serde(default = "JaegerConfig::default_max_trace_duration_secs")]
     max_trace_duration_secs: NonZeroU64,
-    #[serde(default = "JaegerConfig::default_max_retrieve_spans")]
-    pub max_retrieve_spans: NonZeroU64,
+    /// The maximum number of spans that can be retrieved in a single request.
+    #[serde(default = "JaegerConfig::default_max_fetch_spans")]
+    pub max_fetch_spans: NonZeroU64,
 }
 
 impl JaegerConfig {
@@ -185,7 +198,7 @@ impl JaegerConfig {
         Duration::from_secs(self.max_trace_duration_secs.get())
     }
 
-    fn default_enable_jaeger_service() -> bool {
+    fn default_enable_endpoint() -> bool {
         !(cfg!(feature = "test") || cfg!(feature = "testsuite"))
     }
 
@@ -197,7 +210,7 @@ impl JaegerConfig {
         NonZeroU64::new(3600).unwrap() // 1 hour
     }
 
-    fn default_max_retrieve_spans() -> NonZeroU64 {
+    fn default_max_fetch_spans() -> NonZeroU64 {
         NonZeroU64::new(10_000).unwrap() // 10k spans
     }
 }
@@ -205,10 +218,10 @@ impl JaegerConfig {
 impl Default for JaegerConfig {
     fn default() -> Self {
         Self {
-            enable_service: Self::default_enable_jaeger_service(),
+            enable_endpoint: Self::default_enable_endpoint(),
             lookback_period_hours: Self::default_lookback_period_hours(),
             max_trace_duration_secs: Self::default_max_trace_duration_secs(),
-            max_retrieve_spans: Self::default_max_retrieve_spans(),
+            max_fetch_spans: Self::default_max_fetch_spans(),
         }
     }
 }

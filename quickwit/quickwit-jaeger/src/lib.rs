@@ -77,16 +77,16 @@ pub struct JaegerService {
     search_service: Arc<dyn SearchService>,
     lookback_period_secs: i64,
     max_trace_duration_secs: i64,
-    max_retrieve_spans: u64,
+    max_fetch_spans: u64,
 }
 
 impl JaegerService {
     pub fn new(config: JaegerConfig, search_service: Arc<dyn SearchService>) -> Self {
         Self {
+            search_service,
             lookback_period_secs: config.lookback_period().as_secs() as i64,
             max_trace_duration_secs: config.max_trace_duration().as_secs() as i64,
-            max_retrieve_spans: config.max_retrieve_spans.get(),
-            search_service,
+            max_fetch_spans: config.max_fetch_spans.get(),
         }
     }
 
@@ -328,7 +328,7 @@ impl JaegerService {
             search_fields: Vec::new(),
             start_timestamp: Some(*search_window.start()),
             end_timestamp: Some(*search_window.end()),
-            max_hits: self.max_retrieve_spans,
+            max_hits: self.max_fetch_spans,
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,

@@ -427,7 +427,7 @@ mod tests {
         assert_eq!(
             config.indexer_config,
             IndexerConfig {
-                enable_opentelemetry_otlp_service: false,
+                enable_otlp_endpoint: false,
                 split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
                 split_store_max_num_splits: 10_000,
                 max_concurrent_split_uploads: 8,
@@ -445,10 +445,10 @@ mod tests {
         assert_eq!(
             config.jaeger_config,
             JaegerConfig {
-                enable_service: false,
+                enable_endpoint: false,
                 lookback_period_hours: NonZeroU64::new(24).unwrap(),
                 max_trace_duration_secs: NonZeroU64::new(600).unwrap(),
-                max_retrieve_spans: NonZeroU64::new(1_000).unwrap(),
+                max_fetch_spans: NonZeroU64::new(1_000).unwrap(),
             }
         );
         Ok(())
@@ -898,7 +898,7 @@ mod tests {
     #[test]
     fn test_jaeger_config_rejects_null_values() {
         let jaeger_config_yaml = r#"
-            enable_service: true
+            enable_endpoint: true
             max_trace_duration_secs: 0
         "#;
         let error = serde_yaml::from_str::<JaegerConfig>(jaeger_config_yaml).unwrap_err();
