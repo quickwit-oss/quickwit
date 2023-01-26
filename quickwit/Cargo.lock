@@ -4372,6 +4372,7 @@ dependencies = [
  "prost",
  "prost-types",
  "quickwit-common",
+ "quickwit-config",
  "quickwit-opentelemetry",
  "quickwit-proto",
  "quickwit-search",

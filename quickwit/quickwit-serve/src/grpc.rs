@@ -125,18 +125,18 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
-    let enable_jaeger_service = services.config.searcher_config.enable_jaeger_service;
+    let enable_jaeger_service = services.config.jaeger_config.enable_service;
     let jaeger_grpc_service =
         if enable_jaeger_service && services.services.contains(&QuickwitService::Searcher) {
             enabled_grpc_services.insert("jaeger");
             let search_service = services.search_service.clone();
             Some(SpanReaderPluginServer::new(JaegerService::new(
+                services.config.jaeger_config.clone(),
                 search_service,
             )))
         } else {
             None
         };
-
     let server_router = server
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(control_plane_grpc_service)

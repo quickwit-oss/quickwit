@@ -56,7 +56,7 @@ impl Universe {
     ///
     /// The time "jumps" only happen when no actor is processing any message,
     /// running initialization or finalize.
-    #[cfg(any(tests, feature = "testsuite"))]
+    #[cfg(any(test, feature = "testsuite"))]
     pub fn with_accelerated_time() -> Universe {
         let universe = Universe::new();
         universe.spawn_ctx().scheduler_client.accelerate_time();

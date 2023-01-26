@@ -26,6 +26,7 @@ tonic = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-search = { workspace = true }
