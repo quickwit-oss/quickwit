@@ -256,8 +256,8 @@ impl OtlpGrpcTraceService {
         })
         .await
         .map_err(|join_error| {
-            error!(error=?join_error, "Failed to parse spans.");
-            Status::internal("Failed to parse spans.".to_string())
+            error!("Failed to parse spans: {join_error:?}");
+            Status::internal("Failed to parse spans.")
         })??;
         if num_spans == num_parse_errors {
             return Err(tonic::Status::internal(error_message));
@@ -443,9 +443,9 @@ impl OtlpGrpcTraceService {
         self.ingest_api_service
             .ask_for_res(ingest_request)
             .await
-            .map_err(|error| {
-                error!(error=?error, "Failed to store spans.");
-                tonic::Status::internal(format!("Failed to store spans: {error:?}"))
+            .map_err(|ask_error| {
+                error!("Failed to store spans: {ask_error:?}");
+                tonic::Status::internal("Failed to store spans.")
             })?;
         Ok(())
     }

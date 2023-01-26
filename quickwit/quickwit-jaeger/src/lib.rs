@@ -208,12 +208,8 @@ impl JaegerService {
 
         let trace_ids = trace_ids_b64
             .into_iter()
-            .map(|trace_id_b64| BASE64_STANDARD.decode(trace_id_b64))
-            .collect::<Result<_, _>>()
-            .map_err(|error| {
-                error!(error=?error, "Failed to base64 decode trace ID.");
-                Status::internal("Failed to base64 decode trace ID.")
-            })?;
+            .map(|trace_id_b64| base64_decode(trace_id_b64.as_bytes(), "trace ID"))
+            .collect::<Result<_, _>>()?;
         let response = FindTraceIDsResponse { trace_ids };
         Ok(response)
     }
@@ -236,7 +232,7 @@ impl JaegerService {
         let search_window = start..=end;
         let response = self
             .stream_spans(&trace_ids, search_window, operation_name, request_start)
-            .await;
+            .await?;
         Ok(response)
     }
 
@@ -254,7 +250,7 @@ impl JaegerService {
         let search_window = start..=end;
         let response = self
             .stream_spans(&[trace_id], search_window, operation_name, request_start)
-            .await;
+            .await?;
         Ok(response)
     }
 
@@ -309,18 +305,17 @@ impl JaegerService {
         Ok(trace_ids)
     }
 
-    #[instrument("stream_spans", skip_all, fields(num_traces=%trace_ids.len(), num_spans=Empty))]
+    #[instrument("stream_spans", skip_all, fields(num_traces=%trace_ids.len(), num_spans=Empty, num_bytes=Empty))]
     async fn stream_spans(
         &self,
         trace_ids: &[TraceId],
         search_window: TimeIntervalSecs,
         operation_name: &'static str,
         request_start: Instant,
-    ) -> SpanStream {
-        let (tx, rx) = mpsc::channel(1);
-
+    ) -> Result<SpanStream, Status> {
         if trace_ids.is_empty() {
-            return ReceiverStream::new(rx);
+            let (_tx, rx) = mpsc::channel(1);
+            return Ok(ReceiverStream::new(rx));
         }
         let num_traces = trace_ids.len() as u64;
         let mut query = String::new();
@@ -345,42 +340,43 @@ impl JaegerService {
             aggregation_request: None,
             snippet_fields: Vec::new(),
         };
-        let search_service = self.search_service.clone();
+        let search_response = match self.search_service.root_search(search_request).await {
+            Ok(search_response) => search_response,
+            Err(search_error) => {
+                error!("Failed to fetch spans: {search_error:?}");
+                record_error(operation_name, request_start);
+                return Err(Status::internal("Failed to fetch spans."));
+            }
+        };
+        let mut spans: Vec<JaegerSpan> = Vec::with_capacity(search_response.hits.len());
 
-        let current_span = RuntimeSpan::current();
-        tokio::task::spawn(async move {
-            let search_response = match search_service.root_search(search_request).await {
-                Ok(search_response) => search_response,
-                Err(search_error) => {
-                    warn!(error=?search_error, "Failed to retrieve spans.");
+        for hit in search_response.hits {
+            match qw_span_to_jaeger_span(&hit.json) {
+                Ok(span) => {
+                    spans.push(span);
+                }
+                Err(status) => {
                     record_error(operation_name, request_start);
-                    if let Err(error) = tx.send(Err(search_error.into())).await {
-                        debug!(error=?error, "Client disconnected.");
-                    }
-                    return;
+                    return Err(status);
                 }
             };
-            // I attempted to do this with `itertools::Chunks`, but it panics if the iterator is
-            // empty and `Peekable` is not `Sync`...
-            const CHUNK_SIZE: usize = 100;
-            let mut chunk = Vec::with_capacity(search_response.hits.len().min(CHUNK_SIZE));
+        }
+        if trace_ids.len() > 1 {
+            spans.sort_unstable_by(|left, right| left.trace_id.cmp(&right.trace_id));
+        }
+        let (tx, rx) = mpsc::channel(2);
+        let current_span = RuntimeSpan::current();
+
+        tokio::task::spawn(async move {
+            const CHUNK_SIZE: usize = 1_000;
+
+            let chunk_size = spans.len().min(CHUNK_SIZE);
+            let mut chunk = Vec::with_capacity(chunk_size);
             let mut chunk_num_bytes = 0;
             let mut num_spans_total = 0;
             let mut num_bytes_total = 0;
 
-            // TODO: investigate whether this should be moved to a blocking task.
-            for hit in search_response.hits {
-                let span = match qw_span_to_jaeger_span(&hit.json) {
-                    Ok(span) => span,
-                    Err(status) => {
-                        warn!(error=?status, span=?hit, "Failed to parse span.");
-                        record_error(operation_name, request_start);
-                        if let Err(error) = tx.send(Err(status)).await {
-                            debug!(error=?error, "Client disconnected.");
-                        }
-                        return;
-                    }
-                };
+            while let Some(span) = spans.pop() {
                 chunk_num_bytes += span.encoded_len();
                 chunk.push(span);
 
@@ -388,9 +384,11 @@ impl JaegerService {
                     num_spans_total += chunk.len();
                     num_bytes_total += chunk_num_bytes;
 
-                    let chunk = mem::replace(&mut chunk, Vec::with_capacity(CHUNK_SIZE));
-                    if let Err(error) = tx.send(Ok(SpansResponseChunk { spans: chunk })).await {
-                        debug!(error=?error, "Client disconnected.");
+                    let chunk_size = spans.len().min(CHUNK_SIZE);
+                    let chunk = mem::replace(&mut chunk, Vec::with_capacity(chunk_size));
+                    if let Err(send_error) = tx.send(Ok(SpansResponseChunk { spans: chunk })).await
+                    {
+                        debug!("Client disconnected: {send_error:?}");
                         return;
                     }
                     record_send(operation_name, CHUNK_SIZE, chunk_num_bytes);
@@ -398,12 +396,12 @@ impl JaegerService {
                 }
             }
             if !chunk.is_empty() {
-                num_spans_total += chunk.len();
+                let num_spans = chunk.len();
+                num_spans_total += num_spans;
                 num_bytes_total += chunk_num_bytes;
 
-                let num_spans = chunk.len();
-                if let Err(error) = tx.send(Ok(SpansResponseChunk { spans: chunk })).await {
-                    warn!(error=?error, "Client disconnected.");
+                if let Err(send_error) = tx.send(Ok(SpansResponseChunk { spans: chunk })).await {
+                    debug!("Client disconnected: {send_error:?}");
                     return;
                 }
                 record_send(operation_name, num_spans, chunk_num_bytes);
@@ -422,8 +420,7 @@ impl JaegerService {
                 .with_label_values([operation_name, OTEL_TRACE_INDEX_ID, "false"])
                 .observe(elapsed);
         });
-
-        ReceiverStream::new(rx)
+        Ok(ReceiverStream::new(rx))
     }
 }
 
@@ -700,14 +697,9 @@ fn build_aggregations_query(num_traces: usize) -> String {
 }
 
 fn qw_span_to_jaeger_span(qw_span: &str) -> Result<JaegerSpan, Status> {
-    let mut span = serde_json::from_str::<QwSpan>(qw_span)
-        .map_err(|error| Status::internal(format!("Failed to deserialize span: {error:?}")))?;
-    let trace_id = BASE64_STANDARD.decode(span.trace_id).map_err(|error| {
-        Status::internal(format!("Failed to base64 decode trace ID: {error:?}"))
-    })?;
-    let span_id = BASE64_STANDARD
-        .decode(span.span_id)
-        .map_err(|error| Status::internal(format!("Failed to base64 decode span ID: {error:?}")))?;
+    let mut span: QwSpan = json_deserialize(qw_span, "span")?;
+    let trace_id = base64_decode(span.trace_id.as_bytes(), "trace ID")?;
+    let span_id = base64_decode(span.span_id.as_bytes(), "span ID")?;
 
     let start_time = Some(to_well_known_timestamp(span.span_start_timestamp_nanos));
     let duration = Some(to_well_known_duration(
@@ -929,9 +921,7 @@ fn otlp_links_to_jaeger_references(
     let mut references = Vec::with_capacity(parent_span_id_opt.is_some() as usize + links.len());
 
     if let Some(parent_span_id) = parent_span_id_opt {
-        let parent_span_id = BASE64_STANDARD.decode(parent_span_id).map_err(|error| {
-            Status::internal(format!("Failed to base64 decode parent span ID: {error:?}"))
-        })?;
+        let parent_span_id = base64_decode(parent_span_id.as_bytes(), "parent span ID")?;
         let reference = JaegerSpanRef {
             trace_id: trace_id.to_vec(),
             span_id: parent_span_id,
@@ -942,14 +932,8 @@ fn otlp_links_to_jaeger_references(
     // "Span references generated from Link(s) MUST be added after the span reference generated from
     // Parent ID, if any."
     for link in links {
-        let trace_id = BASE64_STANDARD
-            .decode(link.link_trace_id)
-            .map_err(|error| {
-                Status::internal(format!("Failed to base64 decode parent span ID: {error:?}"))
-            })?;
-        let span_id = BASE64_STANDARD.decode(link.link_span_id).map_err(|error| {
-            Status::internal(format!("Failed to base64 decode parent span ID: {error:?}"))
-        })?;
+        let trace_id = base64_decode(link.link_trace_id.as_bytes(), "link trace ID")?;
+        let span_id = base64_decode(link.link_span_id.as_bytes(), "link span ID")?;
         let reference = JaegerSpanRef {
             trace_id,
             span_id,
@@ -1038,12 +1022,7 @@ struct MetricValue {
 }
 
 fn collect_trace_ids(agg_result_json: &str) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
-    let agg_result: TraceIdsAggResult = serde_json::from_str(agg_result_json).map_err(|error| {
-        error!("Failed to deserialize trace IDs aggregation: {error:?}",);
-        Status::internal(format!(
-            "Failed to deserialize trace IDs aggregation: {error:?}"
-        ))
-    })?;
+    let agg_result: TraceIdsAggResult = json_deserialize(agg_result_json, "trace IDs aggregation")?;
     if agg_result.trace_ids.buckets.is_empty() {
         return Ok((Vec::new(), 0..=0));
     }
@@ -1059,6 +1038,29 @@ fn collect_trace_ids(agg_result_json: &str) -> Result<(Vec<TraceId>, TimeInterva
     let start = start / 1_000_000;
     let end = end / 1_000_000;
     Ok((trace_ids, start..=end))
+}
+
+fn base64_decode(encoded: &[u8], label: &'static str) -> Result<Vec<u8>, Status> {
+    match BASE64_STANDARD.decode(encoded) {
+        Ok(decoded) => Ok(decoded),
+        Err(error) => {
+            error!("Failed to base64 decode {label}: {error:?}",);
+            Err(Status::internal(format!(
+                "Failed to base64 decode: {error:?}"
+            )))
+        }
+    }
+}
+
+fn json_deserialize<'a, T>(json: &'a str, label: &'static str) -> Result<T, Status>
+where T: Deserialize<'a> {
+    match serde_json::from_str(json) {
+        Ok(deserialized) => Ok(deserialized),
+        Err(error) => {
+            error!("Failed to deserialize {label}: {error:?}",);
+            Err(Status::internal(format!("Failed to deserialize {json}.")))
+        }
+    }
 }
 
 #[cfg(test)]
