@@ -116,6 +116,11 @@ pub fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
     left.end <= *right.start() || *right.end() < left.start
 }
 
+/// For use with the `skip_serializing_if` serde attribute.
+pub fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 pub fn no_color() -> bool {
     matches!(env::var("NO_COLOR"), Ok(value) if !value.is_empty())
 }

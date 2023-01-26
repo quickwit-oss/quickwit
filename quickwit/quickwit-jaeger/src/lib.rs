@@ -22,13 +22,14 @@ use std::fmt::Write;
 use std::mem;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use itertools::Itertools;
 use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
+use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
     Event as QwEvent, Link as QwLink, Span as QwSpan, SpanStatus as QwSpanStatus,
     OTEL_TRACE_INDEX_ID,
@@ -74,18 +75,18 @@ type SpanStream = ReceiverStream<Result<SpansResponseChunk, Status>>;
 
 pub struct JaegerService {
     search_service: Arc<dyn SearchService>,
-    lookback_period: Duration,
-    max_trace_duration: Duration,
-    max_retrieved_spans: u64,
+    lookback_period_secs: i64,
+    max_trace_duration_secs: i64,
+    max_fetch_spans: u64,
 }
 
 impl JaegerService {
-    pub fn new(search_service: Arc<dyn SearchService>) -> Self {
+    pub fn new(config: JaegerConfig, search_service: Arc<dyn SearchService>) -> Self {
         Self {
             search_service,
-            lookback_period: Duration::from_secs(3 * 24 * 3600),
-            max_trace_duration: Duration::from_secs(3600),
-            max_retrieved_spans: 10_000,
+            lookback_period_secs: config.lookback_period().as_secs() as i64,
+            max_trace_duration_secs: config.max_trace_duration().as_secs() as i64,
+            max_fetch_spans: config.max_fetch_spans.get(),
         }
     }
 
@@ -99,7 +100,8 @@ impl JaegerService {
         let index_id = TRACE_INDEX_ID.to_string();
         let query = "*".to_string();
         let max_hits = 1_000;
-        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
+        let start_timestamp =
+            Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
 
         let search_request = SearchRequest {
             index_id,
@@ -150,7 +152,8 @@ impl JaegerService {
             None,
         );
         let max_hits = 1_000;
-        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
+        let start_timestamp =
+            Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
 
         let search_request = SearchRequest {
             index_id,
@@ -220,8 +223,8 @@ impl JaegerService {
             .query
             .ok_or_else(|| Status::invalid_argument("Trace query is empty."))?;
         let (trace_ids, span_timestamps_range) = self.find_trace_ids(trace_query).await?;
-        let start = span_timestamps_range.start() - self.max_trace_duration.as_secs() as i64;
-        let end = span_timestamps_range.end() + self.max_trace_duration.as_secs() as i64;
+        let start = span_timestamps_range.start() - self.max_trace_duration_secs;
+        let end = span_timestamps_range.end() + self.max_trace_duration_secs;
         let search_window = start..=end;
         let response = self
             .stream_spans(&trace_ids, search_window, operation_name, request_start)
@@ -239,7 +242,7 @@ impl JaegerService {
         debug!(request=?request, "`get_trace` request");
         let trace_id = BASE64_STANDARD.encode(request.trace_id);
         let end = OffsetDateTime::now_utc().unix_timestamp();
-        let start = end - self.lookback_period.as_secs() as i64;
+        let start = end - self.lookback_period_secs;
         let search_window = start..=end;
         let response = self
             .stream_spans(&[trace_id], search_window, operation_name, request_start)
@@ -325,7 +328,7 @@ impl JaegerService {
             search_fields: Vec::new(),
             start_timestamp: Some(*search_window.start()),
             end_timestamp: Some(*search_window.end()),
-            max_hits: self.max_retrieved_spans,
+            max_hits: self.max_fetch_spans,
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,

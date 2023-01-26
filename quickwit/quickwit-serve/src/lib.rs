@@ -181,7 +181,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         let ingest_api_service =
             start_ingest_api_service(&universe, &config.data_dir_path, &config.ingest_api_config)
                 .await?;
-        if config.indexer_config.enable_opentelemetry_otlp_service {
+        if config.indexer_config.enable_otlp_endpoint {
             let index_config = load_index_config_from_user_config(
                 ConfigFormat::Yaml,
                 OTEL_TRACE_INDEX_CONFIG.as_bytes(),

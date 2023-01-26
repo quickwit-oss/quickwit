@@ -15,12 +15,20 @@ peer_seeds:
 data_dir: /opt/quickwit/data
 metastore_uri: postgres://username:password@host:port/db
 default_index_root_uri: s3://quickwit-indexes
+
 indexer:
   split_store_max_num_bytes: 1T
   split_store_max_num_splits: 10000
   max_concurrent_split_uploads: 8
+
 searcher:
   fast_field_cache_capacity: 10G
   split_footer_cache_capacity: 1G
   max_num_concurrent_split_streams: 120
   max_num_concurrent_split_searches: 150
+
+jaeger:
+  enable_endpoint: false
+  lookback_period_hours: 24
+  max_trace_duration_secs: 60
+  max_fetch_spans: 1000
