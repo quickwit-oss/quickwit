@@ -49,8 +49,8 @@ const GENERATED_FILE_HEADER: &str = r#"
 "#;
 
 pub static ROOT_DIR: Lazy<path::PathBuf> = Lazy::new(|| {
-    let mf = env::var("CARGO_MANIFEST_DIR").expect("Should be run using 'cargo xtask ...'");
-    path::Path::new(&mf).parent().unwrap().to_owned()
+    let mf = env::var("CARGO_MANIFEST_DIR").expect("Should be run using 'cargo run ...'");
+    path::Path::new(&mf).parent().unwrap().to_path_buf()
 });
 
 // Elastic stack versions https://artifacts-api.elastic.co/v1/versions
@@ -67,7 +67,7 @@ fn main() -> anyhow::Result<()> {
     let command_opt = Command::new("elastic-api-generator")
         .about("Quickwit Elasticsearch compatible API generator CLI")
         .subcommand_required(true)
-        .subcommand(Command::new("download").about("Download the Elasticsearch API spec files."))
+        .subcommand(Command::new("download").about("Downloads the Elasticsearch API spec files."))
         .subcommand(Command::new("generate").about("Generates the Elasticsearch API types."));
 
     let matches = command_opt.get_matches();

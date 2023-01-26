@@ -23,7 +23,6 @@ mod rest_handler;
 use std::convert::Infallible;
 use std::str::FromStr;
 
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use warp::{Filter, Rejection};
 
@@ -45,20 +44,9 @@ pub fn elastic_api_handlers(
     // Register newly created handlers here.
 }
 
-fn from_comma_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where D: Deserializer<'de> {
-    let str_sequence = String::deserialize(deserializer)?;
-    let list = str_sequence
-        .trim_matches(',')
-        .split(',')
-        .map(|item| item.to_owned())
-        .collect::<Vec<_>>();
-    Ok(list)
-}
-
 /// A helper struct to serialize/deserialize a comma separated list.
 #[derive(Debug, Deserialize)]
-pub(crate) struct SimpleList(#[serde(deserialize_with = "from_comma_list")] Vec<String>);
+pub(crate) struct SimpleList(Vec<String>);
 
 impl FromStr for SimpleList {
     type Err = Infallible;
@@ -82,24 +70,19 @@ pub(crate) fn to_simple_list<S, T>(
 ) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
 where
     S: Serializer,
-    T: Serialize,
+    T: ToString,
 {
     let vec = &value
         .as_ref()
         .expect("attempt to serialize Option::None value");
 
-    let serialized = vec
+    let serialized_str = vec
         .iter()
-        .map(|v| serde_json::to_string(v).unwrap())
-        .collect::<Vec<_>>();
-
-    let target = serialized
-        .iter()
-        .map(|s| s.trim_matches('"'))
-        .collect::<Vec<_>>()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>() // do not collect here
         .join(",");
 
-    serializer.serialize_str(&target)
+    serializer.serialize_str(&serialized_str)
 }
 
 /// Deserializes a comma separated string of values
@@ -108,16 +91,16 @@ where
 pub(crate) fn from_simple_list<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
 where
     D: Deserializer<'de>,
-    T: DeserializeOwned,
+    T: FromStr,
+    <T as FromStr>::Err: ToString,
 {
     let str_sequence = String::deserialize(deserializer)?;
-
     let list = str_sequence
         .trim_matches(',')
         .split(',')
-        .map(|item| serde_json::from_str::<T>(item))
+        .map(|item| T::from_str(item))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(serde::de::Error::custom)?;
+        .map_err(|err| serde::de::Error::custom(err.to_string()))?;
     Ok(Some(list))
 }
 

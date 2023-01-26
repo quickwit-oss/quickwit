@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::str::FromStr;
+
 /// This file is auto-generated, any change can be overriden.
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
@@ -152,6 +154,24 @@ pub enum DefaultOperator {
     #[serde(rename = "OR")]
     Or,
 }
+impl FromStr for DefaultOperator {
+    type Err = &'static str;
+    fn from_str(value_str: &str) -> Result<Self, Self::Err> {
+        match value_str {
+            "AND" => Ok(Self::And),
+            "OR" => Ok(Self::Or),
+            _ => Err("unknown enum variant"),
+        }
+    }
+}
+impl ToString for DefaultOperator {
+    fn to_string(&self) -> String {
+        match &self {
+            Self::And => "AND".to_string(),
+            Self::Or => "OR".to_string(),
+        }
+    }
+}
 #[doc = "Whether to expand wildcard expression to concrete indices that are open, closed or both."]
 #[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
 pub enum ExpandWildcards {
@@ -166,6 +186,30 @@ pub enum ExpandWildcards {
     #[serde(rename = "all")]
     All,
 }
+impl FromStr for ExpandWildcards {
+    type Err = &'static str;
+    fn from_str(value_str: &str) -> Result<Self, Self::Err> {
+        match value_str {
+            "open" => Ok(Self::Open),
+            "closed" => Ok(Self::Closed),
+            "hidden" => Ok(Self::Hidden),
+            "none" => Ok(Self::None),
+            "all" => Ok(Self::All),
+            _ => Err("unknown enum variant"),
+        }
+    }
+}
+impl ToString for ExpandWildcards {
+    fn to_string(&self) -> String {
+        match &self {
+            Self::Open => "open".to_string(),
+            Self::Closed => "closed".to_string(),
+            Self::Hidden => "hidden".to_string(),
+            Self::None => "none".to_string(),
+            Self::All => "all".to_string(),
+        }
+    }
+}
 #[doc = "Search operation type"]
 #[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
 pub enum SearchType {
@@ -173,6 +217,24 @@ pub enum SearchType {
     QueryThenFetch,
     #[serde(rename = "dfs_query_then_fetch")]
     DfsQueryThenFetch,
+}
+impl FromStr for SearchType {
+    type Err = &'static str;
+    fn from_str(value_str: &str) -> Result<Self, Self::Err> {
+        match value_str {
+            "query_then_fetch" => Ok(Self::QueryThenFetch),
+            "dfs_query_then_fetch" => Ok(Self::DfsQueryThenFetch),
+            _ => Err("unknown enum variant"),
+        }
+    }
+}
+impl ToString for SearchType {
+    fn to_string(&self) -> String {
+        match &self {
+            Self::QueryThenFetch => "query_then_fetch".to_string(),
+            Self::DfsQueryThenFetch => "dfs_query_then_fetch".to_string(),
+        }
+    }
 }
 #[doc = "Specify suggest mode"]
 #[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
@@ -183,6 +245,26 @@ pub enum SuggestMode {
     Popular,
     #[serde(rename = "always")]
     Always,
+}
+impl FromStr for SuggestMode {
+    type Err = &'static str;
+    fn from_str(value_str: &str) -> Result<Self, Self::Err> {
+        match value_str {
+            "missing" => Ok(Self::Missing),
+            "popular" => Ok(Self::Popular),
+            "always" => Ok(Self::Always),
+            _ => Err("unknown enum variant"),
+        }
+    }
+}
+impl ToString for SuggestMode {
+    fn to_string(&self) -> String {
+        match &self {
+            Self::Missing => "missing".to_string(),
+            Self::Popular => "popular".to_string(),
+            Self::Always => "always".to_string(),
+        }
+    }
 }
 #[utoipa::path(get, tag = "Search", path = "/_search")]
 pub(crate) fn elastic_get_search_filter(
