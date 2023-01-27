@@ -27,6 +27,7 @@ use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
 use crate::delete_task_api::delete_task_api_handlers;
+use crate::elastic_search_api::elastic_api_handlers;
 use crate::format::FormatError;
 use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
@@ -92,7 +93,8 @@ pub(crate) async fn start_rest_server(
         ))
         .or(delete_task_api_handlers(
             quickwit_services.metastore.clone(),
-        ));
+        ))
+        .or(elastic_api_handlers());
 
     let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
     let redirect_root_to_ui_route =

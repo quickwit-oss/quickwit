@@ -223,7 +223,7 @@ pub fn elastic_bulk_handler(
         (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
     ),
 )]
-/// Elastic Bulk Ingest
+/// Elasticsearch Bulk Ingest
 async fn elastic_ingest(
     payload: String,
     ingest_api_mailbox: Mailbox<IngestApiService>,

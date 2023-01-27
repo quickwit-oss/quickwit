@@ -105,6 +105,7 @@ prost = { version = "0.11.6", default-features = false, features = [
 ] }
 prost-build = "0.11.6"
 prost-types = "0.11.6"
+quickwit_elastic_api_generation = { git = "https://github.com/quickwit-oss/elasticsearch-rs", rev = "c157b19" }
 rand = "0.8"
 rand_distr = "0.4"
 rayon = "1"
@@ -139,6 +140,7 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 serde_cbor = "0.11"
 serde_json = "1.0"
 serde_qs = { version = "0.10", features = ["warp"] }
+serde_with = "2.2.0"
 serde_yaml = "0.9"
 serial_test = "0.9.0"
 siphasher = "0.3"

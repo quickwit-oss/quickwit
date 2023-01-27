@@ -32,6 +32,7 @@ use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
+use crate::elastic_search_api::from_simple_list;
 use crate::{with_arg, Format};
 
 #[derive(utoipa::OpenApi)]
@@ -96,18 +97,6 @@ where D: Deserializer<'de> {
         return Err(de::Error::custom("Expected a non empty string field."));
     }
     Ok(value)
-}
-
-fn from_simple_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
-where D: Deserializer<'de> {
-    let str_sequence = String::deserialize(deserializer)?;
-    Ok(Some(
-        str_sequence
-            .trim_matches(',')
-            .split(',')
-            .map(|item| item.to_owned())
-            .collect(),
-    ))
 }
 
 /// This struct represents the QueryString passed to
