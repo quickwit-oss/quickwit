@@ -32,6 +32,9 @@ docker-compose-down:
 docker-compose-logs:
 	docker compose logs -f -t
 
+docker-compose-monitoring:
+	COMPOSE_PROFILES=monitoring docker compose -f docker-compose.yml up -d --remove-orphans
+
 fmt:
 	@$(MAKE) -C $(QUICKWIT_SRC) fmt
 
