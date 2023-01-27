@@ -276,7 +276,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "Publisher"]),
+                    .with_label_values([index_id, "publisher"]),
             )
             .spawn(publisher);
 
@@ -286,7 +286,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "Sequencer"]),
+                    .with_label_values([index_id, "sequencer"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(sequencer);
@@ -304,7 +304,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "Uploader"]),
+                    .with_label_values([index_id, "uploader"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(uploader);
@@ -338,7 +338,7 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
-                    .with_label_values([index_id, "Indexer"]),
+                    .with_label_values([index_id, "indexer"]),
             )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(indexer);
@@ -352,6 +352,11 @@ impl IndexingPipeline {
         )?;
         let (doc_processor_mailbox, doc_processor_handler) = ctx
             .spawn_actor()
+            .set_backpressure_micros_counter(
+                crate::metrics::INDEXER_METRICS
+                    .backpressure_micros
+                    .with_label_values([index_id, "doc_processor"]),
+            )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(doc_processor);
 
