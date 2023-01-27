@@ -30,30 +30,52 @@ You can now move this executable directory wherever sensible for your environmen
 You can also pull and run the Quickwit binary in an isolated Docker container.
 
 ```bash
-docker run quickwit/quickwit --version
+docker run --rm quickwit/quickwit --version
 ```
 
+If you are using Apple silicon based macOS system you might need to specify the platform. You can also safely ignore jemalloc warnings.
+
+```bash
+docker run --rm --platform linux/amd64 quickwit/quickwit --version
+```
 
 ## Create your first index
 
 Before adding documents to Quickwit, you need to create an index configured with a YAML config file. This config file notably lets you define how to map your input documents to your index fields and whether these fields should be stored and indexed. See the [index config documentation](../configuration/index-config.md).
 
-Let's create an index configured to receive Wikipedia articles.
+Let's create an index configured to receive Stackoverflow posts (questions and answers).
 
 ```bash
-# First, download the Wikipedia config from Quickwit repository.
-curl -o wikipedia-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/wikipedia/index-config.yaml
+# First, download the stackoverflow dataset config from Quickwit repository.
+curl -o stackoverflow-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/stackoverflow/index-config.yaml
 ```
 
-The index config defines three text fields: `title`, `body` and `url`. It also sets two default search fields `body` and `title`. These fields will be used for search if you do not target a specific field in your query. Please note that by default, text fields are [indexed and tokenized](../configuration/index-config.md).
+The index config defines nine text fields. Among them there are five text fields: `user`, `tags`, `title`, `type` and `body`. Two of these fields, `body` and `title` are [indexed and tokenized](../configuration/index-config.md#text-type) and they are also used as default search fields, which means they will be used for search if you do not target a specific field in your query. The `tags` field is configured to accept multiple text values. The rest of the text fields are not tokenized and configured as [fast](../configuration/index-config.md#text-type). There are three numeric fields `questionId`, `answerId` and `acceptedAnswerId`. And there is the `creationDate` field that serves as the timestamp for each record.
 
 And here is the complete config:
 
-```yaml title="wikipedia-index-config.yaml"
+```yaml title="stackoverflow-index-config.yaml"
+#
+# Index config file for stackoverflow dataset.
+#
 version: 0.4
-index_id: wikipedia
+
+index_id: stackoverflow
+
 doc_mapping:
   field_mappings:
+    - name: user
+      type: text
+      fast: true
+      tokenizer: raw
+    - name: tags
+      type: array<text>
+      fast: true
+      tokenizer: raw
+    - name: type
+      type: text
+      fast: true
+      tokenizer: raw
     - name: title
       type: text
       tokenizer: default
@@ -64,12 +86,21 @@ doc_mapping:
       tokenizer: default
       record: position
       stored: true
-    - name: url
-      type: text
-      tokenizer: raw
+    - name: questionId
+      type: u64
+    - name: answerId
+      type: u64
+    - name: acceptedAnswerId
+      type: u64
+    - name: creationDate
+      type: datetime
+      fast: true
+      input_formats:
+        - rfc3339
+      precision: seconds
+  timestamp_field: creationDate
 
 search_settings:
-  # If you do not specify fields in your query, those fields will be used.
   default_search_fields: [title, body]
 ```
 
@@ -80,7 +111,7 @@ Now we can create the index with the command:
 <TabItem value="cli" label="CLI">
 
 ```bash
-./quickwit index create --index-config ./wikipedia-index-config.yaml
+./quickwit index create --index-config ./stackoverflow-index-config.yaml
 ```
 
 </TabItem>
@@ -90,25 +121,25 @@ Now we can create the index with the command:
 ```bash
 # Create first the data directory.
 mkdir qwdata
-docker run -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/wikipedia-index-config.yaml:/quickwit/index-config.yaml quickwit/quickwit index create --index-config index-config.yaml
+docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/stackoverflow-index-config.yaml:/quickwit/index-config.yaml quickwit/quickwit index create --index-config index-config.yaml
 ```
 
 </TabItem>
 
 </Tabs>
 
-Check that a directory `./qwdata/indexes/wikipedia` has been created, Quickwit will write index files here and a `metastore.json` which contains the [index metadata](../concepts/architecture.md#index).
+Check that a directory `./qwdata/indexes/stackoverflow` has been created, Quickwit will write index files here and a `metastore.json` which contains the [index metadata](../concepts/architecture.md#index).
 You're now ready to fill the index.
 
 
 ## Let's add some documents
 
 Quickwit can index data from many [sources](../configuration/source-config.md). We will use a new line delimited json [ndjson](http://ndjson.org/) datasets as our data source.
-Let's download [a bunch of wikipedia articles (10 000)](https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json) in [ndjson](http://ndjson.org/) format and index it.
+Let's download [a bunch of stackoverflow posts (10 000)](https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.transformed-10000.json) in [ndjson](http://ndjson.org/) format and index it.
 
 ```bash
-# Download the first 10_000 Wikipedia articles.
-curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
+# Download the first 10_000 Stackoverflow posts articles.
+curl -O https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.transformed-10000.json
 ```
 
 <Tabs>
@@ -117,7 +148,7 @@ curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.c
 
 ```bash
 # Index our 10k documents.
-./quickwit index ingest --index wikipedia --input-path wiki-articles-10000.json
+./quickwit index ingest --index stackoverflow --input-path stackoverflow.posts.transformed-10000.json
 ```
 
 </TabItem>
@@ -125,7 +156,7 @@ curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.c
 <TabItem value="docker" label="Docker">
 
 ```bash
-docker run -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/wiki-articles-10000.json:/quickwit/docs.json quickwit/quickwit index ingest --index wikipedia --input-path docs.json
+docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/stackoverflow.posts.transformed-10000.json:/quickwit/docs.json quickwit/quickwit index ingest --index stackoverflow --input-path docs.json
 ```
 
 </TabItem>
@@ -139,7 +170,7 @@ Wait one second or two and check if it worked by using `search` command:
 <TabItem value="cli" label="CLI">
 
 ```bash
-./quickwit index search --index wikipedia --query "barack AND obama"
+./quickwit index search --index stackoverflow --query "search AND engine"
 ```
 
 </TabItem>
@@ -147,7 +178,7 @@ Wait one second or two and check if it worked by using `search` command:
 <TabItem value="docker" label="Docker">
 
 ```bash
-docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index search --index wikipedia --query "barack AND obama"
+docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index search --index stackoverflow --query "search AND engine"
 ```
 
 </TabItem>
@@ -174,7 +205,7 @@ Quickwit provides a search [REST API](../reference/rest-api.md) that can be star
 <TabItem value="docker" label="Docker">
 
 ```bash
-docker run -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit run --service searcher --service metastore
+docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit run --service searcher --service metastore
 ```
 
 </TabItem>
@@ -184,16 +215,38 @@ docker run -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/qui
 
 Check it's working by browsing the [UI at http://localhost:7280](http://localhost:7280) or do a simple GET with cURL:
 ```bash
-curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+AND+obama"
+curl "http://127.0.0.1:7280/api/v1/stackoverflow/search?query=search+AND+engine"
 ```
 
-You can also specify the search field with `body:barack AND obama`:
+You can also specify the search field with `title:search AND engine`:
 ```bash
-curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=body:barack+AND+obama"
+curl "http://127.0.0.1:7280/api/v1/stackoverflow/search?query=title:search+AND+engine"
 ```
 
-Check out the server logs to see what's happening.
+The same request can be expressed as a JSON query:
+```bash
+curl -XPOST "http://localhost:7280/api/v1/stackoverflow/search" -H 'Content-Type: application/json' -d '{
+    "query": "title:search AND engine"
+}'
+```
 
+This format is more verbose but it allows you to use more advanced features such as aggregations. The following query finds most popular tags used on the questions in this dataset:
+```bash
+curl -XPOST "http://localhost:7280/api/v1/stackoverflow/search" -H 'Content-Type: application/json' -d '{
+    "query": "type:question",
+    "max_hits": 0,
+    "aggs": {
+        "foo": {
+            "terms":{
+                "field":"tags",
+                "size": 10
+            }
+        }
+    }
+}'
+```
+
+As you are experimenting with different queries check out the server logs to see what's happening.
 
 :::note
 
@@ -212,7 +265,7 @@ Let's do some cleanup by deleting the index:
 <TabItem value="cli" label="CLI">
 
 ```bash
-./quickwit index delete --index wikipedia
+./quickwit index delete --index stackoverflow
 ```
 
 </TabItem>
@@ -220,7 +273,7 @@ Let's do some cleanup by deleting the index:
 <TabItem value="docker" label="Docker">
 
 ```bash
-docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index delete --index wikipedia
+docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index delete --index stackoverflow
 ```
 
 </TabItem>
@@ -235,12 +288,12 @@ Congrats! You can level up with the following tutorials to discover all Quickwit
 Run the following command from within Quickwit's installation directory.
 
 ```bash
-curl -o wikipedia-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/wikipedia/index-config.yaml
-./quickwit index create --index-config ./wikipedia-index-config.yaml
-curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
-./quickwit index ingest --index wikipedia --input-path ./wiki-articles-10000.json
-./quickwit index search --index wikipedia --query "barack AND obama"
-./quickwit index delete --index wikipedia
+curl -o stackoverflow-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/stackoverflow/index-config.yaml
+./quickwit index create --index-config ./stackoverflow-index-config.yaml
+curl -O https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.transformed-10000.json
+./quickwit index ingest --index stackoverflow --input-path ./stackoverflow.posts.transformed-10000.json
+./quickwit index search --index stackoverflow --query "search AND engine"
+./quickwit index delete --index stackoverflow
 ```
 
 
