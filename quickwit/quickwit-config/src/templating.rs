@@ -61,7 +61,7 @@ pub fn render_config(config_content: &[u8]) -> Result<String> {
                 default_value
             } else {
                 bail!(
-                    "Failed to render templated config file: environment variable `{env_var_key}` \
+                    "Failed to render config file template: environment variable `{env_var_key}` \
                      is not set and no default value was provided."
                 );
             }
@@ -71,7 +71,7 @@ pub fn render_config(config_content: &[u8]) -> Result<String> {
     let template = Template::new(template_str).with_regex(&TEMPLATE_ENV_VAR_CAPTURE);
     let rendered = template
         .render(&values)
-        .context("Failed to render templated config file")?;
+        .context("Failed to render config file template.")?;
     Ok(rendered)
 }
 

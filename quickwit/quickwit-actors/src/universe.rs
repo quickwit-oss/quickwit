@@ -56,7 +56,7 @@ impl Universe {
     ///
     /// The time "jumps" only happen when no actor is processing any message,
     /// running initialization or finalize.
-    #[cfg(any(tests, feature = "testsuite"))]
+    #[cfg(any(test, feature = "testsuite"))]
     pub fn with_accelerated_time() -> Universe {
         let universe = Universe::new();
         universe.spawn_ctx().scheduler_client.accelerate_time();
@@ -99,7 +99,7 @@ impl Universe {
     /// `tokio::time::sleep`.
     ///
     /// It can however be accelerated when using a time-accelerated
-    /// Universe.
+    /// universe.
     pub async fn sleep(&self, duration: Duration) {
         self.spawn_ctx.scheduler_client.sleep(duration).await;
     }

@@ -454,13 +454,9 @@ In plain language:
 For field names containing the `.` character, you will need to escape it when referencing them. Otherwise the `.` character will be interpreted as a JSON object property access. Because of this, it is recommended to avoid using field names containing the `.` character.
 :::
 
-### Behavior with fields not defined in the config
-
-Fields in your JSON document that are not defined in the `index config` will be ignored.
-
 ### Behavior with null values or missing fields
 
-Fields with `null` or missing fields in your JSON document will be silently ignored when indexing.
+Fields with `null` or missing fields in your JSON document will be silently ignored when indexing with the exception of non-text fast fields. Non-text fast fields are required and entire record will be rejected with an error if at least one fast field is missing. 
 
 ## Indexing settings
 

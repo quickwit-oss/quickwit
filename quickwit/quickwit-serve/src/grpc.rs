@@ -84,10 +84,8 @@ pub(crate) async fn start_grpc_server(
         None
     };
     // Mount gRPC OpenTelemetry OTLP trace service if `QuickwitService::Indexer` is enabled on node.
-    let enable_opentelemetry_otlp_grpc_service = services
-        .config
-        .indexer_config
-        .enable_opentelemetry_otlp_service;
+    let enable_opentelemetry_otlp_grpc_service =
+        services.config.indexer_config.enable_otlp_endpoint;
     let otlp_trace_service = if enable_opentelemetry_otlp_grpc_service
         && services.services.contains(&QuickwitService::Indexer)
     {
@@ -125,18 +123,18 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
-    let enable_jaeger_service = services.config.searcher_config.enable_jaeger_service;
+    let enable_jaeger_endpoint = services.config.jaeger_config.enable_endpoint;
     let jaeger_grpc_service =
-        if enable_jaeger_service && services.services.contains(&QuickwitService::Searcher) {
+        if enable_jaeger_endpoint && services.services.contains(&QuickwitService::Searcher) {
             enabled_grpc_services.insert("jaeger");
             let search_service = services.search_service.clone();
             Some(SpanReaderPluginServer::new(JaegerService::new(
+                services.config.jaeger_config.clone(),
                 search_service,
             )))
         } else {
             None
         };
-
     let server_router = server
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(control_plane_grpc_service)

@@ -24,8 +24,8 @@ pub struct JaegerServiceMetrics {
     pub requests_total: IntCounterVec<2>,
     pub request_errors_total: IntCounterVec<2>,
     pub request_duration_seconds: HistogramVec<3>,
-    pub retrieved_traces_total: IntCounterVec<2>,
-    pub retrieved_spans_total: IntCounterVec<2>,
+    pub fetched_traces_total: IntCounterVec<2>,
+    pub fetched_spans_total: IntCounterVec<2>,
     pub transferred_bytes_total: IntCounterVec<2>,
 }
 
@@ -50,14 +50,14 @@ impl Default for JaegerServiceMetrics {
                 "quickwit_jaeger",
                 ["operation", "index", "error"],
             ),
-            retrieved_traces_total: new_counter_vec(
-                "retrieved_traces_total",
+            fetched_traces_total: new_counter_vec(
+                "fetched_traces_total",
                 "Number of traces retrieved from storage",
                 "quickwit_jaeger",
                 ["operation", "index"],
             ),
-            retrieved_spans_total: new_counter_vec(
-                "retrieved_spans_total",
+            fetched_spans_total: new_counter_vec(
+                "fetched_spans_total",
                 "Number of spans retrieved from storage",
                 "quickwit_jaeger",
                 ["operation", "index"],

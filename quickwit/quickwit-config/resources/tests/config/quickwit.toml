@@ -23,3 +23,8 @@ split_footer_cache_capacity = "1G"
 max_num_concurrent_split_streams = 120
 max_num_concurrent_split_searches = 150
 
+[jaeger]
+enable_endpoint = false
+lookback_period_hours = 24
+max_trace_duration_secs = 600
+max_fetch_spans = 1_000

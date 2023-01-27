@@ -84,25 +84,25 @@ doc_mapping:
     - name: span_name
       type: text
       tokenizer: raw
-    - name: span_start_timestamp_secs
-      type: datetime
-      input_formats:
-        - unix_timestamp
-      stored: false
-      indexed: false
-      fast: true
-      precision: seconds
     - name: span_start_timestamp_nanos
       type: u64
       indexed: false
     - name: span_end_timestamp_nanos
       type: u64
       indexed: false
-    - name: span_duration_millis
-      type: u64
-      stored: false
+    - name: span_start_timestamp_secs
+      type: datetime
+      input_formats:
+        - unix_timestamp
       indexed: false
       fast: true
+      precision: seconds
+      stored: false
+    - name: span_duration_millis
+      type: u64
+      indexed: false
+      fast: true
+      stored: false
     - name: span_attributes
       type: json
       tokenizer: raw
@@ -124,6 +124,11 @@ doc_mapping:
     - name: events
       type: array<json>
       tokenizer: raw
+    - name: event_names
+      type: array<text>
+      tokenizer: default
+      record: position
+      stored: false
     - name: links
       type: array<json>
       tokenizer: raw
@@ -156,9 +161,14 @@ pub struct Span {
     pub span_id: Base64,
     pub span_kind: u64,
     pub span_name: String,
+    /// Span start timestamp in nanoseconds. Stored as a `u64` instead of a `datetime` to avoid the
+    /// truncation to microseconds. This field is stored but not indexed.
     pub span_start_timestamp_nanos: u64,
+    /// Span start timestamp in nanoseconds. Stored as a `u64` instead of a `datetime` to avoid the
+    /// truncation to microseconds. This field is stored but not indexed.
     pub span_end_timestamp_nanos: u64,
-    // TODO: Explain why those two fields are optional.
+    /// Span start timestamp in seconds used for aggregations and range queries. This field is
+    /// stored as a fast field but not indexed.
     pub span_start_timestamp_secs: Option<u64>,
     pub span_duration_millis: Option<u64>,
     pub span_attributes: HashMap<String, JsonValue>,
@@ -169,6 +179,8 @@ pub struct Span {
     pub parent_span_id: Option<Base64>,
     #[serde(default)]
     pub events: Vec<Event>,
+    #[serde(default)]
+    pub event_names: Vec<String>,
     #[serde(default)]
     pub links: Vec<Link>,
 }
@@ -238,8 +250,15 @@ impl OtlpGrpcTraceService {
             num_spans,
             num_parse_errors,
             error_message,
-        } = self.parse_spans(request)?;
-
+        } = tokio::task::spawn_blocking({
+            let parent_span = RuntimeSpan::current();
+            || Self::parse_spans(request, parent_span)
+        })
+        .await
+        .map_err(|join_error| {
+            error!("Failed to parse spans: {join_error:?}");
+            Status::internal("Failed to parse spans.")
+        })??;
         if num_spans == num_parse_errors {
             return Err(tonic::Status::internal(error_message));
         }
@@ -265,8 +284,11 @@ impl OtlpGrpcTraceService {
         Ok(response)
     }
 
-    #[instrument(skip_all, fields(num_spans = Empty, num_bytes = Empty, num_parse_errors = Empty))]
-    fn parse_spans(&self, request: ExportTraceServiceRequest) -> Result<ParsedSpans, Status> {
+    #[instrument(skip_all, parent = parent_span, fields(num_spans = Empty, num_bytes = Empty, num_parse_errors = Empty))]
+    fn parse_spans(
+        request: ExportTraceServiceRequest,
+        parent_span: RuntimeSpan,
+    ) -> Result<ParsedSpans, Status> {
         let mut doc_batch = DocBatch {
             index_id: OTEL_TRACE_INDEX_ID.to_string(),
             ..Default::default()
@@ -326,7 +348,7 @@ impl OtlpGrpcTraceService {
                     let span_duration_millis = Some(span_duration_nanos / 1_000_000);
                     let span_attributes = extract_attributes(span.attributes);
 
-                    let events = span
+                    let events: Vec<Event> = span
                         .events
                         .into_iter()
                         .map(|event| Event {
@@ -336,7 +358,11 @@ impl OtlpGrpcTraceService {
                             event_dropped_attributes_count: event.dropped_attributes_count as u64,
                         })
                         .collect();
-                    let links = span
+                    let event_names: Vec<String> = events
+                        .iter()
+                        .map(|event| event.event_name.clone())
+                        .collect();
+                    let links: Vec<Link> = span
                         .links
                         .into_iter()
                         .map(|link| Link {
@@ -376,20 +402,22 @@ impl OtlpGrpcTraceService {
                         span_status: span.status.map(|status| status.into()),
                         parent_span_id,
                         events,
+                        event_names,
                         links,
                     };
-                    let span_json = match serde_json::to_vec(&span) {
+                    let doc_batch_len = doc_batch.concat_docs.len();
+
+                    match serde_json::to_writer(&mut doc_batch.concat_docs, &span) {
                         Ok(span_json) => span_json,
-                        Err(err) => {
-                            error!(error=?err, "Failed to JSON serialize span.");
-                            error_message = format!("Failed to JSON serialize span: {err:?}");
+                        Err(error) => {
+                            error!(error=?error, "Failed to JSON serialize span.");
+                            error_message = format!("Failed to JSON serialize span: {error:?}");
                             num_parse_errors += 1;
                             continue;
                         }
-                    };
-                    let span_json_len = span_json.len() as u64;
-                    doc_batch.concat_docs.extend_from_slice(&span_json);
-                    doc_batch.doc_lens.push(span_json_len);
+                    }
+                    let span_json_len = doc_batch.concat_docs.len() - doc_batch_len;
+                    doc_batch.doc_lens.push(span_json_len as u64);
                 }
             }
         }
@@ -415,9 +443,9 @@ impl OtlpGrpcTraceService {
         self.ingest_api_service
             .ask_for_res(ingest_request)
             .await
-            .map_err(|error| {
-                error!(error=?error, "Failed to store spans.");
-                tonic::Status::internal(format!("Failed to store spans: {error:?}"))
+            .map_err(|ask_error| {
+                error!("Failed to store spans: {ask_error:?}");
+                tonic::Status::internal("Failed to store spans.")
             })?;
         Ok(())
     }

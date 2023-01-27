@@ -93,12 +93,12 @@ Take a look at our [Quick Start](https://quickwit.io/docs/get-started/quickstart
 
 # 📚 Tutorials
 
-- [Set up a cluster on a local machine](https://quickwit.io/docs/tutorials/tutorial-hdfs-logs/)
-- [Set up a distributed search on AWS S3](https://quickwit.io/docs/tutorials/tutorial-hdfs-logs-distributed-search-aws-s3)
-- [Send logs from Vector to Quickwit](https://quickwit.io/tutorials/send-logs-from-vector-to-quickwit/)
-- [Ingest data from Apache Kafka](https://quickwit.io/tutorials/kafka/)
-- [Ingest data from Amazon Kinesis](https://quickwit.io/tutorials/kinesis/)
-- [Add full-text search to a well-known OLAP database, ClickHouse](https://quickwit.io/docs/tutorials/add-full-text-search-to-your-olap-db)
+- [Set up a cluster on a local machine](https://quickwit.io/docs/get-started/tutorials/tutorial-hdfs-logs)
+- [Set up a distributed search on AWS S3](https://quickwit.io/docs/get-started/tutorials/tutorial-hdfs-logs-distributed-search-aws-s3)
+- [Send logs from Vector to Quickwit](https://quickwit.io/docs/get-started/tutorials/send-logs-from-vector-to-quickwit)
+- [Ingest data from Apache Kafka](https://quickwit.io/docs/get-started/tutorials/kafka)
+- [Ingest data from Amazon Kinesis](https://quickwit.io/docs/get-started/tutorials/kinesis)
+- [Add full-text search to a well-known OLAP database, ClickHouse](https://quickwit.io/docs/get-started/tutorials/add-full-text-search-to-your-olap-db/)
 
 # 🙋 FAQ
 

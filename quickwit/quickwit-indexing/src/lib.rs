@@ -41,7 +41,6 @@ pub mod actors;
 mod controlled_directory;
 pub mod grpc_adapter;
 pub mod indexing_client;
-pub mod indexing_client_pool;
 pub mod merge_policy;
 mod metrics;
 pub mod models;

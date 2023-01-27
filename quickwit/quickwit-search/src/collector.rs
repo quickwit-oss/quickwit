@@ -311,7 +311,7 @@ impl QuickwitCollector {
     }
 }
 
-const AGGREGATION_BUCKET_LIMIT: u32 = 65000;
+const AGGREGATION_BUCKET_LIMIT: u32 = 1_000_000;
 
 impl Collector for QuickwitCollector {
     type Child = QuickwitSegmentCollector;
