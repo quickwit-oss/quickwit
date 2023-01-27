@@ -1,0 +1,47 @@
+#
+# Index config file for stackoverflow dataset.
+#
+version: 0.4
+
+index_id: stackoverflow
+
+doc_mapping:
+  field_mappings:
+    - name: user
+      type: text
+      fast: true
+      tokenizer: raw
+    - name: tags
+      type: array<text>
+      fast: true
+      tokenizer: raw
+    - name: type
+      type: text
+      fast: true
+      tokenizer: raw
+    - name: title
+      type: text
+      tokenizer: default
+      record: position
+      stored: true
+    - name: body
+      type: text
+      tokenizer: default
+      record: position
+      stored: true
+    - name: questionId
+      type: u64
+    - name: answerId
+      type: u64
+    - name: acceptedAnswerId
+      type: u64
+    - name: creationDate
+      type: datetime
+      fast: true
+      input_formats:
+        - rfc3339
+      precision: seconds
+  timestamp_field: creationDate
+
+search_settings:
+  default_search_fields: [title, body]
