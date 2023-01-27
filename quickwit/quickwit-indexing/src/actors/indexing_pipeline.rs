@@ -270,7 +270,7 @@ impl IndexingPipeline {
             Some(self.params.merge_planner_mailbox.clone()),
             Some(source_mailbox.clone()),
         );
-        let (publisher_mailbox, publisher_handler) = ctx
+        let (publisher_mailbox, publisher_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(
@@ -281,7 +281,7 @@ impl IndexingPipeline {
             .spawn(publisher);
 
         let sequencer = Sequencer::new(publisher_mailbox);
-        let (sequencer_mailbox, sequencer_handler) = ctx
+        let (sequencer_mailbox, sequencer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
@@ -299,7 +299,7 @@ impl IndexingPipeline {
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             self.params.max_concurrent_split_uploads_index,
         );
-        let (uploader_mailbox, uploader_handler) = ctx
+        let (uploader_mailbox, uploader_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
@@ -312,14 +312,14 @@ impl IndexingPipeline {
         // Packager
         let tag_fields = self.params.doc_mapper.tag_named_fields()?;
         let packager = Packager::new("Packager", tag_fields, uploader_mailbox);
-        let (packager_mailbox, packager_handler) = ctx
+        let (packager_mailbox, packager_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .spawn(packager);
 
         // Index Serializer
         let index_serializer = IndexSerializer::new(packager_mailbox);
-        let (index_serializer_mailbox, index_serializer_handler) = ctx
+        let (index_serializer_mailbox, index_serializer_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .spawn(index_serializer);
@@ -333,7 +333,7 @@ impl IndexingPipeline {
             self.params.indexing_settings.clone(),
             index_serializer_mailbox,
         );
-        let (indexer_mailbox, indexer_handler) = ctx
+        let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
@@ -350,7 +350,7 @@ impl IndexingPipeline {
             indexer_mailbox,
             self.params.source_config.transform_config.clone(),
         )?;
-        let (doc_processor_mailbox, doc_processor_handler) = ctx
+        let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
@@ -384,7 +384,7 @@ impl IndexingPipeline {
             source,
             doc_processor_mailbox,
         };
-        let (_source_mailbox, source_handler) = ctx
+        let (_source_mailbox, source_handle) = ctx
             .spawn_actor()
             .set_mailboxes(source_mailbox, source_inbox)
             .set_kill_switch(self.kill_switch.clone())
@@ -394,27 +394,27 @@ impl IndexingPipeline {
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
         self.handles = Some(IndexingPipelineHandles {
-            source: source_handler,
-            doc_processor: doc_processor_handler,
-            indexer: indexer_handler,
-            index_serializer: index_serializer_handler,
-            packager: packager_handler,
-            uploader: uploader_handler,
-            sequencer: sequencer_handler,
-            publisher: publisher_handler,
+            source: source_handle,
+            doc_processor: doc_processor_handle,
+            indexer: indexer_handle,
+            index_serializer: index_serializer_handle,
+            packager: packager_handle,
+            uploader: uploader_handle,
+            sequencer: sequencer_handle,
+            publisher: publisher_handle,
         });
         Ok(())
     }
 
     async fn terminate(&mut self) {
         self.kill_switch.kill();
-        if let Some(handlers) = self.handles.take() {
+        if let Some(handles) = self.handles.take() {
             tokio::join!(
-                handlers.source.kill(),
-                handlers.indexer.kill(),
-                handlers.packager.kill(),
-                handlers.uploader.kill(),
-                handlers.publisher.kill(),
+                handles.source.kill(),
+                handles.indexer.kill(),
+                handles.packager.kill(),
+                handles.uploader.kill(),
+                handles.publisher.kill(),
             );
         }
     }
@@ -637,8 +637,8 @@ mod tests {
             merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
-        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
-        let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.join().await;
+        let (_pipeline_mailbox, pipeline_handle) = universe.spawn_builder().spawn(pipeline);
+        let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1 + num_fails);
         Ok(pipeline_exit_status.is_success())
