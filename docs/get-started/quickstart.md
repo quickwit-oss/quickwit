@@ -299,5 +299,5 @@ curl -O https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.tr
 
 ## Next tutorials
 
-- [Search on logs with timestamp pruning](/docs/tutorials/tutorial-hdfs-logs)
-- [Setup a distributed search on AWS S3](/docs/tutorials/tutorial-hdfs-logs-distributed-search-aws-s3)
+- [Search on logs with timestamp pruning](/docs/get-started/tutorials/tutorial-hdfs-logs)
+- [Setup a distributed search on AWS S3](/docs/get-started/tutorials/tutorial-hdfs-logs-distributed-search-aws-s3)
