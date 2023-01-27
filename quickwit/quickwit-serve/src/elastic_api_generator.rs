@@ -53,7 +53,7 @@ pub static ROOT_DIR: Lazy<path::PathBuf> = Lazy::new(|| {
     path::Path::new(&mf).parent().unwrap().to_path_buf()
 });
 
-// Elastic stack versions https://artifacts-api.elastic.co/v1/versions
+// Elasticsearch stack versions https://artifacts-api.elastic.co/v1/versions
 pub static ES_STACK_VERSION: Lazy<String> =
     Lazy::new(|| env::var("ES_STACK_VERSION").unwrap_or_else(|_| "8.6.0".to_string()));
 
