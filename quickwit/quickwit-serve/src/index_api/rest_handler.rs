@@ -20,6 +20,7 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
+use hyper::StatusCode;
 use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig};
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_janitor::FileEntry;
@@ -27,6 +28,7 @@ use quickwit_metastore::{IndexMetadata, Split};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tracing::info;
+use warp::reply::{with_header, with_status};
 use warp::{Filter, Rejection, Reply};
 
 use crate::format::Format;
@@ -274,7 +276,6 @@ fn delete_source_handler(
         .and(warp::delete())
         .and(with_arg(index_service))
         .then(delete_source)
-        .map(format_response)
 }
 
 #[utoipa::path(
@@ -294,9 +295,13 @@ async fn delete_source(
     index_id: String,
     source_id: String,
     index_service: Arc<IndexService>,
-) -> Result<(), IndexServiceError> {
+) -> impl warp::Reply {
     info!(index_id = %index_id, source_id = %source_id, "delete-source");
-    index_service.delete_source(&index_id, &source_id).await
+    let res = index_service.delete_source(&index_id, &source_id).await;
+    match &res {
+        Ok(_) => with_status(with_header("".to_string(), "", ""), StatusCode::OK),
+        Err(_) => Format::PrettyJson.make_rest_reply_non_serializable_error(res),
+    }
 }
 
 #[cfg(test)]
@@ -574,6 +579,7 @@ mod tests {
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
+        assert!(resp.body().is_empty());
         let index_metadata = metastore.index_metadata("hdfs-logs").await.unwrap();
         assert!(!index_metadata.sources.contains_key("file-source"));
 
