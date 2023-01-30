@@ -145,12 +145,16 @@ fn get_indexes_metadatas_handler(
 struct ListSplitsQueryParam {
     /// A specific split state(s) to filter by.
     #[serde(deserialize_with = "from_simple_list")]
+    #[serde(default)]
     pub split_states: Option<Vec<SplitState>>,
     /// If set, restrict splits to documents with a `timestamp >= start_timestamp`.
+    #[serde(default)]
     pub start_timestamp: Option<i64>,
     /// If set, restrict splits to documents with a `timestamp < end_timestamp``.
+    #[serde(default)]
     pub end_timestamp: Option<i64>,
     /// If set, restrict splits whose creation dates are before this date.
+    #[serde(default)]
     pub end_create_timestamp: Option<i64>,
 }
 
@@ -653,7 +657,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_splits() -> anyhow::Result<()> {
+    async fn test_get_splits() {
         let mut metastore = MockMetastore::new();
         metastore
             .expect_list_splits()
@@ -678,32 +682,66 @@ mod tests {
             Arc::new(QuickwitConfig::for_test()),
         )
         .recover(recover_fn);
+        {
+            let resp = warp::test::request()
+                .path(
+                    "/indexes/quickwit-demo-index/splits?split_states=Published&\
+                     start_timestamp=10&end_timestamp=20&end_create_timestamp=2",
+                )
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
+            let expected_response_json = serde_json::json!([{
+                "create_timestamp": 0,
+                "split_id": "split_1",
+            }]);
+            assert_json_include!(
+                actual: actual_response_json,
+                expected: expected_response_json
+            );
+        }
+        {
+            let resp = warp::test::request()
+                .path(
+                    "/indexes/quickwit-demo-index/splits?split_states=Published&\
+                     start_timestamp=11&end_timestamp=20&end_create_timestamp=2",
+                )
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 500);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_all_splits() {
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_list_splits()
+            .return_once(|list_split_query: ListSplitsQuery| {
+                if list_split_query.index_id == "quickwit-demo-index"
+                    && list_split_query.split_states.is_empty()
+                    && list_split_query.time_range.is_unbounded()
+                    && list_split_query.create_timestamp.is_unbounded()
+                {
+                    return Ok(vec![]);
+                }
+                Err(MetastoreError::InternalError {
+                    message: "".to_string(),
+                    cause: "".to_string(),
+                })
+            });
+        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_management_handler = super::index_management_handlers(
+            Arc::new(index_service),
+            Arc::new(QuickwitConfig::for_test()),
+        )
+        .recover(recover_fn);
         let resp = warp::test::request()
-            .path(
-                "/indexes/quickwit-demo-index/splits?split_states=Published&start_timestamp=10&\
-                 end_timestamp=20&end_create_timestamp=2",
-            )
+            .path("/indexes/quickwit-demo-index/splits")
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        let actual_response_json: JsonValue = serde_json::from_slice(resp.body())?;
-        let expected_response_json = serde_json::json!([{
-            "create_timestamp": 0,
-            "split_id": "split_1",
-        }]);
-        assert_json_include!(
-            actual: actual_response_json,
-            expected: expected_response_json
-        );
-        let resp = warp::test::request()
-            .path(
-                "/indexes/quickwit-demo-index/splits?split_states=Published&start_timestamp=11&\
-                 end_timestamp=20&end_create_timestamp=2",
-            )
-            .reply(&index_management_handler)
-            .await;
-        assert_eq!(resp.status(), 500);
-        Ok(())
     }
 
     #[tokio::test]
