@@ -206,6 +206,9 @@ impl PulsarSource {
         let num_bytes = doc.as_bytes().len();
 
         if let Some(previous) = self.previous_positions.get(&partition) {
+            // We skip messages which are older than the previously recorded position.
+            // This is because Pulsar may replay messages which have not yet been acknowledged but
+            // are in the process of being indexed.
             if &position < previous {
                 self.state.num_invalid_messages += 1;
                 return Ok(());
