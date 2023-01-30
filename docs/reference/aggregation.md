@@ -116,7 +116,7 @@ Example request, histogram with stats in each bucket:
 
 #### Aggregating on datetime fields
 
-The `datetime` fields are handled the same way as other numric fields. However, all values in the requests such is intervals, offsets, bounds, and range boundaries need to be expressed in microseconds.
+Fields of type `datetime` are handled the same way as any numeric field. However, all values in the requests such as intervals, offsets, bounds, and range boundaries need to be expressed in microseconds.
 
 Histogram with one bucket per day on a `datetime` field. `interval` needs to be provided in microseconds. 
 In the following example, we grouped documents per day (`1 day = 86400000000 microseconds`).
@@ -515,7 +515,7 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
 
 ### Count
 
-A single-value metric aggregation that computesthat counts the number of values that are extracted from the aggregated documents.
+A single-value metric aggregation that counts the number of values that are extracted from the aggregated documents.
 Supported field types are `u64`, `f64`, `i64`, and `datetime`.
 
 **Request**
