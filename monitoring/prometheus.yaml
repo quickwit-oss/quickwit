@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 1s
+  scrape_timeout: 1s
+
+scrape_configs:
+  - job_name: quickwit
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - host.docker.internal:7280
