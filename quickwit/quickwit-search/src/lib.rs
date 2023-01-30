@@ -29,7 +29,6 @@ mod error;
 mod fetch_docs;
 mod filters;
 mod leaf;
-mod rendezvous_hasher;
 mod retry;
 mod root;
 mod search_job_placer;
