@@ -87,11 +87,6 @@ Response
 }
 ```
 
-#### Limitations
-
-Currently aggregations work only on single value fast fields of type u64, f64, i64, date and on string fast fields.
-
-
 ### Supported Aggregations
 
  - Bucket
@@ -100,7 +95,11 @@ Currently aggregations work only on single value fast fields of type u64, f64, i
     - [Terms](#terms)
 - Metric
     - [Average](#average)
+    - [Count](#count)
+    - [Max](#max)
+    - [Min](#min)
     - [Stats](#stats)
+    - [Sum](#sum)
 
 
 ## Bucket Aggregations
@@ -115,7 +114,9 @@ Some define a single bucket, some define a fixed number of multiple buckets, and
 
 Example request, histogram with stats in each bucket:
 
-#### Datetime Histogram Example
+#### Aggregating on datetime fields
+
+Fields of type `datetime` are handled the same way as any numeric field. However, all values in the requests such as intervals, offsets, bounds, and range boundaries need to be expressed in microseconds.
 
 Histogram with one bucket per day on a `datetime` field. `interval` needs to be provided in microseconds. 
 In the following example, we grouped documents per day (`1 day = 86400000000 microseconds`).
@@ -160,11 +161,6 @@ The returned format is currently fixed at `Rfc3339`.
 }
 ```
 
-#### Limitations/Compatibility
-
-Currently aggregations work only on single value fast fields of type `u64`, `f64`, `i64`, `datetime` and on `text` fast fields.
-Aggregation queries on `datetime` need to be expressed in microseconds.
-
 ### Histogram
 
 Histogram is a bucket aggregation, where buckets are created dynamically for the given interval. Each document value is rounded down to its bucket.
@@ -198,7 +194,9 @@ The value range of the buckets can bet extended via extended_bounds or limit the
 
 ###### **field**
 
-The field to aggregate on.
+The field to aggregate on. 
+
+Currently this aggregation only works on single value fast fields of type `u64`, `f64`, `i64`, and `datetime`.
 
 ###### **keyed**
 
@@ -322,7 +320,9 @@ Change response format from an array to a hashmap, the serialized range will be 
 
 ###### **field**
 
-The field to aggregate on.
+The field to aggregate on. 
+
+Currently this aggregation only works on single value fast fields of type `u64`, `f64`, `i64`, and `datetime`.
 
 ###### **ranges**
 
@@ -396,6 +396,8 @@ into `split_size`.
 ###### **field**
 
 The field to aggregate on.
+
+Currently this aggregation only works on fast `text` fields.
 
 ###### **size**
 
@@ -481,8 +483,7 @@ In contrast to bucket aggregations, metrics don't allow sub-aggregations, since 
 ### Average
 
 A single-value metric aggregation that computes the average of numeric values that are extracted from the aggregated documents.
-Supported field types are u64, i64, and f64. 
-
+Supported field types are `u64`, `f64`, `i64`, and `datetime`.
 
 **Request**
 ```json skip
@@ -512,10 +513,109 @@ Supported field types are u64, i64, and f64.
 }
 ```
 
+### Count
+
+A single-value metric aggregation that counts the number of values that are extracted from the aggregated documents.
+Supported field types are `u64`, `f64`, `i64`, and `datetime`.
+
+**Request**
+```json skip
+{
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "price_count": {
+            "value_count": { "field": "price" }
+        }
+    }
+}
+```
+
+**Response**
+```json
+{
+    "num_hits": 9582098,
+    "hits": [],
+    "elapsed_time_micros": 102956,
+    "errors": [],
+    "aggs": {
+        "price_count": {
+            "value": 9582098
+        }
+    }
+}
+```
+
+### Max
+
+A single-value metric aggregation that computes the maximum of numeric values that are that are extracted from the aggregated documents.
+Supported field types are `u64`, `f64`, `i64`, and `datetime`.
+
+**Request**
+```json skip
+{
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "max_price": {
+            "max": { "field": "price" }
+        }
+    }
+}
+```
+
+**Response**
+```json
+{
+    "num_hits": 9582098,
+    "hits": [],
+    "elapsed_time_micros": 101543,
+    "errors": [],
+    "aggs": {
+        "max_price": {
+            "value": 1353.23
+        }
+    }
+}
+```
+
+### Min
+
+A single-value metric aggregation that computes the minimum of numeric values that are that are extracted from the aggregated documents.
+Supported field types are `u64`, `f64`, `i64`, and `datetime`.
+
+**Request**
+```json skip
+{
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "min_price": {
+            "min": { "field": "price" }
+        }
+    }
+}
+```
+
+**Response**
+```json
+{
+    "num_hits": 9582098,
+    "hits": [],
+    "elapsed_time_micros": 102342,
+    "errors": [],
+    "aggs": {
+        "min_price": {
+            "value": 0.01
+        }
+    }
+}
+```
+
 ### Stats
 
 A multi-value metric aggregation that computes stats (average, count, min, max, standard deviation, and sum) of numeric values that are extracted from the aggregated documents. 
-Supported field types are u64, i64, and f64. 
+Supported field types are `u64`, `f64`, `i64`, and `datetime`.
 
 **Request**
 ```json skip
@@ -552,4 +652,35 @@ Supported field types are u64, i64, and f64.
 }
 ```
 
+### Sum
 
+A single-value metric aggregation that that sums up numeric values that are that are extracted from the aggregated documents.
+Supported field types are `u64`, `f64`, `i64`, and `datetime`.
+
+**Request**
+```json skip
+{
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "total_price": {
+            "sum": { "field": "price" }
+        }
+    }
+}
+```
+
+**Response**
+```json
+{
+    "num_hits": 9582098,
+    "hits": [],
+    "elapsed_time_micros": 101142,
+    "errors": [],
+    "aggs": {
+        "total_price": {
+            "value": 12966782476.54
+        }
+    }
+}
+```
