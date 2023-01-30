@@ -4310,7 +4310,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "utoipa",
+ "utoipa 2.4.2",
 ]
 
 [[package]]
@@ -4336,7 +4336,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 2.4.2",
  "warp",
 ]
 
@@ -4363,7 +4363,7 @@ dependencies = [
  "tokio",
  "toml 0.5.11",
  "tracing",
- "utoipa",
+ "utoipa 2.4.2",
  "vrl",
  "vrl-stdlib",
 ]
@@ -4481,7 +4481,7 @@ dependencies = [
  "time-fmt",
  "tracing",
  "typetag",
- "utoipa",
+ "utoipa 2.4.2",
 ]
 
 [[package]]
@@ -4551,7 +4551,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "ulid",
- "utoipa",
+ "utoipa 2.4.2",
  "value",
  "vrl",
  "vrl-stdlib",
@@ -4640,7 +4640,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "utoipa",
+ "utoipa 2.4.2",
 ]
 
 [[package]]
@@ -4677,7 +4677,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
- "utoipa",
+ "utoipa 2.4.2",
 ]
 
 [[package]]
@@ -4728,7 +4728,7 @@ dependencies = [
  "tonic-build",
  "tracing",
  "tracing-opentelemetry",
- "utoipa",
+ "utoipa 2.4.2",
 ]
 
 [[package]]
@@ -4772,7 +4772,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-opentelemetry",
- "utoipa",
+ "utoipa 2.4.2",
 ]
 
 [[package]]
@@ -4827,7 +4827,8 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-opentelemetry",
- "utoipa",
+ "utoipa 2.4.2",
+ "utoipa-swagger-ui",
  "warp",
 ]
 
@@ -5376,6 +5377,7 @@ dependencies = [
  "proc-macro2",
  "quote 1.0.23",
  "rust-embed-utils",
+ "shellexpand",
  "syn 1.0.107",
  "walkdir",
 ]
@@ -5968,6 +5970,15 @@ name = "shell-words"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "24188a676b6ae68c3b2cb3a01be17fbf7240ce009799bb56d5b1409051e78fde"
+
+[[package]]
+name = "shellexpand"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ccc8076840c4da029af4f87e4e8daeb0fca6b87bbb02e10cb60b791450e11e4"
+dependencies = [
+ "dirs",
+]
 
 [[package]]
 name = "shlex"
@@ -7358,7 +7369,19 @@ dependencies = [
  "indexmap",
  "serde",
  "serde_json",
- "utoipa-gen",
+ "utoipa-gen 2.4.2",
+]
+
+[[package]]
+name = "utoipa"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3920fa753064b1be7842bea26175ffa0dfc4a8f30bcb52b8ff03fddf8889914c"
+dependencies = [
+ "indexmap",
+ "serde",
+ "serde_json",
+ "utoipa-gen 3.0.1",
 ]
 
 [[package]]
@@ -7371,6 +7394,33 @@ dependencies = [
  "proc-macro2",
  "quote 1.0.23",
  "syn 1.0.107",
+]
+
+[[package]]
+name = "utoipa-gen"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "720298fac6efca20df9e457e67a1eab41a20d1c3101380b5c4dca1ca60ae0062"
+dependencies = [
+ "proc-macro-error",
+ "proc-macro2",
+ "quote 1.0.23",
+ "syn 1.0.107",
+]
+
+[[package]]
+name = "utoipa-swagger-ui"
+version = "3.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae3d4f4da6408f0f20ff58196ed619c94306ab32635aeca3d3fa0768c0bd0de2"
+dependencies = [
+ "mime_guess",
+ "regex",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "utoipa 3.0.1",
+ "zip",
 ]
 
 [[package]]

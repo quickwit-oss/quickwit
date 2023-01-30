@@ -18,11 +18,16 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::net::SocketAddr;
+use std::pin::Pin;
+use std::sync::Arc;
 
-use hyper::http;
+use futures::Future;
+use hyper::{http, Response, StatusCode};
 use quickwit_common::metrics;
 use quickwit_proto::ServiceErrorCode;
 use tracing::{error, info};
+use utoipa_swagger_ui::Config;
+use warp::path::Tail;
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
@@ -36,7 +41,7 @@ use crate::ingest_api::{elastic_bulk_handler, ingest_handler, tail_handler};
 use crate::node_info_handler::node_info_handler;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
-use crate::{Format, QuickwitServices};
+use crate::{with_arg, Format, QuickwitServices};
 
 /// Starts REST services.
 pub(crate) async fn start_rest_server(
@@ -52,6 +57,14 @@ pub(crate) async fn start_rest_server(
     let api_doc = warp::path("openapi.json")
         .and(warp::get())
         .map(|| warp::reply::json(&crate::openapi::build_docs()));
+
+    // Swagger-ui
+    let swagger_config = Arc::new(Config::from("/openapi.json"));
+    let swagger_ui = warp::path("swagger-ui")
+        .and(warp::get())
+        .and(warp::path::tail())
+        .and(with_arg(swagger_config))
+        .and_then(swagger_ui_handler);
 
     // `/health/*` routes.
     let health_check_routes = health_check_handlers(
@@ -103,6 +116,7 @@ pub(crate) async fn start_rest_server(
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
         .or(api_doc)
+        .or(swagger_ui)
         .or(redirect_root_to_ui_route)
         .or(ui_handler())
         .or(health_check_routes)
@@ -111,8 +125,35 @@ pub(crate) async fn start_rest_server(
         .recover(recover_fn);
 
     info!("Searcher ready to accept requests at http://{rest_listen_addr}/");
-    warp::serve(rest_routes).run(rest_listen_addr).await;
+    let rest_server: Pin<Box<dyn Future<Output = ()> + Send>> =
+        Box::pin(warp::serve(rest_routes).run(rest_listen_addr));
+    rest_server.await;
     Ok(())
+}
+
+async fn swagger_ui_handler(
+    tail: Tail,
+    config: Arc<Config<'static>>,
+) -> Result<Box<dyn Reply>, Rejection> {
+    let path = tail.as_str();
+    match utoipa_swagger_ui::serve(path, config) {
+        Ok(file) => {
+            if let Some(file) = file {
+                Ok(Box::new(
+                    Response::builder()
+                        .header("Content-Type", file.content_type)
+                        .body(file.bytes),
+                ))
+            } else {
+                Ok(Box::new(StatusCode::NOT_FOUND))
+            }
+        }
+        Err(error) => Ok(Box::new(
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(error.to_string()),
+        )),
+    }
 }
 
 /// This function returns a formatted error based on the given rejection reason.
