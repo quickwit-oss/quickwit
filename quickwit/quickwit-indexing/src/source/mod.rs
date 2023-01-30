@@ -331,6 +331,17 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
                 Ok(())
             }
         }
+        #[allow(unused_variables)]
+        SourceParams::Pulsar(params) => {
+            #[cfg(not(feature = "pulsar"))]
+            bail!("Quickwit binary was not compiled with the `pulsar` feature.");
+
+            #[cfg(feature = "pulsar")]
+            {
+                pulsar_source::check_connectivity(params).await?;
+                Ok(())
+            }
+        }
         _ => Ok(()),
     }
 }

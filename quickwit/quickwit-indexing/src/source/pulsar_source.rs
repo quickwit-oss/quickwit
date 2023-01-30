@@ -107,43 +107,14 @@ impl PulsarSource {
         params: PulsarSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
-        let mut builder = Pulsar::builder(&params.address, TokioExecutor);
-
-        match params.authentication.clone() {
-            None => {}
-            Some(PulsarSourceAuth::Token(token)) => {
-                let auth = Authentication {
-                    name: "token".to_string(),
-                    data: token.as_bytes().to_vec(),
-                };
-
-                builder = builder.with_auth(auth);
-            }
-            Some(PulsarSourceAuth::Oauth2 {
-                issuer_url,
-                credentials_url,
-                audience,
-                scope,
-            }) => {
-                let auth = OAuth2Params {
-                    issuer_url,
-                    credentials_url,
-                    audience,
-                    scope,
-                };
-                builder =
-                    builder.with_auth_provider(OAuth2Authentication::client_credentials(auth));
-            }
-        }
-
         info!(
             index_id=%ctx.index_id,
             source_id=%ctx.source_config.source_id,
             topics=?params.topics,
-            "Starting Pulsar source."
+            "Create Pulsar source."
         );
 
-        let pulsar: Pulsar<_> = builder.build().await?;
+        let pulsar = connect_pulsar(&params).await?;
 
         let mut previous_positions = BTreeMap::new();
         for topic in params.topics.iter() {
@@ -476,6 +447,48 @@ fn msg_id_from_position(pos: &Position) -> Option<MessageIdData> {
         first_chunk_message_id: None,
     })
 }
+
+async fn connect_pulsar(params: &PulsarSourceParams) -> anyhow::Result<Pulsar<TokioExecutor>> {
+    let mut builder = Pulsar::builder(&params.address, TokioExecutor);
+
+    match params.authentication.clone() {
+        None => {}
+        Some(PulsarSourceAuth::Token(token)) => {
+            let auth = Authentication {
+                name: "token".to_string(),
+                data: token.as_bytes().to_vec(),
+            };
+
+            builder = builder.with_auth(auth);
+        }
+        Some(PulsarSourceAuth::Oauth2 {
+            issuer_url,
+            credentials_url,
+            audience,
+            scope,
+        }) => {
+            let auth = OAuth2Params {
+                issuer_url,
+                credentials_url,
+                audience,
+                scope,
+            };
+            builder =
+                builder.with_auth_provider(OAuth2Authentication::client_credentials(auth));
+        }
+    }
+
+    let pulsar: Pulsar<_> = builder.build().await?;
+
+    Ok(pulsar)
+}
+
+/// Checks whether we can establish a connection to the pulsar broker.
+pub(crate) async fn check_connectivity(params: &PulsarSourceParams) -> anyhow::Result<()> {
+    connect_pulsar(params).await?;
+    Ok(())
+}
+
 
 #[cfg(all(test, feature = "pulsar-broker-tests"))]
 mod pulsar_broker_tests {
