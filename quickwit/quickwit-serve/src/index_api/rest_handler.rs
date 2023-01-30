@@ -20,12 +20,13 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
+use hyper::header::CONTENT_TYPE;
 use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig};
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_janitor::FileEntry;
 use quickwit_metastore::{IndexMetadata, Split};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use thiserror::Error;
 use tracing::info;
 use warp::{Filter, Rejection, Reply};
 
@@ -59,6 +60,33 @@ pub fn index_management_handlers(
 
 fn format_response<T: Serialize>(result: Result<T, IndexServiceError>) -> impl Reply {
     Format::default().make_rest_reply_non_serializable_error(result)
+}
+
+#[derive(Debug, Error)]
+#[error(
+    "Unsupported content-type header. Choices are application/json, application/toml and \
+     application/yaml."
+)]
+pub struct UnsupportedContentType;
+impl warp::reject::Reject for UnsupportedContentType {}
+
+pub fn config_format_filter() -> impl Filter<Extract = (ConfigFormat,), Error = Rejection> + Copy {
+    warp::filters::header::optional::<mime_guess::Mime>(CONTENT_TYPE.as_str()).and_then(
+        |mime_opt: Option<mime_guess::Mime>| {
+            if let Some(mime) = mime_opt {
+                let config_format = match mime.subtype().as_str() {
+                    "json" => ConfigFormat::Json,
+                    "yaml" => ConfigFormat::Yaml,
+                    "toml" => ConfigFormat::Toml,
+                    _ => {
+                        return futures::future::err(warp::reject::custom(UnsupportedContentType));
+                    }
+                };
+                return futures::future::ok(config_format);
+            }
+            futures::future::ok(ConfigFormat::Json)
+        },
+    )
 }
 
 fn get_index_metadata_handler(
@@ -144,18 +172,14 @@ fn create_index_handler(
     quickwit_config: Arc<QuickwitConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes")
-        // TODO: add a filter on the content type, we support only json.
         .and(warp::post())
+        .and(config_format_filter())
+        .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
         .and(with_arg(quickwit_config))
         .then(create_index)
         .map(format_response)
-}
-
-fn json_body<T: DeserializeOwned + Send>(
-) -> impl Filter<Extract = (T,), Error = warp::Rejection> + Clone {
-    warp::body::content_length_limit(1024 * 1024).and(warp::body::json())
 }
 
 #[utoipa::path(
@@ -170,12 +194,13 @@ fn json_body<T: DeserializeOwned + Send>(
 )]
 /// Create Index
 async fn create_index(
+    config_format: ConfigFormat,
     index_config_bytes: Bytes,
     index_service: Arc<IndexService>,
     quickwit_config: Arc<QuickwitConfig>,
 ) -> Result<IndexMetadata, IndexServiceError> {
     let index_config = quickwit_config::load_index_config_from_user_config(
-        ConfigFormat::Json,
+        config_format,
         &index_config_bytes,
         &quickwit_config.default_index_root_uri,
     )
@@ -219,7 +244,9 @@ fn create_source_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String / "sources")
         .and(warp::post())
-        .and(json_body())
+        .and(config_format_filter())
+        .and(warp::body::content_length_limit(1024 * 1024))
+        .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
         .then(create_source)
         .map(format_response)
@@ -241,9 +268,13 @@ fn create_source_handler(
 /// Create Source
 async fn create_source(
     index_id: String,
-    source_config: SourceConfig,
+    config_format: ConfigFormat,
+    source_config_bytes: Bytes,
     index_service: Arc<IndexService>,
 ) -> Result<SourceConfig, IndexServiceError> {
+    let source_config: SourceConfig = config_format
+        .parse(&source_config_bytes)
+        .map_err(IndexServiceError::InvalidConfig)?;
     info!(index_id = %index_id, source_id = %source_config.source_id, "create-source");
     index_service.create_source(&index_id, source_config).await
 }
@@ -599,6 +630,104 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_rest_create_index_and_source_with_yaml() {
+        let metastore = build_metastore_for_test().await;
+        let index_service = IndexService::new(metastore.clone(), StorageUriResolver::for_test());
+        let mut quickwit_config = QuickwitConfig::for_test();
+        quickwit_config.default_index_root_uri =
+            Uri::from_well_formed("file:///default-index-root-uri");
+        let index_management_handler =
+            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
+                .recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes")
+            .method("POST")
+            .header("content-type", "application/yaml")
+            .body(
+                r#"
+            version: 0.4
+            index_id: hdfs-logs
+            doc_mapping:
+              field_mappings:
+                - name: timestamp
+                  type: i64
+                  fast: true
+                  indexed: true
+            "#,
+            )
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+        let expected_response_json = serde_json::json!({
+            "index_config": {
+                "index_id": "hdfs-logs",
+                "index_uri": "file:///default-index-root-uri/hdfs-logs",
+            }
+        });
+        assert_json_include!(actual: resp_json, expected: expected_response_json);
+    }
+
+    #[tokio::test]
+    async fn test_rest_create_index_and_source_with_toml() {
+        let metastore = build_metastore_for_test().await;
+        let index_service = IndexService::new(metastore.clone(), StorageUriResolver::for_test());
+        let mut quickwit_config = QuickwitConfig::for_test();
+        quickwit_config.default_index_root_uri =
+            Uri::from_well_formed("file:///default-index-root-uri");
+        let index_management_handler =
+            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
+                .recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes")
+            .method("POST")
+            .header("content-type", "application/toml")
+            .body(
+                r#"
+            version = "0.4"
+            index_id = "hdfs-logs"
+            [doc_mapping]
+            field_mappings = [
+                { name = "timestamp", type = "i64", fast = true, indexed = true}
+            ]
+            "#,
+            )
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+        let expected_response_json = serde_json::json!({
+            "index_config": {
+                "index_id": "hdfs-logs",
+                "index_uri": "file:///default-index-root-uri/hdfs-logs",
+            }
+        });
+        assert_json_include!(actual: resp_json, expected: expected_response_json);
+    }
+
+    #[tokio::test]
+    async fn test_rest_create_index_with_wrong_content_type() {
+        let metastore = build_metastore_for_test().await;
+        let index_service = IndexService::new(metastore.clone(), StorageUriResolver::for_test());
+        let mut quickwit_config = QuickwitConfig::for_test();
+        quickwit_config.default_index_root_uri =
+            Uri::from_well_formed("file:///default-index-root-uri");
+        let index_management_handler =
+            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
+                .recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes")
+            .method("POST")
+            .header("content-type", "application/yoml")
+            .body(r#""#)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 415);
+        let body = from_utf8_lossy(resp.body());
+        assert!(body.contains("Unsupported content-type header. Choices are"));
+    }
+
+    #[tokio::test]
     async fn test_rest_create_index_with_bad_config() -> anyhow::Result<()> {
         let metastore = MockMetastore::new();
         let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
@@ -637,12 +766,11 @@ mod tests {
             .path("/indexes/my-index/sources")
             .method("POST")
             .json(&true)
-            .body(r#"{"version": 0.4, "source_id": "file-source""#)
+            .body(r#"{"version": 0.4, "source_id": "file-source"}"#)
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 400);
         let body = from_utf8_lossy(resp.body());
-        println!("{}", body);
         assert!(body.contains("invalid type: floating point `0.4`"));
         Ok(())
     }
