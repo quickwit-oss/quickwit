@@ -37,7 +37,10 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
 use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::{fetch_docs, leaf_search, root_search, ClusterClient, SearchError, SearchJobPlacer};
+use crate::{
+    fetch_docs, leaf_list_terms, leaf_search, root_list_terms, root_search, ClusterClient,
+    SearchError, SearchJobPlacer,
+};
 
 #[derive(Clone)]
 /// The search service implementation.
@@ -238,45 +241,42 @@ impl SearchService for SearchServiceImpl {
 
     async fn root_list_terms(
         &self,
-        _search_request: ListTermsRequest,
+        list_terms_request: ListTermsRequest,
     ) -> crate::Result<ListTermsResponse> {
-        // let search_result = root_search(
-        // &search_request,
-        // self.metastore.as_ref(),
-        // &self.cluster_client,
-        // &self.client_pool,
-        // )
-        // .await?;
-        //
-        // Ok(search_result)
-        unimplemented!()
+        let search_result = root_list_terms(
+            &list_terms_request,
+            self.metastore.as_ref(),
+            &self.cluster_client,
+            &self.search_job_placer,
+        )
+        .await?;
+
+        Ok(search_result)
     }
 
     async fn leaf_list_terms(
         &self,
-        _leaf_search_request: LeafListTermsRequest,
+        leaf_search_request: LeafListTermsRequest,
     ) -> crate::Result<LeafListTermsResponse> {
-        // let search_request = leaf_search_request
-        // .list_terms_request
-        // .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
-        // info!(index=?search_request.index_id, splits=?leaf_search_request.split_offsets,
-        // "leaf_search"); let storage = self
-        // .storage_uri_resolver
-        // .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))?;
-        // let split_ids = leaf_search_request.split_offsets;
-        // let doc_mapper = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
-        //
-        // let leaf_search_response = leaf_search(
-        // self.searcher_context.clone(),
-        // &search_request,
-        // storage.clone(),
-        // &split_ids[..],
-        // doc_mapper,
-        // )
-        // .await?;
-        //
-        // Ok(leaf_search_response)
-        unimplemented!()
+        let search_request = leaf_search_request
+            .list_terms_request
+            .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
+        info!(index=?search_request.index_id, splits=?leaf_search_request.split_offsets,
+         "leaf_search");
+        let storage = self
+            .storage_uri_resolver
+            .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))?;
+        let split_ids = leaf_search_request.split_offsets;
+
+        let leaf_search_response = leaf_list_terms(
+            self.searcher_context.clone(),
+            &search_request,
+            storage.clone(),
+            &split_ids[..],
+        )
+        .await?;
+
+        Ok(leaf_search_response)
     }
 }
 

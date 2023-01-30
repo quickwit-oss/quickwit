@@ -284,20 +284,16 @@ pub struct ListTermsResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafListTermsRequest {
-    /// Search request. This is a perfect copy of the original search request,
-    /// that was sent to root apart from the start_offset & max_hits params.
+    /// Search request. This is a perfect copy of the original list request,
     #[prost(message, optional, tag = "1")]
     pub list_terms_request: ::core::option::Option<ListTermsRequest>,
     /// Index split ids to apply the query on.
     /// This ids are resolved from the index_uri defined in the search_request.
-    #[prost(message, repeated, tag = "4")]
+    #[prost(message, repeated, tag = "2")]
     pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
-    /// `DocMapper` as json serialized trait.
-    #[prost(string, tag = "5")]
-    pub doc_mapper: ::prost::alloc::string::String,
     /// Index URI. The index URI defines the location of the storage that contains the
     /// split files.
-    #[prost(string, tag = "6")]
+    #[prost(string, tag = "3")]
     pub index_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
@@ -307,7 +303,7 @@ pub struct LeafListTermsResponse {
     /// Total number of documents matched by the query.
     #[prost(uint64, tag = "1")]
     pub num_hits: u64,
-    /// List of the best top-K candidates for the given leaf query.
+    /// List of the first K terms the given leaf query.
     #[prost(string, repeated, tag = "2")]
     pub terms: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.

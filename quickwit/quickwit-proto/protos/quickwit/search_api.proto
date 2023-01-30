@@ -305,28 +305,23 @@ message ListTermsResponse {
 }
 
 message LeafListTermsRequest {
-  // Search request. This is a perfect copy of the original search request,
-  // that was sent to root apart from the start_offset & max_hits params.
+  // Search request. This is a perfect copy of the original list request,
   ListTermsRequest list_terms_request = 1;
 
   // Index split ids to apply the query on.
   // This ids are resolved from the index_uri defined in the search_request.
-  repeated SplitIdAndFooterOffsets split_offsets = 4;
-
-  // `DocMapper` as json serialized trait.
-  string doc_mapper = 5;
+  repeated SplitIdAndFooterOffsets split_offsets = 2;
 
   // Index URI. The index URI defines the location of the storage that contains the
   // split files.
-  string index_uri = 6;
-
+  string index_uri = 3;
 }
 
 message LeafListTermsResponse {
   // Total number of documents matched by the query.
   uint64 num_hits = 1;
 
-  // List of the best top-K candidates for the given leaf query.
+  // List of the first K terms the given leaf query.
   repeated string terms = 2;
 
   // The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.

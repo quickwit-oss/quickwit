@@ -25,8 +25,9 @@ use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafSearchRequest, LeafSearchResponse,
-    PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafListTermsRequest, LeafListTermsResponse,
+    LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
+    SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
 use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
@@ -305,6 +306,103 @@ pub async fn root_search(
         aggregation,
         num_hits: leaf_search_response.num_hits,
         hits,
+        elapsed_time_micros: elapsed.as_micros() as u64,
+        errors: vec![],
+    })
+}
+
+/// Performs a distributed list terms.
+/// 1. Sends leaf request over gRPC to multiple leaf nodes.
+/// 2. Merges the search results.
+/// 3. Builds the response and returns.
+/// this is much simpler than `root_search` as it doesn't need to get actual docs.
+#[instrument(skip(list_terms_request, cluster_client, search_job_placer, metastore))]
+pub async fn root_list_terms(
+    list_terms_request: &ListTermsRequest,
+    metastore: &dyn Metastore,
+    cluster_client: &ClusterClient,
+    search_job_placer: &SearchJobPlacer,
+) -> crate::Result<ListTermsResponse> {
+    let start_instant = tokio::time::Instant::now();
+
+    let index_config: IndexConfig = metastore
+        .index_metadata(&list_terms_request.index_id)
+        .await?
+        .into_index_config();
+
+    // TODO verify requested field exist
+
+    let mut query = quickwit_metastore::ListSplitsQuery::for_index(&list_terms_request.index_id)
+        .with_split_state(quickwit_metastore::SplitState::Published);
+
+    if let Some(start_ts) = list_terms_request.start_timestamp {
+        query = query.with_time_range_start_gte(start_ts);
+    }
+
+    if let Some(end_ts) = list_terms_request.end_timestamp {
+        query = query.with_time_range_end_lt(end_ts);
+    }
+
+    let split_metadatas = metastore
+        .list_splits(query)
+        .await?
+        .into_iter()
+        .map(|metadata| metadata.split_metadata)
+        .collect::<Vec<_>>();
+
+    let index_uri = &index_config.index_uri;
+
+    let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+    let assigned_leaf_search_jobs = search_job_placer.assign_jobs(jobs, &HashSet::default())?;
+    debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
+    let leaf_search_responses: Vec<LeafListTermsResponse> = try_join_all(
+        assigned_leaf_search_jobs
+            .into_iter()
+            .map(|(client, client_jobs)| {
+                cluster_client.leaf_list_terms(
+                    LeafListTermsRequest {
+                        list_terms_request: Some(list_terms_request.clone()),
+                        split_offsets: client_jobs.into_iter().map(|job| job.offsets).collect(),
+                        index_uri: index_uri.to_string(),
+                    },
+                    client,
+                )
+            }),
+    )
+    .await?;
+
+    let failed_splits: Vec<_> = leaf_search_responses
+        .iter()
+        .flat_map(|leaf_search_response| &leaf_search_response.failed_splits)
+        .collect();
+
+    if !failed_splits.is_empty() {
+        error!(failed_splits = ?failed_splits, "Leaf search response contains at least one failed split.");
+        let errors: String = failed_splits
+            .iter()
+            .map(|splits| format!("{}", splits))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(SearchError::InternalError(errors));
+    }
+
+    // Merging is a cpu-bound task, but probably fast enough to not require
+    // spawning it on a blocking thread.
+
+    let leaf_list_terms_response: Vec<String> = leaf_search_responses
+        .into_iter()
+        .map(|leaf_search_response| leaf_search_response.terms)
+        .kmerge()
+        .take(list_terms_request.max_hits as usize)
+        .collect();
+
+    debug!(leaf_list_terms_response = ?leaf_list_terms_response, "Merged leaf search response.");
+
+    let elapsed = start_instant.elapsed();
+
+    Ok(ListTermsResponse {
+        num_hits: leaf_list_terms_response.len() as u64,
+        terms: leaf_list_terms_response,
         elapsed_time_micros: elapsed.as_micros() as u64,
         errors: vec![],
     })

@@ -99,38 +99,32 @@ impl JaegerService {
         debug!(request=?request, "`get_services` request");
 
         let index_id = TRACE_INDEX_ID.to_string();
-        let query = "*".to_string();
         let max_hits = 1_000;
-        let start_timestamp =
-            Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
+        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
 
-        let search_request = SearchRequest {
+        let search_request = ListTermsRequest {
             index_id,
-            query,
+            field: "service_name".to_owned(),
             max_hits,
             start_timestamp,
             end_timestamp: None,
-            search_fields: Vec::new(),
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
+            start_key: None,
+            end_key: None,
         };
-        let search_response = self.search_service.root_search(search_request).await?;
+        let search_response = self.search_service.root_list_terms(search_request).await?;
         let services: Vec<String> = search_response
-            .hits
+            .terms
             .into_iter()
-            .map(|hit| {
-                serde_json::from_str::<JsonValue>(&hit.json)
+            .map(|term| {
+                serde_json::from_str::<JsonValue>(&term)
                     .expect("Failed to deserialize hit. This should never happen!")
+                    .as_str()
+                    .expect("Expected string term")
+                    .to_string()
             })
-            .flat_map(extract_service_name)
-            .sorted()
-            .dedup()
             .collect();
-        debug!(services=?services, "`get_services` response");
         let response = GetServicesResponse { services };
+        debug!(response=?response, "`get_services` response");
         Ok(response)
     }
 
@@ -484,37 +478,6 @@ impl SpanReaderPlugin for JaegerService {
             self.get_services_inner(request.into_inner()).await,
             [get_services, OTEL_TRACE_INDEX_ID]
         );
-        let request = request.into_inner();
-        debug!(request=?request, "`get_services` request");
-
-        let index_id = TRACE_INDEX_ID.to_string();
-        let max_hits = 1_000;
-        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
-
-        let search_request = ListTermsRequest {
-            index_id,
-            field: "service_name".to_owned(),
-            max_hits,
-            start_timestamp,
-            end_timestamp: None,
-            start_key: None,
-            end_key: None,
-        };
-        let search_response = self.search_service.root_list_terms(search_request).await?;
-        let services: Vec<String> = search_response
-            .terms
-            .into_iter()
-            .map(|term| {
-                serde_json::from_str::<JsonValue>(&term)
-                    .expect("Failed to deserialize hit. This should never happen!")
-                    .as_str()
-                    .expect("Expected string term")
-                    .to_string()
-            })
-            .collect();
-        let response = GetServicesResponse { services };
-        debug!(response=?response, "`get_services` response");
-        Ok(Response::new(response))
     }
 
     async fn get_operations(
@@ -1835,17 +1798,6 @@ mod tests {
         }
     }
 
-    fn hit(responses: &[&str]) -> Vec<quickwit_proto::Hit> {
-        responses
-            .iter()
-            .map(|resp| quickwit_proto::Hit {
-                json: resp.to_string(),
-                partial_hit: None,
-                snippet: None,
-            })
-            .collect()
-    }
-
     #[tokio::test]
     async fn test_get_service() {
         let mut service = quickwit_search::MockSearchService::new();
@@ -1870,7 +1822,7 @@ mod tests {
             });
 
         let service = Arc::new(service);
-        let jaeger = JaegerService::new(service);
+        let jaeger = JaegerService::new(JaegerConfig::default(), service);
 
         let request = tonic::Request::new(crate::GetServicesRequest {});
         let result = jaeger.get_services(request).await.unwrap();

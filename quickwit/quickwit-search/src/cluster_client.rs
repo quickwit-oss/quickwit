@@ -19,8 +19,8 @@
 
 use futures::StreamExt;
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse,
-    LeafSearchStreamRequest, LeafSearchStreamResponse,
+    FetchDocsRequest, FetchDocsResponse, LeafListTermsRequest, LeafListTermsResponse,
+    LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest, LeafSearchStreamResponse,
 };
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tokio::sync::mpsc::error::SendError;
@@ -143,6 +143,32 @@ impl ClusterClient {
         });
 
         UnboundedReceiverStream::new(result_receiver)
+    }
+
+    /// Leaf search with retry on another node client.
+    pub async fn leaf_list_terms(
+        &self,
+        request: LeafListTermsRequest,
+        mut client: SearchServiceClient,
+    ) -> crate::Result<LeafListTermsResponse> {
+        let response_res = client.leaf_list_terms(request.clone()).await;
+        // TODO: implement retry
+        // let retry_policy = LeafSearchRetryPolicy {};
+        // if let Some(retry_request) = retry_policy.retry_request(request, &response_res) {
+        // assert!(!retry_request.split_offsets.is_empty());
+        // client = retry_client(
+        // &self.client_pool,
+        // &client,
+        // &retry_request.split_offsets[0].split_id,
+        // )?;
+        // debug!(
+        // "Leaf search response error: `{:?}`. Retry once to execute {:?} with {:?}",
+        // response_res, retry_request, client
+        // );
+        // let retry_result = client.leaf_search(retry_request).await;
+        // response_res = merge_leaf_search_results(response_res, retry_result);
+        // }
+        response_res
     }
 }
 
