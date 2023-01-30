@@ -563,7 +563,7 @@ mod pulsar_broker_tests {
                 topics: topics.into_iter().map(|v| v.as_ref().to_string()).collect(),
                 subscription: SUBSCRIPTION.to_string(),
                 address: PULSAR_URI.to_string(),
-                consumer_name: CONSUMER_NAME.to_string(),
+                consumer_name: append_random_suffix(CONSUMER_NAME),
                 authentication: None,
             }),
             transform_config: None,
@@ -607,6 +607,7 @@ mod pulsar_broker_tests {
         for receipt in receipts {
             receipt?;
         }
+        producer.close().await.expect("Close connection.");
 
         pending_messages.sort();
         Ok(pending_messages)
@@ -761,6 +762,8 @@ mod pulsar_broker_tests {
 
     #[tokio::test]
     async fn test_topic_ingestion() {
+        let _ = tracing_subscriber::fmt::try_init();
+
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let topic = append_random_suffix("test-pulsar-source--topic-ingestion--topic");
@@ -800,6 +803,8 @@ mod pulsar_broker_tests {
         })
         .await
         .unwrap();
+
+        println!("Completed Populate");
 
         let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
