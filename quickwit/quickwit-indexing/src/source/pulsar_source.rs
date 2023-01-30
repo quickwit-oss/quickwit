@@ -40,7 +40,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::LocalSet;
 use tokio::time;
 use tokio::time::timeout;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
@@ -147,11 +147,15 @@ impl PulsarSource {
 
         let mut previous_positions = BTreeMap::new();
         for topic in params.topics.iter() {
-            let partition_id = PartitionId::from(topic.as_str());
-            let position_opt = checkpoint.position_for_partition(&partition_id).cloned();
+            let partitions = pulsar.lookup_partitioned_topic(topic).await?;
 
-            if let Some(position) = position_opt {
-                previous_positions.insert(partition_id, position);
+            for (partition, _) in partitions {
+                let partition_id = PartitionId::from(partition);
+                let position_opt = checkpoint.position_for_partition(&partition_id).cloned();
+
+                if let Some(position) = position_opt {
+                    previous_positions.insert(partition_id, position);
+                }
             }
         }
         let pulsar =
@@ -200,6 +204,13 @@ impl PulsarSource {
 
         let partition = PartitionId::from(topic);
         let num_bytes = doc.as_bytes().len();
+
+        if let Some(previous) = self.previous_positions.get(&partition) {
+            if &position < previous {
+                self.state.num_invalid_messages += 1;
+                return Ok(());
+            }
+        }
 
         let previous_position = self
             .previous_positions
@@ -360,19 +371,20 @@ async fn spawn_message_listener(
                 .with_topics(&params.topics)
                 .with_consumer_name(&params.consumer_name)
                 .with_subscription(&params.subscription)
-                .with_subscription_type(SubType::Shared)
+                .with_subscription_type(SubType::Failover)
                 .build()
                 .await?;
 
-            debug!("Seeking to last checkpoint position.");
-            for topic in params.topics.iter() {
-                let partition = PartitionId::from(topic.as_str());
-                let seek_to = previous_positions
-                    .get(&partition)
-                    .and_then(msg_id_from_position);
+            let consumer_ids = consumer.consumer_id()
+                .into_iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>();
+            info!(positions = ?previous_positions, "Seeking to last checkpoint position.");
+            for (_, position) in previous_positions {
+                let seek_to = msg_id_from_position(&position);
 
                 if seek_to.is_some() {
-                    consumer.seek(None, seek_to, None, pulsar.clone()).await?;
+                    consumer.seek(Some(consumer_ids.clone()), seek_to, None, pulsar.clone()).await?;
                 }
             }
 
@@ -393,9 +405,11 @@ async fn spawn_message_listener(
                 if last_ack_rx.has_changed().unwrap_or_default() {
                     let checkpoint = last_ack_rx.borrow();
 
-                    for (_, position) in checkpoint.iter() {
-                        if let Some(_msg_id) = msg_id_from_position(&position) {
-                            // TODO: Implement missing behaviour in fork: consumer.cumulative_ack()
+                    for (partition, position) in checkpoint.iter() {
+                        if let Some(msg_id) = msg_id_from_position(&position) {
+                            if let Err(e) = consumer.cumulative_ack_with_id(partition.0.as_str(), msg_id).await {
+                                error!(error = ?e, partition = %partition.0, position = ?position, "Failed to send ACK to pulsar.");
+                            }
                         }
                     }
                 }
