@@ -473,8 +473,7 @@ async fn connect_pulsar(params: &PulsarSourceParams) -> anyhow::Result<Pulsar<To
                 audience,
                 scope,
             };
-            builder =
-                builder.with_auth_provider(OAuth2Authentication::client_credentials(auth));
+            builder = builder.with_auth_provider(OAuth2Authentication::client_credentials(auth));
         }
     }
 
@@ -489,14 +488,12 @@ pub(crate) async fn check_connectivity(params: &PulsarSourceParams) -> anyhow::R
     Ok(())
 }
 
-
 #[cfg(all(test, feature = "pulsar-broker-tests"))]
 mod pulsar_broker_tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
     use futures::future::join_all;
-    use reqwest::StatusCode;
     use quickwit_actors::{ActorHandle, Inbox, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
@@ -504,6 +501,7 @@ mod pulsar_broker_tests {
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpointDelta,
     };
     use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
+    use reqwest::StatusCode;
 
     use super::*;
     use crate::new_split_id;
@@ -612,7 +610,8 @@ mod pulsar_broker_tests {
         let mut pending_messages = Vec::new();
         for topic in topics {
             let mut topic_messages = Vec::with_capacity(num_messages);
-            let mut producer = client.producer()
+            let mut producer = client
+                .producer()
                 .with_name(append_random_suffix(CLIENT_NAME))
                 .with_topic(topic.as_ref())
                 .build()
@@ -661,14 +660,20 @@ mod pulsar_broker_tests {
     async fn create_partitioned_topic(topic: &str, num_partitions: usize) {
         let client = reqwest::Client::new();
         let res = client
-            .put(format!("{PULSAR_ADMIN_URI}/admin/v2/persistent/public/default/{topic}/partitions"))
+            .put(format!(
+                "{PULSAR_ADMIN_URI}/admin/v2/persistent/public/default/{topic}/partitions"
+            ))
             .body(num_partitions.to_string())
             .header("content-type", b"application/json".as_ref())
             .send()
             .await
             .expect("Send admin request");
 
-        assert_eq!(res.status(), StatusCode::NO_CONTENT, "Expect 204 status code.");
+        assert_eq!(
+            res.status(),
+            StatusCode::NO_CONTENT,
+            "Expect 204 status code."
+        );
     }
 
     async fn create_source(
@@ -686,9 +691,7 @@ mod pulsar_broker_tests {
         );
 
         let source_loader = quickwit_supported_sources();
-        let source = source_loader
-            .load_source(ctx, start_checkpoint)
-            .await?;
+        let source = source_loader.load_source(ctx, start_checkpoint).await?;
 
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_actor = SourceActor {
@@ -842,8 +845,10 @@ mod pulsar_broker_tests {
             metastore,
             &index_id,
             source_config,
-            SourceCheckpoint::default()
-        ).await.expect("Create source");
+            SourceCheckpoint::default(),
+        )
+        .await
+        .expect("Create source");
 
         let expected_docs = populate_topic([&topic], 10, move |id| {
             json!({
@@ -896,8 +901,10 @@ mod pulsar_broker_tests {
             metastore,
             &index_id,
             source_config,
-            SourceCheckpoint::default()
-        ).await.expect("Create source");
+            SourceCheckpoint::default(),
+        )
+        .await
+        .expect("Create source");
 
         let expected_docs = populate_topic([&topic1, &topic2], 10, move |id| {
             json!({
@@ -939,7 +946,8 @@ mod pulsar_broker_tests {
         let metastore = metastore_for_test();
         let topic = append_random_suffix("test-pulsar-source--partitioned-single-consumer--topic");
 
-        let index_id = append_random_suffix("test-pulsar-source--partitioned-single-consumer--index");
+        let index_id =
+            append_random_suffix("test-pulsar-source--partitioned-single-consumer--index");
         let (source_id, source_config) = get_source_config([&topic]);
 
         create_partitioned_topic(&topic, 2).await;
@@ -950,8 +958,10 @@ mod pulsar_broker_tests {
             metastore,
             &index_id,
             source_config,
-            SourceCheckpoint::default()
-        ).await.expect("Create source");
+            SourceCheckpoint::default(),
+        )
+        .await
+        .expect("Create source");
 
         let expected_docs = populate_topic([&topic], 10, move |id| {
             json!({
@@ -993,7 +1003,8 @@ mod pulsar_broker_tests {
         let metastore = metastore_for_test();
         let topic = append_random_suffix("test-pulsar-source--partitioned-multi-consumer--topic");
 
-        let index_id = append_random_suffix("test-pulsar-source--partitioned-multi-consumer--index");
+        let index_id =
+            append_random_suffix("test-pulsar-source--partitioned-multi-consumer--index");
         let (source_id, source_config) = get_source_config([&topic]);
 
         create_partitioned_topic(&topic, 2).await;
@@ -1007,26 +1018,31 @@ mod pulsar_broker_tests {
             metastore.clone(),
             &index_id,
             source_config.clone(),
-            SourceCheckpoint::default()
-        ).await.expect("Create source");
+            SourceCheckpoint::default(),
+        )
+        .await
+        .expect("Create source");
 
         let (source_handle2, doc_processor_inbox2) = create_source(
             &universe,
             metastore,
             &index_id,
             source_config,
-            SourceCheckpoint::default()
-        ).await.expect("Create source");
-
-        let expected_docs = populate_topic([&topic_partition_1, &topic_partition_2], 10, move |id| {
-            json!({
-                "id": id,
-                "timestamp": 1674515715,
-                "body": "Hello, world! This is some test data. From topic 1",
-            })
-        })
+            SourceCheckpoint::default(),
+        )
         .await
-        .unwrap();
+        .expect("Create source");
+
+        let expected_docs =
+            populate_topic([&topic_partition_1, &topic_partition_2], 10, move |id| {
+                json!({
+                    "id": id,
+                    "timestamp": 1674515715,
+                    "body": "Hello, world! This is some test data. From topic 1",
+                })
+            })
+            .await
+            .unwrap();
 
         let exit_state1 = wait_for_completion(source_handle1, 10).await;
         let exit_state2 = wait_for_completion(source_handle2, 10).await;
@@ -1044,7 +1060,8 @@ mod pulsar_broker_tests {
         let num_bytes = expected_docs
             .iter()
             .map(|v| v.as_bytes().len())
-            .sum::<usize>() / 2;
+            .sum::<usize>()
+            / 2;
         let expected_state = json!({
             "index_id": index_id,
             "source_id": source_id,
