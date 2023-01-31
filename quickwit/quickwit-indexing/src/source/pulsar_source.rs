@@ -31,6 +31,7 @@ use pulsar::{
     Authentication, Consumer, DeserializeMessage, Payload, Pulsar, SubType, TokioExecutor,
 };
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
+use quickwit_common::rand::append_random_suffix;
 use quickwit_config::{PulsarSourceAuth, PulsarSourceParams};
 use quickwit_metastore::checkpoint::{
     PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
@@ -107,10 +108,13 @@ impl PulsarSource {
         params: PulsarSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
+        let subscription_name = append_random_suffix(&format!("quickwit-indexer-{}", ctx.index_id));
+
         info!(
             index_id=%ctx.index_id,
             source_id=%ctx.source_config.source_id,
             topics=?params.topics,
+            subscription_name=%subscription_name,
             "Create Pulsar source."
         );
 
@@ -129,8 +133,14 @@ impl PulsarSource {
                 }
             }
         }
-        let pulsar =
-            spawn_message_listener(params.clone(), pulsar, previous_positions.clone()).await?;
+
+        let pulsar = spawn_message_listener(
+            subscription_name,
+            params.clone(),
+            pulsar,
+            previous_positions.clone(),
+        )
+        .await?;
 
         Ok(Self {
             ctx,
@@ -270,7 +280,6 @@ impl Source for PulsarSource {
             "index_id": self.ctx.index_id,
             "source_id": self.ctx.source_config.source_id,
             "topics": self.params.topics,
-            "subscription": self.params.subscription,
             "consumer_name": self.params.consumer_name,
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
@@ -325,6 +334,7 @@ struct PulsarConsumer {
 ///
 /// Instead we spawn a separate tokio runtime and use a local set to ensure the bounds.
 async fn spawn_message_listener(
+    subscription_name: String,
     params: PulsarSourceParams,
     pulsar: Pulsar<TokioExecutor>,
     previous_positions: BTreeMap<PartitionId, Position>,
@@ -344,7 +354,7 @@ async fn spawn_message_listener(
                 .consumer()
                 .with_topics(&params.topics)
                 .with_consumer_name(&params.consumer_name)
-                .with_subscription(&params.subscription)
+                .with_subscription(subscription_name)
                 .with_subscription_type(SubType::Failover)
                 .build()
                 .await?;
@@ -510,7 +520,6 @@ mod pulsar_broker_tests {
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
     static PULSAR_ADMIN_URI: &str = "http://localhost:8080";
-    static SUBSCRIPTION: &str = "quickwit-test";
     static CLIENT_NAME: &str = "quickwit-tester";
 
     macro_rules! positions {
@@ -574,7 +583,6 @@ mod pulsar_broker_tests {
             enabled: true,
             source_params: SourceParams::Pulsar(PulsarSourceParams {
                 topics: topics.into_iter().map(|v| v.as_ref().to_string()).collect(),
-                subscription: SUBSCRIPTION.to_string(),
                 address: PULSAR_URI.to_string(),
                 consumer_name: CLIENT_NAME.to_string(),
                 authentication: None,
@@ -875,7 +883,6 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
@@ -931,7 +938,6 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic1, topic2],
-            "subscription": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 20,
@@ -988,7 +994,6 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
@@ -1066,7 +1071,6 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,

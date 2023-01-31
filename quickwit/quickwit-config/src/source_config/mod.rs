@@ -355,8 +355,6 @@ pub struct VoidSourceParams;
 pub struct PulsarSourceParams {
     /// List of the topics that the source consumes.
     pub topics: Vec<String>,
-    /// The name of the topic subscription.
-    pub subscription: String,
     /// The connection URI for pulsar.
     pub address: String,
     #[serde(default = "default_consumer_name")]
