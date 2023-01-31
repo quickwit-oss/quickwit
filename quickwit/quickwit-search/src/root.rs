@@ -330,7 +330,30 @@ pub async fn root_list_terms(
         .await?
         .into_index_config();
 
-    // TODO verify requested field exist
+    let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
+        .map_err(|err| {
+            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+        })?;
+
+    let schema = doc_mapper.schema();
+    let field = schema.get_field(&list_terms_request.field).map_err(|_| {
+        SearchError::InvalidQuery(format!(
+            "Failed to list terms in `{}`, field doesn't exist",
+            list_terms_request.field
+        ))
+    })?;
+
+    let field_entry = schema.get_field_entry(field);
+    if !field_entry.is_indexed() {
+        return Err(SearchError::InvalidQuery(
+            "Trying to list terms on field which isn't indexed".to_string(),
+        ));
+    }
+    if field_entry.field_type().value_type() != tantivy::schema::Type::Str {
+        return Err(SearchError::InvalidQuery(
+            "Listing terms on non-string field isn't supported yet".to_string(),
+        ));
+    }
 
     let mut query = quickwit_metastore::ListSplitsQuery::for_index(&list_terms_request.index_id)
         .with_split_state(quickwit_metastore::SplitState::Published);

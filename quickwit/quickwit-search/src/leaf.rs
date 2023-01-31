@@ -492,14 +492,12 @@ async fn leaf_list_terms_single_split(
         .start_key
         .as_ref()
         .map(|term| value_from_json(field, field_type, term))
-        .transpose()
-        .unwrap();
+        .transpose()?;
     let end_term: Option<Term> = search_request
         .end_key
         .as_ref()
         .map(|term| value_from_json(field, field_type, term))
-        .transpose()
-        .unwrap();
+        .transpose()?;
 
     let mut segment_results = Vec::new();
     for segment_reader in searcher.segment_readers() {
@@ -536,7 +534,7 @@ async fn leaf_list_terms_single_split(
             .with_context(|| "Failed to create stream over sstable")?;
         let mut segment_result: Vec<String> = Vec::with_capacity(search_request.max_hits as usize);
         while stream.advance() {
-            segment_result.push(value_to_json(field, field_type, stream.key()).unwrap());
+            segment_result.push(value_to_json(field, field_type, stream.key())?);
         }
         segment_results.push(segment_result);
     }
@@ -555,10 +553,11 @@ async fn leaf_list_terms_single_split(
     })
 }
 
-fn value_from_json(field: Field, field_type: &FieldType, json: &str) -> Result<Term, ()> {
-    // XXX remove unwraps
-    let json = serde_json::from_str(json).unwrap();
-    let value = field_type.value_from_json(json).unwrap();
+fn value_from_json(field: Field, field_type: &FieldType, json: &str) -> crate::Result<Term> {
+    let json = serde_json::from_str(json)?;
+    let value = field_type
+        .value_from_json(json)
+        .map_err(|_| SearchError::InvalidQuery("term doesn't match field type".to_string()))?;
     let term = match value {
         TantivyValue::Str(s) => Term::from_field_text(field, &s),
         TantivyValue::PreTokStr(s) => Term::from_field_text(field, &s.text),
@@ -570,12 +569,20 @@ fn value_from_json(field: Field, field_type: &FieldType, json: &str) -> Result<T
         TantivyValue::Facet(facet) => Term::from_facet(field, &facet),
         TantivyValue::Bytes(bytes) => Term::from_field_bytes(field, &bytes),
         TantivyValue::IpAddr(ip) => Term::from_field_ip_addr(field, ip),
-        TantivyValue::JsonObject(_) => return Err(()),
+        TantivyValue::JsonObject(_) => {
+            return Err(SearchError::InvalidQuery(
+                "listing JSON field isn't supported yet".to_string(),
+            ))
+        }
     };
     Ok(term)
 }
 
-fn value_to_json(field: Field, field_type: &FieldType, field_value: &[u8]) -> Result<String, ()> {
+fn value_to_json(
+    field: Field,
+    field_type: &FieldType,
+    field_value: &[u8],
+) -> crate::Result<String> {
     use serde_json::Value as JsonValue;
 
     // TODO is there a better way to do the conversion? If not, adding one to tantivy would
@@ -585,18 +592,21 @@ fn value_to_json(field: Field, field_type: &FieldType, field_value: &[u8]) -> Re
     term.append_bytes(field_value);
     let json: Option<JsonValue> = match field_type.value_type() {
         Type::Str => term.as_str().map(|s| s.into()),
-        Type::U64 => term.as_u64().map(|number| number.into()),
-        Type::I64 => term.as_i64().map(|number| number.into()),
-        Type::F64 => term.as_f64().map(|number| number.into()),
+        // json doesn't keep numbers sorted (1 < 10 < 2)
+        // Type::U64 => term.as_u64().map(|number| number.into()),
+        // Type::I64 => term.as_i64().map(|number| number.into()),
+        // Type::F64 => term.as_f64().map(|number| number.into()),
+        Type::U64 | Type::I64 | Type::F64 => None,
         Type::Bool => term.as_bool().map(|b| b.into()),
         Type::IpAddr => None, // no getter yet?
         Type::Bytes | Type::Date | Type::Facet | Type::Json => None, // TODO encode in some way
     };
     let Some(json) = json else {
-        return Err(());
+        return Err(SearchError::InvalidQuery("Unsupported field type".to_string()));
     };
 
-    serde_json::to_string(&json).map_err(|_| ())
+    serde_json::to_string(&json)
+        .map_err(|_| SearchError::InternalError("failed to serialize term".to_string()))
 }
 
 /// `leaf` step of list terms.
