@@ -37,7 +37,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
 use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::{fetch_docs, leaf_search, root_search, ClusterClient, SearchClientPool, SearchError};
+use crate::{fetch_docs, leaf_search, root_search, ClusterClient, SearchError, SearchJobPlacer};
 
 #[derive(Clone)]
 /// The search service implementation.
@@ -45,7 +45,7 @@ pub struct SearchServiceImpl {
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
     cluster_client: ClusterClient,
-    client_pool: SearchClientPool,
+    search_job_placer: SearchJobPlacer,
     searcher_context: Arc<SearcherContext>,
 }
 
@@ -97,7 +97,7 @@ impl SearchServiceImpl {
         metastore: Arc<dyn Metastore>,
         storage_uri_resolver: StorageUriResolver,
         cluster_client: ClusterClient,
-        client_pool: SearchClientPool,
+        search_job_placer: SearchJobPlacer,
         searcher_config: SearcherConfig,
     ) -> Self {
         let searcher_context = Arc::new(SearcherContext::new(searcher_config));
@@ -105,7 +105,7 @@ impl SearchServiceImpl {
             metastore,
             storage_uri_resolver,
             cluster_client,
-            client_pool,
+            search_job_placer,
             searcher_context,
         }
     }
@@ -125,7 +125,7 @@ impl SearchService for SearchServiceImpl {
             &search_request,
             self.metastore.as_ref(),
             &self.cluster_client,
-            &self.client_pool,
+            &self.search_job_placer,
         )
         .await?;
 
@@ -188,7 +188,7 @@ impl SearchService for SearchServiceImpl {
             stream_request,
             self.metastore.as_ref(),
             self.cluster_client.clone(),
-            &self.client_pool,
+            &self.search_job_placer,
         )
         .await?;
         Ok(Box::pin(data))

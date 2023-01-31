@@ -57,7 +57,8 @@ use crate::merge_policy_config::{
     ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
 };
 pub use crate::quickwit_config::{
-    IndexerConfig, IngestApiConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH,
+    IndexerConfig, IngestApiConfig, JaegerConfig, QuickwitConfig, SearcherConfig,
+    DEFAULT_QW_CONFIG_PATH,
 };
 use crate::source_config::serialize::{SourceConfigV0_4, VersionedSourceConfig};
 
@@ -83,10 +84,6 @@ use crate::source_config::serialize::{SourceConfigV0_4, VersionedSourceConfig};
 )))]
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct ConfigApiSchemas;
-
-fn is_false(val: &bool) -> bool {
-    !*val
-}
 
 /// Checks whether an identifier conforms to Quickwit object naming conventions.
 pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {

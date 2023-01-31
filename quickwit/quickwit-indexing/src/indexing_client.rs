@@ -20,7 +20,10 @@
 use std::fmt;
 use std::net::SocketAddr;
 
+use async_trait::async_trait;
 use quickwit_actors::Mailbox;
+use quickwit_config::service::QuickwitService;
+use quickwit_grpc_clients::service_client_pool::ServiceClient;
 use quickwit_proto::indexing_api::ApplyIndexingPlanRequest;
 use quickwit_proto::tonic::transport::{Channel, Endpoint, Uri};
 
@@ -48,6 +51,21 @@ impl fmt::Debug for IndexingServiceClient {
                 write!(formatter, "Grpc(grpc_addr={})", self.grpc_addr)
             }
         }
+    }
+}
+
+#[async_trait]
+impl ServiceClient for IndexingServiceClient {
+    fn service() -> QuickwitService {
+        QuickwitService::Indexer
+    }
+
+    async fn build_client(grpc_addr: SocketAddr) -> anyhow::Result<Self> {
+        create_indexing_service_client(grpc_addr).await
+    }
+
+    fn grpc_addr(&self) -> SocketAddr {
+        self.grpc_addr
     }
 }
 
@@ -100,7 +118,7 @@ pub async fn create_indexing_service_client(
         .authority(grpc_addr.to_string().as_str())
         .path_and_query("/")
         .build()?;
-    let channel = Endpoint::from(uri).connect().await?;
+    let channel = Endpoint::from(uri).connect_lazy();
     let client = IndexingServiceClient::from_grpc_client(
         quickwit_proto::indexing_api::indexing_service_client::IndexingServiceClient::new(channel),
         grpc_addr,

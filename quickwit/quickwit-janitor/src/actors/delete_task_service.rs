@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
 use quickwit_config::IndexConfig;
 use quickwit_metastore::Metastore;
-use quickwit_search::SearchClientPool;
+use quickwit_search::SearchJobPlacer;
 use quickwit_storage::StorageUriResolver;
 use serde::Serialize;
 use tracing::{error, info, warn};
@@ -41,7 +41,7 @@ pub struct DeleteTaskServiceState {
 
 pub struct DeleteTaskService {
     metastore: Arc<dyn Metastore>,
-    search_client_pool: SearchClientPool,
+    search_job_placer: SearchJobPlacer,
     storage_resolver: StorageUriResolver,
     data_dir_path: PathBuf,
     pipeline_handles_by_index_id: HashMap<String, ActorHandle<DeleteTaskPipeline>>,
@@ -51,14 +51,14 @@ pub struct DeleteTaskService {
 impl DeleteTaskService {
     pub fn new(
         metastore: Arc<dyn Metastore>,
-        search_client_pool: SearchClientPool,
+        search_job_placer: SearchJobPlacer,
         storage_resolver: StorageUriResolver,
         data_dir_path: PathBuf,
         max_concurrent_split_uploads: usize,
     ) -> Self {
         Self {
             metastore,
-            search_client_pool,
+            search_job_placer,
             storage_resolver,
             data_dir_path,
             pipeline_handles_by_index_id: Default::default(),
@@ -146,7 +146,7 @@ impl DeleteTaskService {
         let pipeline = DeleteTaskPipeline::new(
             index_config.index_id.clone(),
             self.metastore.clone(),
-            self.search_client_pool.clone(),
+            self.search_job_placer.clone(),
             index_config.indexing_settings,
             index_storage,
             delete_task_service_dir,
@@ -185,9 +185,10 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{Universe, HEARTBEAT};
+    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::TestSandbox;
     use quickwit_proto::metastore_api::DeleteQuery;
-    use quickwit_search::{MockSearchService, SearchClientPool};
+    use quickwit_search::{MockSearchService, SearchJobPlacer, SearchServiceClient};
     use quickwit_storage::StorageUriResolver;
 
     use super::DeleteTaskService;
@@ -207,12 +208,17 @@ mod tests {
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
         let metastore = test_sandbox.metastore();
         let mock_search_service = MockSearchService::new();
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+        let client_pool =
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(mock_search_service),
+                ([127, 0, 0, 1], 1000).into(),
+            )]);
+        let search_job_placer = SearchJobPlacer::new(client_pool);
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let delete_task_service = DeleteTaskService::new(
             metastore.clone(),
-            client_pool,
+            search_job_placer,
             StorageUriResolver::for_test(),
             data_dir_path,
             4,

@@ -33,8 +33,8 @@ use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
 use crate::templating::render_config;
 use crate::{
-    validate_identifier, ConfigFormat, IndexerConfig, IngestApiConfig, QuickwitConfig,
-    SearcherConfig,
+    validate_identifier, ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig,
+    QuickwitConfig, SearcherConfig,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
@@ -175,6 +175,9 @@ struct QuickwitConfigBuilder {
     #[serde(rename = "ingest_api")]
     #[serde(default)]
     ingest_api_config: IngestApiConfig,
+    #[serde(rename = "jaeger")]
+    #[serde(default)]
+    jaeger_config: JaegerConfig,
 }
 
 impl QuickwitConfigBuilder {
@@ -255,6 +258,7 @@ impl QuickwitConfigBuilder {
             indexer_config: self.indexer_config,
             searcher_config: self.searcher_config,
             ingest_api_config: self.ingest_api_config,
+            jaeger_config: self.jaeger_config,
         };
 
         validate(&quickwit_config)?;
@@ -296,6 +300,7 @@ impl Default for QuickwitConfigBuilder {
             indexer_config: IndexerConfig::default(),
             searcher_config: SearcherConfig::default(),
             ingest_api_config: IngestApiConfig::default(),
+            jaeger_config: JaegerConfig::default(),
         }
     }
 }
@@ -346,6 +351,7 @@ pub fn quickwit_config_for_test() -> QuickwitConfig {
         indexer_config: IndexerConfig::default(),
         searcher_config: SearcherConfig::default(),
         ingest_api_config: IngestApiConfig::default(),
+        jaeger_config: JaegerConfig::default(),
     }
 }
 
@@ -353,6 +359,7 @@ pub fn quickwit_config_for_test() -> QuickwitConfig {
 mod tests {
     use std::env;
     use std::net::Ipv4Addr;
+    use std::num::NonZeroU64;
     use std::path::Path;
 
     use byte_unit::Byte;
@@ -420,7 +427,7 @@ mod tests {
         assert_eq!(
             config.indexer_config,
             IndexerConfig {
-                enable_opentelemetry_otlp_service: false,
+                enable_otlp_endpoint: false,
                 split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
                 split_store_max_num_splits: 10_000,
                 max_concurrent_split_uploads: 8,
@@ -429,11 +436,19 @@ mod tests {
         assert_eq!(
             config.searcher_config,
             SearcherConfig {
-                enable_jaeger_service: false,
                 fast_field_cache_capacity: Byte::from_str("10G").unwrap(),
                 split_footer_cache_capacity: Byte::from_str("1G").unwrap(),
                 max_num_concurrent_split_searches: 150,
                 max_num_concurrent_split_streams: 120,
+            }
+        );
+        assert_eq!(
+            config.jaeger_config,
+            JaegerConfig {
+                enable_endpoint: false,
+                lookback_period_hours: NonZeroU64::new(24).unwrap(),
+                max_trace_duration_secs: NonZeroU64::new(600).unwrap(),
+                max_fetch_spans: NonZeroU64::new(1_000).unwrap(),
             }
         );
         Ok(())
@@ -473,18 +488,6 @@ mod tests {
         .unwrap_err();
         assert!(format!("{parsing_error:?}")
             .contains("unknown field `max_num_concurrent_split_searchs`"));
-    }
-
-    #[test]
-    fn test_indexer_config_default_values() {
-        let indexer_config = serde_yaml::from_str::<IndexerConfig>("{}").unwrap();
-        assert_eq!(indexer_config, IndexerConfig::default());
-    }
-
-    #[test]
-    fn test_searcher_config_default_values() {
-        let searcher_config = serde_yaml::from_str::<SearcherConfig>("{}").unwrap();
-        assert_eq!(searcher_config, SearcherConfig::default());
     }
 
     #[tokio::test]
@@ -658,6 +661,8 @@ mod tests {
         );
         assert_eq!(config.indexer_config, IndexerConfig::default());
         assert_eq!(config.searcher_config, SearcherConfig::default());
+        assert_eq!(config.ingest_api_config, IngestApiConfig::default());
+        assert_eq!(config.jaeger_config, JaegerConfig::default());
     }
 
     #[tokio::test]
@@ -805,10 +810,10 @@ mod tests {
     async fn test_load_config_with_validation_error() {
         let config_filepath = get_config_filepath("quickwit.yaml");
         let file = std::fs::read_to_string(&config_filepath).unwrap();
-        let config = QuickwitConfig::load(ConfigFormat::Yaml, file.as_bytes())
+        let error = QuickwitConfig::load(ConfigFormat::Yaml, file.as_bytes())
             .await
             .unwrap_err();
-        assert!(config.to_string().contains("Data dir"));
+        assert!(error.to_string().contains("Data dir"));
     }
 
     #[tokio::test]
@@ -888,5 +893,17 @@ mod tests {
             .unwrap_err();
             assert!(error.to_string().contains("Data dir must be located"));
         }
+    }
+
+    #[test]
+    fn test_jaeger_config_rejects_null_values() {
+        let jaeger_config_yaml = r#"
+            enable_endpoint: true
+            max_trace_duration_secs: 0
+        "#;
+        let error = serde_yaml::from_str::<JaegerConfig>(jaeger_config_yaml).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("max_trace_duration_secs: invalid value: integer `0`"))
     }
 }

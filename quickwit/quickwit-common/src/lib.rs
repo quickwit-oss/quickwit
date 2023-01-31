@@ -29,6 +29,7 @@ pub mod metrics;
 pub mod net;
 mod progress;
 pub mod rand;
+pub mod rendezvous_hasher;
 pub mod runtimes;
 pub mod uri;
 
@@ -114,6 +115,11 @@ pub fn extract_time_range(
 /// Takes 2 intervals and returns true iff their intersection is empty
 pub fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
     left.end <= *right.start() || *right.end() < left.start
+}
+
+/// For use with the `skip_serializing_if` serde attribute.
+pub fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 pub fn no_color() -> bool {

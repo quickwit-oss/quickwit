@@ -1,0 +1,25 @@
+apiVersion: 1
+
+datasources:
+  - id: 1
+    name: Prometheus
+    type: prometheus
+    typeName: Prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 5s
+    readOnly: false
+
+  - id: 2
+    name: Jaeger
+    type: jaeger
+    typeName: Jaeger
+    access: proxy
+    url: http://jaeger:16686
+    isDefault: false
+    jsonData:
+      httpMethod: POST
+    readOnly: false

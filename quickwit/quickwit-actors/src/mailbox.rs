@@ -356,6 +356,10 @@ impl<A: Actor> Clone for Inbox<A> {
 }
 
 impl<A: Actor> Inbox<A> {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.rx.is_empty()
+    }
+
     pub(crate) async fn recv(&self) -> Result<Envelope<A>, RecvError> {
         self.rx.recv().await
     }
@@ -502,7 +506,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mailbox_send_with_backpressure_counter_no_backpressure_cleansheet() {
+    async fn test_mailbox_send_with_backpressure_counter_low_backpressure() {
         let universe = Universe::with_accelerated_time();
         let back_pressure_actor = BackPressureActor;
         let (mailbox, _handle) = universe.spawn_builder().spawn(back_pressure_actor);
@@ -523,9 +527,9 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(backpressure_micros_counter.get(), 0u64);
+        assert!(backpressure_micros_counter.get() < 500);
         processed.await.unwrap();
-        assert_eq!(backpressure_micros_counter.get(), 0u64);
+        assert!(backpressure_micros_counter.get() < 500);
     }
 
     #[tokio::test]

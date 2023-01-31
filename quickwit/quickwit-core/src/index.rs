@@ -31,7 +31,7 @@ use quickwit_janitor::{
 };
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Metastore, MetastoreError,
-    Split, SplitMetadata, SplitState,
+    SplitMetadata, SplitState,
 };
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{quickwit_storage_uri_resolver, StorageResolverError, StorageUriResolver};
@@ -91,22 +91,8 @@ impl IndexService {
         Ok(index_service)
     }
 
-    /// Get an index from `index_id`.
-    pub async fn get_index(&self, index_id: &str) -> Result<IndexMetadata, IndexServiceError> {
-        let index_metadata = self.metastore.index_metadata(index_id).await?;
-        Ok(index_metadata)
-    }
-
-    /// Get all splits from index `index_id`.
-    pub async fn get_all_splits(&self, index_id: &str) -> Result<Vec<Split>, IndexServiceError> {
-        let splits = self.metastore.list_all_splits(index_id).await?;
-        Ok(splits)
-    }
-
-    /// Get all indexes.
-    pub async fn list_indexes(&self) -> anyhow::Result<Vec<IndexMetadata>> {
-        let indexes_metadatas = self.metastore.list_indexes_metadatas().await?;
-        Ok(indexes_metadatas)
+    pub fn metastore(&self) -> Arc<dyn Metastore> {
+        self.metastore.clone()
     }
 
     /// Creates an index from `IndexConfig`.
@@ -259,7 +245,7 @@ impl IndexService {
     /// * `metastore` - A metastore object for interacting with the metastore.
     /// * `index_id` - The target index Id.
     /// * `storage_resolver` - A storage resolver object to access the storage.
-    pub async fn clear_index(&self, index_id: &str) -> anyhow::Result<()> {
+    pub async fn clear_index(&self, index_id: &str) -> Result<(), IndexServiceError> {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         let storage = self.storage_resolver.resolve(index_metadata.index_uri())?;
         let splits = self.metastore.list_all_splits(index_id).await?;
@@ -342,19 +328,6 @@ impl IndexService {
             .clone();
 
         Ok(source_config)
-    }
-
-    pub async fn delete_source(
-        &self,
-        index_id: &str,
-        source_id: &str,
-    ) -> Result<(), IndexServiceError> {
-        self.metastore.delete_source(index_id, source_id).await?;
-        info!(
-            "Source `{}` successfully deleted for index `{}`.",
-            source_id, index_id
-        );
-        Ok(())
     }
 }
 

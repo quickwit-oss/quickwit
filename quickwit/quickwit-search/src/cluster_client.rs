@@ -31,20 +31,20 @@ use tracing::debug;
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfullSplitIds};
 use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
-use crate::{SearchClientPool, SearchError, SearchServiceClient};
+use crate::{SearchError, SearchJobPlacer, SearchServiceClient};
 
 /// Client that executes placed requests (Request, `SearchServiceClient`) and provides
 /// retry policies for `FetchDocsRequest`, `LeafSearchRequest` and `LeafSearchStreamRequest`
 /// to retry on other `SearchServiceClient`.
 #[derive(Clone)]
 pub struct ClusterClient {
-    client_pool: SearchClientPool,
+    search_job_placer: SearchJobPlacer,
 }
 
 impl ClusterClient {
     /// Instantiates [`ClusterClient`].
-    pub fn new(client_pool: SearchClientPool) -> Self {
-        Self { client_pool }
+    pub fn new(search_job_placer: SearchJobPlacer) -> Self {
+        Self { search_job_placer }
     }
 
     /// Fetches docs with retry on another node client.
@@ -58,7 +58,7 @@ impl ClusterClient {
         if let Some(retry_request) = retry_policy.retry_request(request, &response_res) {
             assert!(!retry_request.split_offsets.is_empty());
             client = retry_client(
-                &self.client_pool,
+                &self.search_job_placer,
                 &client,
                 &retry_request.split_offsets[0].split_id,
             )?;
@@ -82,7 +82,7 @@ impl ClusterClient {
         if let Some(retry_request) = retry_policy.retry_request(request, &response_res) {
             assert!(!retry_request.split_offsets.is_empty());
             client = retry_client(
-                &self.client_pool,
+                &self.search_job_placer,
                 &client,
                 &retry_request.split_offsets[0].split_id,
             )?;
@@ -106,7 +106,7 @@ impl ClusterClient {
         // responses and and ignore errors. If there are some errors, we make one retry and
         // in this case we send all results.
         let (result_sender, result_receiver) = unbounded_channel();
-        let client_pool = self.client_pool.clone();
+        let client_pool = self.search_job_placer.clone();
         let retry_policy = LeafSearchStreamRetryPolicy {};
         tokio::spawn(async move {
             let result_stream = client.leaf_search_stream(request.clone()).await;
@@ -220,6 +220,7 @@ mod tests {
     use std::net::SocketAddr;
     use std::sync::Arc;
 
+    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_proto::{
         PartialHit, SearchRequest, SearchStreamRequest, SplitIdAndFooterOffsets, SplitSearchError,
     };
@@ -321,10 +322,16 @@ mod tests {
             .return_once(|_: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse { hits: vec![] })
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
+        let grpc_address = ([127, 0, 0, 1], 1000).into();
+        let client_pool =
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(mock_service),
+                grpc_address,
+            )]);
+        let search_job_placer = SearchJobPlacer::new(client_pool);
         let first_client =
-            client_pool.assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())?;
-        let cluster_client = ClusterClient::new(client_pool);
+            search_job_placer.assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())?;
+        let cluster_client = ClusterClient::new(search_job_placer);
         let result = cluster_client.fetch_docs(request, first_client).await;
         assert!(result.is_ok());
         Ok(())
@@ -345,13 +352,21 @@ mod tests {
             .return_once(|_: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse { hits: vec![] })
             });
-        let client_pool =
-            SearchClientPool::from_mocks(vec![Arc::new(mock_service_1), Arc::new(mock_service_2)])
-                .await?;
-        let client_hashmap = client_pool.clients();
-        let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
+        let client_pool = ServiceClientPool::for_clients_list(vec![
+            SearchServiceClient::from_service(
+                Arc::new(mock_service_1),
+                ([127, 0, 0, 1], 1000).into(),
+            ),
+            SearchServiceClient::from_service(
+                Arc::new(mock_service_2),
+                ([127, 0, 0, 1], 1001).into(),
+            ),
+        ]);
+        let search_job_placer = SearchJobPlacer::new(client_pool.clone());
+        let client_hashmap = client_pool.all();
+        let first_grpc_addr: SocketAddr = "127.0.0.1:1000".parse()?;
         let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterClient::new(search_job_placer.clone());
         let result = cluster_client.fetch_docs(request, first_client).await;
         assert!(result.is_ok());
         Ok(())
@@ -366,11 +381,16 @@ mod tests {
             .returning(|_: quickwit_proto::FetchDocsRequest| {
                 Err(SearchError::InternalError("error".to_string()))
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service_1)]).await?;
-        let client_hashmap = client_pool.clients();
-        let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
+        let client_pool =
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(mock_service_1),
+                ([127, 0, 0, 1], 1000).into(),
+            )]);
+        let client_hashmap = client_pool.all();
+        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let first_grpc_addr: SocketAddr = "127.0.0.1:1000".parse()?;
         let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterClient::new(search_job_placer.clone());
         let result = cluster_client.fetch_docs(request, first_client).await;
         assert!(result.is_err());
         Ok(())
@@ -391,10 +411,15 @@ mod tests {
                     ..Default::default()
                 })
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
+        let client_pool =
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(mock_service),
+                ([127, 0, 0, 1], 1000).into(),
+            )]);
+        let search_job_placer = SearchJobPlacer::new(client_pool);
         let first_client =
-            client_pool.assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())?;
-        let cluster_client = ClusterClient::new(client_pool);
+            search_job_placer.assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())?;
+        let cluster_client = ClusterClient::new(search_job_placer);
         let result = cluster_client.leaf_search(request, first_client).await;
         assert!(result.is_ok());
         Ok(())
@@ -436,11 +461,16 @@ mod tests {
                     ..Default::default()
                 })
             });
-        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
-        let first_client = client_pool
+        let client_pool =
+            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
+                Arc::new(mock_service),
+                ([127, 0, 0, 1], 1000).into(),
+            )]);
+        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let first_client = search_job_placer
             .assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())
             .unwrap();
-        let cluster_client = ClusterClient::new(client_pool);
+        let cluster_client = ClusterClient::new(search_job_placer);
         let result = cluster_client.leaf_search(request, first_client).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().num_hits, 2);
@@ -526,9 +556,18 @@ mod tests {
         mock_service_2
             .expect_leaf_search_stream()
             .return_once(|_| Ok(UnboundedReceiverStream::new(result_receiver)));
-        let client_pool =
-            SearchClientPool::from_mocks(vec![Arc::new(mock_service_1), Arc::new(mock_service_2)])
-                .await?;
+        let client_pool = ServiceClientPool::for_clients_list(vec![
+            SearchServiceClient::from_service(
+                Arc::new(mock_service_1),
+                ([127, 0, 0, 1], 1000).into(),
+            ),
+            SearchServiceClient::from_service(
+                Arc::new(mock_service_2),
+                ([127, 0, 0, 1], 1001).into(),
+            ),
+        ]);
+        let client_hashmap = client_pool.all();
+        let search_job_placer = SearchJobPlacer::new(client_pool);
         result_sender.send(Ok(LeafSearchStreamResponse {
             data: Vec::new(),
             split_id: "split_1".to_string(),
@@ -537,10 +576,9 @@ mod tests {
             "last split error".to_string(),
         )))?;
         drop(result_sender);
-        let client_hashmap = client_pool.clients();
-        let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
+        let first_grpc_addr: SocketAddr = "127.0.0.1:1000".parse()?;
         let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
-        let cluster_client = ClusterClient::new(client_pool);
+        let cluster_client = ClusterClient::new(search_job_placer);
         let result = cluster_client
             .leaf_search_stream(request, first_client)
             .await;

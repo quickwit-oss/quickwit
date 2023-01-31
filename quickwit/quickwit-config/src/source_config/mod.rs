@@ -23,8 +23,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
-use quickwit_common::no_color;
 use quickwit_common::uri::Uri;
+use quickwit_common::{is_false, no_color};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
@@ -34,7 +34,7 @@ use tracing::warn;
 use vrl::diagnostic::Formatter;
 use vrl::{CompilationResult, Program, TimeZone};
 
-use crate::{is_false, ConfigFormat, TestableForRegression};
+use crate::{ConfigFormat, TestableForRegression};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_INGEST_SOURCE_ID: &str = "_ingest-cli-source";
