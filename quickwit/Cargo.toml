@@ -176,6 +176,7 @@ typetag = "0.2"
 ulid = "1.0"
 username = "0.2"
 utoipa = { version = "2.4.2", features = ["json"]}
+utoipa-swagger-ui = "3.0.2"
 uuid = { version = "1.2", features = ["v4", "serde"] }
 value = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" } # vrl-value
 vrl = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" }
