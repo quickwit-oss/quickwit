@@ -45,9 +45,9 @@ service SearchService {
   // Perform a leaf stream on a given set of splits.
   rpc LeafSearchStream(LeafSearchStreamRequest) returns (stream LeafSearchStreamResponse);
 
-  // Root list term API.
+  // Root list terms API.
   // This RPC identifies the set of splits on which the query should run on,
-  // and dispatch the several calls to `LeafListTerm`.
+  // and dispatches the several calls to `LeafListTerm`.
   //
   // It is also in charge of merging back the results.
   rpc RootListTerms(ListTermsRequest) returns (ListTermsResponse);
@@ -276,7 +276,7 @@ message ListTermsRequest {
   // Index ID
   string index_id = 1;
 
-  // Fields to search on
+  // Field to search on
   string field = 3;
 
   // Time filter
