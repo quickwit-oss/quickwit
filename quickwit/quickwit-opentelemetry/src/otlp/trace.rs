@@ -21,8 +21,8 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
-use quickwit_actors::Mailbox;
-use quickwit_ingest_api::IngestApiService;
+use quickwit_actors::{AskError, Mailbox};
+use quickwit_ingest_api::{IngestApiError, IngestApiService};
 use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
@@ -444,8 +444,12 @@ impl OtlpGrpcTraceService {
             .ask_for_res(ingest_request)
             .await
             .map_err(|ask_error| {
-                error!("Failed to store spans: {ask_error:?}");
-                tonic::Status::internal("Failed to store spans.")
+                if matches!(ask_error, AskError::ErrorReply(IngestApiError::RateLimited)) {
+                    tonic::Status::unavailable("Failed to store spans due to rate limiting.")
+                } else {
+                    error!("Failed to store spans: {ask_error:?}");
+                    tonic::Status::internal("Failed to store spans.")
+                }
             })?;
         Ok(())
     }
