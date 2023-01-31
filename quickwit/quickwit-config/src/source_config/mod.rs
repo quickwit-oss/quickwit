@@ -355,8 +355,13 @@ pub struct VoidSourceParams;
 pub struct PulsarSourceParams {
     /// List of the topics that the source consumes.
     pub topics: Vec<String>,
+    #[schema(default = "quickwit-indexer")]
+    #[serde(default = "default_subscription_name")]
+    /// The name of the topic subscription.
+    pub subscription_name: String,
     /// The connection URI for pulsar.
     pub address: String,
+    #[schema(default = "quickwit")]
     #[serde(default = "default_consumer_name")]
     /// The name to register with the pulsar source.
     pub consumer_name: String,
@@ -378,6 +383,10 @@ pub enum PulsarSourceAuth {
 
 fn default_consumer_name() -> String {
     "quickwit".to_string()
+}
+
+fn default_subscription_name() -> String {
+    "quickwit-indexer".to_string()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

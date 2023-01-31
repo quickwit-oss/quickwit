@@ -108,13 +108,10 @@ impl PulsarSource {
         params: PulsarSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
-        let subscription_name = append_random_suffix(&format!("quickwit-indexer-{}", ctx.index_id));
-
         info!(
             index_id=%ctx.index_id,
             source_id=%ctx.source_config.source_id,
             topics=?params.topics,
-            subscription_name=%subscription_name,
             "Create Pulsar source."
         );
 
@@ -134,6 +131,7 @@ impl PulsarSource {
             }
         }
 
+        let subscription_name = append_random_suffix(&format!("quickwit-indexer-{}", ctx.index_id));
         let pulsar = spawn_message_listener(
             subscription_name,
             params.clone(),
@@ -280,6 +278,7 @@ impl Source for PulsarSource {
             "index_id": self.ctx.index_id,
             "source_id": self.ctx.source_config.source_id,
             "topics": self.params.topics,
+            "subscription_name": self.params.subscription_name,
             "consumer_name": self.params.consumer_name,
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
@@ -520,6 +519,7 @@ mod pulsar_broker_tests {
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
     static PULSAR_ADMIN_URI: &str = "http://localhost:8080";
+    static SUBSCRIPTION: &str = "quickwit-test";
     static CLIENT_NAME: &str = "quickwit-tester";
 
     macro_rules! positions {
@@ -583,6 +583,7 @@ mod pulsar_broker_tests {
             enabled: true,
             source_params: SourceParams::Pulsar(PulsarSourceParams {
                 topics: topics.into_iter().map(|v| v.as_ref().to_string()).collect(),
+                subscription_name: SUBSCRIPTION.to_string(),
                 address: PULSAR_URI.to_string(),
                 consumer_name: CLIENT_NAME.to_string(),
                 authentication: None,
@@ -883,6 +884,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
+            "subscription": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
@@ -938,6 +940,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic1, topic2],
+            "subscription": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 20,
@@ -994,6 +997,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
+            "subscription": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
@@ -1071,6 +1075,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
+            "subscription": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
