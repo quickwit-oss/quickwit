@@ -128,6 +128,7 @@ exceptions = [
     { name = "quickwit-metastore", allow = ["AGPL-3.0"], version = "*" },
     { name = "quickwit-metastore-utils", allow = ["AGPL-3.0"], version = "*" },
     { name = "quickwit-proto", allow = ["AGPL-3.0"], version = "*" },
+    { name = "quickwit-rest-client", allow = ["AGPL-3.0"], version = "*" },
     { name = "quickwit-search", allow = ["AGPL-3.0"], version = "*" },
     { name = "quickwit-serve", allow = ["AGPL-3.0"], version = "*" },
     { name = "quickwit-storage", allow = ["AGPL-3.0"], version = "*" },

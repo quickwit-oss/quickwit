@@ -30,8 +30,8 @@ pub use index::{
 mod tests {
     use std::path::Path;
 
+    use quickwit_common::FileEntry;
     use quickwit_indexing::TestSandbox;
-    use quickwit_janitor::FileEntry;
     use quickwit_storage::StorageUriResolver;
 
     use crate::IndexService;

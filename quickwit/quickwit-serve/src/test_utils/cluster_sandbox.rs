@@ -23,15 +23,14 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use hyper::Uri;
 use itertools::Itertools;
 use quickwit_common::new_coolid;
 use quickwit_common::rand::append_random_suffix;
+use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{IndexConfig, QuickwitConfig, SourceConfig};
 use quickwit_metastore::quickwit_metastore_uri_resolver;
-use quickwit_proto::tonic::transport::Endpoint;
 use quickwit_search::{create_search_service_client, SearchServiceClient};
 use rand::seq::IteratorRandom;
 use tempfile::TempDir;
@@ -235,37 +234,4 @@ pub fn build_node_configs(
             .collect_vec();
     }
     node_configs
-}
-
-/// Tries to connect at most 3 times to `SocketAddr`.
-/// If not successful, returns an error.
-/// This is a convenient function to wait before sending gRPC requests
-/// to this `SocketAddr`.
-async fn wait_for_server_ready(socket_addr: SocketAddr) -> anyhow::Result<()> {
-    let mut num_attempts = 0;
-    let max_num_attempts = 5;
-    let uri = Uri::builder()
-        .scheme("http")
-        .authority(socket_addr.to_string().as_str())
-        .path_and_query("/")
-        .build()?;
-    while num_attempts < max_num_attempts {
-        tokio::time::sleep(Duration::from_millis(20 * (num_attempts + 1))).await;
-        match Endpoint::from(uri.clone()).connect().await {
-            Ok(_) => break,
-            Err(_) => {
-                println!(
-                    "Failed to connect to `{}` failed, retrying {}/{}",
-                    socket_addr,
-                    num_attempts + 1,
-                    max_num_attempts
-                );
-                num_attempts += 1;
-            }
-        }
-    }
-    if num_attempts == max_num_attempts {
-        anyhow::bail!("Too many attempts to connect to `{}`", socket_addr);
-    }
-    Ok(())
 }

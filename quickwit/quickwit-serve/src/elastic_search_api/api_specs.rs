@@ -19,11 +19,13 @@
 
 use std::str::FromStr;
 
+use quickwit_common::simple_list::{from_simple_list, to_simple_list, SimpleList};
 /// This file is auto-generated, any change can be overriden.
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
-use super::{from_simple_list, to_simple_list, SimpleList, TrackTotalHits};
+use super::TrackTotalHits;
+
 #[serde_with::skip_serializing_none]
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct SearchQueryParams {

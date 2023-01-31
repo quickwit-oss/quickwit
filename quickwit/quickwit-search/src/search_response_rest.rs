@@ -21,14 +21,14 @@ use std::convert::TryFrom;
 
 use quickwit_common::truncate_str;
 use quickwit_proto::SearchResponse;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::error::SearchError;
 
 /// SearchResponseRest represents the response returned by the REST search API
 /// and is meant to be serialized into JSON.
-#[derive(Serialize, utoipa::ToSchema)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, utoipa::ToSchema)]
 pub struct SearchResponseRest {
     /// Overall number of documents matching the query.
     pub num_hits: u64,

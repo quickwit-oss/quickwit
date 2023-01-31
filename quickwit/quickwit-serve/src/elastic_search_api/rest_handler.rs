@@ -17,13 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_common::simple_list::SimpleList;
 use warp::{Filter, Rejection};
 
 use super::api_specs::{
     elastic_get_index_search_filter, elastic_get_search_filter, elastic_post_index_search_filter,
     elastic_post_search_filter, SearchQueryParams,
 };
-use super::SimpleList;
 
 /// GET _elastic/_search
 pub fn elastic_get_search_handler(

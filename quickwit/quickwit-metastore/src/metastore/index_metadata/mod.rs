@@ -34,7 +34,7 @@ use crate::checkpoint::{
 use crate::{MetastoreError, MetastoreResult};
 
 /// An index metadata carries all meta data about an index.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(into = "VersionedIndexMetadata")]
 #[serde(try_from = "VersionedIndexMetadata")]
 pub struct IndexMetadata {

@@ -22,6 +22,7 @@ use std::fmt;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
+use quickwit_common::FileEntry;
 use quickwit_config::TestableForRegression;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -158,6 +159,15 @@ impl SplitMetadata {
         Self {
             split_id,
             ..Default::default()
+        }
+    }
+}
+
+impl From<&SplitMetadata> for FileEntry {
+    fn from(split: &SplitMetadata) -> Self {
+        FileEntry {
+            file_name: quickwit_common::split_file(split.split_id()),
+            file_size_in_bytes: split.footer_offsets.end,
         }
     }
 }
