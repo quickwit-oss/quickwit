@@ -99,7 +99,7 @@ impl JaegerService {
         debug!(request=?request, "`get_services` request");
 
         let index_id = TRACE_INDEX_ID.to_string();
-        let max_hits = 1_000;
+        let max_hits = Some(1_000);
         let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
 
         let search_request = ListTermsRequest {

@@ -412,12 +412,16 @@ pub async fn root_list_terms(
     // Merging is a cpu-bound task, but probably fast enough to not require
     // spawning it on a blocking thread.
 
-    let leaf_list_terms_response: Vec<String> = leaf_search_responses
+    // TODO dedup
+    let merged_iter = leaf_search_responses
         .into_iter()
         .map(|leaf_search_response| leaf_search_response.terms)
-        .kmerge()
-        .take(list_terms_request.max_hits as usize)
-        .collect();
+        .kmerge();
+    let leaf_list_terms_response: Vec<String> = if let Some(limit) = list_terms_request.max_hits {
+        merged_iter.take(limit as usize).collect()
+    } else {
+        merged_iter.collect()
+    };
 
     debug!(leaf_list_terms_response = ?leaf_list_terms_response, "Merged leaf search response.");
 

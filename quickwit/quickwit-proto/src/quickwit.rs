@@ -245,7 +245,7 @@ pub struct ListTermsRequest {
     /// Index ID
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    /// Fields to search on
+    /// Field to search on
     #[prost(string, tag = "3")]
     pub field: ::prost::alloc::string::String,
     /// Time filter
@@ -254,8 +254,8 @@ pub struct ListTermsRequest {
     #[prost(int64, optional, tag = "5")]
     pub end_timestamp: ::core::option::Option<i64>,
     /// Maximum number of hits to return.
-    #[prost(uint64, tag = "6")]
-    pub max_hits: u64,
+    #[prost(uint64, optional, tag = "6")]
+    pub max_hits: ::core::option::Option<u64>,
     /// start_key is included, end_key is excluded
     #[prost(string, optional, tag = "7")]
     pub start_key: ::core::option::Option<::prost::alloc::string::String>,
@@ -604,9 +604,9 @@ pub mod search_service_client {
             );
             self.inner.server_streaming(request.into_request(), path, codec).await
         }
-        /// Root list term API.
+        /// Root list terms API.
         /// This RPC identifies the set of splits on which the query should run on,
-        /// and dispatch the several calls to `LeafListTerm`.
+        /// and dispatches the several calls to `LeafListTerm`.
         ///
         /// It is also in charge of merging back the results.
         pub async fn root_list_terms(
@@ -699,9 +699,9 @@ pub mod search_service_server {
             &self,
             request: tonic::Request<super::LeafSearchStreamRequest>,
         ) -> Result<tonic::Response<Self::LeafSearchStreamStream>, tonic::Status>;
-        /// Root list term API.
+        /// Root list terms API.
         /// This RPC identifies the set of splits on which the query should run on,
-        /// and dispatch the several calls to `LeafListTerm`.
+        /// and dispatches the several calls to `LeafListTerm`.
         ///
         /// It is also in charge of merging back the results.
         async fn root_list_terms(

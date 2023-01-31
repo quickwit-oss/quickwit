@@ -516,13 +516,16 @@ async fn leaf_list_terms_single_split(
                     .map(Bound::Excluded)
                     .unwrap_or(Bound::Unbounded),
             ),
-            Some(search_request.max_hits),
+            search_request.max_hits,
         )
         .read_bytes_async()
         .await
         .with_context(|| "Failed to load sstable range")?;
 
-        let mut range = dict.range().limit(search_request.max_hits);
+        let mut range = dict.range();
+        if let Some(limit) = search_request.max_hits {
+            range = range.limit(limit);
+        }
         if let Some(start_term) = start_term.as_ref() {
             range = range.ge(start_term.value_bytes())
         }
@@ -532,18 +535,21 @@ async fn leaf_list_terms_single_split(
         let mut stream = range
             .into_stream()
             .with_context(|| "Failed to create stream over sstable")?;
-        let mut segment_result: Vec<String> = Vec::with_capacity(search_request.max_hits as usize);
+        let mut segment_result: Vec<String> =
+            Vec::with_capacity(search_request.max_hits.unwrap_or(0) as usize);
         while stream.advance() {
             segment_result.push(value_to_json(field, field_type, stream.key())?);
         }
         segment_results.push(segment_result);
     }
 
-    let merged_results: Vec<String> = segment_results
-        .into_iter()
-        .kmerge()
-        .take(search_request.max_hits as usize)
-        .collect();
+    // TODO dedup
+    let merged_iter = segment_results.into_iter().kmerge();
+    let merged_results: Vec<String> = if let Some(limit) = search_request.max_hits {
+        merged_iter.take(limit as usize).collect()
+    } else {
+        merged_iter.collect()
+    };
 
     Ok(LeafListTermsResponse {
         num_hits: merged_results.len() as u64,
@@ -654,12 +660,16 @@ pub async fn leaf_list_terms(
                 Err(err) => Either::Right(err),
             });
 
-    let terms: Vec<String> = split_search_responses
+    // TODO dedup
+    let merged_iter = split_search_responses
         .into_iter()
         .map(|leaf_search_response| leaf_search_response.terms)
-        .kmerge()
-        .take(request.max_hits as usize)
-        .collect();
+        .kmerge();
+    let terms: Vec<String> = if let Some(limit) = request.max_hits {
+        merged_iter.take(limit as usize).collect()
+    } else {
+        merged_iter.collect()
+    };
 
     let failed_splits = errors
         .into_iter()

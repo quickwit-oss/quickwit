@@ -284,7 +284,7 @@ message ListTermsRequest {
   optional int64 end_timestamp = 5;
 
   // Maximum number of hits to return.
-  uint64 max_hits = 6;
+  optional uint64 max_hits = 6;
 
   // start_key is included, end_key is excluded
   optional string start_key = 7;
