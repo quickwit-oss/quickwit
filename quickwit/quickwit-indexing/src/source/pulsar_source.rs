@@ -658,11 +658,11 @@ mod pulsar_broker_tests {
         exit_state
     }
 
-    async fn create_partitioned_topic(topic: &str) {
+    async fn create_partitioned_topic(topic: &str, num_partitions: usize) {
         let client = reqwest::Client::new();
         let res = client
             .put(format!("{PULSAR_ADMIN_URI}/admin/v2/persistent/public/default/{topic}/partitions"))
-            .body(b"4".to_vec())
+            .body(num_partitions.to_string())
             .header("content-type", b"application/json".as_ref())
             .send()
             .await
@@ -828,8 +828,6 @@ mod pulsar_broker_tests {
 
     #[tokio::test]
     async fn test_topic_ingestion() {
-        let _ = tracing_subscriber::fmt::try_init();
-
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let topic = append_random_suffix("test-pulsar-source--topic-ingestion--topic");
@@ -883,8 +881,6 @@ mod pulsar_broker_tests {
 
     #[tokio::test]
     async fn test_multi_topic_ingestion() {
-        tracing_subscriber::fmt::init();
-
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let topic1 = append_random_suffix("test-pulsar-source--topic-ingestion--topic");
@@ -939,8 +935,6 @@ mod pulsar_broker_tests {
 
     #[tokio::test]
     async fn test_partitioned_topic_single_consumer_ingestion() {
-        tracing_subscriber::fmt::init();
-
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let topic = append_random_suffix("test-pulsar-source--partitioned-single-consumer--topic");
@@ -948,7 +942,7 @@ mod pulsar_broker_tests {
         let index_id = append_random_suffix("test-pulsar-source--partitioned-single-consumer--index");
         let (source_id, source_config) = get_source_config([&topic]);
 
-        create_partitioned_topic(&topic).await;
+        create_partitioned_topic(&topic, 2).await;
         setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
         let (source_handle, doc_processor_inbox) = create_source(
@@ -995,8 +989,6 @@ mod pulsar_broker_tests {
 
     #[tokio::test]
     async fn test_partitioned_topic_multi_consumer_ingestion() {
-        tracing_subscriber::fmt::init();
-
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let topic = append_random_suffix("test-pulsar-source--partitioned-multi-consumer--topic");
@@ -1004,18 +996,11 @@ mod pulsar_broker_tests {
         let index_id = append_random_suffix("test-pulsar-source--partitioned-multi-consumer--index");
         let (source_id, source_config) = get_source_config([&topic]);
 
-        create_partitioned_topic(&topic).await;
+        create_partitioned_topic(&topic, 2).await;
         setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
-        let expected_docs = populate_topic([&topic], 10, move |id| {
-            json!({
-                "id": id,
-                "timestamp": 1674515715,
-                "body": "Hello, world! This is some test data. From topic 1",
-            })
-        })
-        .await
-        .unwrap();
+        let topic_partition_1 = format!("{topic}-partition-0");
+        let topic_partition_2 = format!("{topic}-partition-1");
 
         let (source_handle1, doc_processor_inbox1) = create_source(
             &universe,
@@ -1033,10 +1018,18 @@ mod pulsar_broker_tests {
             SourceCheckpoint::default()
         ).await.expect("Create source");
 
-        let exit_state1 = wait_for_completion(source_handle1, expected_docs.len() / 2).await;
-        info!("Completed 1");
-        let exit_state2 = wait_for_completion(source_handle2, expected_docs.len() / 2).await;
-        info!("Completed 3");
+        let expected_docs = populate_topic([&topic_partition_1, &topic_partition_2], 10, move |id| {
+            json!({
+                "id": id,
+                "timestamp": 1674515715,
+                "body": "Hello, world! This is some test data. From topic 1",
+            })
+        })
+        .await
+        .unwrap();
+
+        let exit_state1 = wait_for_completion(source_handle1, 10).await;
+        let exit_state2 = wait_for_completion(source_handle2, 10).await;
         let messages1: Vec<RawDocBatch> = doc_processor_inbox1.drain_for_test_typed();
         assert!(!messages1.is_empty());
         let messages2: Vec<RawDocBatch> = doc_processor_inbox2.drain_for_test_typed();
@@ -1059,10 +1052,9 @@ mod pulsar_broker_tests {
             "subscription": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
-            "num_messages_processed": 5,
+            "num_messages_processed": 10,
             "num_invalid_messages": 0,
         });
-        dbg!(&exit_state1, &exit_state2, &expected_state);
         assert_eq!(exit_state1, expected_state);
         assert_eq!(exit_state2, expected_state);
     }
