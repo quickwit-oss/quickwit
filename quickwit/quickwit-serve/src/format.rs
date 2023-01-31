@@ -20,14 +20,14 @@
 use hyper::header::CONTENT_TYPE;
 use hyper::StatusCode;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use serde::{self, Deserialize, Serialize};
+use serde::{self, Deserialize, Serialize, Serializer};
 use warp::reply::{self, WithHeader, WithStatus};
 
 const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 
 /// Output format for the search results.
 #[derive(Deserialize, Clone, Debug, Eq, PartialEq, Copy, utoipa::ToSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum Format {
     Json,
     PrettyJson,
@@ -43,8 +43,15 @@ impl ToString for Format {
     fn to_string(&self) -> String {
         match &self {
             Self::Json => "json".to_string(),
-            Self::PrettyJson => "prety-json".to_string(),
+            Self::PrettyJson => "pretty_json".to_string(),
         }
+    }
+}
+
+impl Serialize for Format {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        serializer.serialize_str(&self.to_string())
     }
 }
 

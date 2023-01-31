@@ -17,8 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod rest_handler;
+use serde::{Deserialize, Serialize};
 
-pub use self::rest_handler::{
-    index_management_handlers, IndexApi, ListSplitsQueryParams, UnsupportedContentType,
-};
+#[allow(missing_docs)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema)]
+pub struct FileEntry {
+    /// The file_name is a file name, within an index directory.
+    pub file_name: String,
+    /// File size in bytes.
+    pub file_size_in_bytes: u64, //< TODO switch to `byte_unit::Byte`.
+}

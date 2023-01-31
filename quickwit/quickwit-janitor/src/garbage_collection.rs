@@ -24,10 +24,9 @@ use std::time::Duration;
 
 use futures::Future;
 use quickwit_actors::ActorContext;
-use quickwit_common::PrettySample;
+use quickwit_common::{FileEntry, PrettySample};
 use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState};
 use quickwit_storage::Storage;
-use serde::Serialize;
 use thiserror::Error;
 use time::OffsetDateTime;
 use tracing::{error, instrument};
@@ -46,24 +45,6 @@ pub enum SplitDeletionError {
         error: MetastoreError,
         failed_split_ids: Vec<String>,
     },
-}
-
-#[allow(missing_docs)]
-#[derive(Clone, Debug, Serialize, utoipa::ToSchema)]
-pub struct FileEntry {
-    /// The file_name is a file name, within an index directory.
-    pub file_name: String,
-    /// File size in bytes.
-    pub file_size_in_bytes: u64, //< TODO switch to `byte_unit::Byte`.
-}
-
-impl From<&SplitMetadata> for FileEntry {
-    fn from(split: &SplitMetadata) -> Self {
-        FileEntry {
-            file_name: quickwit_common::split_file(split.split_id()),
-            file_size_in_bytes: split.footer_offsets.end,
-        }
-    }
 }
 
 async fn protect_future<Fut, T>(

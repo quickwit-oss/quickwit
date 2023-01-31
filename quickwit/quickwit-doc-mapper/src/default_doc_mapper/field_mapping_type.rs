@@ -27,7 +27,7 @@ use crate::default_doc_mapper::field_mapping_entry::{
 
 /// A `FieldMappingType` defines the type and indexing options
 /// of a mapping field.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FieldMappingType {
     /// String mapping type configuration.
     Text(QuickwitTextOptions, Cardinality),

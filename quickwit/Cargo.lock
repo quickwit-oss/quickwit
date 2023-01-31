@@ -1436,6 +1436,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "deadpool"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "421fe0f90f2ab22016f32a9881be5134fdd71c65298917084b0c7477cbc3856e"
+dependencies = [
+ "async-trait",
+ "deadpool-runtime",
+ "num_cpus",
+ "retain_mut",
+ "tokio",
+]
+
+[[package]]
+name = "deadpool-runtime"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eaa37046cc0f6c3cc6090fbdbf73ef0b8ef4cfcc37f6befc0020f63e8cf121e1"
+
+[[package]]
 name = "debug-helper"
 version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2326,6 +2345,7 @@ dependencies = [
  "async-channel",
  "base64 0.13.1",
  "futures-lite",
+ "http",
  "infer",
  "pin-project-lite",
  "rand 0.7.3",
@@ -4322,6 +4342,7 @@ dependencies = [
  "colored",
  "env_logger 0.9.3",
  "home",
+ "hyper",
  "itertools",
  "num_cpus",
  "once_cell",
@@ -4729,6 +4750,26 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "utoipa 2.4.2",
+]
+
+[[package]]
+name = "quickwit-rest-client"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-indexing",
+ "quickwit-metastore",
+ "quickwit-search",
+ "quickwit-serve",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "wiremock",
 ]
 
 [[package]]
@@ -5181,6 +5222,12 @@ dependencies = [
  "webpki-roots 0.22.6",
  "winreg",
 ]
+
+[[package]]
+name = "retain_mut"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4389f1d5789befaf6029ebd9f7dac4af7f7e3d61b69d4f30e2ac02b57e7712b0"
 
 [[package]]
 name = "ring"
@@ -8093,6 +8140,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi 0.3.9",
+]
+
+[[package]]
+name = "wiremock"
+version = "0.5.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12316b50eb725e22b2f6b9c4cbede5b7b89984274d113a7440c86e5c3fc6f99b"
+dependencies = [
+ "assert-json-diff",
+ "async-trait",
+ "base64 0.13.1",
+ "deadpool",
+ "futures",
+ "futures-timer",
+ "http-types",
+ "hyper",
+ "log",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
