@@ -4038,7 +4038,7 @@ dependencies = [
 [[package]]
 name = "pulsar"
 version = "5.0.2"
-source = "git+https://github.com/quickwit-oss/pulsar-rs.git?branch=add-ack-by-id#ab14c4373ddc4409b9d87f83113fe0a86c9765da"
+source = "git+https://github.com/quickwit-oss/pulsar-rs.git?rev=56adb96#56adb96a6bbf101af3540102faf27da30758a036"
 dependencies = [
  "async-trait",
  "bit-vec",
@@ -4446,6 +4446,7 @@ dependencies = [
  "quickwit-storage",
  "rand 0.8.5",
  "rdkafka",
+ "reqwest",
  "rusoto_core",
  "rusoto_kinesis",
  "serde",

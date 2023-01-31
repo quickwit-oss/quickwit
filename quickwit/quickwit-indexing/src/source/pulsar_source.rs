@@ -496,7 +496,8 @@ mod pulsar_broker_tests {
     use std::sync::Arc;
 
     use futures::future::join_all;
-    use quickwit_actors::{ActorHandle, Universe};
+    use reqwest::StatusCode;
+    use quickwit_actors::{ActorHandle, Inbox, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{
@@ -510,6 +511,7 @@ mod pulsar_broker_tests {
     use crate::source::quickwit_supported_sources;
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
+    static PULSAR_ADMIN_URI: &str = "http://localhost:8080";
     static SUBSCRIPTION: &str = "quickwit-test";
     static CLIENT_NAME: &str = "quickwit-tester";
 
@@ -607,8 +609,9 @@ mod pulsar_broker_tests {
     {
         let client = Pulsar::builder(PULSAR_URI, TokioExecutor).build().await?;
 
-        let mut pending_messages = Vec::with_capacity(num_messages);
+        let mut pending_messages = Vec::new();
         for topic in topics {
+            let mut topic_messages = Vec::with_capacity(num_messages);
             let mut producer = client.producer()
                 .with_name(append_random_suffix(CLIENT_NAME))
                 .with_topic(topic.as_ref())
@@ -617,15 +620,16 @@ mod pulsar_broker_tests {
 
             for id in 0..num_messages {
                 let msg = (message_fn)(id).to_string();
-                pending_messages.push(msg);
+                topic_messages.push(msg);
             }
 
-            let futures = producer.send_all(pending_messages.clone()).await?;
+            let futures = producer.send_all(topic_messages.clone()).await?;
             let receipts = join_all(futures).await;
 
             for receipt in receipts {
                 receipt?;
             }
+            pending_messages.extend(topic_messages);
             producer.close().await.expect("Close connection.");
         }
 
@@ -652,6 +656,48 @@ mod pulsar_broker_tests {
         }
         let (_exit_status, exit_state) = source_handle.quit().await;
         exit_state
+    }
+
+    async fn create_partitioned_topic(topic: &str) {
+        let client = reqwest::Client::new();
+        let res = client
+            .put(format!("{PULSAR_ADMIN_URI}/admin/v2/persistent/public/default/{topic}/partitions"))
+            .body(b"4".to_vec())
+            .header("content-type", b"application/json".as_ref())
+            .send()
+            .await
+            .expect("Send admin request");
+
+        assert_eq!(res.status(), StatusCode::NO_CONTENT, "Expect 204 status code.");
+    }
+
+    async fn create_source(
+        universe: &Universe,
+        metastore: Arc<dyn Metastore>,
+        index_id: &str,
+        source_config: SourceConfig,
+        start_checkpoint: SourceCheckpoint,
+    ) -> anyhow::Result<(ActorHandle<SourceActor>, Inbox<DocProcessor>)> {
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            index_id,
+            PathBuf::from("./queues"),
+            source_config,
+        );
+
+        let source_loader = quickwit_supported_sources();
+        let source = source_loader
+            .load_source(ctx, start_checkpoint)
+            .await?;
+
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let source_actor = SourceActor {
+            source,
+            doc_processor_mailbox,
+        };
+        let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
+
+        Ok((source_handle, doc_processor_inbox))
     }
 
     #[test]
@@ -793,26 +839,13 @@ mod pulsar_broker_tests {
 
         setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
-        let ctx = SourceExecutionContext::for_test(
+        let (source_handle, doc_processor_inbox) = create_source(
+            &universe,
             metastore,
             &index_id,
-            PathBuf::from("./queues"),
             source_config,
-        );
-        let start_checkpoint = SourceCheckpoint::default();
-
-        let source_loader = quickwit_supported_sources();
-        let source = source_loader
-            .load_source(ctx, start_checkpoint)
-            .await
-            .expect("Load source.");
-
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        let source_actor = SourceActor {
-            source,
-            doc_processor_mailbox: doc_processor_mailbox.clone(),
-        };
-        let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
+            SourceCheckpoint::default()
+        ).await.expect("Create source");
 
         let expected_docs = populate_topic([&topic], 10, move |id| {
             json!({
@@ -823,8 +856,6 @@ mod pulsar_broker_tests {
         })
         .await
         .unwrap();
-
-        println!("Completed Populate");
 
         let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
@@ -847,7 +878,6 @@ mod pulsar_broker_tests {
             "num_messages_processed": 10,
             "num_invalid_messages": 0,
         });
-        dbg!(&expected_state, &exit_state);
         assert_eq!(exit_state, expected_state);
     }
 
@@ -865,26 +895,13 @@ mod pulsar_broker_tests {
 
         setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
-        let ctx = SourceExecutionContext::for_test(
+        let (source_handle, doc_processor_inbox) = create_source(
+            &universe,
             metastore,
             &index_id,
-            PathBuf::from("./queues"),
             source_config,
-        );
-        let start_checkpoint = SourceCheckpoint::default();
-
-        let source_loader = quickwit_supported_sources();
-        let source = source_loader
-            .load_source(ctx, start_checkpoint)
-            .await
-            .expect("Load source.");
-
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        let source_actor = SourceActor {
-            source,
-            doc_processor_mailbox: doc_processor_mailbox.clone(),
-        };
-        let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
+            SourceCheckpoint::default()
+        ).await.expect("Create source");
 
         let expected_docs = populate_topic([&topic1, &topic2], 10, move |id| {
             json!({
@@ -918,5 +935,135 @@ mod pulsar_broker_tests {
             "num_invalid_messages": 0,
         });
         assert_eq!(exit_state, expected_state);
+    }
+
+    #[tokio::test]
+    async fn test_partitioned_topic_single_consumer_ingestion() {
+        tracing_subscriber::fmt::init();
+
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let topic = append_random_suffix("test-pulsar-source--partitioned-single-consumer--topic");
+
+        let index_id = append_random_suffix("test-pulsar-source--partitioned-single-consumer--index");
+        let (source_id, source_config) = get_source_config([&topic]);
+
+        create_partitioned_topic(&topic).await;
+        setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+
+        let (source_handle, doc_processor_inbox) = create_source(
+            &universe,
+            metastore,
+            &index_id,
+            source_config,
+            SourceCheckpoint::default()
+        ).await.expect("Create source");
+
+        let expected_docs = populate_topic([&topic], 10, move |id| {
+            json!({
+                "id": id,
+                "timestamp": 1674515715,
+                "body": "Hello, world! This is some test data. From topic 1",
+            })
+        })
+        .await
+        .unwrap();
+
+        let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
+        let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
+        assert!(!messages.is_empty());
+
+        let batch = merge_doc_batches(messages);
+        assert_eq!(batch.docs, expected_docs);
+
+        let num_bytes = expected_docs
+            .iter()
+            .map(|v| v.as_bytes().len())
+            .sum::<usize>();
+        let expected_state = json!({
+            "index_id": index_id,
+            "source_id": source_id,
+            "topics": vec![topic],
+            "subscription": SUBSCRIPTION,
+            "consumer_name": CLIENT_NAME,
+            "num_bytes_processed": num_bytes,
+            "num_messages_processed": 10,
+            "num_invalid_messages": 0,
+        });
+        assert_eq!(exit_state, expected_state);
+    }
+
+    #[tokio::test]
+    async fn test_partitioned_topic_multi_consumer_ingestion() {
+        tracing_subscriber::fmt::init();
+
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let topic = append_random_suffix("test-pulsar-source--partitioned-multi-consumer--topic");
+
+        let index_id = append_random_suffix("test-pulsar-source--partitioned-multi-consumer--index");
+        let (source_id, source_config) = get_source_config([&topic]);
+
+        create_partitioned_topic(&topic).await;
+        setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+
+        let expected_docs = populate_topic([&topic], 10, move |id| {
+            json!({
+                "id": id,
+                "timestamp": 1674515715,
+                "body": "Hello, world! This is some test data. From topic 1",
+            })
+        })
+        .await
+        .unwrap();
+
+        let (source_handle1, doc_processor_inbox1) = create_source(
+            &universe,
+            metastore.clone(),
+            &index_id,
+            source_config.clone(),
+            SourceCheckpoint::default()
+        ).await.expect("Create source");
+
+        let (source_handle2, doc_processor_inbox2) = create_source(
+            &universe,
+            metastore,
+            &index_id,
+            source_config,
+            SourceCheckpoint::default()
+        ).await.expect("Create source");
+
+        let exit_state1 = wait_for_completion(source_handle1, expected_docs.len() / 2).await;
+        info!("Completed 1");
+        let exit_state2 = wait_for_completion(source_handle2, expected_docs.len() / 2).await;
+        info!("Completed 3");
+        let messages1: Vec<RawDocBatch> = doc_processor_inbox1.drain_for_test_typed();
+        assert!(!messages1.is_empty());
+        let messages2: Vec<RawDocBatch> = doc_processor_inbox2.drain_for_test_typed();
+        assert!(!messages2.is_empty());
+
+        let mut messages = Vec::new();
+        messages.extend(messages2);
+        messages.extend(messages1);
+        let batch = merge_doc_batches(messages);
+        assert_eq!(batch.docs, expected_docs);
+
+        let num_bytes = expected_docs
+            .iter()
+            .map(|v| v.as_bytes().len())
+            .sum::<usize>() / 2;
+        let expected_state = json!({
+            "index_id": index_id,
+            "source_id": source_id,
+            "topics": vec![topic],
+            "subscription": SUBSCRIPTION,
+            "consumer_name": CLIENT_NAME,
+            "num_bytes_processed": num_bytes,
+            "num_messages_processed": 5,
+            "num_invalid_messages": 0,
+        });
+        dbg!(&exit_state1, &exit_state2, &expected_state);
+        assert_eq!(exit_state1, expected_state);
+        assert_eq!(exit_state2, expected_state);
     }
 }
