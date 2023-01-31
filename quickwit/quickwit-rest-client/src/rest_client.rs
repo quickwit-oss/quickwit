@@ -26,7 +26,7 @@ use quickwit_metastore::{IndexMetadata, Split};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
-use reqwest::{Client, Method, Url};
+use reqwest::{Client, Method, StatusCode, Url};
 use serde::Serialize;
 use serde_json::json;
 use tokio::fs::File;
@@ -37,6 +37,7 @@ use crate::models::{ApiResponse, IngestSource};
 
 pub static DEFAULT_ADDRESS: &str = "http://127.0.0.1:7280";
 pub static DEFAULT_CONTENT_TYPE: &str = "application/json";
+pub static INGEST_CHUNK_SIZE_IN_BYTES: usize = 4 * 1024 * 1024;
 
 pub struct Transport {
     base_url: Url,
@@ -70,7 +71,6 @@ impl Transport {
         &self,
         method: Method,
         path: &str,
-        headers: HeaderMap,
         query_string: Option<&Q>,
         body: Option<Bytes>,
     ) -> Result<ApiResponse, Error> {
@@ -80,11 +80,8 @@ impl Transport {
             .map_err(|error| Error::UrlParse(error.to_string()))?;
         let mut request_builder = self.client.request(method, url);
         request_builder = request_builder.timeout(Duration::from_secs(10));
-        let mut request_headers = HeaderMap::with_capacity(4 + headers.len());
+        let mut request_headers = HeaderMap::new();
         request_headers.insert(CONTENT_TYPE, HeaderValue::from_static(DEFAULT_CONTENT_TYPE));
-        for (name, value) in headers {
-            request_headers.insert(name.unwrap(), value);
-        }
         request_builder = request_builder.headers(request_headers);
         if let Some(bytes) = body {
             request_builder = request_builder.body(bytes);
@@ -121,7 +118,7 @@ impl QuickwitClient {
         let body = Bytes::from(bytes);
         let response = self
             .transport
-            .send::<()>(Method::POST, &path, HeaderMap::new(), None, Some(body))
+            .send::<()>(Method::POST, &path, None, Some(body))
             .await?;
         let search_response = response.deserialize().await?;
         Ok(search_response)
@@ -154,7 +151,7 @@ impl QuickwitClient {
         let mut num_bytes_sent = 0;
 
         loop {
-            let mut buffer = Vec::with_capacity(4 * 1024 * 1024);
+            let mut buffer = Vec::with_capacity(INGEST_CHUNK_SIZE_IN_BYTES);
             for _ in 0..5_000 {
                 if buf_reader.read_until(b'\n', &mut buffer).await? == 0 {
                     break;
@@ -169,16 +166,10 @@ impl QuickwitClient {
             loop {
                 let response = self
                     .transport
-                    .send::<()>(
-                        Method::POST,
-                        &ingest_path,
-                        HeaderMap::new(),
-                        None,
-                        Some(body.clone()),
-                    )
+                    .send::<()>(Method::POST, &ingest_path, None, Some(body.clone()))
                     .await?;
 
-                if response.status_code() == 429 {
+                if response.status_code() == StatusCode::TOO_MANY_REQUESTS {
                     println!("Rate limited, retrying in 1 second...");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 } else {
@@ -213,7 +204,6 @@ impl<'a> IndexClient<'a> {
             .send(
                 Method::POST,
                 "indexes",
-                HeaderMap::new(),
                 Some(&[("overwrite", overwrite)]),
                 Some(body),
             )
@@ -225,7 +215,7 @@ impl<'a> IndexClient<'a> {
     pub async fn list(&self) -> Result<Vec<IndexMetadata>, Error> {
         let response = self
             .transport
-            .send::<()>(Method::GET, "indexes", HeaderMap::new(), None, None)
+            .send::<()>(Method::GET, "indexes", None, None)
             .await?;
         let indexes_metadatas = response.deserialize().await?;
         Ok(indexes_metadatas)
@@ -235,7 +225,7 @@ impl<'a> IndexClient<'a> {
         let path = format!("indexes/{index_id}");
         let response = self
             .transport
-            .send::<()>(Method::GET, &path, HeaderMap::new(), None, None)
+            .send::<()>(Method::GET, &path, None, None)
             .await?;
         let index_metadata = response.deserialize().await?;
         Ok(index_metadata)
@@ -244,7 +234,7 @@ impl<'a> IndexClient<'a> {
     pub async fn clear(&self, index_id: &str) -> Result<(), Error> {
         let path = format!("indexes/{index_id}/clear");
         self.transport
-            .send::<()>(Method::PUT, &path, HeaderMap::new(), None, None)
+            .send::<()>(Method::PUT, &path, None, None)
             .await?;
         Ok(())
     }
@@ -253,13 +243,7 @@ impl<'a> IndexClient<'a> {
         let path = format!("indexes/{index_id}");
         let response = self
             .transport
-            .send(
-                Method::DELETE,
-                &path,
-                HeaderMap::new(),
-                Some(&[("dry_run", dry_run)]),
-                None,
-            )
+            .send(Method::DELETE, &path, Some(&[("dry_run", dry_run)]), None)
             .await?;
         let file_entries = response.deserialize().await?;
         Ok(file_entries)
@@ -291,13 +275,7 @@ impl<'a, 'b> SplitClient<'a, 'b> {
         let path = self.splits_root_url();
         let response = self
             .transport
-            .send(
-                Method::GET,
-                &path,
-                HeaderMap::new(),
-                Some(&list_splits_query_params),
-                None,
-            )
+            .send(Method::GET, &path, Some(&list_splits_query_params), None)
             .await?;
 
         let splits = response.deserialize().await?;
@@ -308,7 +286,7 @@ impl<'a, 'b> SplitClient<'a, 'b> {
         let path = format!("{}/mark-for-deletion", self.splits_root_url());
         let body = Bytes::from(serde_json::to_vec(&json!({ "split_ids": split_ids }))?);
         self.transport
-            .send::<()>(Method::PUT, &path, HeaderMap::new(), None, Some(body))
+            .send::<()>(Method::PUT, &path, None, Some(body))
             .await?;
         Ok(())
     }
@@ -335,13 +313,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     pub async fn create(&self, body: Bytes) -> Result<SourceConfig, Error> {
         let response = self
             .transport
-            .send::<()>(
-                Method::POST,
-                &self.sources_root_url(),
-                HeaderMap::new(),
-                None,
-                Some(body),
-            )
+            .send::<()>(Method::POST, &self.sources_root_url(), None, Some(body))
             .await?;
         let source_config = response.deserialize().await?;
         Ok(source_config)
@@ -351,7 +323,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
         let path = format!("{}/{source_id}", self.sources_root_url());
         let response = self
             .transport
-            .send::<()>(Method::GET, &path, HeaderMap::new(), None, None)
+            .send::<()>(Method::GET, &path, None, None)
             .await?;
         let source_config = response.deserialize().await?;
         Ok(source_config)
@@ -360,13 +332,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     pub async fn toggle(&self, source_id: &str, enable: bool) -> Result<(), Error> {
         let path = format!("{}/{source_id}", self.sources_root_url());
         self.transport
-            .send(
-                Method::PUT,
-                &path,
-                HeaderMap::new(),
-                Some(&[("enable", enable)]),
-                None,
-            )
+            .send(Method::PUT, &path, Some(&[("enable", enable)]), None)
             .await?;
         Ok(())
     }
@@ -374,7 +340,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     pub async fn reset_checkpoint(&self, source_id: &str) -> Result<(), Error> {
         let path = format!("{}/{source_id}/reset-checkpoint", self.sources_root_url());
         self.transport
-            .send::<()>(Method::PUT, &path, HeaderMap::new(), None, None)
+            .send::<()>(Method::PUT, &path, None, None)
             .await?;
         Ok(())
     }
@@ -382,13 +348,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     pub async fn list(&self) -> Result<Vec<SourceConfig>, Error> {
         let response = self
             .transport
-            .send::<()>(
-                Method::GET,
-                &self.sources_root_url(),
-                HeaderMap::new(),
-                None,
-                None,
-            )
+            .send::<()>(Method::GET, &self.sources_root_url(), None, None)
             .await?;
 
         let source_configs = response.deserialize().await?;
@@ -398,7 +358,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     pub async fn delete(&self, source_id: &str) -> Result<(), Error> {
         let path = format!("{}/{source_id}", self.sources_root_url());
         self.transport
-            .send::<()>(Method::DELETE, &path, HeaderMap::new(), None, None)
+            .send::<()>(Method::DELETE, &path, None, None)
             .await?;
         Ok(())
     }
@@ -415,7 +375,7 @@ mod test {
     use quickwit_metastore::IndexMetadata;
     use quickwit_search::SearchResponseRest;
     use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString};
-    use reqwest::Url;
+    use reqwest::{StatusCode, Url};
     use serde_json::json;
     use tokio::fs::File;
     use tokio::io::AsyncReadExt;
@@ -465,7 +425,7 @@ mod test {
         };
         Mock::given(method("POST"))
             .and(path("/api/v1/my-index/search"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(
+            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(
                 json!({"num_hits": 0, "hits": [], "elapsed_time_micros": 100, "errors": []}),
             ))
             .mount(&mock_server)
@@ -503,7 +463,7 @@ mod test {
         Mock::given(method("POST"))
             .and(path("/api/v1/my-index/ingest"))
             .and(body_bytes(buffer.clone()))
-            .respond_with(ResponseTemplate::new(429))
+            .respond_with(ResponseTemplate::new(StatusCode::TOO_MANY_REQUESTS))
             .up_to_n_times(2)
             .expect(2)
             .mount(&mock_server)
@@ -511,7 +471,7 @@ mod test {
         Mock::given(method("POST"))
             .and(path("/api/v1/my-index/ingest"))
             .and(body_bytes(buffer))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(StatusCode::OK))
             .mount(&mock_server)
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
@@ -557,7 +517,9 @@ mod test {
         // GET indexes
         Mock::given(method("GET"))
             .and(path("/api/v1/indexes"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(vec![index_metadata.clone()]))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK).set_body_json(vec![index_metadata.clone()]),
+            )
             .mount(&mock_server)
             .await;
         assert_eq!(
@@ -570,7 +532,9 @@ mod test {
         Mock::given(method("POST"))
             .and(path("/api/v1/indexes"))
             .and(body_json(index_config_to_create.clone()))
-            .respond_with(ResponseTemplate::new(200).set_body_json(index_metadata.clone()))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK).set_body_json(index_metadata.clone()),
+            )
             .mount(&mock_server)
             .await;
         let post_body = Bytes::from(serde_json::to_vec(&index_config_to_create).unwrap());
@@ -582,7 +546,7 @@ mod test {
         // PUT clear index
         Mock::given(method("PUT"))
             .and(path("/api/v1/indexes/my-index/clear"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(StatusCode::OK))
             .mount(&mock_server)
             .await;
         qw_client.indexes().clear("my-index").await.unwrap();
@@ -592,7 +556,7 @@ mod test {
             .and(path("/api/v1/indexes/my-index"))
             .and(query_param("dry_run", "true"))
             .respond_with(
-                ResponseTemplate::new(200)
+                ResponseTemplate::new(StatusCode::OK)
                     .set_body_json(json!([{"file_name": "filename", "file_size_in_bytes": 100}])),
             )
             .mount(&mock_server)
@@ -614,7 +578,7 @@ mod test {
         Mock::given(method("GET"))
             .and(path("/api/v1/indexes/my-index/splits"))
             .and(query_param("start_timestamp", "1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(vec![split.clone()]))
+            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(vec![split.clone()]))
             .mount(&mock_server)
             .await;
         assert_eq!(
@@ -629,7 +593,8 @@ mod test {
         Mock::given(method("PUT"))
             .and(path("/api/v1/indexes/my-index/splits/mark-for-deletion"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({"split_ids": ["split-1"]})),
+                ResponseTemplate::new(StatusCode::OK)
+                    .set_body_json(json!({"split_ids": ["split-1"]})),
             )
             .mount(&mock_server)
             .await;
@@ -649,7 +614,9 @@ mod test {
         // GET sources
         Mock::given(method("GET"))
             .and(path("/api/v1/indexes/my-index/sources"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(vec![source_config.clone()]))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK).set_body_json(vec![source_config.clone()]),
+            )
             .mount(&mock_server)
             .await;
         assert_eq!(
@@ -660,7 +627,9 @@ mod test {
         // Toggle source
         Mock::given(method("PUT"))
             .and(path("/api/v1/indexes/my-index/sources/my-source/toggle"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"enable": true})))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK).set_body_json(json!({"enable": true})),
+            )
             .mount(&mock_server)
             .await;
         qw_client
@@ -674,7 +643,7 @@ mod test {
             .and(path(
                 "/api/v1/indexes/my-index/sources/my-source/reset-checkpoint",
             ))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(StatusCode::OK))
             .mount(&mock_server)
             .await;
         qw_client
@@ -686,7 +655,7 @@ mod test {
         // DELETE source
         Mock::given(method("DELETE"))
             .and(path("/api/v1/indexes/my-index/sources/my-source"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(StatusCode::OK))
             .mount(&mock_server)
             .await;
         qw_client

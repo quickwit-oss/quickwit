@@ -23,6 +23,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Deserializer, Serializer};
 
 /// A helper struct to serialize/deserialize a comma separated list.
+/// Used by the Elasticsearch and Quickwit REST API.
 #[derive(Debug, Deserialize)]
 pub struct SimpleList(pub Vec<String>);
 
