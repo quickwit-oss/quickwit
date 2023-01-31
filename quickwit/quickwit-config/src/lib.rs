@@ -135,8 +135,10 @@ impl ConfigFormat {
                 serde_json::from_value(json_value).context("Failed to read JSON file.")
             }
             ConfigFormat::Toml => {
+                let payload_str = std::str::from_utf8(payload)
+                    .context("Configuration file contains invalid UTF-8 characters.")?;
                 let mut toml_value: toml::Value =
-                    toml::from_slice(payload).context("Failed to read TOML file.")?;
+                    toml::from_str(payload_str).context("Failed to read TOML file.")?;
                 let version_value = toml_value.get_mut("version").context("Missing version.")?;
                 if let Some(version_number) = version_value.as_integer() {
                     warn!("`version` is supposed to be a string.");
@@ -145,7 +147,7 @@ impl ConfigFormat {
                         .context("Failed to reserialize toml config.")?;
                     toml::from_str(&reserialized).context("Failed to read TOML file.")
                 } else {
-                    toml::from_slice(payload).context("Failed to read TOML file.")
+                    toml::from_str(payload_str).context("Failed to read TOML file.")
                 }
             }
             ConfigFormat::Yaml => {
