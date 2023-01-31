@@ -47,7 +47,7 @@ use crate::TestableForRegression;
 // This is partly a duplicate of the `DocMapper` and can
 // be viewed as a temporary hack for 0.2 release before
 // refactoring.
-#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocMapping {
     #[serde(default)]
@@ -279,7 +279,7 @@ fn prepend_at_char(schedule: &str) -> String {
     trimmed_schedule.to_string()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[serde(into = "VersionedIndexConfig")]
 #[serde(try_from = "VersionedIndexConfig")]

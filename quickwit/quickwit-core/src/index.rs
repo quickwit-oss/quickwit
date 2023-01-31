@@ -23,11 +23,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
+use quickwit_common::FileEntry;
 use quickwit_config::{validate_identifier, IndexConfig, QuickwitConfig, SourceConfig};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_indexing::check_source_connectivity;
 use quickwit_janitor::{
-    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError, SplitRemovalInfo,
+    delete_splits_with_files, run_garbage_collect, SplitDeletionError, SplitRemovalInfo,
 };
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Metastore, MetastoreError,

@@ -14,6 +14,7 @@ FILTER = {
 	"quickwit-proto",
 	"quickwit-directories",
 	"quickwit-common",
+    "quickwit-rest-client",
 	"quickwit-serve",
 	"quickwit-storage",
 	"quickwit-cluster",

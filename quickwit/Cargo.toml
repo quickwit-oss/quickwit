@@ -20,6 +20,7 @@ members = [
   "quickwit-metastore-utils",
   "quickwit-opentelemetry",
   "quickwit-proto",
+  "quickwit-rest-client",
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
@@ -182,6 +183,7 @@ value = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" } # vr
 vrl = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" }
 vrl-stdlib = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" }
 warp = "0.3"
+wiremock = "0.5"
 
 quickwit-actors = { version = "0.4.0", path = "./quickwit-actors" }
 quickwit-aws = { version = "0.4.0", path = "./quickwit-aws" }
@@ -200,6 +202,7 @@ quickwit-janitor = { version = "0.4.0", path = "./quickwit-janitor" }
 quickwit-metastore = { version = "0.4.0", path = "./quickwit-metastore" }
 quickwit-opentelemetry = { version = "0.4.0", path = "./quickwit-opentelemetry" }
 quickwit-proto = { version = "0.4.0", path = "./quickwit-proto" }
+quickwit-rest-client = { version = "0.4.0", path = "./quickwit-rest-client" }
 quickwit-search = { version = "0.4.0", path = "./quickwit-search" }
 quickwit-serve = { version = "0.4.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.4.0", path = "./quickwit-storage" }

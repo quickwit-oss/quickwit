@@ -31,14 +31,14 @@ use super::{default_as_true, FieldMappingType};
 use crate::default_doc_mapper::field_mapping_type::QuickwitFieldType;
 use crate::default_doc_mapper::validate_field_mapping_name;
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 pub struct QuickwitObjectOptions {
     pub field_mappings: Vec<FieldMappingEntry>,
 }
 
 /// A `FieldMappingEntry` defines how a field is indexed, stored,
 /// and mapped from a JSON document to the related index fields.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "FieldMappingEntryForSerialization",
     into = "FieldMappingEntryForSerialization"
@@ -79,7 +79,7 @@ pub(crate) struct FieldMappingEntryForSerialization {
     pub field_mapping_json: serde_json::Map<String, JsonValue>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitNumericOptions {
     #[serde(default)]
@@ -104,7 +104,7 @@ impl Default for QuickwitNumericOptions {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitIpAddrOptions {
     #[serde(default)]
@@ -152,7 +152,7 @@ impl QuickwitTextTokenizer {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Serialize, Deserialize, Debug, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitTextOptions {
     #[schema(value_type = String)]

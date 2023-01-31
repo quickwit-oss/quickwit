@@ -23,16 +23,16 @@ use std::sync::Arc;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
+use quickwit_common::simple_list::{from_simple_list, to_simple_list};
 use quickwit_proto::{OutputFormat, ServiceError, SortOrder};
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
-use serde::{de, Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tracing::info;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
-use crate::elastic_search_api::from_simple_list;
 use crate::{with_arg, Format};
 
 #[derive(utoipa::OpenApi)]
@@ -50,7 +50,7 @@ use crate::{with_arg, Format};
 pub struct SearchApi;
 
 #[derive(Debug, Eq, PartialEq, Deserialize, utoipa::ToSchema)]
-struct SortByField {
+pub struct SortByField {
     /// Name of the field to sort by.
     pub field_name: String,
     /// Order to sort by. A usual top-k search implies a descending order.
@@ -70,10 +70,21 @@ impl From<String> for SortByField {
     }
 }
 
-fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
+pub fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
 where D: Deserializer<'de> {
     let string = String::deserialize(deserializer)?;
     Ok(Some(SortByField::from(string)))
+}
+
+impl Serialize for SortByField {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        let sort_str = match self.order {
+            SortOrder::Desc => "-",
+            SortOrder::Asc => "",
+        };
+        serializer.serialize_str(&format!("{}{}", sort_str, self.field_name))
+    }
 }
 
 fn default_max_hits() -> u64 {
@@ -101,7 +112,9 @@ where D: Deserializer<'de> {
 
 /// This struct represents the QueryString passed to
 /// the rest API.
-#[derive(Debug, Default, Eq, PartialEq, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
+#[derive(
+    Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::IntoParams, utoipa::ToSchema,
+)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct SearchRequestQueryString {
@@ -110,21 +123,28 @@ pub struct SearchRequestQueryString {
     #[param(value_type = Object)]
     #[schema(value_type = Object)]
     /// The aggregation JSON string.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub aggs: Option<JsonValue>,
     // Fields to search on
     #[param(rename = "search_field")]
     #[schema(rename = "search_field")]
     #[serde(default)]
-    #[serde(rename(deserialize = "search_field"))]
+    #[serde(rename = "search_field")]
     #[serde(deserialize_with = "from_simple_list")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "to_simple_list")]
     pub search_fields: Option<Vec<String>>,
     /// Fields to extract snippets on.
     #[serde(default)]
     #[serde(deserialize_with = "from_simple_list")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "to_simple_list")]
     pub snippet_fields: Option<Vec<String>>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub start_timestamp: Option<i64>,
     /// If set, restrict search to documents with a `timestamp < end_timestamp``.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub end_timestamp: Option<i64>,
     /// Maximum number of hits to return (by default 20).
     #[serde(default = "default_max_hits")]
@@ -143,7 +163,8 @@ pub struct SearchRequestQueryString {
     #[param(value_type = Option<String>)]
     #[serde(deserialize_with = "sort_by_field_mini_dsl")]
     #[serde(default)]
-    sort_by_field: Option<SortByField>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_by_field: Option<SortByField>,
 }
 
 fn get_proto_search_by(search_request: &SearchRequestQueryString) -> (Option<i32>, Option<String>) {

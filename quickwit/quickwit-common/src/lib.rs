@@ -22,6 +22,7 @@
 mod checklist;
 mod coolid;
 
+mod file_entry;
 pub mod fs;
 pub mod io;
 mod kill_switch;
@@ -31,6 +32,9 @@ mod progress;
 pub mod rand;
 pub mod rendezvous_hasher;
 pub mod runtimes;
+pub mod simple_list;
+#[cfg(any(test, feature = "testsuite"))]
+pub mod test_utils;
 pub mod uri;
 
 use std::env;
@@ -42,6 +46,7 @@ pub use checklist::{
     print_checklist, run_checklist, ChecklistError, BLUE_COLOR, GREEN_COLOR, RED_COLOR,
 };
 pub use coolid::new_coolid;
+pub use file_entry::FileEntry;
 pub use kill_switch::KillSwitch;
 pub use progress::{Progress, ProtectedZoneGuard};
 use tracing::{error, info};
