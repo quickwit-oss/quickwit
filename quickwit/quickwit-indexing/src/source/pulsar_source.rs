@@ -610,9 +610,9 @@ mod pulsar_broker_tests {
         topics: impl IntoIterator<Item = S>,
         num_messages: usize,
         message_fn: M,
-    ) -> anyhow::Result<Vec<String>>
+    ) -> anyhow::Result<Vec<Vec<String>>>
     where
-        M: Fn(usize) -> JsonValue,
+        M: Fn(&str, usize) -> JsonValue,
     {
         let client = Pulsar::builder(PULSAR_URI, TokioExecutor).build().await?;
 
@@ -627,7 +627,7 @@ mod pulsar_broker_tests {
                 .await?;
 
             for id in 0..num_messages {
-                let msg = (message_fn)(id).to_string();
+                let msg = (message_fn)(topic.as_ref(), id).to_string();
                 topic_messages.push(msg);
             }
 
@@ -637,11 +637,12 @@ mod pulsar_broker_tests {
             for receipt in receipts {
                 receipt?;
             }
-            pending_messages.extend(topic_messages);
+
+            topic_messages.sort();
+            pending_messages.push(topic_messages);
             producer.close().await.expect("Close connection.");
         }
 
-        pending_messages.sort();
         Ok(pending_messages)
     }
 
@@ -710,6 +711,15 @@ mod pulsar_broker_tests {
         let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
 
         Ok((source_handle, doc_processor_inbox))
+    }
+
+    fn message_generator(topic: &str, id: usize) -> JsonValue {
+        json!({
+            "id": id,
+            "topic": topic,
+            "timestamp": 1674515715,
+            "body": "Hello, world! This is some test data.",
+        })
     }
 
     #[test]
@@ -859,24 +869,18 @@ mod pulsar_broker_tests {
         .await
         .expect("Create source");
 
-        let expected_docs = populate_topic([&topic], 10, move |id| {
-            json!({
-                "id": id,
-                "timestamp": 1674515715,
-                "body": "Hello, world! This is some test data.",
-            })
-        })
-        .await
-        .unwrap();
+        let expected_docs = populate_topic([&topic], 10, message_generator)
+            .await
+            .unwrap();
 
         let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(!messages.is_empty());
 
         let batch = merge_doc_batches(messages);
-        assert_eq!(batch.docs, expected_docs);
+        assert_eq!(batch.docs, expected_docs[0]);
 
-        let num_bytes = expected_docs
+        let num_bytes = expected_docs[0]
             .iter()
             .map(|v| v.as_bytes().len())
             .sum::<usize>();
@@ -884,7 +888,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription": SUBSCRIPTION,
+            "subscription_name": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
@@ -915,15 +919,12 @@ mod pulsar_broker_tests {
         .await
         .expect("Create source");
 
-        let expected_docs = populate_topic([&topic1, &topic2], 10, move |id| {
-            json!({
-                "id": id,
-                "timestamp": 1674515715,
-                "body": "Hello, world! This is some test data. From topic 1",
-            })
-        })
-        .await
-        .unwrap();
+        let expected_docs = populate_topic([&topic1, &topic2], 10, message_generator)
+            .await
+            .unwrap();
+
+        let mut expected_docs = expected_docs.into_iter().flatten().collect::<Vec<_>>();
+        expected_docs.sort();
 
         let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
@@ -940,7 +941,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic1, topic2],
-            "subscription": SUBSCRIPTION,
+            "subscription_name": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 20,
@@ -972,24 +973,18 @@ mod pulsar_broker_tests {
         .await
         .expect("Create source");
 
-        let expected_docs = populate_topic([&topic], 10, move |id| {
-            json!({
-                "id": id,
-                "timestamp": 1674515715,
-                "body": "Hello, world! This is some test data. From topic 1",
-            })
-        })
-        .await
-        .unwrap();
+        let expected_docs = populate_topic([&topic], 10, message_generator)
+            .await
+            .unwrap();
 
         let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(!messages.is_empty());
 
         let batch = merge_doc_batches(messages);
-        assert_eq!(batch.docs, expected_docs);
+        assert_eq!(batch.docs, expected_docs[0]);
 
-        let num_bytes = expected_docs
+        let num_bytes = expected_docs[0]
             .iter()
             .map(|v| v.as_bytes().len())
             .sum::<usize>();
@@ -997,7 +992,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription": SUBSCRIPTION,
+            "subscription_name": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
@@ -1042,16 +1037,13 @@ mod pulsar_broker_tests {
         .await
         .expect("Create source");
 
-        let expected_docs =
-            populate_topic([&topic_partition_1, &topic_partition_2], 10, move |id| {
-                json!({
-                    "id": id,
-                    "timestamp": 1674515715,
-                    "body": "Hello, world! This is some test data. From topic 1",
-                })
-            })
-            .await
-            .unwrap();
+        let expected_docs = populate_topic(
+            [&topic_partition_1, &topic_partition_2],
+            10,
+            message_generator,
+        )
+        .await
+        .unwrap();
 
         let exit_state1 = wait_for_completion(source_handle1, 10).await;
         let exit_state2 = wait_for_completion(source_handle2, 10).await;
@@ -1060,22 +1052,22 @@ mod pulsar_broker_tests {
         let messages2: Vec<RawDocBatch> = doc_processor_inbox2.drain_for_test_typed();
         assert!(!messages2.is_empty());
 
-        let mut messages = Vec::new();
-        messages.extend(messages2);
-        messages.extend(messages1);
-        let batch = merge_doc_batches(messages);
-        assert_eq!(batch.docs, expected_docs);
+        let batch1 = merge_doc_batches(messages1);
+        dbg!(&batch1.docs, &expected_docs[0]);
+        assert_eq!(batch1.docs, expected_docs[0]);
 
-        let num_bytes = expected_docs
+        let batch2 = merge_doc_batches(messages2);
+        assert_eq!(batch2.docs, expected_docs[1]);
+
+        let num_bytes = expected_docs[1]
             .iter()
             .map(|v| v.as_bytes().len())
-            .sum::<usize>()
-            / 2;
+            .sum::<usize>();
         let expected_state = json!({
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription": SUBSCRIPTION,
+            "subscription_name": SUBSCRIPTION,
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
