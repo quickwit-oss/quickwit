@@ -97,6 +97,7 @@ services:
     ports:
         - "10000:10000" # Blob store port
     profiles:
+      - all
       - azurite
     volumes:
         - "${TMPDIR:-/tmp}/quickwit/services/azurite:/data"
