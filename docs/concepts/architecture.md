@@ -36,7 +36,7 @@ Quickwit indexers connect directly to external message queues like Kafka and gua
 
 The following diagram shows a Quickwit cluster with searchers and indexers that receives queries by the API and messages from a Kafka topic.
 
-![Quickwit Architecture](../assets/images/quickwit-architecture.svg)
+![Docusaurus themed image](../assets/images/quickwit-architecture.svg#gh-light-mode-only)![Docusaurus themed image](../assets/images/quickwit-architecture-dark.svg#gh-dark-mode-only)
 
 # Key concepts
 
