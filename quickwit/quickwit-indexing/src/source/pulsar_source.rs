@@ -524,7 +524,7 @@ mod pulsar_broker_tests {
     use crate::source::quickwit_supported_sources;
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
-    static PULSAR_ADMIN_URI: &str = "http://localhost:8080";
+    static PULSAR_ADMIN_URI: &str = "http://localhost:8081";
     static CLIENT_NAME: &str = "quickwit-tester";
 
     macro_rules! positions {
