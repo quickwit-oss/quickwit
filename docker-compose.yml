@@ -58,6 +58,7 @@ services:
     command: bin/pulsar standalone
     ports:
       - "6650:6650"
+      - "8081:8080"
     profiles:
       - all
       - pulsar
