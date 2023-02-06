@@ -91,6 +91,9 @@ pub struct PulsarSourceState {
     pub num_messages_processed: u64,
     /// Number of invalid messages, i.e., that were empty or could not be parsed.
     pub num_invalid_messages: u64,
+    /// The number of messages that were skipped due to the message being older
+    /// than the current checkpoint position
+    pub num_skipped_messages: u64,
 }
 
 pub struct PulsarSource {
@@ -191,7 +194,7 @@ impl PulsarSource {
             // This is because Pulsar may replay messages which have not yet been acknowledged but
             // are in the process of being indexed.
             if &position < previous {
-                self.state.num_invalid_messages += 1;
+                self.state.num_skipped_messages += 1;
                 return Ok(());
             }
         }
@@ -264,7 +267,10 @@ impl Source for PulsarSource {
         _ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
         debug!(ckpt = ?checkpoint, "Truncating message queue.");
-        let _ = self.pulsar.last_ack.send(checkpoint);
+        self.pulsar
+            .last_ack
+            .send(checkpoint)
+            .expect("Pulsar consumer has shutdown unexpectedly");
         Ok(())
     }
 
