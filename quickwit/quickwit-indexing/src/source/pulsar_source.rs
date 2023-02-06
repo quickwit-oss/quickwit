@@ -36,10 +36,9 @@ use quickwit_metastore::checkpoint::{
     PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
 use serde_json::{json, Value as JsonValue};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::Mutex;
 use tokio::time;
-use tokio::time::timeout;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
@@ -60,11 +59,7 @@ use crate::source::{
 /// 5MB seems like a good one size fits all value.
 const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
 
-/// The duration that the pulsar consumer waits for a new message
-/// to be dispatched.
-const MESSAGE_WAIT_TIMEOUT: Duration = Duration::from_secs(1);
-
-type ConsumerMessage = Result<Message<PulsarMessage>, pulsar::Error>;
+type PulsarConsumer = Mutex<Consumer<PulsarMessage, TokioExecutor>>;
 
 pub struct PulsarSourceFactory;
 
@@ -138,7 +133,7 @@ impl PulsarSource {
             }
         }
 
-        let pulsar_consumer = spawn_message_listener(
+        let pulsar_consumer = create_pulsar_consumer(
             subscription_name.clone(),
             params.clone(),
             pulsar,
@@ -234,10 +229,11 @@ impl Source for PulsarSource {
 
         loop {
             tokio::select! {
-                message = self.pulsar_consumer.messages.recv() => {
+                message = self.pulsar_consumer.get_mut().next() => {
                     let message = message
                         .ok_or_else(|| ActorExitStatus::from(anyhow!("Consumer was dropped.")))?
                         .map_err(|e| ActorExitStatus::from(anyhow!("Failed to get message from consumer: {:?}", e)))?;
+
                     self.process_message(message, &mut batch).map_err(ActorExitStatus::from)?;
 
                     if batch.num_bytes >= BATCH_NUM_BYTES_LIMIT {
@@ -270,10 +266,6 @@ impl Source for PulsarSource {
         _ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
         debug!(ckpt = ?checkpoint, "Truncating message queue.");
-        self.pulsar_consumer
-            .last_ack
-            .send(checkpoint)
-            .expect("Pulsar consumer has shutdown unexpectedly");
         Ok(())
     }
 
@@ -330,96 +322,40 @@ impl BatchBuilder {
     }
 }
 
-struct PulsarConsumer {
-    messages: mpsc::Receiver<ConsumerMessage>,
-    last_ack: watch::Sender<SourceCheckpoint>,
-}
-
 #[tracing::instrument(name = "pulsar-consumer", skip(pulsar))]
-/// Spawns a background task listening for incoming messages to
-/// process.
-///
-/// The exists because the `Consumer` is not `Sync` or `Send` in places which means we cannot
-/// have it as part of the `Source` impl itself or as a background tokio task.
-///
-/// Instead we spawn a separate tokio runtime and use a local set to ensure the bounds.
-async fn spawn_message_listener(
+/// Creates a new pulsar consumer
+async fn create_pulsar_consumer(
     subscription_name: String,
     params: PulsarSourceParams,
     pulsar: Pulsar<TokioExecutor>,
     current_positions: BTreeMap<PartitionId, Position>,
 ) -> anyhow::Result<PulsarConsumer> {
-    let (messages_tx, messages_rx) = mpsc::channel(100);
-    let (last_ack_tx, last_ack_rx) = watch::channel(SourceCheckpoint::default());
-    let (ready, waiter) = oneshot::channel();
+    let mut consumer: Consumer<PulsarMessage, _> = pulsar
+        .consumer()
+        .with_topics(&params.topics)
+        .with_consumer_name(&params.consumer_name)
+        .with_subscription(subscription_name)
+        .with_subscription_type(SubType::Failover)
+        .build()
+        .await?;
 
-    let handle = tokio::spawn(async move {
-        let mut consumer: Consumer<PulsarMessage, _> = pulsar
-            .consumer()
-            .with_topics(&params.topics)
-            .with_consumer_name(&params.consumer_name)
-            .with_subscription(subscription_name)
-            .with_subscription_type(SubType::Failover)
-            .build()
-            .await?;
+    let consumer_ids = consumer
+        .consumer_id()
+        .into_iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>();
+    info!(positions = ?current_positions, "Seeking to last checkpoint positions.");
+    for (_, position) in current_positions {
+        let seek_to = msg_id_from_position(&position);
 
-        let consumer_ids = consumer
-            .consumer_id()
-            .into_iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>();
-        info!(positions = ?current_positions, "Seeking to last checkpoint positions.");
-        for (_, position) in current_positions {
-            let seek_to = msg_id_from_position(&position);
-
-            if seek_to.is_some() {
-                consumer
-                    .seek(Some(consumer_ids.clone()), seek_to, None, pulsar.clone())
-                    .await?;
-            }
+        if seek_to.is_some() {
+            consumer
+                .seek(Some(consumer_ids.clone()), seek_to, None, pulsar.clone())
+                .await?;
         }
-
-        let _ = ready.send(());
-
-        'outer: loop {
-            while let Ok(msg_opt) = timeout(MESSAGE_WAIT_TIMEOUT, consumer.next()).await {
-                match msg_opt {
-                    None => break 'outer,
-                    Some(msg) => {
-                        if messages_tx.send(msg).await.is_err() {
-                            break 'outer;
-                        }
-                    }
-                };
-            }
-
-            if last_ack_rx.has_changed().unwrap_or_default() {
-                let checkpoint = last_ack_rx.borrow().clone();
-
-                for (partition, position) in checkpoint.iter() {
-                    if let Some(msg_id) = msg_id_from_position(&position) {
-                        if let Err(e) = consumer
-                            .cumulative_ack_with_id(partition.0.as_str(), msg_id)
-                            .await
-                        {
-                            error!(error = ?e, partition = %partition.0, position = ?position, "Failed to send ACK to pulsar.");
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok::<_, anyhow::Error>(())
-    });
-
-    if waiter.await.is_err() {
-        handle.await.expect("Join background task.")?;
     }
 
-    Ok(PulsarConsumer {
-        messages: messages_rx,
-        last_ack: last_ack_tx,
-    })
+    Ok(Mutex::new(consumer))
 }
 
 fn msg_id_to_position(msg: &MessageIdData) -> Position {
