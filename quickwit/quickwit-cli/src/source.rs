@@ -41,7 +41,7 @@ use crate::{cluster_endpoint_arg, make_table, prompt_confirmation};
 
 pub fn build_source_command<'a>() -> Command<'a> {
     Command::new("source")
-        .about("Creates, updates, deletes sources.")
+        .about("Manages sources: creates, updates, deletes sources...")
         .arg(cluster_endpoint_arg())
         .subcommand(
             Command::new("create")

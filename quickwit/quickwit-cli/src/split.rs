@@ -42,13 +42,13 @@ use crate::{
 
 pub fn build_split_command<'a>() -> Command<'a> {
     Command::new("split")
-        .about("Performs operations on splits (list, describe, mark for deletion, extract).")
-        .arg(cluster_endpoint_arg())
+        .about("Manages splits: lists, describes, marks for deletion...")
         .subcommand(
             Command::new("list")
                 .about("Lists the splits of an index.")
                 .alias("ls")
                 .args(&[
+                    cluster_endpoint_arg(),
                     arg!(--index <INDEX> "Target index ID")
                         .display_order(1)
                         .required(true),
@@ -92,6 +92,7 @@ pub fn build_split_command<'a>() -> Command<'a> {
                 .about("Displays metadata about a split.")
                 .alias("desc")
                 .args(&[
+                    cluster_endpoint_arg(),
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1),
                     arg!(--split <SPLIT> "ID of the target split")
@@ -104,6 +105,7 @@ pub fn build_split_command<'a>() -> Command<'a> {
                 .about("Marks one or multiple splits of an index for deletion.")
                 .alias("mark")
                 .args(&[
+                    cluster_endpoint_arg(),
                     arg!(--index <INDEX_ID> "Target index ID")
                         .display_order(1)
                         .required(true),

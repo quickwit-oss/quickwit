@@ -71,12 +71,12 @@ use crate::{
 pub fn build_index_command<'a>() -> Command<'a> {
     Command::new("index")
         .about("Manages indexes: creates, deletes, ingests, searches, describes...")
-        .arg(cluster_endpoint_arg())
         .subcommand(
             Command::new("create")
                 .display_order(1)
                 .about("Creates an index from an index config file.")
                 .args(&[
+                    cluster_endpoint_arg(),
                     arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file."),
                     arg!(--overwrite "Overwrites pre-existing index. This will delete all existing data stored at `index-uri` before creating a new index.")
                         .required(false),
@@ -89,6 +89,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .about("Clears an index: deletes all splits and resets checkpoint.")
                 .long_about("Deletes all its splits and resets its checkpoint. This operation is destructive and cannot be undone, proceed with caution.")
                 .args(&[
+                    cluster_endpoint_arg(),
                     arg!(--index <INDEX> "Index ID")
                         .display_order(1),
                 ])
@@ -100,6 +101,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .about("Deletes an index.")
                 .long_about("Deletes an index. This operation is destructive and cannot be undone, proceed with caution.")
                 .args(&[
+                    cluster_endpoint_arg(),
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1),
                     arg!(--"dry-run" "Executes the command in dry run mode and only displays the list of splits candidates for deletion.")
@@ -112,6 +114,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .about("Displays descriptive statistics of an index.")
                 .long_about("Displays descriptive statistics of an index. Displayed statistics are: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
+                    cluster_endpoint_arg(),
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1),
                 ])
@@ -121,6 +124,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .alias("ls")
                 .display_order(5)
                 .about("List indexes.")
+                .arg(cluster_endpoint_arg())
             )
         .subcommand(
             Command::new("ingest")
@@ -128,6 +132,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .about("Ingest NDJSON documents with the ingest API.")
                 .long_about("Reads NDJSON documents from a file or streamed from stdin and sends them into ingest API.")
                 .args(&[
+                    cluster_endpoint_arg(),
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1),
                     arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
@@ -139,6 +144,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .display_order(7)
                 .about("Searches an index.")
                 .args(&[
+                    cluster_endpoint_arg(),
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1),
                     arg!(--query <QUERY> "Query expressed in natural query language ((barack AND obama) OR \"president of united states\"). Learn more on https://quickwit.io/docs/reference/search-language."),
