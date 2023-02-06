@@ -101,7 +101,7 @@ pub struct PulsarSource {
     pulsar: PulsarConsumer,
     params: PulsarSourceParams,
     subscription_name: String,
-    previous_positions: BTreeMap<PartitionId, Position>,
+    current_positions: BTreeMap<PartitionId, Position>,
     state: PulsarSourceState,
 }
 
@@ -122,7 +122,7 @@ impl PulsarSource {
 
         let pulsar = connect_pulsar(&params).await?;
 
-        let mut previous_positions = BTreeMap::new();
+        let mut current_positions = BTreeMap::new();
         for topic in params.topics.iter() {
             let partitions = pulsar.lookup_partitioned_topic(topic).await?;
 
@@ -131,7 +131,7 @@ impl PulsarSource {
                 let position_opt = checkpoint.position_for_partition(&partition_id).cloned();
 
                 if let Some(position) = position_opt {
-                    previous_positions.insert(partition_id, position);
+                    current_positions.insert(partition_id, position);
                 }
             }
         }
@@ -140,7 +140,7 @@ impl PulsarSource {
             subscription_name.clone(),
             params.clone(),
             pulsar,
-            previous_positions.clone(),
+            current_positions.clone(),
         )
         .await?;
 
@@ -149,7 +149,7 @@ impl PulsarSource {
             pulsar,
             params,
             subscription_name,
-            previous_positions,
+            current_positions,
             state: PulsarSourceState::default(),
         })
     }
@@ -176,7 +176,7 @@ impl PulsarSource {
     fn add_doc_to_batch(
         &mut self,
         topic: &str,
-        position: Position,
+        msg_position: Position,
         doc: String,
         batch: &mut BatchBuilder,
     ) -> anyhow::Result<()> {
@@ -189,24 +189,24 @@ impl PulsarSource {
         let partition = PartitionId::from(topic);
         let num_bytes = doc.as_bytes().len();
 
-        if let Some(previous) = self.previous_positions.get(&partition) {
+        if let Some(current_position) = self.current_positions.get(&partition) {
             // We skip messages which are older than the previously recorded position.
             // This is because Pulsar may replay messages which have not yet been acknowledged but
             // are in the process of being indexed.
-            if &position < previous {
+            if &msg_position < current_position {
                 self.state.num_skipped_messages += 1;
                 return Ok(());
             }
         }
 
-        let previous_position = self
-            .previous_positions
-            .insert(partition.clone(), position.clone())
+        let current_position = self
+            .current_positions
+            .insert(partition.clone(), msg_position.clone())
             .unwrap_or(Position::Beginning);
 
         batch
             .checkpoint_delta
-            .record_partition_delta(partition, previous_position, position)
+            .record_partition_delta(partition, current_position, msg_position)
             .context("Failed to record partition delta.")?;
         batch.push(doc, num_bytes as u64);
 
@@ -344,7 +344,7 @@ async fn spawn_message_listener(
     subscription_name: String,
     params: PulsarSourceParams,
     pulsar: Pulsar<TokioExecutor>,
-    previous_positions: BTreeMap<PartitionId, Position>,
+    current_positions: BTreeMap<PartitionId, Position>,
 ) -> anyhow::Result<PulsarConsumer> {
     let (messages_tx, messages_rx) = mpsc::channel(100);
     let (last_ack_tx, last_ack_rx) = watch::channel(SourceCheckpoint::default());
@@ -370,8 +370,8 @@ async fn spawn_message_listener(
                 .into_iter()
                 .map(|id| id.to_string())
                 .collect::<Vec<_>>();
-            info!(positions = ?previous_positions, "Seeking to last checkpoint position.");
-            for (_, position) in previous_positions {
+            info!(positions = ?current_positions, "Seeking to last checkpoint position.");
+            for (_, position) in current_positions {
                 let seek_to = msg_id_from_position(&position);
 
                 if seek_to.is_some() {
@@ -810,7 +810,7 @@ mod pulsar_broker_tests {
         assert_eq!(pulsar_source.state.num_invalid_messages, 1);
         assert_eq!(pulsar_source.state.num_messages_processed, 0);
         assert_eq!(pulsar_source.state.num_bytes_processed, 0);
-        assert!(pulsar_source.previous_positions.is_empty());
+        assert!(pulsar_source.current_positions.is_empty());
         assert_eq!(batch.num_bytes, 0);
         assert!(batch.docs.is_empty());
 
@@ -825,7 +825,7 @@ mod pulsar_broker_tests {
         assert_eq!(pulsar_source.state.num_messages_processed, 1);
         assert_eq!(pulsar_source.state.num_bytes_processed, 14);
         assert_eq!(
-            pulsar_source.previous_positions,
+            pulsar_source.current_positions,
             positions!(topic.as_str() => 1u64)
         );
         assert_eq!(batch.num_bytes, 14);
@@ -841,7 +841,7 @@ mod pulsar_broker_tests {
         assert_eq!(pulsar_source.state.num_messages_processed, 2);
         assert_eq!(pulsar_source.state.num_bytes_processed, 30);
         assert_eq!(
-            pulsar_source.previous_positions,
+            pulsar_source.current_positions,
             positions!(topic.as_str() => 4u64)
         );
         assert_eq!(batch.num_bytes, 16);
