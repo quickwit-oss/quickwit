@@ -92,7 +92,7 @@ async fn test_cmd_create() {
     let index_metadata = test_env.index_metadata().await.unwrap();
     assert_eq!(index_metadata.index_id(), test_env.index_id);
 
-    // Create on existing index should fail.
+    // Creating an existing index should fail.
     let error = create_logs_index(&test_env).await.unwrap_err();
     assert!(error.to_string().contains("already exists"),);
 }
@@ -113,7 +113,6 @@ async fn test_cmd_create_no_index_uri() {
     };
 
     let response = create_index_cli(args).await;
-    println!("{:?}", response);
     response.unwrap();
 
     let index_metadata = test_env.index_metadata().await.unwrap();
@@ -121,26 +120,26 @@ async fn test_cmd_create_no_index_uri() {
     assert_eq!(index_metadata.index_uri(), &test_env.index_uri);
 }
 
-// #[tokio::test]
-// async fn test_cmd_create_overwrite() {
-//     // Create non existing index with --overwrite.
-//     let index_id = append_random_suffix("test-create-non-existing-index-with-overwrite");
-//     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+#[tokio::test]
+async fn test_cmd_create_overwrite() {
+    // Create non existing index with --overwrite.
+    let index_id = append_random_suffix("test-create-non-existing-index-with-overwrite");
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
 
-//     let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
-//     let args = CreateIndexArgs {
-//         cluster_endpoint: test_env.cluster_endpoint.clone(),
-//         index_config_uri: index_config_without_uri,
-//         overwrite: true,
-//         assume_yes: true,
-//     };
+    let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
+    let args = CreateIndexArgs {
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        index_config_uri: index_config_without_uri,
+        overwrite: true,
+        assume_yes: true,
+    };
 
-//     create_index_cli(args).await.unwrap();
+    create_index_cli(args).await.unwrap();
 
-//     let index_metadata = test_env.index_metadata().await.unwrap();
-//     assert_eq!(index_metadata.index_id(), &test_env.index_id);
-//     assert_eq!(index_metadata.index_uri(), &test_env.index_uri);
-// }
+    let index_metadata = test_env.index_metadata().await.unwrap();
+    assert_eq!(index_metadata.index_id(), &test_env.index_id);
+    assert_eq!(index_metadata.index_uri(), &test_env.index_uri);
+}
 
 #[test]
 fn test_cmd_create_with_ill_formed_command() {
@@ -443,62 +442,63 @@ async fn test_search_index_cli() {
     assert_eq!(search_res.num_hits, 0);
 }
 
-// #[tokio::test]
-// async fn test_delete_index_cli_dry_run() {
-//     quickwit_common::setup_logging_for_tests();
-//     let index_id = append_random_suffix("test-delete-cmd--dry-run");
-//     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
-//     test_env.start_server().await.unwrap();
-//     create_logs_index(&test_env).await.unwrap();
+#[tokio::test]
+async fn test_delete_index_cli_dry_run() {
+    quickwit_common::setup_logging_for_tests();
+    let index_id = append_random_suffix("test-delete-cmd--dry-run");
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
+    create_logs_index(&test_env).await.unwrap();
 
-//     let refresh_metastore = |metastore| {
-//         // In this test we rely on the file backed metastore
-//         // and the file backed metastore caches results.
-//         // Therefore we need to force reading the disk to fetch updates.
-//         //
-//         // We do that by dropping and recreating our metastore.
-//         drop(metastore);
-//         quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
-//     };
+    let refresh_metastore = |metastore| {
+        // In this test we rely on the file backed metastore
+        // and the file backed metastore caches results.
+        // Therefore we need to force reading the disk to fetch updates.
+        //
+        // We do that by dropping and recreating our metastore.
+        drop(metastore);
+        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+    };
 
-//     let create_delete_args = |dry_run| DeleteIndexArgs {
-//         cluster_endpoint: test_env.cluster_endpoint.clone(),
-//         index_id: index_id.clone(),
-//         dry_run,
-//     };
+    let create_delete_args = |dry_run| DeleteIndexArgs {
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        index_id: index_id.clone(),
+        dry_run,
+        assume_yes: true,
+    };
 
-//     let metastore = quickwit_metastore_uri_resolver()
-//         .resolve(&test_env.metastore_uri)
-//         .await
-//         .unwrap();
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&test_env.metastore_uri)
+        .await
+        .unwrap();
 
-//     assert!(metastore.index_exists(&index_id).await.unwrap());
-//     // On empty index.
-//     let args = create_delete_args(true);
+    assert!(metastore.index_exists(&index_id).await.unwrap());
+    // On empty index.
+    let args = create_delete_args(true);
 
-//     delete_index_cli(args).await.unwrap();
-//     // On dry run index should still exist
-//     let metastore = refresh_metastore(metastore).await.unwrap();
-//     assert!(metastore.index_exists(&index_id).await.unwrap());
+    delete_index_cli(args).await.unwrap();
+    // On dry run index should still exist
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    assert!(metastore.index_exists(&index_id).await.unwrap());
 
-//     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
-//         .await
-//         .unwrap();
+    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+        .await
+        .unwrap();
 
-//     // On non-empty index
-//     let args = create_delete_args(true);
+    // On non-empty index
+    let args = create_delete_args(true);
 
-//     delete_index_cli(args).await.unwrap();
-//     // On dry run index should still exist
-//     let metastore = refresh_metastore(metastore).await.unwrap();
-//     assert!(metastore.index_exists(&index_id).await.unwrap());
+    delete_index_cli(args).await.unwrap();
+    // On dry run index should still exist
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    assert!(metastore.index_exists(&index_id).await.unwrap());
 
-//     let args = create_delete_args(false);
+    let args = create_delete_args(false);
 
-//     delete_index_cli(args).await.unwrap();
-//     let metastore = refresh_metastore(metastore).await.unwrap();
-//     assert!(!metastore.index_exists(&index_id).await.unwrap());
-// }
+    delete_index_cli(args).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    assert!(!metastore.index_exists(&index_id).await.unwrap());
+}
 
 #[tokio::test]
 async fn test_garbage_collect_cli_no_grace() {
@@ -587,6 +587,7 @@ async fn test_garbage_collect_cli_no_grace() {
         cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_id,
         dry_run: false,
+        assume_yes: true,
     };
 
     delete_index_cli(args).await.unwrap();
@@ -756,6 +757,7 @@ async fn test_all_local_index() {
         cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_id,
         dry_run: false,
+        assume_yes: true,
     };
 
     delete_index_cli(args).await.unwrap();
@@ -832,6 +834,7 @@ async fn test_all_with_s3_localstack_cli() {
         cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_id: index_id.clone(),
         dry_run: false,
+        assume_yes: true,
     };
 
     delete_index_cli(args).await.unwrap();
