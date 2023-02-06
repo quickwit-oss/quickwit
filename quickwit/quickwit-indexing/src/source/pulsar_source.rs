@@ -428,7 +428,7 @@ fn msg_id_to_position(msg: &MessageIdData) -> Position {
             .map(|v| format!("{:010}", v))
             .unwrap_or_default(),
         msg.partition
-            .map(|v| format!("{:010}", v))
+            .and_then(|v| if v < 0 { None } else { Some(format!("{:010}", v)) })
             .unwrap_or_default(),
         msg.batch_size
             .map(|v| format!("{:010}", v))
@@ -445,7 +445,7 @@ fn msg_id_from_position(pos: &Position) -> Option<MessageIdData> {
     let ledger_id = parts.next()?.parse::<u64>().ok()?;
     let entry_id = parts.next()?.parse::<u64>().ok()?;
     let batch_index = parts.next()?.parse::<i32>().ok();
-    let partition = parts.next()?.parse::<i32>().ok();
+    let partition = parts.next()?.parse::<i32>().unwrap_or(-1);
     let batch_size = parts.next()?.parse::<i32>().ok();
 
     Some(MessageIdData {
@@ -453,7 +453,7 @@ fn msg_id_from_position(pos: &Position) -> Option<MessageIdData> {
         entry_id,
         batch_index,
         batch_size,
-        partition,
+        partition: Some(partition),
         ack_set: Vec::new(),
         first_chunk_message_id: None,
     })
@@ -537,6 +537,20 @@ mod pulsar_broker_tests {
         }};
     }
 
+    macro_rules! checkpoints {
+        ($($partition:expr => $position:expr $(,)?)*) => {{
+            let mut checkpoint = SourceCheckpointDelta::default();
+            $(
+                checkpoint.record_partition_delta(
+                    PartitionId::from($partition),
+                    Position::Beginning,
+                    Position::from($position),
+                ).unwrap();
+            )*
+            checkpoint
+        }};
+    }
+
     async fn setup_index(
         metastore: Arc<dyn Metastore>,
         index_id: &str,
@@ -610,11 +624,33 @@ mod pulsar_broker_tests {
         merged_batch
     }
 
+    struct TopicData {
+        messages: Vec<String>,
+        expected_position: Position,
+    }
+
+    impl TopicData {
+        fn num_bytes(&self) -> usize {
+            self.messages
+                .iter()
+                .map(|v| v.as_bytes().len())
+                .sum::<usize>()
+        }
+
+        fn len(&self) -> usize {
+            self.messages.len()
+        }
+    }
+
+    /// Populates a given set of topics with messages produced by closure `M`
+    ///
+    /// A set of messages and it's expected last checkpoint position is returned
+    /// for each topic provided.
     async fn populate_topic<'a, S: AsRef<str> + 'a, M>(
         topics: impl IntoIterator<Item = S>,
         num_messages: usize,
         message_fn: M,
-    ) -> anyhow::Result<Vec<Vec<String>>>
+    ) -> anyhow::Result<Vec<TopicData>>
     where
         M: Fn(&str, usize) -> JsonValue,
     {
@@ -638,12 +674,17 @@ mod pulsar_broker_tests {
             let futures = producer.send_all(topic_messages.clone()).await?;
             let receipts = join_all(futures).await;
 
-            for receipt in receipts {
-                receipt?;
+            let mut last_expected_position = Position::Beginning;
+            for result in receipts {
+                let msg_id = result?.message_id.unwrap();
+                last_expected_position = msg_id_to_position(&msg_id);
             }
 
             topic_messages.sort();
-            pending_messages.push(topic_messages);
+            pending_messages.push(TopicData {
+                messages: topic_messages,
+                expected_position: last_expected_position,
+            });
             producer.close().await.expect("Close connection.");
         }
 
@@ -743,17 +784,38 @@ mod pulsar_broker_tests {
         let position = msg_id_to_position(&populated_id);
         assert_eq!(
             position.as_str(),
-            format!("{:0>20},{:0>20},{:010},{:010},{:010}", 1, 134, 3, -1, 6)
+            format!("{:0>20},{:0>20},{:010},,{:010}", 1, 134, 3, 6)
         );
         let retrieved_id = msg_id_from_position(&position)
             .expect("Successfully deserialize message ID from position.");
         assert_eq!(retrieved_id, populated_id);
 
+        let partitioned_id = MessageIdData {
+            ledger_id: 1,
+            entry_id: 134,
+            batch_index: Some(3),
+            partition: Some(5),
+            batch_size: Some(6),
+
+            // We never serialize these fields.
+            ack_set: Vec::new(),
+            first_chunk_message_id: None,
+        };
+
+        let position = msg_id_to_position(&partitioned_id);
+        assert_eq!(
+            position.as_str(),
+            format!("{:0>20},{:0>20},{:010},{:010},{:010}", 1, 134, 3, 5, 6)
+        );
+        let retrieved_id = msg_id_from_position(&position)
+            .expect("Successfully deserialize message ID from position.");
+        assert_eq!(retrieved_id, partitioned_id);
+
         let sparse_id = MessageIdData {
             ledger_id: 1,
             entry_id: 4,
             batch_index: None,
-            partition: None,
+            partition: Some(-1),
             batch_size: Some(0),
 
             // We never serialize these fields.
@@ -877,17 +939,15 @@ mod pulsar_broker_tests {
             .await
             .unwrap();
 
-        let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
+        let exit_state = wait_for_completion(source_handle, expected_docs[0].len()).await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(!messages.is_empty());
 
         let batch = merge_doc_batches(messages);
-        assert_eq!(batch.docs, expected_docs[0]);
+        assert_eq!(batch.docs, expected_docs[0].messages);
+        assert_eq!(batch.checkpoint_delta, checkpoints!(topic.as_str() => expected_docs[0].expected_position.clone()));
 
-        let num_bytes = expected_docs[0]
-            .iter()
-            .map(|v| v.as_bytes().len())
-            .sum::<usize>();
+        let num_bytes = expected_docs[0].num_bytes();
         let expected_state = json!({
             "index_id": index_id,
             "source_id": source_id,
@@ -927,20 +987,30 @@ mod pulsar_broker_tests {
             .await
             .unwrap();
 
-        let mut expected_docs = expected_docs.into_iter().flatten().collect::<Vec<_>>();
-        expected_docs.sort();
+        let mut combined_messages = expected_docs
+            .iter()
+            .flat_map(|v| &v.messages)
+            .cloned()
+            .collect::<Vec<_>>();
+        combined_messages.sort();
 
-        let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
+        let exit_state = wait_for_completion(source_handle, combined_messages.len()).await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(!messages.is_empty());
 
         let batch = merge_doc_batches(messages);
-        assert_eq!(batch.docs, expected_docs);
+        dbg!(&batch.docs, &combined_messages);
+        assert_eq!(batch.docs, combined_messages);
+        assert_eq!(
+            batch.checkpoint_delta,
+            checkpoints! {
+                topic1.as_str() => expected_docs[0].expected_position.clone(),
+                topic2.as_str() => expected_docs[1].expected_position.clone(),
+            }
+        );
 
-        let num_bytes = expected_docs
-            .iter()
-            .map(|v| v.as_bytes().len())
-            .sum::<usize>();
+        let num_bytes = expected_docs[0].num_bytes()
+            + expected_docs[1].num_bytes();
         let expected_state = json!({
             "index_id": index_id,
             "source_id": source_id,
@@ -986,12 +1056,9 @@ mod pulsar_broker_tests {
         assert!(!messages.is_empty());
 
         let batch = merge_doc_batches(messages);
-        assert_eq!(batch.docs, expected_docs[0]);
+        assert_eq!(batch.docs, expected_docs[0].messages);
 
-        let num_bytes = expected_docs[0]
-            .iter()
-            .map(|v| v.as_bytes().len())
-            .sum::<usize>();
+        let num_bytes = expected_docs[0].num_bytes();
         let expected_state = json!({
             "index_id": index_id,
             "source_id": source_id,
@@ -1057,16 +1124,12 @@ mod pulsar_broker_tests {
         assert!(!messages2.is_empty());
 
         let batch1 = merge_doc_batches(messages1);
-        dbg!(&batch1.docs, &expected_docs[0]);
-        assert_eq!(batch1.docs, expected_docs[0]);
+        assert_eq!(batch1.docs, expected_docs[0].messages);
 
         let batch2 = merge_doc_batches(messages2);
-        assert_eq!(batch2.docs, expected_docs[1]);
+        assert_eq!(batch2.docs, expected_docs[1].messages);
 
-        let num_bytes = expected_docs[1]
-            .iter()
-            .map(|v| v.as_bytes().len())
-            .sum::<usize>();
+        let num_bytes = expected_docs[1].num_bytes();
         let expected_state = json!({
             "index_id": index_id,
             "source_id": source_id,
