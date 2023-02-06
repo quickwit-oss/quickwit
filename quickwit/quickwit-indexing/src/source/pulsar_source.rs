@@ -370,7 +370,7 @@ async fn spawn_message_listener(
                 .into_iter()
                 .map(|id| id.to_string())
                 .collect::<Vec<_>>();
-            info!(positions = ?current_positions, "Seeking to last checkpoint position.");
+            info!(positions = ?current_positions, "Seeking to last checkpoint positions.");
             for (_, position) in current_positions {
                 let seek_to = msg_id_from_position(&position);
 
