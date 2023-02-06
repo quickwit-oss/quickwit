@@ -4702,7 +4702,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "tracing-subscriber",
  "ulid",
  "utoipa 2.4.2",
  "value",
