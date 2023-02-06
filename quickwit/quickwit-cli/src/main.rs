@@ -174,14 +174,17 @@ fn about_text() -> String {
 mod tests {
     use std::path::PathBuf;
     use std::str::FromStr;
+    use std::time::Duration;
 
     use quickwit_cli::cli::{build_cli, CliCommand};
     use quickwit_cli::index::{
         ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, IndexCliCommand,
-        SearchIndexArgs,
+        IngestDocsArgs, SearchIndexArgs,
     };
     use quickwit_cli::split::{DescribeSplitArgs, SplitCliCommand};
-    use quickwit_cli::tools::{ExtractSplitArgs, ToolCliCommand};
+    use quickwit_cli::tools::{
+        ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, MergeArgs, ToolCliCommand,
+    };
     use quickwit_common::uri::Uri;
     use reqwest::Url;
 
@@ -254,6 +257,82 @@ mod tests {
         assert_eq!(command, expected_cmd);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_ingest_args() -> anyhow::Result<()> {
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from([
+            "index",
+            "ingest",
+            "--index",
+            "wikipedia",
+            "--endpoint",
+            "http://127.0.0.1:8000",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Ingest(
+                IngestDocsArgs {
+                    cluster_endpoint,
+                    index_id,
+                    input_path_opt: None,
+                })) if &index_id == "wikipedia"
+                       && cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
+        ));
+
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from(["index", "ingest", "--index", "wikipedia"])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Ingest(
+                IngestDocsArgs {
+                    cluster_endpoint,
+                    index_id,
+                    input_path_opt: None,
+                })) if &index_id == "wikipedia"
+                        && cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_local_ingest_args() {
+        let app = build_cli().no_binary_name(true);
+        let matches = app
+            .try_get_matches_from([
+                "tool",
+                "local-ingest",
+                "--index",
+                "wikipedia",
+                "--config",
+                "/config.yaml",
+                "--overwrite",
+                "--keep-cache",
+                "--transform-script",
+                ".message = downcase(string!(.message))",
+            ])
+            .unwrap();
+        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        println!("{:?}", command);
+        assert!(matches!(
+            command,
+            CliCommand::Tool(ToolCliCommand::LocalIngest(
+                LocalIngestDocsArgs {
+                    config_uri,
+                    index_id,
+                    input_path_opt: None,
+                    overwrite,
+                    vrl_script: Some(vrl_script),
+                    clear_cache,
+                })) if &index_id == "wikipedia"
+                       && config_uri == Uri::from_str("file:///config.yaml").unwrap()
+                       && vrl_script == ".message = downcase(string!(.message))"
+                       && overwrite
+                       && !clear_cache
+        ));
     }
 
     #[test]
@@ -425,6 +504,79 @@ mod tests {
                 target_dir,
                 ..
             })) if &index_id == "wikipedia" && &split_id == "ABC" && target_dir == PathBuf::from("datadir")
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_garbage_collect_args() -> anyhow::Result<()> {
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from([
+            "tool",
+            "gc",
+            "--index",
+            "wikipedia",
+            "--config",
+            "/config.yaml",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Tool(ToolCliCommand::GarbageCollect(GarbageCollectIndexArgs {
+                index_id,
+                grace_period,
+                dry_run: false,
+                ..
+            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(60 * 60)
+        ));
+
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from([
+            "tool",
+            "gc",
+            "--index",
+            "wikipedia",
+            "--grace-period",
+            "5m",
+            "--config",
+            "/config.yaml",
+            "--dry-run",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
+        assert!(matches!(
+            command,
+            CliCommand::Tool(ToolCliCommand::GarbageCollect(GarbageCollectIndexArgs {
+                index_id,
+                grace_period,
+                config_uri,
+                dry_run: true,
+            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && config_uri == expected_config_uri
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_merge_args() -> anyhow::Result<()> {
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from([
+            "tool",
+            "merge",
+            "--index",
+            "wikipedia",
+            "--source",
+            "ingest-source",
+            "--config",
+            "/config.yaml",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Tool(ToolCliCommand::Merge(MergeArgs {
+                index_id,
+                source_id,
+                ..
+            })) if &index_id == "wikipedia" && source_id == "ingest-source"
         ));
         Ok(())
     }
