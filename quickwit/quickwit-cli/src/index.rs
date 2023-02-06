@@ -1153,7 +1153,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         .delete(&args.index_id, args.dry_run)
         .await?;
     if !args.dry_run && !args.assume_yes {
-        let prompt = format!("This operation will delete the index. Do you want to proceed?");
+        let prompt = "This operation will delete the index. Do you want to proceed?".to_string();
         if !prompt_confirmation(&prompt, false) {
             return Ok(());
         }

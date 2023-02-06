@@ -372,10 +372,9 @@ async fn mark_splits_for_deletion_cli(args: MarkForDeletionArgs) -> anyhow::Resu
     debug!(args=?args, "mark-splits-for-deletion");
     println!("❯ Marking splits for deletion...");
     if !args.assume_yes {
-        let prompt = format!(
-            "This operation will mark splits for deletion, those splits will be deleted after the \
-             next garbage collection. Do you want to proceed?",
-        );
+        let prompt = "This operation will mark splits for deletion, those splits will be deleted \
+                      after the next garbage collection. Do you want to proceed?"
+            .to_string();
         if !prompt_confirmation(&prompt, false) {
             return Ok(());
         }

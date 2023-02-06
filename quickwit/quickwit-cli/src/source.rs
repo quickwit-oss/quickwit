@@ -443,7 +443,7 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
     validate_identifier("Source ID", &args.source_id)?;
 
     if !args.assume_yes {
-        let prompt = format!("This operation will delete the source. Do you want to proceed?",);
+        let prompt = "This operation will delete the source. Do you want to proceed?".to_string();
         if !prompt_confirmation(&prompt, false) {
             return Ok(());
         }
@@ -586,7 +586,7 @@ async fn reset_checkpoint_cli(args: ResetCheckpointArgs) -> anyhow::Result<()> {
     println!("❯ Resetting source checkpoint...");
     if !args.assume_yes {
         let prompt =
-            format!("This operation will reset the source checkpoints. Do you want to proceed?",);
+            "This operation will reset the source checkpoints. Do you want to proceed?".to_string();
         if !prompt_confirmation(&prompt, false) {
             return Ok(());
         }
