@@ -121,6 +121,9 @@ impl PulsarSource {
 
         let pulsar = connect_pulsar(&params).await?;
 
+        // Current positions are built mapping the topic ID to the last-saved
+        // message ID, pulsar ensures these topics (and topic partitions) are
+        // unique so that we don't inadvertently clash.
         let mut current_positions = BTreeMap::new();
         for topic in params.topics.iter() {
             let partitions = pulsar.lookup_partitioned_topic(topic).await?;
@@ -189,9 +192,10 @@ impl PulsarSource {
         let num_bytes = doc.as_bytes().len();
 
         if let Some(current_position) = self.current_positions.get(&partition) {
-            // We skip messages which are older than the previously recorded position.
+            // We skip messages which are older than the current recorded position.
             // This is because Pulsar may replay messages which have not yet been acknowledged but
-            // are in the process of being indexed.
+            // are in the process of being published, this can occur in situations like pulsar re-balancing
+            // topic partitions if a node leaves, node failure, etc...
             if &msg_position < current_position {
                 self.state.num_skipped_messages += 1;
                 return Ok(());
