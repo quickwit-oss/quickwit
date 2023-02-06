@@ -235,7 +235,7 @@ async fn test_ingest_docs_cli() {
 
     assert!(cache_directory_path.read_dir().unwrap().next().is_none());
 
-    // Ingest on non existing file should fail.
+    // Ingest a non-existing file should fail.
     let args = LocalIngestDocsArgs {
         config_uri: test_env.config_uri,
         index_id: test_env.index_id,
