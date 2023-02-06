@@ -194,8 +194,8 @@ impl PulsarSource {
         if let Some(current_position) = self.current_positions.get(&partition) {
             // We skip messages which are older than the current recorded position.
             // This is because Pulsar may replay messages which have not yet been acknowledged but
-            // are in the process of being published, this can occur in situations like pulsar re-balancing
-            // topic partitions if a node leaves, node failure, etc...
+            // are in the process of being published, this can occur in situations like pulsar
+            // re-balancing topic partitions if a node leaves, node failure, etc...
             if &msg_position < current_position {
                 self.state.num_skipped_messages += 1;
                 return Ok(());
@@ -363,7 +363,8 @@ async fn spawn_message_listener(
             .build()
             .await?;
 
-        let consumer_ids = consumer.consumer_id()
+        let consumer_ids = consumer
+            .consumer_id()
             .into_iter()
             .map(|id| id.to_string())
             .collect::<Vec<_>>();
@@ -372,7 +373,9 @@ async fn spawn_message_listener(
             let seek_to = msg_id_from_position(&position);
 
             if seek_to.is_some() {
-                consumer.seek(Some(consumer_ids.clone()), seek_to, None, pulsar.clone()).await?;
+                consumer
+                    .seek(Some(consumer_ids.clone()), seek_to, None, pulsar.clone())
+                    .await?;
             }
         }
 
@@ -395,7 +398,10 @@ async fn spawn_message_listener(
 
                 for (partition, position) in checkpoint.iter() {
                     if let Some(msg_id) = msg_id_from_position(&position) {
-                        if let Err(e) = consumer.cumulative_ack_with_id(partition.0.as_str(), msg_id).await {
+                        if let Err(e) = consumer
+                            .cumulative_ack_with_id(partition.0.as_str(), msg_id)
+                            .await
+                        {
                             error!(error = ?e, partition = %partition.0, position = ?position, "Failed to send ACK to pulsar.");
                         }
                     }
@@ -428,7 +434,11 @@ fn msg_id_to_position(msg: &MessageIdData) -> Position {
             .map(|v| format!("{:010}", v))
             .unwrap_or_default(),
         msg.partition
-            .and_then(|v| if v < 0 { None } else { Some(format!("{:010}", v)) })
+            .and_then(|v| if v < 0 {
+                None
+            } else {
+                Some(format!("{:010}", v))
+            })
             .unwrap_or_default(),
         msg.batch_size
             .map(|v| format!("{:010}", v))
@@ -945,7 +955,10 @@ mod pulsar_broker_tests {
 
         let batch = merge_doc_batches(messages);
         assert_eq!(batch.docs, expected_docs[0].messages);
-        assert_eq!(batch.checkpoint_delta, checkpoints!(topic.as_str() => expected_docs[0].expected_position.clone()));
+        assert_eq!(
+            batch.checkpoint_delta,
+            checkpoints!(topic.as_str() => expected_docs[0].expected_position.clone())
+        );
 
         let num_bytes = expected_docs[0].num_bytes();
         let expected_state = json!({
@@ -1009,8 +1022,7 @@ mod pulsar_broker_tests {
             }
         );
 
-        let num_bytes = expected_docs[0].num_bytes()
-            + expected_docs[1].num_bytes();
+        let num_bytes = expected_docs[0].num_bytes() + expected_docs[1].num_bytes();
         let expected_state = json!({
             "index_id": index_id,
             "source_id": source_id,
