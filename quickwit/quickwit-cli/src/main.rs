@@ -195,7 +195,7 @@ mod tests {
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
             cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
             index_id: "wikipedia".to_string(),
-            yes: false,
+            assume_yes: false,
         }));
         assert_eq!(command, expected_cmd);
 
@@ -207,7 +207,7 @@ mod tests {
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
             cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
             index_id: "wikipedia".to_string(),
-            yes: true,
+            assume_yes: true,
         }));
         assert_eq!(command, expected_cmd);
     }

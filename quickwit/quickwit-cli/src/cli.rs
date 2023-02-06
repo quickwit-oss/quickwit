@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::bail;
-use clap::{Arg, ArgMatches, Command};
+use clap::{arg, Arg, ArgMatches, Command};
 use tracing::Level;
 
 use crate::index::{build_index_command, IndexCliCommand};
@@ -38,6 +38,10 @@ pub fn build_cli<'a>() -> Command<'a> {
                 .env("NO_COLOR")
                 .global(true)
                 .takes_value(false),
+        )
+        .arg(arg!(-y --"yes" "Assume \"yes\" as an answer to all prompts and run non-interactively.")
+            .global(true)
+            .required(false)
         )
         .subcommand(build_run_command().display_order(1))
         .subcommand(build_index_command().display_order(2))

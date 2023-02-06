@@ -36,7 +36,9 @@ use tabled::{Table, Tabled};
 use time::{format_description, Date, OffsetDateTime, PrimitiveDateTime};
 use tracing::debug;
 
-use crate::{cluster_endpoint_arg, config_cli_arg, load_quickwit_config, make_table};
+use crate::{
+    cluster_endpoint_arg, config_cli_arg, load_quickwit_config, make_table, prompt_confirmation,
+};
 
 pub fn build_split_command<'a>() -> Command<'a> {
     Command::new("split")
@@ -109,6 +111,8 @@ pub fn build_split_command<'a>() -> Command<'a> {
                         .display_order(2)
                         .required(true)
                         .use_value_delimiter(true),
+                    arg!(-y --"yes" "Assume \"yes\" as an answer to all prompts and run non-interactively.")
+                        .required(false),
                 ])
             )
         .arg_required_else_help(true)
@@ -154,6 +158,7 @@ pub struct MarkForDeletionArgs {
     pub cluster_endpoint: Url,
     pub index_id: String,
     pub split_ids: Vec<String>,
+    pub assume_yes: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -268,11 +273,12 @@ impl SplitCliCommand {
             .into_iter()
             .map(String::from)
             .collect();
-
+        let assume_yes = matches.is_present("yes");
         Ok(Self::MarkForDeletion(MarkForDeletionArgs {
             cluster_endpoint,
             index_id,
             split_ids,
+            assume_yes,
         }))
     }
 
@@ -365,6 +371,15 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
 async fn mark_splits_for_deletion_cli(args: MarkForDeletionArgs) -> anyhow::Result<()> {
     debug!(args=?args, "mark-splits-for-deletion");
     println!("❯ Marking splits for deletion...");
+    if !args.assume_yes {
+        let prompt = format!(
+            "This operation will mark splits for deletion, those splits will be deleted after the \
+             next garbage collection. Do you want to proceed?",
+        );
+        if !prompt_confirmation(&prompt, false) {
+            return Ok(());
+        }
+    }
     let transport = Transport::new(args.cluster_endpoint);
     let qw_client = QuickwitClient::new(transport);
     qw_client
@@ -639,6 +654,7 @@ mod tests {
             "wikipedia",
             "--splits",
             "split1,split2",
+            "--yes",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
@@ -647,9 +663,11 @@ mod tests {
                 cluster_endpoint,
                 index_id,
                 split_ids,
+                assume_yes,
             })) if cluster_endpoint == Url::from_str("https://quickwit-cluster.io").unwrap()
                 && index_id == "wikipedia"
                 && split_ids == vec!["split1".to_string(), "split2".to_string()]
+                && assume_yes
         ));
         Ok(())
     }

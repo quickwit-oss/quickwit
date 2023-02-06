@@ -37,11 +37,11 @@ use serde_json::Value as JsonValue;
 use tabled::{Table, Tabled};
 use tracing::debug;
 
-use crate::{cluster_endpoint_arg, make_table};
+use crate::{cluster_endpoint_arg, make_table, prompt_confirmation};
 
 pub fn build_source_command<'a>() -> Command<'a> {
     Command::new("source")
-        .about("Manages sources.")
+        .about("Creates, updates, deletes sources.")
         .arg(cluster_endpoint_arg())
         .subcommand(
             Command::new("create")
@@ -116,7 +116,7 @@ pub fn build_source_command<'a>() -> Command<'a> {
             )
         .subcommand(
             Command::new("reset-checkpoint")
-                .about("Resets a source checkpoint. This operation is destructive and cannot be undone. Proceed with caution.")
+                .about("Resets a source checkpoint.")
                 .alias("reset")
                 .args(&[
                     arg!(--index <INDEX_ID> "Index ID")
@@ -155,6 +155,7 @@ pub struct DeleteSourceArgs {
     pub cluster_endpoint: Url,
     pub index_id: String,
     pub source_id: String,
+    pub assume_yes: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -175,6 +176,7 @@ pub struct ResetCheckpointArgs {
     pub cluster_endpoint: Url,
     pub index_id: String,
     pub source_id: String,
+    pub assume_yes: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -301,10 +303,12 @@ impl SourceCliCommand {
             .value_of("source")
             .map(String::from)
             .expect("`source` is a required arg.");
+        let assume_yes = matches.is_present("yes");
         Ok(DeleteSourceArgs {
             cluster_endpoint,
             index_id,
             source_id,
+            assume_yes,
         })
     }
 
@@ -356,10 +360,12 @@ impl SourceCliCommand {
             .value_of("source")
             .map(String::from)
             .expect("`source` is a required arg.");
+        let assume_yes = matches.is_present("yes");
         Ok(ResetCheckpointArgs {
             cluster_endpoint,
             index_id,
             source_id,
+            assume_yes,
         })
     }
 }
@@ -435,6 +441,13 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
         );
     }
     validate_identifier("Source ID", &args.source_id)?;
+
+    if !args.assume_yes {
+        let prompt = format!("This operation will delete the source. Do you want to proceed?",);
+        if !prompt_confirmation(&prompt, false) {
+            return Ok(());
+        }
+    }
 
     let transport = Transport::new(args.cluster_endpoint);
     let qw_client = QuickwitClient::new(transport);
@@ -571,6 +584,13 @@ fn display_tables(tables: &[Table]) {
 async fn reset_checkpoint_cli(args: ResetCheckpointArgs) -> anyhow::Result<()> {
     debug!(args=?args, "reset-checkpoint-source");
     println!("❯ Resetting source checkpoint...");
+    if !args.assume_yes {
+        let prompt =
+            format!("This operation will reset the source checkpoints. Do you want to proceed?",);
+        if !prompt_confirmation(&prompt, false) {
+            return Ok(());
+        }
+    }
     let transport = Transport::new(args.cluster_endpoint);
     let qw_client = QuickwitClient::new(transport);
     qw_client
@@ -788,6 +808,7 @@ mod tests {
                 cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
+                assume_yes: true,
             }));
         assert_eq!(command, expected_command);
     }
@@ -834,6 +855,7 @@ mod tests {
                 cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
+                assume_yes: true,
             }));
         assert_eq!(command, expected_command);
     }

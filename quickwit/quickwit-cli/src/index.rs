@@ -70,61 +70,73 @@ use crate::{
 
 pub fn build_index_command<'a>() -> Command<'a> {
     Command::new("index")
-        .about("Create your index, ingest data, search, describe... every command you need to manage indexes.")
+        .about("Manages indexes: creates, deletes, ingests, searches, describes...")
         .arg(cluster_endpoint_arg())
         .subcommand(
-            Command::new("list")
-                .about("List indexes.")
-                .alias("ls")
-            )
-        .subcommand(
             Command::new("create")
+                .display_order(1)
                 .about("Creates an index from an index config file.")
                 .args(&[
                     arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file."),
                     arg!(--overwrite "Overwrites pre-existing index. This will delete all existing data stored at `index-uri` before creating a new index.")
                         .required(false),
-                    arg!(-y --"yes" "Assume \"yes\" as an answer to all prompts and run non-interactively.")
-                        .required(false),
                 ])
             )
         .subcommand(
-            Command::new("ingest")
-                .about("Read JSON documents from a file or streamed from stdin and send them into ingest API.")
+            Command::new("clear")
+                .display_order(2)
+                .alias("clr")
+                .about("Clears an index: deletes all splits and resets checkpoint.")
+                .long_about("Deletes all its splits and resets its checkpoint. This operation is destructive and cannot be undone, proceed with caution.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index")
+                    arg!(--index <INDEX> "Index ID")
                         .display_order(1),
-                    arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
-                        .required(false),
                 ])
             )
         .subcommand(
-            Command::new("local-ingest")
-                .about("Indexes JSON documents read from a file or streamed from stdin.")
+            Command::new("delete")
+                .display_order(3)
+                .alias("del")
+                .about("Deletes an index.")
+                .long_about("Deletes an index. This operation is destructive and cannot be undone, proceed with caution.")
                 .args(&[
-                    config_cli_arg(),
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1),
-                    arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
-                        .required(false),
-                    arg!(--overwrite "Overwrites pre-existing index.")
-                        .required(false),
-                    arg!(--"transform-script" <SCRIPT> "VRL program to transform docs before ingesting.")
-                        .required(false),
-                    arg!(--"keep-cache" "Does not clear local cache directory upon completion.")
+                    arg!(--"dry-run" "Executes the command in dry run mode and only displays the list of splits candidates for deletion.")
                         .required(false),
                 ])
             )
         .subcommand(
             Command::new("describe")
-                .about("Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.")
+                .display_order(4)
+                .about("Displays descriptive statistics of an index.")
+                .long_about("Displays descriptive statistics of an index. Displayed statistics are: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1),
                 ])
             )
         .subcommand(
+            Command::new("list")
+                .alias("ls")
+                .display_order(5)
+                .about("List indexes.")
+            )
+        .subcommand(
+            Command::new("ingest")
+                .display_order(6)
+                .about("Ingest NDJSON documents with the ingest API.")
+                .long_about("Reads NDJSON documents from a file or streamed from stdin and sends them into ingest API.")
+                .args(&[
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
+                    arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
+                        .required(false),
+                ])
+            )
+        .subcommand(
             Command::new("search")
+                .display_order(7)
                 .about("Searches an index.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
@@ -153,17 +165,27 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 ])
             )
         .subcommand(
-            Command::new("merge")
-                .about("Merges all the splits of the index pipeline defined by the tuple (index ID, source ID, pipeline ordinal). The pipeline ordinal is 0 by default. If you have a source with `num_pipelines > 0`, you may want to merge splits on ordinals > 0.")
+            Command::new("local-ingest")
+                .display_order(10)
+                .about("Indexes NDJSON documents locally.")
+                .long_about("Local ingest starts a quickwit isntance locally and directly indexes NDJSON documents from a file or from stdin.")
                 .args(&[
                     config_cli_arg(),
-                    arg!(--index <INDEX> "ID of the target index.")
+                    arg!(--index <INDEX> "ID of the target index")
                         .display_order(1),
-                    arg!(--source <SOURCE_ID> "ID of the target source."),
+                    arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
+                        .required(false),
+                    arg!(--overwrite "Overwrites pre-existing index.")
+                        .required(false),
+                    arg!(--"transform-script" <SCRIPT> "VRL program to transform docs before ingesting.")
+                        .required(false),
+                    arg!(--"keep-cache" "Does not clear local cache directory upon completion.")
+                        .required(false),
                 ])
             )
         .subcommand(
             Command::new("gc")
+                .display_order(10)
                 .about("Garbage collects stale staged splits and splits marked for deletion.")
                 .args(&[
                     config_cli_arg(),
@@ -177,24 +199,14 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 ])
             )
         .subcommand(
-            Command::new("clear")
-                .alias("clr")
-                .about("Clears and index. Deletes all its splits and resets its checkpoint. This operation is destructive and cannot be undone, proceed with caution.")
+            Command::new("merge")
+                .display_order(10)
+                .about("Merges all the splits for a given Node ID, index ID, source ID.")
                 .args(&[
-                    arg!(--index <INDEX> "Index ID")
+                    config_cli_arg(),
+                    arg!(--index <INDEX> "ID of the target index.")
                         .display_order(1),
-                    arg!(--yes),
-                ])
-            )
-        .subcommand(
-            Command::new("delete")
-            .alias("del")
-                .about("Deletes an index. This operation is destructive and cannot be undone, proceed with caution.")
-                .args(&[
-                    arg!(--index <INDEX> "ID of the target index")
-                        .display_order(1),
-                    arg!(--"dry-run" "Executes the command in dry run mode and only displays the list of splits candidates for deletion.")
-                        .required(false),
+                    arg!(--source <SOURCE_ID> "ID of the target source."),
                 ])
             )
         .arg_required_else_help(true)
@@ -204,7 +216,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
 pub struct ClearIndexArgs {
     pub cluster_endpoint: Url,
     pub index_id: String,
-    pub yes: bool,
+    pub assume_yes: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -258,6 +270,7 @@ pub struct DeleteIndexArgs {
     pub cluster_endpoint: Url,
     pub index_id: String,
     pub dry_run: bool,
+    pub assume_yes: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -330,11 +343,11 @@ impl IndexCliCommand {
             .value_of("index")
             .expect("`index` is a required arg.")
             .to_string();
-        let yes = matches.is_present("yes");
+        let assume_yes = matches.is_present("yes");
         Ok(Self::Clear(ClearIndexArgs {
             cluster_endpoint,
             index_id,
-            yes,
+            assume_yes,
         }))
     }
 
@@ -538,10 +551,12 @@ impl IndexCliCommand {
             .expect("`index` is a required arg.")
             .to_string();
         let dry_run = matches.is_present("dry-run");
+        let assume_yes = matches.is_present("yes");
         Ok(Self::Delete(DeleteIndexArgs {
             index_id,
             dry_run,
             cluster_endpoint,
+            assume_yes,
         }))
     }
 
@@ -563,7 +578,7 @@ impl IndexCliCommand {
 
 pub async fn clear_index_cli(args: ClearIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "clear-index");
-    if !args.yes {
+    if !args.assume_yes {
         let prompt = format!(
             "This operation will delete all the splits of the index `{}` and reset its \
              checkpoint. Do you want to proceed?",
@@ -577,11 +592,7 @@ pub async fn clear_index_cli(args: ClearIndexArgs) -> anyhow::Result<()> {
     let transport = Transport::new(endpoint);
     let qw_client = QuickwitClient::new(transport);
     qw_client.indexes().clear(&args.index_id).await?;
-    println!(
-        "{} Index `{}` successfully cleared.",
-        "✔".color(GREEN_COLOR),
-        args.index_id
-    );
+    println!("{} Index successfully cleared.", "✔".color(GREEN_COLOR),);
     Ok(())
 }
 
@@ -1141,6 +1152,12 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         .indexes()
         .delete(&args.index_id, args.dry_run)
         .await?;
+    if !args.dry_run && !args.assume_yes {
+        let prompt = format!("This operation will delete the index. Do you want to proceed?");
+        if !prompt_confirmation(&prompt, false) {
+            return Ok(());
+        }
+    }
     if args.dry_run {
         if affected_files.is_empty() {
             println!("Only the index will be deleted since it does not contains any data file.");
