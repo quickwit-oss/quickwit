@@ -30,17 +30,19 @@ use clap::ErrorKind;
 use helpers::{TestEnv, TestStorageType};
 use quickwit_cli::cli::build_cli;
 use quickwit_cli::index::{
-    create_index_cli, delete_index_cli, garbage_collect_index_cli, ingest_docs_cli, search_index,
-    CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IngestDocsArgs, SearchIndexArgs,
+    create_index_cli, delete_index_cli, search_index, CreateIndexArgs, DeleteIndexArgs,
+    SearchIndexArgs,
 };
 use quickwit_cli::service::RunCliCommand;
+use quickwit_cli::tools::{
+    garbage_collect_index_cli, local_ingest_docs_cli, GarbageCollectIndexArgs, LocalIngestDocsArgs,
+};
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_common::ChecklistError;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::CLI_INGEST_SOURCE_ID;
-use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError, SplitState};
 use serde_json::{json, Number, Value};
 use tokio::time::{sleep, Duration};
@@ -49,7 +51,7 @@ use crate::helpers::{create_test_env, wait_port_ready, PACKAGE_BIN_NAME};
 
 async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
     let args = CreateIndexArgs {
-        config_uri: test_env.config_uri.clone(),
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_config_uri: test_env.index_config_uri.clone(),
         overwrite: false,
         assume_yes: true,
@@ -57,8 +59,8 @@ async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
     create_index_cli(args).await
 }
 
-async fn ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Result<()> {
-    let args = IngestDocsArgs {
+async fn local_ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Result<()> {
+    let args = LocalIngestDocsArgs {
         config_uri: test_env.config_uri.clone(),
         index_id: test_env.index_id.clone(),
         input_path_opt: Some(input_path.to_path_buf()),
@@ -67,7 +69,7 @@ async fn ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Result<()
         vrl_script: None,
     };
 
-    ingest_docs_cli(args).await
+    local_ingest_docs_cli(args).await
 }
 
 #[test]
@@ -83,38 +85,53 @@ fn test_cmd_help() {
 
 #[tokio::test]
 async fn test_cmd_create() {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-create-cmd");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
     let index_metadata = test_env.index_metadata().await.unwrap();
     assert_eq!(index_metadata.index_id(), test_env.index_id);
 
-    // Create without giving `index-uri`.
+    // Creating an existing index should fail.
+    let error = create_logs_index(&test_env).await.unwrap_err();
+    assert!(error.to_string().contains("already exists"),);
+}
+
+#[tokio::test]
+async fn test_cmd_create_no_index_uri() {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-create-cmd-no-index-uri");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
 
     let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
     let args = CreateIndexArgs {
-        config_uri: test_env.config_uri.clone(),
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_config_uri: index_config_without_uri,
         overwrite: false,
         assume_yes: true,
     };
 
-    create_index_cli(args).await.unwrap();
+    let response = create_index_cli(args).await;
+    response.unwrap();
 
     let index_metadata = test_env.index_metadata().await.unwrap();
     assert_eq!(index_metadata.index_id(), test_env.index_id);
     assert_eq!(index_metadata.index_uri(), &test_env.index_uri);
+}
 
+#[tokio::test]
+async fn test_cmd_create_overwrite() {
     // Create non existing index with --overwrite.
     let index_id = append_random_suffix("test-create-non-existing-index-with-overwrite");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
 
     let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
     let args = CreateIndexArgs {
-        config_uri: test_env.config_uri.clone(),
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_config_uri: index_config_without_uri,
         overwrite: true,
         assume_yes: true,
@@ -125,7 +142,10 @@ async fn test_cmd_create() {
     let index_metadata = test_env.index_metadata().await.unwrap();
     assert_eq!(index_metadata.index_id(), &test_env.index_id);
     assert_eq!(index_metadata.index_uri(), &test_env.index_uri);
+}
 
+#[test]
+fn test_cmd_create_with_ill_formed_command() {
     // Attempt to create with ill-formed new command.
     let app = build_cli();
     let result = app.try_get_matches_from(vec![PACKAGE_BIN_NAME, "index", "create"]);
@@ -137,31 +157,11 @@ async fn test_cmd_create() {
 }
 
 #[tokio::test]
-async fn test_cmd_create_on_existing_index() {
-    let index_id = append_random_suffix("test-create-cmd--index-already-exists");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
-    create_logs_index(&test_env).await.unwrap();
-
-    let args = CreateIndexArgs {
-        config_uri: test_env.config_uri,
-        index_config_uri: test_env.index_config_uri,
-        overwrite: false,
-        assume_yes: false,
-    };
-
-    let error = create_index_cli(args).await.unwrap_err();
-    assert_eq!(
-        error.root_cause().downcast_ref::<MetastoreError>().unwrap(),
-        &MetastoreError::IndexAlreadyExists { index_id }
-    );
-}
-
-#[tokio::test]
 async fn test_cmd_ingest_on_non_existing_index() {
     let index_id = append_random_suffix("index-does-not-exist");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
 
-    let args = IngestDocsArgs {
+    let args = LocalIngestDocsArgs {
         config_uri: test_env.config_uri,
         index_id: "index-does-not-exist".to_string(),
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
@@ -170,7 +170,7 @@ async fn test_cmd_ingest_on_non_existing_index() {
         vrl_script: None,
     };
 
-    let error = ingest_docs_cli(args).await.unwrap_err();
+    let error = local_ingest_docs_cli(args).await.unwrap_err();
 
     assert_eq!(
         error.root_cause().downcast_ref::<MetastoreError>().unwrap(),
@@ -181,37 +181,14 @@ async fn test_cmd_ingest_on_non_existing_index() {
 }
 
 #[tokio::test]
-async fn test_cmd_ingest_on_non_existing_file() {
-    let index_id = append_random_suffix("test-new-cmd--file-does-not-exist");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
-    create_logs_index(&test_env).await.unwrap();
-
-    let args = IngestDocsArgs {
-        config_uri: test_env.config_uri,
-        index_id: test_env.index_id,
-        input_path_opt: Some(test_env.data_dir_path.join("file-does-not-exist.json")),
-        overwrite: false,
-        clear_cache: true,
-        vrl_script: None,
-    };
-
-    let error = ingest_docs_cli(args).await.unwrap_err();
-
-    assert!(matches!(
-        error.root_cause().downcast_ref::<ChecklistError>().unwrap(),
-        ChecklistError {
-            errors
-        } if errors.len() == 1 && errors[0].0 == CLI_INGEST_SOURCE_ID
-    ));
-}
-
-#[tokio::test]
 async fn test_ingest_docs_cli_keep_cache() {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-index-keep-cache");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    let args = IngestDocsArgs {
+    let args = LocalIngestDocsArgs {
         config_uri: test_env.config_uri,
         index_id,
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
@@ -220,7 +197,7 @@ async fn test_ingest_docs_cli_keep_cache() {
         vrl_script: None,
     };
 
-    ingest_docs_cli(args).await.unwrap();
+    local_ingest_docs_cli(args).await.unwrap();
     // Ensure cache directory is not empty.
     let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
     assert!(cache_directory_path.read_dir().unwrap().next().is_some());
@@ -228,11 +205,13 @@ async fn test_ingest_docs_cli_keep_cache() {
 
 #[tokio::test]
 async fn test_ingest_docs_cli() {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-index-simple");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    let args = IngestDocsArgs {
+    let args = LocalIngestDocsArgs {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
@@ -241,7 +220,7 @@ async fn test_ingest_docs_cli() {
         vrl_script: None,
     };
 
-    ingest_docs_cli(args).await.unwrap();
+    local_ingest_docs_cli(args).await.unwrap();
 
     let splits: Vec<_> = test_env
         .metastore()
@@ -258,15 +237,36 @@ async fn test_ingest_docs_cli() {
     let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
 
     assert!(cache_directory_path.read_dir().unwrap().next().is_none());
+
+    // Ingest a non-existing file should fail.
+    let args = LocalIngestDocsArgs {
+        config_uri: test_env.config_uri,
+        index_id: test_env.index_id,
+        input_path_opt: Some(test_env.data_dir_path.join("file-does-not-exist.json")),
+        overwrite: false,
+        clear_cache: true,
+        vrl_script: None,
+    };
+
+    let error = local_ingest_docs_cli(args).await.unwrap_err();
+
+    assert!(matches!(
+        error.root_cause().downcast_ref::<ChecklistError>().unwrap(),
+        ChecklistError {
+            errors
+        } if errors.len() == 1 && errors[0].0 == CLI_INGEST_SOURCE_ID
+    ));
 }
 
 #[tokio::test]
-async fn test_cmd_search_aggregation() -> Result<()> {
+async fn test_cmd_search_aggregation() {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-search-cmd");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -301,14 +301,12 @@ async fn test_cmd_search_aggregation() -> Result<()> {
         snippet_fields: None,
         start_timestamp: None,
         end_timestamp: None,
-        config_uri: Uri::from_str(&test_env.resource_files["config"].display().to_string())
-            .unwrap(),
+        cluster_endpoint: test_env.cluster_endpoint,
         sort_by_score: false,
     };
-    let search_response = search_index(args).await?;
+    let search_response = search_index(args).await.unwrap();
 
-    let aggregation_res: Value =
-        serde_json::from_str(&search_response.aggregation.unwrap()).unwrap();
+    let aggregation_res = search_response.aggregations.unwrap();
 
     assert_eq!(
         aggregation_res,
@@ -359,17 +357,17 @@ async fn test_cmd_search_aggregation() -> Result<()> {
           }
         })
     );
-
-    Ok(())
 }
 
 #[tokio::test]
 async fn test_cmd_search_with_snippets() -> Result<()> {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-search-cmd");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -384,19 +382,15 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
         snippet_fields: Some(vec!["event".to_string()]),
         start_timestamp: None,
         end_timestamp: None,
-        config_uri: Uri::from_str(&test_env.resource_files["config"].display().to_string())
-            .unwrap(),
+        cluster_endpoint: test_env.cluster_endpoint,
         sort_by_score: false,
     };
-    let search_response = search_index(args).await?;
+    let search_response = search_index(args).await.unwrap();
     assert_eq!(search_response.hits.len(), 1);
     let hit = &search_response.hits[0];
+    assert_eq!(hit, &json!({"event": "baz", "ts": 72057604}));
     assert_eq!(
-        serde_json::from_str::<Value>(&hit.json).unwrap(),
-        json!({"event": "baz", "ts": 72057604})
-    );
-    assert_eq!(
-        serde_json::from_str::<Value>(hit.snippet.as_ref().unwrap()).unwrap(),
+        search_response.snippets.unwrap()[0],
         json!({
             "event": [ "<b>baz</b>"]
         })
@@ -406,12 +400,14 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
 
 #[tokio::test]
 async fn test_search_index_cli() {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-search-cmd");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
     let create_search_args = |query: &str| SearchIndexArgs {
-        config_uri: test_env.config_uri.clone(),
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_id: index_id.clone(),
         query: query.to_string(),
         aggregation: None,
@@ -424,7 +420,7 @@ async fn test_search_index_cli() {
         sort_by_score: false,
     };
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -451,8 +447,10 @@ async fn test_search_index_cli() {
 
 #[tokio::test]
 async fn test_delete_index_cli_dry_run() {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-delete-cmd--dry-run");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
     let refresh_metastore = |metastore| {
@@ -466,9 +464,10 @@ async fn test_delete_index_cli_dry_run() {
     };
 
     let create_delete_args = |dry_run| DeleteIndexArgs {
-        config_uri: test_env.config_uri.clone(),
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_id: index_id.clone(),
         dry_run,
+        assume_yes: true,
     };
 
     let metastore = quickwit_metastore_uri_resolver()
@@ -485,7 +484,7 @@ async fn test_delete_index_cli_dry_run() {
     let metastore = refresh_metastore(metastore).await.unwrap();
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -505,46 +504,13 @@ async fn test_delete_index_cli_dry_run() {
 }
 
 #[tokio::test]
-async fn test_delete_index_cli() {
-    let index_id = append_random_suffix("test-delete-cmd");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
-    create_logs_index(&test_env).await.unwrap();
-
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
-        .await
-        .unwrap();
-
-    let args = DeleteIndexArgs {
-        config_uri: test_env.config_uri.clone(),
-        index_id: index_id.clone(),
-        dry_run: false,
-    };
-
-    delete_index_cli(args).await.unwrap();
-
-    assert!(test_env
-        .metastore()
-        .await
-        .unwrap()
-        .index_metadata(&test_env.index_id)
-        .await
-        .is_err());
-
-    assert!(!test_env
-        .data_dir_path
-        .join(INDEXING_DIR_NAME)
-        .join(test_env.index_id)
-        .as_path()
-        .try_exists()
-        .unwrap());
-}
-
-#[tokio::test]
 async fn test_garbage_collect_cli_no_grace() {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-gc-cmd--no-grace-period");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -621,9 +587,10 @@ async fn test_garbage_collect_cli_no_grace() {
     );
 
     let args = DeleteIndexArgs {
-        config_uri: test_env.config_uri.clone(),
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_id,
         dry_run: false,
+        assume_yes: true,
     };
 
     delete_index_cli(args).await.unwrap();
@@ -635,8 +602,9 @@ async fn test_garbage_collect_cli_no_grace() {
 async fn test_garbage_collect_index_cli() {
     let index_id = append_random_suffix("test-gc-cmd");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -733,6 +701,7 @@ async fn test_all_local_index() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-all");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
     let metadata_file_exists = test_env
@@ -742,7 +711,7 @@ async fn test_all_local_index() {
         .unwrap();
     assert!(metadata_file_exists);
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -788,9 +757,10 @@ async fn test_all_local_index() {
     service_task.abort();
 
     let args = DeleteIndexArgs {
-        config_uri: test_env.config_uri.clone(),
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_id,
         dry_run: false,
+        assume_yes: true,
     };
 
     delete_index_cli(args).await.unwrap();
@@ -809,15 +779,16 @@ async fn test_all_local_index() {
 async fn test_all_with_s3_localstack_cli() {
     let index_id = append_random_suffix("test-all--cli-s3-localstack");
     let test_env = create_test_env(index_id.clone(), TestStorageType::S3).unwrap();
+    test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
     // Cli search
     let args = SearchIndexArgs {
-        config_uri: test_env.config_uri.clone(),
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_id: index_id.clone(),
         query: "level:info".to_string(),
         aggregation: None,
@@ -863,9 +834,10 @@ async fn test_all_with_s3_localstack_cli() {
     service_task.abort();
 
     let args = DeleteIndexArgs {
-        config_uri: test_env.config_uri.clone(),
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
         index_id: index_id.clone(),
         dry_run: false,
+        assume_yes: true,
     };
 
     delete_index_cli(args).await.unwrap();

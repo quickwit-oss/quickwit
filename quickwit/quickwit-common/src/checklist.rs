@@ -30,11 +30,7 @@ pub const BLUE_COLOR: Color = Color::TrueColor {
     b: 209,
 };
 
-pub const GREEN_COLOR: Color = Color::TrueColor {
-    r: 22,
-    g: 209,
-    b: 142,
-};
+pub const GREEN_COLOR: Color = Color::Green;
 pub const WHITE_COLOR: Color = Color::TrueColor {
     r: 255,
     g: 255,

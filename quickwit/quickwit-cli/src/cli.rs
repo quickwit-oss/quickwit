@@ -18,26 +18,17 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::bail;
-use clap::{Arg, ArgMatches, Command};
-use quickwit_config::DEFAULT_QW_CONFIG_PATH;
+use clap::{arg, Arg, ArgMatches, Command};
 use tracing::Level;
 
 use crate::index::{build_index_command, IndexCliCommand};
 use crate::service::{build_run_command, RunCliCommand};
 use crate::source::{build_source_command, SourceCliCommand};
 use crate::split::{build_split_command, SplitCliCommand};
+use crate::tools::{build_tool_command, ToolCliCommand};
 
 pub fn build_cli<'a>() -> Command<'a> {
     Command::new("Quickwit")
-        .arg(
-            Arg::new("config")
-                .long("config")
-                .help("Config file location")
-                .env("QW_CONFIG")
-                .default_value(DEFAULT_QW_CONFIG_PATH)
-                .global(true)
-                .display_order(1),
-        )
         .arg(
             Arg::new("no-color")
                 .long("no-color")
@@ -47,13 +38,17 @@ pub fn build_cli<'a>() -> Command<'a> {
                 )
                 .env("NO_COLOR")
                 .global(true)
-                .display_order(2)
                 .takes_value(false),
+        )
+        .arg(arg!(-y --"yes" "Assume \"yes\" as an answer to all prompts and run non-interactively.")
+            .global(true)
+            .required(false)
         )
         .subcommand(build_run_command().display_order(1))
         .subcommand(build_index_command().display_order(2))
         .subcommand(build_source_command().display_order(3))
         .subcommand(build_split_command().display_order(4))
+        .subcommand(build_tool_command().display_order(5))
         .arg_required_else_help(true)
         .disable_help_subcommand(true)
         .subcommand_required(true)
@@ -65,6 +60,7 @@ pub enum CliCommand {
     Index(IndexCliCommand),
     Split(SplitCliCommand),
     Source(SourceCliCommand),
+    Tool(ToolCliCommand),
 }
 
 impl CliCommand {
@@ -74,6 +70,7 @@ impl CliCommand {
             CliCommand::Index(subcommand) => subcommand.default_log_level(),
             CliCommand::Source(_) => Level::ERROR,
             CliCommand::Split(_) => Level::ERROR,
+            CliCommand::Tool(_) => Level::ERROR,
         }
     }
 
@@ -86,6 +83,7 @@ impl CliCommand {
             "run" => RunCliCommand::parse_cli_args(submatches).map(CliCommand::Run),
             "source" => SourceCliCommand::parse_cli_args(submatches).map(CliCommand::Source),
             "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
+            "tool" => ToolCliCommand::parse_cli_args(submatches).map(CliCommand::Tool),
             _ => bail!("Subcommand `{}` is not implemented.", subcommand),
         }
     }
@@ -96,6 +94,7 @@ impl CliCommand {
             CliCommand::Run(subcommand) => subcommand.execute().await,
             CliCommand::Source(subcommand) => subcommand.execute().await,
             CliCommand::Split(subcommand) => subcommand.execute().await,
+            CliCommand::Tool(subcommand) => subcommand.execute().await,
         }
     }
 }

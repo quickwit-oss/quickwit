@@ -23,6 +23,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
+use clap::{arg, Arg};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use once_cell::sync::Lazy;
@@ -30,7 +31,7 @@ use quickwit_common::run_checklist;
 use quickwit_common::runtimes::RuntimesConfiguration;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig};
+use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig, DEFAULT_QW_CONFIG_PATH};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
@@ -47,6 +48,7 @@ pub mod service;
 pub mod source;
 pub mod split;
 pub mod stats;
+pub mod tools;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
@@ -60,6 +62,24 @@ pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
 
 /// Regular expression representing a valid duration with unit.
 pub const DURATION_WITH_UNIT_PATTERN: &str = r#"^(\d{1,3})(s|m|h|d)$"#;
+
+fn config_cli_arg<'a>() -> Arg<'a> {
+    Arg::new("config")
+        .long("config")
+        .help("Config file location")
+        .env("QW_CONFIG")
+        .default_value(DEFAULT_QW_CONFIG_PATH)
+        .global(true)
+        .display_order(1)
+}
+
+fn cluster_endpoint_arg<'a>() -> Arg<'a> {
+    arg!(--"endpoint" <QW_CLUSTER_ENDPOINT> "Quickwit cluster endpoint.")
+        .default_value("http://127.0.0.1:7280")
+        .required(false)
+        .display_order(1)
+        .global(true)
+}
 
 /// Parse duration with unit like `1s`, `2m`, `3h`, `5d`.
 pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<Duration> {

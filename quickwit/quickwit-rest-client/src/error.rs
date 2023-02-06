@@ -30,7 +30,7 @@ pub enum Error {
     #[error("Api error: {0}")]
     Api(#[from] ApiError),
     // Error returned by reqwest lib.
-    #[error("Reqwest client lib error: {0}")]
+    #[error(transparent)]
     Client(#[from] reqwest::Error),
     // IO Error returned by tokio lib.
     #[error("IO error: {0}")]

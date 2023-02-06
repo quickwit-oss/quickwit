@@ -23,13 +23,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use predicates::str;
+use quickwit_cli::service::RunCliCommand;
 use quickwit_common::net::find_available_tcp_port;
+use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri;
 use quickwit_metastore::{FileBackedMetastore, IndexMetadata, Metastore, MetastoreResult};
 use quickwit_storage::{LocalFileStorage, S3CompatibleObjectStorage, Storage};
+use reqwest::Url;
 use tempfile::{tempdir, TempDir};
+use tracing::error;
 
 pub const PACKAGE_BIN_NAME: &str = "quickwit";
 
@@ -128,6 +132,7 @@ pub struct TestEnv {
     /// The metastore URI.
     pub metastore_uri: Uri,
     pub config_uri: Uri,
+    pub cluster_endpoint: Url,
     pub index_config_uri: Uri,
     /// The index ID.
     pub index_id: String,
@@ -155,6 +160,20 @@ impl TestEnv {
             .index_metadata(&self.index_id)
             .await?;
         Ok(index_metadata)
+    }
+
+    pub async fn start_server(&self) -> anyhow::Result<()> {
+        let run_command = RunCliCommand {
+            config_uri: self.config_uri.clone(),
+            services: None,
+        };
+        tokio::spawn(async move {
+            if let Err(error) = run_command.execute().await {
+                error!(err=?error, "Failed to start a quickwit server");
+            }
+        });
+        wait_for_server_ready(([127, 0, 0, 1], self.rest_listen_port).into()).await?;
+        Ok(())
     }
 }
 
@@ -235,6 +254,8 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
         "file://{}",
         resource_files["index_config"].display()
     ));
+    let cluster_endpoint = Url::parse(&format!("http://localhost:{rest_listen_port}"))
+        .context("Failed to parse cluster endpoint.")?;
 
     Ok(TestEnv {
         _tempdir: tempdir,
@@ -243,6 +264,7 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
         resource_files,
         metastore_uri,
         config_uri,
+        cluster_endpoint,
         index_config_uri,
         index_id,
         index_uri,
