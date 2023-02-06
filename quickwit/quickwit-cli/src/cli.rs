@@ -25,6 +25,7 @@ use crate::index::{build_index_command, IndexCliCommand};
 use crate::service::{build_run_command, RunCliCommand};
 use crate::source::{build_source_command, SourceCliCommand};
 use crate::split::{build_split_command, SplitCliCommand};
+use crate::tools::{build_tool_command, ToolCliCommand};
 
 pub fn build_cli<'a>() -> Command<'a> {
     Command::new("Quickwit")
@@ -47,6 +48,7 @@ pub fn build_cli<'a>() -> Command<'a> {
         .subcommand(build_index_command().display_order(2))
         .subcommand(build_source_command().display_order(3))
         .subcommand(build_split_command().display_order(4))
+        .subcommand(build_tool_command().display_order(5))
         .arg_required_else_help(true)
         .disable_help_subcommand(true)
         .subcommand_required(true)
@@ -58,6 +60,7 @@ pub enum CliCommand {
     Index(IndexCliCommand),
     Split(SplitCliCommand),
     Source(SourceCliCommand),
+    Tool(ToolCliCommand),
 }
 
 impl CliCommand {
@@ -67,6 +70,7 @@ impl CliCommand {
             CliCommand::Index(subcommand) => subcommand.default_log_level(),
             CliCommand::Source(_) => Level::ERROR,
             CliCommand::Split(_) => Level::ERROR,
+            CliCommand::Tool(_) => Level::ERROR,
         }
     }
 
@@ -79,6 +83,7 @@ impl CliCommand {
             "run" => RunCliCommand::parse_cli_args(submatches).map(CliCommand::Run),
             "source" => SourceCliCommand::parse_cli_args(submatches).map(CliCommand::Source),
             "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
+            "tool" => ToolCliCommand::parse_cli_args(submatches).map(CliCommand::Tool),
             _ => bail!("Subcommand `{}` is not implemented.", subcommand),
         }
     }
@@ -89,6 +94,7 @@ impl CliCommand {
             CliCommand::Run(subcommand) => subcommand.execute().await,
             CliCommand::Source(subcommand) => subcommand.execute().await,
             CliCommand::Split(subcommand) => subcommand.execute().await,
+            CliCommand::Tool(subcommand) => subcommand.execute().await,
         }
     }
 }

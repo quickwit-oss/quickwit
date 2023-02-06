@@ -30,11 +30,13 @@ use clap::ErrorKind;
 use helpers::{TestEnv, TestStorageType};
 use quickwit_cli::cli::build_cli;
 use quickwit_cli::index::{
-    create_index_cli, delete_index_cli, garbage_collect_index_cli, local_ingest_docs_cli,
-    search_index, CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs,
+    create_index_cli, delete_index_cli, search_index, CreateIndexArgs, DeleteIndexArgs,
     SearchIndexArgs,
 };
 use quickwit_cli::service::RunCliCommand;
+use quickwit_cli::tools::{
+    garbage_collect_index_cli, local_ingest_docs_cli, GarbageCollectIndexArgs, LocalIngestDocsArgs,
+};
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
@@ -57,7 +59,7 @@ async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
     create_index_cli(args).await
 }
 
-async fn ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Result<()> {
+async fn local_ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Result<()> {
     let args = LocalIngestDocsArgs {
         config_uri: test_env.config_uri.clone(),
         index_id: test_env.index_id.clone(),
@@ -264,7 +266,7 @@ async fn test_cmd_search_aggregation() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -365,7 +367,7 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -418,7 +420,7 @@ async fn test_search_index_cli() {
         sort_by_score: false,
     };
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -482,7 +484,7 @@ async fn test_delete_index_cli_dry_run() {
     let metastore = refresh_metastore(metastore).await.unwrap();
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -508,7 +510,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -602,7 +604,7 @@ async fn test_garbage_collect_index_cli() {
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -709,7 +711,7 @@ async fn test_all_local_index() {
         .unwrap();
     assert!(metadata_file_exists);
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 
@@ -780,7 +782,7 @@ async fn test_all_with_s3_localstack_cli() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
 

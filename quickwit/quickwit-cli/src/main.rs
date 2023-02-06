@@ -174,14 +174,14 @@ fn about_text() -> String {
 mod tests {
     use std::path::PathBuf;
     use std::str::FromStr;
-    use std::time::Duration;
 
     use quickwit_cli::cli::{build_cli, CliCommand};
     use quickwit_cli::index::{
-        ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs,
-        GarbageCollectIndexArgs, IndexCliCommand, LocalIngestDocsArgs, MergeArgs, SearchIndexArgs,
+        ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, IndexCliCommand,
+        SearchIndexArgs,
     };
-    use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs, SplitCliCommand};
+    use quickwit_cli::split::{DescribeSplitArgs, SplitCliCommand};
+    use quickwit_cli::tools::{ExtractSplitArgs, ToolCliCommand};
     use quickwit_common::uri::Uri;
     use reqwest::Url;
 
@@ -254,92 +254,6 @@ mod tests {
         assert_eq!(command, expected_cmd);
 
         Ok(())
-    }
-
-    #[test]
-    fn test_parse_ingest_args() -> anyhow::Result<()> {
-        let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from([
-            "index",
-            "local-ingest",
-            "--index",
-            "wikipedia",
-            "--config",
-            "/config.yaml",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::LocalIngest(
-                LocalIngestDocsArgs {
-                    config_uri,
-                    index_id,
-                    input_path_opt: None,
-                    overwrite: false,
-                    clear_cache: true,
-                    vrl_script: None
-                })) if &index_id == "wikipedia"
-                       && config_uri == Uri::from_str("file:///config.yaml").unwrap()
-        ));
-
-        let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from([
-            "index",
-            "local-ingest",
-            "--index",
-            "wikipedia",
-            "--config",
-            "/config.yaml",
-            "--keep-cache",
-            "--overwrite",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::LocalIngest(
-                LocalIngestDocsArgs {
-                    config_uri,
-                    index_id,
-                    input_path_opt: None,
-                    overwrite: true,
-                    clear_cache: false,
-                    vrl_script: None
-                })) if &index_id == "wikipedia"
-                        && config_uri == Uri::from_str("file:///config.yaml").unwrap()
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_ingest_transform_args() {
-        let app = build_cli().no_binary_name(true);
-        let matches = app
-            .try_get_matches_from([
-                "index",
-                "local-ingest",
-                "--index",
-                "wikipedia",
-                "--config",
-                "/config.yaml",
-                "--transform-script",
-                ".message = downcase(string!(.message))",
-            ])
-            .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::LocalIngest(
-                LocalIngestDocsArgs {
-                    config_uri,
-                    index_id,
-                    input_path_opt: None,
-                    overwrite: false,
-                    vrl_script: Some(vrl_script),
-                    clear_cache: true,
-                })) if &index_id == "wikipedia"
-                       && config_uri == Uri::from_str("file:///config.yaml").unwrap()
-                       && vrl_script == ".message = downcase(string!(.message))"
-        ));
     }
 
     #[test]
@@ -448,79 +362,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_garbage_collect_args() -> anyhow::Result<()> {
-        let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from([
-            "index",
-            "gc",
-            "--index",
-            "wikipedia",
-            "--config",
-            "/config.yaml",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::GarbageCollect(GarbageCollectIndexArgs {
-                index_id,
-                grace_period,
-                dry_run: false,
-                ..
-            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(60 * 60)
-        ));
-
-        let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from([
-            "index",
-            "gc",
-            "--index",
-            "wikipedia",
-            "--grace-period",
-            "5m",
-            "--config",
-            "/config.yaml",
-            "--dry-run",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::GarbageCollect(GarbageCollectIndexArgs {
-                index_id,
-                grace_period,
-                config_uri,
-                dry_run: true,
-            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && config_uri == expected_config_uri
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_merge_args() -> anyhow::Result<()> {
-        let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from([
-            "index",
-            "merge",
-            "--index",
-            "wikipedia",
-            "--source",
-            "ingest-source",
-            "--config",
-            "/config.yaml",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::Merge(MergeArgs {
-                index_id,
-                source_id,
-                ..
-            })) if &index_id == "wikipedia" && source_id == "ingest-source"
-        ));
-        Ok(())
-    }
-
-    #[test]
     fn test_parse_describe_index_args() {
         let app = build_cli().no_binary_name(true);
         let matches = app
@@ -564,8 +405,8 @@ mod tests {
     fn test_parse_split_extract_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from([
-            "split",
-            "extract",
+            "tool",
+            "extract-split",
             "--index",
             "wikipedia",
             "--split",
@@ -578,7 +419,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            CliCommand::Split(SplitCliCommand::Extract(ExtractSplitArgs {
+            CliCommand::Tool(ToolCliCommand::ExtractSplit(ExtractSplitArgs {
                 index_id,
                 split_id,
                 target_dir,

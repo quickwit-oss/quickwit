@@ -17,38 +17,33 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
 use itertools::Itertools;
-use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Split, SplitState};
+use quickwit_metastore::{Split, SplitState};
 use quickwit_rest_client::rest_client::{QuickwitClient, Transport};
 use quickwit_serve::ListSplitsQueryParams;
-use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
 use reqwest::Url;
 use tabled::{Table, Tabled};
 use time::{format_description, Date, OffsetDateTime, PrimitiveDateTime};
 use tracing::debug;
 
-use crate::{
-    cluster_endpoint_arg, config_cli_arg, load_quickwit_config, make_table, prompt_confirmation,
-};
+use crate::{cluster_endpoint_arg, make_table, prompt_confirmation};
 
 pub fn build_split_command<'a>() -> Command<'a> {
     Command::new("split")
         .about("Manages splits: lists, describes, marks for deletion...")
+        .arg(cluster_endpoint_arg())
         .subcommand(
             Command::new("list")
                 .about("Lists the splits of an index.")
                 .alias("ls")
                 .args(&[
-                    cluster_endpoint_arg(),
                     arg!(--index <INDEX> "Target index ID")
                         .display_order(1)
                         .required(true),
@@ -76,23 +71,10 @@ pub fn build_split_command<'a>() -> Command<'a> {
                 ])
             )
         .subcommand(
-            Command::new("extract")
-                .about("Downloads and extracts a split to a directory.")
-                .args(&[
-                    config_cli_arg(),
-                    arg!(--index <INDEX> "ID of the target index")
-                        .display_order(1),
-                    arg!(--split <SPLIT> "ID of the target split")
-                        .display_order(2),
-                    arg!(--"target-dir" <TARGET_DIR> "Directory to extract the split to."),
-                ])
-            )
-        .subcommand(
             Command::new("describe")
                 .about("Displays metadata about a split.")
                 .alias("desc")
                 .args(&[
-                    cluster_endpoint_arg(),
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1),
                     arg!(--split <SPLIT> "ID of the target split")
@@ -105,7 +87,6 @@ pub fn build_split_command<'a>() -> Command<'a> {
                 .about("Marks one or multiple splits of an index for deletion.")
                 .alias("mark")
                 .args(&[
-                    cluster_endpoint_arg(),
                     arg!(--index <INDEX_ID> "Target index ID")
                         .display_order(1)
                         .required(true),
@@ -171,20 +152,11 @@ pub struct DescribeSplitArgs {
     pub verbose: bool,
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct ExtractSplitArgs {
-    pub config_uri: Uri,
-    pub index_id: String,
-    pub split_id: String,
-    pub target_dir: PathBuf,
-}
-
 #[derive(Debug, PartialEq)]
 pub enum SplitCliCommand {
     List(ListSplitArgs),
     MarkForDeletion(MarkForDeletionArgs),
     Describe(DescribeSplitArgs),
-    Extract(ExtractSplitArgs),
 }
 
 impl SplitCliCommand {
@@ -194,7 +166,6 @@ impl SplitCliCommand {
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
             "describe" => Self::parse_describe_args(submatches),
-            "extract" => Self::parse_extract_split_args(submatches),
             "list" => Self::parse_list_args(submatches),
             "mark-for-deletion" => Self::parse_mark_for_deletion_args(submatches),
             _ => bail!("Subcommand `{}` is not implemented.", subcommand),
@@ -307,37 +278,11 @@ impl SplitCliCommand {
         }))
     }
 
-    fn parse_extract_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_id = matches
-            .value_of("index")
-            .map(String::from)
-            .expect("`index` is a required arg.");
-        let split_id = matches
-            .value_of("split")
-            .map(String::from)
-            .expect("`split` is a required arg.");
-        let config_uri = matches
-            .value_of("config")
-            .map(Uri::from_str)
-            .expect("`config` is a required arg.")?;
-        let target_dir = matches
-            .value_of("target-dir")
-            .map(PathBuf::from)
-            .expect("`target-dir` is a required arg.");
-        Ok(Self::Extract(ExtractSplitArgs {
-            config_uri,
-            index_id,
-            split_id,
-            target_dir,
-        }))
-    }
-
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
             Self::List(args) => list_split_cli(args).await,
             Self::MarkForDeletion(args) => mark_splits_for_deletion_cli(args).await,
             Self::Describe(args) => describe_split_cli(args).await,
-            Self::Extract(args) => extract_split_cli(args).await,
         }
     }
 }
@@ -456,37 +401,6 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
-    debug!(args=?args, "extract-split");
-    println!("❯ Extracting split...");
-
-    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
-    let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri)
-        .await?;
-    let index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let index_storage = storage_uri_resolver.resolve(index_metadata.index_uri())?;
-    let split_file = PathBuf::from(format!("{}.split", args.split_id));
-    let split_data = index_storage.get_all(split_file.as_path()).await?;
-    let (_hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data_with_owned_bytes(
-        index_storage,
-        split_file,
-        split_data,
-    )?;
-    std::fs::create_dir_all(&args.target_dir)?;
-    for path in bundle_storage.iter_files() {
-        let mut out_path = args.target_dir.to_owned();
-        out_path.push(path);
-        println!("Copying {:?}", out_path);
-        bundle_storage.copy_to_file(path, &out_path).await?;
-    }
-
-    println!("{} Split successfully extracted.", "✔".color(GREEN_COLOR));
-    Ok(())
-}
-
 fn make_split_table(splits: &[Split], title: &str) -> Table {
     let rows = splits
         .iter()
@@ -575,9 +489,6 @@ struct SplitRow {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use std::str::FromStr;
-
     use time::macros::datetime;
 
     use super::*;
@@ -695,33 +606,6 @@ mod tests {
             })) if &index_id == "wikipedia" && &split_id == "ABC"
         ));
         Ok(())
-    }
-
-    #[test]
-    fn test_parse_split_extract_args() {
-        let app = build_cli().no_binary_name(true);
-        let matches = app
-            .try_get_matches_from(vec![
-                "split",
-                "extract",
-                "--index",
-                "wikipedia",
-                "--split",
-                "ABC",
-                "--target-dir",
-                "/datadir",
-            ])
-            .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
-        assert!(matches!(
-            command,
-            CliCommand::Split(SplitCliCommand::Extract(ExtractSplitArgs {
-                index_id,
-                split_id,
-                target_dir,
-                ..
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && target_dir == PathBuf::from("/datadir")
-        ));
     }
 
     #[test]
