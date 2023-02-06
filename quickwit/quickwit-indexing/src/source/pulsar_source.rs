@@ -37,7 +37,6 @@ use quickwit_metastore::checkpoint::{
 };
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::{mpsc, watch};
-use tokio::task::LocalSet;
 use tokio::time;
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
@@ -146,6 +145,7 @@ impl PulsarSource {
 
         Ok(Self {
             ctx,
+            params,
             pulsar_consumer,
             subscription_name,
             current_positions,
@@ -349,70 +349,61 @@ async fn spawn_message_listener(
     let (last_ack_tx, last_ack_rx) = watch::channel(SourceCheckpoint::default());
     let (ready, waiter) = oneshot::channel();
 
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
+    let handle = tokio::spawn(async move {
+        let mut consumer: Consumer<PulsarMessage, _> = pulsar
+            .consumer()
+            .with_topics(&params.topics)
+            .with_consumer_name(&params.consumer_name)
+            .with_subscription(subscription_name)
+            .with_subscription_type(SubType::Failover)
+            .build()
+            .await?;
 
-    let handle = std::thread::spawn(move || {
-        let set = LocalSet::new();
-        let fut = set.run_until(async move {
-            let mut consumer: Consumer<PulsarMessage, _> = pulsar
-                .consumer()
-                .with_topics(&params.topics)
-                .with_consumer_name(&params.consumer_name)
-                .with_subscription(subscription_name)
-                .with_subscription_type(SubType::Failover)
-                .build()
-                .await?;
+        let consumer_ids = consumer.consumer_id()
+            .into_iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>();
+        info!(positions = ?current_positions, "Seeking to last checkpoint positions.");
+        for (_, position) in current_positions {
+            let seek_to = msg_id_from_position(&position);
 
-            let consumer_ids = consumer.consumer_id()
-                .into_iter()
-                .map(|id| id.to_string())
-                .collect::<Vec<_>>();
-            info!(positions = ?current_positions, "Seeking to last checkpoint positions.");
-            for (_, position) in current_positions {
-                let seek_to = msg_id_from_position(&position);
+            if seek_to.is_some() {
+                consumer.seek(Some(consumer_ids.clone()), seek_to, None, pulsar.clone()).await?;
+            }
+        }
 
-                if seek_to.is_some() {
-                    consumer.seek(Some(consumer_ids.clone()), seek_to, None, pulsar.clone()).await?;
-                }
+        let _ = ready.send(());
+
+        'outer: loop {
+            while let Ok(msg_opt) = timeout(MESSAGE_WAIT_TIMEOUT, consumer.next()).await {
+                match msg_opt {
+                    None => break 'outer,
+                    Some(msg) => {
+                        if messages_tx.send(msg).await.is_err() {
+                            break 'outer;
+                        }
+                    }
+                };
             }
 
-            let _ = ready.send(());
+            if last_ack_rx.has_changed().unwrap_or_default() {
+                let checkpoint = last_ack_rx.borrow().clone();
 
-            'outer: loop {
-                while let Ok(msg_opt) = timeout(MESSAGE_WAIT_TIMEOUT, consumer.next()).await {
-                    match msg_opt {
-                        None => break 'outer,
-                        Some(msg) => {
-                            if messages_tx.send(msg).await.is_err() {
-                                break 'outer;
-                            }
-                        }
-                    };
-                }
-
-                if last_ack_rx.has_changed().unwrap_or_default() {
-                    let checkpoint = last_ack_rx.borrow();
-
-                    for (partition, position) in checkpoint.iter() {
-                        if let Some(msg_id) = msg_id_from_position(&position) {
-                            if let Err(e) = consumer.cumulative_ack_with_id(partition.0.as_str(), msg_id).await {
-                                error!(error = ?e, partition = %partition.0, position = ?position, "Failed to send ACK to pulsar.");
-                            }
+                for (partition, position) in checkpoint.iter() {
+                    if let Some(msg_id) = msg_id_from_position(&position) {
+                        if let Err(e) = consumer.cumulative_ack_with_id(partition.0.as_str(), msg_id).await {
+                            error!(error = ?e, partition = %partition.0, position = ?position, "Failed to send ACK to pulsar.");
                         }
                     }
                 }
             }
+        }
 
-            Ok::<_, anyhow::Error>(())
-        });
-
-        rt.block_on(fut)
+        Ok::<_, anyhow::Error>(())
     });
 
     if waiter.await.is_err() {
-        handle.join().expect("Join background thread task.")?;
+        handle.await.expect("Join background task.")?;
     }
 
     Ok(PulsarConsumer {
