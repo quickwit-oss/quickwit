@@ -98,7 +98,7 @@ pub struct PulsarSourceState {
 
 pub struct PulsarSource {
     ctx: Arc<SourceExecutionContext>,
-    pulsar: PulsarConsumer,
+    pulsar_consumer: PulsarConsumer,
     params: PulsarSourceParams,
     subscription_name: String,
     current_positions: BTreeMap<PartitionId, Position>,
@@ -136,7 +136,7 @@ impl PulsarSource {
             }
         }
 
-        let pulsar = spawn_message_listener(
+        let pulsar_consumer = spawn_message_listener(
             subscription_name.clone(),
             params.clone(),
             pulsar,
@@ -146,8 +146,7 @@ impl PulsarSource {
 
         Ok(Self {
             ctx,
-            pulsar,
-            params,
+            pulsar_consumer,
             subscription_name,
             current_positions,
             state: PulsarSourceState::default(),
@@ -231,7 +230,7 @@ impl Source for PulsarSource {
 
         loop {
             tokio::select! {
-                message = self.pulsar.messages.recv() => {
+                message = self.pulsar_consumer.messages.recv() => {
                     let message = message
                         .ok_or_else(|| ActorExitStatus::from(anyhow!("Consumer was dropped.")))?
                         .map_err(|e| ActorExitStatus::from(anyhow!("Failed to get message from consumer: {:?}", e)))?;
@@ -267,7 +266,7 @@ impl Source for PulsarSource {
         _ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
         debug!(ckpt = ?checkpoint, "Truncating message queue.");
-        self.pulsar
+        self.pulsar_consumer
             .last_ack
             .send(checkpoint)
             .expect("Pulsar consumer has shutdown unexpectedly");
