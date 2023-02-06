@@ -543,8 +543,7 @@ async fn leaf_list_terms_single_split(
         segment_results.push(segment_result);
     }
 
-    // TODO dedup
-    let merged_iter = segment_results.into_iter().kmerge();
+    let merged_iter = segment_results.into_iter().kmerge().dedup();
     let merged_results: Vec<String> = if let Some(limit) = search_request.max_hits {
         merged_iter.take(limit as usize).collect()
     } else {
@@ -589,10 +588,10 @@ fn value_to_json(
     field_type: &FieldType,
     field_value: &[u8],
 ) -> crate::Result<String> {
+    // TODO use sortable base64 (alphabet = "+/0..9A..Za..z", not padding) to make result sortable
+    // independantly of type
     use serde_json::Value as JsonValue;
 
-    // TODO is there a better way to do the conversion? If not, adding one to tantivy would
-    // probably be better
     let mut term = Term::from_field_bool(field, false);
     term.clear_with_type(field_type.value_type());
     term.append_bytes(field_value);
@@ -605,7 +604,7 @@ fn value_to_json(
         Type::U64 | Type::I64 | Type::F64 => None,
         Type::Bool => term.as_bool().map(|b| b.into()),
         Type::IpAddr => None, // no getter yet?
-        Type::Bytes | Type::Date | Type::Facet | Type::Json => None, // TODO encode in some way
+        Type::Bytes | Type::Date | Type::Facet | Type::Json => None,
     };
     let Some(json) = json else {
         return Err(SearchError::InvalidQuery("Unsupported field type".to_string()));
@@ -660,11 +659,11 @@ pub async fn leaf_list_terms(
                 Err(err) => Either::Right(err),
             });
 
-    // TODO dedup
     let merged_iter = split_search_responses
         .into_iter()
         .map(|leaf_search_response| leaf_search_response.terms)
-        .kmerge();
+        .kmerge()
+        .dedup();
     let terms: Vec<String> = if let Some(limit) = request.max_hits {
         merged_iter.take(limit as usize).collect()
     } else {
