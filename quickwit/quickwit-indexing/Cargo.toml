@@ -76,8 +76,6 @@ proptest = { workspace = true }
 rand = { workspace = true }
 tempfile = { workspace = true }
 
-tracing-subscriber = { workspace = true }
-
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
