@@ -229,6 +229,9 @@ impl Source for PulsarSource {
 
         loop {
             tokio::select! {
+                // This does not actually acquire the lock of the mutex internally
+                // we're using the mutex in order to convince the Rust compiler
+                // that we can use the consumer within this Sync context.
                 message = self.pulsar_consumer.get_mut().next() => {
                     let message = message
                         .ok_or_else(|| ActorExitStatus::from(anyhow!("Consumer was dropped.")))?
@@ -266,6 +269,14 @@ impl Source for PulsarSource {
         _ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
         debug!(ckpt = ?checkpoint, "Truncating message queue.");
+        let mut consumer = self.pulsar_consumer.lock().await;
+        for (partition, position) in checkpoint.iter() {
+            if let Some(msg_id) = msg_id_from_position(&position) {
+                consumer
+                    .cumulative_ack_with_id(partition.0.as_ref(), msg_id)
+                    .await?;
+            }
+        }
         Ok(())
     }
 
