@@ -24,7 +24,6 @@ use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
 use itertools::Itertools;
 use quickwit_common::GREEN_COLOR;
-use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_metastore::{Split, SplitState};
 use quickwit_rest_client::rest_client::{QuickwitClient, Transport};
 use quickwit_serve::ListSplitsQueryParams;
@@ -60,10 +59,10 @@ pub fn build_split_command<'a>() -> Command<'a> {
                     arg!(--"end-date" <END_DATE> "Selects the splits that contain documents before this date (time-series indexes only).")
                         .display_order(5)
                         .required(false),
-                    arg!(--tags <TAGS> "Selects the splits whose tags are all included in this comma-separated list of tags.")
-                        .display_order(6)
-                        .required(false)
-                        .use_value_delimiter(true),
+                    // arg!(--tags <TAGS> "Selects the splits whose tags are all included in this comma-separated list of tags.")
+                    //     .display_order(6)
+                    //     .required(false)
+                    //     .use_value_delimiter(true),
                     arg!(--"output-format" <OUTPUT_FORMAT> "Output format. Possible values are `table`, `json`, and `prettyjson`.")
                         .alias("format")
                         .display_order(7)
@@ -132,7 +131,7 @@ pub struct ListSplitArgs {
     pub create_date: Option<OffsetDateTime>,
     pub start_date: Option<OffsetDateTime>,
     pub end_date: Option<OffsetDateTime>,
-    pub tags: Option<TagFilterAst>,
+    // pub tags: Option<TagFilterAst>,
     output_format: OutputFormat,
 }
 
@@ -202,17 +201,17 @@ impl SplitCliCommand {
             .value_of("end-date")
             .map(|arg| parse_date(arg, "end"))
             .transpose()?;
-        let tags = matches.values_of("tags").map(|values| {
-            TagFilterAst::And(
-                values
-                    .into_iter()
-                    .map(|value| TagFilterAst::Tag {
-                        is_present: true,
-                        tag: value.to_string(),
-                    })
-                    .collect(),
-            )
-        });
+        // let tags = matches.values_of("tags").map(|values| {
+        //     TagFilterAst::And(
+        //         values
+        //             .into_iter()
+        //             .map(|value| TagFilterAst::Tag {
+        //                 is_present: true,
+        //                 tag: value.to_string(),
+        //             })
+        //             .collect(),
+        //     )
+        // });
         let output_format = matches
             .value_of("output-format")
             .map(OutputFormat::from_str)
@@ -226,7 +225,7 @@ impl SplitCliCommand {
             start_date,
             end_date,
             create_date,
-            tags,
+            // tags,
             output_format,
         }))
     }
@@ -510,8 +509,8 @@ mod tests {
             "2020-12-24",
             "--end-date",
             "2020-12-25T12:42",
-            "--tags",
-            "tenant:a,service:zk",
+            // "--tags",
+            // "tenant:a,service:zk",
             "--format",
             "json",
         ])?;
@@ -521,16 +520,16 @@ mod tests {
         let expected_create_date = Some(datetime!(2020-12-24 00:00 UTC));
         let expected_start_date = Some(datetime!(2020-12-24 00:00 UTC));
         let expected_end_date = Some(datetime!(2020-12-25 12:42 UTC));
-        let expected_tags = Some(TagFilterAst::And(vec![
-            TagFilterAst::Tag {
-                is_present: true,
-                tag: "tenant:a".to_string(),
-            },
-            TagFilterAst::Tag {
-                is_present: true,
-                tag: "service:zk".to_string(),
-            },
-        ]));
+        // let expected_tags = Some(TagFilterAst::And(vec![
+        //     TagFilterAst::Tag {
+        //         is_present: true,
+        //         tag: "tenant:a".to_string(),
+        //     },
+        //     TagFilterAst::Tag {
+        //         is_present: true,
+        //         tag: "service:zk".to_string(),
+        //     },
+        // ]));
         let expected_output_format = OutputFormat::Json;
         assert!(matches!(
             command,
@@ -540,7 +539,7 @@ mod tests {
                 create_date,
                 start_date,
                 end_date,
-                tags,
+                // tags,
                 output_format,
                 ..
             })) if index_id == "hdfs"
@@ -548,7 +547,7 @@ mod tests {
                    && create_date == expected_create_date
                    && start_date == expected_start_date
                    && end_date == expected_end_date
-                   && tags == expected_tags
+                   // && tags == expected_tags
                    && output_format == expected_output_format
         ));
         Ok(())
