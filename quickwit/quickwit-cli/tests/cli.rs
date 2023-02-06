@@ -125,6 +125,7 @@ async fn test_cmd_create_overwrite() {
     // Create non existing index with --overwrite.
     let index_id = append_random_suffix("test-create-non-existing-index-with-overwrite");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
 
     let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
     let args = CreateIndexArgs {

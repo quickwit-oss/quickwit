@@ -800,6 +800,7 @@ mod tests {
                 "hdfs-logs",
                 "--source",
                 "hdfs-logs-source",
+                "--yes",
             ])
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
@@ -847,6 +848,7 @@ mod tests {
                 "hdfs-logs",
                 "--source",
                 "hdfs-logs-source",
+                "--yes",
             ])
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
