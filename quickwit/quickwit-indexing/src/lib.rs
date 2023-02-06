@@ -19,8 +19,6 @@
 
 #![deny(clippy::disallowed_methods)]
 
-extern crate core;
-
 use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
