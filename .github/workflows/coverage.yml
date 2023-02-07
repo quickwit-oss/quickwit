@@ -56,6 +56,13 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      pulsar-broker:
+        image: apachepulsar/pulsar:2.11.0
+        command: bin/pulsar standalone
+        ports:
+          - "6650:6650"
+          - "8081:8080"
+
       kafka-broker:
         image: confluentinc/cp-kafka:7.2.1
         ports:
