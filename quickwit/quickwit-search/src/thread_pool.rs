@@ -25,7 +25,7 @@ fn search_thread_pool() -> &'static rayon::ThreadPool {
     static SEARCH_THREAD_POOL: OnceCell<rayon::ThreadPool> = OnceCell::new();
     SEARCH_THREAD_POOL.get_or_init(|| {
         rayon::ThreadPoolBuilder::new()
-            .thread_name(|thread_id| format!("quickwit-search-{}", thread_id))
+            .thread_name(|thread_id| format!("quickwit-search-{thread_id}"))
             .panic_handler(|_my_panic| {
                 error!("Task running in the quickwit search pool panicked.");
             })

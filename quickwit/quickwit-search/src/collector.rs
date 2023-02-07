@@ -574,7 +574,7 @@ mod tests {
     fn test_merge_partial_hits_with_tie() {
         let make_hit_given_split_id = |split_id: u64| PartialHit {
             sorting_field_value: 0u64,
-            split_id: format!("split_{}", split_id),
+            split_id: format!("split_{split_id}"),
             segment_ord: 0u32,
             doc_id: 0u32,
         };

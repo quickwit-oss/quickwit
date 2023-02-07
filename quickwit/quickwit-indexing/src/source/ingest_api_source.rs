@@ -238,11 +238,8 @@ mod tests {
             };
             while doc_batch.doc_lens.len() < batch_size {
                 add_doc(
-                    format!(
-                        "{:0>6} - The quick brown fox jumps over the lazy dog",
-                        doc_id
-                    )
-                    .as_bytes(),
+                    format!("{doc_id:0>6} - The quick brown fox jumps over the lazy dog")
+                        .as_bytes(),
                     &mut doc_batch,
                 );
                 doc_id += 1;

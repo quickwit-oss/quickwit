@@ -148,7 +148,7 @@ impl TestSandbox {
             source_params: SourceParams::Vec(VecSourceParams {
                 docs,
                 batch_num_docs: 10,
-                partition: format!("add-docs-{}", add_docs_id),
+                partition: format!("add-docs-{add_docs_id}"),
             }),
             transform_config: None,
         };

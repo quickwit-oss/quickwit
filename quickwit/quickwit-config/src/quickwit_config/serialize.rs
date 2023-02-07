@@ -375,7 +375,6 @@ mod tests {
         )
     }
 
-    #[track_caller]
     async fn test_quickwit_config_parse_aux(config_format: ConfigFormat) -> anyhow::Result<()> {
         let config_filepath =
             get_config_filepath(&format!("quickwit.{config_format:?}").to_lowercase());

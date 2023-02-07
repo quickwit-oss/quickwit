@@ -185,7 +185,7 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
             .iter()
             .map(|v| format!("'{}'", v.as_str()))
             .join(", ");
-        let _ = write!(sql, " AND split_state IN ({})", params);
+        let _ = write!(sql, " AND split_state IN ({params})");
     }
 
     if let Some(tags) = query.tags.as_ref() {
@@ -198,16 +198,11 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
         Bound::Included(v) => {
             let _ = write!(
                 sql,
-                " AND (time_range_end >= {} OR time_range_end IS NULL)",
-                v
+                " AND (time_range_end >= {v} OR time_range_end IS NULL)"
             );
         }
         Bound::Excluded(v) => {
-            let _ = write!(
-                sql,
-                " AND (time_range_end > {} OR time_range_end IS NULL)",
-                v
-            );
+            let _ = write!(sql, " AND (time_range_end > {v} OR time_range_end IS NULL)");
         }
         Bound::Unbounded => {}
     };
@@ -216,15 +211,13 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
         Bound::Included(v) => {
             let _ = write!(
                 sql,
-                " AND (time_range_start <= {} OR time_range_start IS NULL)",
-                v
+                " AND (time_range_start <= {v} OR time_range_start IS NULL)"
             );
         }
         Bound::Excluded(v) => {
             let _ = write!(
                 sql,
-                " AND (time_range_start < {} OR time_range_start IS NULL)",
-                v
+                " AND (time_range_start < {v} OR time_range_start IS NULL)"
             );
         }
         Bound::Unbounded => {}
@@ -235,24 +228,24 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
         &mut sql,
         "update_timestamp",
         &query.update_timestamp,
-        |val| format!("to_timestamp({})", val),
+        |val| format!("to_timestamp({val})"),
     );
     write_sql_filter(
         &mut sql,
         "create_timestamp",
         &query.create_timestamp,
-        |val| format!("to_timestamp({})", val),
+        |val| format!("to_timestamp({val})"),
     );
     write_sql_filter(&mut sql, "delete_opstamp", &query.delete_opstamp, |val| {
         val.to_string()
     });
 
     if let Some(limit) = query.limit {
-        let _ = write!(sql, " LIMIT {}", limit);
+        let _ = write!(sql, " LIMIT {limit}");
     }
 
     if let Some(offset) = query.offset {
-        let _ = write!(sql, " OFFSET {}", offset);
+        let _ = write!(sql, " OFFSET {offset}");
     }
 
     sql
@@ -278,7 +271,7 @@ fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
                 }
                 (pg_error_code::UNIQUE_VIOLATION, _) => MetastoreError::InternalError {
                     message: "Unique key violation.".to_string(),
-                    cause: format!("DB error {:?}", boxed_db_err),
+                    cause: format!("DB error {boxed_db_err:?}"),
                 },
                 _ => MetastoreError::DbError {
                     message: boxed_db_err.to_string(),
@@ -444,7 +437,7 @@ impl Metastore for PostgresqlMetastore {
             split_ids.push(split_metadata.split_id);
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
         }
-        tracing::Span::current().record("split_ids", format!("{:?}", split_ids));
+        tracing::Span::current().record("split_ids", format!("{split_ids:?}"));
 
         run_with_tx!(self.connection_pool, tx, {
             let upserted_split_ids: Vec<String> = sqlx::query_scalar(r#"

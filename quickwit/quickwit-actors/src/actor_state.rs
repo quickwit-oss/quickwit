@@ -44,8 +44,8 @@ impl From<u32> for ActorState {
             4 => ActorState::Failure,
             _ => {
                 panic!(
-                    "Found forbidden u32 value for ActorState `{}`. This should never happen.",
-                    actor_state_u32
+                    "Found forbidden u32 value for ActorState `{actor_state_u32}`. This should \
+                     never happen."
                 );
             }
         }

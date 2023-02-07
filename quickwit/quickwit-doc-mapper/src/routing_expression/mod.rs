@@ -263,7 +263,7 @@ impl Display for InnerRoutingExpr {
                 }
             }
             InnerRoutingExpr::Modulo(inner_expr, modulo) => {
-                write!(f, "hash_mod(({}), {})", inner_expr, modulo)?;
+                write!(f, "hash_mod(({inner_expr}), {modulo})")?;
             }
         }
         Ok(())

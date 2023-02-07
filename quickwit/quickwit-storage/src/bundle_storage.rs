@@ -276,10 +276,10 @@ impl fmt::Debug for BundleStorage {
     }
 }
 
-fn unsupported_operation<'a>(paths: &[&'a Path]) -> StorageError {
+fn unsupported_operation(paths: &[&Path]) -> StorageError {
     let msg = "Unsupported operation. BundleStorage only supports async reads";
     error!(paths=?paths, msg);
-    io::Error::new(io::ErrorKind::Other, format!("{}: {:?}", msg, paths)).into()
+    io::Error::new(io::ErrorKind::Other, format!("{msg}: {paths:?}")).into()
 }
 
 #[cfg(test)]

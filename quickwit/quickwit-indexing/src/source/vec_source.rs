@@ -195,7 +195,7 @@ mod tests {
     async fn test_vec_source_from_checkpoint() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        let docs = (0..10).map(|i| format!("{}", i)).collect();
+        let docs = (0..10).map(|i| format!("{i}")).collect();
         let params = VecSourceParams {
             docs,
             batch_num_docs: 3,

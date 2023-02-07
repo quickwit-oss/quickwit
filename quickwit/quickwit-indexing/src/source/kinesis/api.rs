@@ -160,7 +160,7 @@ pub(crate) mod tests {
                 .map_err(RusotoErrorWrapper::from)
         })
         .await
-        .with_context(|| format!("Failed to create Kinesis data stream `{}`.", stream_name))?;
+        .with_context(|| format!("Failed to create Kinesis data stream `{stream_name}`."))?;
         Ok(())
     }
 
@@ -181,7 +181,7 @@ pub(crate) mod tests {
                 .map_err(RusotoErrorWrapper::from)
         })
         .await
-        .with_context(|| format!("Failed to delete Kinesis data stream `{}`.", stream_name))?;
+        .with_context(|| format!("Failed to delete Kinesis data stream `{stream_name}`."))?;
         Ok(())
     }
 
@@ -476,7 +476,7 @@ mod kinesis_localstack_tests {
 
         for stream_name_suffix in ["foo", "bar"] {
             let (_kinesis_client, stream_name) =
-                setup(format!("test-list-streams-{}", stream_name_suffix), 1).await?;
+                setup(format!("test-list-streams-{stream_name_suffix}"), 1).await?;
             stream_names.push(stream_name);
         }
         {

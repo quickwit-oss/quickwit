@@ -44,7 +44,7 @@ pub enum MergeOperationType {
 
 impl fmt::Display for MergeOperationType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -223,7 +223,7 @@ pub mod tests {
             .into_iter()
             .enumerate()
             .map(|(split_ord, (num_docs, time_range))| SplitMetadata {
-                split_id: format!("split_{:02}", split_ord),
+                split_id: format!("split_{split_ord:02}"),
                 num_docs,
                 time_range: Some(time_range),
                 create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),

@@ -162,7 +162,7 @@ impl HostAddr {
         }
         let (hostname, port) = if let Some((hostname_str, port_str)) = host_addr.split_once(':') {
             let port_u16 = port_str.parse::<u16>().with_context(|| {
-                format!("Failed to parse address `{}`: port is invalid.", host_addr)
+                format!("Failed to parse address `{host_addr}`: port is invalid.")
             })?;
             (hostname_str, port_u16)
         } else {
@@ -410,8 +410,7 @@ mod tests {
         if let Some(expected_addr) = expected_addr_opt {
             assert!(
                 addr_res.is_ok(),
-                "Parsing `{}` was expected to succeed.",
-                addr
+                "Parsing `{addr}` was expected to succeed."
             );
             assert_eq!(addr_res.unwrap().to_string(), expected_addr);
         } else {

@@ -51,14 +51,14 @@ pub async fn root_search_stream(
     let split_metadatas = list_relevant_splits(&search_request, metastore).await?;
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
-            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
     // Validates the query by effectively building it against the current schema.
     doc_mapper.query(doc_mapper.schema(), &search_request)?;
 
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
-        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
+        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
     })?;
 
     let index_uri: &Uri = &index_config.index_uri;

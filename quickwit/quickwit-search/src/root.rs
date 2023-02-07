@@ -154,7 +154,7 @@ pub async fn root_search(
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
-            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
     validate_request(search_request)?;
@@ -163,7 +163,7 @@ pub async fn root_search(
     doc_mapper.query(doc_mapper.schema(), search_request)?;
 
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
-        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
+        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
     })?;
 
     let split_metadatas: Vec<SplitMetadata> =
@@ -212,7 +212,7 @@ pub async fn root_search(
         spawn_blocking(move || merge_collector.merge_fruits(leaf_search_responses))
             .await?
             .map_err(|merge_error: TantivyError| {
-                crate::SearchError::InternalError(format!("{}", merge_error))
+                crate::SearchError::InternalError(format!("{merge_error}"))
             })?;
     debug!(leaf_search_response = ?leaf_search_response, "Merged leaf search response.");
 
@@ -221,7 +221,7 @@ pub async fn root_search(
         let errors: String = leaf_search_response
             .failed_splits
             .iter()
-            .map(|splits| format!("{}", splits))
+            .map(|splits| format!("{splits}"))
             .collect::<Vec<_>>()
             .join(", ");
         return Err(SearchError::InternalError(errors));
@@ -718,7 +718,7 @@ mod tests {
                         ..Default::default()
                     })
                 } else {
-                    panic!("unexpected request in test {:?}", split_ids);
+                    panic!("unexpected request in test {split_ids:?}");
                 }
             });
         mock_search_service1.expect_fetch_docs().returning(

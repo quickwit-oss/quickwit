@@ -144,7 +144,7 @@ impl AzureBlobStorage {
     pub fn from_uri(uri: &Uri) -> Result<AzureBlobStorage, StorageResolverError> {
         let (account_name, container, path) =
             parse_azure_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
-                message: format!("Invalid URI: {}", uri),
+                message: format!("Invalid URI: {uri}"),
             })?;
         let access_key = std::env::var("QW_AZURE_ACCESS_KEY")
             .expect("The `QW_AZURE_ACCESS_KEY` environment variable must be defined.");
@@ -236,7 +236,7 @@ impl AzureBlobStorage {
                     .inc_by(range.end - range.start);
                 async move {
                     retry(&self.retry_params, || async {
-                        let block_id = format!("block:{}", num);
+                        let block_id = format!("block:{num}");
                         let (data, hash) =
                             extract_range_data_and_hash(moved_payload.box_clone(), range.clone())
                                 .await?;

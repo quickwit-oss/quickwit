@@ -211,7 +211,7 @@ pub enum SplitState {
 
 impl fmt::Display for SplitState {
     fn fmt(&self, f: &mut fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -236,7 +236,7 @@ impl FromStr for SplitState {
             "MarkedForDeletion" => SplitState::MarkedForDeletion,
             "ScheduledForDeletion" => SplitState::MarkedForDeletion, // Deprecated
             "New" => SplitState::Staged,                             // Deprecated
-            _ => return Err(format!("Unknown split state `{}`.", input)),
+            _ => return Err(format!("Unknown split state `{input}`.")),
         };
         Ok(split_state)
     }

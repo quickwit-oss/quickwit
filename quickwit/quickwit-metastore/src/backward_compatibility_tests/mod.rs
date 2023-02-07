@@ -127,8 +127,7 @@ where for<'a> T: Deserialize<'a> + Serialize {
     }
     assert!(
         updated_expected_files.is_empty(),
-        "The following expected files need to be updated. {:?}",
-        updated_expected_files
+        "The following expected files need to be updated. {updated_expected_files:?}"
     );
     Ok(())
 }
@@ -146,7 +145,7 @@ where for<'a> T: Serialize {
     let mut sample_json = serde_json::to_string_pretty(&sample_json_value)?;
     sample_json.push('\n');
     let md5_digest = md5::compute(&sample_json);
-    let test_name = format!("v{}-{:x}", version, md5_digest);
+    let test_name = format!("v{version}-{md5_digest:x}");
     let file_regression_test_path = format!("{}/{}.json", test_dir.display(), test_name);
     let file_regression_expected_path =
         format!("{}/{}.expected.json", test_dir.display(), test_name);

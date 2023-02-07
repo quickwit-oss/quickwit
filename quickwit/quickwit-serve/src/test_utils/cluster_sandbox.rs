@@ -78,7 +78,7 @@ impl ClusterSandbox {
         create_index_for_test(&index_for_test, &node_config.quickwit_config).await?;
         tokio::spawn(async move {
             let result = serve_quickwit(node_config_clone.quickwit_config).await;
-            println!("Quickwit server terminated: {:?}", result);
+            println!("Quickwit server terminated: {result:?}");
             Result::<_, anyhow::Error>::Ok(())
         });
         wait_for_server_ready(node_config.quickwit_config.grpc_listen_addr).await?;
@@ -211,9 +211,9 @@ pub fn build_node_configs(
         config.cluster_id = cluster_id.clone();
         config.data_dir_path = root_data_dir.join(&config.node_id);
         config.metastore_uri =
-            QuickwitUri::from_str(&format!("ram:///{}/metastore", unique_dir_name)).unwrap();
+            QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/metastore")).unwrap();
         config.default_index_root_uri =
-            QuickwitUri::from_str(&format!("ram:///{}/indexes", unique_dir_name)).unwrap();
+            QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/indexes")).unwrap();
         peers.push(config.gossip_advertise_addr.to_string());
         node_configs.push(NodeConfig {
             quickwit_config: config,

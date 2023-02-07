@@ -118,7 +118,7 @@ impl Display for TagFilterAst {
                 if !is_present {
                     write!(f, "¬")?;
                 }
-                write!(f, "{}", tag)?;
+                write!(f, "{tag}")?;
                 return Ok(());
             }
         };
@@ -136,9 +136,9 @@ impl Display for TagFilterAst {
         write!(f, "{}", children_it.next().unwrap())?;
         for child in children_it {
             if is_or {
-                write!(f, " ∨ {}", child)?;
+                write!(f, " ∨ {child}")?;
             } else {
-                write!(f, " ∧ {}", child)?;
+                write!(f, " ∧ {child}")?;
             }
         }
         if is_or {
@@ -209,11 +209,11 @@ fn simplify_ast(ast: UnsimplifiedTagFilterAst) -> Option<TermFilterAst> {
 /// Special tag to indicate that a field is listed in the
 /// `DocMapper` `tag_fields` attribute.
 pub fn field_tag(field_name: &str) -> String {
-    format!("{}!", field_name)
+    format!("{field_name}!")
 }
 
 fn term_tag(field: &str, value: &str) -> String {
-    format!("{}:{}", field, value)
+    format!("{field}:{value}")
 }
 
 fn expand_to_tag_ast(terms_filter_ast: TermFilterAst) -> TagFilterAst {

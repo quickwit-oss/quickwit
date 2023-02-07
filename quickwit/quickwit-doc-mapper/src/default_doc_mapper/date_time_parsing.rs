@@ -190,7 +190,7 @@ mod tests {
             let parser = StrptimeParser::from_str(fmt).unwrap();
             let result = parser.parse_date_time(date_time_str);
             if let Err(error) = &result {
-                println!("Failed to parse: {} {} {}", date_time_str, fmt, error)
+                println!("Failed to parse: {date_time_str} {fmt} {error}")
             }
             assert_eq!(result.unwrap(), expected);
         }

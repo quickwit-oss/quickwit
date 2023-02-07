@@ -256,7 +256,7 @@ mod tests {
             .await
             .unwrap();
 
-        println!("{}", val);
+        println!("{val}");
 
         // Load via function
         let val = cache
@@ -266,7 +266,7 @@ mod tests {
             .await
             .unwrap();
 
-        println!("{}", val);
+        println!("{val}");
 
         assert_eq!(COUNT.load(Ordering::SeqCst), 2);
 

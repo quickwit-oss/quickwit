@@ -48,14 +48,14 @@ impl From<&str> for PartitionId {
 
 impl From<u64> for PartitionId {
     fn from(partition_id: u64) -> Self {
-        let partition_id_str = format!("{:0>20}", partition_id);
+        let partition_id_str = format!("{partition_id:0>20}");
         PartitionId(Arc::new(partition_id_str))
     }
 }
 
 impl From<i64> for PartitionId {
     fn from(partition_id: i64) -> Self {
-        let partition_id_str = format!("{:0>20}", partition_id);
+        let partition_id_str = format!("{partition_id:0>20}");
         PartitionId(Arc::new(partition_id_str))
     }
 }
@@ -92,14 +92,14 @@ impl Position {
 impl From<i64> for Position {
     fn from(offset: i64) -> Self {
         assert!(offset >= 0);
-        let offset_str = format!("{:0>20}", offset);
+        let offset_str = format!("{offset:0>20}");
         Position::Offset(Arc::new(offset_str))
     }
 }
 
 impl From<u64> for Position {
     fn from(offset: u64) -> Self {
-        let offset_str = format!("{:0>20}", offset);
+        let offset_str = format!("{offset:0>20}");
         Position::Offset(Arc::new(offset_str))
     }
 }
@@ -131,7 +131,7 @@ pub struct IndexCheckpoint {
 impl fmt::Debug for IndexCheckpoint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let json = serde_json::to_string_pretty(&self).map_err(|_| fmt::Error)?;
-        write!(f, "{}", json)?;
+        write!(f, "{json}")?;
         Ok(())
     }
 }
@@ -544,12 +544,12 @@ mod tests {
     fn test_delta_from_range() {
         let checkpoint_delta = SourceCheckpointDelta::from(0..3);
         assert_eq!(
-            format!("{:?}", checkpoint_delta),
+            format!("{checkpoint_delta:?}"),
             "∆(:(..00000000000000000002])"
         );
         let checkpoint_delta = SourceCheckpointDelta::from(1..4);
         assert_eq!(
-            format!("{:?}", checkpoint_delta),
+            format!("{checkpoint_delta:?}"),
             "∆(:(00000000000000000000..00000000000000000003])"
         );
     }
@@ -557,7 +557,7 @@ mod tests {
     #[test]
     fn test_checkpoint_simple() {
         let mut checkpoint = SourceCheckpoint::default();
-        assert_eq!(format!("{:?}", checkpoint), "Ckpt()");
+        assert_eq!(format!("{checkpoint:?}"), "Ckpt()");
 
         let delta = {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
@@ -576,13 +576,13 @@ mod tests {
         };
         checkpoint.try_apply_delta(delta.clone()).unwrap();
         assert_eq!(
-            format!("{:?}", checkpoint),
+            format!("{checkpoint:?}"),
             "Ckpt(a:00000000000000000128 b:00000000000000060187)"
         );
         // `try_apply_delta` is not idempotent.
         checkpoint.try_apply_delta(delta).unwrap_err();
         assert_eq!(
-            format!("{:?}", checkpoint),
+            format!("{checkpoint:?}"),
             "Ckpt(a:00000000000000000128 b:00000000000000060187)"
         );
     }
@@ -622,7 +622,7 @@ mod tests {
             Err(IncompatibleCheckpointDelta { .. })
         ));
         // checkpoint was unchanged
-        assert_eq!(format!("{:?}", checkpoint), "Ckpt(a:00128 b:60187)");
+        assert_eq!(format!("{checkpoint:?}"), "Ckpt(a:00128 b:60187)");
         Ok(())
     }
 
@@ -657,7 +657,7 @@ mod tests {
             delta
         };
         assert!(checkpoint.try_apply_delta(delta3).is_ok());
-        assert_eq!(format!("{:?}", checkpoint), "Ckpt(a:00128 b:60190 c:20008)");
+        assert_eq!(format!("{checkpoint:?}"), "Ckpt(a:00128 b:60190 c:20008)");
         Ok(())
     }
 

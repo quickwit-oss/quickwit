@@ -119,7 +119,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
             .map(|field_name| {
                 index_schema
                     .get_field(field_name)
-                    .context(format!("Field `{}` must exist in the schema.", field_name))
+                    .context(format!("Field `{field_name}` must exist in the schema."))
                     .map(|field| NamedField {
                         name: field_name.clone(),
                         field,
@@ -211,8 +211,8 @@ mod tests {
             serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
         let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
         assert_eq!(
-            format!("{:?}", deserialized_default_doc_mapper),
-            format!("{:?}", expected_default_doc_mapper),
+            format!("{deserialized_default_doc_mapper:?}"),
+            format!("{expected_default_doc_mapper:?}"),
         );
         Ok(())
     }
@@ -223,8 +223,8 @@ mod tests {
             serde_json::from_str::<Box<dyn DocMapper>>(r#"{"type": "default"}"#)?;
         let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
         assert_eq!(
-            format!("{:?}", deserialized_default_doc_mapper),
-            format!("{:?}", expected_default_doc_mapper),
+            format!("{deserialized_default_doc_mapper:?}"),
+            format!("{expected_default_doc_mapper:?}"),
         );
         Ok(())
     }
@@ -252,8 +252,8 @@ mod tests {
             serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
         let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
         assert_eq!(
-            format!("{:?}", deserialized_default_doc_mapper),
-            format!("{:?}", expected_default_doc_mapper),
+            format!("{deserialized_default_doc_mapper:?}"),
+            format!("{expected_default_doc_mapper:?}"),
         );
 
         let serialized_doc_mapper = serde_json::to_string(&deserialized_default_doc_mapper)?;
@@ -293,7 +293,7 @@ mod tests {
         };
         let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
         assert_eq!(
-            format!("{:?}", query),
+            format!("{query:?}"),
             r#"TermQuery(Term(type=Json, field=0, path=toto.titi, vtype=Str, "hello"))"#
         );
     }
@@ -330,7 +330,7 @@ mod tests {
         };
         let query = doc_mapper.query(schema, &search_request).unwrap_err();
         assert_eq!(
-            format!("{:?}", query),
+            format!("{query:?}"),
             "QueryParserError(Sort by field on type text is currently not supported `text_field`.)"
         );
     }
@@ -365,7 +365,7 @@ mod tests {
         };
         let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
         assert_eq!(
-            format!("{:?}", query),
+            format!("{query:?}"),
             r#"TermQuery(Term(type=Json, field=0, path=toto.titi, vtype=Str, "hello"))"#
         );
     }
@@ -400,7 +400,7 @@ mod tests {
         };
         let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
         assert_eq!(
-            format!("{:?}", query),
+            format!("{query:?}"),
             r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(type=Json, field=0, path=toto, vtype=U64, 5))), (Should, TermQuery(Term(type=Json, field=0, path=toto, vtype=Str, "5")))] }"#
         );
     }

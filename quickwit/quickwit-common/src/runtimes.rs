@@ -87,7 +87,7 @@ fn start_runtimes(config: RuntimesConfiguration) -> HashMap<RuntimeType, Runtime
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1, Ordering::AcqRel);
-            format!("blocking-{}", id)
+            format!("blocking-{id}")
         })
         .enable_all()
         .build()
@@ -98,7 +98,7 @@ fn start_runtimes(config: RuntimesConfiguration) -> HashMap<RuntimeType, Runtime
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1, Ordering::AcqRel);
-            format!("non-blocking-{}", id)
+            format!("non-blocking-{id}")
         })
         .enable_all()
         .build()

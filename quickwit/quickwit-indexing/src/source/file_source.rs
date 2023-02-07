@@ -311,7 +311,7 @@ mod tests {
     }
 
     fn extract_position_delta(checkpoint_delta: &SourceCheckpointDelta) -> Option<String> {
-        let checkpoint_delta_str = format!("{:?}", checkpoint_delta);
+        let checkpoint_delta_str = format!("{checkpoint_delta:?}");
         let (_left, right) =
             &checkpoint_delta_str[..checkpoint_delta_str.len() - 2].rsplit_once('(')?;
         Some(right.to_string())
@@ -325,7 +325,7 @@ mod tests {
         use tempfile::NamedTempFile;
         let mut temp_file = NamedTempFile::new()?;
         for i in 0..100 {
-            temp_file.write_all(format!("{}\n", i).as_bytes())?;
+            temp_file.write_all(format!("{i}\n").as_bytes())?;
         }
         temp_file.flush()?;
         let temp_file_path = temp_file.path().canonicalize()?;

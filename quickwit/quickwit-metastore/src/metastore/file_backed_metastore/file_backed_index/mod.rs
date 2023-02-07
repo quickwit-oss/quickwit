@@ -259,10 +259,7 @@ impl FileBackedIndex {
 
     /// Helper to mark a list of splits as published.
     /// This function however does not update the checkpoint.
-    fn mark_splits_as_published_helper<'a>(
-        &mut self,
-        split_ids: &[&'a str],
-    ) -> MetastoreResult<()> {
+    fn mark_splits_as_published_helper(&mut self, split_ids: &[&str]) -> MetastoreResult<()> {
         let mut split_not_found_ids = vec![];
         let mut split_not_staged_ids = vec![];
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();

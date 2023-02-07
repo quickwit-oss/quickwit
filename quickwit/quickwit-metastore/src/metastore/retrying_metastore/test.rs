@@ -257,7 +257,7 @@ async fn test_retryable_more_than_max_retry() {
             .collect::<Vec<_>>()
             .iter()
             .map(|index| MetastoreError::ConnectionError {
-                message: format!("{}", index),
+                message: format!("{index}"),
             })
             .collect::<Vec<_>>(),
     );

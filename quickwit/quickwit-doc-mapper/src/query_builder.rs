@@ -265,7 +265,7 @@ pub(crate) fn validate_sort_by_field(
     }
     let sort_by_field = schema
         .get_field(field_name)
-        .with_context(|| format!("Unknown sort by field: `{}`", field_name))?;
+        .with_context(|| format!("Unknown sort by field: `{field_name}`"))?;
     let sort_by_field_entry = schema.get_field_entry(sort_by_field);
 
     if matches!(sort_by_field_entry.field_type(), FieldType::Str(_)) {
@@ -377,9 +377,7 @@ mod test {
                 let query_err = query_result.err().unwrap();
                 assert!(
                     format!("{query_err:?}").contains(sub_str),
-                    "Query error received is {:?}. It should contain {}",
-                    query_err,
-                    sub_str
+                    "Query error received is {query_err:?}. It should contain {sub_str}"
                 );
             }
             TestExpectation::Ok(sub_str) => {
@@ -391,9 +389,7 @@ mod test {
                 let (query, _) = query_result.unwrap();
                 assert!(
                     format!("{query:?}").contains(sub_str),
-                    "Error query parsing {:?} should contain {}",
-                    query,
-                    sub_str
+                    "Error query parsing {query:?} should contain {sub_str}"
                 );
             }
         }
