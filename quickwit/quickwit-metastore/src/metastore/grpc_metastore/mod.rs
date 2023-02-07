@@ -90,8 +90,7 @@ impl MetastoreGrpcClient {
         let underlying =
             MetastoreApiServiceClient::with_interceptor(channel, SpanContextInterceptor);
         let uri = QuickwitUri::from_well_formed(format!(
-            "{}:{}",
-            GRPC_METASTORE_BASE_URI, grpc_advertise_port
+            "{GRPC_METASTORE_BASE_URI}:{grpc_advertise_port}"
         ));
         Ok(Self {
             uri,

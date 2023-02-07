@@ -45,7 +45,7 @@ pub enum IngestApiError {
 impl From<io::Error> for IngestApiError {
     fn from(io_err: io::Error) -> Self {
         IngestApiError::IoError {
-            msg: format!("{:?}", io_err),
+            msg: format!("{io_err:?}"),
         }
     }
 }

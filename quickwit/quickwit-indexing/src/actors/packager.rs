@@ -347,10 +347,10 @@ mod tests {
         for &timestamp in segment_timestamps {
             for num in 1..10 {
                 let doc = doc!(
-                    text_field => format!("timestamp is {}", timestamp),
+                    text_field => format!("timestamp is {timestamp}"),
                     timestamp_field => timestamp,
                     tag_str => "value",
-                    tag_many => format!("many-{}", num),
+                    tag_many => format!("many-{num}"),
                     tag_u64 => 42u64,
                     tag_i64 => -42i64,
                     tag_f64 => -42.02f64,

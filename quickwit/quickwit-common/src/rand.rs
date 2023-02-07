@@ -28,7 +28,7 @@ pub fn append_random_suffix(string: &str) -> String {
         .take(5)
         .map(char::from)
         .collect();
-    format!("{}-{}", string, slug)
+    format!("{string}-{slug}")
 }
 
 #[cfg(test)]

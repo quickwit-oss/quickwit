@@ -357,7 +357,7 @@ pub(super) fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow
     if let Some(RegionOrEndpoint::Region(region)) = region_or_endpoint {
         return region
             .parse()
-            .with_context(|| format!("Failed to parse region: `{}`", region));
+            .with_context(|| format!("Failed to parse region: `{region}`"));
     }
 
     sniff_aws_region_and_cache() //< We fallback to AWS region if `region_or_endpoint` is `None`

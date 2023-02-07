@@ -53,7 +53,7 @@ fn markdown_for_subcommand(
     let subcommand_name = subcommand.get_name();
 
     let command_name = format!("{} {}", command_group.join(" "), subcommand_name);
-    println!("### {}\n", command_name);
+    println!("### {command_name}\n");
 
     let subcommand_ext: Option<&Value> = {
         let mut val_opt: Option<&Value> = doc_extensions.get(command_group[0].to_owned());
@@ -88,17 +88,17 @@ fn markdown_for_command_helper(
 
     if let Some(about) = long_about_opt {
         if !about.trim().is_empty() {
-            println!("{}  ", about);
+            println!("{about}  ");
         }
     } else if let Some(about) = subcommand.get_about() {
         if !about.trim().is_empty() {
-            println!("{}  ", about);
+            println!("{about}  ");
         }
     }
 
     if let Some(note) = note {
         println!(":::note");
-        println!("{}", note);
+        println!("{note}");
         println!(":::");
     }
 
@@ -119,7 +119,7 @@ fn markdown_for_command_helper(
         println!("\n*Synopsis*\n");
 
         println!("```bash");
-        println!("quickwit {}", command_name);
+        println!("quickwit {command_name}");
         for arg in &arguments {
             let is_required = arg.is_required_set();
             let is_bool = !arg.is_takes_value_set();
@@ -129,9 +129,9 @@ fn markdown_for_command_helper(
                 commando = format!("{} <{}>", commando, arg.get_id());
             }
             if !is_required {
-                commando = format!("[{}]", commando);
+                commando = format!("[{commando}]");
             }
-            println!("    {}", commando);
+            println!("    {commando}");
         }
         println!("```");
 
@@ -170,10 +170,10 @@ fn generate_markdown_from_clap(command: &Command) {
     let commands = command.get_subcommands();
     for command in commands {
         let command_name = command.get_name(); // index, split, source
-        println!("## {}", command_name);
+        println!("## {command_name}");
         if let Some(about) = command.get_about() {
             if !about.trim().is_empty() {
-                println!("{}\n", about);
+                println!("{about}\n");
             }
         }
 

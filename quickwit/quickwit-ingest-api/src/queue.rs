@@ -45,7 +45,7 @@ impl Queues {
     }
 
     pub fn queue_exists(&self, queue_id: &str) -> bool {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
+        let real_queue_id = format!("{QUICKWIT_CF_PREFIX}{queue_id}");
         self.record_log.queue_exists(&real_queue_id)
     }
 
@@ -59,7 +59,7 @@ impl Queues {
                 index_id: queue_id.to_string(),
             });
         }
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
+        let real_queue_id = format!("{QUICKWIT_CF_PREFIX}{queue_id}");
         ctx.protect_future(self.record_log.create_queue(&real_queue_id))
             .await
             .map_err(|e| match e {
@@ -76,7 +76,7 @@ impl Queues {
         queue_id: &str,
         ctx: &ActorContext<IngestApiService>,
     ) -> crate::Result<()> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
+        let real_queue_id = format!("{QUICKWIT_CF_PREFIX}{queue_id}");
         ctx.protect_future(self.record_log.delete_queue(&real_queue_id))
             .await?;
         Ok(())
@@ -101,7 +101,7 @@ impl Queues {
         up_to_offset_included: u64,
         ctx: &ActorContext<IngestApiService>,
     ) -> crate::Result<()> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
+        let real_queue_id = format!("{QUICKWIT_CF_PREFIX}{queue_id}");
 
         ctx.protect_future(
             self.record_log
@@ -133,7 +133,7 @@ impl Queues {
         records_it: impl Iterator<Item = &'a [u8]>,
         ctx: &ActorContext<IngestApiService>,
     ) -> crate::Result<()> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
+        let real_queue_id = format!("{QUICKWIT_CF_PREFIX}{queue_id}");
 
         // TODO None means we don't have itempotent inserts
         ctx.protect_future(
@@ -154,7 +154,7 @@ impl Queues {
         start_after: Option<u64>,
         num_bytes_limit: Option<usize>,
     ) -> crate::Result<FetchResponse> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
+        let real_queue_id = format!("{QUICKWIT_CF_PREFIX}{queue_id}");
 
         let starting_bound = match start_after {
             Some(pos) => Bound::Excluded(pos),

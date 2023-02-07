@@ -249,7 +249,7 @@ mod tests {
         let read_data = debug_proxy.atomic_read(test_path)?;
         assert_eq!(&read_data[..], TEST_PAYLOAD);
         let operations: Vec<crate::ReadOperation> = debug_proxy.drain_read_operations().collect();
-        println!("operations {:?}", operations);
+        println!("operations {operations:?}");
         assert_eq!(operations.len(), 1);
         let op0 = &operations[0];
         assert_eq!(op0.offset, 0);

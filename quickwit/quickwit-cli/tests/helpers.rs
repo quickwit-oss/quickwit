@@ -102,7 +102,7 @@ const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "http
 pub async fn wait_port_ready(port: u16) -> anyhow::Result<()> {
     let timer_task = tokio::time::sleep(Duration::from_secs(10));
     let port_check_task = async {
-        while tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
+        while tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
             .await
             .is_err()
         {

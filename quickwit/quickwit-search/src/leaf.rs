@@ -179,10 +179,7 @@ async fn warm_up_term_dict_fields(
             .schema()
             .get_field(term_dict_field_name)
             .with_context(|| {
-                format!(
-                    "Couldn't get field named {:?} from schema.",
-                    term_dict_field_name
-                )
+                format!("Couldn't get field named {term_dict_field_name:?} from schema.")
             })?;
 
         term_dict_fields.push(term_dict_field);
@@ -211,7 +208,7 @@ async fn warm_up_postings(
         let field = searcher
             .schema()
             .get_field(field_name)
-            .with_context(|| format!("Couldn't get field named {:?} from schema.", field_name))?;
+            .with_context(|| format!("Couldn't get field named {field_name:?} from schema."))?;
 
         fields.push(field);
     }
@@ -274,10 +271,7 @@ async fn warm_up_fastfields(
             .schema()
             .get_field(fast_field_name)
             .with_context(|| {
-                format!(
-                    "Couldn't get field named {:?} from schema.",
-                    fast_field_name
-                )
+                format!("Couldn't get field named {fast_field_name:?} from schema.")
             })?;
 
         let field_entry = searcher.schema().get_field_entry(fast_field);
@@ -287,8 +281,7 @@ async fn warm_up_fastfields(
         let cardinality =
             get_fastfield_cardinality(field_entry.field_type()).with_context(|| {
                 format!(
-                    "Couldn't get field cardinality {:?} from type {:?}.",
-                    fast_field_name, field_entry
+                    "Couldn't get field cardinality {fast_field_name:?} from type {field_entry:?}."
                 )
             })?;
 
@@ -386,7 +379,7 @@ async fn leaf_search_single_split(
     })
     .await
     .map_err(|_| {
-        crate::SearchError::InternalError(format!("Leaf search panicked. split={}", split_id))
+        crate::SearchError::InternalError(format!("Leaf search panicked. split={split_id}"))
     })??;
     Ok(leaf_search_response)
 }
@@ -461,7 +454,7 @@ pub async fn leaf_search(
         .failed_splits
         .extend(errors.iter().map(|(split_id, err)| SplitSearchError {
             split_id: split_id.to_string(),
-            error: format!("{}", err),
+            error: format!("{err}"),
             retryable_error: true,
         }));
     Ok(merged_search_response)

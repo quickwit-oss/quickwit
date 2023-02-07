@@ -355,8 +355,8 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
             _ => "CTRL+D",
         };
         println!(
-            "Please, enter JSON documents one line at a time.\nEnd your input using {}.",
-            eof_shortcut
+            "Please, enter JSON documents one line at a time.\nEnd your input using \
+             {eof_shortcut}."
         );
     }
     let statistics =
@@ -496,7 +496,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     if !removal_info.failed_split_ids.is_empty() {
         println!("The following splits were attempted to be removed, but failed.");
         for split_id in removal_info.failed_split_ids.iter() {
-            println!(" - {}", split_id);
+            println!(" - {split_id}");
         }
         println!(
             "{} Splits were unable to be removed.",
@@ -556,7 +556,7 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     for path in bundle_storage.iter_files() {
         let mut out_path = args.target_dir.to_owned();
         out_path.push(path);
-        println!("Copying {:?}", out_path);
+        println!("Copying {out_path:?}");
         bundle_storage.copy_to_file(path, &out_path).await?;
     }
 
@@ -646,7 +646,7 @@ pub async fn start_statistics_reporting_loop(
 }
 
 fn colorize_error_rate(error_rate: f64) -> ColoredString {
-    let error_rate_message = format!("({:.1}% error rate)", error_rate);
+    let error_rate_message = format!("({error_rate:.1}% error rate)");
     if error_rate < 1.0 {
         error_rate_message.yellow()
     } else if error_rate < 5.0 {
@@ -668,7 +668,7 @@ impl<'a> Printer<'a> {
     }
 
     pub fn print_value(&mut self, fmt_args: fmt::Arguments) -> io::Result<()> {
-        write!(&mut self.stdout, " {}", fmt_args)
+        write!(&mut self.stdout, " {fmt_args}")
     }
 
     pub fn flush(&mut self) -> io::Result<()> {
@@ -702,9 +702,9 @@ fn display_statistics(
         statistics.total_bytes_processed / 1_000_000
     ))?;
     printer.print_header("Thrghput")?;
-    printer.print_value(format_args!("{:>5.2}MB/s", throughput_mb_s))?;
+    printer.print_value(format_args!("{throughput_mb_s:>5.2}MB/s"))?;
     printer.print_header("Time")?;
-    printer.print_value(format_args!("{}\n", elapsed_time))?;
+    printer.print_value(format_args!("{elapsed_time}\n"))?;
     printer.flush()?;
     Ok(())
 }

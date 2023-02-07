@@ -394,8 +394,7 @@ impl MergeExecutor {
                     .get_field(timestamp_field_name)
                     .ok_or_else(|| {
                         TantivyError::SchemaError(format!(
-                            "Timestamp field `{}` does not exist",
-                            timestamp_field_name
+                            "Timestamp field `{timestamp_field_name}` does not exist"
                         ))
                     })?;
                 let reader = timestamp_field_reader(timestamp_field, &merged_segment_reader)?;
@@ -555,7 +554,7 @@ mod tests {
             TestSandbox::create(&pipeline_id.index_id, doc_mapping_yaml, "", &["body"]).await?;
         for split_id in 0..4 {
             let single_doc = std::iter::once(
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713u64 + split_id }),
+                serde_json::json!({"body ": format!("split{split_id}"), "ts": 1631072713u64 + split_id }),
             );
             test_sandbox.add_documents(single_doc).await?;
         }

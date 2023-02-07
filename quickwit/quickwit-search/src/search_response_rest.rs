@@ -69,8 +69,7 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
                 let snippet_opt: JsonValue =
                     serde_json::from_str(&snippet_json).map_err(|err| {
                         SearchError::InternalError(format!(
-                            "Failed to serialize snippet `{}` to JSON: `{}`.",
-                            snippet_json, err
+                            "Failed to serialize snippet `{snippet_json}` to JSON: `{err}`."
                         ))
                     })?;
                 snippets.push(snippet_opt);

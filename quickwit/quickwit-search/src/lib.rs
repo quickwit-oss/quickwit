@@ -180,7 +180,7 @@ pub async fn single_node_search(
         metas.iter().map(extract_split_and_footer_offsets).collect();
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
-            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
     validate_request(search_request)?;
@@ -244,7 +244,7 @@ pub async fn single_node_search(
         errors: leaf_search_response
             .failed_splits
             .iter()
-            .map(|error| format!("{:?}", error))
+            .map(|error| format!("{error:?}"))
             .collect_vec(),
     })
 }

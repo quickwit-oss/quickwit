@@ -67,7 +67,7 @@ pub fn setup_logging_for_tests() {
 }
 
 pub fn split_file(split_id: &str) -> String {
-    format!("{}.split", split_id)
+    format!("{split_id}.split")
 }
 
 pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
@@ -163,7 +163,7 @@ where T: Debug
             if i > 0 {
                 write!(formatter, ", ")?;
             }
-            write!(formatter, "{:?}", item)?;
+            write!(formatter, "{item:?}")?;
         }
         write!(formatter, "]")?;
         Ok(())
@@ -211,18 +211,18 @@ mod tests {
     #[test]
     fn test_pretty_sample() {
         let pretty_sample = PrettySample::<'_, usize>::new(&[], 2);
-        assert_eq!(format!("{:?}", pretty_sample), "[]");
+        assert_eq!(format!("{pretty_sample:?}"), "[]");
 
         let pretty_sample = PrettySample::new(&[1], 2);
-        assert_eq!(format!("{:?}", pretty_sample), "[1]");
+        assert_eq!(format!("{pretty_sample:?}"), "[1]");
 
         let pretty_sample = PrettySample::new(&[1, 2], 2);
-        assert_eq!(format!("{:?}", pretty_sample), "[1, 2]");
+        assert_eq!(format!("{pretty_sample:?}"), "[1, 2]");
 
         let pretty_sample = PrettySample::new(&[1, 2, 3], 2);
-        assert_eq!(format!("{:?}", pretty_sample), "[1, 2, and 1 more]");
+        assert_eq!(format!("{pretty_sample:?}"), "[1, 2, and 1 more]");
 
         let pretty_sample = PrettySample::new(&[1, 2, 3, 4], 2);
-        assert_eq!(format!("{:?}", pretty_sample), "[1, 2, and 2 more]");
+        assert_eq!(format!("{pretty_sample:?}"), "[1, 2, and 2 more]");
     }
 }

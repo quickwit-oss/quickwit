@@ -198,14 +198,12 @@ async fn slop_search_and_check(
     .await?;
     assert_eq!(
         single_node_result.num_hits, expected_num_match,
-        "query: {}",
-        query
+        "query: {query}"
     );
     assert_eq!(
         single_node_result.hits.len(),
         expected_num_match as usize,
-        "query: {}",
-        query
+        "query: {query}"
     );
     Ok(())
 }
@@ -481,7 +479,7 @@ async fn single_node_search_sort_by_field(
     let start_timestamp = 72057595;
     for i in 0..30 {
         let timestamp = start_timestamp + (i + 1) as i64;
-        let description = format!("city info-{}", timestamp);
+        let description = format!("city info-{timestamp}");
         docs.push(json!({"description": description, "ts": timestamp, "temperature": i+32}));
     }
     test_sandbox.add_documents(docs).await?;

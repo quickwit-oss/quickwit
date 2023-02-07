@@ -38,7 +38,7 @@ impl QuickwitRestClient {
             .pool_idle_timeout(Duration::from_secs(30))
             .http2_only(true)
             .build_http();
-        let root_url = format!("http://{}", addr);
+        let root_url = format!("http://{addr}");
         Self { root_url, client }
     }
 

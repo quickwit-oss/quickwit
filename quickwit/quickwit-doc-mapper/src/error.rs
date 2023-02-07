@@ -57,7 +57,7 @@ impl From<TantivyDocParsingError> for DocParsingError {
         match value {
             TantivyDocParsingError::InvalidJson(text) => DocParsingError::NoSuchFieldInSchema(text),
             TantivyDocParsingError::ValueError(text, error) => {
-                DocParsingError::ValueError(text, format!("{:?}", error))
+                DocParsingError::ValueError(text, format!("{error:?}"))
             }
         }
     }

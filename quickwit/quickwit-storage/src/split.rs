@@ -144,7 +144,7 @@ impl SplitPayloadBuilder {
                 let file_name = PathBuf::from(path.file_name().ok_or_else(|| {
                     io::Error::new(
                         ErrorKind::InvalidInput,
-                        format!("could not extract file_name from path {:?}", path),
+                        format!("could not extract file_name from path {path:?}"),
                     )
                 })?);
                 Ok((file_name, range.start..range.end))

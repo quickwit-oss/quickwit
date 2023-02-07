@@ -101,7 +101,7 @@ impl From<MetastoreError> for quickwit_proto::tonic::Status {
     fn from(metastore_error: MetastoreError) -> Self {
         let grpc_code = metastore_error.status_code().to_grpc_status_code();
         let error_msg = serde_json::to_string(&metastore_error)
-            .unwrap_or_else(|_| format!("Raw metastore error: {}", metastore_error));
+            .unwrap_or_else(|_| format!("Raw metastore error: {metastore_error}"));
         quickwit_proto::tonic::Status::new(grpc_code, error_msg)
     }
 }

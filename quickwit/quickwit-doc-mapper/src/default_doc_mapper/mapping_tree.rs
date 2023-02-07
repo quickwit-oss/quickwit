@@ -74,7 +74,7 @@ impl LeafType {
                 if let JsonValue::String(text) = json_val {
                     Ok(TantivyValue::Str(text))
                 } else {
-                    Err(format!("Expected JSON string, got `{}`.", json_val))
+                    Err(format!("Expected JSON string, got `{json_val}`."))
                 }
             }
             LeafType::I64(_) => i64::from_json(json_val),
@@ -84,7 +84,7 @@ impl LeafType {
                 if let JsonValue::Bool(val) = json_val {
                     Ok(TantivyValue::Bool(val))
                 } else {
-                    Err(format!("Expected bool value, got `{}`.", json_val))
+                    Err(format!("Expected bool value, got `{json_val}`."))
                 }
             }
             LeafType::IpAddr(_) => {
@@ -94,7 +94,7 @@ impl LeafType {
                         .into_ipv6_addr();
                     Ok(TantivyValue::IpAddr(ipv6_value))
                 } else {
-                    Err(format!("Expected string value, got `{}`.", json_val))
+                    Err(format!("Expected string value, got `{json_val}`."))
                 }
             }
             LeafType::DateTime(date_time_options) => date_time_options.parse_json(json_val),
@@ -102,7 +102,7 @@ impl LeafType {
                 let base64_str = if let JsonValue::String(base64_str) = json_val {
                     base64_str
                 } else {
-                    return Err(format!("Expected base64 string, got `{}`.", json_val));
+                    return Err(format!("Expected base64 string, got `{json_val}`."));
                 };
                 let payload = BASE64_STANDARD
                     .decode(&base64_str)
@@ -115,7 +115,7 @@ impl LeafType {
                 if let JsonValue::Object(json_obj) = json_val {
                     Ok(TantivyValue::JsonObject(json_obj))
                 } else {
-                    Err(format!("Expected JSON object  got `{}`.", json_val))
+                    Err(format!("Expected JSON object  got `{json_val}`."))
                 }
             }
         }
@@ -455,7 +455,7 @@ impl MappingTree {
                 } else {
                     Err(DocParsingError::ValueError(
                         path.join("."),
-                        format!("Expected an JSON Object, got {}", json_value),
+                        format!("Expected an JSON Object, got {json_value}"),
                     ))
                 }
             }

@@ -61,7 +61,7 @@ pub(crate) mod tests {
     }
 
     pub fn make_shard_id(id: usize) -> String {
-        format!("shardId-{:0>12}", id)
+        format!("shardId-{id:0>12}")
     }
 
     pub fn parse_shard_id<S: AsRef<str>>(shard_id: S) -> Option<usize> {

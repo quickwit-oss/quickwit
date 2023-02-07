@@ -174,7 +174,7 @@ fn resolve_timestamp_field(
     if let Some(ref timestamp_field_name) = timestamp_field_name_opt {
         let timestamp_field = schema
             .get_field(timestamp_field_name)
-            .with_context(|| format!("Unknown timestamp field: `{}`", timestamp_field_name))?;
+            .with_context(|| format!("Unknown timestamp field: `{timestamp_field_name}`"))?;
 
         let timestamp_field_entry = schema.get_field_entry(timestamp_field);
         if !timestamp_field_entry.is_fast() {
@@ -238,7 +238,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             }
             schema
                 .get_field(field_name)
-                .with_context(|| format!("Unknown default search field: `{}`", field_name))?;
+                .with_context(|| format!("Unknown default search field: `{field_name}`"))?;
             default_search_field_names.push(field_name.clone());
         }
 
@@ -252,7 +252,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             }
             schema
                 .get_field(tag_field_name)
-                .with_context(|| format!("Unknown tag field: `{}`", tag_field_name))?;
+                .with_context(|| format!("Unknown tag field: `{tag_field_name}`"))?;
             tag_field_names.insert(tag_field_name.clone());
         }
 
@@ -517,13 +517,10 @@ mod tests {
                     .as_array()
                     .unwrap()
                     .iter()
-                    .map(|expected_value| format!("{}", expected_value))
+                    .map(|expected_value| format!("{expected_value}"))
                     .any(|expected_value| expected_value == value);
                 if !is_value_in_expected_values {
-                    panic!(
-                        "Could not find: {:?} in {:?}",
-                        value, expected_json_paths_and_values
-                    );
+                    panic!("Could not find: {value:?} in {expected_json_paths_and_values:?}");
                 }
             }
         });
@@ -805,7 +802,7 @@ mod tests {
                     .as_array()
                     .unwrap()
                     .iter()
-                    .map(|expected_value| format!("{}", expected_value))
+                    .map(|expected_value| format!("{expected_value}"))
                     .any(|expected_value| expected_value == value);
                 assert!(is_value_in_expected_values);
             }
@@ -1101,7 +1098,7 @@ mod tests {
         let (query, _) = doc_mapper
             .query(doc_mapper.schema(), &search_request)
             .map_err(|err| err.to_string())?;
-        Ok(format!("{:?}", query))
+        Ok(format!("{query:?}"))
     }
 
     #[test]

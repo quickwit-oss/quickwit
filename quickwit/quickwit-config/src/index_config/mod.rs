@@ -719,7 +719,7 @@ mod tests {
             &Uri::from_well_formed("s3://my-index"),
         )
         .unwrap_err();
-        println!("{:?}", parsing_config_error);
+        println!("{parsing_config_error:?}");
         assert!(parsing_config_error
             .root_cause()
             .to_string()

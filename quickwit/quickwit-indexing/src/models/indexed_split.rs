@@ -86,7 +86,7 @@ impl IndexedSplitBuilder {
         // The benefit is that we don't have to wait for potentially existing merges,
         // and avoid possible race conditions.
         let split_id = new_split_id();
-        let split_scratch_directory_prefix = format!("split-{}-", split_id);
+        let split_scratch_directory_prefix = format!("split-{split_id}-");
         let split_scratch_directory =
             scratch_directory.named_temp_child(split_scratch_directory_prefix)?;
         let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;

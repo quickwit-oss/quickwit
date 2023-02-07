@@ -143,8 +143,7 @@ impl StaticDirectoryCache {
         if format_version != 0 {
             return Err(tantivy::TantivyError::DataCorruption(
                 DataCorruption::comment_only(format!(
-                    "Format version not supported: `{}`",
-                    format_version
+                    "Format version not supported: `{format_version}`"
                 )),
             ));
         }
@@ -217,10 +216,7 @@ impl StaticSliceCache {
         let (body, idx) = body.split(body_len as usize);
         let mut idx_bytes = idx.as_slice();
         let index: SliceCacheIndex = serde_cbor::from_reader(&mut idx_bytes).map_err(|err| {
-            DataCorruption::comment_only(format!(
-                "Failed to deserialize the slice index: {:?}",
-                err
-            ))
+            DataCorruption::comment_only(format!("Failed to deserialize the slice index: {err:?}"))
         })?;
         Ok(StaticSliceCache { bytes: body, index })
     }

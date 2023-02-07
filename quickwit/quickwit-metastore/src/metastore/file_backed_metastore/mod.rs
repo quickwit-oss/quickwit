@@ -885,7 +885,7 @@ mod tests {
             let handle = tokio::spawn(async move {
                 let split_metadata = SplitMetadata {
                     footer_offsets: 1000..2000,
-                    split_id: format!("split-{}", i),
+                    split_id: format!("split-{i}"),
                     num_docs: 1,
                     uncompressed_docs_size_in_bytes: 2,
                     time_range: Some(RangeInclusive::new(0, 99)),
@@ -901,7 +901,7 @@ mod tests {
                 tokio::time::sleep(sleep_duration).await;
 
                 // publish split
-                let split_id = format!("split-{}", i);
+                let split_id = format!("split-{i}");
                 metastore
                     .publish_splits(index_id, &[&split_id], &[], None)
                     .await

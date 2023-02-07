@@ -300,7 +300,7 @@ impl Uri {
                 .to_string();
         }
         Ok(Self {
-            uri: format!("{}{}{}", protocol, PROTOCOL_SEPARATOR, path),
+            uri: format!("{protocol}{PROTOCOL_SEPARATOR}{path}"),
             protocol_idx: protocol.len(),
         })
     }
@@ -720,13 +720,10 @@ mod tests {
         {
             for protocol in ["postgres", "postgresql"] {
                 let uri = Uri::from_well_formed(format!(
-                    "{}://username:password@localhost:5432/metastore",
-                    protocol
+                    "{protocol}://username:password@localhost:5432/metastore"
                 ));
-                let expected_uri = format!(
-                    "{}://username:***redacted***@localhost:5432/metastore",
-                    protocol
-                );
+                let expected_uri =
+                    format!("{protocol}://username:***redacted***@localhost:5432/metastore");
                 assert_eq!(uri.as_redacted_str(), expected_uri);
                 assert_eq!(format!("{uri}"), expected_uri);
                 assert_eq!(

@@ -71,25 +71,25 @@ pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
 
 impl From<TantivyError> for SearchError {
     fn from(tantivy_err: TantivyError) -> Self {
-        SearchError::InternalError(format!("{}", tantivy_err))
+        SearchError::InternalError(format!("{tantivy_err}"))
     }
 }
 
 impl From<serde_json::Error> for SearchError {
     fn from(serde_error: serde_json::Error) -> Self {
-        SearchError::InternalError(format!("Serde error: {}", serde_error))
+        SearchError::InternalError(format!("Serde error: {serde_error}"))
     }
 }
 
 impl From<anyhow::Error> for SearchError {
     fn from(any_err: anyhow::Error) -> Self {
-        SearchError::InternalError(format!("{}", any_err))
+        SearchError::InternalError(format!("{any_err}"))
     }
 }
 
 impl From<QueryParserError> for SearchError {
     fn from(query_parser_error: QueryParserError) -> Self {
-        SearchError::InvalidQuery(format!("{}", query_parser_error))
+        SearchError::InvalidQuery(format!("{query_parser_error}"))
     }
 }
 
@@ -99,14 +99,14 @@ impl From<MetastoreError> for SearchError {
             MetastoreError::IndexDoesNotExist { index_id } => {
                 SearchError::IndexDoesNotExist { index_id }
             }
-            _ => SearchError::InternalError(format!("{}", metastore_error)),
+            _ => SearchError::InternalError(format!("{metastore_error}")),
         }
     }
 }
 
 impl From<JoinError> for SearchError {
     fn from(join_error: JoinError) -> SearchError {
-        SearchError::InternalError(format!("Spawned task in root join failed: {}", join_error))
+        SearchError::InternalError(format!("Spawned task in root join failed: {join_error}"))
     }
 }
 

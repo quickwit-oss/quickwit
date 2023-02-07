@@ -256,15 +256,14 @@ async fn leaf_search_stream_single_split(
             }
             (fast_field_type, None) => {
                 return Err(SearchError::InternalError(format!(
-                    "Search stream does not support fast field of type `{:?}`.",
-                    fast_field_type
+                    "Search stream does not support fast field of type `{fast_field_type:?}`."
                 )));
             }
             (fast_field_type, Some(partition_fast_field_type)) => {
                 return Err(SearchError::InternalError(format!(
-                    "Search stream does not support the combination of fast field type `{:?}` and \
-                     partition fast field type `{:?}`.",
-                    fast_field_type, partition_fast_field_type
+                    "Search stream does not support the combination of fast field type \
+                     `{fast_field_type:?}` and partition fast field type \
+                     `{partition_fast_field_type:?}`."
                 )));
             }
         };
@@ -463,7 +462,7 @@ mod tests {
         let end_timestamp = start_timestamp + 20;
         for i in 0..30 {
             let timestamp = start_timestamp + (i + 1) as i64;
-            let body = format!("info @ t:{}", timestamp);
+            let body = format!("info @ t:{timestamp}");
             docs.push(json!({"body": body, "ts": timestamp}));
             if timestamp < end_timestamp {
                 filtered_timestamp_values.push(timestamp);
@@ -670,7 +669,7 @@ mod tests {
         let end_timestamp: i64 = start_timestamp + 20;
         for i in 0..30 {
             let timestamp = start_timestamp + (i + 1) as i64;
-            let body = format!("info @ t:{}", timestamp);
+            let body = format!("info @ t:{timestamp}");
             let partition_number = partition_by_fast_field_values[i % 5];
             let fast_field: u64 = (i * 2).try_into().unwrap();
             docs.push(json!({
