@@ -879,7 +879,7 @@ mod pulsar_broker_tests {
     // async fn test_suggest_truncate() {
     //     let metastore = metastore_for_test();
     //     let topic = append_random_suffix("test-pulsar-source-topic-suggest-truncate");
-//
+    //
     //     let index_id = append_random_suffix("test-pulsar-source-index-suggest-truncate");
     //     let (_source_id, source_config) = get_source_config([&topic]);
     //     let params = if let SourceParams::Pulsar(params) = source_config.clone().source_params {
@@ -887,7 +887,7 @@ mod pulsar_broker_tests {
     //     } else {
     //         unreachable!()
     //     };
-//
+    //
     //     let ctx = SourceExecutionContext::for_test(
     //         metastore,
     //         &index_id,
@@ -895,15 +895,15 @@ mod pulsar_broker_tests {
     //         source_config,
     //     );
     //     let start_checkpoint = SourceCheckpoint::default();
-//
+    //
     //     let mut pulsar_source = PulsarSource::try_new(ctx, params, start_checkpoint)
     //         .await
     //         .expect("Setup pulsar source");
-//
-//
-//
+    //
+    //
+    //
     //     let client = Pulsar::builder(PULSAR_URI, TokioExecutor).build().await?;
-//
+    //
     //     let mut topic_messages = Vec::with_capacity(2);
     //     let mut producer = client
     //         .producer()
@@ -911,23 +911,23 @@ mod pulsar_broker_tests {
     //         .with_topic(topic.as_ref())
     //         .build()
     //         .await?;
-//
+    //
     //     for id in 0..2 {
     //         let msg = message_generator(topic.as_ref(), id).to_string();
     //         topic_messages.push(msg);
     //     }
-//
+    //
     //     let futures = producer.send_all(topic_messages.clone()).await?;
     //     let receipts = join_all(futures).await;
-//
+    //
     //     let mut msg_ids = Vec::with_capacity(2);
     //     for result in receipts {
     //         let msg_id = result?.message_id.unwrap();
     //         msg_ids.push(msg_id);
     //     }
     //     producer.close().await.expect("Close connection.");
-//
-//
+    //
+    //
     //     panic!("yeet")
     // }
 
