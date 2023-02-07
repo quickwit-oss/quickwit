@@ -4280,7 +4280,7 @@ dependencies = [
 [[package]]
 name = "pulsar"
 version = "5.0.2"
-source = "git+https://github.com/quickwit-oss/pulsar-rs.git?branch=guilload/seek-is-send#f42e85005d59ed135ac04169b5d99762b82d9777"
+source = "git+https://github.com/quickwit-oss/pulsar-rs.git?rev=f9eff04#f9eff04caf184906c6466fdde8b5bb0fd3c92659"
 dependencies = [
  "async-trait",
  "bit-vec",
