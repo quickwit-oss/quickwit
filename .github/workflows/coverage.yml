@@ -56,13 +56,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      pulsar-broker:
-        image: apachepulsar/pulsar:2.11.0
-        command: bin/pulsar standalone
-        ports:
-          - "6650:6650"
-          - "8081:8080"
-
       kafka-broker:
         image: confluentinc/cp-kafka:7.2.1
         ports:
@@ -128,6 +121,9 @@ jobs:
       # so we are running Azurite as a container manually.
       - name: Run Azurite service
         run: DOCKER_SERVICES=azurite make docker-compose-up
+
+      - name: Run Pulsar service
+        run: DOCKER_SERVICES=pulsar make docker-compose-up
 
       - uses: actions-rs/toolchain@v1
         with:
