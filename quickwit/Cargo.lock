@@ -4916,6 +4916,7 @@ dependencies = [
  "bytes",
  "chitchat",
  "fastfield_codecs",
+ "fnv",
  "futures",
  "http",
  "hyper",

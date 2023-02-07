@@ -28,6 +28,7 @@ mod collector;
 mod error;
 mod fetch_docs;
 mod filters;
+mod jaeger_collector;
 mod leaf;
 mod retry;
 mod root;
@@ -41,6 +42,7 @@ mod metrics;
 #[cfg(test)]
 mod tests;
 
+use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
 use quickwit_doc_mapper::DocMapper;
 use root::validate_request;
@@ -60,7 +62,6 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{Hit, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
-use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::DocAddress;
@@ -228,11 +229,24 @@ pub async fn single_node_search(
     let aggregation = if let Some(intermediate_aggregation_result) =
         leaf_search_response.intermediate_aggregation_result
     {
-        let res: IntermediateAggregationResults =
-            serde_json::from_str(&intermediate_aggregation_result)?;
-        let req: Aggregations = serde_json::from_str(search_request.aggregation_request())?;
-        let res: AggregationResults = res.into_final_bucket_result(req, &schema)?;
-        Some(serde_json::to_string(&res)?)
+        let aggregations: QuickwitAggregations =
+            serde_json::from_str(search_request.aggregation_request.as_ref().expect(
+                "Aggregation should be present since we are processing an intermediate \
+                 aggregation result.",
+            ))?;
+        match aggregations {
+            QuickwitAggregations::FindTraceIdsAggregation(_) => {
+                // There is nothing to merge here because there is only one leaf response.
+                Some(intermediate_aggregation_result)
+            }
+            QuickwitAggregations::TantivyAggregations(aggregations) => {
+                let res: IntermediateAggregationResults =
+                    serde_json::from_str(&intermediate_aggregation_result)?;
+                let res: AggregationResults =
+                    res.into_final_bucket_result(aggregations, &schema)?;
+                Some(serde_json::to_string(&res)?)
+            }
+        }
     } else {
         None
     };
