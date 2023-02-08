@@ -23,7 +23,7 @@ use crate::mailbox::create_mailbox;
 use crate::registry::ActorObservation;
 use crate::scheduler::start_scheduler;
 use crate::spawn_builder::{SpawnBuilder, SpawnContext};
-use crate::{Actor, Command, Inbox, Mailbox, QueueCapacity};
+use crate::{Actor, ActorExitStatus, Command, Inbox, Mailbox, QueueCapacity};
 
 /// Universe serves as the top-level context in which Actor can be spawned.
 /// It is *not* a singleton. A typical application will usually have only one universe hosting all
@@ -117,6 +117,11 @@ impl Universe {
         mailbox.send_message(Command::ExitWithSuccess).await?;
         Ok(())
     }
+
+    /// Gracefully quits all registered actors.
+    pub async fn quit(&self) -> Vec<ActorExitStatus> {
+        self.spawn_ctx.registry.quit().await
+    }
 }
 
 impl Drop for Universe {
@@ -127,6 +132,7 @@ impl Drop for Universe {
 
 #[cfg(test)]
 mod tests {
+    use core::panic;
     use std::time::Duration;
 
     use async_trait::async_trait;
@@ -168,6 +174,22 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    pub struct ExitPanickingActor {}
+
+    #[async_trait]
+    impl Actor for ExitPanickingActor {
+        type ObservableState = ();
+
+        fn observable_state(&self) -> Self::ObservableState {}
+    }
+
+    impl Drop for ExitPanickingActor {
+        fn drop(&mut self) {
+            panic!("Panicking on drop")
+        }
+    }
+
     #[tokio::test]
     async fn test_schedule_for_actor() {
         let universe = Universe::with_accelerated_time();
@@ -178,5 +200,48 @@ mod tests {
         universe.sleep(Duration::from_secs(200)).await;
         let count_after_advance_time = handler.process_pending_and_observe().await.state;
         assert_eq!(count_after_advance_time, 4);
+        assert!(!universe
+            .quit()
+            .await
+            .into_iter()
+            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+    }
+
+    #[tokio::test]
+    #[should_panic(
+        expected = "Attempting to call join after universe.join() or universe.quit() was called"
+    )]
+    async fn test_actor_quit_after_universe_quit_should_panic() {
+        let universe = Universe::with_accelerated_time();
+        let actor_with_schedule = CountingMinutesActor::default();
+        let (_maibox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
+        universe.sleep(Duration::from_secs(200)).await;
+        let res = universe.quit().await;
+        assert_eq!(res.len(), 1);
+        assert!(matches!(res.first().unwrap(), ActorExitStatus::Quit));
+        handler.quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_universe_join_after_actor_quit() {
+        let universe = Universe::default();
+        let actor_with_schedule = CountingMinutesActor::default();
+        let (_maibox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
+        assert!(matches!(handler.quit().await, (ActorExitStatus::Quit, 1)));
+        assert!(universe.quit().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_universe_quit_with_panicking_actor() {
+        let universe = Universe::default();
+        let panicking_actor = ExitPanickingActor::default();
+        let actor_with_schedule = CountingMinutesActor::default();
+        let (_maibox, _handler) = universe.spawn_builder().spawn(panicking_actor);
+        let (_maibox, _handler) = universe.spawn_builder().spawn(actor_with_schedule);
+        assert!(universe
+            .quit()
+            .await
+            .into_iter()
+            .any(|s| matches!(s, ActorExitStatus::Panicked)));
     }
 }

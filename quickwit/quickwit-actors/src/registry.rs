@@ -26,14 +26,17 @@ use async_trait::async_trait;
 use futures::future;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 
 use crate::command::Observe;
 use crate::mailbox::WeakMailbox;
-use crate::{Actor, Mailbox};
+use crate::{Actor, ActorExitStatus, Command, Mailbox};
 
 struct TypedJsonObservable<A: Actor> {
     actor_instance_id: String,
     weak_mailbox: WeakMailbox<A>,
+    join_handle: ActorJoinHandle,
 }
 
 #[async_trait]
@@ -42,6 +45,8 @@ trait JsonObservable: Sync + Send {
     fn any(&self) -> &dyn Any;
     fn actor_instance_id(&self) -> &str;
     async fn observe(&self) -> Option<JsonValue>;
+    async fn quit(&self) -> Option<ActorExitStatus>;
+    async fn join(&self) -> Option<ActorExitStatus>;
 }
 
 #[async_trait]
@@ -63,6 +68,21 @@ impl<A: Actor> JsonObservable for TypedJsonObservable<A> {
         let oneshot_rx = mailbox.send_message_with_high_priority(Observe).ok()?;
         let state: <A as Actor>::ObservableState = oneshot_rx.await.ok()?;
         serde_json::to_value(&state).ok()
+    }
+
+    async fn quit(&self) -> Option<ActorExitStatus> {
+        let _ = self
+            .weak_mailbox
+            .upgrade()
+            .map(|mailbox| {
+                let _ = mailbox.send_message_with_high_priority(Command::Quit);
+            })
+            .unwrap();
+        self.join().await
+    }
+
+    async fn join(&self) -> Option<ActorExitStatus> {
+        self.join_handle.join().await
     }
 }
 
@@ -104,7 +124,7 @@ pub struct ActorObservation {
 }
 
 impl ActorRegistry {
-    pub fn register<A: Actor>(&self, mailbox: &Mailbox<A>) {
+    pub fn register<A: Actor>(&self, mailbox: &Mailbox<A>, join_handle: ActorJoinHandle) {
         let typed_id = TypeId::of::<A>();
         let actor_instance_id = mailbox.actor_instance_id().to_string();
         let weak_mailbox = mailbox.downgrade();
@@ -117,6 +137,7 @@ impl ActorRegistry {
             .push(Arc::new(TypedJsonObservable {
                 weak_mailbox,
                 actor_instance_id,
+                join_handle: join_handle,
             }));
     }
 
@@ -162,6 +183,24 @@ impl ActorRegistry {
             registry_for_type.gc();
         }
     }
+
+    pub async fn quit(&self) -> Vec<ActorExitStatus> {
+        let mut obs_futures = Vec::new();
+        for registry_for_type in self.actors.read().unwrap().values() {
+            for obs in &registry_for_type.observables {
+                if obs.is_disconnected() {
+                    continue;
+                }
+                let obs_clone = obs.clone();
+                obs_futures.push(async move { obs_clone.quit().await });
+            }
+        }
+        let res = future::join_all(obs_futures).await;
+        return res
+            .into_iter()
+            .filter_map(|s| s.map(|s| s.clone()))
+            .collect();
+    }
 }
 
 fn get_iter<A: Actor>(
@@ -179,6 +218,38 @@ fn get_iter<A: Actor>(
                 .flat_map(|weak_mailbox| weak_mailbox.upgrade())
         })
         .filter(|mailbox| !mailbox.is_disconnected())
+}
+
+/// This structure contains an optional exit handle. The handle is present
+/// until the join() method is called.
+#[derive(Clone)]
+pub(crate) struct ActorJoinHandle {
+    holder: Arc<Mutex<Option<JoinHandle<ActorExitStatus>>>>,
+}
+
+impl ActorJoinHandle {
+    pub(crate) fn new(join_handle: JoinHandle<ActorExitStatus>) -> Self {
+        ActorJoinHandle {
+            holder: Arc::new(Mutex::new(Some(join_handle))),
+        }
+    }
+
+    /// Joins the actor and returns its exit status on the frist invocation. 
+    /// Returns None afterwards.
+    pub(crate) async fn join(&self) -> Option<ActorExitStatus> {
+        let mut guard = self.holder.lock().await;
+        if let Some(join_handle) = guard.take() {
+            let exit_status = join_handle.await.unwrap_or_else(|join_err| {
+                if join_err.is_panic() {
+                    return ActorExitStatus::Panicked;
+                } else {
+                    return ActorExitStatus::Killed;
+                }
+            });
+            return Some(exit_status);
+        }
+        return None;
+    }
 }
 
 #[cfg(test)]

@@ -246,7 +246,7 @@ mod tests {
     use std::ops::RangeInclusive;
 
     use mockall::Sequence;
-    use quickwit_actors::Universe;
+    use quickwit_actors::{Universe, ActorExitStatus};
     use quickwit_config::RetentionPolicy;
     use quickwit_metastore::{IndexMetadata, MockMetastore, Split, SplitMetadata, SplitState};
 
@@ -406,6 +406,7 @@ mod tests {
                 ("d", Some("1 hour")),
             ]))
             .await?;
+        assert!(!universe.quit().await.into_iter().any(|s| matches!(s, ActorExitStatus::Panicked)));
 
         Ok(())
     }
@@ -426,7 +427,7 @@ mod tests {
 
         mock_metastore
             .expect_list_splits()
-            .times(2)
+            .times(2..=4)
             .returning(|query| {
                 assert_eq!(query.split_states, &[SplitState::Published]);
                 let splits = match query.index_id {
@@ -447,7 +448,7 @@ mod tests {
 
         mock_metastore
             .expect_mark_splits_for_deletion()
-            .times(1)
+            .times(1..=3)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "a");
                 assert_eq!(split_ids, ["split-1", "split-2"]);
@@ -466,6 +467,7 @@ mod tests {
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_execution_passes, 2);
         assert_eq!(counters.num_expired_splits, 2);
+        assert!(!universe.quit().await.into_iter().any(|s| matches!(s, ActorExitStatus::Panicked)));
 
         Ok(())
     }

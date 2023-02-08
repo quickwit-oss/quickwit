@@ -641,6 +641,7 @@ mod tests {
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1 + num_fails);
+        assert!(!universe.quit().await.into_iter().any(|s| matches!(s, ActorExitStatus::Panicked)));
         Ok(pipeline_exit_status.is_success())
     }
 
@@ -735,6 +736,7 @@ mod tests {
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1);
         assert_eq!(pipeline_statistics.num_published_splits, 1);
+        assert!(!universe.quit().await.into_iter().any(|s| matches!(s, ActorExitStatus::Panicked)));
         Ok(())
     }
 
