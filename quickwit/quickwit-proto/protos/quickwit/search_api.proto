@@ -47,7 +47,7 @@ service SearchService {
 
   // Root list terms API.
   // This RPC identifies the set of splits on which the query should run on,
-  // and dispatches the several calls to `LeafListTerm`.
+  // and dispatches the several calls to `LeafListTerms`.
   //
   // It is also in charge of merging back the results.
   rpc RootListTerms(ListTermsRequest) returns (ListTermsResponse);

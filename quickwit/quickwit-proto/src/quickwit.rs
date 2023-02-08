@@ -606,7 +606,7 @@ pub mod search_service_client {
         }
         /// Root list terms API.
         /// This RPC identifies the set of splits on which the query should run on,
-        /// and dispatches the several calls to `LeafListTerm`.
+        /// and dispatches the several calls to `LeafListTerms`.
         ///
         /// It is also in charge of merging back the results.
         pub async fn root_list_terms(
@@ -701,7 +701,7 @@ pub mod search_service_server {
         ) -> Result<tonic::Response<Self::LeafSearchStreamStream>, tonic::Status>;
         /// Root list terms API.
         /// This RPC identifies the set of splits on which the query should run on,
-        /// and dispatches the several calls to `LeafListTerm`.
+        /// and dispatches the several calls to `LeafListTerms`.
         ///
         /// It is also in charge of merging back the results.
         async fn root_list_terms(
