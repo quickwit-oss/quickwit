@@ -18,6 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_common::simple_list::SimpleList;
+use bytes::Bytes;
+use elasticsearch_dsl::Search;
+use serde::Deserialize;
 use warp::{Filter, Rejection};
 
 use super::api_specs::{
@@ -69,14 +72,37 @@ pub fn elastic_get_index_search_handler(
 /// POST api/_elastic/{index}/_search
 pub fn elastic_post_index_search_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_post_index_search_filter().then(
-        |index: SimpleList, params: SearchQueryParams| async move {
+    elastic_post_index_search_filter()
+    .and(warp::body::content_length_limit(1024 * 1024))
+    .and(warp::filters::body::bytes())
+    .then(
+        |index: SimpleList, params: SearchQueryParams, body: Bytes| async move {
+            use elasticsearch_dsl::Search;
+            let search = serde_json::from_slice::<Search>(&body)?;
+            let user_input_ast = elasticsearch_dsl_to_tantivy_query(search)?;
+
+            let err_str = match query {
+                Ok(qw) => {
+                    println!("EVAN {:?}", qw);
+                    None
+                },
+                Err(err) => Some(err.to_string()),
+            };
+
+            
+            
+            
             // TODO: implement
             let resp = serde_json::json!({
                 "index": index.0,
                 "params": params,
+                "error": err_str,
             });
             warp::reply::json(&resp)
         },
     )
+}
+
+fn elasticsearch_dsl_to_tantivy_query(search: Search) -> tantivy::UserInputAst {
+    todo!()
 }

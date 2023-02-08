@@ -108,6 +108,8 @@ prost-build = "0.11.6"
 prost-types = "0.11.6"
 pulsar = { git = "https://github.com/quickwit-oss/pulsar-rs.git", rev = "f9eff04", default-features = false, features = ["compression", "tokio-runtime", "auth-oauth2"] }
 quickwit_elastic_api_generation = { git = "https://github.com/quickwit-oss/elasticsearch-rs", rev = "c157b19" }
+# elasticsearch-dsl = { git = "https://github.com/evanxg852000/elasticsearch-dsl-rs", rev = "c0b973b"}
+elasticsearch-dsl = { path = "/home/evance/PROJECTS/elasticsearch-dsl-rs" }
 rand = "0.8"
 rand_distr = "0.4"
 rayon = "1"
