@@ -137,7 +137,7 @@ impl ActorRegistry {
             .push(Arc::new(TypedJsonObservable {
                 weak_mailbox,
                 actor_instance_id,
-                join_handle: join_handle,
+                join_handle,
             }));
     }
 
@@ -196,10 +196,7 @@ impl ActorRegistry {
             }
         }
         let res = future::join_all(obs_futures).await;
-        return res
-            .into_iter()
-            .filter_map(|s| s.map(|s| s.clone()))
-            .collect();
+        res.into_iter().flatten().collect()
     }
 }
 
@@ -234,21 +231,22 @@ impl ActorJoinHandle {
         }
     }
 
-    /// Joins the actor and returns its exit status on the frist invocation. 
+    /// Joins the actor and returns its exit status on the frist invocation.
     /// Returns None afterwards.
     pub(crate) async fn join(&self) -> Option<ActorExitStatus> {
         let mut guard = self.holder.lock().await;
         if let Some(join_handle) = guard.take() {
             let exit_status = join_handle.await.unwrap_or_else(|join_err| {
                 if join_err.is_panic() {
-                    return ActorExitStatus::Panicked;
+                    ActorExitStatus::Panicked
                 } else {
-                    return ActorExitStatus::Killed;
+                    ActorExitStatus::Killed
                 }
             });
-            return Some(exit_status);
+            Some(exit_status)
+        } else {
+            None
         }
-        return None;
     }
 }
 

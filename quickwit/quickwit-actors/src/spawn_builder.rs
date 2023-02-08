@@ -24,7 +24,7 @@ use tracing::{debug, error, info};
 
 use crate::envelope::Envelope;
 use crate::mailbox::{create_mailbox, Inbox};
-use crate::registry::{ActorRegistry, ActorJoinHandle};
+use crate::registry::{ActorJoinHandle, ActorRegistry};
 use crate::scheduler::{NoAdvanceTimeGuard, SchedulerClient};
 use crate::supervisor::Supervisor;
 use crate::{

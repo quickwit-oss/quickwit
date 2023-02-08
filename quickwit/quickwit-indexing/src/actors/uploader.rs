@@ -531,7 +531,11 @@ mod tests {
         let mut files = ram_storage.list_files().await;
         files.sort();
         assert_eq!(&files, &[PathBuf::from("test-split.split")]);
-        assert!(!universe.quit().await.into_iter().any(|s| matches!(s, ActorExitStatus::Panicked)));
+        assert!(!universe
+            .quit()
+            .await
+            .into_iter()
+            .any(|s| matches!(s, ActorExitStatus::Panicked)));
         Ok(())
     }
 
@@ -667,7 +671,11 @@ mod tests {
                 PathBuf::from("test-split-2.split")
             ]
         );
-        assert!(!universe.quit().await.into_iter().any(|s| matches!(s, ActorExitStatus::Panicked)));
+        assert!(!universe
+            .quit()
+            .await
+            .into_iter()
+            .any(|s| matches!(s, ActorExitStatus::Panicked)));
         Ok(())
     }
 
@@ -742,7 +750,11 @@ mod tests {
         assert_eq!(index_id, "test-index-no-sequencer");
         assert_eq!(new_splits.len(), 1);
         assert!(replaced_split_ids.is_empty());
-        assert!(!universe.quit().await.into_iter().any(|s| matches!(s, ActorExitStatus::Panicked)));
+        assert!(!universe
+            .quit()
+            .await
+            .into_iter()
+            .any(|s| matches!(s, ActorExitStatus::Panicked)));
         Ok(())
     }
 }
