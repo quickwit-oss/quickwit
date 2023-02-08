@@ -72,9 +72,8 @@ pub fn timestamp_field_reader(
         Type::Date => GenericFastFieldReader::Date(fast_field_readers.date(field_name)?),
         _ => {
             return Err(TantivyError::SchemaError(format!(
-                "Failed to build timestamp filter for field `{:?}`: expected I64 or Date type, \
-                 got `{:?}`.",
-                field_name, field_schema_type
+                "Failed to build timestamp filter for field `{field_name:?}`: expected I64 or \
+                 Date type, got `{field_schema_type:?}`."
             )))
         }
     };

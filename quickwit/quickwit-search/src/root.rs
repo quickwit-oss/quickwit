@@ -332,7 +332,7 @@ pub async fn root_list_terms(
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
-            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
     let schema = doc_mapper.schema();
@@ -403,7 +403,7 @@ pub async fn root_list_terms(
         error!(failed_splits = ?failed_splits, "Leaf search response contains at least one failed split.");
         let errors: String = failed_splits
             .iter()
-            .map(|splits| format!("{}", splits))
+            .map(|splits| splits.to_string())
             .collect::<Vec<_>>()
             .join(", ");
         return Err(SearchError::InternalError(errors));

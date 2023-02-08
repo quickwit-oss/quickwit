@@ -674,7 +674,7 @@ pub async fn leaf_list_terms(
         .into_iter()
         .map(|(split_id, err)| SplitSearchError {
             split_id,
-            error: format!("{}", err),
+            error: err.to_string(),
             retryable_error: true,
         })
         .collect();
