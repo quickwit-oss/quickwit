@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -211,7 +211,7 @@ pub enum SplitState {
 
 impl fmt::Display for SplitState {
     fn fmt(&self, f: &mut fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -236,7 +236,7 @@ impl FromStr for SplitState {
             "MarkedForDeletion" => SplitState::MarkedForDeletion,
             "ScheduledForDeletion" => SplitState::MarkedForDeletion, // Deprecated
             "New" => SplitState::Staged,                             // Deprecated
-            _ => return Err(format!("Unknown split state `{}`.", input)),
+            _ => return Err(format!("Unknown split state `{input}`.")),
         };
         Ok(split_state)
     }

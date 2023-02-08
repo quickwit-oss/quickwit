@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -44,8 +44,8 @@ impl From<u32> for ActorState {
             4 => ActorState::Failure,
             _ => {
                 panic!(
-                    "Found forbidden u32 value for ActorState `{}`. This should never happen.",
-                    actor_state_u32
+                    "Found forbidden u32 value for ActorState `{actor_state_u32}`. This should \
+                     never happen."
                 );
             }
         }

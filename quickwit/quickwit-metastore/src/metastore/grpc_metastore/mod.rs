@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -90,8 +90,7 @@ impl MetastoreGrpcClient {
         let underlying =
             MetastoreApiServiceClient::with_interceptor(channel, SpanContextInterceptor);
         let uri = QuickwitUri::from_well_formed(format!(
-            "{}:{}",
-            GRPC_METASTORE_BASE_URI, grpc_advertise_port
+            "{GRPC_METASTORE_BASE_URI}:{grpc_advertise_port}"
         ));
         Ok(Self {
             uri,

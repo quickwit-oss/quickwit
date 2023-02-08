@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -119,7 +119,7 @@ impl StorageDirectory {
 fn unsupported_operation(path: &Path) -> io::Error {
     let msg = "Unsupported operation. StorageDirectory only supports async reads";
     error!(path=?path, msg);
-    io::Error::new(io::ErrorKind::Other, format!("{}: {:?}", msg, path))
+    io::Error::new(io::ErrorKind::Other, format!("{msg}: {path:?}"))
 }
 
 impl Directory for StorageDirectory {

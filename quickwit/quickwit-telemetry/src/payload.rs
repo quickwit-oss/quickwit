@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -93,9 +93,9 @@ fn hashed_host_username() -> String {
         .map(|hostname| hostname.to_string_lossy().to_string())
         .unwrap_or_else(|_| "".to_string());
     let username = username::get_user_name().unwrap_or_else(|_| "".to_string());
-    let hashed_value = format!("{}:{}", hostname, username);
+    let hashed_value = format!("{hostname}:{username}");
     let digest = md5::compute(hashed_value.as_bytes());
-    format!("{:x}", digest)
+    format!("{digest:x}")
 }
 
 impl Default for ClientInformation {

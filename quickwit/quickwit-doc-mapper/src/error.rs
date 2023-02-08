@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -57,7 +57,7 @@ impl From<TantivyDocParsingError> for DocParsingError {
         match value {
             TantivyDocParsingError::InvalidJson(text) => DocParsingError::NoSuchFieldInSchema(text),
             TantivyDocParsingError::ValueError(text, error) => {
-                DocParsingError::ValueError(text, format!("{:?}", error))
+                DocParsingError::ValueError(text, format!("{error:?}"))
             }
         }
     }

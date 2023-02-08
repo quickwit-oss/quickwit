@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -38,7 +38,7 @@ impl QuickwitRestClient {
             .pool_idle_timeout(Duration::from_secs(30))
             .http2_only(true)
             .build_http();
-        let root_url = format!("http://{}", addr);
+        let root_url = format!("http://{addr}");
         Self { root_url, client }
     }
 

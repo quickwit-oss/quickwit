@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -69,8 +69,7 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
                 let snippet_opt: JsonValue =
                     serde_json::from_str(&snippet_json).map_err(|err| {
                         SearchError::InternalError(format!(
-                            "Failed to serialize snippet `{}` to JSON: `{}`.",
-                            snippet_json, err
+                            "Failed to serialize snippet `{snippet_json}` to JSON: `{err}`."
                         ))
                     })?;
                 snippets.push(snippet_opt);

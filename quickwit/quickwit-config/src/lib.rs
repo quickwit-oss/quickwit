@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -109,6 +109,14 @@ pub enum ConfigFormat {
 }
 
 impl ConfigFormat {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ConfigFormat::Json => "json",
+            ConfigFormat::Toml => "toml",
+            ConfigFormat::Yaml => "yaml",
+        }
+    }
+
     pub fn sniff_from_uri(uri: &Uri) -> anyhow::Result<ConfigFormat> {
         let extension_str: &str = uri.extension().with_context(|| {
             anyhow::anyhow!(

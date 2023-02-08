@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -257,7 +257,7 @@ async fn test_retryable_more_than_max_retry() {
             .collect::<Vec<_>>()
             .iter()
             .map(|index| MetastoreError::ConnectionError {
-                message: format!("{}", index),
+                message: format!("{index}"),
             })
             .collect::<Vec<_>>(),
     );

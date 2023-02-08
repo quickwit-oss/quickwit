@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -289,7 +289,7 @@ mod tests {
     const SCHEDULE_EXPR: &str = "hourly";
 
     fn make_index(index_id: &str, retention_period_opt: Option<&str>) -> IndexConfig {
-        let mut index = IndexConfig::for_test(index_id, &format!("ram://indexes/{}", index_id));
+        let mut index = IndexConfig::for_test(index_id, &format!("ram://indexes/{index_id}"));
         if let Some(retention_period) = retention_period_opt {
             index.retention_policy = Some(RetentionPolicy::new(
                 retention_period.to_string(),
@@ -440,7 +440,7 @@ mod tests {
                     "b" => {
                         vec![]
                     }
-                    unknown => panic!("Unknown index: `{}`.", unknown),
+                    unknown => panic!("Unknown index: `{unknown}`."),
                 };
                 Ok(splits)
             });

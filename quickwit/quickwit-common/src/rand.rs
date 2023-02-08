@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -28,7 +28,7 @@ pub fn append_random_suffix(string: &str) -> String {
         .take(5)
         .map(char::from)
         .collect();
-    format!("{}-{}", string, slug)
+    format!("{string}-{slug}")
 }
 
 #[cfg(test)]

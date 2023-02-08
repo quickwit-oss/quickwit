@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -719,7 +719,7 @@ mod tests {
             &Uri::from_well_formed("s3://my-index"),
         )
         .unwrap_err();
-        println!("{:?}", parsing_config_error);
+        println!("{parsing_config_error:?}");
         assert!(parsing_config_error
             .root_cause()
             .to_string()

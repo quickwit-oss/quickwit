@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -45,7 +45,7 @@ pub enum IngestApiError {
 impl From<io::Error> for IngestApiError {
     fn from(io_err: io::Error) -> Self {
         IngestApiError::IoError {
-            msg: format!("{:?}", io_err),
+            msg: format!("{io_err:?}"),
         }
     }
 }
