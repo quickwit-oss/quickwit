@@ -52,6 +52,19 @@ services:
     healthcheck:
       test: ["CMD", "pg_isready"]
 
+  pulsar-broker:
+    image: apachepulsar/pulsar:2.11.0
+    container_name: pulsar-broker
+    command: bin/pulsar standalone
+    ports:
+      - "6650:6650"
+      - "8081:8080"
+    environment:
+      PULSAR_MEM: " -Xms512m -Xmx512m -XX:MaxDirectMemorySize=2g"
+    profiles:
+      - all
+      - pulsar
+
   kafka-broker:
     image: confluentinc/cp-kafka:7.2.1
     container_name: kafka-broker
