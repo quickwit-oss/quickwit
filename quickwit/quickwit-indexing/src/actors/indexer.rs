@@ -735,7 +735,7 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
-            .times(2)
+            .times(1..=2)
             .returning(move |index_id| {
                 assert_eq!("test-index", index_id);
                 Ok(last_delete_opstamp)
