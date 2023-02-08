@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -25,7 +25,7 @@ fn search_thread_pool() -> &'static rayon::ThreadPool {
     static SEARCH_THREAD_POOL: OnceCell<rayon::ThreadPool> = OnceCell::new();
     SEARCH_THREAD_POOL.get_or_init(|| {
         rayon::ThreadPoolBuilder::new()
-            .thread_name(|thread_id| format!("quickwit-search-{}", thread_id))
+            .thread_name(|thread_id| format!("quickwit-search-{thread_id}"))
             .panic_handler(|_my_panic| {
                 error!("Task running in the quickwit search pool panicked.");
             })

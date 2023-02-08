@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -588,7 +588,7 @@ fn spawn_consumer_poll_loop(
         // will (re)join the group, wait for group rebalance, issue any registered rebalance_cb,
         // assign() the assigned partitions, and then start fetching messages.
         if let Err(error) = consumer.subscribe(&[&topic]) {
-            let _ = events_tx.send(KafkaEvent::Error(anyhow!(error)));
+            let _ = events_tx.blocking_send(KafkaEvent::Error(anyhow!(error)));
             return;
         }
         while !events_tx.is_closed() {
@@ -637,7 +637,7 @@ pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Res
     let cluster_metadata = spawn_blocking(move || {
         consumer
             .fetch_metadata(Some(&topic), timeout)
-            .with_context(|| format!("Failed to fetch metadata for topic `{}`.", topic))
+            .with_context(|| format!("Failed to fetch metadata for topic `{topic}`."))
     })
     .await??;
 
@@ -861,7 +861,7 @@ mod kafka_broker_tests {
     }
 
     fn key_fn(id: i32) -> String {
-        format!("Key {}", id)
+        format!("Key {id}")
     }
 
     fn get_source_config(topic: &str) -> (String, SourceConfig) {

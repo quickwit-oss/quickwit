@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -347,10 +347,10 @@ mod tests {
         for &timestamp in segment_timestamps {
             for num in 1..10 {
                 let doc = doc!(
-                    text_field => format!("timestamp is {}", timestamp),
+                    text_field => format!("timestamp is {timestamp}"),
                     timestamp_field => timestamp,
                     tag_str => "value",
-                    tag_many => format!("many-{}", num),
+                    tag_many => format!("many-{num}"),
                     tag_u64 => 42u64,
                     tag_i64 => -42i64,
                     tag_f64 => -42.02f64,

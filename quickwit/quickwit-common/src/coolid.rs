@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -96,7 +96,7 @@ pub fn new_coolid(name: &str) -> String {
         .take(4)
         .map(char::from)
         .collect();
-    format!("{}-{}-{}", name, adjective, slug)
+    format!("{name}-{adjective}-{slug}")
 }
 
 #[cfg(test)]

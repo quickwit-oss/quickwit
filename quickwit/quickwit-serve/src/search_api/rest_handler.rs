@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -368,7 +368,7 @@ async fn search_stream_endpoint(
                     // need to look at the logs to understand that.
                     tracing::error!(error=?error, "Error when streaming search results.");
                     let header_value_str =
-                        format!("Error when streaming search results: {:?}.", error);
+                        format!("Error when streaming search results: {error:?}.");
                     let header_value = HeaderValue::from_str(header_value_str.as_str())
                         .unwrap_or_else(|_| HeaderValue::from_static("Search stream error"));
                     let mut trailers = HeaderMap::new();

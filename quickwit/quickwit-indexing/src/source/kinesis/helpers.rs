@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -61,7 +61,7 @@ pub(crate) mod tests {
     }
 
     pub fn make_shard_id(id: usize) -> String {
-        format!("shardId-{:0>12}", id)
+        format!("shardId-{id:0>12}")
     }
 
     pub fn parse_shard_id<S: AsRef<str>>(shard_id: S) -> Option<usize> {

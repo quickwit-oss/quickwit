@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -284,7 +284,7 @@ impl IndexService {
         // that the indentifier is valid. However it authorizes the special
         // private names internal to quickwit, so we do an extra check.
         validate_identifier("Source ID", &source_id).map_err(|_| {
-            IndexServiceError::InvalidIdentifier(format!("Invalid source ID: `{}`", source_id))
+            IndexServiceError::InvalidIdentifier(format!("Invalid source ID: `{source_id}`"))
         })?;
         check_source_connectivity(&source_config)
             .await

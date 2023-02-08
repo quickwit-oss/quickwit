@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -29,14 +29,14 @@ use hyper::Uri;
 /// to this `SocketAddr`.
 pub async fn wait_for_server_ready(socket_addr: SocketAddr) -> anyhow::Result<()> {
     let mut num_attempts = 0;
-    let max_num_attempts = 5;
+    let max_num_attempts = 10;
     let uri = Uri::builder()
         .scheme("http")
         .authority(socket_addr.to_string().as_str())
         .path_and_query("/")
         .build()?;
     while num_attempts < max_num_attempts {
-        tokio::time::sleep(Duration::from_millis(20 * (num_attempts + 1))).await;
+        tokio::time::sleep(Duration::from_millis(50 * (num_attempts + 1))).await;
         let mut http = hyper::client::connect::HttpConnector::new();
         match http.call(uri.clone()).await {
             Ok(_) => break,

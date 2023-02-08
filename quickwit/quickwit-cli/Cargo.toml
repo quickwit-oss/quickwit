@@ -22,6 +22,7 @@ path = "src/generate_markdown.rs"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 atty = { workspace = true }
+bytes = { workspace = true }
 byte-unit = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
@@ -37,6 +38,7 @@ opentelemetry-jaeger = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 openssl-probe = { workspace = true, optional = true }
 regex = { workspace = true }
+reqwest = { workspace = true }
 serde_json = { workspace = true }
 tabled = { workspace = true }
 tempfile = { workspace = true }
@@ -53,6 +55,7 @@ tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 quickwit-actors = { workspace = true }
+quickwit-rest-client = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
@@ -72,6 +75,7 @@ predicates = { workspace = true }
 reqwest = { workspace = true }
 serial_test = { workspace = true }
 
+quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -133,8 +133,8 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
                 }
                 StorageResolverError::FailedToOpenStorage { kind, message } => {
                     MetastoreResolverError::FailedToOpenMetastore(MetastoreError::InternalError {
-                        message: format!("Failed to open metastore file `{}`.", uri),
-                        cause: format!("StorageError {:?}: {}.", kind, message),
+                        message: format!("Failed to open metastore file `{uri}`."),
+                        cause: format!("StorageError {kind:?}: {message}."),
                     })
                 }
             })?;

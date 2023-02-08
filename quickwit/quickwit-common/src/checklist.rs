@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -30,11 +30,7 @@ pub const BLUE_COLOR: Color = Color::TrueColor {
     b: 209,
 };
 
-pub const GREEN_COLOR: Color = Color::TrueColor {
-    r: 22,
-    g: 209,
-    b: 142,
-};
+pub const GREEN_COLOR: Color = Color::Green;
 pub const WHITE_COLOR: Color = Color::TrueColor {
     r: 255,
     g: 255,
@@ -61,7 +57,7 @@ pub fn print_checklist(check_list_results: &[(&str, anyhow::Result<()>)]) {
         } else {
             "✖".color(RED_COLOR) //𐄂
         };
-        eprintln!(" {} {}", outcome_symbol, check_item_name);
+        eprintln!(" {outcome_symbol} {check_item_name}");
         if let Err(check_item_err) = check_item_result {
             errors.push((check_item_name, check_item_err));
         }
@@ -78,7 +74,7 @@ pub fn print_checklist(check_list_results: &[(&str, anyhow::Result<()>)]) {
     for (check_item_name, check_item_err) in errors {
         eprintln!(
             "\n{}\n{:?}",
-            format!(" ✖ {}", check_item_name).color(RED_COLOR),
+            format!(" ✖ {check_item_name}").color(RED_COLOR),
             check_item_err
         );
     }
@@ -131,6 +127,6 @@ impl Display for ChecklistError {
                 )
             })
             .join("");
-        write!(f, "{}", err_string)
+        write!(f, "{err_string}")
     }
 }

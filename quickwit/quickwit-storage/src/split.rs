@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -144,7 +144,7 @@ impl SplitPayloadBuilder {
                 let file_name = PathBuf::from(path.file_name().ok_or_else(|| {
                     io::Error::new(
                         ErrorKind::InvalidInput,
-                        format!("could not extract file_name from path {:?}", path),
+                        format!("could not extract file_name from path {path:?}"),
                     )
                 })?);
                 Ok((file_name, range.start..range.end))

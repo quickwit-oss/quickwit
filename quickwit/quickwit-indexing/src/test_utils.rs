@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -148,7 +148,7 @@ impl TestSandbox {
             source_params: SourceParams::Vec(VecSourceParams {
                 docs,
                 batch_num_docs: 10,
-                partition: format!("add-docs-{}", add_docs_id),
+                partition: format!("add-docs-{add_docs_id}"),
             }),
             transform_config: None,
         };

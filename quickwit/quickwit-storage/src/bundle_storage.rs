@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -276,10 +276,10 @@ impl fmt::Debug for BundleStorage {
     }
 }
 
-fn unsupported_operation<'a>(paths: &[&'a Path]) -> StorageError {
+fn unsupported_operation(paths: &[&Path]) -> StorageError {
     let msg = "Unsupported operation. BundleStorage only supports async reads";
     error!(paths=?paths, msg);
-    io::Error::new(io::ErrorKind::Other, format!("{}: {:?}", msg, paths)).into()
+    io::Error::new(io::ErrorKind::Other, format!("{msg}: {paths:?}")).into()
 }
 
 #[cfg(test)]

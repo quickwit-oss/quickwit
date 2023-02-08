@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -238,11 +238,8 @@ mod tests {
             };
             while doc_batch.doc_lens.len() < batch_size {
                 add_doc(
-                    format!(
-                        "{:0>6} - The quick brown fox jumps over the lazy dog",
-                        doc_id
-                    )
-                    .as_bytes(),
+                    format!("{doc_id:0>6} - The quick brown fox jumps over the lazy dog")
+                        .as_bytes(),
                     &mut doc_batch,
                 );
                 doc_id += 1;

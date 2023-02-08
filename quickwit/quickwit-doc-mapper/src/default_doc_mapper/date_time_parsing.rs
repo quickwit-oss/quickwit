@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -190,7 +190,7 @@ mod tests {
             let parser = StrptimeParser::from_str(fmt).unwrap();
             let result = parser.parse_date_time(date_time_str);
             if let Err(error) = &result {
-                println!("Failed to parse: {} {} {}", date_time_str, fmt, error)
+                println!("Failed to parse: {date_time_str} {fmt} {error}")
             }
             assert_eq!(result.unwrap(), expected);
         }
