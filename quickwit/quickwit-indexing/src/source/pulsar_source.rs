@@ -382,17 +382,17 @@ fn msg_id_to_position(msg: &MessageIdData) -> Position {
         msg.ledger_id,
         msg.entry_id,
         msg.batch_index
-            .map(|v| format!("{:010}", v))
+            .map(|v| format!("{v:010}"))
             .unwrap_or_default(),
         msg.partition
             .and_then(|v| if v < 0 {
                 None
             } else {
-                Some(format!("{:010}", v))
+                Some(format!("{v:010}"))
             })
             .unwrap_or_default(),
         msg.batch_size
-            .map(|v| format!("{:010}", v))
+            .map(|v| format!("{v:010}"))
             .unwrap_or_default(),
     );
 
@@ -461,7 +461,7 @@ pub(crate) async fn check_connectivity(params: &PulsarSourceParams) -> anyhow::R
 }
 
 fn subscription_name(index_id: &str, source_id: &str) -> String {
-    format!("quickwit-{}-{}", index_id, source_id)
+    format!("quickwit-{index_id}-{source_id}")
 }
 
 #[cfg(all(test, feature = "pulsar-broker-tests"))]
