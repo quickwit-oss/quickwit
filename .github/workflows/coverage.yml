@@ -122,6 +122,9 @@ jobs:
       - name: Run Azurite service
         run: DOCKER_SERVICES=azurite make docker-compose-up
 
+      - name: Run Pulsar service
+        run: DOCKER_SERVICES=pulsar make docker-compose-up
+
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: 1.62

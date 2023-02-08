@@ -113,6 +113,7 @@ impl SourceConfig {
             SourceParams::Void(_) => "void",
             SourceParams::IngestApi => "ingest-api",
             SourceParams::IngestCli => "ingest-cli",
+            SourceParams::Pulsar(_) => "pulsar",
         }
     }
 
@@ -126,6 +127,7 @@ impl SourceConfig {
             SourceParams::Void(params) => serde_json::to_value(params),
             SourceParams::IngestApi => serde_json::to_value(()),
             SourceParams::IngestCli => serde_json::to_value(()),
+            SourceParams::Pulsar(params) => serde_json::to_value(params),
         }
         .unwrap()
     }
@@ -205,6 +207,8 @@ pub enum SourceParams {
     Kafka(KafkaSourceParams),
     #[serde(rename = "kinesis")]
     Kinesis(KinesisSourceParams),
+    #[serde(rename = "pulsar")]
+    Pulsar(PulsarSourceParams),
     #[serde(rename = "vec")]
     Vec(VecSourceParams),
     #[serde(rename = "void")]
@@ -345,6 +349,37 @@ pub struct VecSourceParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PulsarSourceParams {
+    /// List of the topics that the source consumes.
+    pub topics: Vec<String>,
+    /// The connection URI for pulsar.
+    pub address: String,
+    #[schema(default = "quickwit")]
+    #[serde(default = "default_consumer_name")]
+    /// The name to register with the pulsar source.
+    pub consumer_name: String,
+    /// Authentication for pulsar.
+    pub authentication: Option<PulsarSourceAuth>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PulsarSourceAuth {
+    Token(String),
+    Oauth2 {
+        issuer_url: String,
+        credentials_url: String,
+        audience: Option<String>,
+        scope: Option<String>,
+    },
+}
+
+fn default_consumer_name() -> String {
+    "quickwit".to_string()
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
