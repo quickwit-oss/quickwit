@@ -27,9 +27,9 @@ use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse,
-    LeafSearchStreamRequest, LeafSearchStreamResponse, SearchRequest, SearchResponse,
-    SearchStreamRequest,
+    FetchDocsRequest, FetchDocsResponse, LeafListTermsRequest, LeafListTermsResponse,
+    LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest, LeafSearchStreamResponse,
+    ListTermsRequest, ListTermsResponse, SearchRequest, SearchResponse, SearchStreamRequest,
 };
 use quickwit_storage::{Cache, MemorySizedCache, QuickwitCache, StorageUriResolver};
 use tokio::sync::Semaphore;
@@ -37,7 +37,10 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
 use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::{fetch_docs, leaf_search, root_search, ClusterClient, SearchError, SearchJobPlacer};
+use crate::{
+    fetch_docs, leaf_list_terms, leaf_search, root_list_terms, root_search, ClusterClient,
+    SearchError, SearchJobPlacer,
+};
 
 #[derive(Clone)]
 /// The search service implementation.
@@ -89,6 +92,25 @@ pub trait SearchService: 'static + Send + Sync {
         &self,
         request: LeafSearchStreamRequest,
     ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>>>;
+
+    /// Root search API.
+    /// This RPC identifies the set of splits on which the query should run on,
+    /// and dispatches the multiple calls to `LeafSearch`.
+    ///
+    /// It is also in charge of merging back the responses.
+    async fn root_list_terms(&self, request: ListTermsRequest) -> crate::Result<ListTermsResponse>;
+
+    /// Performs a leaf search on a given set of splits.
+    ///
+    /// It is like a regular search except that:
+    /// - the node should perform the search locally instead of dispatching
+    /// it to other nodes.
+    /// - it should be applied on the given subset of splits
+    /// - hit content is not fetched, and we instead return a so-called `PartialHit`.
+    async fn leaf_list_terms(
+        &self,
+        request: LeafListTermsRequest,
+    ) -> crate::Result<LeafListTermsResponse>;
 }
 
 impl SearchServiceImpl {
@@ -215,6 +237,46 @@ impl SearchService for SearchServiceImpl {
         )
         .await;
         Ok(leaf_receiver)
+    }
+
+    async fn root_list_terms(
+        &self,
+        list_terms_request: ListTermsRequest,
+    ) -> crate::Result<ListTermsResponse> {
+        let search_result = root_list_terms(
+            &list_terms_request,
+            self.metastore.as_ref(),
+            &self.cluster_client,
+            &self.search_job_placer,
+        )
+        .await?;
+
+        Ok(search_result)
+    }
+
+    async fn leaf_list_terms(
+        &self,
+        leaf_search_request: LeafListTermsRequest,
+    ) -> crate::Result<LeafListTermsResponse> {
+        let search_request = leaf_search_request
+            .list_terms_request
+            .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
+        info!(index=?search_request.index_id, splits=?leaf_search_request.split_offsets,
+         "leaf_search");
+        let storage = self
+            .storage_uri_resolver
+            .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))?;
+        let split_ids = leaf_search_request.split_offsets;
+
+        let leaf_search_response = leaf_list_terms(
+            self.searcher_context.clone(),
+            &search_request,
+            storage.clone(),
+            &split_ids[..],
+        )
+        .await?;
+
+        Ok(leaf_search_response)
     }
 }
 

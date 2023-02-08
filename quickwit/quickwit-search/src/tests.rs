@@ -1283,3 +1283,129 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn test_single_node_list() -> anyhow::Result<()> {
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+              - name: url
+                type: text
+              - name: binary
+                type: bytes
+        "#;
+    let test_sandbox =
+        TestSandbox::create("single-node-list-1", doc_mapping_yaml, "{}", &["body"]).await?;
+    let docs = vec![
+        json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy", "binary": "dGhpcyBpcyBhIHRlc3Qu"}),
+        json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="}),
+    ];
+    test_sandbox.add_documents(docs).await.unwrap();
+
+    let splits = test_sandbox
+        .metastore()
+        .list_all_splits(test_sandbox.index_id())
+        .await
+        .unwrap();
+    let splits_offsets: Vec<_> = splits
+        .into_iter()
+        .map(|split_meta| SplitIdAndFooterOffsets {
+            split_id: split_meta.split_id().to_string(),
+            split_footer_start: split_meta.split_metadata.footer_offsets.start,
+            split_footer_end: split_meta.split_metadata.footer_offsets.end,
+        })
+        .collect();
+    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
+
+    {
+        let request = quickwit_proto::ListTermsRequest {
+            index_id: test_sandbox.index_id().to_string(),
+            field: "title".to_string(),
+            start_key: None,
+            end_key: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: Some(100),
+        };
+        let search_response = leaf_list_terms(
+            searcher_context.clone(),
+            &request,
+            test_sandbox.storage(),
+            &splits_offsets,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            search_response.terms,
+            ["\"beagle\"".to_string(), "\"snoopy\"".to_string()]
+        );
+    }
+
+    {
+        let request = quickwit_proto::ListTermsRequest {
+            index_id: test_sandbox.index_id().to_string(),
+            field: "title".to_string(),
+            start_key: None,
+            end_key: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: Some(1),
+        };
+        let search_response = leaf_list_terms(
+            searcher_context.clone(),
+            &request,
+            test_sandbox.storage(),
+            &splits_offsets,
+        )
+        .await
+        .unwrap();
+        assert_eq!(search_response.terms, ["\"beagle\"".to_string()]);
+    }
+
+    {
+        let request = quickwit_proto::ListTermsRequest {
+            index_id: test_sandbox.index_id().to_string(),
+            field: "title".to_string(),
+            start_key: Some("\"casper\"".to_string()),
+            end_key: None,
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: Some(100),
+        };
+        let search_response = leaf_list_terms(
+            searcher_context.clone(),
+            &request,
+            test_sandbox.storage(),
+            &splits_offsets,
+        )
+        .await
+        .unwrap();
+        assert_eq!(search_response.terms, ["\"snoopy\"".to_string()]);
+    }
+
+    {
+        let request = quickwit_proto::ListTermsRequest {
+            index_id: test_sandbox.index_id().to_string(),
+            field: "title".to_string(),
+            start_key: None,
+            end_key: Some("\"casper\"".to_string()),
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: Some(100),
+        };
+        let search_response = leaf_list_terms(
+            searcher_context.clone(),
+            &request,
+            test_sandbox.storage(),
+            &splits_offsets,
+        )
+        .await
+        .unwrap();
+        assert_eq!(search_response.terms, ["\"beagle\"".to_string()]);
+    }
+
+    Ok(())
+}

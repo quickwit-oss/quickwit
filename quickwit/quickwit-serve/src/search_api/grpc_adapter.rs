@@ -94,4 +94,26 @@ impl grpc::SearchService for GrpcSearchAdapter {
             .map_err(|err| err.grpc_error());
         Ok(tonic::Response::new(Box::pin(leaf_search_result)))
     }
+
+    #[instrument(skip(self, request))]
+    async fn root_list_terms(
+        &self,
+        request: tonic::Request<quickwit_proto::ListTermsRequest>,
+    ) -> Result<tonic::Response<quickwit_proto::ListTermsResponse>, tonic::Status> {
+        set_parent_span_from_request_metadata(request.metadata());
+        let search_request = request.into_inner();
+        let search_res = self.0.root_list_terms(search_request).await;
+        convert_to_grpc_result(search_res)
+    }
+
+    #[instrument(skip(self, request))]
+    async fn leaf_list_terms(
+        &self,
+        request: tonic::Request<quickwit_proto::LeafListTermsRequest>,
+    ) -> Result<tonic::Response<quickwit_proto::LeafListTermsResponse>, tonic::Status> {
+        set_parent_span_from_request_metadata(request.metadata());
+        let leaf_search_request = request.into_inner();
+        let leaf_search_res = self.0.leaf_list_terms(leaf_search_request).await;
+        convert_to_grpc_result(leaf_search_res)
+    }
 }

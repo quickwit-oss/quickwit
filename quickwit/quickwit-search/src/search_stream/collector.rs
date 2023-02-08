@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::{Column, FastValue};
-use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
+use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 
 use crate::filters::{TimestampFilter, TimestampFilterBuilder};
 
@@ -247,10 +247,7 @@ mod helpers {
         segment_reader: &SegmentReader,
         fast_field_to_collect: &str,
     ) -> tantivy::Result<Arc<dyn Column<T>>> {
-        let field = segment_reader
-            .schema()
-            .get_field(fast_field_to_collect)
-            .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
+        let field = segment_reader.schema().get_field(fast_field_to_collect)?;
         let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
         let bytes = fast_field_slice.read_bytes()?;
         let column = fastfield_codecs::open(bytes)?;

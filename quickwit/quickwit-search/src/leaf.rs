@@ -19,6 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io;
+use std::ops::Bound;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -30,14 +31,15 @@ use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, WarmupInfo, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_proto::{
-    LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError,
+    LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, SearchRequest,
+    SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_storage::{
     wrap_storage_with_long_term_cache, BundleStorage, MemorySizedCache, OwnedBytes, Storage,
 };
 use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
-use tantivy::schema::{Cardinality, Field, FieldType};
+use tantivy::schema::{Cardinality, Field, FieldType, Type, Value as TantivyValue};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 use tracing::*;
@@ -457,5 +459,231 @@ pub async fn leaf_search(
             error: format!("{err}"),
             retryable_error: true,
         }));
+    Ok(merged_search_response)
+}
+
+/// Apply a leaf list terms on a single split.
+#[instrument(skip(searcher_context, search_request, storage, split))]
+async fn leaf_list_terms_single_split(
+    searcher_context: &Arc<SearcherContext>,
+    search_request: &ListTermsRequest,
+    storage: Arc<dyn Storage>,
+    split: SplitIdAndFooterOffsets,
+) -> crate::Result<LeafListTermsResponse> {
+    let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
+    let split_schema = index.schema();
+    let reader = index
+        .reader_builder()
+        .reload_policy(ReloadPolicy::Manual)
+        .try_into()?;
+    let searcher = reader.searcher();
+
+    let field = split_schema
+        .get_field(&search_request.field)
+        .with_context(|| {
+            format!(
+                "Couldn't get field named {:?} from schema.",
+                search_request.field
+            )
+        })?;
+
+    let field_type = split_schema.get_field_entry(field).field_type();
+    let start_term: Option<Term> = search_request
+        .start_key
+        .as_ref()
+        .map(|term| value_from_json(field, field_type, term))
+        .transpose()?;
+    let end_term: Option<Term> = search_request
+        .end_key
+        .as_ref()
+        .map(|term| value_from_json(field, field_type, term))
+        .transpose()?;
+
+    let mut segment_results = Vec::new();
+    for segment_reader in searcher.segment_readers() {
+        let inverted_index = segment_reader.inverted_index(field)?.clone();
+        let dict = inverted_index.terms();
+        dict.file_slice_for_range(
+            (
+                start_term
+                    .as_ref()
+                    .map(Term::value_bytes)
+                    .map(Bound::Included)
+                    .unwrap_or(Bound::Unbounded),
+                end_term
+                    .as_ref()
+                    .map(Term::value_bytes)
+                    .map(Bound::Excluded)
+                    .unwrap_or(Bound::Unbounded),
+            ),
+            search_request.max_hits,
+        )
+        .read_bytes_async()
+        .await
+        .with_context(|| "Failed to load sstable range")?;
+
+        let mut range = dict.range();
+        if let Some(limit) = search_request.max_hits {
+            range = range.limit(limit);
+        }
+        if let Some(start_term) = start_term.as_ref() {
+            range = range.ge(start_term.value_bytes())
+        }
+        if let Some(end_term) = end_term.as_ref() {
+            range = range.lt(end_term.value_bytes())
+        }
+        let mut stream = range
+            .into_stream()
+            .with_context(|| "Failed to create stream over sstable")?;
+        let mut segment_result: Vec<String> =
+            Vec::with_capacity(search_request.max_hits.unwrap_or(0) as usize);
+        while stream.advance() {
+            segment_result.push(value_to_json(field, field_type, stream.key())?);
+        }
+        segment_results.push(segment_result);
+    }
+
+    let merged_iter = segment_results.into_iter().kmerge().dedup();
+    let merged_results: Vec<String> = if let Some(limit) = search_request.max_hits {
+        merged_iter.take(limit as usize).collect()
+    } else {
+        merged_iter.collect()
+    };
+
+    Ok(LeafListTermsResponse {
+        num_hits: merged_results.len() as u64,
+        terms: merged_results,
+        num_attempted_splits: 1,
+        failed_splits: Vec::new(),
+    })
+}
+
+fn value_from_json(field: Field, field_type: &FieldType, json: &str) -> crate::Result<Term> {
+    let json = serde_json::from_str(json)?;
+    let value = field_type
+        .value_from_json(json)
+        .map_err(|_| SearchError::InvalidQuery("term doesn't match field type".to_string()))?;
+    let term = match value {
+        TantivyValue::Str(s) => Term::from_field_text(field, &s),
+        TantivyValue::PreTokStr(s) => Term::from_field_text(field, &s.text),
+        TantivyValue::U64(number) => Term::from_field_u64(field, number),
+        TantivyValue::I64(number) => Term::from_field_i64(field, number),
+        TantivyValue::F64(number) => Term::from_field_f64(field, number),
+        TantivyValue::Bool(b) => Term::from_field_bool(field, b),
+        TantivyValue::Date(date) => Term::from_field_date(field, date),
+        TantivyValue::Facet(facet) => Term::from_facet(field, &facet),
+        TantivyValue::Bytes(bytes) => Term::from_field_bytes(field, &bytes),
+        TantivyValue::IpAddr(ip) => Term::from_field_ip_addr(field, ip),
+        TantivyValue::JsonObject(_) => {
+            return Err(SearchError::InvalidQuery(
+                "listing JSON field isn't supported yet".to_string(),
+            ))
+        }
+    };
+    Ok(term)
+}
+
+fn value_to_json(
+    field: Field,
+    field_type: &FieldType,
+    field_value: &[u8],
+) -> crate::Result<String> {
+    // TODO use sortable base64 (alphabet = "+/0..9A..Za..z", not padding) to make result sortable
+    // independantly of type
+    use serde_json::Value as JsonValue;
+
+    let mut term = Term::from_field_bool(field, false);
+    term.clear_with_type(field_type.value_type());
+    term.append_bytes(field_value);
+    let json: Option<JsonValue> = match field_type.value_type() {
+        Type::Str => term.as_str().map(|s| s.into()),
+        // json doesn't keep numbers sorted (1 < 10 < 2)
+        // Type::U64 => term.as_u64().map(|number| number.into()),
+        // Type::I64 => term.as_i64().map(|number| number.into()),
+        // Type::F64 => term.as_f64().map(|number| number.into()),
+        Type::U64 | Type::I64 | Type::F64 => None,
+        Type::Bool => term.as_bool().map(|b| b.into()),
+        Type::IpAddr => None, // no getter yet?
+        Type::Bytes | Type::Date | Type::Facet | Type::Json => None,
+    };
+    let Some(json) = json else {
+        return Err(SearchError::InvalidQuery("Unsupported field type".to_string()));
+    };
+
+    serde_json::to_string(&json)
+        .map_err(|_| SearchError::InternalError("failed to serialize term".to_string()))
+}
+
+/// `leaf` step of list terms.
+pub async fn leaf_list_terms(
+    searcher_context: Arc<SearcherContext>,
+    request: &ListTermsRequest,
+    index_storage: Arc<dyn Storage>,
+    splits: &[SplitIdAndFooterOffsets],
+) -> Result<LeafListTermsResponse, SearchError> {
+    let leaf_search_single_split_futures: Vec<_> = splits
+        .iter()
+        .map(|split| {
+            let index_storage_clone = index_storage.clone();
+            let searcher_context_clone = searcher_context.clone();
+            async move {
+                let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore
+                    .acquire()
+                    .await
+                    .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+                // TODO dedicated counter and timer?
+                crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
+                let timer = crate::SEARCH_METRICS
+                    .leaf_search_split_duration_secs
+                    .start_timer();
+                let leaf_search_single_split_res = leaf_list_terms_single_split(
+                    &searcher_context_clone,
+                    request,
+                    index_storage_clone,
+                    split.clone(),
+                )
+                .await;
+                timer.observe_duration();
+                leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
+            }
+        })
+        .collect();
+
+    let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
+
+    let (split_search_responses, errors): (Vec<LeafListTermsResponse>, Vec<(String, SearchError)>) =
+        split_search_results
+            .into_iter()
+            .partition_map(|split_search_res| match split_search_res {
+                Ok(split_search_resp) => Either::Left(split_search_resp),
+                Err(err) => Either::Right(err),
+            });
+
+    let merged_iter = split_search_responses
+        .into_iter()
+        .map(|leaf_search_response| leaf_search_response.terms)
+        .kmerge()
+        .dedup();
+    let terms: Vec<String> = if let Some(limit) = request.max_hits {
+        merged_iter.take(limit as usize).collect()
+    } else {
+        merged_iter.collect()
+    };
+
+    let failed_splits = errors
+        .into_iter()
+        .map(|(split_id, err)| SplitSearchError {
+            split_id,
+            error: err.to_string(),
+            retryable_error: true,
+        })
+        .collect();
+    let merged_search_response = LeafListTermsResponse {
+        num_hits: terms.len() as u64,
+        terms,
+        num_attempted_splits: splits.len() as u64,
+        failed_splits,
+    };
+
     Ok(merged_search_response)
 }

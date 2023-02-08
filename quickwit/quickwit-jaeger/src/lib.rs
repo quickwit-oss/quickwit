@@ -44,7 +44,7 @@ use quickwit_proto::jaeger::storage::v1::{
     GetOperationsResponse, GetServicesRequest, GetServicesResponse, GetTraceRequest, Operation,
     SpansResponseChunk, TraceQueryParameters,
 };
-use quickwit_proto::SearchRequest;
+use quickwit_proto::{ListTermsRequest, SearchRequest};
 use quickwit_search::SearchService;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -99,38 +99,32 @@ impl JaegerService {
         debug!(request=?request, "`get_services` request");
 
         let index_id = TRACE_INDEX_ID.to_string();
-        let query = "*".to_string();
-        let max_hits = 1_000;
-        let start_timestamp =
-            Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
+        let max_hits = Some(1_000);
+        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
 
-        let search_request = SearchRequest {
+        let search_request = ListTermsRequest {
             index_id,
-            query,
+            field: "service_name".to_owned(),
             max_hits,
             start_timestamp,
             end_timestamp: None,
-            search_fields: Vec::new(),
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
+            start_key: None,
+            end_key: None,
         };
-        let search_response = self.search_service.root_search(search_request).await?;
+        let search_response = self.search_service.root_list_terms(search_request).await?;
         let services: Vec<String> = search_response
-            .hits
+            .terms
             .into_iter()
-            .map(|hit| {
-                serde_json::from_str::<JsonValue>(&hit.json)
+            .map(|term| {
+                serde_json::from_str::<JsonValue>(&term)
                     .expect("Failed to deserialize hit. This should never happen!")
+                    .as_str()
+                    .expect("Expected string term")
+                    .to_string()
             })
-            .flat_map(extract_service_name)
-            .sorted()
-            .dedup()
             .collect();
-        debug!(services=?services, "`get_services` response");
         let response = GetServicesResponse { services };
+        debug!(response=?response, "`get_services` response");
         Ok(response)
     }
 
@@ -522,13 +516,6 @@ impl SpanReaderPlugin for JaegerService {
         self.get_trace_inner(request.into_inner(), "get_trace", Instant::now())
             .await
             .map(Response::new)
-    }
-}
-
-fn extract_service_name(mut doc: JsonValue) -> Option<String> {
-    match doc["service_name"].take() {
-        JsonValue::String(service_name) => Some(service_name),
-        _ => None,
     }
 }
 
@@ -1809,5 +1796,36 @@ mod tests {
             );
             assert_eq!(span_timestamps_range, 1674611388..=1674611393);
         }
+    }
+
+    #[tokio::test]
+    async fn test_get_service() {
+        let mut service = quickwit_search::MockSearchService::new();
+        service
+            .expect_root_list_terms()
+            .withf(|req| {
+                req.index_id == "otel-trace-v0"
+                    && req.field == "service_name"
+                    && req.start_timestamp.is_some()
+            })
+            .return_once(|_| {
+                Ok(quickwit_proto::ListTermsResponse {
+                    num_hits: 5,
+                    terms: vec![
+                        "\"service1\"".to_string(),
+                        "\"service2\"".to_string(),
+                        "\"service3\"".to_string(),
+                    ],
+                    elapsed_time_micros: 0,
+                    errors: Vec::new(),
+                })
+            });
+
+        let service = Arc::new(service);
+        let jaeger = JaegerService::new(JaegerConfig::default(), service);
+
+        let request = tonic::Request::new(crate::GetServicesRequest {});
+        let result = jaeger.get_services(request).await.unwrap();
+        assert_eq!(result.get_ref().services.len(), 3);
     }
 }
