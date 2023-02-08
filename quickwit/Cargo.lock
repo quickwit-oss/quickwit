@@ -4897,6 +4897,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-query"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "elasticsearch-dsl",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "quickwit-rest-client"
 version = "0.4.0"
 dependencies = [
@@ -4995,6 +5005,7 @@ dependencies = [
  "quickwit-metastore",
  "quickwit-opentelemetry",
  "quickwit-proto",
+ "quickwit-query",
  "quickwit-search",
  "quickwit-storage",
  "quickwit_elastic_api_generation",

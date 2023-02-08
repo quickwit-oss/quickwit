@@ -167,7 +167,7 @@ pub struct SearchRequestQueryString {
     pub sort_by_field: Option<SortByField>,
 }
 
-fn get_proto_search_by(search_request: &SearchRequestQueryString) -> (Option<i32>, Option<String>) {
+pub fn get_proto_search_by(search_request: &SearchRequestQueryString) -> (Option<i32>, Option<String>) {
     if let Some(sort_by_field) = &search_request.sort_by_field {
         (
             Some(sort_by_field.order as i32),

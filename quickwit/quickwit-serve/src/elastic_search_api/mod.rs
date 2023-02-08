@@ -20,6 +20,9 @@
 mod api_specs;
 mod rest_handler;
 
+use std::sync::Arc;
+
+use quickwit_search::SearchService;
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
@@ -33,11 +36,12 @@ use self::rest_handler::{
 /// This is where all newly supported Elasticsearch handlers
 /// should be registered.
 pub fn elastic_api_handlers(
+    search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_get_search_handler()
         .or(elastic_post_search_handler())
         .or(elastic_get_index_search_handler())
-        .or(elastic_post_index_search_handler())
+        .or(elastic_post_index_search_handler(search_service))
     // Register newly created handlers here.
 }
 
