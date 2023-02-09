@@ -504,17 +504,44 @@ impl Metastore for FileBackedMetastore {
     }
 
     async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
-        let per_index_metastores_rlock = self.per_index_metastores.read().await;
-        try_join_all(
+        // Done in two steps:
+        // 1) Get index IDs and release the lock on `per_index_metastores`.
+        // 2) Get each index metadata. Note that each get will take a read lock on
+        // `per_index_metastores`. Lock is released in 1) to let a concurrent task/thread to
+        // take a write lock on `per_index_metastores`.
+        let index_ids: Vec<String> = {
+            let per_index_metastores_rlock = self.per_index_metastores.read().await;
             per_index_metastores_rlock
                 .iter()
-                .filter_map(|(index_id, index_state)| match index_state {
+                .flat_map(|(index_id, index_state)| match index_state {
                     IndexState::Alive(_) => Some(index_id),
                     _ => None,
                 })
-                .map(|index_id| self.index_metadata(index_id)),
-        )
-        .await
+                .cloned()
+                .collect()
+        };
+        let indexes_metadatas: Vec<IndexMetadata> =
+            try_join_all(index_ids.iter().map(|index_id| async move {
+                match self.index_metadata(index_id).await {
+                    Ok(index_metadata) => Ok(Some(index_metadata)),
+                    Err(MetastoreError::IndexDoesNotExist { index_id: _ }) => Ok(None),
+                    Err(MetastoreError::InternalError { message, cause }) => {
+                        // Indexes can be in a transition state `Creating` or `Deleting`.
+                        // This is fine to ignore them.
+                        if cause.contains("is in transitioning state") {
+                            Ok(None)
+                        } else {
+                            Err(MetastoreError::InternalError { message, cause })
+                        }
+                    }
+                    Err(error) => Err(error),
+                }
+            }))
+            .await?
+            .into_iter()
+            .flatten()
+            .collect();
+        Ok(indexes_metadatas)
     }
 
     fn uri(&self) -> &Uri {
@@ -917,6 +944,43 @@ mod tests {
 
         // Make sure that all 20 splits are in `Published` state.
         assert_eq!(splits.len(), 20);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn test_file_backed_metastore_list_indexes_metadata_race_condition() {
+        let metastore = Arc::new(FileBackedMetastore::default_for_test().await);
+        let mut index_ids = Vec::new();
+        for idx in 0..10 {
+            let index_id = format!("test-index-{}", idx);
+            let index_config = IndexConfig::for_test(&index_id, "ram:///indexes/test-index");
+            metastore.create_index(index_config).await.unwrap();
+            index_ids.push(index_id);
+        }
+        // Delete indexes + call to list_indexes_metadata.
+        let mut handles = Vec::new();
+        for index_id in index_ids {
+            {
+                let metastore = metastore.clone();
+                let handle = tokio::spawn(async move {
+                    metastore.list_indexes_metadatas().await.unwrap();
+                });
+                handles.push(handle);
+            }
+            {
+                let metastore = metastore.clone();
+                let handle = tokio::spawn(async move {
+                    metastore.delete_index(&index_id).await.unwrap();
+                });
+                handles.push(handle);
+            }
+        }
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            futures::future::try_join_all(handles),
+        )
+        .await
+        .unwrap()
+        .unwrap();
     }
 
     #[tokio::test]
