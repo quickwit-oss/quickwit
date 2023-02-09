@@ -269,7 +269,7 @@ pub struct ListTermsResponse {
     /// Number of hits matching the query.
     #[prost(uint64, tag = "1")]
     pub num_hits: u64,
-    /// Matched hits
+    /// Matched hits, encoded in sortable base64
     #[prost(string, repeated, tag = "2")]
     pub terms: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Elapsed time to perform the request. This time is measured
@@ -303,7 +303,7 @@ pub struct LeafListTermsResponse {
     /// Total number of documents matched by the query.
     #[prost(uint64, tag = "1")]
     pub num_hits: u64,
-    /// List of the first K terms the given leaf query.
+    /// List of the first K terms the given leaf query, encoded in sortable base64.
     #[prost(string, repeated, tag = "2")]
     pub terms: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.

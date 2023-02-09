@@ -39,7 +39,7 @@ use quickwit_storage::{
 };
 use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
-use tantivy::schema::{Cardinality, Field, FieldType, Type, Value as TantivyValue};
+use tantivy::schema::{Cardinality, Field, FieldType, Value as TantivyValue};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 use tracing::*;
@@ -538,7 +538,7 @@ async fn leaf_list_terms_single_split(
         let mut segment_result: Vec<String> =
             Vec::with_capacity(search_request.max_hits.unwrap_or(0) as usize);
         while stream.advance() {
-            segment_result.push(value_to_json(field, field_type, stream.key())?);
+            segment_result.push(value_to_base64(field, field_type, stream.key())?);
         }
         segment_results.push(segment_result);
     }
@@ -583,35 +583,16 @@ fn value_from_json(field: Field, field_type: &FieldType, json: &str) -> crate::R
     Ok(term)
 }
 
-fn value_to_json(
+fn value_to_base64(
     field: Field,
     field_type: &FieldType,
     field_value: &[u8],
 ) -> crate::Result<String> {
-    // TODO use sortable base64 (alphabet = "+/0..9A..Za..z", not padding) to make result sortable
-    // independantly of type
-    use serde_json::Value as JsonValue;
-
     let mut term = Term::from_field_bool(field, false);
     term.clear_with_type(field_type.value_type());
     term.append_bytes(field_value);
-    let json: Option<JsonValue> = match field_type.value_type() {
-        Type::Str => term.as_str().map(|s| s.into()),
-        // json doesn't keep numbers sorted (1 < 10 < 2)
-        // Type::U64 => term.as_u64().map(|number| number.into()),
-        // Type::I64 => term.as_i64().map(|number| number.into()),
-        // Type::F64 => term.as_f64().map(|number| number.into()),
-        Type::U64 | Type::I64 | Type::F64 => None,
-        Type::Bool => term.as_bool().map(|b| b.into()),
-        Type::IpAddr => None, // no getter yet?
-        Type::Bytes | Type::Date | Type::Facet | Type::Json => None,
-    };
-    let Some(json) = json else {
-        return Err(SearchError::InvalidQuery("Unsupported field type".to_string()));
-    };
 
-    serde_json::to_string(&json)
-        .map_err(|_| SearchError::InternalError("failed to serialize term".to_string()))
+    Ok(crate::encode_sortable_b64(term.as_slice()))
 }
 
 /// `leaf` step of list terms.
