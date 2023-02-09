@@ -482,7 +482,7 @@ mod pulsar_broker_tests {
     use super::*;
     use crate::new_split_id;
     use crate::source::pulsar_source::{msg_id_from_position, msg_id_to_position};
-    use crate::source::quickwit_supported_sources;
+    use crate::source::{quickwit_supported_sources, SuggestTruncate};
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
     static PULSAR_ADMIN_URI: &str = "http://localhost:8081";
@@ -655,6 +655,8 @@ mod pulsar_broker_tests {
     async fn wait_for_completion(
         source_handle: ActorHandle<SourceActor>,
         num_expected: usize,
+        partition: PartitionId,
+        truncate_to: Position,
     ) -> JsonValue {
         loop {
             let observation = source_handle.observe().await;
@@ -669,6 +671,18 @@ mod pulsar_broker_tests {
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
+
+        let mut checkpoint = SourceCheckpoint::default();
+        checkpoint
+            .try_apply_delta(checkpoints!(partition => truncate_to))
+            .expect("Create checkpoint");
+        let truncate = SuggestTruncate(checkpoint);
+        source_handle
+            .mailbox()
+            .send_message(truncate)
+            .await
+            .expect("Truncate");
+
         let (_exit_status, exit_state) = source_handle.quit().await;
         exit_state
     }
@@ -956,7 +970,13 @@ mod pulsar_broker_tests {
             .await
             .unwrap();
 
-        let exit_state = wait_for_completion(source_handle, expected_docs[0].len()).await;
+        let exit_state = wait_for_completion(
+            source_handle,
+            expected_docs[0].len(),
+            PartitionId::from(topic.clone()),
+            expected_docs[0].expected_position.clone(),
+        )
+        .await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(!messages.is_empty());
 
@@ -1014,7 +1034,13 @@ mod pulsar_broker_tests {
             .collect::<Vec<_>>();
         combined_messages.sort();
 
-        let exit_state = wait_for_completion(source_handle, combined_messages.len()).await;
+        let exit_state = wait_for_completion(
+            source_handle,
+            combined_messages.len(),
+            PartitionId::from(topic1.clone()),
+            expected_docs[0].expected_position.clone(),
+        )
+        .await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(!messages.is_empty());
 
@@ -1070,7 +1096,13 @@ mod pulsar_broker_tests {
             .await
             .unwrap();
 
-        let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
+        let exit_state = wait_for_completion(
+            source_handle,
+            expected_docs.len(),
+            PartitionId::from(topic.clone()),
+            expected_docs[0].expected_position.clone(),
+        )
+        .await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(!messages.is_empty());
 
@@ -1135,8 +1167,20 @@ mod pulsar_broker_tests {
         .await
         .unwrap();
 
-        let exit_state1 = wait_for_completion(source_handle1, 10).await;
-        let exit_state2 = wait_for_completion(source_handle2, 10).await;
+        let exit_state1 = wait_for_completion(
+            source_handle1,
+            10,
+            PartitionId::from(topic_partition_1.clone()),
+            expected_docs[0].expected_position.clone(),
+        )
+        .await;
+        let exit_state2 = wait_for_completion(
+            source_handle2,
+            10,
+            PartitionId::from(topic_partition_2.clone()),
+            expected_docs[1].expected_position.clone(),
+        )
+        .await;
         let messages1: Vec<RawDocBatch> = doc_processor_inbox1.drain_for_test_typed();
         assert!(!messages1.is_empty());
         let messages2: Vec<RawDocBatch> = doc_processor_inbox2.drain_for_test_typed();
