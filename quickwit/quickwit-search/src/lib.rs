@@ -267,45 +267,16 @@ pub async fn start_searcher_service(
     Ok(search_service)
 }
 
-fn get_engine() -> base64::engine::general_purpose::GeneralPurpose {
-    use base64::alphabet;
-
-    // or we could use ';'..'z', thats sortable and there is probably a very fast way to
-    // encode/decode that variant with some simd
-    let alphabet =
-        alphabet::Alphabet::new("+/0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
-            .unwrap();
-
-    let config = base64::engine::general_purpose::GeneralPurposeConfig::new()
-        .with_encode_padding(false)
-        .with_decode_padding_mode(base64::engine::DecodePaddingMode::RequireNone);
-
-    base64::engine::general_purpose::GeneralPurpose::new(&alphabet, config)
-}
-
-/// Encode a slice with a variant of base64 which is sortable
-pub fn encode_sortable_b64(data: &[u8]) -> String {
-    use base64::Engine;
-    get_engine().encode(data)
-}
-
-/// Decode a string containing a variant of base64 which is sortable
-pub fn decode_sortable_b64(b64: &str) -> std::result::Result<Vec<u8>, base64::DecodeError> {
-    use base64::Engine;
-    get_engine().decode(b64)
-}
-
 #[doc(hidden)]
 #[macro_export]
 macro_rules! encode_term_for_test {
     ($field:expr, $value:expr) => {
-        $crate::encode_sortable_b64(
-            ::tantivy::schema::Term::from_field_text(
-                ::tantivy::schema::Field::from_field_id($field),
-                $value,
-            )
-            .as_slice(),
+        ::tantivy::schema::Term::from_field_text(
+            ::tantivy::schema::Field::from_field_id($field),
+            $value,
         )
+        .as_slice()
+        .to_vec()
     };
     ($value:expr) => {
         encode_term_for_test!(0, $value)

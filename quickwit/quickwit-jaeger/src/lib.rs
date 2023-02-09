@@ -116,13 +116,10 @@ impl JaegerService {
             .terms
             .into_iter()
             .map(|term| {
-                tantivy::Term::wrap(
-                    quickwit_search::decode_sortable_b64(&term)
-                        .expect("Failed to deserialize hit. This should never happen!"),
-                )
-                .as_str()
-                .expect("Expected string term")
-                .to_string()
+                tantivy::Term::wrap(term)
+                    .as_str()
+                    .expect("Expected string term")
+                    .to_string()
             })
             .collect();
         let response = GetServicesResponse { services };

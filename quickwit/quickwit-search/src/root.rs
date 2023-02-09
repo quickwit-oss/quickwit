@@ -417,7 +417,7 @@ pub async fn root_list_terms(
         .map(|leaf_search_response| leaf_search_response.terms)
         .kmerge()
         .dedup();
-    let leaf_list_terms_response: Vec<String> = if let Some(limit) = list_terms_request.max_hits {
+    let leaf_list_terms_response: Vec<Vec<u8>> = if let Some(limit) = list_terms_request.max_hits {
         merged_iter.take(limit as usize).collect()
     } else {
         merged_iter.collect()
