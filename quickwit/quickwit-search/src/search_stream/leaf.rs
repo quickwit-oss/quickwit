@@ -510,6 +510,7 @@ mod tests {
                     .join("\n")
             )
         );
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 
@@ -581,6 +582,7 @@ mod tests {
             from_utf8(&res.data)?,
             format!("{}\n", filtered_timestamp_values.join("\n"))
         );
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 
@@ -638,6 +640,7 @@ mod tests {
             .unwrap()
             .to_string()
             .contains("Search stream does not support fast field of type `Str`"),);
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 
@@ -729,6 +732,7 @@ mod tests {
         expected_output.sort_by(|l, r| l.partition_value.cmp(&r.partition_value));
         deserialized_output.sort_by(|l, r| l.partition_value.cmp(&r.partition_value));
         assert_eq!(expected_output, deserialized_output);
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 

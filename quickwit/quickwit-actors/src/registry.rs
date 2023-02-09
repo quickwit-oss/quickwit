@@ -71,13 +71,9 @@ impl<A: Actor> JsonObservable for TypedJsonObservable<A> {
     }
 
     async fn quit(&self) -> Option<ActorExitStatus> {
-        let _ = self
-            .weak_mailbox
-            .upgrade()
-            .map(|mailbox| {
-                let _ = mailbox.send_message_with_high_priority(Command::Quit);
-            })
-            .unwrap();
+        let _ = self.weak_mailbox.upgrade().map(|mailbox| {
+            let _ = mailbox.send_message_with_high_priority(Command::Quit);
+        });
         self.join().await
     }
 
@@ -188,15 +184,25 @@ impl ActorRegistry {
         let mut obs_futures = Vec::new();
         for registry_for_type in self.actors.read().unwrap().values() {
             for obs in &registry_for_type.observables {
-                if obs.is_disconnected() {
-                    continue;
-                }
                 let obs_clone = obs.clone();
                 obs_futures.push(async move { obs_clone.quit().await });
             }
         }
         let res = future::join_all(obs_futures).await;
         res.into_iter().flatten().collect()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.actors
+            .read()
+            .unwrap()
+            .values()
+            .all(|registry_for_type| {
+                registry_for_type
+                    .observables
+                    .iter()
+                    .all(|obs| obs.is_disconnected())
+            })
     }
 }
 
@@ -263,6 +269,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (_mailbox, _handle) = universe.spawn_builder().spawn(test_actor);
         let _actor_mailbox = universe.get_one::<PingReceiverActor>().unwrap();
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -291,5 +298,6 @@ mod tests {
         let (_mailbox, _handle) = universe.spawn_builder().spawn(test_actor);
         let obs = universe.observe(Duration::from_millis(1000)).await;
         assert_eq!(obs.len(), 1);
+        universe.assert_quit().await;
     }
 }

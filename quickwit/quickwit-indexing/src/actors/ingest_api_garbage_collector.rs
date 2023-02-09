@@ -261,7 +261,7 @@ mod tests {
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 2);
         assert_eq!(state_after_initialization.num_deleted_queues, 1);
-
+        universe.assert_quit().await;
         Ok(())
     }
 }

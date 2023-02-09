@@ -707,11 +707,7 @@ mod tests {
         );
         let first_split = batch.splits.into_iter().next().unwrap().finalize()?;
         assert!(first_split.index.settings().sort_by_field.is_none());
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -785,11 +781,7 @@ mod tests {
                 break;
             }
         }
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -876,11 +868,7 @@ mod tests {
                 .delete_opstamp,
             last_delete_opstamp
         );
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -949,11 +937,7 @@ mod tests {
         assert_eq!(output_messages.len(), 1);
         assert_eq!(output_messages[0].commit_trigger, CommitTrigger::NoMoreDocs);
         assert_eq!(output_messages[0].splits[0].split_attrs.num_docs, 1);
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -1053,11 +1037,7 @@ mod tests {
             index_serializer_inbox.drain_for_test_typed();
         assert_eq!(split_batches.len(), 1);
         assert_eq!(split_batches[0].splits.len(), 2);
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -1134,11 +1114,7 @@ mod tests {
                 assert_eq!(split.split_attrs.num_docs, 1);
             }
         }
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -1211,11 +1187,7 @@ mod tests {
         assert_eq!(index_serializer_messages[0].publish_lock, first_lock);
         assert_eq!(index_serializer_messages[1].splits.len(), 1);
         assert_eq!(index_serializer_messages[1].publish_lock, second_lock);
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -1281,10 +1253,6 @@ mod tests {
 
         let index_serializer_messages = index_serializer_inbox.drain_for_test();
         assert!(index_serializer_messages.is_empty());
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
     }
 }

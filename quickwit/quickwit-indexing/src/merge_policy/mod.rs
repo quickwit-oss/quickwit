@@ -383,6 +383,7 @@ pub mod tests {
             split_metadatas = split_index.values().cloned().collect();
             check_final_configuration(&split_metadatas);
         }
+        universe.assert_quit().await;
         Ok(split_metadatas)
     }
 

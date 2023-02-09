@@ -368,6 +368,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .send_exit_with_success(&indexing_server_mailbox)
         .await?;
     indexing_server_handle.join().await;
+    universe.quit().await;
     if statistics.num_published_splits > 0 {
         println!(
             "Now, you can query the index with the following command:\nquickwit index search \

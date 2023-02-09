@@ -215,7 +215,7 @@ mod tests {
     use std::ops::Bound;
     use std::path::Path;
 
-    use quickwit_actors::{ActorExitStatus, Universe};
+    use quickwit_actors::Universe;
     use quickwit_metastore::{
         IndexMetadata, ListSplitsQuery, MetastoreError, MockMetastore, Split, SplitMetadata,
         SplitState,
@@ -383,11 +383,7 @@ mod tests {
         assert_eq!(state_after_initialization.num_deleted_files, 3);
         assert_eq!(state_after_initialization.num_deleted_bytes, 60);
         assert_eq!(state_after_initialization.num_failed_splits, 0);
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -473,11 +469,7 @@ mod tests {
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
         assert_eq!(counters.num_failed_splits, 0);
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -508,11 +500,7 @@ mod tests {
         universe.sleep(RUN_INTERVAL).await;
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_passes, 3);
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -542,11 +530,7 @@ mod tests {
         assert_eq!(counters.num_failed_storage_resolution, 1);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
         assert_eq!(counters.num_failed_splits, 0);
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -615,11 +599,7 @@ mod tests {
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 1);
         assert_eq!(counters.num_failed_splits, 0);
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -691,10 +671,6 @@ mod tests {
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
         assert_eq!(counters.num_failed_splits, 2);
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
     }
 }

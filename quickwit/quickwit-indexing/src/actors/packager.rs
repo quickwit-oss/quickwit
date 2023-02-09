@@ -462,6 +462,7 @@ mod tests {
             ]
         );
         assert_eq!(split.split_attrs.time_range, Some(1628203589..=1628203640));
+        universe.assert_quit().await;
         Ok(())
     }
 }

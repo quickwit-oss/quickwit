@@ -246,7 +246,7 @@ mod tests {
     use std::ops::RangeInclusive;
 
     use mockall::Sequence;
-    use quickwit_actors::{ActorExitStatus, Universe};
+    use quickwit_actors::Universe;
     use quickwit_config::RetentionPolicy;
     use quickwit_metastore::{IndexMetadata, MockMetastore, Split, SplitMetadata, SplitState};
 
@@ -406,11 +406,7 @@ mod tests {
                 ("d", Some("1 hour")),
             ]))
             .await?;
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
 
         Ok(())
     }
@@ -471,11 +467,7 @@ mod tests {
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_execution_passes, 2);
         assert_eq!(counters.num_expired_splits, 2);
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
 
         Ok(())
     }

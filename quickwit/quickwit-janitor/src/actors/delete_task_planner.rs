@@ -562,6 +562,8 @@ mod tests {
         assert_eq!(all_splits[1].split_metadata.delete_opstamp, 2);
         // The last split has not yet its delete opstamp updated.
         assert_eq!(all_splits[2].split_metadata.delete_opstamp, 0);
+        test_sandbox.assert_quit().await;
+        universe.assert_quit().await;
         Ok(())
     }
 }

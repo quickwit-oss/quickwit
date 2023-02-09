@@ -613,6 +613,8 @@ mod tests {
             .try_into()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
+        test_sandbox.assert_quit().await;
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -797,7 +799,8 @@ mod tests {
                     |split| split.split_state == quickwit_metastore::SplitState::MarkedForDeletion
                 ));
         }
-
+        test_sandbox.assert_quit().await;
+        universe.assert_quit().await;
         Ok(())
     }
 

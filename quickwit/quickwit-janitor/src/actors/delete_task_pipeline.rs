@@ -406,6 +406,8 @@ mod tests {
             .find(|split| split.split_state == SplitState::Published)
             .unwrap();
         assert_eq!(published_split.split_metadata.delete_opstamp, 1);
+        universe.assert_quit().await;
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 
@@ -462,6 +464,8 @@ mod tests {
         pipeline_handler.quit().await;
         let observations = universe.observe(HEARTBEAT).await;
         assert!(observations.is_empty());
+        universe.assert_quit().await;
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 }

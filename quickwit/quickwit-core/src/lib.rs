@@ -74,6 +74,7 @@ mod tests {
             IndexService::new(test_sandbox.metastore(), StorageUriResolver::for_test());
         let deleted_file_entries = index_service.delete_index(index_id, false).await?;
         assert_eq!(deleted_file_entries.len(), 1);
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 }

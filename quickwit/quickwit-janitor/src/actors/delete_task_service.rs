@@ -257,6 +257,8 @@ mod tests {
         let actors_observations = universe.observe(HEARTBEAT).await;
         assert_eq!(actors_observations.len(), 1);
         assert!(universe.get_one::<DeleteTaskService>().is_some());
+        test_sandbox.assert_quit().await;
+        universe.assert_quit().await;
         Ok(())
     }
 }

@@ -133,6 +133,7 @@ mod tests {
         assert!(result.is_ok());
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
         assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 2);
+        universe.assert_quit().await;
 
         Ok(())
     }

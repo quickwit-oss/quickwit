@@ -285,6 +285,10 @@ mod tests {
                 num_kills: 0
             }
         );
+        assert!(!matches!(
+            supervisor_handle.quit().await.0,
+            ActorExitStatus::Panicked
+        ));
     }
 
     #[tokio::test]
@@ -313,6 +317,10 @@ mod tests {
                 num_kills: 0
             }
         );
+        assert!(!matches!(
+            supervisor_handle.quit().await.0,
+            ActorExitStatus::Panicked
+        ));
     }
 
     #[tokio::test]
@@ -354,6 +362,10 @@ mod tests {
                 num_kills: 1
             }
         );
+        assert!(!matches!(
+            supervisor_handle.quit().await.0,
+            ActorExitStatus::Panicked
+        ));
     }
 
     #[tokio::test]

@@ -51,7 +51,7 @@ pub struct TestSandbox {
     storage_resolver: StorageUriResolver,
     storage: Arc<dyn Storage>,
     add_docs_id: AtomicUsize,
-    _universe: Universe,
+    universe: Universe,
     _temp_dir: tempfile::TempDir,
 }
 
@@ -121,7 +121,7 @@ impl TestSandbox {
             storage_resolver,
             storage,
             add_docs_id: AtomicUsize::default(),
-            _universe: universe,
+            universe,
             _temp_dir: temp_dir,
         })
     }
@@ -198,6 +198,11 @@ impl TestSandbox {
     pub fn index_id(&self) -> &str {
         &self.index_id
     }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn assert_quit(self) {
+        self.universe.assert_quit().await;
+    }
 }
 
 /// Mock split helper.
@@ -259,6 +264,7 @@ mod tests {
             let splits = metastore.list_all_splits("test_index").await?;
             assert_eq!(splits.len(), 2);
         }
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 }

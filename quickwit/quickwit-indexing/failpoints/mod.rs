@@ -191,6 +191,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
         splits[1].split_metadata.time_range.clone().unwrap(),
         1629889532..=1629889533
     );
+    test_index_builder.assert_quit().await;
     Ok(())
 }
 

@@ -208,7 +208,10 @@ impl<A: Actor> ActorHandle<A> {
 
     /// Waits until the actor exits by itself. This is the equivalent of `Thread::join`.
     pub async fn join(self) -> (ActorExitStatus, A::ObservableState) {
-        let exit_status = self.join_handle.join().await.expect("Attempting to call join after universe.join() or universe.quit() was called");
+        let exit_status =
+            self.join_handle.join().await.expect(
+                "Attempting to call join after universe.join() or universe.quit() was called",
+            );
         let observation = self.last_state.borrow().clone();
         (exit_status, observation)
     }

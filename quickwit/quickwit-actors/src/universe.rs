@@ -122,10 +122,26 @@ impl Universe {
     pub async fn quit(&self) -> Vec<ActorExitStatus> {
         self.spawn_ctx.registry.quit().await
     }
+
+    /// Gracefully quits all registered actors and asserts that none of them panicked
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn assert_quit(self) {
+        assert!(!self
+            .quit()
+            .await
+            .into_iter()
+            .any(|status| matches!(status, ActorExitStatus::Panicked)));
+    }
 }
 
 impl Drop for Universe {
     fn drop(&mut self) {
+        if cfg!(any(test, feature = "testsuite")) && !self.spawn_ctx.registry.is_empty() {
+            panic!(
+                "There are still running actors at the end of the test. Did you call \
+                 universe.assert_quit()?"
+            );
+        }
         self.spawn_ctx.kill_switch.kill();
     }
 }
@@ -200,11 +216,7 @@ mod tests {
         universe.sleep(Duration::from_secs(200)).await;
         let count_after_advance_time = handler.process_pending_and_observe().await.state;
         assert_eq!(count_after_advance_time, 4);
-        assert!(!universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -242,6 +254,17 @@ mod tests {
             .quit()
             .await
             .into_iter()
-            .any(|s| matches!(s, ActorExitStatus::Panicked)));
+            .any(|status| matches!(status, ActorExitStatus::Panicked)));
+    }
+
+    #[tokio::test]
+    #[should_panic(
+        expected = "There are still running actors at the end of the test. Did you call \
+                    universe.assert_quit()?"
+    )]
+    async fn test_enforce_universe_assert_quit_calls() {
+        let universe = Universe::with_accelerated_time();
+        let actor_with_schedule = CountingMinutesActor::default();
+        let _ = universe.spawn_builder().spawn(actor_with_schedule);
     }
 }

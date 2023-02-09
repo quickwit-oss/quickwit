@@ -202,6 +202,7 @@ mod tests {
                 .join(split_filename);
             assert!(split_filepath.try_exists().unwrap());
         }
+        universe.assert_quit().await;
         Ok(())
     }
 }
