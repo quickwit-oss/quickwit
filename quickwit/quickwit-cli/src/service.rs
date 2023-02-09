@@ -34,7 +34,6 @@ pub fn build_run_command<'a>() -> Command<'a> {
     Command::new("run")
         .about("Starts Quickwit server with all services by default (`indexer`, `searcher`...).")
         .long_about("Starts Quickwit server with all services by default: `indexer`, `searcher`, `metastore`, `control_plane` and `janitor`.")
-        .arg_required_else_help(true)
         .arg(config_cli_arg())
         .args(&[
             arg!(--"service" <SERVICE> "Services (indexer|searcher|janitor|metastore|control_plane) to run. If unspecified, all the supported services are started.")

@@ -182,7 +182,7 @@ mod tests {
         IngestDocsArgs, SearchIndexArgs,
     };
     use quickwit_cli::split::{DescribeSplitArgs, SplitCliCommand};
-    use quickwit_cli::tools::{
+    use quickwit_cli::tool::{
         ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, MergeArgs, ToolCliCommand,
     };
     use quickwit_common::uri::Uri;

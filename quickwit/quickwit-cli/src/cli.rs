@@ -25,7 +25,7 @@ use crate::index::{build_index_command, IndexCliCommand};
 use crate::service::{build_run_command, RunCliCommand};
 use crate::source::{build_source_command, SourceCliCommand};
 use crate::split::{build_split_command, SplitCliCommand};
-use crate::tools::{build_tool_command, ToolCliCommand};
+use crate::tool::{build_tool_command, ToolCliCommand};
 
 pub fn build_cli<'a>() -> Command<'a> {
     Command::new("Quickwit")
