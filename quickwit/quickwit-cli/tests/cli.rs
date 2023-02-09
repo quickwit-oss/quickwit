@@ -34,7 +34,7 @@ use quickwit_cli::index::{
     SearchIndexArgs,
 };
 use quickwit_cli::service::RunCliCommand;
-use quickwit_cli::tools::{
+use quickwit_cli::tool::{
     garbage_collect_index_cli, local_ingest_docs_cli, GarbageCollectIndexArgs, LocalIngestDocsArgs,
 };
 use quickwit_common::fs::get_cache_directory_path;
