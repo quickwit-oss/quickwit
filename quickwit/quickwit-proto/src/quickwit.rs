@@ -257,10 +257,10 @@ pub struct ListTermsRequest {
     #[prost(uint64, optional, tag = "6")]
     pub max_hits: ::core::option::Option<u64>,
     /// start_key is included, end_key is excluded
-    #[prost(string, optional, tag = "7")]
-    pub start_key: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "8")]
-    pub end_key: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bytes = "vec", optional, tag = "7")]
+    pub start_key: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    #[prost(bytes = "vec", optional, tag = "8")]
+    pub end_key: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -270,8 +270,8 @@ pub struct ListTermsResponse {
     #[prost(uint64, tag = "1")]
     pub num_hits: u64,
     /// Matched hits
-    #[prost(string, repeated, tag = "2")]
-    pub terms: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(bytes = "vec", repeated, tag = "2")]
+    pub terms: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     /// Elapsed time to perform the request. This time is measured
     /// server-side and expressed in microseconds.
     #[prost(uint64, tag = "3")]
@@ -304,8 +304,8 @@ pub struct LeafListTermsResponse {
     #[prost(uint64, tag = "1")]
     pub num_hits: u64,
     /// List of the first K terms the given leaf query.
-    #[prost(string, repeated, tag = "2")]
-    pub terms: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(bytes = "vec", repeated, tag = "2")]
+    pub terms: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
     #[prost(message, repeated, tag = "3")]
     pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,

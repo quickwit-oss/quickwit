@@ -1340,7 +1340,10 @@ async fn test_single_node_list() -> anyhow::Result<()> {
         .unwrap();
         assert_eq!(
             search_response.terms,
-            ["\"beagle\"".to_string(), "\"snoopy\"".to_string()]
+            [
+                encode_term_for_test!("beagle"),
+                encode_term_for_test!("snoopy")
+            ]
         );
     }
 
@@ -1362,14 +1365,14 @@ async fn test_single_node_list() -> anyhow::Result<()> {
         )
         .await
         .unwrap();
-        assert_eq!(search_response.terms, ["\"beagle\"".to_string()]);
+        assert_eq!(search_response.terms, [encode_term_for_test!("beagle")]);
     }
 
     {
         let request = quickwit_proto::ListTermsRequest {
             index_id: test_sandbox.index_id().to_string(),
             field: "title".to_string(),
-            start_key: Some("\"casper\"".to_string()),
+            start_key: Some(encode_term_for_test!("casper")),
             end_key: None,
             start_timestamp: None,
             end_timestamp: None,
@@ -1383,7 +1386,7 @@ async fn test_single_node_list() -> anyhow::Result<()> {
         )
         .await
         .unwrap();
-        assert_eq!(search_response.terms, ["\"snoopy\"".to_string()]);
+        assert_eq!(search_response.terms, [encode_term_for_test!("snoopy")]);
     }
 
     {
@@ -1391,7 +1394,7 @@ async fn test_single_node_list() -> anyhow::Result<()> {
             index_id: test_sandbox.index_id().to_string(),
             field: "title".to_string(),
             start_key: None,
-            end_key: Some("\"casper\"".to_string()),
+            end_key: Some(encode_term_for_test!("casper")),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: Some(100),
@@ -1404,7 +1407,7 @@ async fn test_single_node_list() -> anyhow::Result<()> {
         )
         .await
         .unwrap();
-        assert_eq!(search_response.terms, ["\"beagle\"".to_string()]);
+        assert_eq!(search_response.terms, [encode_term_for_test!("beagle")]);
     }
 
     Ok(())

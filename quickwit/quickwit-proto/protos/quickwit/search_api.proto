@@ -287,15 +287,15 @@ message ListTermsRequest {
   optional uint64 max_hits = 6;
 
   // start_key is included, end_key is excluded
-  optional string start_key = 7;
-  optional string end_key = 8;
+  optional bytes start_key = 7;
+  optional bytes end_key = 8;
 }
 
 message ListTermsResponse {
   // Number of hits matching the query.
   uint64 num_hits = 1;
   // Matched hits
-  repeated string terms = 2;
+  repeated bytes terms = 2;
   // Elapsed time to perform the request. This time is measured
   // server-side and expressed in microseconds.
   uint64 elapsed_time_micros = 3;
@@ -322,7 +322,7 @@ message LeafListTermsResponse {
   uint64 num_hits = 1;
 
   // List of the first K terms the given leaf query.
-  repeated string terms = 2;
+  repeated bytes terms = 2;
 
   // The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
   repeated SplitSearchError failed_splits = 3;
