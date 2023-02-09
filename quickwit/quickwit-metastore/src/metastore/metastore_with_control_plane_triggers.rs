@@ -193,7 +193,9 @@ impl Metastore for MetastoreWithControlPlaneTriggers {
     ) -> MetastoreResult<()> {
         self.metastore
             .toggle_source(index_id, source_id, enable)
-            .await
+            .await?;
+        send_event_to_control_plane(self.control_plane_client.clone(), "toggle-source");
+        Ok(())
     }
 
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
@@ -341,6 +343,9 @@ mod tests {
             .expect_add_source()
             .returning(|_index: &str, _source_config: SourceConfig| Ok(()));
         mocked_metastore
+            .expect_toggle_source()
+            .returning(|_index: &str, _source_id: &str, _enable: bool| Ok(()));
+        mocked_metastore
             .expect_delete_source()
             .returning(|_index: &str, _source_id: &str| Ok(()));
         let grcp_adapter = GrpcControlPlaneAdapterForTest::new();
@@ -356,10 +361,35 @@ mod tests {
             .await
             .is_ok());
         assert!(metastore.delete_index("index-control-plane").await.is_ok());
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eq!(
+            grcp_adapter
+                .send_refresh_counter
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
         assert!(metastore
             .add_source("index-control-plane", source_config)
             .await
             .is_ok());
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eq!(
+            grcp_adapter
+                .send_refresh_counter
+                .load(std::sync::atomic::Ordering::Relaxed),
+            2
+        );
+        assert!(metastore
+            .toggle_source("index-control-plane", "source-control-plane", true)
+            .await
+            .is_ok());
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eq!(
+            grcp_adapter
+                .send_refresh_counter
+                .load(std::sync::atomic::Ordering::Relaxed),
+            3
+        );
         assert!(metastore
             .delete_source("index-control-plane", "source-control-plane")
             .await
@@ -369,7 +399,7 @@ mod tests {
             grcp_adapter
                 .send_refresh_counter
                 .load(std::sync::atomic::Ordering::Relaxed),
-            3
+            4
         );
     }
 }
