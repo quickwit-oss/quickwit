@@ -48,7 +48,7 @@ pub mod service;
 pub mod source;
 pub mod split;
 pub mod stats;
-pub mod tools;
+pub mod tool;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;

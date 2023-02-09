@@ -44,7 +44,7 @@ backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.21"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
 bytes = "1"
-chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "cd568ba" }
+chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "08e6799" }
 chrono = "0.4.23"
 clap = { version = "=3.1", features = ["env"] }
 colored = "2.0.0"
