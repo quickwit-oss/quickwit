@@ -3,7 +3,7 @@
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
 [![License: AGPL V3](https://img.shields.io/badge/license-AGPL%20V3-blue)](LICENCE.md)
 [![Twitter Follow](https://img.shields.io/twitter/follow/Quickwit_Inc?color=%231DA1F2&logo=Twitter&style=plastic)](https://twitter.com/Quickwit_Inc)
-[![Discord](https://img.shields.io/discord/908281611840282624?logo=Discord&logoColor=%23FFFFFF&style=plastic)](https://discord.gg/rpRRTezWhW)
+[![Discord](https://img.shields.io/discord/908281611840282624?logo=Discord&logoColor=%23FFFFFF&style=plastic)](https://discord.quickwit.io)
 ![Rust](https://img.shields.io/badge/Rust-black?logo=rust&style=plastic)
 <br/>
 
@@ -24,7 +24,7 @@ Search more with less
   <a href="https://quickwit.io/docs/get-started/quickstart">Quickstart</a> |
   <a href="https://quickwit.io/docs/">Docs</a> |
   <a href="https://quickwit.io/tutorials">Tutorials</a> |
-  <a href="https://discord.gg/rpRRTezWhW">Chat</a> |
+  <a href="https://discord.quickwit.io">Chat</a> |
   <a href="https://quickwit.io/docs/get-started/installation">Download</a>
 </h4>
 <br/>
@@ -146,11 +146,11 @@ Our business model relies on our commercial license. There is no plan to become 
 - [Internals of Quickwit & How We Built It](https://www.youtube.com/watch?v=s_C8O5ecZBE)
 - [Stream Ingestion with Kafka & Kinesis](https://www.youtube.com/watch?v=05pS-m6iuQ4)
 
-Chat with us in [Discord](https://discord.gg/rpRRTezWhW) | Follow us on [Twitter](https://twitter.com/quickwit_inc)
+Chat with us in [Discord](https://discord.quickwit.io) | Follow us on [Twitter](https://twitter.com/quickwit_inc)
 
 # 🤝 Contribute and spread the word
 
-We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on [discord](https://discord.gg/rpRRTezWhW)! Here is how you can help us build the future of log management:
+We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on [discord](https://discord.quickwit.io)! Here is how you can help us build the future of log management:
 
 - Have a look through GitHub issues labeled "Good first issue".
 - Read our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md).
@@ -170,5 +170,5 @@ We are always super happy to have contributions: code, documentation, issues, fe
 [website]: https://quickwit.io/
 [youtube]: https://www.youtube.com/channel/UCvZVuRm2FiDq1_ul0mY85wA
 [twitter]: https://twitter.com/Quickwit_Inc
-[discord]: https://discord.gg/MT27AG5EVE
+[discord]: https://discord.quickwit.io
 [blogs]: https://quickwit.io/blog
