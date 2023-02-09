@@ -19,20 +19,21 @@
 
 use std::sync::Arc;
 
-use quickwit_common::simple_list::SimpleList;
 use bytes::Bytes;
-use elasticsearch_dsl::Search;
+use elasticsearch_dsl::{Query, Search};
+use quickwit_common::simple_list::SimpleList;
 use quickwit_query::elastic_search_input_to_search_ast;
-use quickwit_search::{SearchService, SearchResponseRest, SearchError};
+use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use tracing::info;
 use warp::{Filter, Rejection};
-
-use crate::{format::Format, with_arg, search_api::get_proto_search_by};
 
 use super::api_specs::{
     elastic_get_index_search_filter, elastic_get_search_filter, elastic_post_index_search_filter,
     elastic_post_search_filter, SearchQueryParams,
 };
+use crate::elastic_search_api::extract_sort_by;
+use crate::format::Format;
+use crate::with_arg;
 
 /// GET _elastic/_search
 pub fn elastic_get_search_handler(
@@ -80,57 +81,75 @@ pub fn elastic_post_index_search_handler(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_post_index_search_filter()
-    .and(warp::body::content_length_limit(1024 * 1024))
-    .and(warp::filters::body::bytes())
-    .and(with_arg(search_service))
-    .then(|index: SimpleList, params: SearchQueryParams, body: Bytes, search_service: Arc<dyn SearchService>,| async move {
-        info!(index_ids = ?index, params =? params, "elastic-search");
-        Format::Json.make_rest_reply(elastic_search_endpoint(index.0, params, body, &*search_service).await)
-    })
+        .and(warp::body::content_length_limit(1024 * 1024))
+        .and(warp::filters::body::bytes())
+        .and(with_arg(search_service))
+        .then(
+            |index: SimpleList,
+             params: SearchQueryParams,
+             body: Bytes,
+             search_service: Arc<dyn SearchService>| async move {
+                info!(index_ids = ?index, params =? params, "elastic-search");
+                Format::Json.make_rest_reply(
+                    elastic_search_endpoint(index.0, params, body, &*search_service).await,
+                )
+            },
+        )
 }
 
 async fn elastic_search_endpoint(
     index_ids: Vec<String>,
     params: SearchQueryParams,
-    body: Bytes, 
+    body: Bytes,
     search_service: &dyn SearchService,
 ) -> Result<SearchResponseRest, SearchError> {
-    let elastic_search_input = serde_json::from_slice::<Search>(&body)?;
+    let index_id = index_ids.get(0).unwrap().clone();
+    let elastic_search_input: Search = if let Some(query_str) = &params.q {
+        let query: Query = serde_json::from_str(query_str)?;
+        Search::new().query(query)
+    } else {
+        serde_json::from_slice(&body)?
+    };
     let search_input_ast = elastic_search_input_to_search_ast(&elastic_search_input)?;
-    println!("DEBUG {:?}", search_input_ast);
-
-    //TODO: build search_request using:
-    // - elastic_search_input
-    // - params
-    // - search_input_ast
-    let search_request = crate::SearchRequestQueryString {
-        query: "foo".to_string(), //TODO: HOT PRIORITY should be `search_input_ast`
-        aggs: None,
-        search_fields: None,
-        snippet_fields: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        max_hits: 20,
-        start_offset: 0,
-        format: Format::Json,
-        sort_by_field: None, //elastic way
+    let search_fields: Option<Vec<String>> = if params.q.is_some() {
+        params.df.map(|s| vec![s])
+    } else {
+        None
     };
 
-    let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
-    
+    let aggregation_request = if !elastic_search_input.aggs.is_empty() {
+        Some(
+            serde_json::to_string(&elastic_search_input.aggs)
+                .expect("could not serialize Aggregation"),
+        )
+    } else {
+        None
+    };
+
+    let (sort_order, sort_by_field) =
+        extract_sort_by(&params.sort, elastic_search_input.sort.clone())
+            .map_err(SearchError::InvalidArgument)?;
+
     let search_request = quickwit_proto::SearchRequest {
-        index_id: index_ids[0].clone(),
-        query: search_request.query,
-        search_fields: search_request.search_fields.unwrap_or_default(),
-        snippet_fields: search_request.snippet_fields.unwrap_or_default(),
-        start_timestamp: search_request.start_timestamp,
-        end_timestamp: search_request.end_timestamp,
-        max_hits: search_request.max_hits,
-        start_offset: search_request.start_offset,
-        aggregation_request: search_request
-            .aggs
-            .map(|agg| serde_json::to_string(&agg)
-            .expect("could not serialize JsonValue")),
+        index_id,
+        query: serde_json::to_string(&search_input_ast)
+            .expect("could not serialize SearchInputAst"),
+        search_fields: search_fields.unwrap_or_default(),
+        snippet_fields: elastic_search_input
+            .highlight
+            .map(|highlight| {
+                highlight
+                    .fields
+                    .iter()
+                    .map(|kv| kv.key.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        start_timestamp: None,
+        end_timestamp: None,
+        max_hits: elastic_search_input.size.unwrap_or_default(),
+        start_offset: elastic_search_input.from.unwrap_or_default(),
+        aggregation_request,
         sort_order,
         sort_by_field,
     };

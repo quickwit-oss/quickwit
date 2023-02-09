@@ -167,7 +167,9 @@ pub struct SearchRequestQueryString {
     pub sort_by_field: Option<SortByField>,
 }
 
-pub fn get_proto_search_by(search_request: &SearchRequestQueryString) -> (Option<i32>, Option<String>) {
+pub fn get_proto_search_by(
+    search_request: &SearchRequestQueryString,
+) -> (Option<i32>, Option<String>) {
     if let Some(sort_by_field) = &search_request.sort_by_field {
         (
             Some(sort_by_field.order as i32),
@@ -184,6 +186,7 @@ async fn search_endpoint(
     search_service: &dyn SearchService,
 ) -> Result<SearchResponseRest, SearchError> {
     let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
+    // TODO convert search_request.query into
     let search_request = quickwit_proto::SearchRequest {
         index_id,
         query: search_request.query,

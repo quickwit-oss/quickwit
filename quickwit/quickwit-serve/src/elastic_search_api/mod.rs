@@ -22,6 +22,8 @@ mod rest_handler;
 
 use std::sync::Arc;
 
+use elasticsearch_dsl::{Sort, SortCollection};
+use quickwit_proto::SortOrder;
 use quickwit_search::SearchService;
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
@@ -71,5 +73,55 @@ impl From<bool> for TrackTotalHits {
 impl From<i64> for TrackTotalHits {
     fn from(i: i64) -> Self {
         TrackTotalHits::Count(i)
+    }
+}
+
+pub(crate) fn convert_elastic_sort_syntax(value: &str) -> Result<(i32, String), String> {
+    let (field_str, order_str) = value.split_once(':').ok_or_else(|| "".to_string())?;
+    let order = match order_str {
+        "asc" => SortOrder::Asc as i32,
+        "desc" => SortOrder::Desc as i32,
+        any => return Err(format!("unknown SortOrder `{any}`")),
+    };
+    Ok((order, field_str.to_string()))
+}
+
+/// Extracts the sort parameter form the queryString or requestBody
+///
+/// - In ElasticSearch the queryString takes priority over the requestBody.
+/// TODO: Currently we don't support sort on multiple fields.
+fn extract_sort_by(
+    query_param_sort: &Option<Vec<String>>,
+    body_sort: SortCollection,
+) -> Result<(Option<i32>, Option<String>), String> {
+    if let Some(sort) = query_param_sort {
+        return match sort.get(0) {
+            Some(sort_str) => convert_elastic_sort_syntax(sort_str)
+                .map(|(order, field)| (Some(order), Some(field))),
+            None => Ok((None, None)),
+        };
+    }
+
+    match body_sort.into_iter().next() {
+        Some(sort) => {
+            let (order, field) = match sort {
+                Sort::Field(field_name) => (SortOrder::Asc as i32, field_name),
+                Sort::FieldSort(field_sort) => (
+                    field_sort
+                        .order
+                        .map(|order| order as i32)
+                        .unwrap_or_default(),
+                    field_sort.field,
+                ),
+                _ => {
+                    return Err(
+                        "Only `Sort::Field` and `Sort::FieldSort` are currently supported"
+                            .to_string(),
+                    )
+                }
+            };
+            Ok((Some(order), Some(field)))
+        }
+        None => Ok((None, None)),
     }
 }

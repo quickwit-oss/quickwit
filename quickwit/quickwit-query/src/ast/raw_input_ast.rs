@@ -17,14 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use super::Occur;
-
 
 #[derive(PartialEq, Serialize, Deserialize)]
 pub enum SearchInputLeaf {
@@ -42,9 +40,8 @@ pub enum SearchInputLeaf {
 }
 
 impl SearchInputLeaf {
-
     pub fn literal(field_name_opt: Option<String>, phrase: String, slop: u32) -> Self {
-        Self::Literal(SearchInputLiteral{
+        Self::Literal(SearchInputLiteral {
             field_name_opt,
             phrase,
             slop,
@@ -55,8 +52,12 @@ impl SearchInputLeaf {
         Self::All
     }
 
-    pub fn range(field_opt: Option<String>, lower: SearchInputBound, upper: SearchInputBound) -> Self {
-        Self::Range{
+    pub fn range(
+        field_opt: Option<String>,
+        lower: SearchInputBound,
+        upper: SearchInputBound,
+    ) -> Self {
+        Self::Range {
             field_opt,
             lower,
             upper,
@@ -64,9 +65,11 @@ impl SearchInputLeaf {
     }
 
     pub fn set(field_opt: Option<String>, elements: Vec<String>) -> Self {
-        Self::Set { field_opt, elements }
+        Self::Set {
+            field_opt,
+            elements,
+        }
     }
-
 }
 
 impl Debug for SearchInputLeaf {
@@ -79,23 +82,26 @@ impl Debug for SearchInputLeaf {
                 ref upper,
             } => {
                 if let Some(ref field) = field_opt {
-                    write!(formatter, "\"{}\":", field)?;
+                    write!(formatter, "\"{field}\":")?;
                 }
                 lower.display_lower(formatter)?;
                 write!(formatter, " TO ")?;
                 upper.display_upper(formatter)?;
                 Ok(())
             }
-            SearchInputLeaf::Set { field_opt, elements } => {
+            SearchInputLeaf::Set {
+                field_opt,
+                elements,
+            } => {
                 if let Some(ref field) = field_opt {
-                    write!(formatter, "\"{}\": ", field)?;
+                    write!(formatter, "\"{field}\": ")?;
                 }
                 write!(formatter, "IN [")?;
                 for (i, element) in elements.iter().enumerate() {
                     if i != 0 {
                         write!(formatter, " ")?;
                     }
-                    write!(formatter, "\"{}\"", element)?;
+                    write!(formatter, "\"{element}\"")?;
                 }
                 write!(formatter, "]")
             }
@@ -114,7 +120,7 @@ pub struct SearchInputLiteral {
 impl fmt::Debug for SearchInputLiteral {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         if let Some(ref field) = self.field_name_opt {
-            write!(formatter, "\"{}\":", field)?;
+            write!(formatter, "\"{field}\":")?;
         }
         write!(formatter, "\"{}\"", self.phrase)?;
         if self.slop > 0 {
@@ -134,16 +140,16 @@ pub enum SearchInputBound {
 impl SearchInputBound {
     fn display_lower(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            SearchInputBound::Inclusive(ref word) => write!(formatter, "[\"{}\"", word),
-            SearchInputBound::Exclusive(ref word) => write!(formatter, "{{\"{}\"", word),
+            SearchInputBound::Inclusive(ref word) => write!(formatter, "[\"{word}\""),
+            SearchInputBound::Exclusive(ref word) => write!(formatter, "{{\"{word}\""),
             SearchInputBound::Unbounded => write!(formatter, "{{\"*\""),
         }
     }
 
     fn display_upper(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            SearchInputBound::Inclusive(ref word) => write!(formatter, "\"{}\"]", word),
-            SearchInputBound::Exclusive(ref word) => write!(formatter, "\"{}\"}}", word),
+            SearchInputBound::Inclusive(ref word) => write!(formatter, "\"{word}\"]"),
+            SearchInputBound::Exclusive(ref word) => write!(formatter, "\"{word}\"}}"),
             SearchInputBound::Unbounded => write!(formatter, "\"*\"}}"),
         }
     }
@@ -223,9 +229,9 @@ fn print_occur_ast(
     formatter: &mut fmt::Formatter,
 ) -> fmt::Result {
     if let Some(occur) = occur_opt {
-        write!(formatter, "{}{:?}", occur, ast)?;
+        write!(formatter, "{occur}{ast:?}")?;
     } else {
-        write!(formatter, "*{:?}", ast)?;
+        write!(formatter, "*{ast:?}")?;
     }
     Ok(())
 }
@@ -247,8 +253,8 @@ impl fmt::Debug for SearchInputAst {
                 }
                 Ok(())
             }
-            SearchInputAst::Leaf(ref subquery) => write!(formatter, "{:?}", subquery),
-            SearchInputAst::Boost(ref leaf, boost) => write!(formatter, "({:?})^{}", leaf, boost),
+            SearchInputAst::Leaf(ref subquery) => write!(formatter, "{subquery:?}"),
+            SearchInputAst::Boost(ref leaf, boost) => write!(formatter, "({leaf:?})^{boost}"),
         }
     }
 }

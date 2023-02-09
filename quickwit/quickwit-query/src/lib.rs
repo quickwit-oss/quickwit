@@ -36,7 +36,7 @@ mod test {
             "bar".to_string(),
             1,
         ));
-        let expected_obj = json!({ 
+        let expected_obj = json!({
             "Leaf":{
                 "Literal":{
                     "field_name_opt":"foo",
@@ -45,8 +45,9 @@ mod test {
                 }
             }
         });
-        
-        let json_obj: serde_json::Value =  serde_json::from_str(&serde_json::to_string(&search_input_ast)?)?;
+
+        let json_obj: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&search_input_ast)?)?;
         let json_str = serde_json::to_string(&json_obj)?;
 
         let expected_str = serde_json::to_string(&expected_obj)?;
@@ -54,7 +55,4 @@ mod test {
         assert_eq!(json_str, expected_str);
         Ok(())
     }
-
-
 }
-

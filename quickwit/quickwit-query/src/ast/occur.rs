@@ -20,7 +20,7 @@
 use std::fmt;
 use std::fmt::Write;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Defines whether a term in a query must be present,
 /// should be present or must not be present.

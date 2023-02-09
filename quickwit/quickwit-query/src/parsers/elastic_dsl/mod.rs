@@ -17,11 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{SearchInputAst, SearchInputLeaf};
 use elasticsearch_dsl::Search;
 
-pub fn elastic_search_input_to_search_ast(elastic_search_input: &Search) -> anyhow::Result<SearchInputAst> {
-    //TODO: transform
+use crate::{SearchInputAst, SearchInputLeaf};
+
+pub fn elastic_search_input_to_search_ast(
+    _elastic_search_input: &Search,
+) -> anyhow::Result<SearchInputAst> {
+    // TODO: transform
     Ok(SearchInputAst::leaf(SearchInputLeaf::literal(
         Some("body".to_string()),
         "foo".to_string(),

@@ -19,6 +19,6 @@
 
 use crate::SearchInputAst;
 
-pub fn parse_quickwit_dsl(input: &[u8]) ->  anyhow::Result<SearchInputAst> {
+pub fn parse_quickwit_dsl(_input: &[u8]) -> anyhow::Result<SearchInputAst> {
     todo!("ASAP")
 }

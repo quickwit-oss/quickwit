@@ -20,6 +20,5 @@
 mod occur;
 mod raw_input_ast;
 
-
-pub use raw_input_ast::*;
 pub use occur::Occur;
+pub use raw_input_ast::*;
