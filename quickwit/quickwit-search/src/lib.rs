@@ -267,7 +267,8 @@ pub async fn start_searcher_service(
     Ok(search_service)
 }
 
-#[doc(hidden)]
+/// Create a Term from a &str
+#[cfg(any(test, feature = "testsuite"))]
 #[macro_export]
 macro_rules! encode_term_for_test {
     ($field:expr, $value:expr) => {

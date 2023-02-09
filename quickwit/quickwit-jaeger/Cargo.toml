@@ -33,4 +33,4 @@ quickwit-proto = { workspace = true }
 quickwit-search = { workspace = true }
 
 [dev-dependencies]
-tantivy = { workspace = true }
+quickwit-search = { workspace = true, features = ["testsuite"] }
