@@ -176,7 +176,7 @@ async fn fetch_docs_in_split(
     let index_reader = index
         .reader_builder()
         // the docs are presorted so a cache size of NUM_CONCURRENT_REQUESTS is fine
-        .doc_store_cache_size(NUM_CONCURRENT_REQUESTS)
+        .doc_store_cache_num_blocks(NUM_CONCURRENT_REQUESTS)
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = Arc::new(index_reader.searcher());

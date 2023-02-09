@@ -116,8 +116,7 @@ impl JaegerService {
             .terms
             .into_iter()
             .map(|term| {
-                serde_json::from_str::<JsonValue>(&term)
-                    .expect("Failed to deserialize hit. This should never happen!")
+                tantivy::Term::wrap(term)
                     .as_str()
                     .expect("Expected string term")
                     .to_string()
@@ -1053,6 +1052,7 @@ where T: Deserialize<'a> {
 #[cfg(test)]
 mod tests {
     use quickwit_proto::jaeger::api_v2::ValueType;
+    use quickwit_search::encode_term_for_test;
     use serde_json::json;
     use tantivy::aggregation::agg_req::{
         Aggregation, Aggregations, BucketAggregationType, MetricAggregation,
@@ -1810,11 +1810,11 @@ mod tests {
             })
             .return_once(|_| {
                 Ok(quickwit_proto::ListTermsResponse {
-                    num_hits: 5,
+                    num_hits: 3,
                     terms: vec![
-                        "\"service1\"".to_string(),
-                        "\"service2\"".to_string(),
-                        "\"service3\"".to_string(),
+                        quickwit_search::encode_term_for_test!("service1"),
+                        quickwit_search::encode_term_for_test!("service2"),
+                        quickwit_search::encode_term_for_test!("service3"),
                     ],
                     elapsed_time_micros: 0,
                     errors: Vec::new(),
@@ -1827,5 +1827,9 @@ mod tests {
         let request = tonic::Request::new(crate::GetServicesRequest {});
         let result = jaeger.get_services(request).await.unwrap();
         assert_eq!(result.get_ref().services.len(), 3);
+        assert_eq!(
+            result.get_ref().services,
+            vec!["service1", "service2", "service3"]
+        );
     }
 }

@@ -349,11 +349,6 @@ pub async fn root_list_terms(
             "Trying to list terms on field which isn't indexed".to_string(),
         ));
     }
-    if field_entry.field_type().value_type() != tantivy::schema::Type::Str {
-        return Err(SearchError::InvalidQuery(
-            "Listing terms on non-string field isn't supported yet".to_string(),
-        ));
-    }
 
     let mut query = quickwit_metastore::ListSplitsQuery::for_index(&list_terms_request.index_id)
         .with_split_state(quickwit_metastore::SplitState::Published);
@@ -417,7 +412,7 @@ pub async fn root_list_terms(
         .map(|leaf_search_response| leaf_search_response.terms)
         .kmerge()
         .dedup();
-    let leaf_list_terms_response: Vec<String> = if let Some(limit) = list_terms_request.max_hits {
+    let leaf_list_terms_response: Vec<Vec<u8>> = if let Some(limit) = list_terms_request.max_hits {
         merged_iter.take(limit as usize).collect()
     } else {
         merged_iter.collect()
