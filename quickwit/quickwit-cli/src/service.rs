@@ -22,6 +22,7 @@ use std::str::FromStr;
 
 use clap::{arg, ArgAction, ArgMatches, Command};
 use itertools::Itertools;
+use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_serve::serve_quickwit;
@@ -91,13 +92,14 @@ impl RunCliCommand {
         ));
         quickwit_telemetry::send_telemetry_event(telemetry_event).await;
         // TODO move in serve quickwit?
-        start_actor_runtimes(&config.enabled_services)?;
+        let runtimes_config = RuntimesConfig::default();
+        start_actor_runtimes(runtimes_config, &config.enabled_services)?;
         let shutdown_signal = Box::pin(async move {
             signal::ctrl_c()
                 .await
                 .expect("Registering a signal handler for SIGINT should not fail.");
         });
-        let _ = serve_quickwit(config, shutdown_signal).await?;
+        let _ = serve_quickwit(config, runtimes_config, shutdown_signal).await?;
         Ok(())
     }
 }

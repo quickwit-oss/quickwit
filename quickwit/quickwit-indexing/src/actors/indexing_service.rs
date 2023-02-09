@@ -42,6 +42,7 @@ use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
@@ -138,13 +139,16 @@ pub struct IndexingService {
     local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
+    cooperative_indexing_permits: Option<Arc<Semaphore>>,
 }
 
 impl IndexingService {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         node_id: String,
         data_dir_path: PathBuf,
         indexer_config: IndexerConfig,
+        num_blocking_threads: usize,
         cluster: Cluster,
         metastore: Arc<dyn Metastore>,
         ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
@@ -158,8 +162,13 @@ impl IndexingService {
         let local_split_store =
             LocalSplitStore::open(split_cache_dir_path, split_store_space_quota).await?;
         let indexing_root_directory =
-            temp_dir::create_clean_directory(&data_dir_path.join(INDEXING_DIR_NAME)).await?;
+            temp_dir::create_or_purge_directory(&data_dir_path.join(INDEXING_DIR_NAME)).await?;
         let queue_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
+        let cooperative_indexing_permits = if indexer_config.enable_cooperative_indexing {
+            Some(Arc::new(Semaphore::new(num_blocking_threads)))
+        } else {
+            None
+        };
         Ok(Self {
             node_id,
             indexing_root_directory,
@@ -173,6 +182,7 @@ impl IndexingService {
             counters: Default::default(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
             merge_pipeline_handles: HashMap::new(),
+            cooperative_indexing_permits,
         })
     }
 
@@ -264,7 +274,7 @@ impl IndexingService {
             .join(&pipeline_id.source_id)
             .join(&pipeline_id.pipeline_ord.to_string())
             .tempdir_in(&self.indexing_root_directory)
-            .map_err(|err| IndexingServiceError::StorageError(err.into()))?;
+            .map_err(|error| IndexingServiceError::StorageError(error.into()))?;
         let storage = self
             .storage_resolver
             .resolve(&index_config.index_uri)
@@ -315,6 +325,7 @@ impl IndexingService {
             max_concurrent_split_uploads_index,
             max_concurrent_split_uploads_merge,
             queues_dir_path: self.queue_dir_path.clone(),
+            cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
             merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
@@ -804,6 +815,7 @@ mod tests {
         cluster: Cluster,
     ) -> (Mailbox<IndexingService>, ActorHandle<IndexingService>) {
         let indexer_config = IndexerConfig::for_test().unwrap();
+        let num_blocking_threads = 1;
         let storage_resolver = StorageUriResolver::for_test();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         let ingest_api_service =
@@ -814,6 +826,7 @@ mod tests {
             "test-node".to_string(),
             data_dir_path.to_path_buf(),
             indexer_config,
+            num_blocking_threads,
             cluster,
             metastore,
             Some(ingest_api_service),
@@ -1210,6 +1223,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
+        let num_blocking_threads = 1;
         let storage_resolver = StorageUriResolver::for_test();
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
@@ -1221,6 +1235,7 @@ mod tests {
             "test-node".to_string(),
             data_dir_path,
             indexer_config,
+            num_blocking_threads,
             cluster.clone(),
             metastore.clone(),
             Some(ingest_api_service),
@@ -1398,11 +1413,13 @@ mod tests {
         // Setup `IndexingService`
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
+        let num_blocking_threads = 1;
         let storage_resolver = StorageUriResolver::for_test();
         let mut indexing_server = IndexingService::new(
             "test-ingest-api-gc-node".to_string(),
             data_dir_path,
             indexer_config,
+            num_blocking_threads,
             cluster.clone(),
             metastore.clone(),
             Some(ingest_api_service.clone()),

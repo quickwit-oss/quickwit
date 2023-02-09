@@ -55,6 +55,7 @@ use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterChange, ClusterMember};
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
+use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
     Rate, RateLimitLayer, SmaRateEstimator,
@@ -147,6 +148,7 @@ async fn balance_channel_for_service(
 
 pub async fn serve_quickwit(
     config: QuickwitConfig,
+    runtimes_config: RuntimesConfig,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
     let universe = Universe::new();
@@ -254,6 +256,7 @@ pub async fn serve_quickwit(
         let indexing_service = start_indexing_service(
             &universe,
             &config,
+            runtimes_config.num_threads_blocking,
             cluster.clone(),
             metastore.clone(),
             ingest_api_service.clone(),
