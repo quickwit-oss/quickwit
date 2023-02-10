@@ -201,7 +201,14 @@ impl TestSandbox {
 
     #[cfg(any(test, feature = "testsuite"))]
     pub async fn assert_quit(self) {
-        self.universe.assert_quit().await;
+        use quickwit_actors::ActorExitStatus;
+
+        assert!(!self
+            .universe
+            .quit()
+            .await
+            .into_iter()
+            .any(|status| matches!(status, ActorExitStatus::Panicked)));
     }
 }
 
