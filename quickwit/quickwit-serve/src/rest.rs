@@ -22,12 +22,13 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use futures::Future;
-use hyper::{http, Response, StatusCode};
+use hyper::header::CONTENT_TYPE;
+use hyper::{http, Response, StatusCode, Uri};
 use quickwit_common::metrics;
 use quickwit_proto::ServiceErrorCode;
 use tracing::{error, info};
 use utoipa_swagger_ui::Config;
-use warp::path::Tail;
+use warp::path::{FullPath, Tail};
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
@@ -62,6 +63,7 @@ pub(crate) async fn start_rest_server(
     let swagger_config = Arc::new(Config::from("/openapi.json"));
     let swagger_ui = warp::path("swagger-ui")
         .and(warp::get())
+        .and(warp::path::full())
         .and(warp::path::tail())
         .and(with_arg(swagger_config))
         .and_then(swagger_ui_handler);
@@ -132,16 +134,22 @@ pub(crate) async fn start_rest_server(
 }
 
 async fn swagger_ui_handler(
+    full_path: FullPath,
     tail: Tail,
     config: Arc<Config<'static>>,
 ) -> Result<Box<dyn Reply>, Rejection> {
+    if full_path.as_str() == "/swagger-ui" {
+        return Ok(Box::new(warp::redirect::found(Uri::from_static(
+            "/swagger-ui/",
+        ))));
+    }
     let path = tail.as_str();
     match utoipa_swagger_ui::serve(path, config) {
         Ok(file) => {
             if let Some(file) = file {
                 Ok(Box::new(
                     Response::builder()
-                        .header("Content-Type", file.content_type)
+                        .header(CONTENT_TYPE, file.content_type)
                         .body(file.bytes),
                 ))
             } else {

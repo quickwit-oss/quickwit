@@ -740,7 +740,7 @@ dependencies = [
 [[package]]
 name = "chitchat"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/chitchat?rev=cd568ba#cd568ba2ca4fc83b5dcb079b4606a2c3521b9339"
+source = "git+https://github.com/quickwit-oss/chitchat?rev=08e6799#08e6799dfa4301e9c1cadb2efb7d5dd31640326c"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1787,7 +1787,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=116c6d3#116c6d362191e1498ddf47311ac5f6bd66d1c60d"
 dependencies = [
  "fastdivide",
  "itertools",
@@ -3604,7 +3604,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=116c6d3#116c6d362191e1498ddf47311ac5f6bd66d1c60d"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -4462,7 +4462,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -4489,7 +4489,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
- "utoipa 2.4.2",
+ "utoipa",
  "warp",
 ]
 
@@ -4516,7 +4516,7 @@ dependencies = [
  "tokio",
  "toml 0.6.0",
  "tracing",
- "utoipa 2.4.2",
+ "utoipa",
  "vrl",
  "vrl-stdlib",
 ]
@@ -4634,7 +4634,7 @@ dependencies = [
  "time-fmt",
  "tracing",
  "typetag",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -4706,7 +4706,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "ulid",
- "utoipa 2.4.2",
+ "utoipa",
  "value",
  "vrl",
  "vrl-stdlib",
@@ -4795,7 +4795,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -4832,7 +4832,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -4883,7 +4883,7 @@ dependencies = [
  "tonic-build",
  "tracing",
  "tracing-opentelemetry",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -4913,7 +4913,6 @@ dependencies = [
  "anyhow",
  "assert-json-diff",
  "async-trait",
- "base64 0.21.0",
  "bytes",
  "chitchat",
  "fastfield_codecs",
@@ -4947,7 +4946,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-opentelemetry",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -5002,7 +5001,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-opentelemetry",
- "utoipa 2.4.2",
+ "utoipa",
  "utoipa-swagger-ui",
  "warp",
 ]
@@ -6642,7 +6641,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.19.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=116c6d3#116c6d362191e1498ddf47311ac5f6bd66d1c60d"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -6678,6 +6677,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "tantivy-bitpacker",
+ "tantivy-columnar",
  "tantivy-common",
  "tantivy-fst",
  "tantivy-query-grammar",
@@ -6695,12 +6695,27 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=116c6d3#116c6d362191e1498ddf47311ac5f6bd66d1c60d"
+
+[[package]]
+name = "tantivy-columnar"
+version = "0.1.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=116c6d3#116c6d362191e1498ddf47311ac5f6bd66d1c60d"
+dependencies = [
+ "fastdivide",
+ "fnv",
+ "itertools",
+ "log",
+ "tantivy-bitpacker",
+ "tantivy-common",
+ "tantivy-sstable",
+ "tantivy-stacker",
+]
 
 [[package]]
 name = "tantivy-common"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=116c6d3#116c6d362191e1498ddf47311ac5f6bd66d1c60d"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -6721,7 +6736,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.19.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=116c6d3#116c6d362191e1498ddf47311ac5f6bd66d1c60d"
 dependencies = [
  "combine",
  "once_cell",
@@ -6731,7 +6746,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=116c6d3#116c6d362191e1498ddf47311ac5f6bd66d1c60d"
 dependencies = [
  "ciborium",
  "serde",
@@ -6742,7 +6757,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=116c6d3#116c6d362191e1498ddf47311ac5f6bd66d1c60d"
 dependencies = [
  "byteorder",
  "murmurhash32",
@@ -6752,7 +6767,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=116c6d3#116c6d362191e1498ddf47311ac5f6bd66d1c60d"
 dependencies = [
  "serde",
 ]
@@ -7605,18 +7620,6 @@ checksum = "936e4b492acfd135421d8dca4b1aa80a7bfc26e702ef3af710e0752684df5372"
 
 [[package]]
 name = "utoipa"
-version = "2.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b626abb3bbbe41ce00df6dea3d109a83a034930245c3307026d82d71e7a06e43"
-dependencies = [
- "indexmap",
- "serde",
- "serde_json",
- "utoipa-gen 2.4.2",
-]
-
-[[package]]
-name = "utoipa"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3920fa753064b1be7842bea26175ffa0dfc4a8f30bcb52b8ff03fddf8889914c"
@@ -7624,19 +7627,7 @@ dependencies = [
  "indexmap",
  "serde",
  "serde_json",
- "utoipa-gen 3.0.1",
-]
-
-[[package]]
-name = "utoipa-gen"
-version = "2.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "250e8cdb0461b6fbaa1c1acb7f08300d773713fab721776becf5f7386b41a791"
-dependencies = [
- "proc-macro-error",
- "proc-macro2",
- "quote 1.0.23",
- "syn 1.0.107",
+ "utoipa-gen",
 ]
 
 [[package]]
@@ -7662,7 +7653,7 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
- "utoipa 3.0.1",
+ "utoipa",
  "zip",
 ]
 

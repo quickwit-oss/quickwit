@@ -39,7 +39,7 @@ use quickwit_storage::{
 };
 use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
-use tantivy::schema::{Cardinality, Field, FieldType, Type, Value as TantivyValue};
+use tantivy::schema::{Cardinality, Field, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 use tracing::*;
@@ -491,12 +491,12 @@ async fn leaf_list_terms_single_split(
     let start_term: Option<Term> = search_request
         .start_key
         .as_ref()
-        .map(|term| value_from_json(field, field_type, term))
+        .map(|term| term_from_data(field, field_type, term))
         .transpose()?;
     let end_term: Option<Term> = search_request
         .end_key
         .as_ref()
-        .map(|term| value_from_json(field, field_type, term))
+        .map(|term| term_from_data(field, field_type, term))
         .transpose()?;
 
     let mut segment_results = Vec::new();
@@ -535,16 +535,16 @@ async fn leaf_list_terms_single_split(
         let mut stream = range
             .into_stream()
             .with_context(|| "Failed to create stream over sstable")?;
-        let mut segment_result: Vec<String> =
+        let mut segment_result: Vec<Vec<u8>> =
             Vec::with_capacity(search_request.max_hits.unwrap_or(0) as usize);
         while stream.advance() {
-            segment_result.push(value_to_json(field, field_type, stream.key())?);
+            segment_result.push(term_to_data(field, field_type, stream.key())?);
         }
         segment_results.push(segment_result);
     }
 
     let merged_iter = segment_results.into_iter().kmerge().dedup();
-    let merged_results: Vec<String> = if let Some(limit) = search_request.max_hits {
+    let merged_results: Vec<Vec<u8>> = if let Some(limit) = search_request.max_hits {
         merged_iter.take(limit as usize).collect()
     } else {
         merged_iter.collect()
@@ -558,60 +558,31 @@ async fn leaf_list_terms_single_split(
     })
 }
 
-fn value_from_json(field: Field, field_type: &FieldType, json: &str) -> crate::Result<Term> {
-    let json = serde_json::from_str(json)?;
-    let value = field_type
-        .value_from_json(json)
-        .map_err(|_| SearchError::InvalidQuery("term doesn't match field type".to_string()))?;
-    let term = match value {
-        TantivyValue::Str(s) => Term::from_field_text(field, &s),
-        TantivyValue::PreTokStr(s) => Term::from_field_text(field, &s.text),
-        TantivyValue::U64(number) => Term::from_field_u64(field, number),
-        TantivyValue::I64(number) => Term::from_field_i64(field, number),
-        TantivyValue::F64(number) => Term::from_field_f64(field, number),
-        TantivyValue::Bool(b) => Term::from_field_bool(field, b),
-        TantivyValue::Date(date) => Term::from_field_date(field, date),
-        TantivyValue::Facet(facet) => Term::from_facet(field, &facet),
-        TantivyValue::Bytes(bytes) => Term::from_field_bytes(field, &bytes),
-        TantivyValue::IpAddr(ip) => Term::from_field_ip_addr(field, ip),
-        TantivyValue::JsonObject(_) => {
-            return Err(SearchError::InvalidQuery(
-                "listing JSON field isn't supported yet".to_string(),
-            ))
-        }
-    };
-    Ok(term)
+fn term_from_data(field: Field, field_type: &FieldType, data: &[u8]) -> crate::Result<Term> {
+    let term = Term::wrap(data);
+    if term.typ() != field_type.value_type() {
+        return Err(SearchError::InvalidQuery(
+            "term doesn't match field type".to_string(),
+        ));
+    }
+
+    let mut res = Term::from_field_bool(field, false);
+    res.clear_with_type(term.typ());
+    res.append_bytes(term.value_bytes());
+
+    Ok(res)
 }
 
-fn value_to_json(
+fn term_to_data(
     field: Field,
     field_type: &FieldType,
     field_value: &[u8],
-) -> crate::Result<String> {
-    // TODO use sortable base64 (alphabet = "+/0..9A..Za..z", not padding) to make result sortable
-    // independantly of type
-    use serde_json::Value as JsonValue;
-
+) -> crate::Result<Vec<u8>> {
     let mut term = Term::from_field_bool(field, false);
     term.clear_with_type(field_type.value_type());
     term.append_bytes(field_value);
-    let json: Option<JsonValue> = match field_type.value_type() {
-        Type::Str => term.as_str().map(|s| s.into()),
-        // json doesn't keep numbers sorted (1 < 10 < 2)
-        // Type::U64 => term.as_u64().map(|number| number.into()),
-        // Type::I64 => term.as_i64().map(|number| number.into()),
-        // Type::F64 => term.as_f64().map(|number| number.into()),
-        Type::U64 | Type::I64 | Type::F64 => None,
-        Type::Bool => term.as_bool().map(|b| b.into()),
-        Type::IpAddr => None, // no getter yet?
-        Type::Bytes | Type::Date | Type::Facet | Type::Json => None,
-    };
-    let Some(json) = json else {
-        return Err(SearchError::InvalidQuery("Unsupported field type".to_string()));
-    };
 
-    serde_json::to_string(&json)
-        .map_err(|_| SearchError::InternalError("failed to serialize term".to_string()))
+    Ok(term.as_slice().to_vec())
 }
 
 /// `leaf` step of list terms.
@@ -664,7 +635,7 @@ pub async fn leaf_list_terms(
         .map(|leaf_search_response| leaf_search_response.terms)
         .kmerge()
         .dedup();
-    let terms: Vec<String> = if let Some(limit) = request.max_hits {
+    let terms: Vec<Vec<u8>> = if let Some(limit) = request.max_hits {
         merged_iter.take(limit as usize).collect()
     } else {
         merged_iter.collect()
