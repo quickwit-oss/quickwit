@@ -482,7 +482,7 @@ mod pulsar_broker_tests {
     use super::*;
     use crate::new_split_id;
     use crate::source::pulsar_source::{msg_id_from_position, msg_id_to_position};
-    use crate::source::quickwit_supported_sources;
+    use crate::source::{quickwit_supported_sources, SuggestTruncate};
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
     static PULSAR_ADMIN_URI: &str = "http://localhost:8081";
@@ -655,6 +655,8 @@ mod pulsar_broker_tests {
     async fn wait_for_completion(
         source_handle: ActorHandle<SourceActor>,
         num_expected: usize,
+        partition: PartitionId,
+        truncate_to: Position,
     ) -> JsonValue {
         loop {
             let observation = source_handle.observe().await;
@@ -669,6 +671,18 @@ mod pulsar_broker_tests {
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
+
+        let mut checkpoint = SourceCheckpoint::default();
+        checkpoint
+            .try_apply_delta(checkpoints!(partition => truncate_to))
+            .expect("Create checkpoint");
+        let truncate = SuggestTruncate(checkpoint);
+        source_handle
+            .mailbox()
+            .send_message(truncate)
+            .await
+            .expect("Truncate");
+
         let (_exit_status, exit_state) = source_handle.quit().await;
         exit_state
     }
@@ -875,62 +889,6 @@ mod pulsar_broker_tests {
         assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
     }
 
-    // #[tokio::test]
-    // async fn test_suggest_truncate() {
-    //     let metastore = metastore_for_test();
-    //     let topic = append_random_suffix("test-pulsar-source-topic-suggest-truncate");
-    //
-    //     let index_id = append_random_suffix("test-pulsar-source-index-suggest-truncate");
-    //     let (_source_id, source_config) = get_source_config([&topic]);
-    //     let params = if let SourceParams::Pulsar(params) = source_config.clone().source_params {
-    //         params
-    //     } else {
-    //         unreachable!()
-    //     };
-    //
-    //     let ctx = SourceExecutionContext::for_test(
-    //         metastore,
-    //         &index_id,
-    //         PathBuf::from("./queues"),
-    //         source_config,
-    //     );
-    //     let start_checkpoint = SourceCheckpoint::default();
-    //
-    //     let mut pulsar_source = PulsarSource::try_new(ctx, params, start_checkpoint)
-    //         .await
-    //         .expect("Setup pulsar source");
-    //
-    //
-    //
-    //     let client = Pulsar::builder(PULSAR_URI, TokioExecutor).build().await?;
-    //
-    //     let mut topic_messages = Vec::with_capacity(2);
-    //     let mut producer = client
-    //         .producer()
-    //         .with_name(append_random_suffix(CLIENT_NAME))
-    //         .with_topic(topic.as_ref())
-    //         .build()
-    //         .await?;
-    //
-    //     for id in 0..2 {
-    //         let msg = message_generator(topic.as_ref(), id).to_string();
-    //         topic_messages.push(msg);
-    //     }
-    //
-    //     let futures = producer.send_all(topic_messages.clone()).await?;
-    //     let receipts = join_all(futures).await;
-    //
-    //     let mut msg_ids = Vec::with_capacity(2);
-    //     for result in receipts {
-    //         let msg_id = result?.message_id.unwrap();
-    //         msg_ids.push(msg_id);
-    //     }
-    //     producer.close().await.expect("Close connection.");
-    //
-    //
-    //     panic!("yeet")
-    // }
-
     #[tokio::test]
     async fn test_topic_ingestion() {
         let universe = Universe::with_accelerated_time();
@@ -956,7 +914,13 @@ mod pulsar_broker_tests {
             .await
             .unwrap();
 
-        let exit_state = wait_for_completion(source_handle, expected_docs[0].len()).await;
+        let exit_state = wait_for_completion(
+            source_handle,
+            expected_docs[0].len(),
+            PartitionId::from(topic.clone()),
+            expected_docs[0].expected_position.clone(),
+        )
+        .await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(!messages.is_empty());
 
@@ -1014,7 +978,13 @@ mod pulsar_broker_tests {
             .collect::<Vec<_>>();
         combined_messages.sort();
 
-        let exit_state = wait_for_completion(source_handle, combined_messages.len()).await;
+        let exit_state = wait_for_completion(
+            source_handle,
+            combined_messages.len(),
+            PartitionId::from(topic1.clone()),
+            expected_docs[0].expected_position.clone(),
+        )
+        .await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(!messages.is_empty());
 
@@ -1070,7 +1040,13 @@ mod pulsar_broker_tests {
             .await
             .unwrap();
 
-        let exit_state = wait_for_completion(source_handle, expected_docs.len()).await;
+        let exit_state = wait_for_completion(
+            source_handle,
+            expected_docs.len(),
+            PartitionId::from(topic.clone()),
+            expected_docs[0].expected_position.clone(),
+        )
+        .await;
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(!messages.is_empty());
 
@@ -1135,8 +1111,20 @@ mod pulsar_broker_tests {
         .await
         .unwrap();
 
-        let exit_state1 = wait_for_completion(source_handle1, 10).await;
-        let exit_state2 = wait_for_completion(source_handle2, 10).await;
+        let exit_state1 = wait_for_completion(
+            source_handle1,
+            10,
+            PartitionId::from(topic_partition_1.clone()),
+            expected_docs[0].expected_position.clone(),
+        )
+        .await;
+        let exit_state2 = wait_for_completion(
+            source_handle2,
+            10,
+            PartitionId::from(topic_partition_2.clone()),
+            expected_docs[1].expected_position.clone(),
+        )
+        .await;
         let messages1: Vec<RawDocBatch> = doc_processor_inbox1.drain_for_test_typed();
         assert!(!messages1.is_empty());
         let messages2: Vec<RawDocBatch> = doc_processor_inbox2.drain_for_test_typed();
