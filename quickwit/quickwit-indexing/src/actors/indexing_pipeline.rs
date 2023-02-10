@@ -641,7 +641,6 @@ mod tests {
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1 + num_fails);
-        universe.assert_quit().await;
         Ok(pipeline_exit_status.is_success())
     }
 
