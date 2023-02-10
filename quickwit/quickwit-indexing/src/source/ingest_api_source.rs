@@ -307,6 +307,7 @@ mod tests {
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 2);
         assert!(doc_batches[1].docs[0].starts_with("038462"));
+        ingest_api_source_handle.quit().await;
         universe.assert_quit().await;
         Ok(())
     }
@@ -407,6 +408,7 @@ mod tests {
             doc_batches[0].checkpoint_delta.partitions().next().unwrap(),
             &partition_id
         );
+        ingest_api_source_handle.quit().await;
         universe.assert_quit().await;
 
         Ok(())
@@ -459,6 +461,7 @@ mod tests {
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 1);
         assert!(doc_batches[0].docs[0].starts_with("000000"));
+        ingest_api_source_handle.quit().await;
         universe.assert_quit().await;
         Ok(())
     }
