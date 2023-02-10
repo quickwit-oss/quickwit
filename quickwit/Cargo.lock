@@ -4462,7 +4462,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -4489,7 +4489,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
- "utoipa 2.4.2",
+ "utoipa",
  "warp",
 ]
 
@@ -4516,7 +4516,7 @@ dependencies = [
  "tokio",
  "toml 0.6.0",
  "tracing",
- "utoipa 2.4.2",
+ "utoipa",
  "vrl",
  "vrl-stdlib",
 ]
@@ -4634,7 +4634,7 @@ dependencies = [
  "time-fmt",
  "tracing",
  "typetag",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -4706,7 +4706,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "ulid",
- "utoipa 2.4.2",
+ "utoipa",
  "value",
  "vrl",
  "vrl-stdlib",
@@ -4795,7 +4795,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -4832,7 +4832,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -4883,7 +4883,7 @@ dependencies = [
  "tonic-build",
  "tracing",
  "tracing-opentelemetry",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -4946,7 +4946,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-opentelemetry",
- "utoipa 2.4.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -5001,7 +5001,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-opentelemetry",
- "utoipa 2.4.2",
+ "utoipa",
  "utoipa-swagger-ui",
  "warp",
 ]
@@ -7620,18 +7620,6 @@ checksum = "936e4b492acfd135421d8dca4b1aa80a7bfc26e702ef3af710e0752684df5372"
 
 [[package]]
 name = "utoipa"
-version = "2.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b626abb3bbbe41ce00df6dea3d109a83a034930245c3307026d82d71e7a06e43"
-dependencies = [
- "indexmap",
- "serde",
- "serde_json",
- "utoipa-gen 2.4.2",
-]
-
-[[package]]
-name = "utoipa"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3920fa753064b1be7842bea26175ffa0dfc4a8f30bcb52b8ff03fddf8889914c"
@@ -7639,19 +7627,7 @@ dependencies = [
  "indexmap",
  "serde",
  "serde_json",
- "utoipa-gen 3.0.1",
-]
-
-[[package]]
-name = "utoipa-gen"
-version = "2.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "250e8cdb0461b6fbaa1c1acb7f08300d773713fab721776becf5f7386b41a791"
-dependencies = [
- "proc-macro-error",
- "proc-macro2",
- "quote 1.0.23",
- "syn 1.0.107",
+ "utoipa-gen",
 ]
 
 [[package]]
@@ -7677,7 +7653,7 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
- "utoipa 3.0.1",
+ "utoipa",
  "zip",
 ]
 
