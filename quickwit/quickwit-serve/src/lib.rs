@@ -164,11 +164,6 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     )
     .await?;
 
-    tokio::spawn(node_readiness_reporting_task(
-        cluster.clone(),
-        metastore.clone(),
-    ));
-
     // Always instantiate index management service.
     let index_service = Arc::new(IndexService::new(
         metastore.clone(),
@@ -252,8 +247,8 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     let quickwit_services = QuickwitServices {
         config: Arc::new(config),
         build_info: quickwit_build_info(),
-        cluster,
-        metastore,
+        cluster: cluster.clone(),
+        metastore: metastore.clone(),
         indexing_scheduler_service,
         search_service,
         indexing_service,
@@ -264,6 +259,11 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     };
     let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
     let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
+
+    // Node readiness indicates that the server is ready to receive requests.
+    // Thus readiness task is started once gRPC and REST servers are started.
+    tokio::spawn(node_readiness_reporting_task(cluster, metastore));
+
     tokio::try_join!(grpc_server, rest_server)?;
     Ok(())
 }
