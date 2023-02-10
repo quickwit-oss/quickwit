@@ -19,8 +19,8 @@
 
 use futures::StreamExt;
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse,
-    LeafSearchStreamRequest, LeafSearchStreamResponse,
+    FetchDocsRequest, FetchDocsResponse, LeafListTermsRequest, LeafListTermsResponse,
+    LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest, LeafSearchStreamResponse,
 };
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tokio::sync::mpsc::error::SendError;
@@ -143,6 +143,17 @@ impl ClusterClient {
         });
 
         UnboundedReceiverStream::new(result_receiver)
+    }
+
+    /// Leaf search with retry on another node client.
+    pub async fn leaf_list_terms(
+        &self,
+        request: LeafListTermsRequest,
+        mut client: SearchServiceClient,
+    ) -> crate::Result<LeafListTermsResponse> {
+        let response_res = client.leaf_list_terms(request.clone()).await;
+        // TODO: implement retry
+        response_res
     }
 }
 

@@ -69,8 +69,8 @@ pub use crate::client::{create_search_service_client, SearchServiceClient};
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
-use crate::leaf::leaf_search;
-pub use crate::root::{jobs_to_leaf_request, root_search, SearchJob};
+use crate::leaf::{leaf_list_terms, leaf_search};
+pub use crate::root::{jobs_to_leaf_request, root_list_terms, root_search, SearchJob};
 pub use crate::search_job_placer::SearchJobPlacer;
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
@@ -265,4 +265,21 @@ pub async fn start_searcher_service(
         quickwit_config.searcher_config.clone(),
     ));
     Ok(search_service)
+}
+
+/// Create a Term from a &str
+#[cfg(any(test, feature = "testsuite"))]
+#[macro_export]
+macro_rules! encode_term_for_test {
+    ($field:expr, $value:expr) => {
+        ::tantivy::schema::Term::from_field_text(
+            ::tantivy::schema::Field::from_field_id($field),
+            $value,
+        )
+        .as_slice()
+        .to_vec()
+    };
+    ($value:expr) => {
+        encode_term_for_test!(0, $value)
+    };
 }

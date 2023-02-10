@@ -63,6 +63,8 @@ mod ingest_api_source;
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
+#[cfg(feature = "pulsar")]
+mod pulsar_source;
 mod source_factory;
 mod vec_source;
 mod void_source;
@@ -79,6 +81,8 @@ pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
 use once_cell::sync::OnceCell;
+#[cfg(feature = "pulsar")]
+pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
@@ -286,6 +290,8 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source("kafka", KafkaSourceFactory);
         #[cfg(feature = "kinesis")]
         source_factory.add_source("kinesis", KinesisSourceFactory);
+        #[cfg(feature = "pulsar")]
+        source_factory.add_source("pulsar", PulsarSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
         source_factory.add_source("void", VoidSourceFactory);
         source_factory.add_source("ingest-api", IngestApiSourceFactory);
@@ -322,6 +328,17 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
             #[cfg(feature = "kinesis")]
             {
                 kinesis::check_connectivity(params.clone()).await?;
+                Ok(())
+            }
+        }
+        #[allow(unused_variables)]
+        SourceParams::Pulsar(params) => {
+            #[cfg(not(feature = "pulsar"))]
+            bail!("Quickwit binary was not compiled with the `pulsar` feature.");
+
+            #[cfg(feature = "pulsar")]
+            {
+                pulsar_source::check_connectivity(params).await?;
                 Ok(())
             }
         }

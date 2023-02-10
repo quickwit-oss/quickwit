@@ -219,6 +219,24 @@ impl SearchServiceClient {
             SearchServiceClientImpl::Local(service) => service.fetch_docs(request).await,
         }
     }
+
+    /// Perform leaf list terms.
+    pub async fn leaf_list_terms(
+        &mut self,
+        request: quickwit_proto::LeafListTermsRequest,
+    ) -> crate::Result<quickwit_proto::LeafListTermsResponse> {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Grpc(grpc_client) => {
+                let tonic_request = Request::new(request);
+                let tonic_response = grpc_client
+                    .leaf_list_terms(tonic_request)
+                    .await
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+                Ok(tonic_response.into_inner())
+            }
+            SearchServiceClientImpl::Local(service) => service.leaf_list_terms(request).await,
+        }
+    }
 }
 
 /// Creates a [`SearchServiceClient`] with SocketAddr as an argument.

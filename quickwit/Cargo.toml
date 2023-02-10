@@ -44,7 +44,7 @@ backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.21"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
 bytes = "1"
-chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "cd568ba" }
+chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "08e6799" }
 chrono = "0.4.23"
 clap = { version = "=3.1", features = ["env"] }
 colored = "2.0.0"
@@ -106,6 +106,7 @@ prost = { version = "0.11.6", default-features = false, features = [
 ] }
 prost-build = "0.11.6"
 prost-types = "0.11.6"
+pulsar = { git = "https://github.com/quickwit-oss/pulsar-rs.git", rev = "f9eff04", default-features = false, features = ["compression", "tokio-runtime", "auth-oauth2"] }
 quickwit_elastic_api_generation = { git = "https://github.com/quickwit-oss/elasticsearch-rs", rev = "c157b19" }
 rand = "0.8"
 rand_distr = "0.4"
@@ -176,7 +177,7 @@ tracing-subscriber = { version = "0.3.16", features = [
 typetag = "0.2"
 ulid = "1.0"
 username = "0.2"
-utoipa = { version = "2.4.2", features = ["json"]}
+utoipa = "3.0.1"
 utoipa-swagger-ui = "3.0.2"
 uuid = { version = "1.3", features = ["v4", "serde"] }
 value = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" } # vrl-value
@@ -208,14 +209,14 @@ quickwit-serve = { version = "0.4.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.4.0", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.4.0", path = "./quickwit-telemetry" }
 
-fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c9cb3d0" }
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c9cb3d0", default-features = false, features = [
+fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "116c6d3" }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "116c6d3", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
   "quickwit",
 ] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c9cb3d0" }
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "116c6d3" }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.

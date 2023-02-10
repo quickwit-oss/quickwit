@@ -9,7 +9,7 @@ for file in $(git ls-files | \
     grep -v "quickwit-proto/src" \
 )
 do
-    diff <(sed 's/{\\d+}/2022/' .license_header.txt) <(head -n 19 $file)
+    diff <(sed 's/{\\d+}/2023/' .license_header.txt) <(head -n 19 $file)
     DIFFRESULT=$?
     if [ $DIFFRESULT -ne 0 ]; then
         echo $DIFFRESULT

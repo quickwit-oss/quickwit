@@ -37,7 +37,7 @@ use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::metastore_api::DeleteTask;
 use quickwit_proto::SearchRequest;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
-use tantivy::{Directory, Index, IndexMeta, SegmentId, SegmentReader, TantivyError};
+use tantivy::{Directory, Index, IndexMeta, SegmentId, SegmentReader};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
 
@@ -391,12 +391,7 @@ impl MergeExecutor {
             if let Some(ref timestamp_field_name) = self.doc_mapper.timestamp_field_name() {
                 let timestamp_field = merged_segment_reader
                     .schema()
-                    .get_field(timestamp_field_name)
-                    .ok_or_else(|| {
-                        TantivyError::SchemaError(format!(
-                            "Timestamp field `{timestamp_field_name}` does not exist"
-                        ))
-                    })?;
+                    .get_field(timestamp_field_name)?;
                 let reader = timestamp_field_reader(timestamp_field, &merged_segment_reader)?;
                 Some(reader.min_value()..=reader.max_value())
             } else {
