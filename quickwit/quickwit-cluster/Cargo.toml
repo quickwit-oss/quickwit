@@ -30,4 +30,6 @@ quickwit-proto = { workspace = true }
 testsuite = []
 
 [dev-dependencies]
+quickwit-common = { workspace = true, features = ["testsuite"] }
+
 tempfile = { workspace = true }

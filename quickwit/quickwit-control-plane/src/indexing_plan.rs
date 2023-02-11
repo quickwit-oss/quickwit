@@ -354,7 +354,7 @@ mod tests {
                 HashSet::from_iter([quickwit_service].into_iter()),
                 addr,
                 addr,
-                None,
+                Vec::new(),
             ))
         }
         members

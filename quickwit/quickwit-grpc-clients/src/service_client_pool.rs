@@ -224,7 +224,7 @@ mod tests {
             HashSet::from([QuickwitService::Metastore]),
             metastore_grpc_addr,
             metastore_grpc_addr,
-            None,
+            Vec::new(),
         );
         let searcher_1_member = ClusterMember::new(
             "2".to_string(),
@@ -232,7 +232,7 @@ mod tests {
             HashSet::from([QuickwitService::Searcher]),
             searcher_1_grpc_addr,
             searcher_1_grpc_addr,
-            None,
+            Vec::new(),
         );
         let searcher_2_member = ClusterMember::new(
             "2".to_string(),
@@ -240,7 +240,7 @@ mod tests {
             HashSet::from([QuickwitService::Searcher]),
             searcher_2_grpc_addr,
             searcher_2_grpc_addr,
-            None,
+            Vec::new(),
         );
         let (members_tx, members_rx) = watch::channel::<Vec<ClusterMember>>(vec![
             metastore_service_member,
