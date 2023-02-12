@@ -31,8 +31,8 @@ use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
-    Event as QwEvent, Link as QwLink, Span as QwSpan, SpanStatus as QwSpanStatus,
-    OTEL_TRACE_INDEX_ID,
+    Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint, SpanKind as QwSpanKind,
+    SpanStatus as QwSpanStatus, OTEL_TRACE_INDEX_ID,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -100,11 +100,12 @@ impl JaegerService {
 
         let index_id = TRACE_INDEX_ID.to_string();
         let max_hits = Some(1_000);
-        let start_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600); // 24-hour lookback
+        let start_timestamp =
+            Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
 
         let search_request = ListTermsRequest {
             index_id,
-            field: "service_name".to_owned(),
+            field: "service_name".to_string(),
             max_hits,
             start_timestamp,
             end_timestamp: None,
@@ -115,12 +116,7 @@ impl JaegerService {
         let services: Vec<String> = search_response
             .terms
             .into_iter()
-            .map(|term| {
-                tantivy::Term::wrap(term)
-                    .as_str()
-                    .expect("Expected string term")
-                    .to_string()
-            })
+            .map(|term_bytes| extract_term(&term_bytes))
             .collect();
         let response = GetServicesResponse { services };
         debug!(response=?response, "`get_services` response");
@@ -134,48 +130,29 @@ impl JaegerService {
     ) -> JaegerResult<GetOperationsResponse> {
         debug!(request=?request, "`get_operations` request");
 
-        let current_span = RuntimeSpan::current();
-        current_span.record("service", &request.service);
-
         let index_id = TRACE_INDEX_ID.to_string();
-        let query = build_search_query(
-            &request.service,
-            &request.span_kind,
-            "",
-            HashMap::new(),
-            None,
-            None,
-            None,
-            None,
-        );
-        let max_hits = 1_000;
+        let max_hits = Some(1_000);
         let start_timestamp =
             Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
 
-        let search_request = SearchRequest {
+        let span_kind_opt = request.span_kind.parse().ok();
+        let start_key = SpanFingerprint::start_key(&request.service, span_kind_opt.clone());
+        let end_key = SpanFingerprint::end_key(&request.service, span_kind_opt);
+
+        let search_request = ListTermsRequest {
             index_id,
-            query,
+            field: "span_fingerprint".to_string(),
             max_hits,
             start_timestamp,
             end_timestamp: None,
-            search_fields: Vec::new(),
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
+            start_key,
+            end_key,
         };
-        let search_response = self.search_service.root_search(search_request).await?;
+        let search_response = self.search_service.root_list_terms(search_request).await?;
         let operations: Vec<Operation> = search_response
-            .hits
+            .terms
             .into_iter()
-            .map(|hit| {
-                serde_json::from_str::<JsonValue>(&hit.json)
-                    .expect("Failed to deserialize hit. This should never happen!")
-            })
-            .flat_map(extract_operation)
-            .sorted()
-            .dedup()
+            .map(|term_json| extract_operation(&term_json))
             .collect();
         debug!(operations=?operations, "`get_operations` response");
         let response = GetOperationsResponse {
@@ -253,6 +230,7 @@ impl JaegerService {
         trace_query: TraceQueryParameters,
     ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
         let index_id = TRACE_INDEX_ID.to_string();
+        let span_kind_opt = None;
         let min_span_start_timestamp_secs_opt = trace_query.start_time_min.map(|ts| ts.seconds);
         let max_span_start_timestamp_secs_opt = trace_query.start_time_max.map(|ts| ts.seconds);
         let min_span_duration_millis_opt = trace_query
@@ -263,7 +241,7 @@ impl JaegerService {
             .and_then(|d| to_duration_millis(&d));
         let query = build_search_query(
             &trace_query.service_name,
-            "",
+            span_kind_opt,
             &trace_query.operation_name,
             trace_query.tags,
             min_span_start_timestamp_secs_opt,
@@ -518,19 +496,28 @@ impl SpanReaderPlugin for JaegerService {
     }
 }
 
-fn extract_operation(mut doc: JsonValue) -> Option<Operation> {
-    match (doc["span_name"].take(), doc["span_kind"].take()) {
-        (JsonValue::String(span_name), JsonValue::Number(span_kind_number)) => {
-            let span_kind_id = span_kind_number
-                .as_u64()
-                .expect("Span kind should be stored as u64.");
-            let span_kind = to_span_kind(span_kind_id).to_string();
-            Some(Operation {
-                name: span_name,
-                span_kind,
-            })
-        }
-        _ => None,
+fn extract_term(term_bytes: &[u8]) -> String {
+    tantivy::Term::wrap(term_bytes)
+        .as_str()
+        .expect("Term should be a valid UTF-8 string.")
+        .to_string()
+}
+
+fn extract_operation(term_bytes: &[u8]) -> Operation {
+    let term = extract_term(term_bytes);
+    let fingerprint = SpanFingerprint::from_string(term);
+    let span_name = fingerprint
+        .span_name()
+        .expect("The span fingerprint should be properly formed.")
+        .to_string();
+    let span_kind = fingerprint
+        .span_kind()
+        .map(|span_kind| span_kind.as_jaeger())
+        .expect("The span fingerprint should be properly formed.")
+        .to_string();
+    Operation {
+        name: span_name,
+        span_kind,
     }
 }
 
@@ -538,7 +525,7 @@ fn extract_operation(mut doc: JsonValue) -> Option<Operation> {
 #[allow(clippy::too_many_arguments)]
 fn build_search_query(
     service_name: &str,
-    span_kind: &str,
+    span_kind_opt: Option<QwSpanKind>,
     span_name: &str,
     mut tags: HashMap<String, String>,
     min_span_start_timestamp_secs_opt: Option<i64>,
@@ -555,12 +542,12 @@ fn build_search_query(
         query.push_str("service_name:");
         query.push_str(service_name);
     }
-    if !span_kind.is_empty() {
+    if let Some(span_kind) = span_kind_opt {
         if !query.is_empty() {
             query.push_str(" AND ");
         }
         query.push_str("span_kind:");
-        query.push_str(to_span_kind_id(span_kind));
+        query.push(span_kind.as_char());
     }
     if !span_name.is_empty() {
         if !query.is_empty() {
@@ -930,32 +917,6 @@ fn otlp_links_to_jaeger_references(
     Ok(references)
 }
 
-fn to_span_kind(span_kind_id: u64) -> &'static str {
-    match span_kind_id {
-        1 => "internal",
-        2 => "server",
-        3 => "client",
-        4 => "producer",
-        5 => "consumer",
-        _ => "unspecified",
-    }
-}
-
-fn to_span_kind_id(span_kind: &str) -> &'static str {
-    match span_kind {
-        "0" | "unspecified" => "0",
-        "1" | "internal" => "1",
-        "2" | "server" => "2",
-        "3" | "client" => "3",
-        "4" | "producer" => "4",
-        "5" | "consumer" => "5",
-        _ => {
-            warn!("Unknown span kind `{span_kind}`.");
-            "*"
-        }
-    }
-}
-
 fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
     let timestamp = to_well_known_timestamp(event.event_timestamp_nanos);
     // "OpenTelemetry Event’s name field should be added to Jaeger Log’s fields map as follows: name
@@ -1052,7 +1013,7 @@ where T: Deserialize<'a> {
 #[cfg(test)]
 mod tests {
     use quickwit_proto::jaeger::api_v2::ValueType;
-    use quickwit_search::encode_term_for_test;
+    use quickwit_search::{encode_term_for_test, MockSearchService};
     use serde_json::json;
     use tantivy::aggregation::agg_req::{
         Aggregation, Aggregations, BucketAggregationType, MetricAggregation,
@@ -1064,7 +1025,7 @@ mod tests {
     fn test_build_query() {
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::new();
             let min_span_start_timestamp_secs = None;
@@ -1087,7 +1048,7 @@ mod tests {
         }
         {
             let service_name = "quickwit";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::new();
             let min_span_start_timestamp_secs = None;
@@ -1110,7 +1071,7 @@ mod tests {
         }
         {
             let service_name = "quickwit";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::from_iter([("_qw_query".to_string(), "query".to_string())]);
             let min_span_start_timestamp_secs = None;
@@ -1133,7 +1094,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "client";
+            let span_kind = "client".parse().ok();
             let span_name = "";
             let tags = HashMap::new();
             let min_span_start_timestamp_secs = None;
@@ -1156,7 +1117,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "leaf_search";
             let tags = HashMap::new();
             let min_span_start_timestamp_secs = None;
@@ -1179,7 +1140,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::from_iter([("foo".to_string(), "bar baz".to_string())]);
             let min_span_start_timestamp_secs = None;
@@ -1202,7 +1163,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::from_iter([("event".to_string(), "Failed to ...".to_string())]);
             let min_span_start_timestamp_secs = None;
@@ -1225,7 +1186,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::from_iter([
                 ("event".to_string(), "Failed to ...".to_string()),
@@ -1251,7 +1212,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::from_iter([
                 ("baz".to_string(), "qux".to_string()),
@@ -1277,7 +1238,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::new();
             let min_span_start_timestamp_secs = Some(3);
@@ -1300,7 +1261,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::new();
             let min_span_start_timestamp_secs = None;
@@ -1323,7 +1284,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::new();
             let min_span_start_timestamp_secs = Some(3);
@@ -1346,7 +1307,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::new();
             let min_span_start_timestamp_secs = None;
@@ -1369,7 +1330,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::new();
             let min_span_start_timestamp_secs = None;
@@ -1392,7 +1353,7 @@ mod tests {
         }
         {
             let service_name = "";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::new();
             let min_span_start_timestamp_secs = None;
@@ -1415,7 +1376,7 @@ mod tests {
         }
         {
             let service_name = "quickwit";
-            let span_kind = "";
+            let span_kind = None;
             let span_name = "";
             let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
             let min_span_start_timestamp_secs = None;
@@ -1438,7 +1399,7 @@ mod tests {
         }
         {
             let service_name = "quickwit";
-            let span_kind = "client";
+            let span_kind = "client".parse().ok();
             let span_name = "";
             let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
             let min_span_start_timestamp_secs = None;
@@ -1461,7 +1422,7 @@ mod tests {
         }
         {
             let service_name = "quickwit";
-            let span_kind = "client";
+            let span_kind = "client".parse().ok();
             let span_name = "leaf_search";
             let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
             let min_span_start_timestamp_secs = None;
@@ -1484,7 +1445,7 @@ mod tests {
         }
         {
             let service_name = "quickwit";
-            let span_kind = "client";
+            let span_kind = "client".parse().ok();
             let span_name = "leaf_search";
             let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
             let min_span_start_timestamp_secs = Some(3);
@@ -1799,8 +1760,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_service() {
-        let mut service = quickwit_search::MockSearchService::new();
+    async fn test_get_services() {
+        let mut service = MockSearchService::new();
         service
             .expect_root_list_terms()
             .withf(|req| {
@@ -1812,9 +1773,9 @@ mod tests {
                 Ok(quickwit_proto::ListTermsResponse {
                     num_hits: 3,
                     terms: vec![
-                        quickwit_search::encode_term_for_test!("service1"),
-                        quickwit_search::encode_term_for_test!("service2"),
-                        quickwit_search::encode_term_for_test!("service3"),
+                        encode_term_for_test!("service1"),
+                        encode_term_for_test!("service2"),
+                        encode_term_for_test!("service3"),
                     ],
                     elapsed_time_micros: 0,
                     errors: Vec::new(),
@@ -1825,11 +1786,7 @@ mod tests {
         let jaeger = JaegerService::new(JaegerConfig::default(), service);
 
         let request = tonic::Request::new(crate::GetServicesRequest {});
-        let result = jaeger.get_services(request).await.unwrap();
-        assert_eq!(result.get_ref().services.len(), 3);
-        assert_eq!(
-            result.get_ref().services,
-            vec!["service1", "service2", "service3"]
-        );
+        let response = jaeger.get_services(request).await.unwrap().into_inner();
+        assert_eq!(response.services, &["service1", "service2", "service3"]);
     }
 }
