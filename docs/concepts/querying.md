@@ -10,7 +10,7 @@ Quickwit provides two endpoints with full-text search queries identified by the 
 
 A search query received by a searcher will be executed using a map-reduce approach following these steps:
 
-1. the Searcher identifies relevant splits based on the request’s [timestamp interval](#Time-sharding) and [tags](#Tag-pruning).
+1. the Searcher identifies relevant splits based on the request’s [timestamp interval](#time-sharding) and [tags](#tag-pruning).
 2. It distributes the splits workload among other searchers available in the cluster using *[rendez-vous hashing](https://en.wikipedia.org/wiki/Rendezvous_hashing)* to optimize caching and load.
 3. It finally waits for all results, merges them, and returns them to the client.
 
@@ -103,4 +103,4 @@ Quickwit does caching in many places to deliver a highly performing query engine
 
 ### Scoring
 
-Quickwit supports sorting docs by their BM25 scores. In order to query by score, [fieldnorms](../configuration/index-config.md#Text-type) must be enabled for the field. By default BM25 scoring is disabled to improve query times but it can be opt-in by setting `sort_by_field` option to `_score` in queries.
+Quickwit supports sorting docs by their BM25 scores. In order to query by score, [fieldnorms](../configuration/index-config.md#text-type) must be enabled for the field. By default BM25 scoring is disabled to improve query times but it can be opt-in by setting `sort_by_field` option to `_score` in queries.
