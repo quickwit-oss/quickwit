@@ -23,10 +23,11 @@ use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
-use quickwit_proto::{SearchRequest, SortOrder};
+use quickwit_proto::{LeafListTermsResponse, SearchRequest, SortOrder};
 use serde_json::{json, Value as JsonValue};
 use tantivy::schema::Value as TantivyValue;
 use tantivy::time::OffsetDateTime;
+use tantivy::Term;
 
 use super::*;
 use crate::single_node_search;
@@ -1284,8 +1285,16 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn collect_str_terms(response: LeafListTermsResponse) -> Vec<String> {
+    response
+        .terms
+        .into_iter()
+        .map(|term| Term::wrap(term).as_str().unwrap().to_string())
+        .collect()
+}
+
 #[tokio::test]
-async fn test_single_node_list() -> anyhow::Result<()> {
+async fn test_single_node_list_terms() -> anyhow::Result<()> {
     let doc_mapping_yaml = r#"
             field_mappings:
               - name: title
@@ -1298,7 +1307,7 @@ async fn test_single_node_list() -> anyhow::Result<()> {
                 type: bytes
         "#;
     let test_sandbox =
-        TestSandbox::create("single-node-list-1", doc_mapping_yaml, "{}", &["body"]).await?;
+        TestSandbox::create("single-node-list-terms", doc_mapping_yaml, "{}", &["body"]).await?;
     let docs = vec![
         json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy", "binary": "dGhpcyBpcyBhIHRlc3Qu"}),
         json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="}),
@@ -1338,15 +1347,9 @@ async fn test_single_node_list() -> anyhow::Result<()> {
         )
         .await
         .unwrap();
-        assert_eq!(
-            search_response.terms,
-            [
-                encode_term_for_test!("beagle"),
-                encode_term_for_test!("snoopy")
-            ]
-        );
+        let terms = collect_str_terms(search_response);
+        assert_eq!(terms, &["beagle", "snoopy",]);
     }
-
     {
         let request = quickwit_proto::ListTermsRequest {
             index_id: test_sandbox.index_id().to_string(),
@@ -1365,14 +1368,14 @@ async fn test_single_node_list() -> anyhow::Result<()> {
         )
         .await
         .unwrap();
-        assert_eq!(search_response.terms, [encode_term_for_test!("beagle")]);
+        let terms = collect_str_terms(search_response);
+        assert_eq!(terms, &["beagle"]);
     }
-
     {
         let request = quickwit_proto::ListTermsRequest {
             index_id: test_sandbox.index_id().to_string(),
             field: "title".to_string(),
-            start_key: Some(encode_term_for_test!("casper")),
+            start_key: Some("casper".as_bytes().to_vec()),
             end_key: None,
             start_timestamp: None,
             end_timestamp: None,
@@ -1386,15 +1389,15 @@ async fn test_single_node_list() -> anyhow::Result<()> {
         )
         .await
         .unwrap();
-        assert_eq!(search_response.terms, [encode_term_for_test!("snoopy")]);
+        let terms = collect_str_terms(search_response);
+        assert_eq!(terms, &["snoopy"]);
     }
-
     {
         let request = quickwit_proto::ListTermsRequest {
             index_id: test_sandbox.index_id().to_string(),
             field: "title".to_string(),
             start_key: None,
-            end_key: Some(encode_term_for_test!("casper")),
+            end_key: Some("casper".as_bytes().to_vec()),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: Some(100),
@@ -1407,8 +1410,8 @@ async fn test_single_node_list() -> anyhow::Result<()> {
         )
         .await
         .unwrap();
-        assert_eq!(search_response.terms, [encode_term_for_test!("beagle")]);
+        let terms = collect_str_terms(search_response);
+        assert_eq!(terms, &["beagle"]);
     }
-
     Ok(())
 }

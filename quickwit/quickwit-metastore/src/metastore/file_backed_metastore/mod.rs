@@ -951,7 +951,7 @@ mod tests {
         let metastore = Arc::new(FileBackedMetastore::default_for_test().await);
         let mut index_ids = Vec::new();
         for idx in 0..10 {
-            let index_id = format!("test-index-{}", idx);
+            let index_id = format!("test-index-{idx}");
             let index_config = IndexConfig::for_test(&index_id, "ram:///indexes/test-index");
             metastore.create_index(index_config).await.unwrap();
             index_ids.push(index_id);
