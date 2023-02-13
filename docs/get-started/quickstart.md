@@ -6,8 +6,7 @@ sidebar_position: 1
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-
-Before running Quickwit search instances on your servers, you will need to create indexes, add documents, and finally launch the server. In this quick start guide, we will install Quickwit and go through these steps one by one. All the Quickwit commands used in this guide are documented [in the CLI reference documentation](../reference/cli.md).
+In this quick start guide, we will install Quickwit, create an index, add documents and finally execute search queries. All the Quickwit commands used in this guide are documented [in the CLI reference documentation](/docs/reference/cli.md).
 
 ## Install Quickwit using Quickwit installer
 
@@ -30,6 +29,8 @@ You can now move this executable directory wherever sensible for your environmen
 You can also pull and run the Quickwit binary in an isolated Docker container.
 
 ```bash
+# Create first the data directory.
+mkdir qwdata
 docker run --rm quickwit/quickwit --version
 ```
 
@@ -39,9 +40,37 @@ If you are using Apple silicon based macOS system you might need to specify the 
 docker run --rm --platform linux/amd64 quickwit/quickwit --version
 ```
 
+## Start Quickwit server
+
+<Tabs>
+
+<TabItem value="cli" label="CLI">
+
+```bash
+./quickwit run
+```
+
+</TabItem>
+
+<TabItem value="docker" label="Docker">
+
+```bash
+docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit run
+```
+
+</TabItem>
+
+</Tabs>
+
+Check it's working by browsing the [UI at http://localhost:7280](http://localhost:7280) or do a simple GET with cURL:
+
+```bash
+curl http://localhost:7280/api/v1/version
+```
+
 ## Create your first index
 
-Before adding documents to Quickwit, you need to create an index configured with a YAML config file. This config file notably lets you define how to map your input documents to your index fields and whether these fields should be stored and indexed. See the [index config documentation](../configuration/index-config.md).
+Before adding documents to Quickwit, you need to create an index configured with a YAML config file. This config file notably lets you define how to map your input documents to your index fields and whether these fields should be stored and indexed. See the [index config documentation](/docs/configuration/index-config.md).
 
 Let's create an index configured to receive Stackoverflow posts (questions and answers).
 
@@ -50,7 +79,7 @@ Let's create an index configured to receive Stackoverflow posts (questions and a
 curl -o stackoverflow-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/stackoverflow/index-config.yaml
 ```
 
-The index config defines nine text fields. Among them there are five text fields: `user`, `tags`, `title`, `type` and `body`. Two of these fields, `body` and `title` are [indexed and tokenized](../configuration/index-config.md#text-type) and they are also used as default search fields, which means they will be used for search if you do not target a specific field in your query. The `tags` field is configured to accept multiple text values. The rest of the text fields are not tokenized and configured as [fast](../configuration/index-config.md#text-type). There are three numeric fields `questionId`, `answerId` and `acceptedAnswerId`. And there is the `creationDate` field that serves as the timestamp for each record.
+The index config defines nine text fields. Among them there are five text fields: `user`, `tags`, `title`, `type` and `body`. Two of these fields, `body` and `title` are [indexed and tokenized](../configuration/index-config.md#text-type) and they are also used as default search fields, which means they will be used for search if you do not target a specific field in your query. The `tags` field is configured to accept multiple text values. The rest of the text fields are not tokenized and configured as [fast](/docs/configuration/index-config.md#text-type). There are three numeric fields `questionId`, `answerId` and `acceptedAnswerId`. And there is the `creationDate` field that serves as the timestamp for each record.
 
 And here is the complete config:
 
@@ -102,6 +131,9 @@ doc_mapping:
 
 search_settings:
   default_search_fields: [title, body]
+
+indexing_settings:
+  commit_timeout_secs: 5
 ```
 
 Now we can create the index with the command:
@@ -116,25 +148,23 @@ Now we can create the index with the command:
 
 </TabItem>
 
-<TabItem value="docker" label="Docker">
+<TabItem value="curl" label="CURL">
 
 ```bash
-# Create first the data directory.
-mkdir qwdata
-docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/stackoverflow-index-config.yaml:/quickwit/index-config.yaml quickwit/quickwit index create --index-config index-config.yaml
+curl -XPOST http://127.0.0.1:7280/api/v1/indexes --header "content-type: application/yaml" --data-binary @./stackoverflow-index-config.yaml
 ```
 
 </TabItem>
 
 </Tabs>
 
-Check that a directory `./qwdata/indexes/stackoverflow` has been created, Quickwit will write index files here and a `metastore.json` which contains the [index metadata](../concepts/architecture.md#index).
+Check that a directory `./qwdata/indexes/stackoverflow` has been created, Quickwit will write index files here and a `metastore.json` which contains the [index metadata](/docs/concepts/architecture.md#index).
 You're now ready to fill the index.
 
 
 ## Let's add some documents
 
-Quickwit can index data from many [sources](../configuration/source-config.md). We will use a new line delimited json [ndjson](http://ndjson.org/) datasets as our data source.
+Quickwit can index data from many [sources](/docs/configuration/source-config.md). We will use a new line delimited json [ndjson](http://ndjson.org/) datasets as our data source.
 Let's download [a bunch of stackoverflow posts (10 000)](https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.transformed-10000.json) in [ndjson](http://ndjson.org/) format and index it.
 
 ```bash
@@ -153,17 +183,18 @@ curl -O https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.tr
 
 </TabItem>
 
-<TabItem value="docker" label="Docker">
+<TabItem value="curl" label="CURL">
 
 ```bash
-docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/stackoverflow.posts.transformed-10000.json:/quickwit/docs.json quickwit/quickwit index ingest --index stackoverflow --input-path docs.json
+# Index our 10k documents.
+curl -XPOST http://127.0.0.1:7280/api/v1/ingest/stackoverflow --data-binary stackoverflow.posts.transformed-10000.json
 ```
 
 </TabItem>
 
 </Tabs>
 
-Wait one second or two and check if it worked by using `search` command:
+Wait around 10 seconds and check if it worked by using `search` command:
 
 <Tabs>
 
@@ -175,50 +206,23 @@ Wait one second or two and check if it worked by using `search` command:
 
 </TabItem>
 
-<TabItem value="docker" label="Docker">
+<TabItem value="curl" label="CURL">
 
-```bash
-docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index search --index stackoverflow --query "search AND engine"
-```
-
-</TabItem>
-
-</Tabs>
-
-It should return 10 hits. Now you're ready to serve our search API.
-
-
-## Start the search service
-
-Quickwit provides a search [REST API](../reference/rest-api.md) that can be started using the `service` subcommand.
-
-<Tabs>
-
-<TabItem value="cli" label="CLI">
-
-```bash
-./quickwit run --service searcher --service metastore
-```
-
-</TabItem>
-
-<TabItem value="docker" label="Docker">
-
-```bash
-docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit run --service searcher --service metastore
-```
-
-</TabItem>
-
-</Tabs>
-
-
-Check it's working by browsing the [UI at http://localhost:7280](http://localhost:7280) or do a simple GET with cURL:
 ```bash
 curl "http://127.0.0.1:7280/api/v1/stackoverflow/search?query=search+AND+engine"
 ```
 
-You can also specify the search field with `title:search AND engine`:
+</TabItem>
+
+</Tabs>
+
+It should return 10 hits. Now you're ready to play with the search API.
+
+
+## Execute search queries
+
+
+Let's start with a query on the field `title`: `title:search AND engine`:
 ```bash
 curl "http://127.0.0.1:7280/api/v1/stackoverflow/search?query=title:search+AND+engine"
 ```
@@ -270,10 +274,10 @@ Let's do some cleanup by deleting the index:
 
 </TabItem>
 
-<TabItem value="docker" label="Docker">
+<TabItem value="rest" label="REST">
 
 ```bash
-docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index delete --index stackoverflow
+curl -XDELETE http://127.0.0.1:7280/api/v1/indexes/stackoverflow
 ```
 
 </TabItem>
