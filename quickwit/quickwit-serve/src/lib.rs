@@ -26,6 +26,7 @@ mod grpc;
 mod rest;
 pub(crate) mod simple_list;
 
+mod build_info;
 mod cluster_api;
 mod delete_task_api;
 mod elastic_search_api;
@@ -53,7 +54,6 @@ use byte_unit::n_mib_bytes;
 use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
 use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterChange, ClusterMember};
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
@@ -79,12 +79,12 @@ use quickwit_metastore::{
 use quickwit_opentelemetry::otlp::{OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG};
 use quickwit_search::{start_searcher_service, SearchJobPlacer, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
-use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tower::ServiceBuilder;
 use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
+pub use crate::build_info::{BuildInfo, RuntimeInfo};
 pub use crate::index_api::ListSplitsQueryParams;
 pub use crate::metrics::SERVE_METRICS;
 #[cfg(test)]
@@ -99,7 +99,6 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 
 struct QuickwitServices {
     pub config: Arc<QuickwitConfig>,
-    pub build_info: &'static QuickwitBuildInfo,
     pub cluster: Cluster,
     pub metastore: Arc<dyn Metastore>,
     pub control_plane_service: Option<ControlPlaneServiceClient>,
@@ -320,7 +319,6 @@ pub async fn serve_quickwit(
     let services = config.enabled_services.clone();
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         config: Arc::new(config),
-        build_info: quickwit_build_info(),
         cluster: cluster.clone(),
         metastore: metastore.clone(),
         control_plane_service,
@@ -564,63 +562,4 @@ async fn check_cluster_configuration(
         );
     }
     Ok(())
-}
-
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct QuickwitBuildInfo {
-    pub build_date: &'static str,
-    pub build_profile: &'static str,
-    pub build_target: &'static str,
-    pub cargo_pkg_version: &'static str,
-    pub commit_date: &'static str,
-    pub commit_hash: &'static str,
-    pub commit_short_hash: &'static str,
-    pub commit_tags: Vec<String>,
-    pub version: String,
-}
-
-/// QuickwitBuildInfo from env variables prepopulated by the build script or CI env.
-pub fn quickwit_build_info() -> &'static QuickwitBuildInfo {
-    const UNKNOWN: &str = "unknown";
-
-    static INSTANCE: OnceCell<QuickwitBuildInfo> = OnceCell::new();
-    INSTANCE.get_or_init(|| {
-        let commit_date = option_env!("QW_COMMIT_DATE")
-            .filter(|commit_date| !commit_date.is_empty())
-            .unwrap_or(UNKNOWN);
-        let commit_hash = option_env!("QW_COMMIT_HASH")
-            .filter(|commit_hash| !commit_hash.is_empty())
-            .unwrap_or(UNKNOWN);
-        let commit_short_hash = option_env!("QW_COMMIT_HASH")
-            .filter(|commit_hash| commit_hash.len() >= 7)
-            .map(|commit_hash| &commit_hash[..7])
-            .unwrap_or(UNKNOWN);
-        let commit_tags: Vec<String> = option_env!("QW_COMMIT_TAGS")
-            .map(|tags| {
-                tags.split(',')
-                    .map(|tag| tag.trim().to_string())
-                    .filter(|tag| !tag.is_empty())
-                    .sorted()
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let version = commit_tags
-            .iter()
-            .find(|tag| tag.starts_with('v'))
-            .cloned()
-            .unwrap_or_else(|| concat!(env!("CARGO_PKG_VERSION"), "-nightly").to_string());
-
-        QuickwitBuildInfo {
-            build_date: env!("BUILD_DATE"),
-            build_profile: env!("BUILD_PROFILE"),
-            build_target: env!("BUILD_TARGET"),
-            cargo_pkg_version: env!("CARGO_PKG_VERSION"),
-            commit_date,
-            commit_hash,
-            commit_short_hash,
-            commit_tags,
-            version,
-        }
-    })
 }

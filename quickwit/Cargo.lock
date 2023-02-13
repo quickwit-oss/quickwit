@@ -4682,6 +4682,7 @@ dependencies = [
  "itertools",
  "mime_guess",
  "mockall",
+ "num_cpus",
  "once_cell",
  "opentelemetry",
  "quickwit-actors",

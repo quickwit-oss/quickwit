@@ -21,6 +21,7 @@ http-serde = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
+num_cpus = { workspace = true }
 once_cell = { workspace = true }
 regex = { workspace = true }
 rust-embed = { workspace = true }

@@ -44,7 +44,7 @@ use crate::json_api_response::{ApiError, JsonApiResponse};
 use crate::node_info_handler::node_info_handler;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
-use crate::{BodyFormat, QuickwitServices};
+use crate::{BodyFormat, BuildInfo, QuickwitServices, RuntimeInfo};
 
 /// The minimum size a response body must be in order to
 /// be automatically compressed with gzip.
@@ -93,7 +93,8 @@ pub(crate) async fn start_rest_server(
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
     let api_v1_routes = cluster_handler(quickwit_services.cluster.clone())
         .or(node_info_handler(
-            quickwit_services.build_info,
+            BuildInfo::get(),
+            RuntimeInfo::get(),
             quickwit_services.config.clone(),
         ))
         .or(indexing_get_handler(
