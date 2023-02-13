@@ -32,7 +32,7 @@ use serde::Serialize;
 /// each indexer, identified by its node ID, should run.
 /// TODO(fmassot): a metastore version number will be attached to the plan
 /// to identify if the plan is up to date with the metastore.
-#[derive(Debug, PartialEq, Clone, Serialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Default)]
 pub struct PhysicalIndexingPlan {
     indexing_tasks_per_node_id: HashMap<String, Vec<IndexingTask>>,
 }
@@ -46,6 +46,10 @@ impl PhysicalIndexingPlan {
         Self {
             indexing_tasks_per_node_id,
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.indexing_tasks_per_node_id.is_empty()
     }
 
     /// Returns the number of indexing tasks for the given node ID.
