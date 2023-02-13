@@ -539,8 +539,9 @@ fn build_search_query(
     let mut query = String::new();
 
     if !service_name.is_empty() {
-        query.push_str("service_name:");
+        query.push_str("service_name:\"");
         query.push_str(service_name);
+        query.push('"');
     }
     if let Some(span_kind) = span_kind_opt {
         if !query.is_empty() {
@@ -553,8 +554,9 @@ fn build_search_query(
         if !query.is_empty() {
             query.push_str(" AND ");
         }
-        query.push_str("span_name:");
+        query.push_str("span_name:\"");
         query.push_str(span_name);
+        query.push('"');
     }
     if !tags.is_empty() {
         if !query.is_empty() {
@@ -1047,7 +1049,7 @@ mod tests {
             );
         }
         {
-            let service_name = "quickwit";
+            let service_name = "quickwit search";
             let span_kind = None;
             let span_name = "";
             let tags = HashMap::new();
@@ -1066,7 +1068,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                "service_name:quickwit"
+                r#"service_name:"quickwit search""#
             );
         }
         {
@@ -1118,7 +1120,7 @@ mod tests {
         {
             let service_name = "";
             let span_kind = None;
-            let span_name = "leaf_search";
+            let span_name = "GET /config";
             let tags = HashMap::new();
             let min_span_start_timestamp_secs = None;
             let max_span_start_timestamp_secs = None;
@@ -1135,7 +1137,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                "span_name:leaf_search"
+                r#"span_name:"GET /config""#
             );
         }
         {
@@ -1394,7 +1396,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"service_name:quickwit AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                r#"service_name:"quickwit" AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
             );
         }
         {
@@ -1417,7 +1419,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"service_name:quickwit AND span_kind:3 AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                r#"service_name:"quickwit" AND span_kind:3 AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
             );
         }
         {
@@ -1440,7 +1442,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"service_name:quickwit AND span_kind:3 AND span_name:leaf_search AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                r#"service_name:"quickwit" AND span_kind:3 AND span_name:"leaf_search" AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
             );
         }
         {
@@ -1463,7 +1465,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"service_name:quickwit AND span_kind:3 AND span_name:leaf_search AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_start_timestamp_secs:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z] AND span_duration_millis:[7 TO 77]"#
+                r#"service_name:"quickwit" AND span_kind:3 AND span_name:"leaf_search" AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_start_timestamp_secs:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z] AND span_duration_millis:[7 TO 77]"#
             );
         }
     }
