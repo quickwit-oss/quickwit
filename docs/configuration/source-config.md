@@ -86,7 +86,7 @@ The Kafka source consumes a `topic` using the client library [librdkafka](https:
 Comma-separated list of host and port pairs that are the addresses of a subset of the Kafka brokers in the Kafka cluster.
 
 - `enable.auto.commit`
-The Kafka source manages commit offsets manually using the [checkpoint API](../concepts/indexing.md#Checkpoint) and disables auto-commit.
+The Kafka source manages commit offsets manually using the [checkpoint API](../concepts/indexing.md#checkpoint) and disables auto-commit.
 
 - `group.id`
 Kafka-based distributed indexing relies on consumer groups. The group ID assigned to each consumer managed by the source is `quickwit-{index_id}-{source_id}`.

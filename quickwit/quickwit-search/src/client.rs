@@ -20,6 +20,7 @@
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
@@ -250,7 +251,9 @@ pub async fn create_search_service_client(
         .path_and_query("/")
         .build()?;
     // Create a channel with connect_lazy to automatically reconnect to the node.
-    let channel = Endpoint::from(uri).connect_lazy();
+    let channel = Endpoint::from(uri)
+        .connect_timeout(Duration::from_secs(5))
+        .connect_lazy();
     let client = quickwit_proto::search_service_client::SearchServiceClient::with_interceptor(
         channel,
         SpanContextInterceptor,

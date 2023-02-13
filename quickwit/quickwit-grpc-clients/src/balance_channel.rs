@@ -74,6 +74,7 @@ pub async fn create_balance_channel_from_watched_members(
                 {
                     // If it fails, just log an error and stop the loop.
                     error!("Failed to update balance channel endpoints: {error:?}");
+                    break;
                 };
                 current_grpc_address_pool = new_grpc_address_pool;
                 // TODO: Expose number of metastore servers in the pool as a Prometheus metric.
@@ -138,7 +139,8 @@ async fn update_channel_endpoints(
                 .path_and_query("/")
                 .build()
                 .expect("Failed to build URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-            let new_grpc_endpoint = Endpoint::from(new_grpc_uri);
+            let new_grpc_endpoint =
+                Endpoint::from(new_grpc_uri).connect_timeout(Duration::from_secs(5));
             channel_endpoint_tx
                 .send(Change::Insert(new_grpc_address, new_grpc_endpoint))
                 .await?;
