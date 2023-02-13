@@ -131,6 +131,11 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
 
     /// Returns the maximum number of partitions.
     fn max_num_partitions(&self) -> NonZeroU32;
+
+    /// Returns the default search field names.
+    fn default_search_field_names(&self) -> Vec<String> {
+        Default::default()
+    }
 }
 
 /// A struct to wrap a tantivy field with its name.
@@ -290,6 +295,7 @@ mod tests {
             sort_order: None,
             sort_by_field: None,
             aggregation_request: None,
+            ..Default::default()
         };
         let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
         assert_eq!(
@@ -327,6 +333,7 @@ mod tests {
             sort_order: None,
             sort_by_field: Some("text_field".to_string()),
             aggregation_request: None,
+            ..Default::default()
         };
         let query = doc_mapper.query(schema, &search_request).unwrap_err();
         assert_eq!(
@@ -362,6 +369,7 @@ mod tests {
             sort_order: None,
             sort_by_field: None,
             aggregation_request: None,
+            ..Default::default()
         };
         let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
         assert_eq!(
@@ -397,6 +405,7 @@ mod tests {
             sort_order: None,
             sort_by_field: None,
             aggregation_request: None,
+            ..Default::default()
         };
         let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
         assert_eq!(

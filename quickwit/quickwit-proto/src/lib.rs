@@ -199,6 +199,8 @@ impl From<SearchStreamRequest> for SearchRequest {
             sort_by_field: None,
             sort_order: None,
             aggregation_request: None,
+            resolved_search_fields: item.resolved_search_fields,
+            fast_field_names: item.fast_field_names,
         }
     }
 }

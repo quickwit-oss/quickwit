@@ -23,16 +23,22 @@ use std::collections::{HashMap, HashSet};
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, IndexConfig};
+use quickwit_doc_mapper::DYNAMIC_FIELD_NAME;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafListTermsRequest, LeafListTermsResponse,
     LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
     SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
+use quickwit_query::{
+    extract_field_with_ranges, needs_default_search_field, resolve_fields,
+    validate_requested_snippet_fields, validate_sort_by_field, SearchInputAst,
+};
 use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
+use tantivy::schema::Schema;
 use tantivy::TantivyError;
 use tokio::task::spawn_blocking;
 use tracing::{debug, error, instrument};
@@ -111,7 +117,13 @@ impl From<FetchDocsJob> for SplitIdAndFooterOffsets {
     }
 }
 
-pub(crate) fn validate_request(search_request: &SearchRequest) -> crate::Result<()> {
+/// Validates a SearchRequest, extract search fields and fast fields names
+/// in order to return a new SearchRequest with the extracted info.
+pub(crate) fn validate_request(
+    schema: &Schema,
+    default_field_names: &[String],
+    search_request: &SearchRequest,
+) -> crate::Result<SearchRequest> {
     if let Some(agg) = search_request.aggregation_request.as_ref() {
         let _agg: Aggregations = serde_json::from_str(agg)
             .map_err(|err| SearchError::InvalidAggregationRequest(err.to_string()))?;
@@ -131,7 +143,48 @@ pub(crate) fn validate_request(search_request: &SearchRequest) -> crate::Result<
         )));
     }
 
-    Ok(())
+    let search_input_ast: SearchInputAst =
+        serde_json::from_str(&search_request.query).expect("could not deserialize SearchInputAst");
+
+    if needs_default_search_field(&search_input_ast)
+        && search_request.search_fields.is_empty()
+        && (default_field_names.is_empty() || default_field_names == [DYNAMIC_FIELD_NAME])
+    {
+        return Err(
+            anyhow::anyhow!("No default field declared and no field specified in query.").into(),
+        );
+    }
+
+    validate_requested_snippet_fields(
+        &schema,
+        &search_request,
+        &search_input_ast,
+        default_field_names,
+    )?;
+
+    let search_fields = if search_request.search_fields.is_empty() {
+        resolve_fields(&schema, default_field_names)?
+    } else {
+        resolve_fields(&schema, &search_request.search_fields)?
+    };
+
+    if let Some(sort_by_field) = &search_request.sort_by_field {
+        validate_sort_by_field(sort_by_field, &schema, Some(&search_fields))?;
+    }
+
+    let fast_field_names = extract_field_with_ranges(&schema, &search_input_ast)?
+        .into_iter()
+        .collect_vec();
+
+    let validated_search_request = SearchRequest {
+        resolved_search_fields: search_fields
+            .into_iter()
+            .map(|field| field.field_id())
+            .collect_vec(),
+        fast_field_names,
+        ..search_request.clone()
+    };
+    Ok(validated_search_request)
 }
 
 /// Performs a distributed search.
@@ -158,17 +211,25 @@ pub async fn root_search(
             SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
-    validate_request(search_request)?;
-
+    // TODO: no need to build, just do the appropriate checking
     // Validates the query by effectively building it against the current schema.
-    doc_mapper.query(doc_mapper.schema(), search_request)?;
+    // doc_mapper.query(doc_mapper.schema(), search_request)?;
+    // let search_input_ast: SearchInputAst =  serde_json::from_str(&search_request.query)
+    //     .expect("could not deserialize SearchInputAst");
+
+    // Validates the query & extract useful info
+    let validated_search_request = validate_request(
+        &doc_mapper.schema(),
+        &doc_mapper.default_search_field_names(),
+        search_request,
+    )?;
 
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
     })?;
 
     let split_metadatas: Vec<SplitMetadata> =
-        list_relevant_splits(search_request, metastore).await?;
+        list_relevant_splits(&validated_search_request, metastore).await?;
 
     let split_offsets_map: HashMap<String, SplitIdAndFooterOffsets> = split_metadatas
         .iter()
@@ -190,7 +251,7 @@ pub async fn root_search(
             .into_iter()
             .map(|(client, client_jobs)| {
                 let leaf_request = jobs_to_leaf_request(
-                    search_request,
+                    &validated_search_request,
                     &doc_mapper_str,
                     index_uri.as_ref(),
                     client_jobs,
@@ -201,7 +262,7 @@ pub async fn root_search(
     .await?;
 
     // Creates a collector which merges responses into one
-    let merge_collector = make_merge_collector(search_request)?;
+    let merge_collector = make_merge_collector(&validated_search_request)?;
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
@@ -248,14 +309,14 @@ pub async fn root_search(
                     .map(|fetch_doc_job| fetch_doc_job.into())
                     .collect();
 
-                let search_request_opt = if search_request.snippet_fields.is_empty() {
+                let search_request_opt = if validated_search_request.snippet_fields.is_empty() {
                     None
                 } else {
-                    Some(search_request.clone())
+                    Some(validated_search_request.clone())
                 };
                 let fetch_docs_req = FetchDocsRequest {
                     partial_hits,
-                    index_id: search_request.index_id.to_string(),
+                    index_id: validated_search_request.index_id.to_string(),
                     split_offsets,
                     index_uri: index_uri.to_string(),
                     search_request: search_request_opt,

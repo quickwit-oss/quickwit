@@ -4632,6 +4632,7 @@ dependencies = [
  "ouroboros",
  "proptest",
  "quickwit-proto",
+ "quickwit-query",
  "regex",
  "serde",
  "serde_json",
@@ -4901,8 +4902,10 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "elasticsearch-dsl",
+ "quickwit-proto",
  "serde",
  "serde_json",
+ "tantivy",
 ]
 
 [[package]]
@@ -4954,6 +4957,7 @@ dependencies = [
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
+ "quickwit-query",
  "quickwit-storage",
  "rayon",
  "serde",

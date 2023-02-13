@@ -394,7 +394,7 @@ async fn leaf_search_single_split(
 /// fetch the actual documents to convert the partial hits into actual Hits.
 pub async fn leaf_search(
     searcher_context: Arc<SearcherContext>,
-    request: &SearchRequest,
+    search_request: &SearchRequest,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
     doc_mapper: Arc<dyn DocMapper>,
@@ -416,7 +416,7 @@ pub async fn leaf_search(
                     .start_timer();
                 let leaf_search_single_split_res = leaf_search_single_split(
                     &searcher_context_clone,
-                    request,
+                    search_request,
                     index_storage_clone,
                     split.clone(),
                     doc_mapper_clone,
@@ -442,7 +442,7 @@ pub async fn leaf_search(
         });
 
     // Creates a collector which merges responses into one
-    let merge_collector = make_merge_collector(request)?;
+    let merge_collector = make_merge_collector(search_request)?;
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.

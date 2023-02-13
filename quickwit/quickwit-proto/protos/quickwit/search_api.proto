@@ -101,6 +101,12 @@ message SearchRequest {
   
   // Fields to extract snippet on
   repeated string  snippet_fields = 12;
+
+  // Search fields resolved during  SearchRequest validation
+  repeated uint32 resolved_search_fields = 13;
+
+  // Fast field names extracted during SearchRequest validation
+  repeated string fast_field_names = 14;
 }
 
 enum SortOrder {
@@ -119,7 +125,7 @@ message SearchResponse {
   // server-side and expressed in microseconds.
   uint64 elapsed_time_micros = 3;
 
-  // The searcherrors that occured formatted as string.
+  // The search errors that occured formatted as string.
   repeated string errors = 4;
 
   // Serialized aggregation response
@@ -370,6 +376,12 @@ message SearchStreamRequest {
 
   // Fields to extract snippet on.
   repeated string  snippet_fields = 10;
+
+  // Search fields resolved during  SearchRequest validation
+  repeated uint32 resolved_search_fields = 12;
+
+  // Fast field names extracted during SearchRequest validation
+  repeated string fast_field_names = 13;
 }
 
 message LeafSearchStreamRequest {

@@ -304,6 +304,7 @@ mod tests {
             fast_field: "fast".to_string(),
             output_format: 0,
             partition_by_field: None,
+            ..Default::default()
         };
         LeafSearchStreamRequest {
             request: Some(search_request),

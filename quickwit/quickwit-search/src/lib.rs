@@ -43,7 +43,6 @@ mod tests;
 
 use metrics::SEARCH_METRICS;
 use quickwit_doc_mapper::DocMapper;
-use root::validate_request;
 use service::SearcherContext;
 use tantivy::schema::NamedFieldDocument;
 
@@ -183,10 +182,11 @@ pub async fn single_node_search(
             SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
-    validate_request(search_request)?;
-
+    // TO REMOVE:  request should already be validated
+    // validate_request(search_request)?;
     // Validates the query by effectively building it against the current schema.
-    doc_mapper.query(doc_mapper.schema(), search_request)?;
+    // doc_mapper.query(doc_mapper.schema(), search_request)?;
+
     let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
     let leaf_search_response = leaf_search(
         searcher_context.clone(),

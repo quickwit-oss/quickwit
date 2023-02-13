@@ -473,6 +473,7 @@ mod tests {
             fast_field: "ts".to_string(),
             output_format: 0,
             partition_by_field: None,
+            ..Default::default()
         };
         let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
         let splits_offsets = splits
@@ -550,6 +551,7 @@ mod tests {
             fast_field: "ts".to_string(),
             output_format: 0,
             partition_by_field: None,
+            ..Default::default()
         };
         let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
         let splits_offsets = splits
@@ -606,6 +608,7 @@ mod tests {
             fast_field: "app".to_string(),
             output_format: 0,
             partition_by_field: None,
+            ..Default::default()
         };
         let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
         let splits_offsets = splits
@@ -698,6 +701,7 @@ mod tests {
             fast_field: "fast_field".to_string(),
             output_format: 1,
             partition_by_field: Some(String::from("partition_by_fast_field")),
+            ..Default::default()
         };
         let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
         let splits_offsets = splits

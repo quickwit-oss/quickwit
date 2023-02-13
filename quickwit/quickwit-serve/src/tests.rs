@@ -72,6 +72,7 @@ async fn test_standalone_server_no_indexer() {
             sort_by_field: None,
             sort_order: None,
             start_offset: 0,
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -114,6 +115,7 @@ async fn test_multi_nodes_cluster() {
             sort_order: None,
             start_offset: 0,
             snippet_fields: Vec::new(),
+            ..Default::default()
         })
         .await
         .unwrap();

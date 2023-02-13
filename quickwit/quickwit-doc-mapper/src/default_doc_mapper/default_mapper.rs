@@ -422,6 +422,16 @@ impl DocMapper for DefaultDocMapper {
     fn max_num_partitions(&self) -> NonZeroU32 {
         self.max_num_partitions
     }
+
+    fn default_search_field_names(&self) -> Vec<String> {
+        let mut default_search_field_names = self.default_search_field_names.clone();
+        if let Mode::Dynamic(default_mapping_options) = &self.mode {
+            if default_mapping_options.indexed {
+                default_search_field_names.push(DYNAMIC_FIELD_NAME.to_string());
+            }
+        }
+        default_search_field_names
+    }
 }
 
 #[cfg(test)]

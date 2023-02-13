@@ -34,6 +34,7 @@ typetag = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

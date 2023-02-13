@@ -19,9 +19,14 @@
 
 mod ast;
 mod parsers;
+mod validations;
 
 pub use ast::*;
 pub use parsers::{elastic_search_input_to_search_ast, parse_quickwit_dsl};
+pub use validations::{
+    extract_field_with_ranges, extract_term_set_query_fields, needs_default_search_field,
+    resolve_fields, validate_requested_snippet_fields, validate_sort_by_field,
+};
 
 #[cfg(test)]
 mod test {

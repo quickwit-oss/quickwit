@@ -112,7 +112,7 @@ async fn elastic_search_endpoint(
     };
     let search_input_ast = elastic_search_input_to_search_ast(&elastic_search_input)?;
     let search_fields: Option<Vec<String>> = if params.q.is_some() {
-        params.df.map(|s| vec![s])
+        params.df.map(|default_field| vec![default_field])
     } else {
         None
     };
@@ -132,6 +132,7 @@ async fn elastic_search_endpoint(
 
     let search_request = quickwit_proto::SearchRequest {
         index_id,
+        // TODO: try to change from String to SearchInput
         query: serde_json::to_string(&search_input_ast)
             .expect("could not serialize SearchInputAst"),
         search_fields: search_fields.unwrap_or_default(),
@@ -152,6 +153,7 @@ async fn elastic_search_endpoint(
         aggregation_request,
         sort_order,
         sort_by_field,
+        ..Default::default()
     };
     let search_response = search_service.root_search(search_request).await?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;

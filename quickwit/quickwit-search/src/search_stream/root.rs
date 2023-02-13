@@ -125,6 +125,7 @@ mod tests {
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             partition_by_field: None,
+            ..Default::default()
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -186,6 +187,7 @@ mod tests {
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             partition_by_field: Some("timestamp".to_string()),
+            ..Default::default()
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -244,6 +246,7 @@ mod tests {
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             partition_by_field: None,
+            ..Default::default()
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -330,6 +333,7 @@ mod tests {
                 fast_field: "timestamp".to_string(),
                 output_format: OutputFormat::Csv as i32,
                 partition_by_field: Some("timestamp".to_string()),
+                ..Default::default()
             },
             &metastore,
             ClusterClient::new(search_job_placer.clone()),
@@ -349,6 +353,7 @@ mod tests {
                 fast_field: "timestamp".to_string(),
                 output_format: OutputFormat::Csv as i32,
                 partition_by_field: Some("timestamp".to_string()),
+                ..Default::default()
             },
             &metastore,
             ClusterClient::new(search_job_placer.clone()),

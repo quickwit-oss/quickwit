@@ -19,53 +19,37 @@
 
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
-use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
-use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
-use tantivy_query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
+use quickwit_query::{extract_term_set_query_fields, SearchInputAst};
+use tantivy::query::Query;
+use tantivy::schema::{Field, Schema};
 
-use crate::{QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME, QUICKWIT_TOKENIZER_MANAGER};
+use crate::{QueryParserError, WarmupInfo};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
-    schema: Schema,
-    request: &SearchRequest,
-    default_field_names: &[String],
+    _schema: Schema,
+    search_request: &SearchRequest,
+    _default_field_names: &[String],
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
-    let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
-        .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
-
-    let fast_field_names: HashSet<String> = extract_field_with_ranges(&schema, &user_input_ast)?;
-
-    if needs_default_search_field(&user_input_ast)
-        && request.search_fields.is_empty()
-        && (default_field_names.is_empty() || default_field_names == [DYNAMIC_FIELD_NAME])
-    {
-        return Err(
-            anyhow::anyhow!("No default field declared and no field specified in query.").into(),
-        );
-    }
-
-    validate_requested_snippet_fields(&schema, request, &user_input_ast, default_field_names)?;
-
-    let search_fields = if request.search_fields.is_empty() {
-        resolve_fields(&schema, default_field_names)?
-    } else {
-        resolve_fields(&schema, &request.search_fields)?
-    };
-
-    if let Some(sort_by_field) = &request.sort_by_field {
-        validate_sort_by_field(sort_by_field, &schema, Some(&search_fields))?;
-    }
-
-    let mut query_parser =
-        QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
-    query_parser.set_conjunction_by_default();
-    let query = query_parser.parse_query(&request.query)?;
+    let search_input_ast: SearchInputAst =
+        serde_json::from_str(&search_request.query).expect("could not deserialize SearchInputAst");
 
     let mut term_set_query_fields = HashSet::new();
-    extract_term_set_query_fields(&user_input_ast, &mut term_set_query_fields);
+    extract_term_set_query_fields(&search_input_ast, &mut term_set_query_fields);
+
+    let _search_fields = search_request
+        .resolved_search_fields
+        .iter()
+        .map(|field_id| Field::from_field_id(*field_id));
+    let fast_field_names: HashSet<String> =
+        search_request.fast_field_names.iter().cloned().collect();
+
+    // TODO: Now build the query
+    let query = Box::new(tantivy::query::TermQuery::new(
+        tantivy::Term::from_field_text(Field::from_field_id(0), "foo"),
+        tantivy::schema::IndexRecordOption::Basic,
+    ));
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
 
@@ -82,232 +66,22 @@ pub(crate) fn build_query(
         term_dict_field_names: term_set_query_fields.clone(),
         posting_field_names: term_set_query_fields,
         terms_grouped_by_field,
-        fast_field_names,
+        fast_field_names: HashSet::from(fast_field_names),
         ..WarmupInfo::default()
     };
 
     Ok((query, warmup_info))
 }
 
-fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec<Field>> {
-    let mut fields = vec![];
-    for field_name in field_names {
-        let field = schema.get_field(field_name)?;
-        fields.push(field);
-    }
-    Ok(fields)
-}
-
-// Extract leaves from query ast.
-fn collect_leaves(user_input_ast: &UserInputAst) -> Vec<&UserInputLeaf> {
-    match user_input_ast {
-        UserInputAst::Clause(sub_queries) => {
-            let mut leaves = vec![];
-            for (_, sub_ast) in sub_queries {
-                leaves.extend(collect_leaves(sub_ast));
-            }
-            leaves
-        }
-        UserInputAst::Boost(ast, _) => collect_leaves(ast),
-        UserInputAst::Leaf(leaf) => vec![leaf],
-    }
-}
-
-fn extract_field_name(leaf: &UserInputLeaf) -> Option<&str> {
-    match leaf {
-        UserInputLeaf::Literal(UserInputLiteral { field_name, .. }) => field_name.as_deref(),
-        UserInputLeaf::Range { field, .. } => field.as_deref(),
-        UserInputLeaf::Set { field, .. } => field.as_deref(),
-        UserInputLeaf::All => None,
-    }
-}
-
-fn is_valid_field_for_range(field_entry: &FieldEntry) -> anyhow::Result<()> {
-    match field_entry.field_type() {
-        FieldType::Bool(_)
-        | FieldType::Date(_)
-        | FieldType::IpAddr(_)
-        | FieldType::F64(_)
-        | FieldType::I64(_)
-        | FieldType::U64(_) => {
-            if !field_entry.is_fast() {
-                bail!(
-                    "Range queries require having a fast field (field `{}` is not declared as a \
-                     fast field.)",
-                    field_entry.name()
-                );
-            }
-        }
-        other_type => {
-            anyhow::bail!(
-                "Field `{}` is of type `{:?}`. Range queries are only supported on boolean, \
-                 datetime, IP, and numeric fields at the moment.",
-                field_entry.name(),
-                other_type.value_type()
-            );
-        }
-    }
-    Ok(())
-}
-
-/// Extracts field names with ranges.
-fn extract_field_with_ranges(
-    schema: &Schema,
-    user_input_ast: &UserInputAst,
-) -> anyhow::Result<HashSet<String>> {
-    let mut field_with_ranges: HashSet<String> = Default::default();
-    for leaf in collect_leaves(user_input_ast) {
-        if let UserInputLeaf::Range { field, .. } = leaf {
-            // TODO check the field supports ranges.
-            if let Some(field_name) = field {
-                let field: Field = schema
-                    .get_field(field_name)
-                    .with_context(|| format!("Unknown field `{field_name}`"))?;
-                let field_entry = schema.get_field_entry(field);
-                is_valid_field_for_range(field_entry)?;
-                field_with_ranges.insert(field_name.clone());
-            } else {
-                anyhow::bail!("Range query without targeting a specific field is forbidden.");
-            }
-        }
-    }
-    Ok(field_with_ranges)
-}
-
-fn extract_term_set_query_fields(user_input_ast: &UserInputAst, set: &mut HashSet<String>) {
-    set.extend(
-        collect_leaves(user_input_ast)
-            .into_iter()
-            .filter_map(|leaf| {
-                if let UserInputLeaf::Set { field, .. } = leaf {
-                    field.clone()
-                } else {
-                    None
-                }
-            }),
-    )
-}
-
-/// Tells if the query has a Term or Range node which does not
-/// specify a search field.
-fn needs_default_search_field(user_input_ast: &UserInputAst) -> bool {
-    // `All` query apply to all fields, therefore doesn't need default fields.
-    if matches!(user_input_ast, UserInputAst::Leaf(leaf) if **leaf == UserInputLeaf::All) {
-        return false;
-    }
-
-    collect_leaves(user_input_ast)
-        .into_iter()
-        .any(|leaf| extract_field_name(leaf).is_none())
-}
-
-/// Collects all the fields names on the query ast nodes.
-fn field_names(user_input_ast: &UserInputAst) -> HashSet<&str> {
-    collect_leaves(user_input_ast)
-        .into_iter()
-        .filter_map(extract_field_name)
-        .collect()
-}
-
-fn validate_requested_snippet_fields(
-    schema: &Schema,
-    request: &SearchRequest,
-    user_input_ast: &UserInputAst,
-    default_field_names: &[String],
-) -> anyhow::Result<()> {
-    let query_fields = field_names(user_input_ast);
-    for field_name in &request.snippet_fields {
-        if !default_field_names.contains(field_name)
-            && !request.search_fields.contains(field_name)
-            && !query_fields.contains(field_name.as_str())
-        {
-            return Err(anyhow::anyhow!(
-                "The snippet field `{}` should be a default search field or appear in the query.",
-                field_name
-            ));
-        }
-
-        let field_entry = schema
-            .get_field(field_name)
-            .map(|field| schema.get_field_entry(field))?;
-        match field_entry.field_type() {
-            FieldType::Str(text_options) => {
-                if !text_options.is_stored() {
-                    return Err(anyhow::anyhow!(
-                        "The snippet field `{}` must be stored.",
-                        field_name
-                    ));
-                }
-                continue;
-            }
-            other => {
-                return Err(anyhow::anyhow!(
-                    "The snippet field `{}` must be of type `Str`, got `{}`.",
-                    field_name,
-                    other.value_type().name()
-                ))
-            }
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_sort_by_field(
-    field_name: &str,
-    schema: &Schema,
-    search_fields_opt: Option<&Vec<Field>>,
-) -> anyhow::Result<()> {
-    if field_name == "_score" {
-        return validate_sort_by_score(schema, search_fields_opt);
-    }
-    let sort_by_field = schema
-        .get_field(field_name)
-        .with_context(|| format!("Unknown sort by field: `{field_name}`"))?;
-    let sort_by_field_entry = schema.get_field_entry(sort_by_field);
-
-    if matches!(sort_by_field_entry.field_type(), FieldType::Str(_)) {
-        bail!(
-            "Sort by field on type text is currently not supported `{}`.",
-            field_name
-        )
-    }
-    if !sort_by_field_entry.is_fast() {
-        bail!(
-            "Sort by field must be a fast field, please add the fast property to your field `{}`.",
-            field_name
-        )
-    }
-
-    Ok(())
-}
-
-fn validate_sort_by_score(
-    schema: &Schema,
-    search_fields_opt: Option<&Vec<Field>>,
-) -> anyhow::Result<()> {
-    if let Some(fields) = search_fields_opt {
-        for field in fields {
-            if !schema.get_field_entry(*field).has_fieldnorms() {
-                bail!(
-                    "Fieldnorms for field `{}` is missing. Fieldnorms must be stored for the \
-                     field to compute the BM25 score of the documents.",
-                    schema.get_field_name(*field)
-                )
-            }
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod test {
     use quickwit_proto::SearchRequest;
-    use tantivy::query::QueryParserError;
+    use quickwit_query::{validate_requested_snippet_fields, SearchInputAst};
     use tantivy::schema::{
         Cardinality, DateOptions, IpAddrOptions, Schema, FAST, INDEXED, STORED, TEXT,
     };
 
-    use super::{build_query, validate_requested_snippet_fields};
+    use super::build_query;
     use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
 
     enum TestExpectation {
@@ -359,6 +133,7 @@ mod test {
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,
+            ..Default::default()
         };
 
         let default_field_names =
@@ -656,14 +431,18 @@ mod test {
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,
+            ..Default::default()
         };
-        let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
-            .map_err(|_| QueryParserError::SyntaxError(request.query.clone()))
-            .unwrap();
+        let search_input_ast = SearchInputAst::empty_query();
         let default_field_names =
             default_search_fields.unwrap_or_else(|| vec!["title".to_string(), "desc".to_string()]);
 
-        validate_requested_snippet_fields(&schema, &request, &user_input_ast, &default_field_names)
+        validate_requested_snippet_fields(
+            &schema,
+            &request,
+            &search_input_ast,
+            &default_field_names,
+        )
     }
 
     #[test]
@@ -766,6 +545,7 @@ mod test {
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,
+            ..Default::default()
         };
         let request_without_set = SearchRequest {
             aggregation_request: None,
@@ -779,6 +559,7 @@ mod test {
             start_offset: 0,
             sort_order: None,
             sort_by_field: None,
+            ..Default::default()
         };
 
         let default_field_names = vec!["title".to_string(), "desc".to_string()];

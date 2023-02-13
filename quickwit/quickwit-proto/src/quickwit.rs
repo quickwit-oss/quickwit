@@ -38,6 +38,12 @@ pub struct SearchRequest {
     /// Fields to extract snippet on
     #[prost(string, repeated, tag = "12")]
     pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Search fields resolved during  SearchRequest validation
+    #[prost(uint32, repeated, tag = "13")]
+    pub resolved_search_fields: ::prost::alloc::vec::Vec<u32>,
+    /// Fast field names extracted during SearchRequest validation
+    #[prost(string, repeated, tag = "14")]
+    pub fast_field_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -53,7 +59,7 @@ pub struct SearchResponse {
     /// server-side and expressed in microseconds.
     #[prost(uint64, tag = "3")]
     pub elapsed_time_micros: u64,
-    /// The searcherrors that occured formatted as string.
+    /// The search errors that occured formatted as string.
     #[prost(string, repeated, tag = "4")]
     pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Serialized aggregation response
@@ -344,6 +350,12 @@ pub struct SearchStreamRequest {
     /// Fields to extract snippet on.
     #[prost(string, repeated, tag = "10")]
     pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Search fields resolved during  SearchRequest validation
+    #[prost(uint32, repeated, tag = "12")]
+    pub resolved_search_fields: ::prost::alloc::vec::Vec<u32>,
+    /// Fast field names extracted during SearchRequest validation
+    #[prost(string, repeated, tag = "13")]
+    pub fast_field_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

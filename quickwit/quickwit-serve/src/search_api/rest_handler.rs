@@ -201,6 +201,8 @@ async fn search_endpoint(
             .map(|agg| serde_json::to_string(&agg).expect("could not serialize JsonValue")),
         sort_order,
         sort_by_field,
+        resolved_search_fields: Vec::new(),
+        fast_field_names: Vec::new(),
     };
     let search_response = search_service.root_search(search_request).await?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;
@@ -350,6 +352,8 @@ async fn search_stream_endpoint(
         fast_field: search_request.fast_field,
         output_format: search_request.output_format as i32,
         partition_by_field: search_request.partition_by_field,
+        resolved_search_fields: Vec::new(),
+        fast_field_names: Vec::new(),
     };
     let mut data = search_service.root_search_stream(request).await?;
     let (mut sender, body) = hyper::Body::channel();
