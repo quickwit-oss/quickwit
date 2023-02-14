@@ -23,6 +23,7 @@ tonic-build = { workspace = true }
 [dev-dependencies]
 async-trait = { workspace = true }
 dyn-clone = { workspace = true }
+mockall = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

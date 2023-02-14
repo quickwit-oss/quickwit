@@ -12,6 +12,7 @@ pub struct HelloResponse {
     #[prost(string, tag = "1")]
     pub message: ::prost::alloc::string::String,
 }
+#[mockall::automock]
 #[async_trait]
 pub trait Hello: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
     async fn hello(
@@ -20,6 +21,11 @@ pub trait Hello: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
     ) -> crate::hello::HelloResult<HelloResponse>;
 }
 dyn_clone::clone_trait_object!(Hello);
+impl Clone for MockHello {
+    fn clone(&self) -> Self {
+        MockHello::new()
+    }
+}
 /// Generated client implementations.
 pub mod hello_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]

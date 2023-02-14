@@ -31,7 +31,7 @@ async fn test_hello_codegen() {
 
     Codegen::run(proto, out_dir, "crate::hello::HelloResult").unwrap();
 
-    use crate::hello::{Hello, HelloRequest, HelloResponse};
+    use crate::hello::{Hello, HelloRequest, HelloResponse, MockHello};
 
     #[derive(Debug, Clone)]
     struct HelloImpl;
@@ -57,6 +57,24 @@ async fn test_hello_codegen() {
             .unwrap(),
         HelloResponse {
             message: "Hello, World!".to_string()
+        }
+    );
+
+    let mut mock_hello = MockHello::new();
+    mock_hello.expect_hello().returning(|_| {
+        Ok(HelloResponse {
+            message: "Hello, Mock!".to_string(),
+        })
+    });
+    assert_eq!(
+        mock_hello
+            .hello(HelloRequest {
+                name: "".to_string()
+            })
+            .await
+            .unwrap(),
+        HelloResponse {
+            message: "Hello, Mock!".to_string()
         }
     );
 }

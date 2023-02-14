@@ -90,15 +90,22 @@ fn generate_service_trait(
     result_path: &syn::Path,
 ) -> TokenStream {
     let trait_methods = generate_service_trait_methods(methods, result_path);
+    let mock_name = quote::format_ident!("Mock{}", trait_name);
 
     quote! {
+        #[mockall::automock]
         #[async_trait]
         pub trait #trait_name: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
-
             #trait_methods
         }
 
         dyn_clone::clone_trait_object!(#trait_name);
+
+        impl Clone for #mock_name {
+            fn clone(&self) -> Self {
+                #mock_name::new()
+            }
+        }
     }
 }
 
