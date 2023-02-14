@@ -63,8 +63,6 @@ mod metrics;
 // OpenTelemetry to Jaeger Transformation
 // <https://opentelemetry.io/docs/reference/specification/trace/sdk_exporters/jaeger/>
 
-const TRACE_INDEX_ID: &str = "otel-trace-v0";
-
 /// A base64-encoded 16-byte array.
 type TraceId = String;
 
@@ -98,7 +96,7 @@ impl JaegerService {
     ) -> JaegerResult<GetServicesResponse> {
         debug!(request=?request, "`get_services` request");
 
-        let index_id = TRACE_INDEX_ID.to_string();
+        let index_id = OTEL_TRACE_INDEX_ID.to_string();
         let max_hits = Some(1_000);
         let start_timestamp =
             Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
@@ -130,7 +128,7 @@ impl JaegerService {
     ) -> JaegerResult<GetOperationsResponse> {
         debug!(request=?request, "`get_operations` request");
 
-        let index_id = TRACE_INDEX_ID.to_string();
+        let index_id = OTEL_TRACE_INDEX_ID.to_string();
         let max_hits = Some(1_000);
         let start_timestamp =
             Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
@@ -229,7 +227,7 @@ impl JaegerService {
         &self,
         trace_query: TraceQueryParameters,
     ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
-        let index_id = TRACE_INDEX_ID.to_string();
+        let index_id = OTEL_TRACE_INDEX_ID.to_string();
         let span_kind_opt = None;
         let min_span_start_timestamp_secs_opt = trace_query.start_time_min.map(|ts| ts.seconds);
         let max_span_start_timestamp_secs_opt = trace_query.start_time_max.map(|ts| ts.seconds);
@@ -299,7 +297,7 @@ impl JaegerService {
             query.push_str(trace_id);
         }
         let search_request = SearchRequest {
-            index_id: TRACE_INDEX_ID.to_string(),
+            index_id: OTEL_TRACE_INDEX_ID.to_string(),
             query,
             search_fields: Vec::new(),
             start_timestamp: Some(*search_window.start()),
