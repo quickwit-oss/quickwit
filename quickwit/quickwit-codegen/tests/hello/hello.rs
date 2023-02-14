@@ -26,6 +26,27 @@ impl Clone for MockHello {
         MockHello::new()
     }
 }
+#[derive(Debug, Clone)]
+pub struct HelloClient {
+    inner: Box<dyn Hello>,
+}
+impl HelloClient {
+    pub fn new<T>(instance: T) -> Self
+    where
+        T: Hello,
+    {
+        Self { inner: Box::new(instance) }
+    }
+}
+#[async_trait]
+impl Hello for HelloClient {
+    async fn hello(
+        &mut self,
+        request: HelloRequest,
+    ) -> crate::hello::HelloResult<HelloResponse> {
+        self.inner.hello(request).await
+    }
+}
 /// Generated client implementations.
 pub mod hello_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]

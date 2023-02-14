@@ -77,19 +77,18 @@ fn generate_all(service: &Service, result_path: &str) -> TokenStream {
     let result_path = syn::parse_str::<syn::Path>(result_path)
         .expect("Result path should be a valid result path such as `crate::Result`.");
 
-    let service_trait = generate_service_trait(&service_trait_name, &service.methods, &result_path);
+    let service_trait = generate_trait(&service_trait_name, &service.methods, &result_path);
+    let service_client = generate_client(&service_trait_name, &service.methods, &result_path);
 
     quote! {
         #service_trait
+
+        #service_client
     }
 }
 
-fn generate_service_trait(
-    trait_name: &Ident,
-    methods: &[Method],
-    result_path: &syn::Path,
-) -> TokenStream {
-    let trait_methods = generate_service_trait_methods(methods, result_path);
+fn generate_trait(trait_name: &Ident, methods: &[Method], result_path: &syn::Path) -> TokenStream {
+    let trait_methods = generate_trait_methods(methods, result_path);
     let mock_name = quote::format_ident!("Mock{}", trait_name);
 
     quote! {
@@ -109,7 +108,7 @@ fn generate_service_trait(
     }
 }
 
-fn generate_service_trait_methods(methods: &[Method], result_path: &syn::Path) -> TokenStream {
+fn generate_trait_methods(methods: &[Method], result_path: &syn::Path) -> TokenStream {
     let mut stream = TokenStream::new();
     for method in methods {
         let method_name = quote::format_ident!("{}", method.name);
@@ -122,6 +121,55 @@ fn generate_service_trait_methods(methods: &[Method], result_path: &syn::Path) -
 
         let method = quote! {
             async fn #method_name(&mut self, request: #request_type) -> #result_path<#response_type>;
+        };
+        stream.extend(method);
+    }
+    stream
+}
+
+fn generate_client(trait_name: &Ident, methods: &[Method], result_path: &syn::Path) -> TokenStream {
+    let client_name = quote::format_ident!("{}Client", trait_name);
+    let client_methods = generate_client_methods(methods, result_path);
+
+    quote! {
+        #[derive(Debug, Clone)]
+        pub struct #client_name {
+            inner: Box<dyn #trait_name>,
+        }
+
+        impl #client_name {
+            pub fn new<T>(instance: T) -> Self
+            where
+                T: #trait_name,
+            {
+                Self {
+                    inner: Box::new(instance),
+                }
+            }
+        }
+
+        #[async_trait]
+        impl #trait_name for #client_name {
+            #client_methods
+        }
+    }
+}
+
+fn generate_client_methods(methods: &[Method], result_path: &syn::Path) -> TokenStream {
+    let mut stream = TokenStream::new();
+    for method in methods {
+        let method_name = quote::format_ident!("{}", method.name);
+        let request_type = syn::parse_str::<syn::Path>(&method.input_type)
+            .unwrap()
+            .to_token_stream();
+        let response_type = syn::parse_str::<syn::Path>(&method.output_type)
+            .unwrap()
+            .to_token_stream();
+
+        let method = quote! {
+            async fn #method_name(&mut self, request: #request_type) -> #result_path<#response_type> {
+                self.inner.#method_name(request).await
+            }
         };
         stream.extend(method);
     }
