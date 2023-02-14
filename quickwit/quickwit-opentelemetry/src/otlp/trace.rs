@@ -137,10 +137,10 @@ doc_mapping:
       type: array<json>
       tokenizer: raw
 
-  tag_fields: [service_name]
   timestamp_field: span_start_timestamp_secs
 
   partition_key: hash_mod(service_name, 100)
+  tag_fields: [service_name]
 
 indexing_settings:
   commit_timeout_secs: 30
@@ -157,11 +157,11 @@ pub struct Span {
     pub trace_state: Option<String>,
     pub service_name: String,
     pub resource_attributes: HashMap<String, JsonValue>,
-    pub resource_dropped_attributes_count: u64,
+    pub resource_dropped_attributes_count: u32,
     pub scope_name: Option<String>,
     pub scope_version: Option<String>,
     pub scope_attributes: HashMap<String, JsonValue>,
-    pub scope_dropped_attributes_count: u64,
+    pub scope_dropped_attributes_count: u32,
     pub span_id: Base64,
     pub span_kind: u64,
     pub span_name: String,
@@ -177,9 +177,9 @@ pub struct Span {
     pub span_start_timestamp_secs: Option<u64>,
     pub span_duration_millis: Option<u64>,
     pub span_attributes: HashMap<String, JsonValue>,
-    pub span_dropped_attributes_count: u64,
-    pub span_dropped_events_count: u64,
-    pub span_dropped_links_count: u64,
+    pub span_dropped_attributes_count: u32,
+    pub span_dropped_events_count: u32,
+    pub span_dropped_links_count: u32,
     pub span_status: Option<SpanStatus>,
     pub parent_span_id: Option<Base64>,
     #[serde(default)]
@@ -199,12 +199,12 @@ impl Ord for OrdSpan {
         self.0
             .trace_id
             .cmp(&other.0.trace_id)
+            .then(self.0.span_name.cmp(&other.0.span_name))
             .then(
                 self.0
-                    .span_start_timestamp_secs
-                    .cmp(&other.0.span_start_timestamp_secs),
+                    .span_start_timestamp_nanos
+                    .cmp(&other.0.span_start_timestamp_nanos),
             )
-            .then(self.0.span_name.cmp(&other.0.span_name))
             .then(self.0.span_id.cmp(&other.0.span_id))
     }
 }
@@ -387,7 +387,7 @@ pub struct Event {
     pub event_timestamp_nanos: u64,
     pub event_name: String,
     pub event_attributes: HashMap<String, JsonValue>,
-    pub event_dropped_attributes_count: u64,
+    pub event_dropped_attributes_count: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -396,7 +396,7 @@ pub struct Link {
     pub link_trace_state: String,
     pub link_span_id: Base64,
     pub link_attributes: HashMap<String, JsonValue>,
-    pub link_dropped_attributes_count: u64,
+    pub link_dropped_attributes_count: u32,
 }
 
 struct ParsedSpans {
@@ -486,14 +486,23 @@ impl OtlpGrpcTraceService {
             let resource_dropped_attributes_count = resource_span
                 .resource
                 .map(|rsrc| rsrc.dropped_attributes_count)
-                .unwrap_or(0) as u64;
+                .unwrap_or(0);
+            // TODO: Pop service name rather than copy it.
             let service_name = match resource_attributes.get("service.name") {
                 Some(JsonValue::String(value)) => value.to_string(),
-                _ => "unknown".to_string(),
+                _ => "unknown_service".to_string(),
             };
             for scope_span in resource_span.scope_spans {
-                let scope_name = scope_span.scope.as_ref().map(|scope| &scope.name);
-                let scope_version = scope_span.scope.as_ref().map(|scope| &scope.version);
+                let scope_name = scope_span
+                    .scope
+                    .as_ref()
+                    .map(|scope| &scope.name)
+                    .filter(|name| !name.is_empty());
+                let scope_version = scope_span
+                    .scope
+                    .as_ref()
+                    .map(|scope| &scope.version)
+                    .filter(|version| !version.is_empty());
                 let scope_attributes = extract_attributes(
                     scope_span
                         .scope
@@ -505,7 +514,8 @@ impl OtlpGrpcTraceService {
                     .scope
                     .as_ref()
                     .map(|scope| scope.dropped_attributes_count)
-                    .unwrap_or(0) as u64;
+                    .unwrap_or(0);
+
                 for span in scope_span.spans {
                     num_spans += 1;
 
@@ -535,7 +545,7 @@ impl OtlpGrpcTraceService {
                             event_timestamp_nanos: event.time_unix_nano,
                             event_name: event.name,
                             event_attributes: extract_attributes(event.attributes),
-                            event_dropped_attributes_count: event.dropped_attributes_count as u64,
+                            event_dropped_attributes_count: event.dropped_attributes_count,
                         })
                         .collect();
                     let event_names: Vec<String> = events
@@ -550,7 +560,7 @@ impl OtlpGrpcTraceService {
                             link_trace_state: link.trace_state,
                             link_span_id: BASE64_STANDARD.encode(link.span_id),
                             link_attributes: extract_attributes(link.attributes),
-                            link_dropped_attributes_count: link.dropped_attributes_count as u64,
+                            link_dropped_attributes_count: link.dropped_attributes_count,
                         })
                         .collect();
                     let trace_state = if span.trace_state.is_empty() {
@@ -577,9 +587,9 @@ impl OtlpGrpcTraceService {
                         span_start_timestamp_secs,
                         span_duration_millis,
                         span_attributes,
-                        span_dropped_attributes_count: span.dropped_attributes_count as u64,
-                        span_dropped_events_count: span.dropped_events_count as u64,
-                        span_dropped_links_count: span.dropped_links_count as u64,
+                        span_dropped_attributes_count: span.dropped_attributes_count,
+                        span_dropped_events_count: span.dropped_events_count,
+                        span_dropped_links_count: span.dropped_links_count,
                         span_status: span.status.map(|status| status.into()),
                         parent_span_id,
                         events,

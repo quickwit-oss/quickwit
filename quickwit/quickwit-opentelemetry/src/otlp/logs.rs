@@ -17,23 +17,167 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
+use std::collections::{BTreeSet, HashMap};
 
 use async_trait::async_trait;
-use quickwit_actors::Mailbox;
-use quickwit_ingest_api::IngestApiService;
+use base64::prelude::{Engine, BASE64_STANDARD};
+use quickwit_actors::{AskError, Mailbox};
+use quickwit_ingest_api::{IngestApiError, IngestApiService};
 use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsService;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
-    ExportLogsServiceRequest, ExportLogsServiceResponse,
+    ExportLogsPartialSuccess, ExportLogsServiceRequest, ExportLogsServiceResponse,
 };
-use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use tonic::{Request, Response, Status};
+use tracing::field::Empty;
+use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
+use super::parse_log_record_body;
 use crate::otlp::extract_attributes;
+use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
-const OTEL_LOG_INDEX_ID: &str = "otel-log-v0";
+pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0";
+
+pub const OTEL_LOGS_INDEX_CONFIG: &str = r#"
+version: 0.4
+
+index_id: otel-logs-v0
+
+doc_mapping:
+  mode: strict
+  field_mappings:
+    - name: timestamp_secs
+      type: datetime
+      input_formats: [unix_timestamp]
+      indexed: false
+      fast: true
+      precision: seconds
+      stored: false
+    - name: timestamp_nanos
+      type: u64
+      indexed: false
+    - name: observed_timestamp_nanos
+      type: u64
+      indexed: false
+    - name: service_name
+      type: text
+      tokenizer: raw
+    - name: severity_text
+      type: text
+      tokenizer: raw
+    - name: severity_number
+      type: u64
+    - name: body
+      type: json
+    - name: attributes
+      type: json
+      tokenizer: raw
+    - name: dropped_attributes_count
+      type: u64
+      indexed: false
+    - name: trace_id
+      type: text
+      tokenizer: raw
+    - name: span_id
+      type: text
+      tokenizer: raw
+    - name: trace_flags
+      type: u64
+      indexed: false
+    - name: resource_attributes
+      type: json
+      tokenizer: raw
+    - name: resource_dropped_attributes_count
+      type: u64
+      indexed: false
+    - name: scope_name
+      type: text
+      indexed: false
+    - name: scope_version
+      type: text
+      indexed: false
+    - name: scope_attributes
+      type: json
+      indexed: false
+    - name: scope_dropped_attributes_count
+      type: u64
+      indexed: false
+
+  timestamp_field: timestamp_secs
+
+  partition_key: hash_mod(service_name, 100)
+  tag_fields: [service_name]
+
+indexing_settings:
+  commit_timeout_secs: 30
+
+search_settings:
+  default_search_fields: []
+"#;
+
+pub type Base64 = String;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LogRecord {
+    pub timestamp_secs: Option<u64>,
+    pub timestamp_nanos: u64,
+    pub observed_timestamp_nanos: u64,
+    pub service_name: String,
+    pub severity_text: Option<String>,
+    pub severity_number: i32,
+    pub body: Option<JsonValue>,
+    pub attributes: HashMap<String, JsonValue>,
+    pub dropped_attributes_count: u32,
+    pub trace_id: Option<Base64>,
+    pub span_id: Option<Base64>,
+    pub trace_flags: Option<u32>,
+    pub resource_attributes: HashMap<String, JsonValue>,
+    pub resource_dropped_attributes_count: u32,
+    pub scope_name: Option<String>,
+    pub scope_version: Option<String>,
+    pub scope_attributes: HashMap<String, JsonValue>,
+    pub scope_dropped_attributes_count: u32,
+}
+
+/// A wrapper around `LogRecord` that implements `Ord` to allow insertion of log records into a
+/// `BTreeSet`.
+#[derive(Debug)]
+struct OrdLogRecord(LogRecord);
+
+impl Ord for OrdLogRecord {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0
+            .service_name
+            .cmp(&other.0.service_name)
+            .then(self.0.timestamp_nanos.cmp(&other.0.timestamp_nanos))
+    }
+}
+
+impl PartialOrd for OrdLogRecord {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for OrdLogRecord {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.timestamp_nanos == other.0.timestamp_nanos
+            && self.0.service_name == other.0.service_name
+            && self.0.body == other.0.body
+    }
+}
+
+impl Eq for OrdLogRecord {}
+
+struct ParsedLogRecords {
+    doc_batch: DocBatch,
+    num_log_records: u64,
+    num_parse_errors: u64,
+    error_message: String,
+}
 
 #[derive(Clone)]
 pub struct OtlpGrpcLogsService {
@@ -45,73 +189,245 @@ impl OtlpGrpcLogsService {
     pub fn new(ingest_api_service: Mailbox<IngestApiService>) -> Self {
         Self { ingest_api_service }
     }
-}
 
-#[derive(Debug, Serialize)]
-struct LogEvent {
-    timestamp: i64,
-    attributes: HashMap<String, JsonValue>,
-    resource: HashMap<String, JsonValue>,
-    body: Option<String>,
-    severity: String,
+    async fn export_inner(
+        &self,
+        request: ExportLogsServiceRequest,
+        labels: [&'static str; 4],
+    ) -> Result<ExportLogsServiceResponse, Status> {
+        let ParsedLogRecords {
+            doc_batch,
+            num_log_records,
+            num_parse_errors,
+            error_message,
+        } = tokio::task::spawn_blocking({
+            let parent_span = RuntimeSpan::current();
+            || Self::parse_logs(request, parent_span)
+        })
+        .await
+        .map_err(|join_error| {
+            error!("Failed to parse log records: {join_error:?}");
+            Status::internal("Failed to parse log records.")
+        })??;
+        if num_log_records == num_parse_errors {
+            return Err(tonic::Status::internal(error_message));
+        }
+        let num_bytes = doc_batch.concat_docs.len() as u64;
+        self.store_logs(doc_batch).await?;
+
+        OTLP_SERVICE_METRICS
+            .ingested_log_records_total
+            .with_label_values(labels)
+            .inc_by(num_log_records);
+        OTLP_SERVICE_METRICS
+            .ingested_bytes_total
+            .with_label_values(labels)
+            .inc_by(num_bytes);
+
+        let response = ExportLogsServiceResponse {
+            // `rejected_spans=0` and `error_message=""` is consided a "full" success.
+            partial_success: Some(ExportLogsPartialSuccess {
+                rejected_log_records: num_parse_errors as i64,
+                error_message,
+            }),
+        };
+        Ok(response)
+    }
+
+    #[instrument(skip_all, parent = parent_span, fields(num_spans = Empty, num_bytes = Empty, num_parse_errors = Empty))]
+    fn parse_logs(
+        request: ExportLogsServiceRequest,
+        parent_span: RuntimeSpan,
+    ) -> Result<ParsedLogRecords, Status> {
+        let mut doc_batch = DocBatch {
+            index_id: OTEL_LOGS_INDEX_ID.to_string(),
+            ..Default::default()
+        };
+        let mut log_records = BTreeSet::new();
+        let mut num_log_records = 0;
+        let mut num_parse_errors = 0;
+        let mut error_message = String::new();
+
+        for resource_log in request.resource_logs {
+            let mut resource_attributes = extract_attributes(
+                resource_log
+                    .resource
+                    .clone()
+                    .map(|rsrc| rsrc.attributes)
+                    .unwrap_or_else(Vec::new),
+            );
+            let resource_dropped_attributes_count = resource_log
+                .resource
+                .map(|rsrc| rsrc.dropped_attributes_count)
+                .unwrap_or(0);
+
+            let service_name = match resource_attributes.remove("service.name") {
+                Some(JsonValue::String(value)) => value.to_string(),
+                _ => "unknown_service".to_string(),
+            };
+            for scope_log in resource_log.scope_logs {
+                let scope_name = scope_log
+                    .scope
+                    .as_ref()
+                    .map(|scope| &scope.name)
+                    .filter(|name| !name.is_empty());
+                let scope_version = scope_log
+                    .scope
+                    .as_ref()
+                    .map(|scope| &scope.version)
+                    .filter(|version| !version.is_empty());
+                let scope_attributes = extract_attributes(
+                    scope_log
+                        .scope
+                        .clone()
+                        .map(|scope| scope.attributes)
+                        .unwrap_or_else(Vec::new),
+                );
+                let scope_dropped_attributes_count = scope_log
+                    .scope
+                    .as_ref()
+                    .map(|scope| scope.dropped_attributes_count)
+                    .unwrap_or(0);
+
+                for log_record in scope_log.log_records {
+                    num_log_records += 1;
+
+                    let timestamp_nanos = log_record.time_unix_nano;
+                    let timestamp_secs = Some(timestamp_nanos / 1_000_000_000);
+                    let observed_timestamp_nanos = log_record.observed_time_unix_nano;
+
+                    let trace_id = if log_record.trace_id.iter().any(|&byte| byte != 0) {
+                        Some(BASE64_STANDARD.encode(log_record.trace_id))
+                    } else {
+                        None
+                    };
+                    let span_id = if log_record.span_id.iter().any(|&byte| byte != 0) {
+                        Some(BASE64_STANDARD.encode(log_record.span_id))
+                    } else {
+                        None
+                    };
+                    let trace_flags = Some(log_record.flags);
+
+                    let severity_text = if !log_record.severity_text.is_empty() {
+                        Some(log_record.severity_text)
+                    } else {
+                        None
+                    };
+                    let severity_number = log_record.severity_number;
+                    let body = log_record.body.and_then(parse_log_record_body);
+                    let attributes = extract_attributes(log_record.attributes);
+                    let dropped_attributes_count = log_record.dropped_attributes_count;
+
+                    let log_record = LogRecord {
+                        timestamp_secs,
+                        timestamp_nanos,
+                        observed_timestamp_nanos,
+                        service_name: service_name.clone(),
+                        severity_text,
+                        severity_number,
+                        body,
+                        attributes,
+                        trace_id,
+                        span_id,
+                        trace_flags,
+                        dropped_attributes_count,
+                        resource_attributes: resource_attributes.clone(),
+                        resource_dropped_attributes_count,
+                        scope_name: scope_name.cloned(),
+                        scope_version: scope_version.cloned(),
+                        scope_attributes: scope_attributes.clone(),
+                        scope_dropped_attributes_count,
+                    };
+                    log_records.insert(OrdLogRecord(log_record));
+                }
+            }
+        }
+        for log_record in log_records {
+            let current_doc_batch_len = doc_batch.concat_docs.len();
+            if let Err(error) = serde_json::to_writer(&mut doc_batch.concat_docs, &log_record.0) {
+                error!(error=?error, "Failed to JSON serialize log record.");
+                error_message = format!("Failed to JSON serialize log record: {error:?}");
+                num_parse_errors += 1;
+                continue;
+            }
+            let new_doc_batch_len = doc_batch.concat_docs.len();
+            let span_json_len = new_doc_batch_len - current_doc_batch_len;
+            doc_batch.doc_lens.push(span_json_len as u64);
+        }
+        let current_span = RuntimeSpan::current();
+        current_span.record("num_log_records", num_log_records);
+        current_span.record("num_bytes", doc_batch.concat_docs.len());
+        current_span.record("num_parse_errors", num_parse_errors);
+
+        let parsed_spans = ParsedLogRecords {
+            doc_batch,
+            num_log_records,
+            num_parse_errors,
+            error_message,
+        };
+        Ok(parsed_spans)
+    }
+
+    #[instrument(skip_all, fields(num_bytes = doc_batch.concat_docs.len()))]
+    async fn store_logs(&self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
+        let ingest_request = IngestRequest {
+            doc_batches: vec![doc_batch],
+        };
+        self.ingest_api_service
+            .ask_for_res(ingest_request)
+            .await
+            .map_err(|ask_error| {
+                if matches!(ask_error, AskError::ErrorReply(IngestApiError::RateLimited)) {
+                    tonic::Status::unavailable("Failed to store logs due to rate limiting.")
+                } else {
+                    error!("Failed to store logs: {ask_error:?}");
+                    tonic::Status::internal("Failed to store logs.")
+                }
+            })?;
+        Ok(())
+    }
+
+    async fn export_instrumented(
+        &self,
+        request: ExportLogsServiceRequest,
+    ) -> Result<ExportLogsServiceResponse, Status> {
+        let start = std::time::Instant::now();
+
+        let labels = ["logs", OTEL_LOGS_INDEX_ID, "grpc", "protobuf"];
+
+        OTLP_SERVICE_METRICS
+            .requests_total
+            .with_label_values(labels)
+            .inc();
+        let (export_res, is_error) = match self.export_inner(request, labels).await {
+            ok @ Ok(_) => (ok, "false"),
+            err @ Err(_) => {
+                OTLP_SERVICE_METRICS
+                    .request_errors_total
+                    .with_label_values(labels)
+                    .inc();
+                (err, "true")
+            }
+        };
+        let elapsed = start.elapsed().as_secs_f64();
+        let labels = ["logs", OTEL_LOGS_INDEX_ID, "grpc", "protobuf", is_error];
+        OTLP_SERVICE_METRICS
+            .request_duration_seconds
+            .with_label_values(labels)
+            .observe(elapsed);
+
+        export_res
+    }
 }
 
 #[async_trait]
 impl LogsService for OtlpGrpcLogsService {
+    #[instrument(name = "ingest_logs", skip_all)]
     async fn export(
         &self,
-        request: tonic::Request<ExportLogsServiceRequest>,
-    ) -> Result<tonic::Response<ExportLogsServiceResponse>, tonic::Status> {
+        request: Request<ExportLogsServiceRequest>,
+    ) -> Result<Response<ExportLogsServiceResponse>, Status> {
         let request = request.into_inner();
-        let mut doc_batch = DocBatch {
-            index_id: OTEL_LOG_INDEX_ID.to_string(),
-            ..Default::default()
-        };
-
-        for resource_log in request.resource_logs {
-            let resource: HashMap<String, JsonValue> = resource_log
-                .resource
-                .map(|resource| extract_attributes(resource.attributes))
-                .unwrap_or_default();
-            for scope_log in resource_log.scope_logs {
-                for log_record in scope_log.log_records {
-                    let body = log_record.body.and_then(|body| match body.value {
-                        Some(Value::StringValue(inner)) => Some(inner),
-                        _ => None,
-                    });
-                    let severity_text = log_record.severity_text;
-                    let timestamp = if log_record.time_unix_nano != 0 {
-                        // Quickwit supports only microseconds.
-                        (log_record.time_unix_nano / 1000) as i64
-                    } else {
-                        (log_record.observed_time_unix_nano / 1000) as i64
-                    };
-                    let attributes = extract_attributes(log_record.attributes);
-                    let log_event = LogEvent {
-                        timestamp,
-                        attributes,
-                        body,
-                        severity: severity_text,
-                        resource: resource.clone(),
-                    };
-                    let log_event_json = serde_json::to_vec(&log_event)
-                        .expect("`LogEvent` are serializable, this should never happened.");
-                    let log_event_json_len = log_event_json.len() as u64;
-                    doc_batch.concat_docs.extend_from_slice(&log_event_json);
-                    doc_batch.doc_lens.push(log_event_json_len);
-                }
-            }
-        }
-
-        let ingest_request = IngestRequest {
-            doc_batches: vec![doc_batch],
-        };
-
-        self.ingest_api_service
-            .ask_for_res(ingest_request)
-            .await
-            .map_err(|err| tonic::Status::internal(err.to_string()))?;
-
-        Ok(tonic::Response::new(ExportLogsServiceResponse::default()))
+        self.export_instrumented(request).await.map(Response::new)
     }
 }

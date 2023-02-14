@@ -747,9 +747,9 @@ fn to_well_known_duration(
 
 fn inject_dropped_count_tags(
     tags: &mut Vec<JaegerKeyValue>,
-    dropped_attributes_count: u64,
-    dropped_events_count: u64,
-    dropped_links_count: u64,
+    dropped_attributes_count: u32,
+    dropped_events_count: u32,
+    dropped_links_count: u32,
 ) {
     for (dropped_count, key) in [
         (dropped_attributes_count, "otel.dropped_attributes_count"),

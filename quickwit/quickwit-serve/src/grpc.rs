@@ -103,11 +103,11 @@ pub(crate) async fn start_grpc_server(
     let otlp_log_grpc_service = if enable_opentelemetry_otlp_grpc_service
         && services.services.contains(&QuickwitService::Indexer)
     {
-        enabled_grpc_services.insert("otlp-log");
+        enabled_grpc_services.insert("otlp-logs");
         let ingest_api_service = services
             .ingest_api_service
             .clone()
-            .context("Failed to instantiate OTLP log service: the ingest API is disabled.")?;
+            .context("Failed to instantiate OTLP logs service: the ingest API is disabled.")?;
         let logs_service = LogsServiceServer::new(OtlpGrpcLogsService::new(ingest_api_service))
             .accept_compressed(CompressionEncoding::Gzip);
         Some(logs_service)
