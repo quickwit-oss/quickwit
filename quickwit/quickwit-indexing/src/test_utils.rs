@@ -101,7 +101,7 @@ impl TestSandbox {
             .await?;
         metastore.create_index(index_config.clone()).await?;
         let storage = storage_resolver.resolve(&index_uri)?;
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let indexing_service_actor = IndexingService::new(
             node_id.to_string(),
             temp_dir.path().to_path_buf(),
@@ -199,16 +199,17 @@ impl TestSandbox {
         &self.index_id
     }
 
+    /// Returns the underlying universe.
+    pub fn universe(&self) -> &Universe {
+        &self.universe
+    }
+
+    /// Gracefully quits all registered actors in the underlying universr and asserts that none of them panicked.
+    /// 
+    /// This is useful for testing purposes to detect failed asserts in actors
     #[cfg(any(test, feature = "testsuite"))]
     pub async fn assert_quit(self) {
-        use quickwit_actors::ActorExitStatus;
-
-        assert!(!self
-            .universe
-            .quit()
-            .await
-            .into_iter()
-            .any(|status| matches!(status, ActorExitStatus::Panicked)));
+        self.universe.assert_quit().await
     }
 }
 
