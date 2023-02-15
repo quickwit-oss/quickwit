@@ -104,6 +104,8 @@ fn generate_all(service: &Service, result_path: &str, error_path: &str) -> Token
         generate_grpc_server_adapter(&package_name, &trait_name, &service.methods);
 
     quote! {
+        // The line below is necessary to opt out of the license header check.
+        /// BEGIN quickwit-codegen
         #service_trait
 
         #client

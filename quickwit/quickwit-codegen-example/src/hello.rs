@@ -12,6 +12,7 @@ pub struct HelloResponse {
     #[prost(string, tag = "1")]
     pub message: ::prost::alloc::string::String,
 }
+/// BEGIN quickwit-codegen
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait Hello: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {

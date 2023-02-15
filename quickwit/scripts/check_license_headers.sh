@@ -3,21 +3,21 @@
 RESULT=0
 
 for file in $(git ls-files | \
-    grep "src\|proto" | \
+    grep "build\|src\|proto" | \
     grep -e "\.proto\|\.rs\|\.ts" | \
     grep -v "quickwit-proto/protos/third-party" | \
     grep -v "quickwit-proto/src" \
 )
 do
-    diff <(sed 's/{\\d+}/2023/' .license_header.txt) <(head -n 19 $file)
+    diff <(sed 's/{\\d+}/2023/' .license_header.txt) <(head -n 19 $file) > /dev/null
     DIFFRESULT=$?
     if [ $DIFFRESULT -ne 0 ]; then
-        echo $DIFFRESULT
-        echo "---"
-        echo "Incomplete or missing license header in $file"
-        echo "---"
-        echo
-        RESULT=1
+        grep -q -i 'begin quickwit-codegen' $file
+        GREPRESULT=$?
+        if [ $GREPRESULT -ne 0 ]; then
+            echo "Incomplete or missing license header in $file"
+            RESULT=1
+        fi
     fi
 done
 
