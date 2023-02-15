@@ -4,7 +4,7 @@
 
 1. Describe your service in a proto file.
 
-2. Define an error and a result type for you service. The error type must implement `From<tonic::Status>` and `Into<tonic::Status>`.
+2. Define an error and a result type for your service. The error type must implement `From<tonic::Status>` and `Into<tonic::Status>`.
 
 3. Add the following dependencies to your project:
 
@@ -43,4 +43,4 @@ fn main() {
 
 5. Import and implement the generated service trait and use the various generated adapters to instantiate a gRPC server, or use a local or remote gRPC implementation with the same client interface.
 
-Checkout the complete working example in the `quickwit-codegen-example` crate
+Checkout the complete working example in the `quickwit-codegen-example` crate.
