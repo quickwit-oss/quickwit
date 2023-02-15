@@ -12,10 +12,13 @@ pub struct HelloResponse {
     #[prost(string, tag = "1")]
     pub message: ::prost::alloc::string::String,
 }
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait Hello: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
-    async fn hello(&mut self, request: HelloRequest) -> crate::hello::HelloResult<HelloResponse>;
+    async fn hello(
+        &mut self,
+        request: HelloRequest,
+    ) -> crate::test_hello::HelloResult<HelloResponse>;
 }
 dyn_clone::clone_trait_object!(Hello);
 impl Clone for MockHello {
@@ -37,7 +40,10 @@ impl HelloClient {
 }
 #[async_trait::async_trait]
 impl Hello for HelloClient {
-    async fn hello(&mut self, request: HelloRequest) -> crate::hello::HelloResult<HelloResponse> {
+    async fn hello(
+        &mut self,
+        request: HelloRequest,
+    ) -> crate::test_hello::HelloResult<HelloResponse> {
         self.inner.hello(request).await
     }
 }
@@ -45,7 +51,7 @@ pub type BoxFuture<T, E> =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>>;
 impl tower::Service<HelloRequest> for HelloClient {
     type Response = HelloResponse;
-    type Error = crate::hello::error::HelloError;
+    type Error = crate::test_hello::error::HelloError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
         &mut self,
@@ -81,7 +87,10 @@ where
     <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send,
     T::Future: Send,
 {
-    async fn hello(&mut self, request: HelloRequest) -> crate::hello::HelloResult<HelloResponse> {
+    async fn hello(
+        &mut self,
+        request: HelloRequest,
+    ) -> crate::test_hello::HelloResult<HelloResponse> {
         self.inner
             .hello(request)
             .await

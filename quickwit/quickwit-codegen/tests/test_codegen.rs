@@ -26,26 +26,26 @@ use quickwit_codegen::Codegen;
 use tonic::transport::{Endpoint, Server};
 use tower::Service;
 
-use crate::hello::hello_grpc_client::HelloGrpcClient;
-use crate::hello::HelloGrpcClientAdapter;
+use crate::test_hello::hello_grpc_client::HelloGrpcClient;
+use crate::test_hello::HelloGrpcClientAdapter;
 
-mod hello;
+mod test_hello;
 
 #[tokio::test]
 async fn test_hello_codegen() {
-    let proto = Path::new("tests/hello/hello.proto");
-    let out_dir = Path::new("tests/hello/");
+    let proto = Path::new("tests/test_hello/hello.proto");
+    let out_dir = Path::new("tests/test_hello/");
 
     Codegen::run(
         proto,
         out_dir,
-        "crate::hello::HelloResult",
-        "crate::hello::error::HelloError",
+        "crate::test_hello::HelloResult",
+        "crate::test_hello::error::HelloError",
     )
     .unwrap();
 
-    use crate::hello::hello_grpc_server::HelloGrpcServer;
-    use crate::hello::{
+    use crate::test_hello::hello_grpc_server::HelloGrpcServer;
+    use crate::test_hello::{
         Hello, HelloClient, HelloGrpcServerAdapter, HelloRequest, HelloResponse, MockHello,
     };
 
@@ -57,7 +57,7 @@ async fn test_hello_codegen() {
         async fn hello(
             &mut self,
             request: HelloRequest,
-        ) -> crate::hello::HelloResult<HelloResponse> {
+        ) -> crate::test_hello::HelloResult<HelloResponse> {
             Ok(HelloResponse {
                 message: format!("Hello, {}!", request.name),
             })
