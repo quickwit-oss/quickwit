@@ -18,11 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod error;
+mod hello;
 
-use async_trait::async_trait;
 pub use error::HelloError;
-use serde::{Deserialize, Serialize};
+pub use hello::*;
 
 pub type HelloResult<T> = Result<T, HelloError>;
-
-include!("hello.rs");

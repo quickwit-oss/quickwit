@@ -17,11 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::net::SocketAddr;
 use std::path::Path;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_codegen::Codegen;
-use tonic::transport::Server;
+use tonic::transport::{Endpoint, Server};
+
+use crate::hello::hello_grpc_client::HelloGrpcClient;
+use crate::hello::HelloGrpcClientAdapter;
 
 mod hello;
 
@@ -101,13 +106,32 @@ async fn test_hello_codegen() {
 
     let grpc_server_adapter = HelloGrpcServerAdapter::new(hello);
     let grpc_server = HelloGrpcServer::new(grpc_server_adapter);
-    let addr = "127.0.0.1:0".parse().unwrap();
+    let addr: SocketAddr = "127.0.0.1:6666".parse().unwrap();
 
-    tokio::spawn(async move {
-        Server::builder()
-            .add_service(grpc_server)
-            .serve(addr)
-            .await
-            .unwrap();
+    tokio::spawn({
+        async move {
+            Server::builder()
+                .add_service(grpc_server)
+                .serve(addr)
+                .await
+                .unwrap();
+        }
     });
+    let channel = Endpoint::from_static("http://127.0.0.1:6666")
+        .connect_timeout(Duration::from_secs(1))
+        .connect_lazy();
+    let mut grpc_client =
+        HelloClient::new(HelloGrpcClientAdapter::new(HelloGrpcClient::new(channel)));
+
+    assert_eq!(
+        grpc_client
+            .hello(HelloRequest {
+                name: "Client".to_string()
+            })
+            .await
+            .unwrap(),
+        HelloResponse {
+            message: "Hello, Client!".to_string()
+        }
+    );
 }

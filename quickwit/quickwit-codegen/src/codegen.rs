@@ -31,7 +31,10 @@ impl Codegen {
         let mut prost_config = prost_build::Config::default();
         prost_config
             .protoc_arg("--experimental_allow_proto3_optional")
-            .type_attribute(".", "#[derive(Serialize, Deserialize, utoipa::ToSchema)]")
+            .type_attribute(
+                ".",
+                "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]",
+            )
             .out_dir(out_dir);
 
         let service_generator = Box::new(QuickwitServiceGenerator::new(result_path));
@@ -77,18 +80,24 @@ impl ServiceGenerator for QuickwitServiceGenerator {
 }
 
 fn generate_all(service: &Service, result_path: &str) -> TokenStream {
-    let service_trait_name = quote::format_ident!("{}", service.name);
+    let package_name = quote::format_ident!("{}", service.package);
+    let trait_name = quote::format_ident!("{}", service.name);
     let result_path = syn::parse_str::<syn::Path>(result_path)
         .expect("Result path should be a valid result path such as `crate::Result`.");
 
-    let service_trait = generate_trait(&service_trait_name, &service.methods, &result_path);
-    let service_client = generate_client(&service_trait_name, &service.methods, &result_path);
-    let grpc_server_adapter = generate_grpc_server_adapter(&service_trait_name, &service.methods);
+    let service_trait = generate_trait(&trait_name, &service.methods, &result_path);
+    let service_client = generate_client(&trait_name, &service.methods, &result_path);
+    let grpc_client_adapter =
+        generate_grpc_client_adapter(&package_name, &trait_name, &service.methods, &result_path);
+    let grpc_server_adapter =
+        generate_grpc_server_adapter(&package_name, &trait_name, &service.methods);
 
     quote! {
         #service_trait
 
         #service_client
+
+        #grpc_client_adapter
 
         #grpc_server_adapter
     }
@@ -100,7 +109,7 @@ fn generate_trait(trait_name: &Ident, methods: &[Method], result_path: &syn::Pat
 
     quote! {
         #[mockall::automock]
-        #[async_trait]
+        #[async_trait::async_trait]
         pub trait #trait_name: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
             #trait_methods
         }
@@ -141,21 +150,19 @@ fn generate_client(trait_name: &Ident, methods: &[Method], result_path: &syn::Pa
     quote! {
         #[derive(Debug, Clone)]
         pub struct #client_name {
-            inner: Box<dyn #trait_name>,
+            inner: Box<dyn #trait_name>
         }
 
         impl #client_name {
             pub fn new<T>(instance: T) -> Self
-            where
-                T: #trait_name,
-            {
+            where T: #trait_name {
                 Self {
                     inner: Box::new(instance),
                 }
             }
         }
 
-        #[async_trait]
+        #[async_trait::async_trait]
         impl #trait_name for #client_name {
             #client_methods
         }
@@ -183,9 +190,83 @@ fn generate_client_methods(methods: &[Method], result_path: &syn::Path) -> Token
     stream
 }
 
-fn generate_grpc_server_adapter(trait_name: &Ident, methods: &[Method]) -> TokenStream {
-    let grpc_server_package_name =
-        quote::format_ident!("{}_grpc_server", trait_name.to_string().to_lowercase());
+fn generate_grpc_client_adapter(
+    package_name: &Ident,
+    trait_name: &Ident,
+    methods: &[Method],
+    result_path: &syn::Path,
+) -> TokenStream {
+    let grpc_client_package_name = quote::format_ident!("{}_grpc_client", package_name);
+    let grpc_client_name = quote::format_ident!("{}GrpcClient", trait_name);
+    let grpc_client_adapter_name = quote::format_ident!("{}GrpcClientAdapter", trait_name);
+    let grpc_server_adapter_methods = generate_grpc_client_adapter_methods(methods, result_path);
+
+    quote! {
+        #[derive(Debug, Clone)]
+        pub struct #grpc_client_adapter_name<T> {
+            inner: T
+        }
+
+        impl<T> #grpc_client_adapter_name<T> {
+            pub fn new(instance: T) -> Self {
+                Self {
+                    inner: instance
+                }
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl<T> #trait_name for #grpc_client_adapter_name<#grpc_client_package_name::#grpc_client_name<T>>
+        where
+            T: tonic::client::GrpcService<tonic::body::BoxBody>
+                + std::fmt::Debug
+                + Clone
+                + Send
+                + Sync
+                + 'static,
+            T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
+            <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send,
+            T::Future: Send
+        {
+            #grpc_server_adapter_methods
+        }
+    }
+}
+
+fn generate_grpc_client_adapter_methods(
+    methods: &[Method],
+    result_path: &syn::Path,
+) -> TokenStream {
+    let mut stream = TokenStream::new();
+    for method in methods {
+        let method_name = quote::format_ident!("{}", method.name);
+        let request_type = syn::parse_str::<syn::Path>(&method.input_type)
+            .unwrap()
+            .to_token_stream();
+        let response_type = syn::parse_str::<syn::Path>(&method.output_type)
+            .unwrap()
+            .to_token_stream();
+
+        let method = quote! {
+            async fn #method_name(&mut self, request: #request_type) -> #result_path<#response_type> {
+                self.inner
+                    .#method_name(request)
+                    .await
+                    .map(|response| response.into_inner())
+                    .map_err(|error| error.into())
+            }
+        };
+        stream.extend(method);
+    }
+    stream
+}
+
+fn generate_grpc_server_adapter(
+    package_name: &Ident,
+    trait_name: &Ident,
+    methods: &[Method],
+) -> TokenStream {
+    let grpc_server_package_name = quote::format_ident!("{}_grpc_server", package_name);
     let grpc_service_name = quote::format_ident!("{}Grpc", trait_name);
     let grpc_server_adapter_name = quote::format_ident!("{}GrpcServerAdapter", trait_name);
     let grpc_server_adapter_methods = generate_grpc_server_adapter_methods(methods);
@@ -198,16 +279,14 @@ fn generate_grpc_server_adapter(trait_name: &Ident, methods: &[Method]) -> Token
 
         impl #grpc_server_adapter_name {
             pub fn new<T>(instance: T) -> Self
-            where
-                T: #trait_name,
-            {
+            where T: #trait_name {
                 Self {
                     inner: Box::new(instance),
                 }
             }
         }
 
-        #[async_trait]
+        #[async_trait::async_trait]
         impl #grpc_server_package_name::#grpc_service_name for #grpc_server_adapter_name {
             #grpc_server_adapter_methods
         }
