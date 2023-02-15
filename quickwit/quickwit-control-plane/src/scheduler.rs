@@ -136,7 +136,10 @@ impl IndexingScheduler {
     async fn schedule_indexing_plan(&mut self) -> anyhow::Result<()> {
         let indexers: Vec<ClusterMember> = self.get_indexers_from_cluster_state().await;
         if indexers.is_empty() {
-            warn!("No indexer available, cannot build a physical indexing plan.");
+            warn!("No indexer available, set an empty physical indexing plan.");
+            self.state.last_applied_physical_plan = Some(PhysicalIndexingPlan::default());
+            self.state.last_applied_plan_timestamp =
+                Some(OffsetDateTime::now_utc().unix_timestamp());
             return Ok(());
         };
         let source_configs: HashMap<IndexSourceId, SourceConfig> =
@@ -186,8 +189,13 @@ impl IndexingScheduler {
         // `MIN_DURATION_BETWEEN_SCHEDULING_SECS` value for test and correclty test it. Currently, I
         // put its value 0 to make test simple.
         if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp.as_ref() {
-            if (OffsetDateTime::now_utc().unix_timestamp() - last_applied_plan_timestamp)
-                < MIN_DURATION_BETWEEN_SCHEDULING_SECS as i64
+            // If the last applied plan is empty, the node is probably starting and did not find
+            // indexers yet. In this case, we dont want to wait
+            // `MIN_DURATION_BETWEEN_SCHEDULING_SECS` for checking if new indexers are
+            // there.
+            if !last_applied_plan.is_empty()
+                && (OffsetDateTime::now_utc().unix_timestamp() - last_applied_plan_timestamp)
+                    < MIN_DURATION_BETWEEN_SCHEDULING_SECS as i64
             {
                 return Ok(());
             }

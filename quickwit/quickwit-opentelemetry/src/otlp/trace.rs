@@ -17,7 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
+use std::collections::{BTreeSet, HashMap};
+use std::str::FromStr;
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
@@ -33,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tonic::{Request, Response, Status};
 use tracing::field::Empty;
-use tracing::{error, instrument, Span as RuntimeSpan};
+use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
@@ -84,6 +86,9 @@ doc_mapping:
     - name: span_name
       type: text
       tokenizer: raw
+    - name: span_fingerprint
+      type: text
+      tokenizer: raw
     - name: span_start_timestamp_nanos
       type: u64
       indexed: false
@@ -92,8 +97,7 @@ doc_mapping:
       indexed: false
     - name: span_start_timestamp_secs
       type: datetime
-      input_formats:
-        - unix_timestamp
+      input_formats: [unix_timestamp]
       indexed: false
       fast: true
       precision: seconds
@@ -133,10 +137,10 @@ doc_mapping:
       type: array<json>
       tokenizer: raw
 
+  tag_fields: [service_name]
   timestamp_field: span_start_timestamp_secs
 
-  partition_key: service_name
-  max_num_partitions: 200
+  partition_key: hash_mod(service_name, 100)
 
 indexing_settings:
   commit_timeout_secs: 30
@@ -161,6 +165,7 @@ pub struct Span {
     pub span_id: Base64,
     pub span_kind: u64,
     pub span_name: String,
+    pub span_fingerprint: Option<SpanFingerprint>,
     /// Span start timestamp in nanoseconds. Stored as a `u64` instead of a `datetime` to avoid the
     /// truncation to microseconds. This field is stored but not indexed.
     pub span_start_timestamp_nanos: u64,
@@ -183,6 +188,178 @@ pub struct Span {
     pub event_names: Vec<String>,
     #[serde(default)]
     pub links: Vec<Link>,
+}
+
+/// A wrapper around `Span` that implements `Ord` to allow insertion of spans into a `BTreeSet`.
+#[derive(Debug)]
+struct OrdSpan(Span);
+
+impl Ord for OrdSpan {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0
+            .trace_id
+            .cmp(&other.0.trace_id)
+            .then(
+                self.0
+                    .span_start_timestamp_secs
+                    .cmp(&other.0.span_start_timestamp_secs),
+            )
+            .then(self.0.span_name.cmp(&other.0.span_name))
+            .then(self.0.span_id.cmp(&other.0.span_id))
+    }
+}
+
+impl PartialOrd for OrdSpan {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for OrdSpan {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.span_id == other.0.span_id
+    }
+}
+
+impl Eq for OrdSpan {}
+
+#[derive(Debug, Clone)]
+pub struct SpanKind(i32);
+
+impl SpanKind {
+    pub fn as_char(&self) -> char {
+        match self.0 {
+            0 => '0',
+            1 => '1',
+            2 => '2',
+            3 => '3',
+            4 => '4',
+            5 => '5',
+            _ => {
+                panic!("Unexpected span kind: {}", self.0);
+            }
+        }
+    }
+    pub fn as_jaeger(&self) -> &'static str {
+        match self.0 {
+            0 => "unspecified",
+            1 => "internal",
+            2 => "server",
+            3 => "client",
+            4 => "producer",
+            5 => "consumer",
+            _ => {
+                panic!("Unexpected span kind: {}", self.0);
+            }
+        }
+    }
+
+    pub fn as_otlp(&self) -> &'static str {
+        match self.0 {
+            0 => "SPAN_KIND_UNSPECIFIED",
+            1 => "SPAN_KIND_INTERNAL",
+            2 => "SPAN_KIND_SERVER",
+            3 => "SPAN_KIND_CLIENT",
+            4 => "SPAN_KIND_PRODUCER",
+            5 => "SPAN_KIND_CONSUMER",
+            _ => {
+                panic!("Unexpected span kind: {}", self.0);
+            }
+        }
+    }
+}
+
+impl From<i32> for SpanKind {
+    fn from(span_kind: i32) -> Self {
+        Self(span_kind)
+    }
+}
+
+impl FromStr for SpanKind {
+    type Err = String;
+
+    fn from_str(span_kind: &str) -> Result<Self, Self::Err> {
+        let span_kind_i32 = match span_kind {
+            "0" | "unspecified" | "SPAN_KIND_UNSPECIFIED" => 0,
+            "1" | "internal" | "SPAN_KIND_INTERNAL" => 1,
+            "2" | "server" | "SPAN_KIND_SERVER" => 2,
+            "3" | "client" | "SPAN_KIND_CLIENT" => 3,
+            "4" | "producer" | "SPAN_KIND_PRODUCER" => 4,
+            "5" | "consumer" | "SPAN_KIND_CONSUMER" => 5,
+            _ => {
+                if !span_kind.is_empty() {
+                    warn!("Unexpected span kind: {}", span_kind);
+                }
+                return Err(format!("Unexpected span kind: {span_kind}"));
+            }
+        };
+        Ok(Self(span_kind_i32))
+    }
+}
+
+const SPAN_FINGERPRINT_SEPARATOR: char = '\0';
+
+/// Concatenation of the service name, span kind, and span name.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SpanFingerprint(String);
+
+impl SpanFingerprint {
+    pub fn new(service_name: &str, span_kind: SpanKind, span_name: &str) -> Self {
+        Self(format!(
+            "{service_name}{SPAN_FINGERPRINT_SEPARATOR}{span_kind}{SPAN_FINGERPRINT_SEPARATOR}{span_name}", span_kind = span_kind.0
+        ))
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub fn from_string(fingerprint: String) -> Self {
+        Self(fingerprint)
+    }
+
+    pub fn service_name(&self) -> Option<&str> {
+        self.0.split(SPAN_FINGERPRINT_SEPARATOR).next()
+    }
+
+    pub fn span_kind(&self) -> Option<SpanKind> {
+        self.0
+            .split(SPAN_FINGERPRINT_SEPARATOR)
+            .nth(1)
+            .and_then(|span_kind| SpanKind::from_str(span_kind).ok())
+    }
+
+    pub fn span_name(&self) -> Option<&str> {
+        self.0.split(SPAN_FINGERPRINT_SEPARATOR).nth(2)
+    }
+
+    pub fn start_key(service_name: &str, span_kind_opt: Option<SpanKind>) -> Option<Vec<u8>> {
+        if service_name.is_empty() {
+            return None;
+        }
+        let mut start_key = service_name.as_bytes().to_vec();
+        start_key.push(SPAN_FINGERPRINT_SEPARATOR as u8);
+
+        if let Some(span_kind) = span_kind_opt {
+            start_key.push(span_kind.0 as u8);
+            start_key.push(SPAN_FINGERPRINT_SEPARATOR as u8);
+        }
+        Some(start_key)
+    }
+
+    pub fn end_key(service_name: &str, span_kind_opt: Option<SpanKind>) -> Option<Vec<u8>> {
+        if service_name.is_empty() {
+            return None;
+        }
+        let mut end_key = service_name.as_bytes().to_vec();
+
+        if let Some(span_kind) = span_kind_opt {
+            end_key.push(SPAN_FINGERPRINT_SEPARATOR as u8);
+            end_key.push(span_kind.0 as u8);
+        }
+        end_key.push(SPAN_FINGERPRINT_SEPARATOR as u8 + 1);
+        Some(end_key)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -293,6 +470,7 @@ impl OtlpGrpcTraceService {
             index_id: OTEL_TRACE_INDEX_ID.to_string(),
             ..Default::default()
         };
+        let mut spans = BTreeSet::new();
         let mut num_spans = 0;
         let mut num_parse_errors = 0;
         let mut error_message = String::new();
@@ -343,6 +521,8 @@ impl OtlpGrpcTraceService {
                     } else {
                         "unknown".to_string()
                     };
+                    let span_fingerprint =
+                        SpanFingerprint::new(&service_name, span.kind.into(), &span_name);
                     let span_start_timestamp_secs = Some(span.start_time_unix_nano / 1_000_000_000);
                     let span_duration_nanos = span.end_time_unix_nano - span.start_time_unix_nano;
                     let span_duration_millis = Some(span_duration_nanos / 1_000_000);
@@ -391,6 +571,7 @@ impl OtlpGrpcTraceService {
                         span_id,
                         span_kind: span.kind as u64,
                         span_name,
+                        span_fingerprint: Some(span_fingerprint),
                         span_start_timestamp_nanos: span.start_time_unix_nano,
                         span_end_timestamp_nanos: span.end_time_unix_nano,
                         span_start_timestamp_secs,
@@ -405,21 +586,21 @@ impl OtlpGrpcTraceService {
                         event_names,
                         links,
                     };
-                    let doc_batch_len = doc_batch.concat_docs.len();
-
-                    match serde_json::to_writer(&mut doc_batch.concat_docs, &span) {
-                        Ok(span_json) => span_json,
-                        Err(error) => {
-                            error!(error=?error, "Failed to JSON serialize span.");
-                            error_message = format!("Failed to JSON serialize span: {error:?}");
-                            num_parse_errors += 1;
-                            continue;
-                        }
-                    }
-                    let span_json_len = doc_batch.concat_docs.len() - doc_batch_len;
-                    doc_batch.doc_lens.push(span_json_len as u64);
+                    spans.insert(OrdSpan(span));
                 }
             }
+        }
+        for span in spans {
+            let current_doc_batch_len = doc_batch.concat_docs.len();
+            if let Err(error) = serde_json::to_writer(&mut doc_batch.concat_docs, &span.0) {
+                error!(error=?error, "Failed to JSON serialize span.");
+                error_message = format!("Failed to JSON serialize span: {error:?}");
+                num_parse_errors += 1;
+                continue;
+            }
+            let new_doc_batch_len = doc_batch.concat_docs.len();
+            let span_json_len = new_doc_batch_len - current_doc_batch_len;
+            doc_batch.doc_lens.push(span_json_len as u64);
         }
         let current_span = RuntimeSpan::current();
         current_span.record("num_spans", num_spans);

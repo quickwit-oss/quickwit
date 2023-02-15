@@ -171,7 +171,7 @@ fn generate_markdown_from_clap(command: &Command) {
     for command in commands {
         let command_name = command.get_name(); // index, split, source
         println!("## {command_name}");
-        if let Some(about) = command.get_about() {
+        if let Some(about) = command.get_long_about().or_else(|| command.get_about()) {
             if !about.trim().is_empty() {
                 println!("{about}\n");
             }
@@ -182,11 +182,11 @@ fn generate_markdown_from_clap(command: &Command) {
             continue;
         }
 
-        for subcommand in command.get_subcommands().filter(|subcommand| {
-            subcommand.get_name() != "merge"
-                && subcommand.get_name() != "extract"
-                && !(subcommand.get_name() == "describe" && command_name == "split")
-        }) {
+        let excluded_doc_commands = ["merge"];
+        for subcommand in command
+            .get_subcommands()
+            .filter(|subcommand| !excluded_doc_commands.contains(&subcommand.get_name()))
+        {
             let commands = vec![command.get_name().to_string()];
             markdown_for_subcommand(subcommand, commands, &doc_extensions);
 

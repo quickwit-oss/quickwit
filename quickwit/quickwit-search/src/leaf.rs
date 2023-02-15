@@ -491,13 +491,11 @@ async fn leaf_list_terms_single_split(
     let start_term: Option<Term> = search_request
         .start_key
         .as_ref()
-        .map(|term| term_from_data(field, field_type, term))
-        .transpose()?;
+        .map(|data| term_from_data(field, field_type, data));
     let end_term: Option<Term> = search_request
         .end_key
         .as_ref()
-        .map(|term| term_from_data(field, field_type, term))
-        .transpose()?;
+        .map(|data| term_from_data(field, field_type, data));
 
     let mut segment_results = Vec::new();
     for segment_reader in searcher.segment_readers() {
@@ -526,10 +524,10 @@ async fn leaf_list_terms_single_split(
         if let Some(limit) = search_request.max_hits {
             range = range.limit(limit);
         }
-        if let Some(start_term) = start_term.as_ref() {
+        if let Some(start_term) = &start_term {
             range = range.ge(start_term.value_bytes())
         }
-        if let Some(end_term) = end_term.as_ref() {
+        if let Some(end_term) = &end_term {
             range = range.lt(end_term.value_bytes())
         }
         let mut stream = range
@@ -538,7 +536,7 @@ async fn leaf_list_terms_single_split(
         let mut segment_result: Vec<Vec<u8>> =
             Vec::with_capacity(search_request.max_hits.unwrap_or(0) as usize);
         while stream.advance() {
-            segment_result.push(term_to_data(field, field_type, stream.key())?);
+            segment_result.push(term_to_data(field, field_type, stream.key()));
         }
         segment_results.push(segment_result);
     }
@@ -558,31 +556,18 @@ async fn leaf_list_terms_single_split(
     })
 }
 
-fn term_from_data(field: Field, field_type: &FieldType, data: &[u8]) -> crate::Result<Term> {
-    let term = Term::wrap(data);
-    if term.typ() != field_type.value_type() {
-        return Err(SearchError::InvalidQuery(
-            "term doesn't match field type".to_string(),
-        ));
-    }
-
-    let mut res = Term::from_field_bool(field, false);
-    res.clear_with_type(term.typ());
-    res.append_bytes(term.value_bytes());
-
-    Ok(res)
+fn term_from_data(field: Field, field_type: &FieldType, data: &[u8]) -> Term {
+    let mut term = Term::from_field_bool(field, false);
+    term.clear_with_type(field_type.value_type());
+    term.append_bytes(data);
+    term
 }
 
-fn term_to_data(
-    field: Field,
-    field_type: &FieldType,
-    field_value: &[u8],
-) -> crate::Result<Vec<u8>> {
+fn term_to_data(field: Field, field_type: &FieldType, field_value: &[u8]) -> Vec<u8> {
     let mut term = Term::from_field_bool(field, false);
     term.clear_with_type(field_type.value_type());
     term.append_bytes(field_value);
-
-    Ok(term.as_slice().to_vec())
+    term.as_slice().to_vec()
 }
 
 /// `leaf` step of list terms.
