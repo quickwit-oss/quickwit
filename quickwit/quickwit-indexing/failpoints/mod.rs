@@ -191,7 +191,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
         splits[1].split_metadata.time_range.clone().unwrap(),
         1629889532..=1629889533
     );
-    test_index_builder.assert_quit().await;
+    test_index_builder.universe().quit().await;
     Ok(())
 }
 
@@ -218,7 +218,6 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     // do any write during a HEARTBEAT... Before removing the protect zone, we need
     // to investigate this instability. Then this test will finally be really helpful.
     quickwit_common::setup_logging_for_tests();
-    let universe = Universe::with_accelerated_time();
     let doc_mapper_yaml = r#"
         field_mappings:
           - name: body
@@ -231,7 +230,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     let indexing_setting_yaml = r#"
         split_num_docs_target: 1000
         merge_policy:
-          type: "no_merge" 
+          type: "no_merge"
     "#;
     let search_fields = ["body"];
     let index_id = "test-index-merge-executory-kill-switch";
@@ -289,6 +288,8 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         node_id: "test-node".to_string(),
         pipeline_ord: 0,
     };
+
+    let universe = test_index_builder.universe();
     let (merge_packager_mailbox, _merge_packager_inbox) = universe.create_test_mailbox();
     let io_controls = IoControls::default();
     let merge_executor = MergeExecutor::new(
@@ -298,6 +299,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         io_controls,
         merge_packager_mailbox,
     );
+
     let (merge_executor_mailbox, merge_executor_handle) =
         universe.spawn_builder().spawn(merge_executor);
 
@@ -323,5 +325,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
 
     let (exit_status, _) = merge_executor_handle.join().await;
     assert!(matches!(exit_status, ActorExitStatus::Failure(_)));
+    universe.quit().await;
+
     Ok(())
 }
