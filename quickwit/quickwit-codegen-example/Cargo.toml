@@ -1,31 +1,27 @@
 [package]
-name = "quickwit-codegen"
+name = "quickwit-codegen-example"
 version = "0.4.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Generate traits, adapters, and gRPC clients/servers from proto files"
+description = "Provides an example of code generation for a simple service."
 repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-anyhow = { workspace = true }
-prettyplease = { workspace = true }
-proc-macro2 = { workspace = true }
-prost = { workspace = true }
-prost-build = { workspace = true }
-quote = { workspace = true }
-syn = { workspace = true }
-tonic = { workspace = true }
-tonic-build = { workspace = true }
-
-[dev-dependencies]
 async-trait = { workspace = true }
 dyn-clone = { workspace = true }
-mockall = { workspace = true }
+prost = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tonic = { workspace = true }
 tower = { workspace = true }
 utoipa = { workspace = true }
+
+[dev-dependencies]
+mockall = { workspace = true }
+
+[build-dependencies]
+quickwit-codegen = { workspace = true }

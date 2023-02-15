@@ -6,6 +6,7 @@ members = [
   "quickwit-cli",
   "quickwit-cluster",
   "quickwit-codegen",
+  "quickwit-codegen-example",
   "quickwit-common",
   "quickwit-config",
   "quickwit-control-plane",
@@ -193,6 +194,8 @@ wiremock = "0.5"
 quickwit-actors = { version = "0.4.0", path = "./quickwit-actors" }
 quickwit-aws = { version = "0.4.0", path = "./quickwit-aws" }
 quickwit-cluster = { version = "0.4.0", path = "./quickwit-cluster" }
+quickwit-codegen = { version = "0.4.0", path = "./quickwit-codegen" }
+quickwit-codegen-example = { version = "0.4.0", path = "./quickwit-codegen-example" }
 quickwit-common = { version = "0.4.0", path = "./quickwit-common" }
 quickwit-config = { version = "0.4.0", path = "./quickwit-config" }
 quickwit-control-plane = { version = "0.4.0", path = "./quickwit-control-plane" }
