@@ -123,7 +123,7 @@ fn generate_trait(trait_name: &Ident, methods: &[Method], result_path: &syn::Pat
     let mock_name = quote::format_ident!("Mock{}", trait_name);
 
     quote! {
-        #[mockall::automock]
+        #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
         #[async_trait::async_trait]
         pub trait #trait_name: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
             #trait_methods
@@ -131,6 +131,7 @@ fn generate_trait(trait_name: &Ident, methods: &[Method], result_path: &syn::Pat
 
         dyn_clone::clone_trait_object!(#trait_name);
 
+        #[cfg(any(test, feature = "testsuite"))]
         impl Clone for #mock_name {
             fn clone(&self) -> Self {
                 #mock_name::new()
