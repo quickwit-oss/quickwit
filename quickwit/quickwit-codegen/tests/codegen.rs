@@ -21,6 +21,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use quickwit_codegen::Codegen;
+use tonic::transport::Server;
 
 mod hello;
 
@@ -31,7 +32,10 @@ async fn test_hello_codegen() {
 
     Codegen::run(proto, out_dir, "crate::hello::HelloResult").unwrap();
 
-    use crate::hello::{Hello, HelloClient, HelloRequest, HelloResponse, MockHello};
+    use crate::hello::hello_grpc_server::HelloGrpcServer;
+    use crate::hello::{
+        Hello, HelloClient, HelloGrpcServerAdapter, HelloRequest, HelloResponse, MockHello,
+    };
 
     #[derive(Debug, Clone)]
     struct HelloImpl;
@@ -62,7 +66,7 @@ async fn test_hello_codegen() {
         }
     );
 
-    let mut client = HelloClient::new(hello).clone();
+    let mut client = HelloClient::new(hello.clone()).clone();
 
     assert_eq!(
         client
@@ -94,4 +98,16 @@ async fn test_hello_codegen() {
             message: "Hello, Mock!".to_string()
         }
     );
+
+    let grpc_server_adapter = HelloGrpcServerAdapter::new(hello);
+    let grpc_server = HelloGrpcServer::new(grpc_server_adapter);
+    let addr = "127.0.0.1:0".parse().unwrap();
+
+    tokio::spawn(async move {
+        Server::builder()
+            .add_service(grpc_server)
+            .serve(addr)
+            .await
+            .unwrap();
+    });
 }

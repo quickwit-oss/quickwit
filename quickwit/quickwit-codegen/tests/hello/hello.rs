@@ -47,16 +47,42 @@ impl Hello for HelloClient {
         self.inner.hello(request).await
     }
 }
+#[derive(Debug)]
+pub struct HelloGrpcServerAdapter {
+    inner: Box<dyn Hello>,
+}
+impl HelloGrpcServerAdapter {
+    pub fn new<T>(instance: T) -> Self
+    where
+        T: Hello,
+    {
+        Self { inner: Box::new(instance) }
+    }
+}
+#[async_trait]
+impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
+    async fn hello(
+        &self,
+        request: tonic::Request<HelloRequest>,
+    ) -> Result<tonic::Response<HelloResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .hello(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(Into::into)
+    }
+}
 /// Generated client implementations.
-pub mod hello_client {
+pub mod hello_grpc_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
-    pub struct HelloClient<T> {
+    pub struct HelloGrpcClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl HelloClient<tonic::transport::Channel> {
+    impl HelloGrpcClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -67,7 +93,7 @@ pub mod hello_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> HelloClient<T>
+    impl<T> HelloGrpcClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
         T::Error: Into<StdError>,
@@ -85,7 +111,7 @@ pub mod hello_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> HelloClient<InterceptedService<T, F>>
+        ) -> HelloGrpcClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -99,7 +125,7 @@ pub mod hello_client {
                 http::Request<tonic::body::BoxBody>,
             >>::Error: Into<StdError> + Send + Sync,
         {
-            HelloClient::new(InterceptedService::new(inner, interceptor))
+            HelloGrpcClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -136,25 +162,25 @@ pub mod hello_client {
     }
 }
 /// Generated server implementations.
-pub mod hello_server {
+pub mod hello_grpc_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with HelloServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with HelloGrpcServer.
     #[async_trait]
-    pub trait Hello: Send + Sync + 'static {
+    pub trait HelloGrpc: Send + Sync + 'static {
         async fn hello(
             &self,
             request: tonic::Request<super::HelloRequest>,
         ) -> Result<tonic::Response<super::HelloResponse>, tonic::Status>;
     }
     #[derive(Debug)]
-    pub struct HelloServer<T: Hello> {
+    pub struct HelloGrpcServer<T: HelloGrpc> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
-    impl<T: Hello> HelloServer<T> {
+    impl<T: HelloGrpc> HelloGrpcServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -188,9 +214,9 @@ pub mod hello_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for HelloServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for HelloGrpcServer<T>
     where
-        T: Hello,
+        T: HelloGrpc,
         B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
@@ -208,8 +234,8 @@ pub mod hello_server {
             match req.uri().path() {
                 "/hello.Hello/Hello" => {
                     #[allow(non_camel_case_types)]
-                    struct HelloSvc<T: Hello>(pub Arc<T>);
-                    impl<T: Hello> tonic::server::UnaryService<super::HelloRequest>
+                    struct HelloSvc<T: HelloGrpc>(pub Arc<T>);
+                    impl<T: HelloGrpc> tonic::server::UnaryService<super::HelloRequest>
                     for HelloSvc<T> {
                         type Response = super::HelloResponse;
                         type Future = BoxFuture<
@@ -257,7 +283,7 @@ pub mod hello_server {
             }
         }
     }
-    impl<T: Hello> Clone for HelloServer<T> {
+    impl<T: HelloGrpc> Clone for HelloGrpcServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -267,7 +293,7 @@ pub mod hello_server {
             }
         }
     }
-    impl<T: Hello> Clone for _Inner<T> {
+    impl<T: HelloGrpc> Clone for _Inner<T> {
         fn clone(&self) -> Self {
             Self(self.0.clone())
         }
@@ -277,7 +303,7 @@ pub mod hello_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: Hello> tonic::server::NamedService for HelloServer<T> {
+    impl<T: HelloGrpc> tonic::server::NamedService for HelloGrpcServer<T> {
         const NAME: &'static str = "hello.Hello";
     }
 }
