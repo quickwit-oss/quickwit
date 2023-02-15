@@ -19,14 +19,15 @@
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::future;
+use futures::future::{self, Shared};
+use futures::{Future, FutureExt};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::command::Observe;
@@ -45,8 +46,8 @@ trait JsonObservable: Sync + Send {
     fn any(&self) -> &dyn Any;
     fn actor_instance_id(&self) -> &str;
     async fn observe(&self) -> Option<JsonValue>;
-    async fn quit(&self) -> Option<ActorExitStatus>;
-    async fn join(&self) -> Option<ActorExitStatus>;
+    async fn quit(&self) -> ActorExitStatus;
+    async fn join(&self) -> ActorExitStatus;
 }
 
 #[async_trait]
@@ -70,14 +71,14 @@ impl<A: Actor> JsonObservable for TypedJsonObservable<A> {
         serde_json::to_value(&state).ok()
     }
 
-    async fn quit(&self) -> Option<ActorExitStatus> {
+    async fn quit(&self) -> ActorExitStatus {
         if let Some(mailbox) = self.weak_mailbox.upgrade() {
- let _ = mailbox.send_message_with_high_priority(Command::Quit);
+            let _ = mailbox.send_message_with_high_priority(Command::Quit);
         }
         self.join().await
     }
 
-    async fn join(&self) -> Option<ActorExitStatus> {
+    async fn join(&self) -> ActorExitStatus {
         self.join_handle.join().await
     }
 }
@@ -189,7 +190,7 @@ impl ActorRegistry {
             }
         }
         let res = future::join_all(obs_futures).await;
-        res.into_iter().flatten().collect()
+        res.into_iter().collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -227,32 +228,30 @@ fn get_iter<A: Actor>(
 /// until the join() method is called.
 #[derive(Clone)]
 pub(crate) struct ActorJoinHandle {
-    holder: Arc<Mutex<Option<JoinHandle<ActorExitStatus>>>>,
+    holder: Shared<Pin<Box<dyn Future<Output = ActorExitStatus> + Send>>>,
 }
 
 impl ActorJoinHandle {
     pub(crate) fn new(join_handle: JoinHandle<ActorExitStatus>) -> Self {
         ActorJoinHandle {
-            holder: Arc::new(Mutex::new(Some(join_handle))),
+            holder: Self::inner_join(join_handle).boxed().shared(),
         }
+    }
+
+    async fn inner_join(join_handle: JoinHandle<ActorExitStatus>) -> ActorExitStatus {
+        join_handle.await.unwrap_or_else(|join_err| {
+            if join_err.is_panic() {
+                ActorExitStatus::Panicked
+            } else {
+                ActorExitStatus::Killed
+            }
+        })
     }
 
     /// Joins the actor and returns its exit status on the frist invocation.
     /// Returns None afterwards.
-    pub(crate) async fn join(&self) -> Option<ActorExitStatus> {
-        let mut guard = self.holder.lock().await;
-        if let Some(join_handle) = guard.take() {
-            let exit_status = join_handle.await.unwrap_or_else(|join_err| {
-                if join_err.is_panic() {
-                    ActorExitStatus::Panicked
-                } else {
-                    ActorExitStatus::Killed
-                }
-            });
-            Some(exit_status)
-        } else {
-            None
-        }
+    pub(crate) async fn join(&self) -> ActorExitStatus {
+        self.holder.clone().await
     }
 }
 

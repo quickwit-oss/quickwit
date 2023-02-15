@@ -220,10 +220,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[should_panic(
-        expected = "Attempting to call join after universe.join() or universe.quit() was called"
-    )]
-    async fn test_actor_quit_after_universe_quit_should_panic() {
+    async fn test_actor_quit_after_universe_quit() {
         let universe = Universe::with_accelerated_time();
         let actor_with_schedule = CountingMinutesActor::default();
         let (_maibox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
@@ -231,7 +228,7 @@ mod tests {
         let res = universe.quit().await;
         assert_eq!(res.len(), 1);
         assert!(matches!(res.first().unwrap(), ActorExitStatus::Quit));
-        handler.quit().await;
+        assert!(matches!(handler.quit().await, (ActorExitStatus::Quit, 4)));
     }
 
     #[tokio::test]
@@ -240,7 +237,11 @@ mod tests {
         let actor_with_schedule = CountingMinutesActor::default();
         let (_maibox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
         assert!(matches!(handler.quit().await, (ActorExitStatus::Quit, 1)));
-        assert!(universe.quit().await.is_empty());
+        assert!(!universe
+            .quit()
+            .await
+            .into_iter()
+            .any(|status| matches!(status, ActorExitStatus::Panicked)));
     }
 
     #[tokio::test]
