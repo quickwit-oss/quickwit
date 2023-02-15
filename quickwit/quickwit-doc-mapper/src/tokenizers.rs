@@ -144,7 +144,7 @@ impl<'a> TokenStream for ChineseTokenStream<'a> {
     }
 }
 
-/// Quickwits default tokenizer
+/// Quickwit's default tokenizers
 pub static QUICKWIT_TOKENIZER_MANAGER: Lazy<TokenizerManager> =
     Lazy::new(get_quickwit_tokenizer_manager);
 

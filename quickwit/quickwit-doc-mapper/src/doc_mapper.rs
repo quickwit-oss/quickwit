@@ -27,6 +27,7 @@ use quickwit_proto::SearchRequest;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, Schema, Value};
+use tantivy::tokenizer::TextAnalyzer;
 use tantivy::{Document, Term};
 
 pub type Partition = u64;
@@ -131,6 +132,13 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
 
     /// Returns the maximum number of partitions.
     fn max_num_partitions(&self) -> NonZeroU32;
+
+    /// Builds and return the custom text analyzers.
+    ///
+    /// Currently we just have RegexTokenizers.
+    fn custom_text_analyzers(&self) -> Vec<(String, TextAnalyzer)> {
+        Vec::new()
+    }
 }
 
 /// A struct to wrap a tantivy field with its name.

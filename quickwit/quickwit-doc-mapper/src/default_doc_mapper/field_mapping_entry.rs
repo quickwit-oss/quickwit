@@ -20,7 +20,8 @@
 use std::convert::TryFrom;
 
 use anyhow::bail;
-use serde::{Deserialize, Serialize};
+use regex::Regex;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
     Cardinality, IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
@@ -139,21 +140,37 @@ pub enum QuickwitTextTokenizer {
     StemEn,
     #[serde(rename = "chinese_compatible")]
     Chinese,
+    #[serde(rename = "regex")]
+    Regex,
 }
 
 impl QuickwitTextTokenizer {
-    pub fn get_name(&self) -> &str {
+    pub fn get_name<'a>(&self, regex_opt: &'a Option<Regex>) -> &'a str {
         match self {
             QuickwitTextTokenizer::Raw => "raw",
             QuickwitTextTokenizer::Default => "default",
             QuickwitTextTokenizer::StemEn => "en_stem",
             QuickwitTextTokenizer::Chinese => "chinese_compatible",
+            QuickwitTextTokenizer::Regex => {
+                let regex = regex_opt
+                    .as_ref()
+                    .expect("A pattern should be set when using a regex tokenizer.");
+                regex.as_str()
+            }
+        }
+    }
+
+    pub fn is_regex(&self) -> bool {
+        match self {
+            QuickwitTextTokenizer::Regex => true,
+            _ => false,
         }
     }
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize, Debug, utoipa::ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
+#[serde(remote = "Self")]
 pub struct QuickwitTextOptions {
     #[schema(value_type = String)]
     #[serde(default)]
@@ -164,6 +181,11 @@ pub struct QuickwitTextOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokenizer: Option<QuickwitTextTokenizer>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_regex")]
+    #[serde(deserialize_with = "deserialize_regex")]
+    pub pattern: Option<Regex>,
     #[schema(value_type = IndexRecordOptionSchema)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -182,6 +204,7 @@ impl Default for QuickwitTextOptions {
             description: None,
             indexed: true,
             tokenizer: None,
+            pattern: None,
             record: None,
             fieldnorms: false,
             stored: true,
@@ -209,11 +232,54 @@ impl From<QuickwitTextOptions> for TextOptions {
             let text_field_indexing = TextFieldIndexing::default()
                 .set_index_option(index_record_option)
                 .set_fieldnorms(quickwit_text_options.fieldnorms)
-                .set_tokenizer(tokenizer.get_name());
-
+                .set_tokenizer(&tokenizer.get_name(&quickwit_text_options.pattern));
             text_options = text_options.set_indexing_options(text_field_indexing);
         }
         text_options
+    }
+}
+
+impl PartialEq for QuickwitTextOptions {
+    fn eq(&self, other: &Self) -> bool {
+        self.description == other.description
+            && self.indexed == other.indexed
+            && self.tokenizer == other.tokenizer
+            && self.pattern.as_ref().map(|pattern| pattern.as_str())
+                == other.pattern.as_ref().map(|pattern| pattern.as_str())
+            && self.record == other.record
+            && self.fieldnorms == other.fieldnorms
+            && self.stored == other.stored
+            && self.fast == other.fast
+    }
+}
+
+impl Eq for QuickwitTextOptions {}
+
+impl<'de> Deserialize<'de> for QuickwitTextOptions {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let quickwit_text_options = Self::deserialize(deserializer)?;
+
+        if quickwit_text_options
+            .tokenizer
+            .as_ref()
+            .map(|tokenizer| tokenizer.is_regex())
+            .unwrap_or(false)
+            && quickwit_text_options.pattern.is_none()
+        {
+            return Err(serde::de::Error::custom(
+                "A pattern should be set when using a regex tokenizer.",
+            ));
+        }
+
+        Ok(quickwit_text_options)
+    }
+}
+
+impl Serialize for QuickwitTextOptions {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        Self::serialize(self, serializer)
     }
 }
 
@@ -237,8 +303,9 @@ pub enum IndexRecordOptionSchema {
 ///
 /// `QuickwitJsonOptions` is also used to configure
 /// the dynamic mapping.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
+#[serde(remote = "Self")]
 pub struct QuickwitJsonOptions {
     /// Optional description of JSON object.
     #[serde(default)]
@@ -252,6 +319,13 @@ pub struct QuickwitJsonOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokenizer: Option<QuickwitTextTokenizer>,
+    /// Sets the tokenizer pattern, only useful when the regex
+    /// tokenizer is used.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_regex")]
+    #[serde(deserialize_with = "deserialize_regex")]
+    pub pattern: Option<Regex>,
     /// Sets how much information should be added in the index
     /// with each token.
     ///
@@ -274,6 +348,7 @@ impl Default for QuickwitJsonOptions {
             description: None,
             indexed: true,
             tokenizer: None,
+            pattern: None,
             record: None,
             stored: true,
             expand_dots: true,
@@ -295,7 +370,7 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
                 .tokenizer
                 .unwrap_or(QuickwitTextTokenizer::Default);
             let text_field_indexing = TextFieldIndexing::default()
-                .set_tokenizer(tokenizer.get_name())
+                .set_tokenizer(tokenizer.get_name(&quickwit_json_options.pattern))
                 .set_index_option(index_record_option);
             json_options = json_options.set_indexing_options(text_field_indexing);
         }
@@ -304,6 +379,64 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
         }
         json_options
     }
+}
+
+impl PartialEq for QuickwitJsonOptions {
+    fn eq(&self, other: &Self) -> bool {
+        self.description == other.description
+            && self.indexed == other.indexed
+            && self.tokenizer == other.tokenizer
+            && self.pattern.as_ref().map(|pattern| pattern.as_str())
+                == other.pattern.as_ref().map(|pattern| pattern.as_str())
+            && self.record == other.record
+            && self.stored == other.stored
+            && self.expand_dots == other.expand_dots
+    }
+}
+
+impl Eq for QuickwitJsonOptions {}
+
+impl<'de> Deserialize<'de> for QuickwitJsonOptions {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let quickwit_json_options = Self::deserialize(deserializer)?;
+
+        if quickwit_json_options
+            .tokenizer
+            .as_ref()
+            .map(|tokenizer| tokenizer.is_regex())
+            .unwrap_or(false)
+            && quickwit_json_options.pattern.is_none()
+        {
+            return Err(serde::de::Error::custom(
+                "A pattern should be set when using a regex tokenizer.",
+            ));
+        }
+
+        Ok(quickwit_json_options)
+    }
+}
+
+impl Serialize for QuickwitJsonOptions {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        Self::serialize(self, serializer)
+    }
+}
+
+fn serialize_regex<S>(regex_opt: &Option<Regex>, serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer {
+    match regex_opt {
+        Some(regex) => serializer.serialize_str(regex.as_str()),
+        None => serializer.serialize_none(),
+    }
+}
+
+fn deserialize_regex<'de, D>(deserializer: D) -> Result<Option<Regex>, D::Error>
+where D: Deserializer<'de> {
+    let regex_str = String::deserialize(deserializer)?;
+    let regex = Regex::new(&regex_str).map_err(|err| serde::de::Error::custom(err.to_string()))?;
+    Ok(Some(regex))
 }
 
 fn deserialize_mapping_type(
@@ -645,7 +778,10 @@ mod tests {
             FieldMappingType::Text(options, _) => {
                 assert_eq!(options.stored, true);
                 assert_eq!(options.indexed, true);
-                assert_eq!(options.tokenizer.unwrap().get_name(), "en_stem");
+                assert_eq!(
+                    options.tokenizer.unwrap().get_name(&options.pattern),
+                    "en_stem"
+                );
                 assert_eq!(options.record.unwrap(), IndexRecordOption::Basic);
             }
             _ => panic!("wrong property type"),
@@ -1238,6 +1374,7 @@ mod tests {
             description: None,
             indexed: true,
             tokenizer: None,
+            pattern: None,
             record: None,
             stored: true,
             expand_dots: true,
@@ -1253,6 +1390,56 @@ mod tests {
     fn test_quickwit_json_options_default_tokenizer_is_default() {
         let quickwit_json_options = QuickwitJsonOptions::default();
         assert_eq!(quickwit_json_options.tokenizer, None);
+    }
+
+    #[test]
+    fn test_deserialize_tokenizer_options() {
+        let text_options = serde_json::from_str::<QuickwitTextOptions>(
+            r#"{
+            "indexed": true,
+            "stored": true,
+            "tokenizer": "en_stem"
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(text_options.tokenizer, Some(QuickwitTextTokenizer::StemEn));
+        assert!(text_options.pattern.is_none());
+
+        let text_options = serde_json::from_str::<QuickwitTextOptions>(
+            r#"{
+                "indexed": true,
+                "stored": true,
+                "tokenizer": "regex",
+                "pattern": "\\W+"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(text_options.tokenizer, Some(QuickwitTextTokenizer::Regex));
+        assert!(text_options.pattern.is_some());
+        assert_eq!(text_options.pattern.unwrap().as_str(), "\\W+");
+    }
+
+    #[test]
+    fn test_deserialize_regex_tokenizer_without_pattern_should_error() {
+        let expected_error = "A pattern should be set when using a regex tokenizer";
+        let result = serde_json::from_str::<QuickwitTextOptions>(
+            r#"{
+                "indexed": true,
+                "stored": true,
+                "tokenizer": "regex"
+            }"#,
+        );
+        assert!(result.unwrap_err().to_string().contains(expected_error));
+
+        let result = serde_json::from_str::<QuickwitJsonOptions>(
+            r#"{
+                "indexed": true,
+                "stored": true,
+                "tokenizer": "regex"
+            }"#,
+        );
+        assert!(result.unwrap_err().to_string().contains(expected_error));
     }
 
     #[test]
@@ -1278,6 +1465,7 @@ mod tests {
             description: None,
             indexed: true,
             tokenizer: Some(QuickwitTextTokenizer::Raw),
+            pattern: None,
             record: None,
             stored: false,
             expand_dots: true,

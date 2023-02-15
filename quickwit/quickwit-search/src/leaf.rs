@@ -117,6 +117,7 @@ pub(crate) async fn open_index_with_caches(
     } else {
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
     };
+    
     let mut index = Index::open(hot_directory)?;
     index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
     Ok(index)

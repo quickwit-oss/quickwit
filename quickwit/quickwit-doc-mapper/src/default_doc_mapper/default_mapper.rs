@@ -17,15 +17,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
 use anyhow::{bail, Context};
+use itertools::Itertools;
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
 use tantivy::schema::{Cardinality, Field, FieldType, Schema, Value as TantivyValue, STORED};
+use tantivy::tokenizer::{RegexTokenizer, TextAnalyzer};
 use tantivy::Document;
 
 use super::field_mapping_entry::QuickwitTextTokenizer;
@@ -80,6 +82,9 @@ pub struct DefaultDocMapper {
     /// This field is only valid when using the schema associated with the default
     /// doc mapper, and therefore cannot be used in the `query` method.
     dynamic_field: Option<Field>,
+    /// List of custom regular expression tokenizers.
+    /// TODO: think of caching this 
+    regex_tokenizers: HashSet<String>,
     /// Default list of field names used for search.
     default_search_field_names: Vec<String>,
     /// Timestamp field name.
@@ -131,7 +136,7 @@ fn validate_tag_fields(tag_fields: &[String], schema: &Schema) -> anyhow::Result
                     .get_indexing_options()
                     .map(|text_options| text_options.tokenizer());
 
-                if tokenizer_opt != Some(QuickwitTextTokenizer::Raw.get_name()) {
+                if tokenizer_opt != Some(QuickwitTextTokenizer::Raw.get_name(&None)) {
                     bail!(
                         "Tags collection is only allowed on text fields with the `raw` tokenizer."
                     );
@@ -223,6 +228,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             None
         };
 
+        let regex_tokenizers = schema_builder.regex_tokenizers();
         let schema = schema_builder.build();
 
         // validate fast fields
@@ -261,6 +267,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             schema,
             source_field,
             dynamic_field,
+            regex_tokenizers,
             default_search_field_names,
             timestamp_field_name: builder.timestamp_field,
             field_mappings,
@@ -421,6 +428,18 @@ impl DocMapper for DefaultDocMapper {
 
     fn max_num_partitions(&self) -> NonZeroU32 {
         self.max_num_partitions
+    }
+
+    fn custom_text_analyzers(&self) -> Vec<(String, TextAnalyzer)> {
+        self.regex_tokenizers
+            .iter()
+            .map(|regex_str| {
+                let regex_tokenizer = RegexTokenizer::new(regex_str).expect(&format!(
+                    "Unable to build RegexTokenizer with an invalid regex: `{regex_str}`"
+                ));
+                (regex_str.to_string(), TextAnalyzer::from(regex_tokenizer))
+            })
+            .collect()
     }
 }
 
