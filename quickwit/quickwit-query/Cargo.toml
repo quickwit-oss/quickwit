@@ -15,6 +15,7 @@ elasticsearch-dsl = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }
+tantivy-query-grammar = { workspace = true }
 
 quickwit-proto = { workspace = true }
 

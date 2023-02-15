@@ -130,11 +130,12 @@ async fn elastic_search_endpoint(
         extract_sort_by(&params.sort, elastic_search_input.sort.clone())
             .map_err(SearchError::InvalidArgument)?;
 
+    let query = serde_json::to_string(&search_input_ast)
+        .expect("could not serialize SearchInputAst");
+
     let search_request = quickwit_proto::SearchRequest {
         index_id,
-        // TODO: try to change from String to SearchInput
-        query: serde_json::to_string(&search_input_ast)
-            .expect("could not serialize SearchInputAst"),
+        query,
         search_fields: search_fields.unwrap_or_default(),
         snippet_fields: elastic_search_input
             .highlight

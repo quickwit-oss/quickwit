@@ -21,6 +21,7 @@ use std::fmt;
 use std::fmt::Write;
 
 use serde::{Deserialize, Serialize};
+use tantivy_query_grammar::Occur as TantivyOccur;
 
 /// Defines whether a term in a query must be present,
 /// should be present or must not be present.
@@ -65,6 +66,26 @@ impl Occur {
 impl fmt::Display for Occur {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_char(self.to_char())
+    }
+}
+
+impl From<Occur> for TantivyOccur {
+    fn from(occur: Occur) -> Self {
+        match occur {
+            Occur::Should => TantivyOccur::Should,
+            Occur::Must => TantivyOccur::Must,
+            Occur::MustNot => TantivyOccur::MustNot,
+        }
+    }
+}
+
+impl From<TantivyOccur> for Occur {
+    fn from(occur: TantivyOccur) -> Self {
+        match occur {
+            TantivyOccur::Should => Occur::Should,
+            TantivyOccur::Must => Occur::Must,
+            TantivyOccur::MustNot => Occur::MustNot,
+        }
     }
 }
 

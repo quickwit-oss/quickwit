@@ -201,6 +201,7 @@ impl From<SearchStreamRequest> for SearchRequest {
             aggregation_request: None,
             resolved_search_fields: item.resolved_search_fields,
             fast_field_names: item.fast_field_names,
+            term_set_query_fields:  item.term_set_query_fields,
         }
     }
 }

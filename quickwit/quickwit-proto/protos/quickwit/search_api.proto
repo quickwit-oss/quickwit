@@ -107,6 +107,9 @@ message SearchRequest {
 
   // Fast field names extracted during SearchRequest validation
   repeated string fast_field_names = 14;
+
+  // Term set extracted during SearchRequest validation
+  repeated string term_set_query_fields = 15;
 }
 
 enum SortOrder {
@@ -382,6 +385,9 @@ message SearchStreamRequest {
 
   // Fast field names extracted during SearchRequest validation
   repeated string fast_field_names = 13;
+
+  // Term set extracted during SearchRequest validation
+  repeated string term_set_query_fields = 14;
 }
 
 message LeafSearchStreamRequest {

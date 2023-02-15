@@ -44,6 +44,9 @@ pub struct SearchRequest {
     /// Fast field names extracted during SearchRequest validation
     #[prost(string, repeated, tag = "14")]
     pub fast_field_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Term set extracted during SearchRequest validation
+    #[prost(string, repeated, tag = "15")]
+    pub term_set_query_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -356,6 +359,9 @@ pub struct SearchStreamRequest {
     /// Fast field names extracted during SearchRequest validation
     #[prost(string, repeated, tag = "13")]
     pub fast_field_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Term set extracted during SearchRequest validation
+    #[prost(string, repeated, tag = "14")]
+    pub term_set_query_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

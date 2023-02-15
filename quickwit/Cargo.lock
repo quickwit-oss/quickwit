@@ -952,7 +952,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "unicode-width",
- "windows-sys",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -1796,7 +1796,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=04662aa#04662aab11c01fe713400d9b803896883ba8008a"
 dependencies = [
  "fastdivide",
  "itertools",
@@ -1826,7 +1826,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "redox_syscall",
- "windows-sys",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -2263,6 +2263,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hermit-abi"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fed44880c466736ef9a5c5b5facefb5ed0785676d0c02d612db14e54f0d84286"
+
+[[package]]
 name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2604,7 +2610,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7d6c6f8c91b4b9ed43484ad1a938e393caf35960fce7f82a040497207bd8e9e"
 dependencies = [
  "libc",
- "windows-sys",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -2624,14 +2630,14 @@ dependencies = [
 
 [[package]]
 name = "is-terminal"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28dfb6c8100ccc63462345b67d1bbc3679177c75ee4bf59bf29c8b1d110b8189"
+checksum = "22e18b0a45d56fe973d6db23972bf5bc46f988a4a2385deac9cc29572f09daef"
 dependencies = [
- "hermit-abi 0.2.6",
+ "hermit-abi 0.3.1",
  "io-lifetimes",
  "rustix",
- "windows-sys",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -3025,7 +3031,7 @@ dependencies = [
  "libc",
  "log",
  "wasi 0.11.0+wasi-snapshot-preview1",
- "windows-sys",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -3572,7 +3578,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6a252f1f8c11e84b3ab59d7a488e48e4478a93937e027076638c49536204639"
 dependencies = [
  "libc",
- "windows-sys",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -3613,7 +3619,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=04662aa#04662aab11c01fe713400d9b803896883ba8008a"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -3682,7 +3688,7 @@ dependencies = [
  "libc",
  "redox_syscall",
  "smallvec",
- "windows-sys",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -4906,6 +4912,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tantivy",
+ "tantivy-query-grammar",
 ]
 
 [[package]]
@@ -5660,7 +5667,7 @@ dependencies = [
  "io-lifetimes",
  "libc",
  "linux-raw-sys",
- "windows-sys",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -5775,7 +5782,7 @@ version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "713cfb06c7059f3588fb8044c0fad1d09e3c01d225e25b9220dbfdcf16dbb1b3"
 dependencies = [
- "windows-sys",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -6260,7 +6267,7 @@ dependencies = [
  "colored",
  "log",
  "time 0.3.17",
- "windows-sys",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -6666,7 +6673,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.19.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=04662aa#04662aab11c01fe713400d9b803896883ba8008a"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -6719,12 +6726,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=04662aa#04662aab11c01fe713400d9b803896883ba8008a"
 
 [[package]]
 name = "tantivy-common"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=04662aa#04662aab11c01fe713400d9b803896883ba8008a"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -6745,7 +6752,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.19.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=04662aa#04662aab11c01fe713400d9b803896883ba8008a"
 dependencies = [
  "combine",
  "once_cell",
@@ -6755,7 +6762,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=04662aa#04662aab11c01fe713400d9b803896883ba8008a"
 dependencies = [
  "ciborium",
  "serde",
@@ -6766,7 +6773,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=04662aa#04662aab11c01fe713400d9b803896883ba8008a"
 dependencies = [
  "byteorder",
  "murmurhash32",
@@ -6776,7 +6783,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d72ea7d#d72ea7d35303ebf21799985149e0a1197941cb59"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=04662aa#04662aab11c01fe713400d9b803896883ba8008a"
 dependencies = [
  "serde",
 ]
@@ -7076,7 +7083,7 @@ dependencies = [
  "socket2",
  "tokio-macros",
  "tracing",
- "windows-sys",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -8272,6 +8279,30 @@ name = "windows-sys"
 version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a3e1820f08b8513f676f7ab6c1f99ff312fb97b553d30ff4dd86f9f15728aa7"
+dependencies = [
+ "windows_aarch64_gnullvm",
+ "windows_aarch64_msvc 0.42.1",
+ "windows_i686_gnu 0.42.1",
+ "windows_i686_msvc 0.42.1",
+ "windows_x86_64_gnu 0.42.1",
+ "windows_x86_64_gnullvm",
+ "windows_x86_64_msvc 0.42.1",
+]
+
+[[package]]
+name = "windows-sys"
+version = "0.45.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75283be5efb2831d37ea142365f009c02ec203cd29a3ebecbc093d52315b66d0"
+dependencies = [
+ "windows-targets",
+]
+
+[[package]]
+name = "windows-targets"
+version = "0.42.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e2522491fbfcd58cc84d47aeb2958948c4b8982e9a2d8a2a35bbaed431390e7"
 dependencies = [
  "windows_aarch64_gnullvm",
  "windows_aarch64_msvc 0.42.1",

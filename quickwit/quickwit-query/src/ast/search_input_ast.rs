@@ -21,8 +21,9 @@ use std::fmt;
 use std::fmt::{Debug, Formatter};
 
 use serde::{Deserialize, Serialize};
+use tantivy_query_grammar::UserInputBound;
 
-use super::Occur;
+use crate::Occur;
 
 #[derive(PartialEq, Serialize, Deserialize)]
 pub enum SearchInputLeaf {
@@ -159,6 +160,26 @@ impl SearchInputBound {
             SearchInputBound::Inclusive(ref contents) => contents,
             SearchInputBound::Exclusive(ref contents) => contents,
             SearchInputBound::Unbounded => "*",
+        }
+    }
+}
+
+impl From<SearchInputBound> for UserInputBound {
+    fn from(bound: SearchInputBound) -> Self {
+        match bound {
+            SearchInputBound::Inclusive(value) => UserInputBound::Inclusive(value),
+            SearchInputBound::Exclusive(value) => UserInputBound::Exclusive(value),
+            SearchInputBound::Unbounded => UserInputBound::Unbounded,
+        }
+    }
+}
+
+impl From<UserInputBound> for SearchInputBound {
+    fn from(bound: UserInputBound) -> Self {
+        match bound {
+            UserInputBound::Inclusive(value) => SearchInputBound::Inclusive(value),
+            UserInputBound::Exclusive(value) => SearchInputBound::Exclusive(value),
+            UserInputBound::Unbounded => SearchInputBound::Unbounded,
         }
     }
 }

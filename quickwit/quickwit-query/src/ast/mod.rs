@@ -18,7 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod occur;
-mod raw_input_ast;
+mod search_input_ast;
+mod query_builder;
 
 pub use occur::Occur;
-pub use raw_input_ast::*;
+pub use search_input_ast::*;
+pub use query_builder::build_query_from_search_input_ast;

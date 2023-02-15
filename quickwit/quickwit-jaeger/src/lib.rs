@@ -167,6 +167,7 @@ impl JaegerService {
             snippet_fields: Vec::new(),
             resolved_search_fields: Vec::new(),
             fast_field_names: Vec::new(),
+            term_set_query_fields: Vec::new(),
         };
         let search_response = self.search_service.root_search(search_request).await?;
         let operations: Vec<Operation> = search_response
@@ -290,6 +291,7 @@ impl JaegerService {
             snippet_fields: Vec::new(),
             resolved_search_fields: Vec::new(),
             fast_field_names: Vec::new(),
+            term_set_query_fields: Vec::new(),
         };
         let search_response = self.search_service.root_search(search_request).await?;
 
@@ -339,6 +341,7 @@ impl JaegerService {
             snippet_fields: Vec::new(),
             resolved_search_fields: Vec::new(),
             fast_field_names: Vec::new(),
+            term_set_query_fields: Vec::new(),
         };
         let search_response = match self.search_service.root_search(search_request).await {
             Ok(search_response) => search_response,

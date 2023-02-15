@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod elastic_dsl;
-mod quickwit_dsl;
+mod tantivy_dsl;
 
 pub use elastic_dsl::elastic_search_input_to_search_ast;
-pub use quickwit_dsl::parse_quickwit_dsl;
+pub use tantivy_dsl::parse_tantivy_dsl;

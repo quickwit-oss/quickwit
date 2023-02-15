@@ -32,7 +32,7 @@ use quickwit_proto::{
 };
 use quickwit_query::{
     extract_field_with_ranges, needs_default_search_field, resolve_fields,
-    validate_requested_snippet_fields, validate_sort_by_field, SearchInputAst,
+    validate_requested_snippet_fields, validate_sort_by_field, SearchInputAst, extract_term_set_query_fields,
 };
 use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
@@ -172,9 +172,8 @@ pub(crate) fn validate_request(
         validate_sort_by_field(sort_by_field, &schema, Some(&search_fields))?;
     }
 
-    let fast_field_names = extract_field_with_ranges(&schema, &search_input_ast)?
-        .into_iter()
-        .collect_vec();
+    let fast_field_names = extract_field_with_ranges(&schema, &search_input_ast)?;
+    let term_set_query_fields = extract_term_set_query_fields(&search_input_ast);
 
     let validated_search_request = SearchRequest {
         resolved_search_fields: search_fields
@@ -182,6 +181,7 @@ pub(crate) fn validate_request(
             .map(|field| field.field_id())
             .collect_vec(),
         fast_field_names,
+        term_set_query_fields,
         ..search_request.clone()
     };
     Ok(validated_search_request)

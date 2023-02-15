@@ -20,39 +20,29 @@
 use std::collections::{HashMap, HashSet};
 
 use quickwit_proto::SearchRequest;
-use quickwit_query::{extract_term_set_query_fields, SearchInputAst};
+use quickwit_query::{SearchInputAst, build_query_from_search_input_ast};
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 
-use crate::{QueryParserError, WarmupInfo};
+use crate::{QueryParserError, WarmupInfo, QUICKWIT_TOKENIZER_MANAGER};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
-    _schema: Schema,
+    schema: Schema,
     search_request: &SearchRequest,
     _default_field_names: &[String],
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
     let search_input_ast: SearchInputAst =
-        serde_json::from_str(&search_request.query).expect("could not deserialize SearchInputAst");
+        serde_json::from_str(&search_request.query)
+        .expect("Could not deserialize SearchInputAst");
 
-    let mut term_set_query_fields = HashSet::new();
-    extract_term_set_query_fields(&search_input_ast, &mut term_set_query_fields);
-
-    let _search_fields = search_request
+    let search_fields: Vec<Field> = search_request
         .resolved_search_fields
         .iter()
-        .map(|field_id| Field::from_field_id(*field_id));
-    let fast_field_names: HashSet<String> =
-        search_request.fast_field_names.iter().cloned().collect();
-
-    // TODO: Now build the query
-    let query = Box::new(tantivy::query::TermQuery::new(
-        tantivy::Term::from_field_text(Field::from_field_id(0), "foo"),
-        tantivy::schema::IndexRecordOption::Basic,
-    ));
+        .map(|field_id| Field::from_field_id(*field_id)).collect();
+    let query = build_query_from_search_input_ast(schema, search_fields, search_input_ast, QUICKWIT_TOKENIZER_MANAGER.clone())?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
-
     query.query_terms(&mut |term, need_position| {
         let field = term.field();
         *terms_grouped_by_field
@@ -62,11 +52,15 @@ pub(crate) fn build_query(
             .or_default() |= need_position;
     });
 
+    let fast_field_names: HashSet<String> =
+        search_request.fast_field_names.iter().cloned().collect();
+    let term_set_query_fields: HashSet<String> =
+        search_request.term_set_query_fields.iter().cloned().collect();
     let warmup_info = WarmupInfo {
         term_dict_field_names: term_set_query_fields.clone(),
         posting_field_names: term_set_query_fields,
         terms_grouped_by_field,
-        fast_field_names: HashSet::from(fast_field_names),
+        fast_field_names,
         ..WarmupInfo::default()
     };
 

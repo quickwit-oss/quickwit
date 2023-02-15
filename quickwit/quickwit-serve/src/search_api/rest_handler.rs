@@ -25,6 +25,7 @@ use hyper::header::HeaderValue;
 use hyper::HeaderMap;
 use quickwit_common::simple_list::{from_simple_list, to_simple_list};
 use quickwit_proto::{OutputFormat, ServiceError, SortOrder};
+use quickwit_query::parse_tantivy_dsl;
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
@@ -186,10 +187,14 @@ async fn search_endpoint(
     search_service: &dyn SearchService,
 ) -> Result<SearchResponseRest, SearchError> {
     let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
-    // TODO convert search_request.query into
+    
+    let search_input_ast = parse_tantivy_dsl(&search_request.query)?;
+    let query = serde_json::to_string(&search_input_ast)
+        .expect("could not serialize SearchInputAst");
+
     let search_request = quickwit_proto::SearchRequest {
         index_id,
-        query: search_request.query,
+        query,
         search_fields: search_request.search_fields.unwrap_or_default(),
         snippet_fields: search_request.snippet_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
@@ -203,6 +208,7 @@ async fn search_endpoint(
         sort_by_field,
         resolved_search_fields: Vec::new(),
         fast_field_names: Vec::new(),
+        term_set_query_fields: Vec::new(),
     };
     let search_response = search_service.root_search(search_request).await?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;
@@ -354,6 +360,7 @@ async fn search_stream_endpoint(
         partition_by_field: search_request.partition_by_field,
         resolved_search_fields: Vec::new(),
         fast_field_names: Vec::new(),
+        term_set_query_fields: Vec::new(),
     };
     let mut data = search_service.root_search_stream(request).await?;
     let (mut sender, body) = hyper::Body::channel();
