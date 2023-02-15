@@ -1439,7 +1439,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         let terms = collect_str_terms(search_response);
         assert_eq!(terms, &["beagle"]);
     }
-    test_sandbox.assert_quit().await;   
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 

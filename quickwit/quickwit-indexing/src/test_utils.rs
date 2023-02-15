@@ -204,8 +204,9 @@ impl TestSandbox {
         &self.universe
     }
 
-    /// Gracefully quits all registered actors in the underlying universr and asserts that none of them panicked.
-    /// 
+    /// Gracefully quits all registered actors in the underlying universr and asserts that none of
+    /// them panicked.
+    ///
     /// This is useful for testing purposes to detect failed asserts in actors
     #[cfg(any(test, feature = "testsuite"))]
     pub async fn assert_quit(self) {

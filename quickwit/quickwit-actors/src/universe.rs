@@ -124,7 +124,7 @@ impl Universe {
     }
 
     /// Gracefully quits all registered actors and asserts that none of them panicked.
-    /// 
+    ///
     /// This is useful for testing purposes to detect failed asserts in actors.
     #[cfg(any(test, feature = "testsuite"))]
     pub async fn assert_quit(self) {
