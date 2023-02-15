@@ -24,6 +24,5 @@ use quickwit_codegen::Codegen;
 fn main() {
     let proto = Path::new("src/hello.proto");
     let out_dir = Path::new("src/");
-
     Codegen::run(proto, out_dir, "crate::HelloResult", "crate::HelloError").unwrap();
 }
