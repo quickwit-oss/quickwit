@@ -41,6 +41,24 @@ impl Hello for HelloClient {
         self.inner.hello(request).await
     }
 }
+pub type BoxFuture<T, E> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>>;
+impl tower::Service<HelloRequest> for HelloClient {
+    type Response = HelloResponse;
+    type Error = crate::hello::error::HelloError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: HelloRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.hello(request).await };
+        Box::pin(fut)
+    }
+}
 #[derive(Debug, Clone)]
 pub struct HelloGrpcClientAdapter<T> {
     inner: T,

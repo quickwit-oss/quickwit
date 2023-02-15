@@ -4484,6 +4484,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
+ "tower",
  "utoipa",
 ]
 

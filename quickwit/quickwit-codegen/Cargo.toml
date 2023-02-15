@@ -27,4 +27,5 @@ mockall = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tower = { workspace = true }
 utoipa = { workspace = true }

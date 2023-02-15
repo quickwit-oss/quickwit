@@ -27,7 +27,12 @@ use syn::Ident;
 pub struct Codegen;
 
 impl Codegen {
-    pub fn run(proto: &Path, out_dir: &Path, result_path: &str) -> anyhow::Result<()> {
+    pub fn run(
+        proto: &Path,
+        out_dir: &Path,
+        result_path: &str,
+        error_path: &str,
+    ) -> anyhow::Result<()> {
         let mut prost_config = prost_build::Config::default();
         prost_config
             .protoc_arg("--experimental_allow_proto3_optional")
@@ -37,7 +42,7 @@ impl Codegen {
             )
             .out_dir(out_dir);
 
-        let service_generator = Box::new(QuickwitServiceGenerator::new(result_path));
+        let service_generator = Box::new(QuickwitServiceGenerator::new(result_path, error_path));
 
         prost_config
             .service_generator(service_generator)
@@ -48,17 +53,19 @@ impl Codegen {
 
 struct QuickwitServiceGenerator {
     result_path: String,
+    error_path: String,
     inner: Box<dyn ServiceGenerator>,
 }
 
 impl QuickwitServiceGenerator {
-    fn new(result_path: &str) -> Self {
+    fn new(result_path: &str, error_path: &str) -> Self {
         let inner = Box::new(WithSuffixServiceGenerator::new(
             "Grpc",
             tonic_build::configure().service_generator(),
         ));
         Self {
             result_path: result_path.to_string(),
+            error_path: error_path.to_string(),
             inner,
         }
     }
@@ -66,7 +73,7 @@ impl QuickwitServiceGenerator {
 
 impl ServiceGenerator for QuickwitServiceGenerator {
     fn generate(&mut self, service: Service, buf: &mut String) {
-        let tokens = generate_all(&service, &self.result_path);
+        let tokens = generate_all(&service, &self.result_path, &self.error_path);
         let ast: syn::File = syn::parse2(tokens).expect("Tokenstream should be a valid Syn AST.");
         let pretty_code = prettyplease::unparse(&ast);
         buf.push_str(&pretty_code);
@@ -79,14 +86,18 @@ impl ServiceGenerator for QuickwitServiceGenerator {
     }
 }
 
-fn generate_all(service: &Service, result_path: &str) -> TokenStream {
+fn generate_all(service: &Service, result_path: &str, error_path: &str) -> TokenStream {
     let package_name = quote::format_ident!("{}", service.package);
     let trait_name = quote::format_ident!("{}", service.name);
+    let client_name = quote::format_ident!("{}Client", service.name);
     let result_path = syn::parse_str::<syn::Path>(result_path)
-        .expect("Result path should be a valid result path such as `crate::Result`.");
+        .expect("Result path should be a valid result path such as `crate::HelloResult`.");
+    let error_path = syn::parse_str::<syn::Path>(error_path)
+        .expect("Result path should be a valid result path such as `crate::error::HelloError`.");
 
     let service_trait = generate_trait(&trait_name, &service.methods, &result_path);
-    let service_client = generate_client(&trait_name, &service.methods, &result_path);
+    let client = generate_client(&trait_name, &client_name, &service.methods, &result_path);
+    let tower_service = generate_tower_service(&client_name, &service.methods, &error_path);
     let grpc_client_adapter =
         generate_grpc_client_adapter(&package_name, &trait_name, &service.methods, &result_path);
     let grpc_server_adapter =
@@ -95,7 +106,11 @@ fn generate_all(service: &Service, result_path: &str) -> TokenStream {
     quote! {
         #service_trait
 
-        #service_client
+        #client
+
+        pub type BoxFuture<T, E> = std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>>;
+
+        #tower_service
 
         #grpc_client_adapter
 
@@ -143,8 +158,12 @@ fn generate_trait_methods(methods: &[Method], result_path: &syn::Path) -> TokenS
     stream
 }
 
-fn generate_client(trait_name: &Ident, methods: &[Method], result_path: &syn::Path) -> TokenStream {
-    let client_name = quote::format_ident!("{}Client", trait_name);
+fn generate_client(
+    trait_name: &Ident,
+    client_name: &Ident,
+    methods: &[Method],
+    result_path: &syn::Path,
+) -> TokenStream {
     let client_methods = generate_client_methods(methods, result_path);
 
     quote! {
@@ -186,6 +205,46 @@ fn generate_client_methods(methods: &[Method], result_path: &syn::Path) -> Token
             }
         };
         stream.extend(method);
+    }
+    stream
+}
+
+fn generate_tower_service(
+    client_name: &Ident,
+    methods: &[Method],
+    error_path: &syn::Path,
+) -> TokenStream {
+    let mut stream = TokenStream::new();
+    for method in methods {
+        let method_name = quote::format_ident!("{}", method.name);
+        let request_type = syn::parse_str::<syn::Path>(&method.input_type)
+            .unwrap()
+            .to_token_stream();
+        let response_type = syn::parse_str::<syn::Path>(&method.output_type)
+            .unwrap()
+            .to_token_stream();
+
+        let service = quote! {
+            impl tower::Service<#request_type> for #client_name {
+                type Response = #response_type;
+                type Error = #error_path;
+                type Future = BoxFuture<Self::Response, Self::Error>;
+
+                fn poll_ready(
+                    &mut self,
+                    _cx: &mut std::task::Context<'_>,
+                ) -> std::task::Poll<Result<(), Self::Error>> {
+                    std::task::Poll::Ready(Ok(()))
+                }
+
+                fn call(&mut self, request: #request_type) -> Self::Future {
+                    let mut svc = self.clone();
+                    let fut = async move { svc.#method_name(request).await };
+                    Box::pin(fut)
+                }
+            }
+        };
+        stream.extend(service);
     }
     stream
 }

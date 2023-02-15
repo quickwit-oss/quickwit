@@ -24,6 +24,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use quickwit_codegen::Codegen;
 use tonic::transport::{Endpoint, Server};
+use tower::Service;
 
 use crate::hello::hello_grpc_client::HelloGrpcClient;
 use crate::hello::HelloGrpcClientAdapter;
@@ -35,7 +36,13 @@ async fn test_hello_codegen() {
     let proto = Path::new("tests/hello/hello.proto");
     let out_dir = Path::new("tests/hello/");
 
-    Codegen::run(proto, out_dir, "crate::hello::HelloResult").unwrap();
+    Codegen::run(
+        proto,
+        out_dir,
+        "crate::hello::HelloResult",
+        "crate::hello::error::HelloError",
+    )
+    .unwrap();
 
     use crate::hello::hello_grpc_server::HelloGrpcServer;
     use crate::hello::{
@@ -132,6 +139,17 @@ async fn test_hello_codegen() {
             .unwrap(),
         HelloResponse {
             message: "Hello, Client!".to_string()
+        }
+    );
+    assert_eq!(
+        grpc_client
+            .call(HelloRequest {
+                name: "Tower".to_string()
+            })
+            .await
+            .unwrap(),
+        HelloResponse {
+            message: "Hello, Tower!".to_string()
         }
     );
 }
