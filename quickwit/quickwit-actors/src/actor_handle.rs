@@ -21,20 +21,20 @@ use std::fmt;
 
 use serde::Serialize;
 use tokio::sync::{oneshot, watch};
-use tokio::task::JoinHandle;
 use tracing::error;
 
 use crate::actor_state::ActorState;
 use crate::command::Observe;
 use crate::mailbox::Priority;
 use crate::observation::ObservationType;
+use crate::registry::ActorJoinHandle;
 use crate::{Actor, ActorContext, ActorExitStatus, Command, Mailbox, Observation};
 
 /// An Actor Handle serves as an address to communicate with an actor.
 pub struct ActorHandle<A: Actor> {
     actor_context: ActorContext<A>,
     last_state: watch::Receiver<A::ObservableState>,
-    join_handle: JoinHandle<ActorExitStatus>,
+    join_handle: ActorJoinHandle,
 }
 
 /// Describes the health of a given actor.
@@ -98,7 +98,7 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
 impl<A: Actor> ActorHandle<A> {
     pub(crate) fn new(
         last_state: watch::Receiver<A::ObservableState>,
-        join_handle: JoinHandle<ActorExitStatus>,
+        join_handle: ActorJoinHandle,
         actor_context: ActorContext<A>,
     ) -> Self {
         ActorHandle {
@@ -208,13 +208,7 @@ impl<A: Actor> ActorHandle<A> {
 
     /// Waits until the actor exits by itself. This is the equivalent of `Thread::join`.
     pub async fn join(self) -> (ActorExitStatus, A::ObservableState) {
-        let exit_status = self.join_handle.await.unwrap_or_else(|join_err| {
-            if join_err.is_panic() {
-                ActorExitStatus::Panicked
-            } else {
-                ActorExitStatus::Killed
-            }
-        });
+        let exit_status = self.join_handle.join().await;
         let observation = self.last_state.borrow().clone();
         (exit_status, observation)
     }

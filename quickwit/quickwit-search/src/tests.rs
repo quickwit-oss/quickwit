@@ -76,6 +76,7 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
     assert_json_include!(actual: hit_json, expected: expected_json);
     assert!(single_node_result.elapsed_time_micros > 10);
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -121,6 +122,7 @@ async fn test_single_node_termset() -> anyhow::Result<()> {
     assert_json_include!(actual: hit_json, expected: expected_json);
     assert!(single_node_result.elapsed_time_micros > 10);
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -173,6 +175,7 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
         "body": ["The <b>beagle</b> is a breed of small scent hound"]
     });
     assert_json_eq!(highlight_json, expected_json);
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -240,6 +243,7 @@ async fn test_slop_queries() -> anyhow::Result<()> {
     slop_search_and_check(&test_sandbox, index_id, "\"small bike\"~2", 2).await?;
     slop_search_and_check(&test_sandbox, index_id, "\"small bike\"~3", 3).await?;
     slop_search_and_check(&test_sandbox, index_id, "\"tiny shelter\"~3", 1).await?;
+    test_sandbox.assert_quit().await;
 
     Ok(())
 }
@@ -312,6 +316,7 @@ async fn test_single_node_several_splits() -> anyhow::Result<()> {
     })));
     assert!(single_node_result.elapsed_time_micros > 10);
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -423,6 +428,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         single_node_response.err().map(|err| err.to_string()),
         Some("Invalid query: Field does not exist: 'tag'".to_string())
     );
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -498,21 +504,31 @@ async fn single_node_search_sort_by_field(
         sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
-    let single_node_response = single_node_search(
+    let single_node_response = match single_node_search(
         &search_request,
         &*test_sandbox.metastore(),
         test_sandbox.storage_uri_resolver(),
     )
-    .await?;
-    assert_eq!(single_node_response.num_hits, 30);
-    assert_eq!(single_node_response.hits.len(), 15);
-    assert!(single_node_response.hits.windows(2).all(|hits| hits[0]
-        .partial_hit
-        .as_ref()
-        .unwrap()
-        .sorting_field_value
-        >= hits[1].partial_hit.as_ref().unwrap().sorting_field_value));
-    Ok(())
+    .await
+    {
+        Ok(single_node_response) => {
+            assert_eq!(single_node_response.num_hits, 30);
+            assert_eq!(single_node_response.hits.len(), 15);
+            assert!(single_node_response.hits.windows(2).all(|hits| hits[0]
+                .partial_hit
+                .as_ref()
+                .unwrap()
+                .sorting_field_value
+                >= hits[1].partial_hit.as_ref().unwrap().sorting_field_value));
+            test_sandbox.assert_quit().await;
+            Ok(())
+        }
+        Err(err) => {
+            test_sandbox.assert_quit().await;
+            Err(err).map_err(anyhow::Error::from)
+        }
+    };
+    single_node_response
 }
 
 #[tokio::test]
@@ -584,6 +600,7 @@ async fn test_single_node_invalid_sorting_with_query() -> anyhow::Result<()> {
                 .to_string()
         )
     );
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -652,6 +669,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
             .collect::<Vec<&str>>(),
         vec!["owner!", "owner:adrien", "owner:paul"]
     );
+    test_sandbox.assert_quit().await;
 
     Ok(())
 }
@@ -723,6 +741,7 @@ async fn test_search_dynamic_mode() -> anyhow::Result<()> {
         let docs = test_search_dynamic_util(&test_sandbox, "body_dynamic:hello").await;
         assert_eq!(&docs[..], &[3u32]); // 1 is not matched due to the raw tokenizer
     }
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -753,6 +772,7 @@ async fn test_search_dynamic_mode_expand_dots() -> anyhow::Result<()> {
             test_search_dynamic_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
         assert_eq!(&docs[..], &[0u32]);
     }
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -783,6 +803,7 @@ async fn test_search_dynamic_mode_do_not_expand_dots() -> anyhow::Result<()> {
         let docs = test_search_dynamic_util(&test_sandbox, r#"k8s.component.name:quickwit"#).await;
         assert!(docs.is_empty());
     }
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -1019,6 +1040,7 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
     );
     assert!(single_node_result.elapsed_time_micros > 10);
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -1080,6 +1102,7 @@ async fn test_single_node_aggregation_missing_fast_field() -> anyhow::Result<()>
     assert_eq!(single_node_result.errors.len(), 1);
     assert!(single_node_result.errors[0].contains("color"));
     assert!(single_node_result.errors[0].contains("is not a fast field"));
+    test_sandbox.assert_quit().await;
 
     Ok(())
 }
@@ -1146,8 +1169,9 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
         let hit_json: JsonValue = serde_json::from_str(&single_node_result.hits[0].json)?;
         let expected_json: JsonValue = json!({"log": "Request successful", "host": "10.10.11.125"});
         assert_json_include!(actual: hit_json, expected: expected_json);
-        Ok(())
     }
+    test_sandbox.assert_quit().await;
+    Ok(())
 }
 
 #[tokio::test]
@@ -1283,6 +1307,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
         assert_eq!(single_node_result.num_hits, 4);
         assert_eq!(single_node_result.hits.len(), 4);
     }
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -1414,6 +1439,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         let terms = collect_str_terms(search_response);
         assert_eq!(terms, &["beagle"]);
     }
+    test_sandbox.assert_quit().await;
     Ok(())
 }
 
@@ -1480,5 +1506,6 @@ async fn test_single_node_find_trace_ids_collector() -> anyhow::Result<()> {
         assert_eq!(trace_ids[2].trace_id, "qux".as_bytes().to_vec());
         assert_eq!(trace_ids[2].span_timestamp, 1736522020000000);
     }
+    test_sandbox.assert_quit().await;
     Ok(())
 }

@@ -168,6 +168,7 @@ mod tests {
             })
             .await
             .unwrap();
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -237,5 +238,6 @@ mod tests {
             .ask_for_res(ingest_request)
             .await
             .unwrap();
+        universe.assert_quit().await;
     }
 }

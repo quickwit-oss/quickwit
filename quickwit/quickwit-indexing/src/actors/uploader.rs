@@ -531,6 +531,7 @@ mod tests {
         let mut files = ram_storage.list_files().await;
         files.sort();
         assert_eq!(&files, &[PathBuf::from("test-split.split")]);
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -666,6 +667,7 @@ mod tests {
                 PathBuf::from("test-split-2.split")
             ]
         );
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -740,6 +742,7 @@ mod tests {
         assert_eq!(index_id, "test-index-no-sequencer");
         assert_eq!(new_splits.len(), 1);
         assert!(replaced_split_ids.is_empty());
+        universe.assert_quit().await;
         Ok(())
     }
 }

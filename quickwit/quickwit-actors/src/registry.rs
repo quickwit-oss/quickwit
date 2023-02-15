@@ -19,21 +19,25 @@
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::future;
+use futures::future::{self, Shared};
+use futures::{Future, FutureExt};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use tokio::task::JoinHandle;
 
 use crate::command::Observe;
 use crate::mailbox::WeakMailbox;
-use crate::{Actor, Mailbox};
+use crate::{Actor, ActorExitStatus, Command, Mailbox};
 
 struct TypedJsonObservable<A: Actor> {
     actor_instance_id: String,
     weak_mailbox: WeakMailbox<A>,
+    join_handle: ActorJoinHandle,
 }
 
 #[async_trait]
@@ -42,6 +46,8 @@ trait JsonObservable: Sync + Send {
     fn any(&self) -> &dyn Any;
     fn actor_instance_id(&self) -> &str;
     async fn observe(&self) -> Option<JsonValue>;
+    async fn quit(&self) -> ActorExitStatus;
+    async fn join(&self) -> ActorExitStatus;
 }
 
 #[async_trait]
@@ -63,6 +69,17 @@ impl<A: Actor> JsonObservable for TypedJsonObservable<A> {
         let oneshot_rx = mailbox.send_message_with_high_priority(Observe).ok()?;
         let state: <A as Actor>::ObservableState = oneshot_rx.await.ok()?;
         serde_json::to_value(&state).ok()
+    }
+
+    async fn quit(&self) -> ActorExitStatus {
+        if let Some(mailbox) = self.weak_mailbox.upgrade() {
+            let _ = mailbox.send_message_with_high_priority(Command::Quit);
+        }
+        self.join().await
+    }
+
+    async fn join(&self) -> ActorExitStatus {
+        self.join_handle.join().await
     }
 }
 
@@ -104,7 +121,7 @@ pub struct ActorObservation {
 }
 
 impl ActorRegistry {
-    pub fn register<A: Actor>(&self, mailbox: &Mailbox<A>) {
+    pub fn register<A: Actor>(&self, mailbox: &Mailbox<A>, join_handle: ActorJoinHandle) {
         let typed_id = TypeId::of::<A>();
         let actor_instance_id = mailbox.actor_instance_id().to_string();
         let weak_mailbox = mailbox.downgrade();
@@ -117,6 +134,7 @@ impl ActorRegistry {
             .push(Arc::new(TypedJsonObservable {
                 weak_mailbox,
                 actor_instance_id,
+                join_handle,
             }));
     }
 
@@ -162,6 +180,31 @@ impl ActorRegistry {
             registry_for_type.gc();
         }
     }
+
+    pub async fn quit(&self) -> Vec<ActorExitStatus> {
+        let mut obs_futures = Vec::new();
+        for registry_for_type in self.actors.read().unwrap().values() {
+            for obs in &registry_for_type.observables {
+                let obs_clone = obs.clone();
+                obs_futures.push(async move { obs_clone.quit().await });
+            }
+        }
+        let res = future::join_all(obs_futures).await;
+        res.into_iter().collect()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.actors
+            .read()
+            .unwrap()
+            .values()
+            .all(|registry_for_type| {
+                registry_for_type
+                    .observables
+                    .iter()
+                    .all(|obs| obs.is_disconnected())
+            })
+    }
 }
 
 fn get_iter<A: Actor>(
@@ -181,6 +224,37 @@ fn get_iter<A: Actor>(
         .filter(|mailbox| !mailbox.is_disconnected())
 }
 
+/// This structure contains an optional exit handle. The handle is present
+/// until the join() method is called.
+#[derive(Clone)]
+pub(crate) struct ActorJoinHandle {
+    holder: Shared<Pin<Box<dyn Future<Output = ActorExitStatus> + Send>>>,
+}
+
+impl ActorJoinHandle {
+    pub(crate) fn new(join_handle: JoinHandle<ActorExitStatus>) -> Self {
+        ActorJoinHandle {
+            holder: Self::inner_join(join_handle).boxed().shared(),
+        }
+    }
+
+    async fn inner_join(join_handle: JoinHandle<ActorExitStatus>) -> ActorExitStatus {
+        join_handle.await.unwrap_or_else(|join_err| {
+            if join_err.is_panic() {
+                ActorExitStatus::Panicked
+            } else {
+                ActorExitStatus::Killed
+            }
+        })
+    }
+
+    /// Joins the actor and returns its exit status on the frist invocation.
+    /// Returns None afterwards.
+    pub(crate) async fn join(&self) -> ActorExitStatus {
+        self.holder.clone().await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -194,6 +268,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (_mailbox, _handle) = universe.spawn_builder().spawn(test_actor);
         let _actor_mailbox = universe.get_one::<PingReceiverActor>().unwrap();
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -222,5 +297,6 @@ mod tests {
         let (_mailbox, _handle) = universe.spawn_builder().spawn(test_actor);
         let obs = universe.observe(Duration::from_millis(1000)).await;
         assert_eq!(obs.len(), 1);
+        universe.assert_quit().await;
     }
 }

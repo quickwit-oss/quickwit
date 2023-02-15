@@ -486,6 +486,7 @@ mod tests {
                  "timestamp": 1628837062
             })
         );
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -543,6 +544,7 @@ mod tests {
         assert_eq!(partition_ids[0], partition_ids[2]);
         assert_eq!(partition_ids[1], partition_ids[3]);
         assert_ne!(partition_ids[0], partition_ids[1]);
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -574,6 +576,7 @@ mod tests {
         assert!(matches!(exit_status, ActorExitStatus::Success));
         let publish_locks: Vec<NewPublishLock> = indexer_inbox.drain_for_test_typed();
         assert_eq!(&publish_locks, &[NewPublishLock(publish_lock)]);
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -614,6 +617,7 @@ mod tests {
         assert!(matches!(exit_status, ActorExitStatus::Success));
         let indexer_messages: Vec<PreparedDocBatch> = indexer_inbox.drain_for_test_typed();
         assert!(indexer_messages.is_empty());
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -693,6 +697,7 @@ mod tests {
                  "timestamp": 1628837062
             })
         );
+        universe.assert_quit().await;
         Ok(())
     }
 }

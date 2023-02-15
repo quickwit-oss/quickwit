@@ -1088,6 +1088,8 @@ mod tests {
         for _ in 0..2000 {
             let obs = indexing_server_handle.observe().await;
             if obs.num_successful_pipelines == 2 {
+                // It may or may not panic
+                universe.quit().await;
                 return;
             }
             universe.sleep(Duration::from_millis(100)).await;
@@ -1183,6 +1185,8 @@ mod tests {
         // Check that the merge pipeline is also shut down as they are no more indexing pipeilne on
         // the index.
         assert!(universe.get_one::<MergePipeline>().is_none());
+        // It may or may not panic
+        universe.quit().await;
     }
 
     #[derive(Debug)]
@@ -1295,5 +1299,7 @@ mod tests {
         assert_eq!(observation.num_running_pipelines, 1);
         assert_eq!(observation.num_failed_pipelines, 0);
         assert_eq!(observation.num_running_merge_pipelines, 1);
+        // Might generate panics
+        universe.quit().await;
     }
 }

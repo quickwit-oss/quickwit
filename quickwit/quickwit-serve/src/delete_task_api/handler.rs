@@ -208,5 +208,6 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let delete_tasks: Vec<DeleteTask> = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(delete_tasks.len(), 1);
+        test_sandbox.assert_quit().await;
     }
 }

@@ -261,6 +261,7 @@ mod tests {
         let merger_msgs: Vec<NewSplits> = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
         assert_eq!(merger_msgs.len(), 1);
         assert_eq!(merger_msgs[0].new_splits.len(), 1);
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -309,6 +310,7 @@ mod tests {
         let merge_planner_msgs = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
         assert_eq!(merge_planner_msgs.len(), 1);
         assert_eq!(merge_planner_msgs[0].new_splits.len(), 1);
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -347,5 +349,6 @@ mod tests {
 
         let merger_messages = merge_planner_inbox.drain_for_test();
         assert!(merger_messages.is_empty());
+        universe.assert_quit().await;
     }
 }

@@ -283,6 +283,7 @@ async fn test_timeouting_actor() {
     assert_eq!(buggy_handle.harvest_health(), Health::Healthy);
     universe.sleep(crate::HEARTBEAT * 2).await;
     assert_eq!(buggy_handle.harvest_health(), Health::FailureOrUnhealthy);
+    buggy_handle.kill().await;
 }
 
 #[tokio::test]
@@ -305,6 +306,7 @@ async fn test_pause_actor() {
         .is_ok());
     let end_state = ping_handle.process_pending_and_observe().await.state;
     assert_eq!(end_state, 1000);
+    universe.assert_quit().await;
 }
 
 #[tokio::test]
@@ -320,6 +322,7 @@ async fn test_actor_running_states() {
     assert_eq!(*obs, 10);
     universe.sleep(Duration::from_millis(1)).await;
     assert!(ping_handle.state() == ActorState::Idle);
+    universe.assert_quit().await;
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -551,6 +554,7 @@ async fn test_actor_return_response() -> anyhow::Result<()> {
     let plus_two_plus_four = mailbox.send_message(AddOperand(4)).await?;
     assert_eq!(plus_two.await.unwrap(), 2);
     assert_eq!(plus_two_plus_four.await.unwrap(), 6);
+    universe.assert_quit().await;
     Ok(())
 }
 
@@ -631,4 +635,5 @@ async fn test_drain_is_called() {
             drain_calls_count: 2
         }
     );
+    universe.assert_quit().await;
 }

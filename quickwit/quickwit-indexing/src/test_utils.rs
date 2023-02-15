@@ -51,7 +51,7 @@ pub struct TestSandbox {
     storage_resolver: StorageUriResolver,
     storage: Arc<dyn Storage>,
     add_docs_id: AtomicUsize,
-    _universe: Universe,
+    universe: Universe,
     _temp_dir: tempfile::TempDir,
 }
 
@@ -101,7 +101,7 @@ impl TestSandbox {
             .await?;
         metastore.create_index(index_config.clone()).await?;
         let storage = storage_resolver.resolve(&index_uri)?;
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let indexing_service_actor = IndexingService::new(
             node_id.to_string(),
             temp_dir.path().to_path_buf(),
@@ -121,7 +121,7 @@ impl TestSandbox {
             storage_resolver,
             storage,
             add_docs_id: AtomicUsize::default(),
-            _universe: universe,
+            universe,
             _temp_dir: temp_dir,
         })
     }
@@ -198,6 +198,20 @@ impl TestSandbox {
     pub fn index_id(&self) -> &str {
         &self.index_id
     }
+
+    /// Returns the underlying universe.
+    pub fn universe(&self) -> &Universe {
+        &self.universe
+    }
+
+    /// Gracefully quits all registered actors in the underlying universr and asserts that none of
+    /// them panicked.
+    ///
+    /// This is useful for testing purposes to detect failed asserts in actors
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn assert_quit(self) {
+        self.universe.assert_quit().await
+    }
 }
 
 /// Mock split helper.
@@ -259,6 +273,7 @@ mod tests {
             let splits = metastore.list_all_splits("test_index").await?;
             assert_eq!(splits.len(), 2);
         }
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 }

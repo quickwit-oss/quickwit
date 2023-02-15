@@ -398,7 +398,6 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::Universe;
     use quickwit_config::build_doc_mapper;
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::merge_policy::{MergeOperation, NopMergePolicy};
@@ -414,7 +413,6 @@ mod tests {
     #[tokio::test]
     async fn test_delete_task_planner() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::with_accelerated_time();
         let index_id = "test-delete-task-planner";
         let doc_mapping_yaml = r#"
             field_mappings:
@@ -500,7 +498,7 @@ mod tests {
                 ([127, 0, 0, 1], 1000).into(),
             )]);
         let search_job_placer = SearchJobPlacer::new(client_pool);
-        let (downloader_mailbox, downloader_inbox) = universe.create_test_mailbox();
+        let (downloader_mailbox, downloader_inbox) = test_sandbox.universe().create_test_mailbox();
         let delete_planner_executor = DeleteTaskPlanner::new(
             index_id.to_string(),
             index_config.index_uri.clone(),
@@ -510,8 +508,10 @@ mod tests {
             Arc::new(NopMergePolicy),
             downloader_mailbox,
         );
-        let (delete_planner_mailbox, delete_planner_handle) =
-            universe.spawn_builder().spawn(delete_planner_executor);
+        let (delete_planner_mailbox, delete_planner_handle) = test_sandbox
+            .universe()
+            .spawn_builder()
+            .spawn(delete_planner_executor);
         delete_planner_handle.process_pending_and_observe().await;
         let downloader_msgs: Vec<TrackedObject<MergeOperation>> =
             downloader_inbox.drain_for_test_typed();
@@ -562,6 +562,7 @@ mod tests {
         assert_eq!(all_splits[1].split_metadata.delete_opstamp, 2);
         // The last split has not yet its delete opstamp updated.
         assert_eq!(all_splits[2].split_metadata.delete_opstamp, 0);
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 }

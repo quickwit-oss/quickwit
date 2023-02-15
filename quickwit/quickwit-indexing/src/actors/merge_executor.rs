@@ -527,7 +527,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
-        let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -583,7 +582,8 @@ mod tests {
             merge_scratch_directory,
             downloaded_splits_directory,
         };
-        let (merge_packager_mailbox, merge_packager_inbox) = universe.create_test_mailbox();
+        let (merge_packager_mailbox, merge_packager_inbox) =
+            test_sandbox.universe().create_test_mailbox();
         let merge_executor = MergeExecutor::new(
             pipeline_id,
             metastore,
@@ -591,8 +591,10 @@ mod tests {
             IoControls::default(),
             merge_packager_mailbox,
         );
-        let (merge_executor_mailbox, merge_executor_handle) =
-            universe.spawn_builder().spawn(merge_executor);
+        let (merge_executor_mailbox, merge_executor_handle) = test_sandbox
+            .universe()
+            .spawn_builder()
+            .spawn(merge_executor);
         merge_executor_mailbox.send_message(merge_scratch).await?;
         merge_executor_handle.process_pending_and_observe().await;
         let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
@@ -608,6 +610,7 @@ mod tests {
             .try_into()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 
@@ -792,7 +795,8 @@ mod tests {
                     |split| split.split_state == quickwit_metastore::SplitState::MarkedForDeletion
                 ));
         }
-
+        test_sandbox.assert_quit().await;
+        universe.assert_quit().await;
         Ok(())
     }
 

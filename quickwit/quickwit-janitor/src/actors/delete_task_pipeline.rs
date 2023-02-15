@@ -280,7 +280,7 @@ mod tests {
     use std::sync::Arc;
 
     use async_trait::async_trait;
-    use quickwit_actors::{Handler, Universe, HEARTBEAT};
+    use quickwit_actors::{Handler, HEARTBEAT};
     use quickwit_config::merge_policy_config::MergePolicyConfig;
     use quickwit_config::IndexingSettings;
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
@@ -382,14 +382,14 @@ mod tests {
             data_dir_path,
             4,
         );
-        let universe = Universe::with_accelerated_time();
 
-        let (pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
+        let (pipeline_mailbox, pipeline_handler) =
+            test_sandbox.universe().spawn_builder().spawn(pipeline);
         // Insure that the message sent by initialize method is processed.
         let _ = pipeline_handler.process_pending_and_observe().await.state;
         // Pipeline will first fail and we need to wait a HEARTBEAT * 2 for the pipeline state to be
         // updated.
-        universe.sleep(HEARTBEAT * 2).await;
+        test_sandbox.universe().sleep(HEARTBEAT * 2).await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
         assert_eq!(pipeline_state.delete_task_planner.num_errors, 1);
         assert_eq!(pipeline_state.downloader.num_errors, 0);
@@ -406,6 +406,7 @@ mod tests {
             .find(|split| split.split_state == SplitState::Published)
             .unwrap();
         assert_eq!(published_split.split_metadata.delete_opstamp, 1);
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 
@@ -456,12 +457,15 @@ mod tests {
             data_dir_path,
             4,
         );
-        let universe = Universe::with_accelerated_time();
 
-        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
+        let (_pipeline_mailbox, pipeline_handler) =
+            test_sandbox.universe().spawn_builder().spawn(pipeline);
         pipeline_handler.quit().await;
-        let observations = universe.observe(HEARTBEAT).await;
-        assert!(observations.is_empty());
+        let observations = test_sandbox.universe().observe(HEARTBEAT).await;
+        assert!(observations.into_iter().all(
+            |observation| observation.type_name != std::any::type_name::<DeleteTaskPipeline>()
+        ));
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 }

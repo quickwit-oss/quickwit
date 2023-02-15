@@ -601,17 +601,13 @@ mod tests {
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
-            .expect_publish_splits()
-            .returning(move |_, splits, _, _| {
-                assert!(splits.is_empty());
-                Ok(())
-            });
-        metastore
             .expect_last_delete_opstamp()
+            .times(2)
             .returning(move |index_id| {
                 assert_eq!("test-index", index_id);
                 Ok(last_delete_opstamp)
             });
+        metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -711,6 +707,7 @@ mod tests {
         );
         let first_split = batch.splits.into_iter().next().unwrap().finalize()?;
         assert!(first_split.index.settings().sort_by_field.is_none());
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -733,17 +730,13 @@ mod tests {
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
-            .expect_publish_splits()
-            .returning(move |_, splits, _, _| {
-                assert!(splits.is_empty());
-                Ok(())
-            });
-        metastore
             .expect_last_delete_opstamp()
+            .times(1..=2)
             .returning(move |index_id| {
                 assert_eq!("test-index", index_id);
                 Ok(last_delete_opstamp)
             });
+        metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -788,6 +781,7 @@ mod tests {
                 break;
             }
         }
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -810,17 +804,13 @@ mod tests {
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
-            .expect_publish_splits()
-            .returning(move |_, splits, _, _| {
-                assert!(splits.is_empty());
-                Ok(())
-            });
-        metastore
             .expect_last_delete_opstamp()
+            .once()
             .returning(move |index_id| {
                 assert_eq!("test-index", index_id);
                 Ok(last_delete_opstamp)
             });
+        metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -878,6 +868,7 @@ mod tests {
                 .delete_opstamp,
             last_delete_opstamp
         );
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -899,17 +890,13 @@ mod tests {
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
-            .expect_publish_splits()
-            .returning(move |_, splits, _, _| {
-                assert!(splits.is_empty());
-                Ok(())
-            });
-        metastore
             .expect_last_delete_opstamp()
+            .once()
             .returning(move |index_id| {
                 assert_eq!("test-index", index_id);
                 Ok(10)
             });
+        metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -950,6 +937,7 @@ mod tests {
         assert_eq!(output_messages.len(), 1);
         assert_eq!(output_messages[0].commit_trigger, CommitTrigger::NoMoreDocs);
         assert_eq!(output_messages[0].splits[0].split_attrs.num_docs, 1);
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -983,17 +971,13 @@ mod tests {
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
-            .expect_publish_splits()
-            .returning(move |_, splits, _, _| {
-                assert!(splits.is_empty());
-                Ok(())
-            });
-        metastore
             .expect_last_delete_opstamp()
+            .once()
             .returning(move |index_id| {
                 assert_eq!("test-index", index_id);
                 Ok(10)
             });
+        metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -1053,6 +1037,7 @@ mod tests {
             index_serializer_inbox.drain_for_test_typed();
         assert_eq!(split_batches.len(), 1);
         assert_eq!(split_batches[0].splits.len(), 2);
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -1078,6 +1063,7 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
+            .times(1)
             .returning(move |index_id| {
                 assert_eq!("test-index", index_id);
                 Ok(10)
@@ -1128,6 +1114,7 @@ mod tests {
                 assert_eq!(split.split_attrs.num_docs, 1);
             }
         }
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -1148,6 +1135,7 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
+            .times(2)
             .returning(move |index_id| {
                 assert_eq!("test-index", index_id);
                 Ok(10)
@@ -1199,6 +1187,7 @@ mod tests {
         assert_eq!(index_serializer_messages[0].publish_lock, first_lock);
         assert_eq!(index_serializer_messages[1].splits.len(), 1);
         assert_eq!(index_serializer_messages[1].publish_lock, second_lock);
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -1219,6 +1208,7 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
+            .times(1)
             .returning(move |index_id| {
                 assert_eq!("test-index", index_id);
                 Ok(10)
@@ -1263,5 +1253,6 @@ mod tests {
 
         let index_serializer_messages = index_serializer_inbox.drain_for_test();
         assert!(index_serializer_messages.is_empty());
+        universe.assert_quit().await;
     }
 }

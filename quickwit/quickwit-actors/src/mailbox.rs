@@ -530,6 +530,7 @@ mod tests {
         assert!(backpressure_micros_counter.get() < 500);
         processed.await.unwrap();
         assert!(backpressure_micros_counter.get() < 500);
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -563,6 +564,7 @@ mod tests {
             .await
             .unwrap();
         assert!(backpressure_micros_counter.get() > 1_000u64);
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -584,6 +586,7 @@ mod tests {
         let elapsed = start.elapsed();
         assert!(elapsed.as_micros() > 1000);
         assert_eq!(backpressure_micros_counter.get(), 0);
+        universe.assert_quit().await;
     }
 
     #[tokio::test]

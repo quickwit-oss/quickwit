@@ -482,6 +482,7 @@ mod tests {
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1);
         assert_eq!(pipeline_statistics.num_published_splits, 0);
         assert!(matches!(pipeline_exit_status, ActorExitStatus::Quit));
+        universe.assert_quit().await;
         Ok(())
     }
 }

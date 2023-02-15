@@ -184,7 +184,7 @@ impl Handler<SuperviseLoop> for DeleteTaskService {
 mod tests {
     use std::sync::Arc;
 
-    use quickwit_actors::{Universe, HEARTBEAT};
+    use quickwit_actors::HEARTBEAT;
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::TestSandbox;
     use quickwit_proto::metastore_api::DeleteQuery;
@@ -223,9 +223,10 @@ mod tests {
             data_dir_path,
             4,
         );
-        let universe = Universe::with_accelerated_time();
-        let (_delete_task_service_mailbox, delete_task_service_handler) =
-            universe.spawn_builder().spawn(delete_task_service);
+        let (_delete_task_service_mailbox, delete_task_service_handler) = test_sandbox
+            .universe()
+            .spawn_builder()
+            .spawn(delete_task_service);
         let state = delete_task_service_handler
             .process_pending_and_observe()
             .await;
@@ -248,15 +249,27 @@ mod tests {
             1
         );
         metastore.delete_index(index_id).await.unwrap();
-        universe.sleep(HEARTBEAT * 2).await;
+        test_sandbox.universe().sleep(HEARTBEAT * 2).await;
         let state_after_deletion = delete_task_service_handler
             .process_pending_and_observe()
             .await;
         assert_eq!(state_after_deletion.num_running_pipelines, 0);
-        assert!(universe.get_one::<DeleteTaskService>().is_some());
-        let actors_observations = universe.observe(HEARTBEAT).await;
-        assert_eq!(actors_observations.len(), 1);
-        assert!(universe.get_one::<DeleteTaskService>().is_some());
+        assert!(test_sandbox
+            .universe()
+            .get_one::<DeleteTaskService>()
+            .is_some());
+        let actors_observations = test_sandbox.universe().observe(HEARTBEAT).await;
+        assert!(
+            actors_observations
+                .into_iter()
+                .any(|observation| observation.type_name
+                    == std::any::type_name::<DeleteTaskService>())
+        );
+        assert!(test_sandbox
+            .universe()
+            .get_one::<DeleteTaskService>()
+            .is_some());
+        test_sandbox.assert_quit().await;
         Ok(())
     }
 }

@@ -735,6 +735,7 @@ mod tests {
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1);
         assert_eq!(pipeline_statistics.num_published_splits, 1);
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -818,6 +819,7 @@ mod tests {
                 .await;
             if obs.generation == 2 {
                 assert_eq!(merge_pipeline_handler.harvest_health(), Health::Healthy);
+                universe.quit().await;
                 return;
             }
         }

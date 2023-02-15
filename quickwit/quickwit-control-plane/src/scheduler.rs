@@ -541,6 +541,7 @@ mod tests {
         let indexing_service_inbox_messages =
             indexing_service_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
         assert_eq!(indexing_service_inbox_messages.len(), 1);
+        universe.assert_quit().await;
     }
 
     #[test]

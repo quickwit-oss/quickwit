@@ -307,6 +307,9 @@ mod tests {
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 2);
         assert!(doc_batches[1].docs[0].starts_with("038462"));
+        // TODO: Source deadlocks and test hangs occasionally if we don't quit source first.
+        ingest_api_source_handle.quit().await;
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -341,6 +344,7 @@ mod tests {
             partition_id_before_lost_queue_dir,
             partition_id_after_lost_queue_dir
         );
+        universe.assert_quit().await;
         Ok(())
     }
 
@@ -405,6 +409,9 @@ mod tests {
             doc_batches[0].checkpoint_delta.partitions().next().unwrap(),
             &partition_id
         );
+        // TODO: Source deadlocks and test hangs occasionally if we don't quit source first.
+        ingest_api_source_handle.quit().await;
+        universe.assert_quit().await;
 
         Ok(())
     }
@@ -456,6 +463,9 @@ mod tests {
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 1);
         assert!(doc_batches[0].docs[0].starts_with("000000"));
+        // TODO: Source deadlocks and test hangs occasionally if we don't quit source first.
+        ingest_api_source_handle.quit().await;
+        universe.assert_quit().await;
         Ok(())
     }
 }
