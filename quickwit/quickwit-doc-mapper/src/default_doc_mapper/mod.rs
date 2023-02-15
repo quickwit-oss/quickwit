@@ -39,9 +39,10 @@ pub(crate) use self::field_mapping_entry::{
     FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
 };
 pub use self::field_mapping_type::FieldMappingType;
+use crate::QW_RESERVED_FIELD_NAMES;
 
 /// Regular expression validating a field mapping name.
-pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[a-zA-Z][_\.\-a-zA-Z0-9]{0,254}$"#;
+pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[_\-a-zA-Z][_\.\-a-zA-Z0-9]{0,254}$"#;
 
 /// Validates a field mapping name.
 /// Returns `Ok(())` if the name can be used for a field mapping. Does not check for reserved field
@@ -50,21 +51,31 @@ pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[a-zA-Z][_\.\-a-zA-Z0-9]{0,254}
 /// A field mapping name:
 /// - may only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, hyphens
 ///   `-`, and underscores `_`;
-/// - must start with an uppercase or lowercase ASCII letter `[a-zA-Z]`; (fields starting by _ are
-///   reserved by quickwit)
+/// - must not start with a dot or a digit;
+/// - must be different from Quickwit's reserved field mapping names `_source`, `_dynamic`;
 /// - must not be longer than 255 characters.
 pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<()> {
     static FIELD_MAPPING_NAME_PTN: Lazy<Regex> =
         Lazy::new(|| Regex::new(FIELD_MAPPING_NAME_PATTERN).unwrap());
 
+    if QW_RESERVED_FIELD_NAMES.contains(&field_mapping_name) {
+        bail!(
+            "Field name `{field_mapping_name}` is reserved. The following fields are reserved for \
+             Quickwit internal usage: {}.",
+            QW_RESERVED_FIELD_NAMES.join(", "),
+        );
+    }
     if FIELD_MAPPING_NAME_PTN.is_match(field_mapping_name) {
         return Ok(());
     }
     if field_mapping_name.is_empty() {
         bail!("Field name is empty.");
     }
-    if field_mapping_name.starts_with('_') {
-        bail!("Field name `{}` may not start by _", field_mapping_name);
+    if field_mapping_name.starts_with('.') {
+        bail!(
+            "Field name `{}` must not start with a dot `.`",
+            field_mapping_name
+        );
     }
     if field_mapping_name.len() > 255 {
         bail!(
@@ -73,7 +84,7 @@ pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<(
         )
     }
     let first_char = field_mapping_name.chars().next().unwrap();
-    if !first_char.is_ascii_alphabetic() && first_char != '_' {
+    if !first_char.is_ascii_alphabetic() {
         bail!(
             "Field name `{}` is invalid. Field names must start with an uppercase or lowercase \
              ASCII letter, or an underscore `_`.",
@@ -110,10 +121,24 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("must start with"));
+        assert!(validate_field_mapping_name(".my-field")
+            .unwrap_err()
+            .to_string()
+            .contains("must not start with"));
+        assert!(validate_field_mapping_name("_source")
+            .unwrap_err()
+            .to_string()
+            .contains("are reserved for Quickwit"));
+        assert!(validate_field_mapping_name("_dynamic")
+            .unwrap_err()
+            .to_string()
+            .contains("are reserved for Quickwit"));
         assert!(validate_field_mapping_name("my-field!")
             .unwrap_err()
             .to_string()
             .contains("illegal characters"));
+        assert!(validate_field_mapping_name("_my_field").is_ok());
+        assert!(validate_field_mapping_name("-my-field").is_ok());
         assert!(validate_field_mapping_name("my-field").is_ok());
         assert!(validate_field_mapping_name("my.field").is_ok());
         assert!(validate_field_mapping_name("my_field").is_ok());
