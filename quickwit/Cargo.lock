@@ -4472,6 +4472,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "dyn-clone",
+ "mockall",
  "prettyplease",
  "proc-macro2",
  "prost",
@@ -4483,6 +4484,24 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
+ "tower",
+ "utoipa",
+]
+
+[[package]]
+name = "quickwit-codegen-example"
+version = "0.4.0"
+dependencies = [
+ "async-trait",
+ "dyn-clone",
+ "mockall",
+ "prost",
+ "quickwit-codegen",
+ "serde",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tower",
  "utoipa",
 ]
 

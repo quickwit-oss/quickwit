@@ -1,35 +1,132 @@
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HelloRequest {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HelloResponse {
     #[prost(string, tag = "1")]
     pub message: ::prost::alloc::string::String,
 }
-#[async_trait]
+/// BEGIN quickwit-codegen
+#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
+#[async_trait::async_trait]
 pub trait Hello: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
-    async fn hello(
-        &mut self,
-        request: HelloRequest,
-    ) -> crate::hello::HelloResult<HelloResponse>;
+    async fn hello(&mut self, request: HelloRequest) -> crate::HelloResult<HelloResponse>;
 }
 dyn_clone::clone_trait_object!(Hello);
+#[cfg(any(test, feature = "testsuite"))]
+impl Clone for MockHello {
+    fn clone(&self) -> Self {
+        MockHello::new()
+    }
+}
+#[derive(Debug, Clone)]
+pub struct HelloClient {
+    inner: Box<dyn Hello>,
+}
+impl HelloClient {
+    pub fn new<T>(instance: T) -> Self
+    where T: Hello {
+        Self {
+            inner: Box::new(instance),
+        }
+    }
+}
+#[async_trait::async_trait]
+impl Hello for HelloClient {
+    async fn hello(&mut self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
+        self.inner.hello(request).await
+    }
+}
+pub type BoxFuture<T, E> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>>;
+impl tower::Service<HelloRequest> for HelloClient {
+    type Response = HelloResponse;
+    type Error = crate::HelloError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: HelloRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.hello(request).await };
+        Box::pin(fut)
+    }
+}
+#[derive(Debug, Clone)]
+pub struct HelloGrpcClientAdapter<T> {
+    inner: T,
+}
+impl<T> HelloGrpcClientAdapter<T> {
+    pub fn new(instance: T) -> Self {
+        Self { inner: instance }
+    }
+}
+#[async_trait::async_trait]
+impl<T> Hello for HelloGrpcClientAdapter<hello_grpc_client::HelloGrpcClient<T>>
+where
+    T: tonic::client::GrpcService<tonic::body::BoxBody>
+        + std::fmt::Debug
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
+    <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send,
+    T::Future: Send,
+{
+    async fn hello(&mut self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
+        self.inner
+            .hello(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+}
+#[derive(Debug)]
+pub struct HelloGrpcServerAdapter {
+    inner: Box<dyn Hello>,
+}
+impl HelloGrpcServerAdapter {
+    pub fn new<T>(instance: T) -> Self
+    where T: Hello {
+        Self {
+            inner: Box::new(instance),
+        }
+    }
+}
+#[async_trait::async_trait]
+impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
+    async fn hello(
+        &self,
+        request: tonic::Request<HelloRequest>,
+    ) -> Result<tonic::Response<HelloResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .hello(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(Into::into)
+    }
+}
 /// Generated client implementations.
-pub mod hello_client {
+pub mod hello_grpc_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
-    pub struct HelloClient<T> {
+    pub struct HelloGrpcClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl HelloClient<tonic::transport::Channel> {
+    impl HelloGrpcClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -40,7 +137,7 @@ pub mod hello_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> HelloClient<T>
+    impl<T> HelloGrpcClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
         T::Error: Into<StdError>,
@@ -58,7 +155,7 @@ pub mod hello_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> HelloClient<InterceptedService<T, F>>
+        ) -> HelloGrpcClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -68,11 +165,10 @@ pub mod hello_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
-            HelloClient::new(InterceptedService::new(inner, interceptor))
+            HelloGrpcClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -93,15 +189,12 @@ pub mod hello_client {
             &mut self,
             request: impl tonic::IntoRequest<super::HelloRequest>,
         ) -> Result<tonic::Response<super::HelloResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/hello.Hello/Hello");
             self.inner.unary(request.into_request(), path, codec).await
@@ -109,25 +202,26 @@ pub mod hello_client {
     }
 }
 /// Generated server implementations.
-pub mod hello_server {
+pub mod hello_grpc_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with HelloServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with
+    /// HelloGrpcServer.
     #[async_trait]
-    pub trait Hello: Send + Sync + 'static {
+    pub trait HelloGrpc: Send + Sync + 'static {
         async fn hello(
             &self,
             request: tonic::Request<super::HelloRequest>,
         ) -> Result<tonic::Response<super::HelloResponse>, tonic::Status>;
     }
     #[derive(Debug)]
-    pub struct HelloServer<T: Hello> {
+    pub struct HelloGrpcServer<T: HelloGrpc> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
-    impl<T: Hello> HelloServer<T> {
+    impl<T: HelloGrpc> HelloGrpcServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -139,13 +233,8 @@ pub mod hello_server {
                 send_compression_encodings: Default::default(),
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
-        where
-            F: tonic::service::Interceptor,
-        {
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+        where F: tonic::service::Interceptor {
             InterceptedService::new(Self::new(inner), interceptor)
         }
         /// Enable decompressing requests with the given encoding.
@@ -161,19 +250,16 @@ pub mod hello_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for HelloServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for HelloGrpcServer<T>
     where
-        T: Hello,
+        T: HelloGrpc,
         B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
         type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(
-            &mut self,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -181,14 +267,10 @@ pub mod hello_server {
             match req.uri().path() {
                 "/hello.Hello/Hello" => {
                     #[allow(non_camel_case_types)]
-                    struct HelloSvc<T: Hello>(pub Arc<T>);
-                    impl<T: Hello> tonic::server::UnaryService<super::HelloRequest>
-                    for HelloSvc<T> {
+                    struct HelloSvc<T: HelloGrpc>(pub Arc<T>);
+                    impl<T: HelloGrpc> tonic::server::UnaryService<super::HelloRequest> for HelloSvc<T> {
                         type Response = super::HelloResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::HelloRequest>,
@@ -205,32 +287,27 @@ pub mod hello_server {
                         let inner = inner.0;
                         let method = HelloSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        Ok(
-                            http::Response::builder()
-                                .status(200)
-                                .header("grpc-status", "12")
-                                .header("content-type", "application/grpc")
-                                .body(empty_body())
-                                .unwrap(),
-                        )
-                    })
-                }
+                _ => Box::pin(async move {
+                    Ok(http::Response::builder()
+                        .status(200)
+                        .header("grpc-status", "12")
+                        .header("content-type", "application/grpc")
+                        .body(empty_body())
+                        .unwrap())
+                }),
             }
         }
     }
-    impl<T: Hello> Clone for HelloServer<T> {
+    impl<T: HelloGrpc> Clone for HelloGrpcServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -240,7 +317,7 @@ pub mod hello_server {
             }
         }
     }
-    impl<T: Hello> Clone for _Inner<T> {
+    impl<T: HelloGrpc> Clone for _Inner<T> {
         fn clone(&self) -> Self {
             Self(self.0.clone())
         }
@@ -250,7 +327,7 @@ pub mod hello_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: Hello> tonic::server::NamedService for HelloServer<T> {
+    impl<T: HelloGrpc> tonic::server::NamedService for HelloGrpcServer<T> {
         const NAME: &'static str = "hello.Hello";
     }
 }
