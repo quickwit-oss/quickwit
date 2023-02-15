@@ -71,9 +71,9 @@ impl<A: Actor> JsonObservable for TypedJsonObservable<A> {
     }
 
     async fn quit(&self) -> Option<ActorExitStatus> {
-        let _ = self.weak_mailbox.upgrade().map(|mailbox| {
-            let _ = mailbox.send_message_with_high_priority(Command::Quit);
-        });
+        if let Some(mailbox) = self.weak_mailbox.upgrade() {
+ let _ = mailbox.send_message_with_high_priority(Command::Quit);
+        }
         self.join().await
     }
 
