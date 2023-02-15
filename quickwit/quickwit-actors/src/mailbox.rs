@@ -235,21 +235,20 @@ impl<A: Actor> Mailbox<A> {
         M: 'static + Send + Sync + fmt::Debug,
     {
         let (envelope, response_rx) = self.wrap_in_envelope(message);
-        if let Some(backpressure_micros_counter) = backpressure_micros_counter_opt {
-            match self.inner.tx.try_send_low_priority(envelope) {
-                Ok(()) => Ok(response_rx),
-                Err(TrySendError::Full(msg)) => {
+        match self.inner.tx.try_send_low_priority(envelope) {
+            Ok(()) => Ok(response_rx),
+            Err(TrySendError::Full(envelope)) => {
+                if let Some(backpressure_micros_counter) = backpressure_micros_counter_opt {
                     let now = Instant::now();
-                    self.inner.tx.send_low_priority(msg).await?;
+                    self.inner.tx.send_low_priority(envelope).await?;
                     let elapsed = now.elapsed();
                     backpressure_micros_counter.inc_by(elapsed.as_micros() as u64);
-                    Ok(response_rx)
+                } else {
+                    self.inner.tx.send_low_priority(envelope).await?;
                 }
-                Err(TrySendError::Disconnected) => Err(SendError::Disconnected),
+                Ok(response_rx)
             }
-        } else {
-            self.inner.tx.send_low_priority(envelope).await?;
-            Ok(response_rx)
+            Err(TrySendError::Disconnected) => Err(SendError::Disconnected),
         }
     }
 
