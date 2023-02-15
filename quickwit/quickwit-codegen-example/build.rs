@@ -17,10 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod error;
-mod hello;
+use std::path::Path;
 
-pub use error::HelloError;
-pub use hello::*;
+use quickwit_codegen::Codegen;
 
-pub type HelloResult<T> = Result<T, HelloError>;
+fn main() {
+    let proto = Path::new("src/hello.proto");
+    let out_dir = Path::new("src/");
+
+    Codegen::run(proto, out_dir, "crate::HelloResult", "crate::HelloError").unwrap();
+}

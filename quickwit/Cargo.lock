@@ -4489,6 +4489,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-codegen-example"
+version = "0.4.0"
+dependencies = [
+ "async-trait",
+ "dyn-clone",
+ "mockall",
+ "prost",
+ "quickwit-codegen",
+ "serde",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tower",
+ "utoipa",
+]
+
+[[package]]
 name = "quickwit-common"
 version = "0.4.0"
 dependencies = [
