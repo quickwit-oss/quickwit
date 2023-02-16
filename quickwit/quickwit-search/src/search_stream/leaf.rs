@@ -118,7 +118,9 @@ async fn leaf_search_stream_single_split(
         .await
         .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
 
-    let index = open_index_with_caches(&searcher_context, storage, &split, true).await?;
+    let index =
+        open_index_with_caches(&searcher_context, doc_mapper.clone(), storage, &split, true)
+            .await?;
     let split_schema = index.schema();
 
     let request_fields = Arc::new(SearchStreamRequestFields::from_request(

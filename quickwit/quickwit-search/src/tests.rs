@@ -1365,8 +1365,10 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
             end_timestamp: None,
             max_hits: Some(100),
         };
+
         let search_response = leaf_list_terms(
             searcher_context.clone(),
+            test_sandbox.doc_mapper(),
             &request,
             test_sandbox.storage(),
             &splits_offsets,
@@ -1388,6 +1390,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         };
         let search_response = leaf_list_terms(
             searcher_context.clone(),
+            test_sandbox.doc_mapper(),
             &request,
             test_sandbox.storage(),
             &splits_offsets,
@@ -1409,6 +1412,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         };
         let search_response = leaf_list_terms(
             searcher_context.clone(),
+            test_sandbox.doc_mapper(),
             &request,
             test_sandbox.storage(),
             &splits_offsets,
@@ -1430,6 +1434,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         };
         let search_response = leaf_list_terms(
             searcher_context.clone(),
+            test_sandbox.doc_mapper(),
             &request,
             test_sandbox.storage(),
             &splits_offsets,

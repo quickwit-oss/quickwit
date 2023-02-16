@@ -314,7 +314,7 @@ mod tests {
     use std::ops::RangeInclusive;
 
     use quickwit_actors::{ObservationType, Universe};
-    use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
+    use quickwit_doc_mapper::tokenizer_manager_for_test;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, Index};
@@ -340,7 +340,7 @@ mod tests {
             schema_builder.add_bool_field("tag_bool", NumericOptions::default().set_indexed());
         let schema = schema_builder.build();
         let mut index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
-        index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+        index.set_tokenizers(tokenizer_manager_for_test());
         let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
         let mut timerange_opt: Option<RangeInclusive<i64>> = None;
         let mut num_docs = 0;

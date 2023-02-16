@@ -161,10 +161,7 @@ impl QuickwitTextTokenizer {
     }
 
     pub fn is_regex(&self) -> bool {
-        match self {
-            QuickwitTextTokenizer::Regex => true,
-            _ => false,
-        }
+        matches!(self, QuickwitTextTokenizer::Regex)
     }
 }
 
@@ -232,7 +229,7 @@ impl From<QuickwitTextOptions> for TextOptions {
             let text_field_indexing = TextFieldIndexing::default()
                 .set_index_option(index_record_option)
                 .set_fieldnorms(quickwit_text_options.fieldnorms)
-                .set_tokenizer(&tokenizer.get_name(&quickwit_text_options.pattern));
+                .set_tokenizer(tokenizer.get_name(&quickwit_text_options.pattern));
             text_options = text_options.set_indexing_options(text_field_indexing);
         }
         text_options
@@ -735,7 +732,7 @@ mod tests {
         assert_eq!(
             mapping_entry.unwrap_err().to_string(),
             "Error while parsing field `my_field_name`: unknown variant `notexist`, expected one \
-             of `raw`, `default`, `en_stem`, `chinese_compatible`"
+             of `raw`, `default`, `en_stem`, `chinese_compatible`, `regex`"
                 .to_string()
         );
         Ok(())

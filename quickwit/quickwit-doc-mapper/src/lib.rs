@@ -46,7 +46,9 @@ use default_doc_mapper::{
 };
 pub use doc_mapper::{DocMapper, NamedField, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
-pub use tokenizers::QUICKWIT_TOKENIZER_MANAGER;
+use tantivy::tokenizer::TokenizerManager;
+use tokenizers::get_quickwit_tokenizer_manager;
+pub use tokenizers::index_tokenizer_manager;
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";
@@ -146,4 +148,10 @@ pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
             ]
         }"#;
     serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap()
+}
+
+/// Returns the base TokenizerManager for unit tests.
+#[cfg(any(test, feature = "testsuite"))]
+pub fn tokenizer_manager_for_test() -> TokenizerManager {
+    get_quickwit_tokenizer_manager()
 }

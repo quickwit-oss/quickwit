@@ -23,13 +23,15 @@ use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
+use tantivy::tokenizer::TokenizerManager;
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
 
-use crate::{QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME, QUICKWIT_TOKENIZER_MANAGER};
+use crate::{QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
     schema: Schema,
+    tokenizer_manager: TokenizerManager,
     request: &SearchRequest,
     default_field_names: &[String],
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
@@ -59,8 +61,7 @@ pub(crate) fn build_query(
         validate_sort_by_field(sort_by_field, &schema, Some(&search_fields))?;
     }
 
-    let mut query_parser =
-        QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
+    let mut query_parser = QueryParser::new(schema, search_fields, tokenizer_manager);
     query_parser.set_conjunction_by_default();
     let query = query_parser.parse_query(&request.query)?;
 
@@ -308,7 +309,7 @@ mod test {
     };
 
     use super::{build_query, validate_requested_snippet_fields};
-    use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
+    use crate::{tokenizer_manager_for_test, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
 
     enum TestExpectation {
         Err(&'static str),
@@ -364,7 +365,12 @@ mod test {
         let default_field_names =
             default_search_fields.unwrap_or_else(|| vec!["title".to_string(), "desc".to_string()]);
 
-        let query_result = build_query(make_schema(), &request, &default_field_names);
+        let query_result = build_query(
+            make_schema(),
+            tokenizer_manager_for_test(),
+            &request,
+            &default_field_names,
+        );
         match expected {
             TestExpectation::Err(sub_str) => {
                 assert!(
@@ -783,14 +789,23 @@ mod test {
 
         let default_field_names = vec!["title".to_string(), "desc".to_string()];
 
-        let (_, warmup_info) = build_query(make_schema(), &request_with_set, &default_field_names)?;
+        let (_, warmup_info) = build_query(
+            make_schema(),
+            tokenizer_manager_for_test(),
+            &request_with_set,
+            &default_field_names,
+        )?;
         assert_eq!(warmup_info.term_dict_field_names.len(), 1);
         assert_eq!(warmup_info.posting_field_names.len(), 1);
         assert!(warmup_info.term_dict_field_names.contains("title"));
         assert!(warmup_info.posting_field_names.contains("title"));
 
-        let (_, warmup_info) =
-            build_query(make_schema(), &request_without_set, &default_field_names)?;
+        let (_, warmup_info) = build_query(
+            make_schema(),
+            tokenizer_manager_for_test(),
+            &request_without_set,
+            &default_field_names,
+        )?;
         assert!(warmup_info.term_dict_field_names.is_empty());
         assert!(warmup_info.posting_field_names.is_empty());
 

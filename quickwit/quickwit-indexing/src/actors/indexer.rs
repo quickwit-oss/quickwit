@@ -32,12 +32,13 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::io::IoControls;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
-use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
 use serde::Serialize;
 use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::{IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
 use tracing::{info, info_span, warn, Span};
@@ -77,6 +78,7 @@ struct IndexerState {
     indexing_settings: IndexingSettings,
     publish_lock: PublishLock,
     schema: Schema,
+    tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
 }
@@ -91,7 +93,7 @@ impl IndexerState {
         let index_builder = IndexBuilder::new()
             .settings(self.index_settings.clone())
             .schema(self.schema.clone())
-            .tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+            .tokenizers(self.tokenizer_manager.clone());
 
         let io_controls = IoControls::default()
             .set_progress(ctx.progress().clone())
@@ -427,6 +429,7 @@ impl Indexer {
             sort_by_field: None,
         };
         let publish_lock = PublishLock::default();
+
         Self {
             indexer_state: IndexerState {
                 pipeline_id,
@@ -435,6 +438,7 @@ impl Indexer {
                 indexing_settings,
                 publish_lock,
                 schema,
+                tokenizer_manager: doc_mapper.tokenizer_manager(),
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
             },

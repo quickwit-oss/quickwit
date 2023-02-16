@@ -295,6 +295,9 @@ pub struct LeafListTermsRequest {
     /// split files.
     #[prost(string, tag = "3")]
     pub index_uri: ::prost::alloc::string::String,
+    /// `DocMapper` as json serialized trait.
+    #[prost(string, tag = "4")]
+    pub doc_mapper: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

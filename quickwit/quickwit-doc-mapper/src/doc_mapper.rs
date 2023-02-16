@@ -27,7 +27,7 @@ use quickwit_proto::SearchRequest;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, Schema, Value};
-use tantivy::tokenizer::TextAnalyzer;
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Document, Term};
 
 pub type Partition = u64;
@@ -83,6 +83,11 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// over time. The schema returned here represents the most up-to-date schema of the index.
     fn schema(&self) -> Schema;
 
+    /// Return the tokenizer manager.
+    ///
+    /// This is based on the latest doc mapping.
+    fn tokenizer_manager(&self) -> TokenizerManager;
+
     /// Returns the query.
     ///
     /// Considering schema evolution, splits within an index can have different schema
@@ -132,13 +137,6 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
 
     /// Returns the maximum number of partitions.
     fn max_num_partitions(&self) -> NonZeroU32;
-
-    /// Builds and return the custom text analyzers.
-    ///
-    /// Currently we just have RegexTokenizers.
-    fn custom_text_analyzers(&self) -> Vec<(String, TextAnalyzer)> {
-        Vec::new()
-    }
 }
 
 /// A struct to wrap a tantivy field with its name.

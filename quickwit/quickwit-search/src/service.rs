@@ -261,6 +261,8 @@ impl SearchService for SearchServiceImpl {
         let search_request = leaf_search_request
             .list_terms_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
+        let doc_mapper = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
+
         info!(index=?search_request.index_id, splits=?leaf_search_request.split_offsets,
          "leaf_search");
         let storage = self
@@ -270,6 +272,7 @@ impl SearchService for SearchServiceImpl {
 
         let leaf_search_response = leaf_list_terms(
             self.searcher_context.clone(),
+            doc_mapper,
             &search_request,
             storage.clone(),
             &split_ids[..],

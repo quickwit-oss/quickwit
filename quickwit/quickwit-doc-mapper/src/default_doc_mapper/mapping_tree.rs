@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::any::type_name;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::net::IpAddr;
 use std::str::FromStr;
 
@@ -482,14 +482,16 @@ impl MappingTree {
 pub(crate) fn build_mapping_tree(
     entries: &[FieldMappingEntry],
     schema: &mut SchemaBuilder,
+    regex_tokenizer_patterns: &mut HashSet<String>,
 ) -> anyhow::Result<MappingNode> {
     let mut field_path = Vec::new();
-    build_mapping_tree_from_entries(entries, &mut field_path, schema)
+    build_mapping_tree_from_entries(entries, &mut field_path, regex_tokenizer_patterns, schema)
 }
 
 fn build_mapping_tree_from_entries<'a>(
     entries: &'a [FieldMappingEntry],
     field_path: &mut Vec<&'a str>,
+    regex_tokenizer_patterns: &mut HashSet<String>,
     schema: &mut SchemaBuilder,
 ) -> anyhow::Result<MappingNode> {
     let mut mapping_node = MappingNode::default();
@@ -498,7 +500,12 @@ fn build_mapping_tree_from_entries<'a>(
         if mapping_node.branches.contains_key(&entry.name) {
             bail!("Duplicated field definition `{}`.", entry.name);
         }
-        let child_tree = build_mapping_from_field_type(&entry.mapping_type, field_path, schema)?;
+        let child_tree = build_mapping_from_field_type(
+            &entry.mapping_type,
+            field_path,
+            regex_tokenizer_patterns,
+            schema,
+        )?;
         field_path.pop();
         mapping_node.insert(&entry.name, child_tree);
     }
@@ -597,6 +604,7 @@ fn escape_dots(field_name: &str) -> String {
 fn build_mapping_from_field_type<'a>(
     field_mapping_type: &'a FieldMappingType,
     field_path: &mut Vec<&'a str>,
+    regex_tokenizer_patterns: &mut HashSet<String>,
     schema_builder: &mut SchemaBuilder,
 ) -> anyhow::Result<MappingTree> {
     let field_name = field_name_for_field_path(field_path);
@@ -604,6 +612,19 @@ fn build_mapping_from_field_type<'a>(
         FieldMappingType::Text(options, cardinality) => {
             let text_options: TextOptions = options.clone().into();
             let field = schema_builder.add_text_field(&field_name, text_options);
+            if options
+                .tokenizer
+                .as_ref()
+                .map(|tokenizer| tokenizer.is_regex())
+                .unwrap_or(false)
+            {
+                let pattern = options
+                    .pattern
+                    .clone()
+                    .expect("RegexTokenizer expected a valid regular expression.")
+                    .to_string();
+                regex_tokenizer_patterns.insert(pattern);
+            }
             let mapping_leaf = MappingLeaf {
                 field,
                 typ: LeafType::Text(options.clone()),
@@ -684,6 +705,19 @@ fn build_mapping_from_field_type<'a>(
         FieldMappingType::Json(options, cardinality) => {
             let json_options = JsonObjectOptions::from(options.clone());
             let field = schema_builder.add_json_field(&field_name, json_options);
+            if options
+                .tokenizer
+                .as_ref()
+                .map(|tokenizer| tokenizer.is_regex())
+                .unwrap_or(false)
+            {
+                let pattern = options
+                    .pattern
+                    .clone()
+                    .expect("RegexTokenizer expected a valid regular expression.")
+                    .to_string();
+                regex_tokenizer_patterns.insert(pattern);
+            }
             Ok(MappingTree::Leaf(MappingLeaf {
                 field,
                 typ: LeafType::Json(options.clone()),
@@ -694,6 +728,7 @@ fn build_mapping_from_field_type<'a>(
             let mapping_node = build_mapping_tree_from_entries(
                 &entries.field_mappings,
                 field_path,
+                regex_tokenizer_patterns,
                 schema_builder,
             )?;
             Ok(MappingTree::Node(mapping_node))

@@ -17,15 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::str::CharIndices;
 
-use once_cell::sync::Lazy;
 use tantivy::tokenizer::{
-    BoxTokenStream, LowerCaser, RawTokenizer, RemoveLongFilter, TextAnalyzer, Token, TokenStream,
-    Tokenizer, TokenizerManager,
+    BoxTokenStream, LowerCaser, RawTokenizer, RegexTokenizer, RemoveLongFilter, TextAnalyzer,
+    Token, TokenStream, Tokenizer, TokenizerManager,
 };
 
-fn get_quickwit_tokenizer_manager() -> TokenizerManager {
+pub(crate) fn get_quickwit_tokenizer_manager() -> TokenizerManager {
     let raw_tokenizer = TextAnalyzer::from(RawTokenizer).filter(RemoveLongFilter::limit(100));
 
     let chinese_tokenizer = TextAnalyzer::from(ChineseTokenizer)
@@ -36,6 +36,25 @@ fn get_quickwit_tokenizer_manager() -> TokenizerManager {
 
     tokenizer_manager.register("raw", raw_tokenizer);
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
+
+    tokenizer_manager
+}
+
+/// Creates the TokenizerManager for an index.
+///
+/// The patterns in `regex_tokenizer_patterns` are already known to
+/// be valid regular expressions.
+pub fn index_tokenizer_manager(regex_tokenizer_patterns: HashSet<String>) -> TokenizerManager {
+    let tokenizer_manager = get_quickwit_tokenizer_manager();
+
+    for pattern in regex_tokenizer_patterns {
+        let regex_tokenizer = RegexTokenizer::new(&pattern).unwrap_or_else(|err| {
+            panic!(
+                "Unable to build RegexTokenizer with an invalid regex: `{pattern}`, Cause: {err}"
+            )
+        });
+        tokenizer_manager.register(&pattern, regex_tokenizer);
+    }
 
     tokenizer_manager
 }
@@ -143,10 +162,6 @@ impl<'a> TokenStream for ChineseTokenStream<'a> {
         &mut self.token
     }
 }
-
-/// Quickwit's default tokenizers
-pub static QUICKWIT_TOKENIZER_MANAGER: Lazy<TokenizerManager> =
-    Lazy::new(get_quickwit_tokenizer_manager);
 
 #[cfg(test)]
 mod tests {

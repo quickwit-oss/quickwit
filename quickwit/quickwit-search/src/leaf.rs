@@ -29,7 +29,7 @@ use futures::future::try_join_all;
 use futures::Future;
 use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::{DocMapper, WarmupInfo, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_doc_mapper::{DocMapper, WarmupInfo};
 use quickwit_proto::{
     LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, SearchRequest,
     SplitIdAndFooterOffsets, SplitSearchError,
@@ -89,6 +89,7 @@ async fn get_split_footer_from_cache_or_fetch(
 /// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
 pub(crate) async fn open_index_with_caches(
     searcher_context: &Arc<SearcherContext>,
+    doc_mapper: Arc<dyn DocMapper>,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     ephemeral_unbounded_cache: bool,
@@ -117,9 +118,9 @@ pub(crate) async fn open_index_with_caches(
     } else {
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
     };
-    
+
     let mut index = Index::open(hot_directory)?;
-    index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+    index.set_tokenizers(doc_mapper.tokenizer_manager());
     Ok(index)
 }
 
@@ -356,7 +357,8 @@ async fn leaf_search_single_split(
     doc_mapper: Arc<dyn DocMapper>,
 ) -> crate::Result<LeafSearchResponse> {
     let split_id = split.split_id.to_string();
-    let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
+    let index =
+        open_index_with_caches(searcher_context, doc_mapper.clone(), storage, &split, true).await?;
     let split_schema = index.schema();
     let quickwit_collector = make_collector_for_split(
         split_id.clone(),
@@ -467,11 +469,12 @@ pub async fn leaf_search(
 #[instrument(skip(searcher_context, search_request, storage, split))]
 async fn leaf_list_terms_single_split(
     searcher_context: &Arc<SearcherContext>,
+    doc_mapper: Arc<dyn DocMapper>,
     search_request: &ListTermsRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
 ) -> crate::Result<LeafListTermsResponse> {
-    let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
+    let index = open_index_with_caches(searcher_context, doc_mapper, storage, &split, true).await?;
     let split_schema = index.schema();
     let reader = index
         .reader_builder()
@@ -574,6 +577,7 @@ fn term_to_data(field: Field, field_type: &FieldType, field_value: &[u8]) -> Vec
 /// `leaf` step of list terms.
 pub async fn leaf_list_terms(
     searcher_context: Arc<SearcherContext>,
+    doc_mapper: Arc<dyn DocMapper>,
     request: &ListTermsRequest,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
@@ -583,6 +587,7 @@ pub async fn leaf_list_terms(
         .map(|split| {
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
+            let doc_mapper_clone = doc_mapper.clone();
             async move {
                 let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore
                     .acquire()
@@ -595,6 +600,7 @@ pub async fn leaf_list_terms(
                     .start_timer();
                 let leaf_search_single_split_res = leaf_list_terms_single_split(
                     &searcher_context_clone,
+                    doc_mapper_clone,
                     request,
                     index_storage_clone,
                     split.clone(),

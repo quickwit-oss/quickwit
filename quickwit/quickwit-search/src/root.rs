@@ -384,6 +384,10 @@ pub async fn root_list_terms(
     let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
     let assigned_leaf_search_jobs = search_job_placer.assign_jobs(jobs, &HashSet::default())?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
+    let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
+        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
+    })?;
+
     let leaf_search_responses: Vec<LeafListTermsResponse> = try_join_all(
         assigned_leaf_search_jobs
             .into_iter()
@@ -393,6 +397,7 @@ pub async fn root_list_terms(
                         list_terms_request: Some(list_terms_request.clone()),
                         split_offsets: client_jobs.into_iter().map(|job| job.offsets).collect(),
                         index_uri: index_uri.to_string(),
+                        doc_mapper: doc_mapper_str.clone(),
                     },
                     client,
                 )
