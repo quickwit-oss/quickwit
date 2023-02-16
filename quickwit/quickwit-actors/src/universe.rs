@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::thread;
 use std::time::Duration;
 
 use crate::mailbox::create_mailbox;
@@ -138,7 +139,10 @@ impl Universe {
 
 impl Drop for Universe {
     fn drop(&mut self) {
-        if cfg!(any(test, feature = "testsuite")) && !self.spawn_ctx.registry.is_empty() {
+        if cfg!(any(test, feature = "testsuite"))
+            && !self.spawn_ctx.registry.is_empty()
+            && !thread::panicking()
+        {
             panic!(
                 "There are still running actors at the end of the test. Did you call \
                  universe.assert_quit()?"

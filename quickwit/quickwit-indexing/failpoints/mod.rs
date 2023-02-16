@@ -40,7 +40,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use fail::FailScenario;
-use quickwit_actors::{ActorExitStatus, Universe};
+use quickwit_actors::ActorExitStatus;
 use quickwit_common::io::IoControls;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::split_file;
