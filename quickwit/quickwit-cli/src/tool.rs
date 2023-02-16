@@ -321,12 +321,14 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     };
     start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
     let universe = Universe::new();
+    let (ingest_api_service, _) = universe.create_test_mailbox();
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
         indexer_config,
         Arc::new(fake_cluster),
         metastore,
+        ingest_api_service,
         quickwit_storage_uri_resolver().clone(),
     )
     .await?;
@@ -410,16 +412,18 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
+    let universe = Universe::new();
+    let (ingest_api_service, _) = universe.create_test_mailbox();
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
         indexer_config,
         Arc::new(fake_cluster),
         metastore,
+        ingest_api_service,
         storage_resolver,
     )
     .await?;
-    let universe = Universe::new();
     let (indexing_service_mailbox, indexing_service_handle) =
         universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_service_mailbox
