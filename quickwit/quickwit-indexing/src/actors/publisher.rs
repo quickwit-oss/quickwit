@@ -160,21 +160,23 @@ impl Handler<SplitsUpdate> for Publisher {
             }
         }
 
-        // The merge planner is not necessarily awake and this is not an error.
-        // For instance, when a source reaches its end, and the last "new" split
-        // has been packaged, the packager finalizer sends a message to the merge
-        // planner in order to stop it.
-        if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
-            let _ = ctx
-                .send_message(merge_planner_mailbox, NewSplits { new_splits })
-                .await;
+        if !new_splits.is_empty() {
+            // The merge planner is not necessarily awake and this is not an error.
+            // For instance, when a source reaches its end, and the last "new" split
+            // has been packaged, the packager finalizer sends a message to the merge
+            // planner in order to stop it.
+            if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
+                let _ = ctx
+                    .send_message(merge_planner_mailbox, NewSplits { new_splits })
+                    .await;
+            }
+            if replaced_split_ids.is_empty() {
+                self.counters.num_published_splits += 1;
+            } else {
+                self.counters.num_replace_operations += 1;
+            }
         }
 
-        if replaced_split_ids.is_empty() {
-            self.counters.num_published_splits += 1;
-        } else {
-            self.counters.num_replace_operations += 1;
-        }
         fail_point!("publisher:after");
         Ok(())
     }

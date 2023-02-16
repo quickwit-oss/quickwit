@@ -280,7 +280,7 @@ impl IndexingPipeline {
             )
             .spawn(publisher);
 
-        let sequencer = Sequencer::new(publisher_mailbox);
+        let sequencer = Sequencer::new(publisher_mailbox.clone());
         let (sequencer_mailbox, sequencer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(
@@ -332,6 +332,7 @@ impl IndexingPipeline {
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
             index_serializer_mailbox,
+            publisher_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
