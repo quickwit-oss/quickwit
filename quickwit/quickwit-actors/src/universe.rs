@@ -139,7 +139,10 @@ impl Universe {
 
 impl Drop for Universe {
     fn drop(&mut self) {
-        if cfg!(any(test, feature = "testsuite")) && !self.spawn_ctx.registry.is_empty() && !thread::panicking() {
+        if cfg!(any(test, feature = "testsuite"))
+            && !self.spawn_ctx.registry.is_empty()
+            && !thread::panicking()
+        {
             panic!(
                 "There are still running actors at the end of the test. Did you call \
                  universe.assert_quit()?"
