@@ -1,22 +1,22 @@
 # Contributing to Quickwit
 There are many ways to contribute to Quickwit.
-Code contribution are welcome of course, but also
-bug reports, feature request, and evangelizing are as valuable.
+Code contributions are welcome of course, but also
+bug reports, feature requests, and evangelizing are as valuable.
 
 # Submitting a PR
-Check if your issue is already listed [github](https://github.com/quickwit-oss/quickwit/issues).
+Check if your issue is already listed on [github](https://github.com/quickwit-oss/quickwit/issues).
 If it is not, create your own issue.
 
-Please add the following phrase at the end of your commit.  `Closes #<Issue Number>`.
+Please add the following phrase at the end of your commit `Closes #<Issue Number>`.
 It will automatically link your PR in the issue page. Also, once your PR is merged, it will
-closes the issue. If your PR only partially addresses the issue and you would like to
+close the issue. If your PR only partially addresses the issue and you would like to
 keep it open, just write `See #<Issue Number>`.
 
 Feel free to send your contribution in an unfinished state to get early feedback.
 In that case, simply mark the PR with the tag [WIP] (standing for work in progress).
 
 ## Signing the CLA
-Quickwit is an opensource project licensed a AGPLv3.
+Quickwit is an open source project licensed under AGPLv3.
 It is also distributed under a commercial license by Quickwit, Inc.
 
 Contributors are required to sign a Contributor License Agreement.
@@ -24,8 +24,10 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 [sign our CLA by visiting this link](https://cla-assistant.io/quickwit-oss/quickwit).
 
 ## PR verification checks
-When you submit a pull request to the project, the CI system runs several verification checks. You will be notified by email from the CI system if any issues are discovered, but if you want to run these checks locally before submitting PR or in order to verify changes you can use the following commands in the root directory:
-1. To verify that all tests are passing run `make test-all`.
+When you submit a pull request to the project, the CI system runs several verification checks. After your PR is merged, a more exhaustive list of tests will be run.
+
+You will be notified by email from the CI system if any issues are discovered, but if you want to run these checks locally before submitting PR or in order to verify changes you can use the following commands in the root directory:
+1. To verify that all tests are passing, run `make test-all`.
 2. To fix code style and format as well as catch common mistakes run `make fix`. Alternatively, run `make -k test-all docker-compose-down` to tear down the Docker services after running all the tests.
 3. To build docs run `make build-docs`.
 
@@ -95,9 +97,9 @@ Ref: https://github.com/open-telemetry/opentelemetry-rust/issues/851
 ## Building binaries
 
 Currently, we use [cross](https://github.com/rust-embedded/cross) to build Quickwit binaries for different architectures.
-For this to work, we've had to customize the docker images cross uses. These customizations can be found in docker files located in `./cross-images` folder. To make cross take into account any change on those
+For this to work, we've had to customize the docker images cross uses. These customizations can be found in docker files located in the `./cross-images` folder. To make cross take into account any change on those
 docker files, you will need to build and push the images on Docker Hub by running `make cross-images`.
-We also have nightly builds that are pushed to Docker Hub. This helps continuously check our binaries are still built even with external dependency update. Successful builds let you accessed the artifacts for the next three days. Release builds always have their artifacts attached to the release.
+We also have nightly builds that are pushed to Docker Hub. This helps continuously check that our binaries are still built even with external dependency updates. Successful builds let you access the artifacts for the next three days. Release builds always have their artifacts attached to the release.
 
 ## Docker images
 
