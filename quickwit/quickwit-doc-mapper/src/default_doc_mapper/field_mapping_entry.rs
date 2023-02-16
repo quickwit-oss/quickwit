@@ -1419,7 +1419,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_regex_tokenizer_without_pattern_should_error() {
-        let expected_error = "A pattern should be set when using a regex tokenizer";
+        let expected_error = "A pattern is required when using a regex tokenizer.";
         let result = serde_json::from_str::<QuickwitTextOptions>(
             r#"{
                 "indexed": true,
