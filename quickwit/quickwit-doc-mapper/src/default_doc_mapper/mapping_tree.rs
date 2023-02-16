@@ -621,7 +621,7 @@ fn build_mapping_from_field_type<'a>(
                 let pattern = options
                     .pattern
                     .clone()
-                    .expect("RegexTokenizer expected a valid regular expression.")
+                    .expect("A valid regular expression is require to build a RegexTokenizer.")
                     .to_string();
                 regex_tokenizer_patterns.insert(pattern);
             }
@@ -714,7 +714,7 @@ fn build_mapping_from_field_type<'a>(
                 let pattern = options
                     .pattern
                     .clone()
-                    .expect("RegexTokenizer expected a valid regular expression.")
+                    .expect("A valid regular expression is require to build a RegexTokenizer.")
                     .to_string();
                 regex_tokenizer_patterns.insert(pattern);
             }

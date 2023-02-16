@@ -25,7 +25,8 @@ use tantivy::tokenizer::{
     Token, TokenStream, Tokenizer, TokenizerManager,
 };
 
-pub(crate) fn get_quickwit_tokenizer_manager() -> TokenizerManager {
+/// Builds and returns the default available TokenizerManager.
+pub(crate) fn get_default_tokenizer_manager() -> TokenizerManager {
     let raw_tokenizer = TextAnalyzer::from(RawTokenizer).filter(RemoveLongFilter::limit(100));
 
     let chinese_tokenizer = TextAnalyzer::from(ChineseTokenizer)
@@ -40,17 +41,19 @@ pub(crate) fn get_quickwit_tokenizer_manager() -> TokenizerManager {
     tokenizer_manager
 }
 
-/// Creates the TokenizerManager for an index.
+/// Creates the TokenizerManager for an index by combining
+/// the default tokenizers with the regular expressions tokenizers.
 ///
 /// The patterns in `regex_tokenizer_patterns` are already known to
 /// be valid regular expressions.
 pub fn index_tokenizer_manager(regex_tokenizer_patterns: HashSet<String>) -> TokenizerManager {
-    let tokenizer_manager = get_quickwit_tokenizer_manager();
+    let tokenizer_manager = get_default_tokenizer_manager();
 
     for pattern in regex_tokenizer_patterns {
         let regex_tokenizer = RegexTokenizer::new(&pattern).unwrap_or_else(|err| {
             panic!(
-                "Unable to build RegexTokenizer with an invalid regex: `{pattern}`, Cause: {err}"
+                "Unable to build a RegexTokenizer with the regular expression `{pattern}`. Cause: \
+                 {err}"
             )
         });
         tokenizer_manager.register(&pattern, regex_tokenizer);
@@ -167,7 +170,7 @@ impl<'a> TokenStream for ChineseTokenStream<'a> {
 mod tests {
     use tantivy::tokenizer::Token;
 
-    use super::get_quickwit_tokenizer_manager;
+    use super::get_default_tokenizer_manager;
 
     #[test]
     fn test_raw_tokenizer() {
@@ -180,7 +183,7 @@ mod tests {
                             it, no one shall find it. I just need some more chars, now you may \
                             not pass.";
 
-        let tokenizer = get_quickwit_tokenizer_manager().get("raw").unwrap();
+        let tokenizer = get_default_tokenizer_manager().get("raw").unwrap();
         let mut haiku_stream = tokenizer.token_stream(my_haiku);
         assert!(haiku_stream.advance());
         assert!(!haiku_stream.advance());
@@ -191,7 +194,7 @@ mod tests {
     fn test_chinese_tokenizer() {
         let text = "Hello world, 你好世界, bonjour monde";
 
-        let tokenizer = get_quickwit_tokenizer_manager()
+        let tokenizer = get_default_tokenizer_manager()
             .get("chinese_compatible")
             .unwrap();
         let mut text_stream = tokenizer.token_stream(text);
@@ -268,7 +271,7 @@ mod tests {
     fn test_chinese_tokenizer_no_space() {
         let text = "Hello你好bonjour";
 
-        let tokenizer = get_quickwit_tokenizer_manager()
+        let tokenizer = get_default_tokenizer_manager()
             .get("chinese_compatible")
             .unwrap();
         let mut text_stream = tokenizer.token_stream(text);
@@ -315,8 +318,8 @@ mod tests {
     proptest::proptest! {
         #[test]
         fn test_proptest_ascii_default_chinese_equal(text in "[ -~]{0,64}") {
-            let cn_tok = get_quickwit_tokenizer_manager().get("chinese_compatible").unwrap();
-            let default_tok = get_quickwit_tokenizer_manager().get("default").unwrap();
+            let cn_tok = get_default_tokenizer_manager().get("chinese_compatible").unwrap();
+            let default_tok = get_default_tokenizer_manager().get("default").unwrap();
 
             let mut text_stream = cn_tok.token_stream(&text);
 

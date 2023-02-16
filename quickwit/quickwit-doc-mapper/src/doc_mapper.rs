@@ -83,9 +83,9 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// over time. The schema returned here represents the most up-to-date schema of the index.
     fn schema(&self) -> Schema;
 
-    /// Return the tokenizer manager.
+    /// Returns the tokenizer manager.
     ///
-    /// This is based on the latest doc mapping.
+    /// This is based on the current doc_mapper config.
     fn tokenizer_manager(&self) -> TokenizerManager;
 
     /// Returns the query.

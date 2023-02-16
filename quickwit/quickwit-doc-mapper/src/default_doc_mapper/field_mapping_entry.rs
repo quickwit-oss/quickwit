@@ -154,7 +154,7 @@ impl QuickwitTextTokenizer {
             QuickwitTextTokenizer::Regex => {
                 let regex = regex_opt
                     .as_ref()
-                    .expect("A pattern should be set when using a regex tokenizer.");
+                    .expect("A pattern is required when using a regex tokenizer.");
                 regex.as_str()
             }
         }
@@ -265,7 +265,7 @@ impl<'de> Deserialize<'de> for QuickwitTextOptions {
             && quickwit_text_options.pattern.is_none()
         {
             return Err(serde::de::Error::custom(
-                "A pattern should be set when using a regex tokenizer.",
+                "A pattern is required when using a regex tokenizer.",
             ));
         }
 
@@ -406,7 +406,7 @@ impl<'de> Deserialize<'de> for QuickwitJsonOptions {
             && quickwit_json_options.pattern.is_none()
         {
             return Err(serde::de::Error::custom(
-                "A pattern should be set when using a regex tokenizer.",
+                "A pattern is required when using a regex tokenizer.",
             ));
         }
 

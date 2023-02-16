@@ -163,7 +163,7 @@ pub async fn root_search(
     doc_mapper.query(doc_mapper.schema(), search_request)?;
 
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
-        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
+        SearchError::InternalError(format!("Failed to serialize the doc mapper: Cause {err}"))
     })?;
 
     let split_metadatas: Vec<SplitMetadata> =
@@ -385,7 +385,7 @@ pub async fn root_list_terms(
     let assigned_leaf_search_jobs = search_job_placer.assign_jobs(jobs, &HashSet::default())?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
-        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
+        SearchError::InternalError(format!("Failed to serialize the doc mapper: Cause {err}"))
     })?;
 
     let leaf_search_responses: Vec<LeafListTermsResponse> = try_join_all(
