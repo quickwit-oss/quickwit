@@ -20,8 +20,12 @@ tonic = { workspace = true }
 tower = { workspace = true }
 utoipa = { workspace = true }
 
+quickwit-actors = { workspace = true }
+
 [dev-dependencies]
-mockall = { workspace = true }
+mockall = { workspace = true}
+
+quickwit-actors = { workspace = true, features = ["testsuite"] }
 
 [build-dependencies]
 quickwit-codegen = { workspace = true }

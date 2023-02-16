@@ -17,6 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
+
+use quickwit_actors::AskError;
+
 // Service errors have to be handwritten before codegen.
 #[derive(Debug, thiserror::Error)]
 pub enum HelloError {
@@ -28,10 +32,18 @@ pub enum HelloError {
 
 // Service errors must implement `From<tonic::Status>` and `Into<tonic::Status>`.
 impl From<HelloError> for tonic::Status {
-    fn from(val: HelloError) -> Self {
-        match val {
+    fn from(error: HelloError) -> Self {
+        match error {
             HelloError::InternalError(message) => tonic::Status::internal(message),
             HelloError::TransportError(status) => status,
         }
+    }
+}
+
+impl<E> From<AskError<E>> for HelloError
+where E: fmt::Debug
+{
+    fn from(error: AskError<E>) -> Self {
+        HelloError::InternalError(format!("{:?}", error))
     }
 }

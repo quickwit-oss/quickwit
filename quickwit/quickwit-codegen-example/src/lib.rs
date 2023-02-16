@@ -31,15 +31,17 @@ mod tests {
     use std::time::Duration;
 
     use async_trait::async_trait;
+    use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
     use tonic::transport::{Endpoint, Server};
     use tower::Service;
 
     use crate::hello::hello_grpc_client::HelloGrpcClient;
     use crate::hello::hello_grpc_server::HelloGrpcServer;
     use crate::hello::{
-        Hello, HelloClient, HelloGrpcClientAdapter, HelloGrpcServerAdapter, HelloRequest,
-        HelloResponse, MockHello,
+        Hello, HelloClient, HelloGrpcClientAdapter, HelloGrpcServerAdapter, HelloMailbox,
+        HelloRequest, HelloResponse, MockHello,
     };
+    use crate::HelloError;
 
     #[tokio::test]
     async fn test_hello_codegen() {
@@ -143,5 +145,46 @@ mod tests {
                 message: "Hello, Tower!".to_string()
             }
         );
+
+        struct HelloActor;
+
+        impl Actor for HelloActor {
+            type ObservableState = ();
+
+            fn observable_state(&self) -> Self::ObservableState {}
+        }
+
+        #[async_trait]
+        impl Handler<HelloRequest> for HelloActor {
+            type Reply = Result<HelloResponse, HelloError>;
+
+            async fn handle(
+                &mut self,
+                message: HelloRequest,
+                _ctx: &ActorContext<Self>,
+            ) -> Result<Self::Reply, ActorExitStatus> {
+                Ok(Ok(HelloResponse {
+                    message: format!("Hello, {} actor!", message.name),
+                }))
+            }
+        }
+
+        let universe = Universe::new();
+        let hello_actor = HelloActor;
+        let (actor_mailbox, _actor_handle) = universe.spawn_builder().spawn(hello_actor);
+        let mut hello_mailbox = HelloMailbox::new(actor_mailbox.clone());
+
+        assert_eq!(
+            hello_mailbox
+                .call(HelloRequest {
+                    name: "beautiful".to_string()
+                })
+                .await
+                .unwrap(),
+            HelloResponse {
+                message: "Hello, beautiful actor!".to_string()
+            }
+        );
+        universe.assert_quit().await;
     }
 }

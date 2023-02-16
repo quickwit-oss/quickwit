@@ -273,14 +273,15 @@ impl<A: Actor> ActorContext<A> {
 
     /// Similar to `send_message`, except this method
     /// waits asynchronously for the actor reply.
-    pub async fn ask_for_res<DestActor: Actor, M, T, E: fmt::Debug>(
+    pub async fn ask_for_res<DestActor: Actor, M, T, E>(
         &self,
         mailbox: &Mailbox<DestActor>,
         msg: M,
     ) -> Result<T, AskError<E>>
     where
         DestActor: Handler<M, Reply = Result<T, E>>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + Sync + 'static,
+        E: fmt::Debug,
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg, "ask");
