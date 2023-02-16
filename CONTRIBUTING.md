@@ -15,7 +15,7 @@ keep it open, just write `See #<Issue Number>`.
 Feel free to send your contribution in an unfinished state to get early feedback.
 In that case, simply mark the PR with the tag [WIP] (standing for work in progress).
 
-# Signing the CLA
+## Signing the CLA
 Quickwit is an opensource project licensed a AGPLv3.
 It is also distributed under a commercial license by Quickwit, Inc.
 
@@ -23,10 +23,11 @@ Contributors are required to sign a Contributor License Agreement.
 The process is simple and fast. Upon your first pull request, you will be prompted to
 [sign our CLA by visiting this link](https://cla-assistant.io/quickwit-oss/quickwit).
 
-# PR verification checks
-When you submit a pull request to the project, the CI system runs several verification checks. You will be notified by email from the CI system if any issues are discoverd, but if you want to run these checks locally before submitting PR or in order to verify changes you can use the following commands:
-1. To veryfy that all tests are passing run `make test-all` in the root directory.
-2. To fix code style and foramt as well as catch common mistakes run `make fix` in the root directory. Alternatively, run `make -k test-all docker-compose-down` to tear down the Docker services after running all the tests.
+## PR verification checks
+When you submit a pull request to the project, the CI system runs several verification checks. You will be notified by email from the CI system if any issues are discoverd, but if you want to run these checks locally before submitting PR or in order to verify changes you can use the following commands in the root directory:
+1. To veryfy that all tests are passing run `make test-all`.
+2. To fix code style and foramt as well as catch common mistakes run `make fix`. Alternatively, run `make -k test-all docker-compose-down` to tear down the Docker services after running all the tests.
+3. To build docs run `make build-docs`.
 
 # Development
 ## Setup & run tests
@@ -34,16 +35,26 @@ When you submit a pull request to the project, the CI system runs several verifi
 2. Install node@16 and `npm install -g yarn`
 3. Install awslocal https://github.com/localstack/awscli-local
 4. Install protoc https://grpc.io/docs/protoc-installation/ (you may need to install the latest binaries rather than your distro's flavor)
-5. In the project's root directory start the external services with `make docker-compose-up`
-6. Switch to the `quickwit` subdirectory
-7. Run `QW_S3_ENDPOINT=http://localhost:4566 AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features`
-8. Run UI tests `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui test`
+5. Run all tests using `make test-all`
+
+## Useful commands
+* `make test-all` - starts necessary Docker services and runs all tests.
+* `make -k test-all docker-compose-down` - the same as above, but tears down the Docker services after running all the tests.
+* `make fmt` - runs formatter, this command requires the nightly toolchain to be installed by running `rustup toolchain install nightly`.
+* `make fix` - runs formatter and clippy checks.
+* `make build-docs` - builds docs.
+* `make docker-compose-up` - starts Docker services.
+* `make docker-compose-down` - stops Docker services.
+* `make docker-compose-logs` - shows Docker logs.
 
 ## Start the UI
 1. Switch to the `quickwit` subdirectory of the project and create a data directory `qwdata` there if it doesn't exist
 2. Start a server `cargo r run --config ../config/quickwit.yaml`
 3. `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui start`
 4. Open your browser at `http://localhost:3000/ui` if it doesn't open automatically
+
+## Running UI Tests
+1. Run `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui test` in the `quickwit` directory
 
 ## Running UI e2e tests
 1. Ensure to run a searcher `cargo r run --service searcher --config ../config/quickwit.yaml`
