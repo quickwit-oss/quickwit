@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::Path;
-
 use proc_macro2::TokenStream;
 use prost_build::{Method, Service, ServiceGenerator};
 use quote::{quote, ToTokens};
@@ -28,11 +26,13 @@ pub struct Codegen;
 
 impl Codegen {
     pub fn run(
-        proto: &Path,
-        out_dir: &Path,
+        proto: &str,
+        out_dir: &str,
         result_path: &str,
         error_path: &str,
     ) -> anyhow::Result<()> {
+        println!("cargo:rerun-if-changed={proto}");
+
         let mut prost_config = prost_build::Config::default();
         prost_config
             .protoc_arg("--experimental_allow_proto3_optional")
