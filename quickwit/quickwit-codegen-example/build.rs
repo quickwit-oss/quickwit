@@ -17,12 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod error;
+use quickwit_codegen::Codegen;
 
-use async_trait::async_trait;
-pub use error::HelloError;
-use serde::{Deserialize, Serialize};
-
-pub type HelloResult<T> = Result<T, HelloError>;
-
-include!("hello.rs");
+fn main() {
+    Codegen::run(
+        "src/hello.proto",
+        "src/",
+        "crate::HelloResult",
+        "crate::HelloError",
+    )
+    .unwrap();
+}

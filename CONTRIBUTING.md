@@ -23,6 +23,11 @@ Contributors are required to sign a Contributor License Agreement.
 The process is simple and fast. Upon your first pull request, you will be prompted to
 [sign our CLA by visiting this link](https://cla-assistant.io/quickwit-oss/quickwit).
 
+# PR verification checks
+When you submit a pull request to the project, the CI system runs several verification checks. You will be notified by email from the CI system if any issues are discoverd, but if you want to run these checks locally before submitting PR or in order to verify changes you can use the following commands:
+1. To veryfy that all tests are passing run `make test-all` in the root directory.
+2. To fix code style and foramt as well as catch common mistakes run `make fix` in the root directory. Alternatively, run `make -k test-all docker-compose-down` to tear down the Docker services after running all the tests.
+
 # Development
 ## Setup & run tests
 1. Install Rust, CMake, Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
