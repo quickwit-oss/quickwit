@@ -25,7 +25,7 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 
 ## PR verification checks
 When you submit a pull request to the project, the CI system runs several verification checks. You will be notified by email from the CI system if any issues are discoverd, but if you want to run these checks locally before submitting PR or in order to verify changes you can use the following commands in the root directory:
-1. To veryfy that all tests are passing run `make test-all`.
+1. To verify that all tests are passing run `make test-all`.
 2. To fix code style and format as well as catch common mistakes run `make fix`. Alternatively, run `make -k test-all docker-compose-down` to tear down the Docker services after running all the tests.
 3. To build docs run `make build-docs`.
 
