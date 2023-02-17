@@ -24,12 +24,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_ingest_api::{
-    get_ingest_api_service, iter_doc_payloads, GetPartitionId, IngestApiService,
+    get_ingest_api_service, iter_doc_payloads, CreateQueueIfNotExistsRequest, FetchRequest,
+    FetchResponse, GetPartitionId, IngestApiService, SuggestTruncateRequest,
 };
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
-use quickwit_proto::ingest_api::{
-    CreateQueueIfNotExistsRequest, FetchRequest, FetchResponse, SuggestTruncateRequest,
-};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -220,10 +218,9 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, INGEST_API_SOURCE_ID};
-    use quickwit_ingest_api::{add_doc, init_ingest_api};
+    use quickwit_ingest_api::{add_doc, init_ingest_api, DocBatch, IngestRequest};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
-    use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
 
     use super::*;
     use crate::source::SourceActor;

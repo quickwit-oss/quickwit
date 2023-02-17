@@ -36,11 +36,33 @@ impl HelloClient {
             inner: Box::new(instance),
         }
     }
+    pub fn from_channel(channel: tower::timeout::Timeout<tonic::transport::Channel>) -> Self {
+        HelloClient::new(HelloGrpcClientAdapter::new(
+            hello_grpc_client::HelloGrpcClient::new(channel),
+        ))
+    }
+    pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
+    where
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        HelloMailbox<A>: Hello,
+    {
+        HelloClient::new(HelloMailbox::new(mailbox))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mock() -> MockHello {
+        MockHello::new()
+    }
 }
 #[async_trait::async_trait]
 impl Hello for HelloClient {
     async fn hello(&mut self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
         self.inner.hello(request).await
+    }
+}
+#[cfg(any(test, feature = "testsuite"))]
+impl From<MockHello> for HelloClient {
+    fn from(mock: MockHello) -> Self {
+        HelloClient::new(mock)
     }
 }
 pub type BoxFuture<T, E> =
@@ -61,7 +83,7 @@ impl tower::Service<HelloRequest> for HelloClient {
         Box::pin(fut)
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct MailboxAdapter<A: quickwit_actors::Actor, E> {
     inner: quickwit_actors::Mailbox<A>,
     phantom: std::marker::PhantomData<E>,
@@ -87,6 +109,16 @@ impl<A: quickwit_actors::Actor> HelloMailbox<A> {
         Self { inner }
     }
 }
+impl<A: quickwit_actors::Actor> Clone for HelloMailbox<A> {
+    fn clone(&self) -> Self {
+        let inner = MailboxAdapter {
+            inner: self.inner.clone(),
+            phantom: std::marker::PhantomData,
+        };
+        Self { inner }
+    }
+}
+use tower::Service;
 impl<A, M, T, E> tower::Service<M> for HelloMailbox<A>
 where
     A: quickwit_actors::Actor
@@ -120,6 +152,21 @@ where
                 .map_err(|error| error.into())
         };
         Box::pin(fut)
+    }
+}
+#[async_trait::async_trait]
+impl<A> Hello for HelloMailbox<A>
+where
+    A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+    HelloMailbox<A>: tower::Service<
+        HelloRequest,
+        Response = HelloResponse,
+        Error = crate::HelloError,
+        Future = BoxFuture<HelloResponse, crate::HelloError>,
+    >,
+{
+    async fn hello(&mut self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
+        self.call(request).await
     }
 }
 #[derive(Debug, Clone)]

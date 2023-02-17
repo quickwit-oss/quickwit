@@ -29,8 +29,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
-pub use errors::IngestApiError;
-use errors::Result;
+pub use errors::IngestServiceError;
 pub use ingest_api_service::{GetPartitionId, IngestApiService};
 use metrics::INGEST_METRICS;
 use once_cell::sync::OnceCell;
@@ -38,10 +37,13 @@ pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::IngestApiConfig;
-use quickwit_proto::ingest_api::DocBatch;
 use tokio::sync::Mutex;
+mod ingest_service;
+pub use ingest_service::*;
 
 pub const QUEUES_DIR_NAME: &str = "queues";
+
+pub type Result<T> = std::result::Result<T, IngestServiceError>;
 
 type IngestApiServiceMailboxes = HashMap<PathBuf, Mailbox<IngestApiService>>;
 
@@ -134,9 +136,9 @@ mod tests {
 
     use byte_unit::Byte;
     use quickwit_actors::AskError;
-    use quickwit_proto::ingest_api::{CreateQueueRequest, IngestRequest, SuggestTruncateRequest};
 
     use super::*;
+    use crate::{CreateQueueRequest, IngestRequest, SuggestTruncateRequest};
 
     #[tokio::test]
     async fn test_get_ingest_api_service() {
@@ -263,7 +265,7 @@ mod tests {
                 .ask_for_res(ingest_request.clone())
                 .await
                 .unwrap_err(),
-            AskError::ErrorReply(IngestApiError::RateLimited)
+            AskError::ErrorReply(IngestServiceError::RateLimited)
         ));
 
         // delete the first batch

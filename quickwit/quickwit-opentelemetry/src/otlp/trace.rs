@@ -23,9 +23,7 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
-use quickwit_actors::{AskError, Mailbox};
-use quickwit_ingest_api::{IngestApiError, IngestApiService};
-use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
+use quickwit_ingest_api::{DocBatch, IngestRequest, IngestService, IngestServiceClient};
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
     ExportTracePartialSuccess, ExportTraceServiceRequest, ExportTraceServiceResponse,
@@ -406,19 +404,19 @@ struct ParsedSpans {
     error_message: String,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct OtlpGrpcTraceService {
-    ingest_api_service: Mailbox<IngestApiService>,
+    ingest_service: IngestServiceClient,
 }
 
 impl OtlpGrpcTraceService {
     // TODO: remove and use registry
-    pub fn new(ingest_api_service: Mailbox<IngestApiService>) -> Self {
-        Self { ingest_api_service }
+    pub fn new(ingest_service: IngestServiceClient) -> Self {
+        Self { ingest_service }
     }
 
     async fn export_inner(
-        &self,
+        &mut self,
         request: ExportTraceServiceRequest,
         labels: [&'static str; 4],
     ) -> Result<ExportTraceServiceResponse, Status> {
@@ -627,26 +625,16 @@ impl OtlpGrpcTraceService {
     }
 
     #[instrument(skip_all, fields(num_bytes = doc_batch.concat_docs.len()))]
-    async fn store_spans(&self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
+    async fn store_spans(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],
         };
-        self.ingest_api_service
-            .ask_for_res(ingest_request)
-            .await
-            .map_err(|ask_error| {
-                if matches!(ask_error, AskError::ErrorReply(IngestApiError::RateLimited)) {
-                    tonic::Status::unavailable("Failed to store spans due to rate limiting.")
-                } else {
-                    error!("Failed to store spans: {ask_error:?}");
-                    tonic::Status::internal("Failed to store spans.")
-                }
-            })?;
+        self.ingest_service.ingest(ingest_request).await?;
         Ok(())
     }
 
     async fn export_instrumented(
-        &self,
+        &mut self,
         request: ExportTraceServiceRequest,
     ) -> Result<ExportTraceServiceResponse, Status> {
         let start = std::time::Instant::now();
@@ -686,6 +674,9 @@ impl TraceService for OtlpGrpcTraceService {
         request: Request<ExportTraceServiceRequest>,
     ) -> Result<Response<ExportTraceServiceResponse>, Status> {
         let request = request.into_inner();
-        self.export_instrumented(request).await.map(Response::new)
+        self.clone()
+            .export_instrumented(request)
+            .await
+            .map(Response::new)
     }
 }

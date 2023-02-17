@@ -23,9 +23,10 @@ use std::path::Path;
 use mrecordlog::error::CreateQueueError;
 use mrecordlog::MultiRecordLog;
 use quickwit_actors::ActorContext;
-use quickwit_proto::ingest_api::{DocBatch, FetchResponse, ListQueuesResponse};
 
-use crate::{add_doc, IngestApiError, IngestApiService};
+use crate::{
+    add_doc, DocBatch, FetchResponse, IngestApiService, IngestServiceError, ListQueuesResponse,
+};
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
 
@@ -40,7 +41,6 @@ impl Queues {
     pub async fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
         tokio::fs::create_dir_all(queues_dir_path).await.unwrap();
         let record_log = MultiRecordLog::open(queues_dir_path).await?;
-
         Ok(Queues { record_log })
     }
 
@@ -55,7 +55,7 @@ impl Queues {
         ctx: &ActorContext<IngestApiService>,
     ) -> crate::Result<()> {
         if self.queue_exists(queue_id) {
-            return Err(crate::IngestApiError::IndexAlreadyExists {
+            return Err(crate::IngestServiceError::IndexAlreadyExists {
                 index_id: queue_id.to_string(),
             });
         }
@@ -63,7 +63,7 @@ impl Queues {
         ctx.protect_future(self.record_log.create_queue(&real_queue_id))
             .await
             .map_err(|e| match e {
-                CreateQueueError::AlreadyExists => IngestApiError::IndexAlreadyExists {
+                CreateQueueError::AlreadyExists => IngestServiceError::IndexAlreadyExists {
                     index_id: queue_id.to_owned(),
                 },
                 CreateQueueError::IoError(ioe) => ioe.into(),
@@ -163,7 +163,7 @@ impl Queues {
         let records = self
             .record_log
             .range(&real_queue_id, (starting_bound, Bound::Unbounded))
-            .ok_or_else(|| crate::IngestApiError::IndexDoesNotExist {
+            .ok_or_else(|| crate::IngestServiceError::IndexNotFound {
                 index_id: queue_id.to_string(),
             })?;
 
@@ -227,7 +227,7 @@ mod tests {
     use tokio::sync::watch;
 
     use super::Queues;
-    use crate::errors::IngestApiError;
+    use crate::errors::IngestServiceError;
     use crate::{iter_doc_payloads, IngestApiService};
 
     const TEST_QUEUE_ID: &str = "my-queue";
@@ -308,7 +308,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             queue_err,
-            IngestApiError::IndexAlreadyExists { .. }
+            IngestServiceError::IndexAlreadyExists { .. }
         ));
     }
 
@@ -477,7 +477,6 @@ mod tests {
         let tmpdir = tempfile::tempdir_in(".").unwrap();
         let mut queues = Queues::open(tmpdir.path()).await.unwrap();
         for queue_id in 0..NUM_QUEUES {
-            println!("create queue {queue_id}");
             queues
                 .create_queue(&queue_id.to_string(), &ctx)
                 .await
@@ -496,6 +495,6 @@ mod tests {
         println!("{elapsed:?}");
         println!("{num_bytes}");
         let throughput = num_bytes as f64 / (elapsed.as_micros() as f64);
-        println!("throughput: {throughput}MB/s");
+        println!("Throughput: {}", throughput);
     }
 }

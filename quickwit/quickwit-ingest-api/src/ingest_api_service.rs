@@ -17,27 +17,38 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
 use std::path::Path;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
-use quickwit_proto::ingest_api::{
-    CreateQueueIfNotExistsRequest, CreateQueueRequest, DropQueueRequest, FetchRequest,
-    FetchResponse, IngestRequest, IngestResponse, ListQueuesRequest, ListQueuesResponse,
-    QueueExistsRequest, SuggestTruncateRequest, TailRequest,
-};
 use tracing::info;
 use ulid::Ulid;
 
 use crate::metrics::INGEST_METRICS;
-use crate::{iter_doc_payloads, IngestApiError, Queues};
+use crate::{
+    iter_doc_payloads, CreateQueueIfNotExistsRequest, CreateQueueRequest, DropQueueRequest,
+    FetchRequest, FetchResponse, IngestRequest, IngestResponse, IngestServiceError,
+    ListQueuesRequest, ListQueuesResponse, QueueExistsRequest, Queues, SuggestTruncateRequest,
+    TailRequest,
+};
 
 pub struct IngestApiService {
     partition_id: String,
     queues: Queues,
     memory_limit: usize,
     disk_limit: usize,
+}
+
+impl fmt::Debug for IngestApiService {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IngestApiService")
+            .field("partition_id", &self.partition_id)
+            .field("memory_limit", &self.memory_limit)
+            .field("disk_limit", &self.disk_limit)
+            .finish()
+    }
 }
 
 /// When we create our queue storage, we also generate and store
@@ -55,7 +66,7 @@ async fn get_or_initialize_partition_id(dir_path: &Path) -> crate::Result<String
     if let Ok(partition_id_bytes) = tokio::fs::read(&partition_id_path).await {
         let partition_id: &str = std::str::from_utf8(&partition_id_bytes).map_err(|_| {
             let msg = format!("Partition key ({partition_id_bytes:?}) is not utf8");
-            IngestApiError::Corruption { msg }
+            IngestServiceError::Corruption(msg)
         })?;
         return Ok(partition_id.to_string());
     }
@@ -95,7 +106,7 @@ impl IngestApiService {
             .find(|index_id| !self.queues.queue_exists(index_id));
 
         if let Some(index_id) = first_non_existing_queue_opt {
-            return Err(IngestApiError::IndexDoesNotExist {
+            return Err(IngestServiceError::IndexNotFound {
                 index_id: index_id.to_string(),
             });
         }
@@ -103,11 +114,11 @@ impl IngestApiService {
         let (memory, disk) = self.queues.ressource_usage();
         if memory > self.memory_limit {
             info!("Ingestion rejected due to memory limits");
-            return Err(IngestApiError::RateLimited);
+            return Err(IngestServiceError::RateLimited);
         }
         if disk > self.disk_limit {
             info!("Ingestion rejected due to disk limits");
-            return Err(IngestApiError::RateLimited);
+            return Err(IngestServiceError::RateLimited);
         }
 
         let mut num_docs = 0usize;

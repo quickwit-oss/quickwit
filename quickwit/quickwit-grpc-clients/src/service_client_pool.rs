@@ -84,7 +84,7 @@ impl<T: ServiceClient> ServiceClientPool<T> {
             .read()
             .expect("Client pool lock is poisoned.")
             .get(&grpc_address)
-            .map(T::clone)
+            .cloned()
     }
 
     /// Sets the pool hashmap to the given clients hashmap.

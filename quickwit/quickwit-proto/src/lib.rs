@@ -25,7 +25,6 @@
 mod quickwit;
 mod quickwit_control_plane_api;
 mod quickwit_indexing_api;
-mod quickwit_ingest_api;
 mod quickwit_metastore_api;
 
 pub mod control_plane_api {
@@ -34,10 +33,6 @@ pub mod control_plane_api {
 
 pub mod indexing_api {
     pub use crate::quickwit_indexing_api::*;
-}
-
-pub mod ingest_api {
-    pub use crate::quickwit_ingest_api::*;
 }
 
 pub mod metastore_api {
@@ -131,40 +126,37 @@ use ::opentelemetry::propagation::Extractor;
 /// It is voluntarily a restricted subset.
 #[derive(Clone, Copy)]
 pub enum ServiceErrorCode {
-    NotFound,
+    BadRequest,
     Internal,
     MethodNotAllowed,
-    UnsupportedMediaType,
-    BadRequest,
+    NotFound,
     RateLimited,
+    Unavailable,
+    UnsupportedMediaType,
 }
 
 impl ServiceErrorCode {
     pub fn to_grpc_status_code(self) -> tonic::Code {
         match self {
-            ServiceErrorCode::NotFound => tonic::Code::NotFound,
-            ServiceErrorCode::Internal => tonic::Code::Internal,
             ServiceErrorCode::BadRequest => tonic::Code::InvalidArgument,
+            ServiceErrorCode::Internal => tonic::Code::Internal,
             ServiceErrorCode::MethodNotAllowed => tonic::Code::InvalidArgument,
-            ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
+            ServiceErrorCode::NotFound => tonic::Code::NotFound,
             ServiceErrorCode::RateLimited => tonic::Code::ResourceExhausted,
+            ServiceErrorCode::Unavailable => tonic::Code::Unavailable,
+            ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
         }
     }
     pub fn to_http_status_code(self) -> http::StatusCode {
         match self {
-            ServiceErrorCode::NotFound => http::StatusCode::NOT_FOUND,
-            ServiceErrorCode::Internal => http::StatusCode::INTERNAL_SERVER_ERROR,
             ServiceErrorCode::BadRequest => http::StatusCode::BAD_REQUEST,
+            ServiceErrorCode::Internal => http::StatusCode::INTERNAL_SERVER_ERROR,
             ServiceErrorCode::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
-            ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ServiceErrorCode::NotFound => http::StatusCode::NOT_FOUND,
             ServiceErrorCode::RateLimited => http::StatusCode::TOO_MANY_REQUESTS,
+            ServiceErrorCode::Unavailable => http::StatusCode::SERVICE_UNAVAILABLE,
+            ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
         }
-    }
-}
-
-impl ServiceError for Infallible {
-    fn status_code(&self) -> ServiceErrorCode {
-        unreachable!()
     }
 }
 
@@ -178,11 +170,16 @@ pub trait ServiceError: ToString {
     fn status_code(&self) -> ServiceErrorCode;
 }
 
+impl ServiceError for Infallible {
+    fn status_code(&self) -> ServiceErrorCode {
+        unreachable!()
+    }
+}
+
 pub fn convert_to_grpc_result<T, E: ServiceError>(
     res: Result<T, E>,
 ) -> Result<tonic::Response<T>, tonic::Status> {
-    res.map(|outcome| tonic::Response::new(outcome))
-        .map_err(|err| err.grpc_error())
+    res.map(tonic::Response::new).map_err(|error| error.grpc_error())
 }
 
 impl From<SearchStreamRequest> for SearchRequest {
@@ -222,7 +219,7 @@ impl fmt::Display for SplitSearchError {
     }
 }
 
-/// `MutMetadataMap` used to extract [`tonic::metadata::MetadataMap`] from a request. 
+/// `MutMetadataMap` used to extract [`tonic::metadata::MetadataMap`] from a request.
 pub struct MutMetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
 
 impl<'a> Injector for MutMetadataMap<'a> {
