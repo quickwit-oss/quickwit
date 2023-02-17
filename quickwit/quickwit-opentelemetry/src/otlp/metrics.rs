@@ -24,6 +24,7 @@ pub struct OtlpServiceMetrics {
     pub requests_total: IntCounterVec<4>,
     pub request_errors_total: IntCounterVec<4>,
     pub request_duration_seconds: HistogramVec<5>,
+    pub ingested_log_records_total: IntCounterVec<4>,
     pub ingested_spans_total: IntCounterVec<4>,
     pub ingested_bytes_total: IntCounterVec<4>,
 }
@@ -34,31 +35,37 @@ impl Default for OtlpServiceMetrics {
             requests_total: new_counter_vec(
                 "requests_total",
                 "Number of requests",
-                "quickwit_otel",
+                "quickwit_otlp",
                 ["service", "index", "transport", "format"],
             ),
             request_errors_total: new_counter_vec(
                 "request_errors_total",
                 "Number of failed requests",
-                "quickwit_otel",
+                "quickwit_otlp",
                 ["service", "index", "transport", "format"],
             ),
             request_duration_seconds: new_histogram_vec(
                 "request_duration_seconds",
                 "Duration of requests",
-                "quickwit_otel",
+                "quickwit_otlp",
                 ["service", "index", "transport", "format", "error"],
+            ),
+            ingested_log_records_total: new_counter_vec(
+                "ingested_log_records_total",
+                "Number of log records ingested",
+                "quickwit_otlp",
+                ["service", "index", "transport", "format"],
             ),
             ingested_spans_total: new_counter_vec(
                 "ingested_spans_total",
                 "Number of spans ingested",
-                "quickwit_otel",
+                "quickwit_otlp",
                 ["service", "index", "transport", "format"],
             ),
             ingested_bytes_total: new_counter_vec(
                 "ingested_bytes_total",
                 "Number of bytes ingested",
-                "quickwit_otel",
+                "quickwit_otlp",
                 ["service", "index", "transport", "format"],
             ),
         }

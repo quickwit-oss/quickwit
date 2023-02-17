@@ -68,7 +68,7 @@ use quickwit_metastore::{
     quickwit_metastore_uri_resolver, Metastore, MetastoreError, MetastoreGrpcClient,
     MetastoreWithControlPlaneTriggers, RetryingMetastore,
 };
-use quickwit_opentelemetry::otlp::OTEL_TRACE_INDEX_CONFIG;
+use quickwit_opentelemetry::otlp::{OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG};
 use quickwit_search::{start_searcher_service, SearchJobPlacer, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
@@ -180,18 +180,20 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
             start_ingest_api_service(&universe, &config.data_dir_path, &config.ingest_api_config)
                 .await?;
         if config.indexer_config.enable_otlp_endpoint {
-            let index_config = load_index_config_from_user_config(
-                ConfigFormat::Yaml,
-                OTEL_TRACE_INDEX_CONFIG.as_bytes(),
-                &config.default_index_root_uri,
-            )?;
-            match index_service.create_index(index_config, false).await {
-                Ok(_)
-                | Err(IndexServiceError::MetastoreError(MetastoreError::IndexAlreadyExists {
-                    ..
-                })) => Ok(()),
-                Err(error) => Err(error),
-            }?;
+            for index_config_content in [OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG] {
+                let index_config = load_index_config_from_user_config(
+                    ConfigFormat::Yaml,
+                    index_config_content.as_bytes(),
+                    &config.default_index_root_uri,
+                )?;
+                match index_service.create_index(index_config, false).await {
+                    Ok(_)
+                    | Err(IndexServiceError::MetastoreError(
+                        MetastoreError::IndexAlreadyExists { .. },
+                    )) => Ok(()),
+                    Err(error) => Err(error),
+                }?;
+            }
         }
         let indexing_service = start_indexing_service(
             &universe,
