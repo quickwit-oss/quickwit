@@ -448,7 +448,7 @@ pub async fn create_cluster_for_test_with_id(
 /// Creates a failure detector config for tests.
 fn create_failure_detector_config_for_test() -> FailureDetectorConfig {
     FailureDetectorConfig {
-        phi_threshold: 6.0,
+        phi_threshold: 3.0,
         initial_interval: GOSSIP_INTERVAL,
         ..Default::default()
     }
