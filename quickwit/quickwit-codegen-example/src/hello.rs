@@ -61,6 +61,67 @@ impl tower::Service<HelloRequest> for HelloClient {
         Box::pin(fut)
     }
 }
+#[derive(Debug)]
+struct MailboxAdapter<A: quickwit_actors::Actor, E> {
+    inner: quickwit_actors::Mailbox<A>,
+    phantom: std::marker::PhantomData<E>,
+}
+impl<A, E> std::ops::Deref for MailboxAdapter<A, E>
+where A: quickwit_actors::Actor
+{
+    type Target = quickwit_actors::Mailbox<A>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+#[derive(Debug)]
+pub struct HelloMailbox<A: quickwit_actors::Actor> {
+    inner: MailboxAdapter<A, crate::HelloError>,
+}
+impl<A: quickwit_actors::Actor> HelloMailbox<A> {
+    pub fn new(instance: quickwit_actors::Mailbox<A>) -> Self {
+        let inner = MailboxAdapter {
+            inner: instance,
+            phantom: std::marker::PhantomData,
+        };
+        Self { inner }
+    }
+}
+impl<A, M, T, E> tower::Service<M> for HelloMailbox<A>
+where
+    A: quickwit_actors::Actor
+        + quickwit_actors::Handler<M, Reply = Result<T, E>>
+        + Send
+        + Sync
+        + 'static,
+    M: std::fmt::Debug + Send + Sync + 'static,
+    T: Send + Sync + 'static,
+    E: std::fmt::Debug + Send + Sync + 'static,
+    crate::HelloError: From<quickwit_actors::AskError<E>>,
+{
+    type Response = T;
+    type Error = crate::HelloError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        //! This does not work with balance middlewares such as `tower::balance::pool::Pool` because
+        //! this always returns `Poll::Ready`. The fix is to acquire a permit from the
+        //! mailbox in `poll_ready` and consume it in `call`.
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, message: M) -> Self::Future {
+        let mailbox = self.inner.clone();
+        let fut = async move {
+            mailbox
+                .ask_for_res(message)
+                .await
+                .map_err(|error| error.into())
+        };
+        Box::pin(fut)
+    }
+}
 #[derive(Debug, Clone)]
 pub struct HelloGrpcClientAdapter<T> {
     inner: T,

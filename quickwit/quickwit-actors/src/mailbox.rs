@@ -328,10 +328,11 @@ impl<A: Actor> Mailbox<A> {
     /// waits asynchronously for the actor reply.
     ///
     /// From an actor context, use the `ActorContext::ask` method instead.
-    pub async fn ask_for_res<M, T, E: fmt::Debug>(&self, message: M) -> Result<T, AskError<E>>
+    pub async fn ask_for_res<M, T, E>(&self, message: M) -> Result<T, AskError<E>>
     where
         A: Handler<M, Reply = Result<T, E>>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + Sync + 'static,
+        E: fmt::Debug,
     {
         self.send_message(message)
             .await

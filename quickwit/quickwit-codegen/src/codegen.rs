@@ -90,18 +90,23 @@ fn generate_all(service: &Service, result_path: &str, error_path: &str) -> Token
     let package_name = quote::format_ident!("{}", service.package);
     let trait_name = quote::format_ident!("{}", service.name);
     let client_name = quote::format_ident!("{}Client", service.name);
+    let mailbox_name = quote::format_ident!("{}Mailbox", service.name);
     let result_path = syn::parse_str::<syn::Path>(result_path)
         .expect("Result path should be a valid result path such as `crate::HelloResult`.");
     let error_path = syn::parse_str::<syn::Path>(error_path)
         .expect("Result path should be a valid result path such as `crate::error::HelloError`.");
 
-    let service_trait = generate_trait(&trait_name, &service.methods, &result_path);
-    let client = generate_client(&trait_name, &client_name, &service.methods, &result_path);
-    let tower_service = generate_tower_service(&client_name, &service.methods, &error_path);
+    let syn_methods = parse_methods(&service.methods);
+    let service_trait = generate_trait(&trait_name, &syn_methods, &result_path);
+    let client = generate_client(&trait_name, &client_name, &syn_methods, &result_path);
+    let tower_client_services =
+        generate_tower_services_for_client(&client_name, &syn_methods, &error_path);
+    let tower_mailbox = generate_tower_mailbox(&mailbox_name, &error_path);
+
     let grpc_client_adapter =
-        generate_grpc_client_adapter(&package_name, &trait_name, &service.methods, &result_path);
+        generate_grpc_client_adapter(&package_name, &trait_name, &syn_methods, &result_path);
     let grpc_server_adapter =
-        generate_grpc_server_adapter(&package_name, &trait_name, &service.methods);
+        generate_grpc_server_adapter(&package_name, &trait_name, &syn_methods);
 
     quote! {
         // The line below is necessary to opt out of the license header check.
@@ -112,7 +117,9 @@ fn generate_all(service: &Service, result_path: &str, error_path: &str) -> Token
 
         pub type BoxFuture<T, E> = std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>>;
 
-        #tower_service
+        #tower_client_services
+
+        #tower_mailbox
 
         #grpc_client_adapter
 
@@ -120,8 +127,36 @@ fn generate_all(service: &Service, result_path: &str, error_path: &str) -> Token
     }
 }
 
-fn generate_trait(trait_name: &Ident, methods: &[Method], result_path: &syn::Path) -> TokenStream {
-    let trait_methods = generate_trait_methods(methods, result_path);
+struct SynMethod {
+    method_name: Ident,
+    request_type: syn::Path,
+    response_type: syn::Path,
+}
+
+fn parse_methods(methods: &[Method]) -> Vec<SynMethod> {
+    let mut syn_methods = Vec::with_capacity(methods.len());
+
+    for method in methods {
+        let method_name = quote::format_ident!("{}", method.name);
+        let request_type = syn::parse_str::<syn::Path>(&method.input_type).unwrap();
+        let response_type = syn::parse_str::<syn::Path>(&method.output_type).unwrap();
+
+        let syn_method = SynMethod {
+            method_name,
+            request_type,
+            response_type,
+        };
+        syn_methods.push(syn_method);
+    }
+    syn_methods
+}
+
+fn generate_trait(
+    trait_name: &Ident,
+    syn_methods: &[SynMethod],
+    result_path: &syn::Path,
+) -> TokenStream {
+    let trait_methods = generate_trait_methods(syn_methods, result_path);
     let mock_name = quote::format_ident!("Mock{}", trait_name);
 
     quote! {
@@ -142,16 +177,13 @@ fn generate_trait(trait_name: &Ident, methods: &[Method], result_path: &syn::Pat
     }
 }
 
-fn generate_trait_methods(methods: &[Method], result_path: &syn::Path) -> TokenStream {
+fn generate_trait_methods(syn_methods: &[SynMethod], result_path: &syn::Path) -> TokenStream {
     let mut stream = TokenStream::new();
-    for method in methods {
-        let method_name = quote::format_ident!("{}", method.name);
-        let request_type = syn::parse_str::<syn::Path>(&method.input_type)
-            .unwrap()
-            .to_token_stream();
-        let response_type = syn::parse_str::<syn::Path>(&method.output_type)
-            .unwrap()
-            .to_token_stream();
+
+    for syn_method in syn_methods {
+        let method_name = syn_method.method_name.to_token_stream();
+        let request_type = syn_method.request_type.to_token_stream();
+        let response_type = syn_method.response_type.to_token_stream();
 
         let method = quote! {
             async fn #method_name(&mut self, request: #request_type) -> #result_path<#response_type>;
@@ -164,10 +196,10 @@ fn generate_trait_methods(methods: &[Method], result_path: &syn::Path) -> TokenS
 fn generate_client(
     trait_name: &Ident,
     client_name: &Ident,
-    methods: &[Method],
+    syn_methods: &[SynMethod],
     result_path: &syn::Path,
 ) -> TokenStream {
-    let client_methods = generate_client_methods(methods, result_path);
+    let client_methods = generate_client_methods(syn_methods, result_path);
 
     quote! {
         #[derive(Debug, Clone)]
@@ -191,16 +223,13 @@ fn generate_client(
     }
 }
 
-fn generate_client_methods(methods: &[Method], result_path: &syn::Path) -> TokenStream {
+fn generate_client_methods(syn_methods: &[SynMethod], result_path: &syn::Path) -> TokenStream {
     let mut stream = TokenStream::new();
-    for method in methods {
-        let method_name = quote::format_ident!("{}", method.name);
-        let request_type = syn::parse_str::<syn::Path>(&method.input_type)
-            .unwrap()
-            .to_token_stream();
-        let response_type = syn::parse_str::<syn::Path>(&method.output_type)
-            .unwrap()
-            .to_token_stream();
+
+    for syn_method in syn_methods {
+        let method_name = syn_method.method_name.to_token_stream();
+        let request_type = syn_method.request_type.to_token_stream();
+        let response_type = syn_method.response_type.to_token_stream();
 
         let method = quote! {
             async fn #method_name(&mut self, request: #request_type) -> #result_path<#response_type> {
@@ -212,20 +241,17 @@ fn generate_client_methods(methods: &[Method], result_path: &syn::Path) -> Token
     stream
 }
 
-fn generate_tower_service(
+fn generate_tower_services_for_client(
     client_name: &Ident,
-    methods: &[Method],
+    syn_methods: &[SynMethod],
     error_path: &syn::Path,
 ) -> TokenStream {
     let mut stream = TokenStream::new();
-    for method in methods {
-        let method_name = quote::format_ident!("{}", method.name);
-        let request_type = syn::parse_str::<syn::Path>(&method.input_type)
-            .unwrap()
-            .to_token_stream();
-        let response_type = syn::parse_str::<syn::Path>(&method.output_type)
-            .unwrap()
-            .to_token_stream();
+
+    for syn_method in syn_methods {
+        let method_name = syn_method.method_name.to_token_stream();
+        let request_type = syn_method.request_type.to_token_stream();
+        let response_type = syn_method.response_type.to_token_stream();
 
         let service = quote! {
             impl tower::Service<#request_type> for #client_name {
@@ -252,16 +278,82 @@ fn generate_tower_service(
     stream
 }
 
+fn generate_tower_mailbox(mailbox_name: &Ident, error_path: &syn::Path) -> TokenStream {
+    quote! {
+        #[derive(Debug)]
+        struct MailboxAdapter<A: quickwit_actors::Actor, E> {
+            inner: quickwit_actors::Mailbox<A>,
+            phantom: std::marker::PhantomData<E>,
+        }
+
+        impl<A, E> std::ops::Deref for MailboxAdapter<A, E> where A: quickwit_actors::Actor {
+            type Target = quickwit_actors::Mailbox<A>;
+
+            fn deref(&self) -> &Self::Target {
+                &self.inner
+            }
+        }
+
+        #[derive(Debug)]
+        pub struct #mailbox_name<A: quickwit_actors::Actor> {
+            inner: MailboxAdapter<A, #error_path>
+        }
+
+        impl <A: quickwit_actors::Actor> #mailbox_name<A> {
+            pub fn new(instance: quickwit_actors::Mailbox<A>) -> Self {
+                let inner = MailboxAdapter {
+                    inner: instance,
+                    phantom: std::marker::PhantomData,
+                };
+                Self {
+                    inner
+                }
+            }
+        }
+
+        impl<A, M, T, E> tower::Service<M> for #mailbox_name<A>
+        where
+            A: quickwit_actors::Actor + quickwit_actors::Handler<M, Reply = Result<T, E>> + Send + Sync + 'static,
+            M: std::fmt::Debug + Send + Sync + 'static,
+            T: Send + Sync + 'static,
+            E: std::fmt::Debug + Send + Sync + 'static,
+            #error_path: From<quickwit_actors::AskError<E>>,
+        {
+            type Response = T;
+            type Error = #error_path;
+            type Future = BoxFuture<Self::Response, Self::Error>;
+
+            fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+                //! This does not work with balance middlewares such as `tower::balance::pool::Pool` because this always returns `Poll::Ready`.
+                //! The fix is to acquire a permit from the mailbox in `poll_ready` and consume it in `call`.
+                std::task::Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, message: M) -> Self::Future {
+                let mailbox = self.inner.clone();
+                let fut = async move {
+                    mailbox
+                        .ask_for_res(message)
+                        .await
+                        .map_err(|error| error.into())
+                    };
+                    Box::pin(fut)
+                }
+            }
+    }
+}
+
 fn generate_grpc_client_adapter(
     package_name: &Ident,
     trait_name: &Ident,
-    methods: &[Method],
+    syn_methods: &[SynMethod],
     result_path: &syn::Path,
 ) -> TokenStream {
     let grpc_client_package_name = quote::format_ident!("{}_grpc_client", package_name);
     let grpc_client_name = quote::format_ident!("{}GrpcClient", trait_name);
     let grpc_client_adapter_name = quote::format_ident!("{}GrpcClientAdapter", trait_name);
-    let grpc_server_adapter_methods = generate_grpc_client_adapter_methods(methods, result_path);
+    let grpc_server_adapter_methods =
+        generate_grpc_client_adapter_methods(syn_methods, result_path);
 
     quote! {
         #[derive(Debug, Clone)]
@@ -296,18 +388,15 @@ fn generate_grpc_client_adapter(
 }
 
 fn generate_grpc_client_adapter_methods(
-    methods: &[Method],
+    syn_methods: &[SynMethod],
     result_path: &syn::Path,
 ) -> TokenStream {
     let mut stream = TokenStream::new();
-    for method in methods {
-        let method_name = quote::format_ident!("{}", method.name);
-        let request_type = syn::parse_str::<syn::Path>(&method.input_type)
-            .unwrap()
-            .to_token_stream();
-        let response_type = syn::parse_str::<syn::Path>(&method.output_type)
-            .unwrap()
-            .to_token_stream();
+
+    for syn_method in syn_methods {
+        let method_name = syn_method.method_name.to_token_stream();
+        let request_type = syn_method.request_type.to_token_stream();
+        let response_type = syn_method.response_type.to_token_stream();
 
         let method = quote! {
             async fn #method_name(&mut self, request: #request_type) -> #result_path<#response_type> {
@@ -326,12 +415,12 @@ fn generate_grpc_client_adapter_methods(
 fn generate_grpc_server_adapter(
     package_name: &Ident,
     trait_name: &Ident,
-    methods: &[Method],
+    syn_methods: &[SynMethod],
 ) -> TokenStream {
     let grpc_server_package_name = quote::format_ident!("{}_grpc_server", package_name);
     let grpc_service_name = quote::format_ident!("{}Grpc", trait_name);
     let grpc_server_adapter_name = quote::format_ident!("{}GrpcServerAdapter", trait_name);
-    let grpc_server_adapter_methods = generate_grpc_server_adapter_methods(methods);
+    let grpc_server_adapter_methods = generate_grpc_server_adapter_methods(syn_methods);
 
     quote! {
         #[derive(Debug)]
@@ -355,16 +444,13 @@ fn generate_grpc_server_adapter(
     }
 }
 
-fn generate_grpc_server_adapter_methods(methods: &[Method]) -> TokenStream {
+fn generate_grpc_server_adapter_methods(syn_methods: &[SynMethod]) -> TokenStream {
     let mut stream = TokenStream::new();
-    for method in methods {
-        let method_name = quote::format_ident!("{}", method.name);
-        let request_type = syn::parse_str::<syn::Path>(&method.input_type)
-            .unwrap()
-            .to_token_stream();
-        let response_type = syn::parse_str::<syn::Path>(&method.output_type)
-            .unwrap()
-            .to_token_stream();
+
+    for syn_method in syn_methods {
+        let method_name = syn_method.method_name.to_token_stream();
+        let request_type = syn_method.request_type.to_token_stream();
+        let response_type = syn_method.response_type.to_token_stream();
 
         let method = quote! {
             async fn #method_name(&self, request: tonic::Request<#request_type>) -> Result<tonic::Response<#response_type>, tonic::Status> {
