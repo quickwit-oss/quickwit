@@ -549,7 +549,7 @@ impl IndexingService {
 
         if let Err(error) = self
             .cluster
-            .set_self_node_indexing_tasks(&indexing_tasks)
+            .update_self_node_indexing_tasks(&indexing_tasks)
             .await
         {
             error!(

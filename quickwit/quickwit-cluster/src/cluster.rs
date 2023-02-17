@@ -52,6 +52,12 @@ const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_secs(1)
 };
 
+const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "testsuite")) {
+    100 // ~ HEARTBEAT * 100 = 2.5 seconds.
+} else {
+    5_000 // ~ HEARTBEAT * 5_000 ~ 4 hours.
+};
+
 // Health key and values used to store node's health in chitchat state.
 const HEALTH_KEY: &str = "health";
 const HEALTH_VALUE_READY: &str = "READY";
@@ -118,7 +124,7 @@ impl Cluster {
             seed_nodes: peer_seed_addrs,
             failure_detector_config,
             is_ready_predicate: Some(Box::new(is_ready_predicate)),
-            marked_for_deletion_grace_period: 10_000,
+            marked_for_deletion_grace_period: MARKED_FOR_DELETION_GRACE_PERIOD,
         };
         let chitchat_handle = spawn_chitchat(
             chitchat_config,
@@ -316,14 +322,18 @@ impl Cluster {
         is_ready_predicate(node_state)
     }
 
-    pub async fn set_self_node_indexing_tasks(
+    /// Updates indexing tasks in chitchat state.
+    /// Tasks are grouped by (index_id, source_id), each group is stored in a key as follows:
+    /// - key: `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`
+    /// - value: Number of indexing tasks in the group.
+    /// Keys present in chitchat state but not in the given `indexing_tasks` are marked for
+    /// deletion.
+    pub async fn update_self_node_indexing_tasks(
         &self,
         indexing_tasks: &[IndexingTask],
     ) -> anyhow::Result<()> {
         let chitchat = self.chitchat_handle.chitchat();
-        // TODO: add a timeout on the lock.
         let mut chitchat_guard = chitchat.lock().await;
-        // TODO make the diff to mark task as deleted.
         let mut current_indexing_tasks_keys: HashSet<_> = chitchat_guard
             .self_node_state()
             .iter_key_values(|key, _| key.starts_with(INDEXING_TASK_PREFIX))
@@ -476,6 +486,7 @@ pub async fn create_fake_cluster_for_cli() -> anyhow::Result<Cluster> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::net::SocketAddr;
     use std::time::Duration;
 
@@ -483,6 +494,7 @@ mod tests {
     use itertools::Itertools;
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_proto::indexing_api::IndexingTask;
+    use rand::Rng;
 
     use super::*;
 
@@ -552,7 +564,7 @@ mod tests {
             .set_key_value(GRPC_ADVERTISE_ADDR_KEY, "127.0.0.1:1001")
             .await;
         cluster2
-            .set_self_node_indexing_tasks(&[indexing_task.clone(), indexing_task.clone()])
+            .update_self_node_indexing_tasks(&[indexing_task.clone(), indexing_task.clone()])
             .await
             .unwrap();
         cluster1
@@ -588,7 +600,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_chitchat_state_with_high_number_of_tasks() {
+    async fn test_chitchat_state_set_high_number_of_tasks() {
         let transport = ChannelTransport::default();
         let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
@@ -603,29 +615,90 @@ mod tests {
             .await
             .unwrap(),
         );
-        let indexing_tasks = (0..100000)
-            .map(|idx| IndexingTask {
-                index_id: format!("index-{idx}"),
-                source_id: format!("source-{idx}"),
+        let cluster3 = Arc::new(
+            create_cluster_for_test(
+                vec![cluster1.gossip_listen_addr.to_string()],
+                &["indexer", "metastore"],
+                &transport,
+                true,
+            )
+            .await
+            .unwrap(),
+        );
+        let mut random_generator = rand::thread_rng();
+        let indexing_tasks = (0..100_000)
+            .map(|_| {
+                let index_id = random_generator.gen_range(0..=10_000);
+                let source_id = random_generator.gen_range(0..=100);
+                IndexingTask {
+                    index_id: format!("index-{index_id}"),
+                    source_id: format!("source-{source_id}"),
+                }
             })
             .collect_vec();
         cluster1
-            .set_self_node_indexing_tasks(&indexing_tasks)
+            .update_self_node_indexing_tasks(&indexing_tasks)
             .await
             .unwrap();
-        wait_until_predicate(
-            move || {
-                test_indexing_tasks_in_given_node(
-                    cluster2.clone(),
-                    cluster1.node_id.gossip_public_address,
-                    indexing_tasks.clone(),
-                )
-            },
-            Duration::from_secs(5),
-            Duration::from_millis(500),
-        )
-        .await
-        .unwrap();
+        for cluster in [&cluster2, &cluster3] {
+            let cluster_clone = cluster.clone();
+            let indexing_tasks_clone = indexing_tasks.clone();
+            wait_until_predicate(
+                move || {
+                    test_indexing_tasks_in_given_node(
+                        cluster_clone.clone(),
+                        cluster1.node_id.gossip_public_address,
+                        indexing_tasks_clone.clone(),
+                    )
+                },
+                Duration::from_secs(4),
+                Duration::from_millis(500),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Mark tasks for deletion.
+        cluster1.update_self_node_indexing_tasks(&[]).await.unwrap();
+        for cluster in [&cluster2, &cluster3] {
+            let cluster_clone = cluster.clone();
+            wait_until_predicate(
+                move || {
+                    test_indexing_tasks_in_given_node(
+                        cluster_clone.clone(),
+                        cluster1.node_id.gossip_public_address,
+                        Vec::new(),
+                    )
+                },
+                Duration::from_secs(4),
+                Duration::from_millis(500),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Readd tasks.
+        cluster1
+            .update_self_node_indexing_tasks(&indexing_tasks)
+            .await
+            .unwrap();
+        for cluster in [&cluster2, &cluster3] {
+            let cluster_clone = cluster.clone();
+            let indexing_tasks_clone = indexing_tasks.clone();
+            wait_until_predicate(
+                move || {
+                    test_indexing_tasks_in_given_node(
+                        cluster_clone.clone(),
+                        cluster1.node_id.gossip_public_address,
+                        indexing_tasks_clone.clone(),
+                    )
+                },
+                Duration::from_secs(4),
+                Duration::from_millis(500),
+            )
+            .await
+            .unwrap();
+        }
     }
 
     async fn test_indexing_tasks_in_given_node(
@@ -634,11 +707,24 @@ mod tests {
         indexing_tasks: Vec<IndexingTask>,
     ) -> anyhow::Result<bool> {
         let members = cluster.ready_members_from_chitchat_state().await;
-        let node_1 = members
+        let node = members
             .iter()
             .find(|member| member.gossip_advertise_addr == gossip_public_address)
             .ok_or_else(|| anyhow!("no cluster member"))?;
-        Ok(node_1.indexing_tasks == indexing_tasks)
+        let node_grouped_tasks: HashMap<IndexingTask, usize> = node
+            .indexing_tasks
+            .iter()
+            .group_by(|task| (*task).clone())
+            .into_iter()
+            .map(|(key, group)| (key, group.count()))
+            .collect();
+        let grouped_tasks: HashMap<IndexingTask, usize> = indexing_tasks
+            .iter()
+            .group_by(|task| (*task).clone())
+            .into_iter()
+            .map(|(key, group)| (key, group.count()))
+            .collect();
+        Ok(node_grouped_tasks == grouped_tasks)
     }
 
     #[tokio::test]
@@ -651,11 +737,11 @@ mod tests {
             let chitchat_handle = cluster1.chitchat_handle.chitchat();
             let mut chitchat_guard = chitchat_handle.lock().await;
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}:my_good_index:my_source"),
+                format!("{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}my_good_index{INDEXING_TASK_SEPARATOR}my_source"),
                 "2".to_string(),
             );
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}:my_bad_index:my_source"),
+                format!("{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}my_bad_index{INDEXING_TASK_SEPARATOR}my_source"),
                 "malformatted value".to_string(),
             );
         }

@@ -505,7 +505,7 @@ mod tests {
         // Update the indexer state and check that the indexer does not receive any new
         // `ApplyIndexingPlanRequest`.
         cluster
-            .set_self_node_indexing_tasks(&indexing_tasks)
+            .update_self_node_indexing_tasks(&indexing_tasks)
             .await
             .unwrap();
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
@@ -517,7 +517,7 @@ mod tests {
         // Update the indexer state with a different plan and check that the indexer does now
         // receive a new `ApplyIndexingPlanRequest`.
         cluster
-            .set_self_node_indexing_tasks(&[indexing_tasks[0].clone()])
+            .update_self_node_indexing_tasks(&[indexing_tasks[0].clone()])
             .await
             .unwrap();
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;

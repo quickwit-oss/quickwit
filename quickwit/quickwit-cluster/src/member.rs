@@ -31,9 +31,10 @@ use crate::QuickwitService;
 // Keys used to store member's data in chitchat state.
 pub(crate) const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
 pub(crate) const ENABLED_SERVICES_KEY: &str = "enabled_services";
-// An indexing task key is formatted as `INDEXING_TASK_PREFIX:index_id:source_id`.
+// An indexing task key is formatted as
+// `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
 pub(crate) const INDEXING_TASK_PREFIX: &str = "indexing_task";
-pub(crate) const INDEXING_TASK_SEPARATOR: &str = ":";
+pub(crate) const INDEXING_TASK_SEPARATOR: char = '\u{0000}';
 
 /// Cluster member.
 #[derive(Clone, Debug, Eq, PartialEq)]
