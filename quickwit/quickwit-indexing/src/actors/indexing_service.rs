@@ -517,7 +517,8 @@ impl IndexingService {
         for pipeline_id_to_remove in running_pipeline_ids.difference(&updated_pipeline_ids) {
             match self.detach_pipeline(pipeline_id_to_remove).await {
                 Ok(pipeline_handle) => {
-                    pipeline_handle.quit().await;
+                    // Killing the pipeline ensure that all pipeline actors will stop.
+                    pipeline_handle.kill().await;
                 }
                 Err(error) => {
                     // Just log the detach error, it can only come from a missing pipeline in the
