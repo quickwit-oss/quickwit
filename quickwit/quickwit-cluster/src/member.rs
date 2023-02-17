@@ -57,7 +57,7 @@ pub struct ClusterMember {
     /// Running indexing plan.
     /// None if the node is not an indexer or the indexer has not yet started some indexing
     /// pipelines.
-    pub indexing_tasks: Vec<IndexingTask>, // , IndexingTaskState)>,
+    pub indexing_tasks: Vec<IndexingTask>,
 }
 
 impl ClusterMember {
@@ -67,7 +67,7 @@ impl ClusterMember {
         enabled_services: HashSet<QuickwitService>,
         gossip_advertise_addr: SocketAddr,
         grpc_advertise_addr: SocketAddr,
-        indexing_tasks: Vec<IndexingTask>, // , IndexingTaskState)>,
+        indexing_tasks: Vec<IndexingTask>,
     ) -> Self {
         Self {
             node_id,
@@ -162,8 +162,8 @@ pub(crate) fn build_cluster_member(
     ))
 }
 
-/// Parse indexing tasks serialized in keys formatted as `INDEXING_TASK_PREFIX:index_id:source_id`.
-/// Malformatted keys and values are ignored and warn logs are written instead.
+/// Parses indexing tasks serialized in keys formatted as `INDEXING_TASK_PREFIX:index_id:source_id`.
+/// Malformatted keys and values are ignored, just warnings are emitted.
 pub(crate) fn parse_indexing_tasks(node_state: &NodeState, node_id: &str) -> Vec<IndexingTask> {
     node_state
         .iter_key_values(|key, _| key.starts_with(INDEXING_TASK_PREFIX))
