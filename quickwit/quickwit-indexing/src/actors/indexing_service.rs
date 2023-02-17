@@ -552,7 +552,7 @@ impl IndexingService {
         Ok(())
     }
 
-    /// TODO DOC
+    /// Updates running indexing tasks in chitchat cluster state.
     async fn update_cluster_running_indexing_tasks(&self) {
         let indexing_tasks = self
             .indexing_pipeline_handles
@@ -580,7 +580,7 @@ impl IndexingService {
         }
     }
 
-    /// TODO DOC
+    /// Garbage collects ingest API queues of deleted indexes.
     async fn run_ingest_api_queues_gc(&mut self) -> anyhow::Result<()> {
         let queues: HashSet<String> = self
             .ingest_api_service
@@ -691,10 +691,12 @@ impl Actor for IndexingService {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        // We don't want to block on a GC task so we just send a message.
-        // Note: if you try to call directly the gc taks and await, you will have
-        // trouble if you spawn the indexing service and call universe.assert_quit()
-        // after that, the call on `assert_quit` can block indefinitely.
+        // We don't want to block on a GC task during initialization so we just send a message.
+        // Note(fmassot): garbage collecting requires to `ask_for_res` on the ingest API service.
+        // If you try to await for the garbage collect in the initialization, some tests
+        // may run indefinitely. Indeed, the `universe.assert_quit()` called at the
+        // end of tests will potentially shutdown first the ingest API service and the initialize
+        // of the indexing service will hang indefinitely.
         let _ = ctx.send_self_message(GCIngestApiQueues).await;
         self.handle(SuperviseLoop, ctx).await
     }
