@@ -235,21 +235,20 @@ impl<A: Actor> Mailbox<A> {
         M: 'static + Send + Sync + fmt::Debug,
     {
         let (envelope, response_rx) = self.wrap_in_envelope(message);
-        if let Some(backpressure_micros_counter) = backpressure_micros_counter_opt {
-            match self.inner.tx.try_send_low_priority(envelope) {
-                Ok(()) => Ok(response_rx),
-                Err(TrySendError::Full(msg)) => {
+        match self.inner.tx.try_send_low_priority(envelope) {
+            Ok(()) => Ok(response_rx),
+            Err(TrySendError::Full(envelope)) => {
+                if let Some(backpressure_micros_counter) = backpressure_micros_counter_opt {
                     let now = Instant::now();
-                    self.inner.tx.send_low_priority(msg).await?;
+                    self.inner.tx.send_low_priority(envelope).await?;
                     let elapsed = now.elapsed();
                     backpressure_micros_counter.inc_by(elapsed.as_micros() as u64);
-                    Ok(response_rx)
+                } else {
+                    self.inner.tx.send_low_priority(envelope).await?;
                 }
-                Err(TrySendError::Disconnected) => Err(SendError::Disconnected),
+                Ok(response_rx)
             }
-        } else {
-            self.inner.tx.send_low_priority(envelope).await?;
-            Ok(response_rx)
+            Err(TrySendError::Disconnected) => Err(SendError::Disconnected),
         }
     }
 
@@ -329,10 +328,11 @@ impl<A: Actor> Mailbox<A> {
     /// waits asynchronously for the actor reply.
     ///
     /// From an actor context, use the `ActorContext::ask` method instead.
-    pub async fn ask_for_res<M, T, E: fmt::Debug>(&self, message: M) -> Result<T, AskError<E>>
+    pub async fn ask_for_res<M, T, E>(&self, message: M) -> Result<T, AskError<E>>
     where
         A: Handler<M, Reply = Result<T, E>>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + Sync + 'static,
+        E: fmt::Debug,
     {
         self.send_message(message)
             .await

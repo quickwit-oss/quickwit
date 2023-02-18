@@ -713,10 +713,9 @@ mod tests {
         let deser_err = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)
             .err()
             .unwrap();
-        assert_eq!(
-            deser_err.to_string(),
-            "Field name `_source` may not start by _ at line 9 column 13"
-        );
+        assert!(deser_err
+            .to_string()
+            .contains("The following fields are reserved for Quickwit internal usage"));
     }
 
     #[test]

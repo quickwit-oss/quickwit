@@ -195,7 +195,7 @@ pub trait Actor: Send + Sync + Sized + 'static {
 
 #[async_trait::async_trait]
 pub trait Handler<M>: Actor {
-    type Reply: 'static + Send;
+    type Reply: Send + 'static;
 
     /// Processes a message.
     ///

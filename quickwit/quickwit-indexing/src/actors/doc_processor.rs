@@ -377,7 +377,10 @@ impl VrlProgram {
         let runtime_res = self
             .runtime
             .resolve(&mut target, &self.program, &self.timezone)
-            .map_err(PrepareDocumentError::TransformError);
+            .map_err(|transform_error| {
+                warn!(transform_error=?transform_error);
+                PrepareDocumentError::TransformError(transform_error)
+            });
 
         self.runtime.clear();
 

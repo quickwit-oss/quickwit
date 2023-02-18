@@ -4496,6 +4496,7 @@ dependencies = [
  "dyn-clone",
  "mockall",
  "prost",
+ "quickwit-actors",
  "quickwit-codegen",
  "serde",
  "thiserror",
