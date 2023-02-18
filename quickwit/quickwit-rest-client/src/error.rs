@@ -58,15 +58,15 @@ impl Error {
 
 #[derive(Error, Debug)]
 pub struct ApiError {
-    pub error: Option<String>,
+    pub message: Option<String>,
     pub status: StatusCode,
 }
 
 // Implement `Display` for `ApiError`.
 impl std::fmt::Display for ApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        if let Some(error) = &self.error {
-            write!(f, "(status={}, error={})", self.status, error)
+        if let Some(error) = &self.message {
+            write!(f, "(status={}, message={})", self.status, error)
         } else {
             write!(f, "(status={})", self.status)
         }
@@ -75,5 +75,5 @@ impl std::fmt::Display for ApiError {
 
 #[derive(Deserialize)]
 pub(crate) struct ErrorResponsePayload {
-    pub error: String,
+    pub message: String,
 }

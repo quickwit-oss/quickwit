@@ -40,7 +40,7 @@ pub struct IndexingApi;
 /// Observe Indexing Pipeline
 async fn indexing_endpoint(indexing_service_mailbox: Mailbox<IndexingService>) -> impl warp::Reply {
     let obs = indexing_service_mailbox.ask(Observe).await;
-    Format::PrettyJson.make_rest_reply_non_serializable_error(obs)
+    Format::PrettyJson.make_rest_reply(obs)
 }
 
 fn indexing_get_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {

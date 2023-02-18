@@ -76,7 +76,7 @@ fn cluster_state_filter(
 async fn get_cluster(request: ClusterStateQueryString, cluster: Arc<Cluster>) -> impl warp::Reply {
     request
         .format
-        .make_rest_reply_non_serializable_error(cluster_endpoint(cluster).await)
+        .make_rest_reply(cluster_endpoint(cluster).await)
 }
 
 async fn cluster_endpoint(cluster: Arc<Cluster>) -> Result<ClusterSnapshot, Infallible> {

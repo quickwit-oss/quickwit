@@ -123,7 +123,7 @@ fn ingest_handler(
     ingest_filter()
         .and(with_arg(ingest_service))
         .then(ingest)
-        .map(|result| Format::default().make_rest_reply_non_serializable_error(result))
+        .map(|result| Format::default().make_rest_reply(result))
 }
 
 fn lines(body: &str) -> impl Iterator<Item = &str> {
@@ -174,7 +174,7 @@ pub fn tail_handler(
     tail_filter()
         .and(with_arg(ingest_service))
         .then(tail_endpoint)
-        .map(|result| Format::default().make_rest_reply_non_serializable_error(result))
+        .map(|result| Format::default().make_rest_reply(result))
 }
 
 fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
@@ -221,7 +221,7 @@ pub fn elastic_bulk_handler(
     elastic_bulk_filter()
         .and(with_arg(ingest_service))
         .then(elastic_ingest)
-        .map(|result| Format::default().make_rest_reply_non_serializable_error(result))
+        .map(|result| Format::default().make_rest_reply(result))
 }
 
 #[utoipa::path(
