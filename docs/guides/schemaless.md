@@ -7,7 +7,7 @@ sidebar_position: 1
 
 Quickwit lets you place the cursor on how strict you would like your schema to be. In other words, it is possible to operate Quickwit with a very strict mapping, in an entirely schemaless manner, and anywhere in between. Let's see how this works!
 
-::: note
+:::note
 
 To experiment schemaless search, [install](/docs/get-started/installation.md) Quickwit and start a server in a terminal. You will then be able to execute the bash commands throughout this guide.
 
@@ -24,7 +24,7 @@ As a user, you need to precisely define the list of fields to be ingested by Qui
 
 For instance, a reasonable mapping for an application log could be:
 
-```yaml
+```yml title=my_strict_index.yaml
 version: 0.4
 
 index_id: my_strict_index
@@ -40,7 +40,7 @@ doc_mapping:
       precision: seconds
       fast: true
     - name: server
-      type: 
+      type: text
       tokenizer: raw
     - name: message
       type: text
@@ -69,7 +69,7 @@ When set to dynamic, all extra fields will actually be mapped using a catch-all 
 By default, this catch-all configuration indexes and stores all of these fields, but this can be configured by setting the [`dynamic_mapping` attribute](../configuration/index-config#mode).
 A minimalist, yet perfectly valid and useful index configuration is then:
 
-```yaml
+```yaml title=my_dynamic_index.yaml
 version: 0.4
 index_id: my_dynamic_index
 doc_mapping:
@@ -114,7 +114,7 @@ Each event type comes with its own set of attributes. Declaring our mapping as t
 
 Instead, we can cherry-pick the fields that are common to all of the logs, and rely on dynamic mode to handle the rest.
 
-```yaml
+```yaml title=my_dynamic_index.yaml
 version: 0.4
 index_id: my_dynamic_index
 doc_mapping:
@@ -173,6 +173,7 @@ indexing_settings:
   commit_timeout_secs: 5
 EOF
 
+# Create index.
 ./quickwit index create --index-config ./my_dynamic_index.yaml --overwrite --yes
 
 cat << EOF > my_logs.json
@@ -181,8 +182,10 @@ cat << EOF > my_logs.json
 {"timestamp":1653021748,"user_id":"8705a7fak","event_type":"login","ab_groups":["phoenix-red-ux"]}
 EOF
 
+# Ingest documents.
 ./quickwit index ingest --index my_dynamic_index --input-path my_logs.json 
 
+# Execute search query.
 ./quickwit index search --index my_dynamic_index --query "event_type:order AND cart.product_id:120391
 
 ```
@@ -192,7 +195,7 @@ EOF
 Some logs are isolating these event-specific attributes in a
 sub-field. For instance, let's have a look at an OpenTelemetry JSON log.
 
-```json
+```json title=otel_logs.json
 {
   "Timestamp": 1653028151,
   "Attributes": {
@@ -215,7 +218,7 @@ In this log, the `Attributes` and the `Resource` fields contain arbitrary key-va
 Quickwit 0.3 introduced a JSON field type to handle this use case.
 A good index configuration here could be:
 
-```yaml
+```yaml title=otel_logs.yaml
 version: 0.4
 index_id: otel_logs
 doc_mapping:
@@ -265,15 +268,17 @@ donuts AND service:donuts_shop
 Let's use the CLI commands to reproduce it:
 
 ```bash
-
+# Create index.
 ./quickwit index create --index-config ./otel_logs.yaml --overwrite --yes
 
 cat << EOF > otel_logs.json
 {"Timestamp":1653028151,"Attributes":{"split_id":"28f897f2-0419-4d88-8abc-ada72b4b5256"},"Resource":{"service":"donut_shop","k8s_pod_uid":"27413708-876b-4652-8ca4-50e8b4a5caa2"},"TraceId":"f4dbb3edd765f620","SpanId":"43222c2d51a7abe3","SeverityText":"INFO","SeverityNumber":9,"Body":"merge ended"}
 EOF
 
+# Ingest documents.
 ./quickwit index ingest --index otel_logs --input-path otel_logs.json
 
+# Execute search query.
 ./quickwit index search --index otel_logs --query "merge AND service:donut_shop"
 
 ```
