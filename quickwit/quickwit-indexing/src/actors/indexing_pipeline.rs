@@ -280,7 +280,7 @@ impl IndexingPipeline {
             )
             .spawn(publisher);
 
-        let sequencer = Sequencer::new(publisher_mailbox.clone());
+        let sequencer = Sequencer::new(publisher_mailbox);
         let (sequencer_mailbox, sequencer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(
@@ -332,7 +332,6 @@ impl IndexingPipeline {
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
             index_serializer_mailbox,
-            publisher_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
@@ -537,7 +536,7 @@ mod tests {
 
     use quickwit_actors::{Command, Universe};
     use quickwit_config::{IndexingSettings, SourceParams, VoidSourceParams};
-    use quickwit_doc_mapper::default_doc_mapper_for_test;
+    use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
 
@@ -825,5 +824,110 @@ mod tests {
             }
         }
         panic!("Pipeline was apparently not restarted.");
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_all_failures_handling() -> anyhow::Result<()> {
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_index_metadata()
+            .withf(|index_id| index_id == "test-index")
+            .returning(|_| {
+                Ok(IndexMetadata::for_test(
+                    "test-index",
+                    "ram:///indexes/test-index",
+                ))
+            });
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(10)
+            });
+        metastore
+            .expect_stage_splits()
+            .never()
+            .returning(|_, _| Ok(()));
+        metastore
+            .expect_publish_splits()
+            .withf(
+                |index_id, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
+                    let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
+                    index_id == "test-index"
+                        && splits.is_empty()
+                        && replaced_split_ids.is_empty()
+                        && checkpoint_delta.source_id == "test-source"
+                        && format!("{:?}", checkpoint_delta.source_delta)
+                            .ends_with(":(00000000000000000000..00000000000000001030])")
+                },
+            )
+            .times(1)
+            .returning(|_, _, _, _| Ok(()));
+        let universe = Universe::with_accelerated_time();
+        let node_id = "test-node";
+        let metastore = Arc::new(metastore);
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: node_id.to_string(),
+            pipeline_ord: 0,
+        };
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
+            transform_config: None,
+        };
+        let storage = Arc::new(RamStorage::default());
+        let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
+        let (merge_planner_mailbox, _) = universe.create_test_mailbox();
+        // Create a minimal mapper with wrong date format to ensure that all documents will fail
+        let broken_mapper = serde_json::from_str::<DefaultDocMapper>(
+            r#"
+                {
+                    "store_source": true,
+                    "timestamp_field": "timestamp",
+                    "field_mappings": [
+                        {
+                            "name": "timestamp",
+                            "type": "datetime",
+                            "input_formats": ["iso8601"],
+                            "fast": true
+                        }
+                    ]
+                }"#,
+        )
+        .unwrap();
+
+        let pipeline_params = IndexingPipelineParams {
+            pipeline_id,
+            doc_mapper: Arc::new(broken_mapper),
+            source_config,
+            indexing_directory: ScratchDirectory::for_test(),
+            indexing_settings: IndexingSettings::for_test(),
+            metastore: metastore.clone(),
+            queues_dir_path: PathBuf::from("./queues"),
+            storage,
+            split_store,
+            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads_merge: 5,
+            merge_planner_mailbox,
+        };
+        let pipeline = IndexingPipeline::new(pipeline_params);
+        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
+        let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.join().await;
+        assert!(pipeline_exit_status.is_success());
+        assert_eq!(pipeline_statistics.generation, 1);
+        assert_eq!(pipeline_statistics.num_spawn_attempts, 1);
+        assert_eq!(pipeline_statistics.num_published_splits, 0);
+        assert_eq!(pipeline_statistics.num_empty_splits, 1);
+        assert_eq!(
+            pipeline_statistics.num_docs,
+            pipeline_statistics.num_invalid_docs
+        );
+        universe.assert_quit().await;
+        Ok(())
     }
 }

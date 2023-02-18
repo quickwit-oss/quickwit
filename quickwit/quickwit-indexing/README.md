@@ -10,7 +10,6 @@ flowchart LR
         packager[Packager] --0--> uploader
         uploader[Uploader] --2--> sequencer
         sequencer[Sequencer] --1--> publisher
-        indexer[Indexer] --1--> publisher
     end
     subgraph Merge pipeline
         direction LR

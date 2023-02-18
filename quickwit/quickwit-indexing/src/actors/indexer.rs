@@ -43,11 +43,10 @@ use tokio::runtime::Handle;
 use tracing::{info, info_span, warn, Span};
 use ulid::Ulid;
 
-use super::Publisher;
 use crate::actors::IndexSerializer;
 use crate::models::{
-    CommitTrigger, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingPipelineId,
-    NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, ScratchDirectory, SplitsUpdate,
+    CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingPipelineId,
+    NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, ScratchDirectory,
 };
 
 // Random partition id used to gather partitions exceeding the maximum number of partitions.
@@ -300,7 +299,6 @@ struct IndexingWorkbench {
 pub struct Indexer {
     indexer_state: IndexerState,
     index_serializer_mailbox: Mailbox<IndexSerializer>,
-    publisher_mailbox: Mailbox<Publisher>,
     indexing_workbench_opt: Option<IndexingWorkbench>,
     counters: IndexerCounters,
 }
@@ -416,7 +414,6 @@ impl Indexer {
         indexing_directory: ScratchDirectory,
         indexing_settings: IndexingSettings,
         index_serializer_mailbox: Mailbox<IndexSerializer>,
-        publisher_mailbox: Mailbox<Publisher>,
     ) -> Self {
         let schema = doc_mapper.schema();
         let docstore_compression = Compressor::Zstd(ZstdCompressor {
@@ -432,7 +429,7 @@ impl Indexer {
         Self {
             indexer_state: IndexerState {
                 pipeline_id,
-                metastore,
+                metastore: metastore.clone(),
                 indexing_directory,
                 indexing_settings,
                 publish_lock,
@@ -441,7 +438,6 @@ impl Indexer {
                 max_num_partitions: doc_mapper.max_num_partitions(),
             },
             index_serializer_mailbox,
-            publisher_mailbox,
             indexing_workbench_opt: None,
             counters: IndexerCounters::default(),
         }
@@ -507,22 +503,21 @@ impl Indexer {
             splits.push(other_split)
         }
 
-        // Avoid producing empty split, but still update the checkpoint to avoid
+        // Avoid producing empty split, but still update the checkpoint if it is not empty to avoid
         // reprocessing the same faulty documents.
         if splits.is_empty() {
-            ctx.send_message(
-                &self.publisher_mailbox,
-                SplitsUpdate {
-                    index_id: self.indexer_state.pipeline_id.index_id.to_string(),
-                    new_splits: Vec::new(),
-                    replaced_split_ids: Vec::new(),
-                    checkpoint_delta_opt: Some(checkpoint_delta),
-                    publish_lock,
-                    merge_operation: None,
-                    parent_span: tracing::Span::none(),
-                },
-            )
-            .await?;
+            if !checkpoint_delta.is_empty() {
+                ctx.send_message(
+                    &self.index_serializer_mailbox,
+                    EmptySplit {
+                        index_id: self.indexer_state.pipeline_id.index_id.clone(),
+                        batch_parent_span,
+                        checkpoint_delta,
+                        publish_lock,
+                    },
+                )
+                .await?;
+            }
             return Ok(());
         }
         let num_splits = splits.len() as u64;
@@ -591,7 +586,6 @@ mod tests {
         indexing_settings.split_num_docs_target = 3;
         let universe = Universe::with_accelerated_time();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
@@ -608,7 +602,6 @@ mod tests {
             indexing_directory,
             indexing_settings,
             index_serializer_mailbox,
-            publisher_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -701,13 +694,6 @@ mod tests {
         );
         let first_split = batch.splits.into_iter().next().unwrap().finalize()?;
         assert!(first_split.index.settings().sort_by_field.is_none());
-        let publisher_messages = publisher_inbox.drain_for_test();
-        assert!(publisher_messages.is_empty());
-
-        assert!(matches!(
-            indexer_handle.quit().await.0,
-            ActorExitStatus::Quit
-        ));
         universe.assert_quit().await;
         Ok(())
     }
@@ -729,7 +715,6 @@ mod tests {
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.resources.heap_size = Byte::from_bytes(5_000_000);
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
@@ -746,7 +731,6 @@ mod tests {
             indexing_directory,
             indexing_settings,
             index_serializer_mailbox,
-            publisher_mailbox,
         );
         let (indexer_mailbox, _indexer_handle) = universe.spawn_builder().spawn(indexer);
 
@@ -784,8 +768,6 @@ mod tests {
                 break;
             }
         }
-        let publisher_messages = publisher_inbox.drain_for_test();
-        assert!(publisher_messages.is_empty());
         universe.assert_quit().await;
         Ok(())
     }
@@ -807,7 +789,6 @@ mod tests {
         let indexing_directory = ScratchDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
@@ -824,7 +805,6 @@ mod tests {
             indexing_directory,
             indexing_settings,
             index_serializer_mailbox,
-            publisher_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -875,8 +855,6 @@ mod tests {
                 .delete_opstamp,
             last_delete_opstamp
         );
-        let publisher_messages = publisher_inbox.drain_for_test();
-        assert!(publisher_messages.is_empty());
         universe.assert_quit().await;
         Ok(())
     }
@@ -897,7 +875,6 @@ mod tests {
         let indexing_directory = ScratchDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
@@ -914,7 +891,6 @@ mod tests {
             indexing_directory,
             indexing_settings,
             index_serializer_mailbox,
-            publisher_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -948,8 +924,6 @@ mod tests {
         assert_eq!(output_messages.len(), 1);
         assert_eq!(output_messages[0].commit_trigger, CommitTrigger::NoMoreDocs);
         assert_eq!(output_messages[0].splits[0].split_attrs.num_docs, 1);
-        let publisher_messages = publisher_inbox.drain_for_test();
-        assert!(publisher_messages.is_empty());
         universe.assert_quit().await;
         Ok(())
     }
@@ -982,7 +956,6 @@ mod tests {
         let indexing_directory = ScratchDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
@@ -999,7 +972,6 @@ mod tests {
             indexing_directory,
             indexing_settings,
             index_serializer_mailbox,
-            publisher_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -1052,9 +1024,6 @@ mod tests {
             index_serializer_inbox.drain_for_test_typed();
         assert_eq!(split_batches.len(), 1);
         assert_eq!(split_batches[0].splits.len(), 2);
-
-        let publisher_messages = publisher_inbox.drain_for_test();
-        assert!(publisher_messages.is_empty());
         universe.assert_quit().await;
         Ok(())
     }
@@ -1088,7 +1057,6 @@ mod tests {
             });
         metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -1096,7 +1064,6 @@ mod tests {
             indexing_directory,
             indexing_settings,
             index_serializer_mailbox,
-            publisher_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
@@ -1134,9 +1101,6 @@ mod tests {
                 assert_eq!(split.split_attrs.num_docs, 1);
             }
         }
-
-        let publisher_messages = publisher_inbox.drain_for_test();
-        assert!(publisher_messages.is_empty());
         universe.assert_quit().await;
     }
 
@@ -1165,7 +1129,6 @@ mod tests {
             });
         metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -1173,7 +1136,6 @@ mod tests {
             indexing_directory,
             indexing_settings,
             index_serializer_mailbox,
-            publisher_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
@@ -1212,9 +1174,6 @@ mod tests {
         assert_eq!(index_serializer_messages[0].publish_lock, first_lock);
         assert_eq!(index_serializer_messages[1].splits.len(), 1);
         assert_eq!(index_serializer_messages[1].publish_lock, second_lock);
-
-        let publisher_messages = publisher_inbox.drain_for_test();
-        assert!(publisher_messages.is_empty());
         universe.assert_quit().await;
     }
 
@@ -1243,7 +1202,6 @@ mod tests {
             });
         metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -1251,7 +1209,6 @@ mod tests {
             indexing_directory,
             indexing_settings,
             index_serializer_mailbox,
-            publisher_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
@@ -1283,19 +1240,6 @@ mod tests {
 
         let index_serializer_messages = index_serializer_inbox.drain_for_test();
         assert!(index_serializer_messages.is_empty());
-
-        let publisher_messages: Vec<SplitsUpdate> = publisher_inbox.drain_for_test_typed();
-        assert_eq!(publisher_messages.len(), 1);
-        let update = publisher_messages.into_iter().next().unwrap();
-        assert_eq!(update.index_id, "test-index");
-        assert_eq!(update.new_splits, Vec::new());
-        let IndexCheckpointDelta {
-            source_id,
-            source_delta,
-        } = update.checkpoint_delta_opt.unwrap();
-        assert_eq!(source_id, "test-source");
-        assert!(source_delta.is_empty());
-
         universe.assert_quit().await;
     }
 
@@ -1314,7 +1258,6 @@ mod tests {
         let commit_timeout = indexing_settings.commit_timeout();
         let universe = Universe::with_accelerated_time();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
@@ -1335,7 +1278,6 @@ mod tests {
             indexing_directory,
             indexing_settings,
             index_serializer_mailbox,
-            publisher_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -1362,18 +1304,15 @@ mod tests {
                 num_docs_in_workbench: 0, //< the num docs in split counter has been reset.
             }
         );
-        let index_serializer_messages: Vec<IndexedSplitBatchBuilder> =
-            index_serializer_inbox.drain_for_test_typed();
-        assert_eq!(index_serializer_messages.len(), 0);
 
-        let publisher_messages: Vec<SplitsUpdate> = publisher_inbox.drain_for_test_typed();
-        assert_eq!(publisher_messages.len(), 1);
-        let update = publisher_messages.into_iter().next().unwrap();
+        let index_serializer_messages: Vec<EmptySplit> =
+            index_serializer_inbox.drain_for_test_typed();
+        assert_eq!(index_serializer_messages.len(), 1);
+        let update = index_serializer_messages.into_iter().next().unwrap();
         assert_eq!(update.index_id, "test-index");
-        assert_eq!(update.new_splits, Vec::new());
         assert_eq!(
-            update.checkpoint_delta_opt,
-            IndexCheckpointDelta::for_test("test-source", 4..8).into()
+            update.checkpoint_delta,
+            IndexCheckpointDelta::for_test("test-source", 4..8)
         );
 
         universe.assert_quit().await;

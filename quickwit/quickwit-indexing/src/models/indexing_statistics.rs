@@ -38,6 +38,8 @@ pub struct IndexingStatistics {
     pub num_uploaded_splits: u64,
     /// Number of published splits
     pub num_published_splits: u64,
+    /// Number of empty batches
+    pub num_empty_splits: u64,
     /// Size in byte of document processed
     pub total_bytes_processed: u64,
     /// Size in bytes of resulting split
@@ -63,6 +65,7 @@ impl IndexingStatistics {
         self.num_staged_splits += uploader_counters.num_staged_splits.load(Ordering::SeqCst);
         self.num_uploaded_splits += uploader_counters.num_uploaded_splits.load(Ordering::SeqCst);
         self.num_published_splits += publisher_counters.num_published_splits;
+        self.num_empty_splits += publisher_counters.num_empty_splits;
         self
     }
 
