@@ -112,7 +112,7 @@ pub fn ingest_handler(
     ingest_filter()
         .and(require(ingest_api_mailbox_opt))
         .then(ingest)
-        .map(|result| Format::default().make_rest_reply_non_serializable_error(result))
+        .map(|result| Format::default().make_rest_reply(result))
 }
 
 fn ingest_filter() -> impl Filter<Extract = (String, String), Error = Rejection> + Clone {
@@ -176,7 +176,7 @@ pub fn tail_handler(
     tail_filter()
         .and(require(ingest_api_mailbox_opt))
         .then(tail_endpoint)
-        .map(|result| Format::default().make_rest_reply_non_serializable_error(result))
+        .map(|result| Format::default().make_rest_reply(result))
 }
 
 fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
@@ -225,7 +225,7 @@ pub fn elastic_bulk_handler(
     elastic_bulk_filter()
         .and(require(ingest_api_mailbox_opt))
         .then(elastic_ingest)
-        .map(|result| Format::default().make_rest_reply_non_serializable_error(result))
+        .map(|result| Format::default().make_rest_reply(result))
 }
 
 #[utoipa::path(

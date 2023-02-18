@@ -56,19 +56,19 @@ impl Serialize for Format {
 }
 
 #[derive(Serialize)]
-pub(crate) struct FormatError {
+pub(crate) struct ApiError {
     #[serde(skip_serializing)]
     pub code: ServiceErrorCode,
-    pub error: String,
+    pub message: String,
 }
 
-impl ToString for FormatError {
+impl ToString for ApiError {
     fn to_string(&self) -> String {
-        self.error.clone()
+        self.message.clone()
     }
 }
 
-impl ServiceError for FormatError {
+impl ServiceError for ApiError {
     fn status_code(&self) -> ServiceErrorCode {
         self.code
     }
@@ -95,9 +95,9 @@ impl Format {
         reply::with_status(reply_with_header, status_code)
     }
 
-    pub(crate) fn make_rest_reply<T: serde::Serialize, E: ServiceError + Serialize>(
+    fn internal_make_rest_reply<T: serde::Serialize>(
         self,
-        result: Result<T, E>,
+        result: Result<T, ApiError>,
     ) -> WithStatus<WithHeader<String>> {
         match result {
             Ok(success) => {
@@ -110,9 +110,9 @@ impl Format {
                     }
                     Err(_) => {
                         tracing::error!("Error: the response serialization failed.");
-                        self.make_reply_for_err(FormatError {
+                        self.make_reply_for_err(ApiError {
                             code: ServiceErrorCode::Internal,
-                            error: JSON_SERIALIZATION_ERROR.to_string(),
+                            message: JSON_SERIALIZATION_ERROR.to_string(),
                         })
                     }
                 }
@@ -121,7 +121,7 @@ impl Format {
         }
     }
 
-    pub(crate) fn make_rest_reply_non_serializable_error<T, E>(
+    pub(crate) fn make_rest_reply<T, E>(
         self,
         result: Result<T, E>,
     ) -> WithStatus<WithHeader<String>>
@@ -129,9 +129,9 @@ impl Format {
         T: serde::Serialize,
         E: ServiceError + ToString,
     {
-        self.make_rest_reply(result.map_err(|err| FormatError {
+        self.internal_make_rest_reply(result.map_err(|err| ApiError {
             code: err.status_code(),
-            error: err.to_string(),
+            message: err.to_string(),
         }))
     }
 }

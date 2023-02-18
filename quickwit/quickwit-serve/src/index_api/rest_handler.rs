@@ -75,7 +75,7 @@ pub fn index_management_handlers(
 }
 
 fn format_response<T: Serialize, E: ServiceError + ToString>(result: Result<T, E>) -> impl Reply {
-    Format::default().make_rest_reply_non_serializable_error(result)
+    Format::default().make_rest_reply(result)
 }
 
 fn json_body<T: DeserializeOwned + Send>(

@@ -49,12 +49,12 @@ impl ApiResponse {
         let status = self.inner.status();
         if let Ok(error_payload) = self.inner.json::<ErrorResponsePayload>().await {
             Error::from(ApiError {
-                error: Some(error_payload.error),
+                message: Some(error_payload.message),
                 status,
             })
         } else {
             Error::from(ApiError {
-                error: None,
+                message: None,
                 status,
             })
         }

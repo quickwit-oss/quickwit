@@ -656,7 +656,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: JsonValue = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `snippet_fields`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
+            "message": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `snippet_fields`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
@@ -773,14 +773,13 @@ mod tests {
             .expect_root_search()
             .returning(|_| Err(SearchError::InvalidQuery("invalid query".to_string())));
         let rest_search_api_handler = search_handler(mock_search_service);
-        assert_eq!(
-            warp::test::request()
-                .path("/my-index/search?query=myfield:test")
-                .reply(&rest_search_api_handler)
-                .await
-                .status(),
-            400
-        );
+        let response = warp::test::request()
+            .path("/my-index/search?query=myfield:test")
+            .reply(&rest_search_api_handler)
+            .await;
+        assert_eq!(response.status(), 400);
+        let body = String::from_utf8_lossy(response.body());
+        assert!(body.contains("invalid query"));
         Ok(())
     }
 
