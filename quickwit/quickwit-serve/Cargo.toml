@@ -73,6 +73,7 @@ rand = { workspace = true }
 tokio = { workspace = true }
 tempfile = { workspace = true }
 
+quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
