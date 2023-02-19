@@ -63,8 +63,8 @@ pub async fn init_ingest_api(
     }
     let ingest_api_actor = IngestApiService::with_queues_dir(
         queues_dir_path,
-        config.max_queue_memory_usage,
-        config.max_queue_disk_usage,
+        config.max_queue_memory_usage.get_bytes() as usize,
+        config.max_queue_disk_usage.get_bytes() as usize,
     )
     .await
     .with_context(|| {
@@ -132,6 +132,7 @@ pub fn iter_doc_payloads(doc_batch: &DocBatch) -> impl Iterator<Item = &[u8]> {
 #[cfg(test)]
 mod tests {
 
+    use byte_unit::Byte;
     use quickwit_actors::AskError;
     use quickwit_proto::ingest_api::{CreateQueueRequest, IngestRequest, SuggestTruncateRequest};
 
@@ -182,8 +183,8 @@ mod tests {
             &universe,
             &queues_dir_path,
             &IngestApiConfig {
-                max_queue_memory_usage: 1024,
-                max_queue_disk_usage: 1024 * 1024 * 256,
+                max_queue_memory_usage: Byte::from_bytes(1024),
+                max_queue_disk_usage: Byte::from_bytes(1024 * 1024 * 256),
             },
         )
         .await
