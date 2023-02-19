@@ -4934,6 +4934,7 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "bytes",
+ "quickwit-actors",
  "quickwit-common",
  "quickwit-config",
  "quickwit-indexing",
