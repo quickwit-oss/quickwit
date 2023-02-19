@@ -9,7 +9,7 @@ Quickwit lets you place the cursor on how strict you would like your schema to b
 
 :::note
 
-To experiment schemaless search, [install](/docs/get-started/installation.md) Quickwit and start a server in a terminal. You will then be able to execute the bash commands throughout this guide.
+To execute the CLI commands thoughout this guide, [install](/docs/get-started/installation.md) Quickwit and start a server in a terminal with the following command:
 
 ```bash
 ./quickwit run
@@ -24,7 +24,7 @@ As a user, you need to precisely define the list of fields to be ingested by Qui
 
 For instance, a reasonable mapping for an application log could be:
 
-```yml title=my_strict_index.yaml
+```yaml title=my_strict_index.yaml
 version: 0.4
 
 index_id: my_strict_index
@@ -136,7 +136,7 @@ doc_mapping:
   timestamp_field: timestamp
 
 indexing_settings:
-  commit_timeout_secs: 5
+  commit_timeout_secs: 5  # <--- Your document will be searchable ~5 seconds after you ingest them.
 ```
 
 Our index is now ready to handle queries like this:
@@ -145,7 +145,7 @@ Our index is now ready to handle queries like this:
 event_type:order AND cart.product_id:120391
 ```
 
-Using the CLI commands, this gives:
+Execute the following commands to create the index, ingest a few documents and search through them:
 
 ```bash
 cat << EOF > my_dynamic_index.yaml
@@ -262,10 +262,10 @@ indexing_settings:
 We can now naturally search our logs with the following query:
 
 ```
-donuts AND service:donuts_shop
+merge AND service:donuts_shop
 ```
 
-Let's use the CLI commands to reproduce it:
+Let's execute the following commands to create the index, ingest a document and execute a search query:
 
 ```bash
 # Create index.
