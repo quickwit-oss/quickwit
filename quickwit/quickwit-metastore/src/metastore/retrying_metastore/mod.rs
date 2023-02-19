@@ -18,16 +18,15 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod error;
-mod retry;
 #[cfg(test)]
 mod test;
 
 use async_trait::async_trait;
+use quickwit_common::retry::{retry, RetryParams};
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 
-use self::retry::{retry, RetryParams};
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
 

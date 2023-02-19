@@ -4514,6 +4514,7 @@ dependencies = [
  "async-speed-limit",
  "colored",
  "env_logger 0.9.3",
+ "futures",
  "home",
  "hyper",
  "itertools",

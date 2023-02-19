@@ -20,11 +20,13 @@
 use std::time::Duration;
 
 use quickwit_cluster::ClusterMember;
+use quickwit_common::retry::{retry, RetryParams, Retryable};
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::control_plane_api::control_plane_service_client::ControlPlaneServiceClient;
 use quickwit_proto::control_plane_api::NotifyIndexChangeRequest;
 use tokio_stream::wrappers::WatchStream;
 use tonic::transport::Channel;
+use tonic::Code;
 use tower::timeout::Timeout;
 
 use crate::balance_channel::create_balance_channel_from_watched_members;
@@ -43,6 +45,7 @@ use crate::balance_channel::create_balance_channel_from_watched_members;
 #[derive(Clone)]
 pub struct ControlPlaneGrpcClient {
     underlying: ControlPlaneServiceClient<Timeout<Channel>>,
+    retry_params: RetryParams,
 }
 
 impl ControlPlaneGrpcClient {
@@ -51,6 +54,10 @@ impl ControlPlaneGrpcClient {
         let timeout_channel = Timeout::new(channel, Duration::from_secs(5));
         Self {
             underlying: ControlPlaneServiceClient::new(timeout_channel),
+            retry_params: RetryParams {
+                max_attempts: 3,
+                ..Default::default()
+            },
         }
     }
 
@@ -67,16 +74,43 @@ impl ControlPlaneGrpcClient {
         .await?;
         Ok(Self {
             underlying: ControlPlaneServiceClient::new(channel),
+            retry_params: RetryParams {
+                max_attempts: 5,
+                ..Default::default()
+            },
         })
     }
 
     /// Notifies a control plane that an index change happened.
     pub async fn notify_index_change(&mut self) -> anyhow::Result<()> {
-        let _ = self
-            .underlying
-            .notify_index_change(NotifyIndexChangeRequest {})
-            .await?;
+        let _ = retry(&self.retry_params, || {
+            let mut underlying_clone = self.underlying.clone();
+            async move {
+                underlying_clone
+                    .notify_index_change(NotifyIndexChangeRequest {})
+                    .await
+                    .map_err(ControlPlaneGrpcError::from)
+            }
+        })
+        .await;
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct ControlPlaneGrpcError {
+    inner: tonic::Status,
+}
+
+impl Retryable for ControlPlaneGrpcError {
+    fn is_retryable(&self) -> bool {
+        self.inner.code() == Code::Unavailable
+    }
+}
+
+impl From<tonic::Status> for ControlPlaneGrpcError {
+    fn from(status: tonic::Status) -> Self {
+        ControlPlaneGrpcError { inner: status }
     }
 }
 

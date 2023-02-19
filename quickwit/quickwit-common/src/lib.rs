@@ -31,6 +31,7 @@ pub mod net;
 mod progress;
 pub mod rand;
 pub mod rendezvous_hasher;
+pub mod retry;
 pub mod runtimes;
 pub mod simple_list;
 #[cfg(any(test, feature = "testsuite"))]
