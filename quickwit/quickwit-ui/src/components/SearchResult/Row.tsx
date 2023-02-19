@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { KeyboardArrowDown } from "@mui/icons-material";
-import ChevronRight from "@mui/icons-material/ChevronRight";
 import { Box, IconButton, styled, TableCell, TableRow } from "@mui/material";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime"
@@ -124,7 +122,6 @@ export function Row(props: RowProps) {
             size="small"
             onClick={() => setOpen(!open)}
           >
-            {open ? <KeyboardArrowDown /> : <ChevronRight />}
           </IconButton>
         </TableCell>
         {DisplayTimestampValue(props.row, props.timestampField)}

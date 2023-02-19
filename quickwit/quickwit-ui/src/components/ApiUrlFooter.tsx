@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import { Box, styled, Typography, Button } from '@mui/material';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { QUICKWIT_LIGHT_GREY } from '../utils/theme';
 
 const Footer = styled(Box)`
@@ -50,7 +49,6 @@ export default function ApiUrlFooter(url: string) {
           window.open(completeUrl, '_blank');
         }
       }}
-      endIcon={<ContentCopyIcon />}
       size="small">
         {completeUrl.substring(0, urlMaxLength)}{isTooLong && "..."}
     </Button>

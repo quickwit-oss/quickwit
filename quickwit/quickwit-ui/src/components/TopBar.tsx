@@ -19,7 +19,6 @@
 
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
-import GitHubIcon from '@mui/icons-material/GitHub';
 import { Box, IconButton, Link, styled, SvgIcon, Tooltip, Typography } from '@mui/material';
 import { Discord } from '@styled-icons/fa-brands/Discord';
 import { ReactComponent as Logo } from '../assets/img/quickwit-logo.svg';
@@ -70,7 +69,6 @@ const TopBar = () => {
         </Link>
         <Link href="https://github.com/quickwit-inc/quickwit" target="_blank">
           <IconButton size="large">
-            <GitHubIcon />
           </IconButton>
         </Link>
       </Toolbar>

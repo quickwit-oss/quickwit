@@ -19,7 +19,6 @@
 
 import { Box, Button } from "@mui/material";
 import { TimeRangeSelect } from './TimeRangeSelect';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { SearchComponentProps } from "../utils/SearchComponentProps";
 
 export function QueryEditorActionBar(props: SearchComponentProps) {
@@ -31,7 +30,6 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
         <Button
           onClick={() => props.runSearch(props.searchRequest)}
           variant="contained"
-          startIcon={<PlayArrowIcon />}
           disableElevation
           sx={{ flexGrow: 1}}
           disabled={props.queryRunning || !props.searchRequest.indexId}>

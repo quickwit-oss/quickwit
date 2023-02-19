@@ -19,7 +19,6 @@
 
 import { Box } from '@mui/material';
 import { ResponseError } from '../utils/models';
-import SentimentVeryDissatisfiedIcon from '@mui/icons-material/SentimentVeryDissatisfied';
 
 function renderMessage(error: ResponseError) {
   if (error.message !== null && error.message.includes('No search node available.')) {
@@ -40,7 +39,6 @@ function renderMessage(error: ResponseError) {
 
 export default function ErrorResponseDisplay(error: ResponseError) {
   return <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', alignItems: 'center' }} >
-    <SentimentVeryDissatisfiedIcon sx={{ fontSize: 60 }} />
     {renderMessage(error)}
   </Box>
 }

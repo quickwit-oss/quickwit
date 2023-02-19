@@ -21,7 +21,6 @@ import { Autocomplete, Box, Chip, CircularProgress, IconButton, List, ListItem, 
 import React, { useEffect, useMemo, useState } from 'react';
 import styled from '@emotion/styled';
 import { FieldMapping, getAllFields, IndexMetadata } from '../utils/models';
-import { ChevronRight, KeyboardArrowDown } from '@mui/icons-material';
 import Tooltip from '@mui/material/Tooltip';
 import { Client } from '../services/client';
 
@@ -149,7 +148,6 @@ export function IndexSideBar(props: IndexMetadataProps) {
             size="small"
             onClick={() => setOpen(!open)}
           >
-            {open ? <KeyboardArrowDown /> : <ChevronRight />}
         </IconButton>
         Fields
         { open && <List dense={true} sx={{paddingTop: '0'}}>

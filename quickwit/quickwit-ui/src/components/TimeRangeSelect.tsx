@@ -30,7 +30,6 @@ import {
   TextField,
   TextFieldProps,
 } from "@mui/material";
-import { AccessTime, ChevronRight, DateRange } from "@mui/icons-material";
 import { Dayjs, default as dayjs } from 'dayjs';
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
@@ -108,7 +107,6 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
         variant="contained"
         disableElevation
         onClick={handleOpenClick}
-        startIcon={<AccessTime />}
         disabled={props.queryRunning || props.searchRequest.indexId == null}
       >
         <DateTimeRangeLabel startTimestamp={props.searchRequest.startTimestamp} endTimestamp={props.searchRequest.endTimestamp} />
@@ -152,11 +150,9 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
                 </ListItem>
                 <ListItem button onClick={handleOpenCustomDatesPanelClick}>
                   <ListItemIcon sx={{alignItems: "left", minWidth: 'inherit', paddingRight: '8px'}}>
-                    <DateRange />
                   </ListItemIcon>
                   <ListItemText primary="Custom dates" sx={{ paddingRight: '16px' }} />
                   <ListItemIcon sx={{ minWidth: 'inherit' }}>
-                    <ChevronRight />
                   </ListItemIcon>
                 </ListItem>
               </List>
