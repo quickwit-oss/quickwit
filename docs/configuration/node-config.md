@@ -50,6 +50,14 @@ This section contains the configuration options for an indexer. The split store 
 | split_store_max_num_splits | Maximum number of files allowed in the split store for each index-source pair. | 1000 |
 | max_concurrent_split_uploads | Maximum number of concurrent split uploads allowed on the node. | 12 |
 
+## Ingest API configuration
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| max_queue_memory_usage | Maximum size in bytes of the in-memory Ingest queue. | 2GiB |
+| max_queue_disk_usage | Maximum disk-space in bytes taken by the Ingest queue. This is typically higher than the max in-memory queue. | 4GiB |
+
+
 ## Searcher configuration
 
 This section contains the configuration options for a Searcher.

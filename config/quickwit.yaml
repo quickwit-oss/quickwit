@@ -85,8 +85,8 @@ indexer:
 # -------------------------------- Ingest API settings ------------------------------
 #
 # ingest_api:
-#   max_queue_memory_usage: 2G
-#   max_queue_disk_usage: 4G
+#   max_queue_memory_usage: 2GiB
+#   max_queue_disk_usage: 4GiB
 #
 # -------------------------------- Searcher settings --------------------------------
 #
