@@ -22,7 +22,8 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
-
+        with:
+          platforms: linux/arm64
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v4
@@ -57,6 +58,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
+          platforms: linux/arm64
           push: true
           build-args: |
             QW_COMMIT_DATE=${{ env.QW_COMMIT_DATE }}
