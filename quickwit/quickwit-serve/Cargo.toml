@@ -17,6 +17,7 @@ path = "src/elastic_api_generator.rs"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
+byte-unit = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }

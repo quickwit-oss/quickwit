@@ -4999,6 +4999,7 @@ dependencies = [
  "anyhow",
  "assert-json-diff",
  "async-trait",
+ "byte-unit",
  "bytes",
  "chitchat",
  "clap 3.1.18",

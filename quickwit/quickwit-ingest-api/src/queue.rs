@@ -168,7 +168,10 @@ impl Queues {
             })?;
 
         let size_limit = num_bytes_limit.unwrap_or(FETCH_PAYLOAD_LIMIT);
-        let mut doc_batch = DocBatch::default();
+        let mut doc_batch = DocBatch {
+            index_id: queue_id.to_string(),
+            ..Default::default()
+        };
         let mut num_bytes = 0;
         let mut first_key_opt = None;
 

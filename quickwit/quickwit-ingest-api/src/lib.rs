@@ -173,6 +173,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_ingest_multiple_index_api_service() {
+        let universe = Universe::with_accelerated_time();
+        let tempdir = tempfile::tempdir().unwrap();
+
+        let queues_0_dir_path = tempdir.path().join("queues-0");
+        let ingest_api_service =
+            init_ingest_api(&universe, &queues_0_dir_path, &IngestApiConfig::default())
+                .await
+                .unwrap();
+        ingest_api_service
+            .ask_for_res(CreateQueueRequest {
+                queue_id: "index-1".to_string(),
+            })
+            .await
+            .unwrap();
+        let ingest_request = IngestRequest {
+            doc_batches: vec![
+                DocBatch {
+                    index_id: "index-1".to_string(),
+                    concat_docs: vec![10, 11, 12],
+                    doc_lens: vec![2],
+                },
+                DocBatch {
+                    index_id: "index-2".to_string(),
+                    concat_docs: vec![10, 11, 12],
+                    doc_lens: vec![2],
+                },
+            ],
+        };
+        let ingest_result = ingest_api_service.ask_for_res(ingest_request).await;
+        assert!(ingest_result.is_err());
+        match ingest_result.unwrap_err() {
+            AskError::ErrorReply(ingest_error) => {
+                assert!(ingest_error.to_string().contains("index-2"));
+            }
+            _ => panic!("wrong error type"),
+        }
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
     async fn test_queue_limit() {
         let universe = Universe::with_accelerated_time();
         let tempdir = tempfile::tempdir().unwrap();
