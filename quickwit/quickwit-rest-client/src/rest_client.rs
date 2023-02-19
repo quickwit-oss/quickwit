@@ -540,7 +540,7 @@ mod test {
             .and(path("/api/v1/my-index/ingest"))
             .and(body_bytes(buffer.clone()))
             .respond_with(
-                ResponseTemplate::new(500).set_body_json(json!({"error": "internal error"})),
+                ResponseTemplate::new(500).set_body_json(json!({"message": "internal error"})),
             )
             .mount(&mock_server)
             .await;
