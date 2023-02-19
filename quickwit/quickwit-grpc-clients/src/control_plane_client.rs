@@ -218,13 +218,8 @@ mod tests {
             .send(vec![member_2.clone(), member_3, member_4])
             .unwrap();
 
-        let error = control_plane_client
-            .notify_index_change()
-            .await
-            .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("tcp connect error: Connection refused"));
+        // It will retry until success.
+        control_plane_client.notify_index_change().await.unwrap();
 
         // Send running control plane member and 1 dead control plane.
         members_tx.send(vec![member_1]).unwrap();
