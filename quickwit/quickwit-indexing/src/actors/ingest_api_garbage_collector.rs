@@ -25,9 +25,8 @@ use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_config::INGEST_API_SOURCE_ID;
-use quickwit_ingest_api::IngestApiService;
+use quickwit_ingest_api::{DropQueueRequest, IngestApiService, ListQueuesRequest};
 use quickwit_metastore::Metastore;
-use quickwit_proto::ingest_api::{DropQueueRequest, ListQueuesRequest};
 use serde::Serialize;
 use tracing::{debug, error, info, instrument};
 
@@ -182,9 +181,8 @@ mod tests {
     use quickwit_cluster::create_cluster_for_test;
     use quickwit_common::uri::Uri;
     use quickwit_config::{IndexConfig, IndexerConfig, IngestApiConfig};
-    use quickwit_ingest_api::{init_ingest_api, QUEUES_DIR_NAME};
+    use quickwit_ingest_api::{init_ingest_api, CreateQueueIfNotExistsRequest, QUEUES_DIR_NAME};
     use quickwit_metastore::quickwit_metastore_uri_resolver;
-    use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
     use quickwit_storage::StorageUriResolver;
 
     use super::*;

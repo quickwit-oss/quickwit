@@ -17,7 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod rest_handler;
+use quickwit_codegen::Codegen;
 
-pub(crate) use rest_handler::ingest_api_handlers;
-pub use rest_handler::{IngestApi, IngestApiSchemas};
+fn main() {
+    Codegen::run(
+        "src/ingest_service.proto",
+        "src/",
+        "crate::Result",
+        "crate::IngestServiceError",
+    )
+    .unwrap();
+}

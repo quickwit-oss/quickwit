@@ -20,6 +20,8 @@ tonic = { workspace = true }
 tower = { workspace = true }
 utoipa = { workspace = true }
 
+quickwit-actors = { workspace = true }
+
 [dev-dependencies]
 mockall = { workspace = true }
 
@@ -33,11 +35,12 @@ quickwit-codegen = { workspace = true }
 use quickwit_codegen::Codegen;
 
 fn main() {
-    // Proto file describing the service.
-    let proto = Path::new("src/hello.proto");
-    // Output directory for the generated code.
-    let out_dir = Path::new("src/");
-    Codegen::run(proto, out_dir, "crate::HelloResult", "crate::HelloError").unwrap();
+    Codegen::run(
+        "src/hello.proto",
+        "src/",
+        "crate::HelloResult",
+        "crate::HelloError"
+    ).unwrap();
 }
 ```
 

@@ -5,20 +5,29 @@ edition = "2021"
 license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit is a cost-efficient search engine."
 
+[features]
+testsuite = ["mockall"]
+
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 byte-unit = { workspace = true }
+dyn-clone = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
+mockall = { workspace = true, optional = true }
 mrecordlog = { workspace = true }
 once_cell = { workspace = true }
+prost = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tonic = { workspace = true }
+tower = { workspace = true }
 tracing = { workspace = true }
-ulid = {workspace = true}
+ulid = {workspace = true }
+utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
@@ -31,3 +40,6 @@ rand_distr = { workspace = true }
 tempfile = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
+
+[build-dependencies]
+quickwit-codegen = { workspace = true }

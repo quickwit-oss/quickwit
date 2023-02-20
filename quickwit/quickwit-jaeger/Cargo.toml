@@ -34,3 +34,6 @@ quickwit-search = { workspace = true }
 
 [dev-dependencies]
 quickwit-search = { workspace = true, features = ["testsuite"] }
+
+[features]
+testsuite = []

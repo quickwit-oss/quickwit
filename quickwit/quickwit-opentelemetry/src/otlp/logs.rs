@@ -22,9 +22,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
-use quickwit_actors::{AskError, Mailbox};
-use quickwit_ingest_api::{IngestApiError, IngestApiService};
-use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
+use quickwit_ingest_api::{DocBatch, IngestRequest, IngestService, IngestServiceClient};
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsService;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
     ExportLogsPartialSuccess, ExportLogsServiceRequest, ExportLogsServiceResponse,
@@ -181,17 +179,17 @@ struct ParsedLogRecords {
 
 #[derive(Clone)]
 pub struct OtlpGrpcLogsService {
-    ingest_api_service: Mailbox<IngestApiService>,
+    ingest_service: IngestServiceClient,
 }
 
 impl OtlpGrpcLogsService {
     // TODO: remove and use registry
-    pub fn new(ingest_api_service: Mailbox<IngestApiService>) -> Self {
-        Self { ingest_api_service }
+    pub fn new(ingest_service: IngestServiceClient) -> Self {
+        Self { ingest_service }
     }
 
     async fn export_inner(
-        &self,
+        &mut self,
         request: ExportLogsServiceRequest,
         labels: [&'static str; 4],
     ) -> Result<ExportLogsServiceResponse, Status> {
@@ -369,26 +367,16 @@ impl OtlpGrpcLogsService {
     }
 
     #[instrument(skip_all, fields(num_bytes = doc_batch.concat_docs.len()))]
-    async fn store_logs(&self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
+    async fn store_logs(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],
         };
-        self.ingest_api_service
-            .ask_for_res(ingest_request)
-            .await
-            .map_err(|ask_error| {
-                if matches!(ask_error, AskError::ErrorReply(IngestApiError::RateLimited)) {
-                    tonic::Status::unavailable("Failed to store logs due to rate limiting.")
-                } else {
-                    error!("Failed to store logs: {ask_error:?}");
-                    tonic::Status::internal("Failed to store logs.")
-                }
-            })?;
+        self.ingest_service.ingest(ingest_request).await?;
         Ok(())
     }
 
     async fn export_instrumented(
-        &self,
+        &mut self,
         request: ExportLogsServiceRequest,
     ) -> Result<ExportLogsServiceResponse, Status> {
         let start = std::time::Instant::now();
@@ -428,6 +416,9 @@ impl LogsService for OtlpGrpcLogsService {
         request: Request<ExportLogsServiceRequest>,
     ) -> Result<Response<ExportLogsServiceResponse>, Status> {
         let request = request.into_inner();
-        self.export_instrumented(request).await.map(Response::new)
+        self.clone()
+            .export_instrumented(request)
+            .await
+            .map(Response::new)
     }
 }

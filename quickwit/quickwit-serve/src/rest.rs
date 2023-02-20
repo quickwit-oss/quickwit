@@ -80,6 +80,8 @@ pub(crate) async fn start_rest_server(
         .and(warp::get())
         .map(metrics::metrics_handler);
 
+    let ingest_service = quickwit_services.ingest_service.clone();
+
     // `/api/v1/*` routes.
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
     let api_v1_routes = cluster_handler(quickwit_services.cluster.clone())
@@ -97,9 +99,7 @@ pub(crate) async fn start_rest_server(
         .or(search_stream_handler(
             quickwit_services.search_service.clone(),
         ))
-        .or(ingest_api_handlers(
-            quickwit_services.ingest_api_service.clone(),
-        ))
+        .or(ingest_api_handlers(ingest_service.clone()))
         .or(index_management_handlers(
             quickwit_services.index_service.clone(),
             quickwit_services.config.clone(),
