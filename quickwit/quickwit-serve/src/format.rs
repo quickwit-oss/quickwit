@@ -17,11 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::convert::Infallible;
+
 use hyper::header::CONTENT_TYPE;
 use hyper::StatusCode;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::{self, Deserialize, Serialize, Serializer};
 use warp::reply::{self, WithHeader, WithStatus};
+use warp::{Filter, Rejection, Reply};
 
 const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 
@@ -55,6 +58,30 @@ impl Serialize for Format {
     }
 }
 
+/// This struct represents a QueryString passed to
+/// the REST API.
+#[derive(Deserialize, Debug, Eq, PartialEq, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(crate) struct FormatQueryString {
+    /// The output format requested.
+    #[serde(default)]
+    pub format: Format,
+}
+
+pub(crate) fn extract_format_from_qs() -> impl Filter<Extract = (Format,), Error = Rejection> + Clone
+{
+    serde_qs::warp::query::<FormatQueryString>(serde_qs::Config::default()).and_then(
+        |format_qs: FormatQueryString| async move { Result::<_, Infallible>::Ok(format_qs.format) },
+    )
+}
+
+pub(crate) fn make_response<T: Serialize, E: ServiceError + ToString>(
+    result: Result<T, E>,
+    format: Format,
+) -> impl Reply {
+    format.make_rest_reply(result)
+}
+
 #[derive(Serialize)]
 pub(crate) struct ApiError {
     #[serde(skip_serializing)]
@@ -62,19 +89,21 @@ pub(crate) struct ApiError {
     pub message: String,
 }
 
-impl ToString for ApiError {
-    fn to_string(&self) -> String {
-        self.message.clone()
-    }
-}
-
-impl ServiceError for ApiError {
-    fn status_code(&self) -> ServiceErrorCode {
-        self.code
-    }
-}
-
 impl Format {
+    pub(crate) fn make_rest_reply<T, E>(
+        self,
+        result: Result<T, E>,
+    ) -> WithStatus<WithHeader<String>>
+    where
+        T: serde::Serialize,
+        E: ServiceError + ToString,
+    {
+        self.internal_make_rest_reply(result.map_err(|err| ApiError {
+            code: err.status_code(),
+            message: err.to_string(),
+        }))
+    }
+
     fn resp_body<T: serde::Serialize>(self, val: &T) -> serde_json::Result<String> {
         match self {
             Format::Json => serde_json::to_string(val),
@@ -82,17 +111,11 @@ impl Format {
         }
     }
 
-    pub(crate) fn make_reply_for_err<E: ServiceError + Serialize>(
-        &self,
-        err: E,
-    ) -> WithStatus<WithHeader<String>> {
-        let status_code: StatusCode = err.status_code().to_http_status_code();
-        let body_json = self.resp_body(&err).unwrap_or_else(|_| {
-            tracing::error!("Error: the response serialization failed.");
-            "Error: Failed to serialize response.".to_string()
-        });
+    pub(crate) fn make_reply_for_err(&self, err: ApiError) -> WithStatus<WithHeader<String>> {
+        let body_json =
+            serde_json::to_string(&err).expect("ApiError serialization should never fail.");
         let reply_with_header = reply::with_header(body_json, CONTENT_TYPE, "application/json");
-        reply::with_status(reply_with_header, status_code)
+        reply::with_status(reply_with_header, err.code.to_http_status_code())
     }
 
     fn internal_make_rest_reply<T: serde::Serialize>(
@@ -119,19 +142,5 @@ impl Format {
             }
             Err(err) => self.make_reply_for_err(err),
         }
-    }
-
-    pub(crate) fn make_rest_reply<T, E>(
-        self,
-        result: Result<T, E>,
-    ) -> WithStatus<WithHeader<String>>
-    where
-        T: serde::Serialize,
-        E: ServiceError + ToString,
-    {
-        self.internal_make_rest_reply(result.map_err(|err| ApiError {
-            code: err.status_code(),
-            message: err.to_string(),
-        }))
     }
 }

@@ -46,16 +46,16 @@ impl ApiResponse {
     }
 
     async fn api_error(self) -> Error {
-        let status = self.inner.status();
+        let code = self.inner.status();
         if let Ok(error_payload) = self.inner.json::<ErrorResponsePayload>().await {
             Error::from(ApiError {
                 message: Some(error_payload.message),
-                status,
+                code,
             })
         } else {
             Error::from(ApiError {
                 message: None,
-                status,
+                code,
             })
         }
     }

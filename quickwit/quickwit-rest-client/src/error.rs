@@ -50,7 +50,7 @@ impl Error {
     pub fn status_code(&self) -> Option<StatusCode> {
         match &self {
             Error::Client(err) => err.status(),
-            Error::Api(err) => Some(err.status),
+            Error::Api(err) => Some(err.code),
             _ => None,
         }
     }
@@ -59,16 +59,16 @@ impl Error {
 #[derive(Error, Debug)]
 pub struct ApiError {
     pub message: Option<String>,
-    pub status: StatusCode,
+    pub code: StatusCode,
 }
 
 // Implement `Display` for `ApiError`.
 impl std::fmt::Display for ApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if let Some(error) = &self.message {
-            write!(f, "(status={}, message={})", self.status, error)
+            write!(f, "(code={}, message={})", self.code, error)
         } else {
-            write!(f, "(status={})", self.status)
+            write!(f, "(code={})", self.code)
         }
     }
 }
