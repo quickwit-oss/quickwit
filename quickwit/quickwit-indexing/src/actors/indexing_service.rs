@@ -698,7 +698,8 @@ impl Actor for IndexingService {
         // may run indefinitely. Indeed, the `universe.assert_quit()` called at the
         // end of tests will potentially shutdown first the ingest API service and the initialize
         // of the indexing service will hang indefinitely.
-        let _ = ctx.send_self_message(GCIngestApiQueues).await;
+        // let _ = ctx.send_self_message(GCIngestApiQueues).await;
+        let _ = self.run_ingest_api_queues_gc().await;
         self.handle(SuperviseLoop, ctx).await
     }
 }
