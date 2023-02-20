@@ -77,16 +77,25 @@ version: 0.4
 #
 indexer:
   enable_otlp_endpoint: ${QW_ENABLE_OTLP_ENDPOINT:-true}
-#   split_store_max_num_bytes: 200G
-#   split_store_max_num_splits: 10000
+#   split_store_max_num_bytes: 100G
+#   split_store_max_num_splits: 1000
+#   max_concurrent_split_uploads: 12
 #
+#
+# -------------------------------- Ingest API settings ------------------------------
+#
+# ingest_api:
+#   max_queue_memory_usage: 2GiB
+#   max_queue_disk_usage: 4GiB
 #
 # -------------------------------- Searcher settings --------------------------------
 #
 # searcher:
-#   fast_field_cache_capacity: 10G
-#   split_footer_cache_capacity: 1G
+#   fast_field_cache_capacity: 1G
+#   split_footer_cache_capacity: 500M
 #   max_num_concurrent_split_streams: 100
-
+#   max_num_concurrent_split_searches: 100
+#
+# -------------------------------- Jaeger settings --------------------------------
 jaeger:
   enable_endpoint: ${QW_ENABLE_JAEGER_ENDPOINT:-true}
