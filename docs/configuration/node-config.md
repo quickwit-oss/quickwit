@@ -49,6 +49,7 @@ This section contains the configuration options for an indexer. The split store 
 | split_store_max_num_bytes | Maximum size in bytes allowed in the split store for each index-source pair. | 100G |
 | split_store_max_num_splits | Maximum number of files allowed in the split store for each index-source pair. | 1000 |
 | max_concurrent_split_uploads | Maximum number of concurrent split uploads allowed on the node. | 12 |
+| enable_otlp_endpoint | If true, enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry Protocol (OTLP). | false |
 
 ## Ingest API configuration
 
@@ -68,6 +69,14 @@ This section contains the configuration options for a Searcher.
 | split_footer_cache_capacity | Split footer cache (it is essentially the hotcache) capacity on a Searcher. | 500M |
 | max_num_concurrent_split_searches | Maximum number of concurrent split search requests running on a Searcher. | 100 |
 | max_num_concurrent_split_streams | Maximum number of concurrent split stream requests running on a Searcher. | 100 |
+
+
+## Jaeger configuration
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| enable_endpoint | If true, enables the gRPC endpoint that allows the Jaeger Query Service to connect and retrieve traces. | false |
+
 
 ## Using environment variables in the configuration
 
