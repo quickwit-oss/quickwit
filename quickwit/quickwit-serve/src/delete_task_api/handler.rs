@@ -27,7 +27,7 @@ use quickwit_proto::SearchRequest;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
-use crate::format::Format;
+use crate::format::{format_response, qs_format, Format};
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
@@ -100,7 +100,8 @@ pub fn post_delete_tasks_handler(
         .and(warp::post())
         .and(with_arg(metastore))
         .then(post_delete_request)
-        .map(|create_delete_res| Format::PrettyJson.make_rest_reply(create_delete_res))
+        .and(qs_format())
+        .map(format_response)
 }
 
 #[utoipa::path(

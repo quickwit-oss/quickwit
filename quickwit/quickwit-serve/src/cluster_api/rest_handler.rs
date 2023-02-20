@@ -21,18 +21,21 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use quickwit_cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
-use serde::Deserialize;
 use warp::{Filter, Rejection};
 
-use crate::Format;
+use crate::format::{format_response, qs_format, FormatQueryString};
 
 /// Cluster handler.
 pub fn cluster_handler(
     cluster: Arc<Cluster>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    cluster_state_filter()
+    warp::path!("cluster")
+        .and(warp::path::end())
+        .and(warp::get())
         .and(warp::path::end().map(move || cluster.clone()))
         .then(get_cluster)
+        .and(qs_format())
+        .map(format_response)
 }
 
 #[derive(utoipa::OpenApi)]
@@ -42,41 +45,20 @@ pub fn cluster_handler(
 )]
 pub struct ClusterApi;
 
-/// This struct represents the QueryString passed to
-/// the rest API.
-#[derive(Deserialize, Debug, Eq, PartialEq, utoipa::IntoParams)]
-#[into_params(parameter_in = Query)]
-#[serde(deny_unknown_fields)]
-struct ClusterStateQueryString {
-    /// The output format requested.
-    #[serde(default)]
-    pub format: Format,
-}
-
-fn cluster_state_filter(
-) -> impl Filter<Extract = (ClusterStateQueryString,), Error = Rejection> + Clone {
-    warp::path!("cluster")
-        .and(warp::path::end())
-        .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
-}
-
 #[utoipa::path(
     get,
     tag = "Cluster Info",
     path = "/cluster",
-    params(ClusterStateQueryString),
+    params(FormatQueryString),
     responses(
         (status = 200, description = "Successfully fetched cluster information.", body = ClusterSnapshot)
     )
 )]
 /// Get Cluster
 ///
-/// Get cluster information based on a provided filter.
-async fn get_cluster(request: ClusterStateQueryString, cluster: Arc<Cluster>) -> impl warp::Reply {
-    request
-        .format
-        .make_rest_reply(cluster_endpoint(cluster).await)
+/// Get cluster information based xon a provided filter.
+async fn get_cluster(cluster: Arc<Cluster>) -> Result<ClusterSnapshot, Infallible> {
+    cluster_endpoint(cluster).await
 }
 
 async fn cluster_endpoint(cluster: Arc<Cluster>) -> Result<ClusterSnapshot, Infallible> {

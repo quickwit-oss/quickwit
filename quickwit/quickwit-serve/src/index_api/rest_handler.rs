@@ -28,14 +28,13 @@ use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitState,
 };
-use quickwit_proto::ServiceError;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
-use warp::{Filter, Rejection, Reply};
+use warp::{Filter, Rejection};
 
-use crate::format::Format;
+use crate::format::{format_response, qs_format};
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
@@ -72,10 +71,6 @@ pub fn index_management_handlers(
         .or(create_source_handler(index_service.clone()))
         .or(get_source_handler(index_service.metastore()))
         .or(delete_source_handler(index_service.metastore()))
-}
-
-fn format_response<T: Serialize, E: ServiceError + ToString>(result: Result<T, E>) -> impl Reply {
-    Format::default().make_rest_reply(result)
 }
 
 fn json_body<T: DeserializeOwned + Send>(
@@ -117,6 +112,7 @@ fn get_index_metadata_handler(
         .and(warp::get())
         .and(with_arg(metastore))
         .then(get_index_metadata)
+        .and(qs_format())
         .map(format_response)
 }
 
@@ -135,6 +131,7 @@ fn get_indexes_metadatas_handler(
         .and(warp::get())
         .and(with_arg(metastore))
         .then(get_indexes_metadatas)
+        .and(qs_format())
         .map(format_response)
 }
 
@@ -206,6 +203,7 @@ fn list_splits_handler(
         .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(with_arg(metastore))
         .then(list_splits)
+        .and(qs_format())
         .map(format_response)
 }
 
@@ -252,6 +250,7 @@ fn mark_splits_for_deletion_handler(
         .and(json_body())
         .and(with_arg(metastore))
         .then(mark_splits_for_deletion)
+        .and(qs_format())
         .map(format_response)
 }
 
@@ -292,6 +291,7 @@ fn create_index_handler(
         .and(with_arg(index_service))
         .and(with_arg(quickwit_config))
         .then(create_index)
+        .and(qs_format())
         .map(format_response)
 }
 
@@ -335,6 +335,7 @@ fn clear_index_handler(
         .and(warp::put())
         .and(with_arg(index_service))
         .then(clear_index)
+        .and(qs_format())
         .map(format_response)
 }
 
@@ -373,6 +374,7 @@ fn delete_index_handler(
         .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(with_arg(index_service))
         .then(delete_index)
+        .and(qs_format())
         .map(format_response)
 }
 
@@ -411,6 +413,7 @@ fn create_source_handler(
         .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
         .then(create_source)
+        .and(qs_format())
         .map(format_response)
 }
 
@@ -449,6 +452,7 @@ fn get_source_handler(
         .and(warp::get())
         .and(with_arg(metastore))
         .then(get_source)
+        .and(qs_format())
         .map(format_response)
 }
 
@@ -477,6 +481,7 @@ fn reset_source_checkpoint_handler(
         .and(warp::put())
         .and(with_arg(metastore))
         .then(reset_source_checkpoint)
+        .and(qs_format())
         .map(format_response)
 }
 
@@ -511,6 +516,7 @@ fn toggle_source_handler(
         .and(json_body())
         .and(with_arg(metastore))
         .then(toggle_source)
+        .and(qs_format())
         .map(format_response)
 }
 
@@ -552,6 +558,7 @@ fn delete_source_handler(
         .and(warp::delete())
         .and(with_arg(metastore))
         .then(delete_source)
+        .and(qs_format())
         .map(format_response)
 }
 

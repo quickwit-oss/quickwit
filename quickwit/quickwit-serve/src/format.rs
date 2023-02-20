@@ -17,11 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::convert::Infallible;
+
 use hyper::header::CONTENT_TYPE;
 use hyper::StatusCode;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::{self, Deserialize, Serialize, Serializer};
 use warp::reply::{self, WithHeader, WithStatus};
+use warp::{Filter, Rejection, Reply};
 
 const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 
@@ -53,6 +56,29 @@ impl Serialize for Format {
     where S: Serializer {
         serializer.serialize_str(&self.to_string())
     }
+}
+
+/// This struct represents a QueryString passed to
+/// the rest API.
+#[derive(Deserialize, Debug, Eq, PartialEq, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(crate) struct FormatQueryString {
+    /// The output format requested.
+    #[serde(default)]
+    pub format: Format,
+}
+
+pub(crate) fn qs_format() -> impl Filter<Extract = (Format,), Error = Rejection> + Clone {
+    serde_qs::warp::query::<FormatQueryString>(serde_qs::Config::default()).and_then(
+        |format_qs: FormatQueryString| async move { Result::<_, Infallible>::Ok(format_qs.format) },
+    )
+}
+
+pub(crate) fn format_response<T: Serialize, E: ServiceError + ToString>(
+    result: Result<T, E>,
+    format: Format,
+) -> impl Reply {
+    format.make_rest_reply(result)
 }
 
 #[derive(Serialize)]
