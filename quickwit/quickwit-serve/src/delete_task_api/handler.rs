@@ -198,7 +198,7 @@ mod tests {
             .reply(&delete_query_api_handlers)
             .await;
         assert_eq!(resp.status(), 400);
-        assert!(String::from_utf8_lossy(resp.body()).contains("InvalidDeleteQuery"));
+        assert!(String::from_utf8_lossy(resp.body()).contains("Invalid delete query"));
 
         // GET delete tasks.
         let resp = warp::test::request()

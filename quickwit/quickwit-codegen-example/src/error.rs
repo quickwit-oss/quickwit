@@ -44,6 +44,6 @@ impl<E> From<AskError<E>> for HelloError
 where E: fmt::Debug
 {
     fn from(error: AskError<E>) -> Self {
-        HelloError::InternalError(format!("{:?}", error))
+        HelloError::InternalError(format!("{error:?}"))
     }
 }
