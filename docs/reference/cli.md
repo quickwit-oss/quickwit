@@ -396,7 +396,7 @@ quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query
 # Start a Quickwit server.
 quickwit run --config=./config/quickwit.yaml
 # Open a new terminal and run:
-quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "Barack Obama" --sort-by-score
+quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "camp" --sort-by-score
 
 ```
 
