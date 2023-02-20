@@ -117,7 +117,10 @@ impl Format {
                     }
                 }
             }
-            Err(err) => self.make_reply_for_err(err),
+            Err(err) => self.make_reply_for_err(FormatError {
+                code: err.status_code(),
+                error: err.to_string(),
+            }),
         }
     }
 
