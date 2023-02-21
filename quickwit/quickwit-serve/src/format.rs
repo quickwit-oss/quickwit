@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::Infallible;
-
 use hyper::header::CONTENT_TYPE;
 use hyper::StatusCode;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -31,18 +29,18 @@ const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 /// Output format for the search results.
 #[derive(Deserialize, Clone, Debug, Eq, PartialEq, Copy, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum Format {
+pub enum BodyFormat {
     Json,
     PrettyJson,
 }
 
-impl Default for Format {
+impl Default for BodyFormat {
     fn default() -> Self {
-        Format::PrettyJson
+        BodyFormat::PrettyJson
     }
 }
 
-impl ToString for Format {
+impl ToString for BodyFormat {
     fn to_string(&self) -> String {
         match &self {
             Self::Json => "json".to_string(),
@@ -51,7 +49,7 @@ impl ToString for Format {
     }
 }
 
-impl Serialize for Format {
+impl Serialize for BodyFormat {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
         serializer.serialize_str(&self.to_string())
@@ -62,22 +60,21 @@ impl Serialize for Format {
 /// the REST API.
 #[derive(Deserialize, Debug, Eq, PartialEq, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
-pub(crate) struct FormatQueryString {
+struct FormatQueryString {
     /// The output format requested.
     #[serde(default)]
-    pub format: Format,
+    pub format: BodyFormat,
 }
 
-pub(crate) fn extract_format_from_qs() -> impl Filter<Extract = (Format,), Error = Rejection> + Clone
-{
-    serde_qs::warp::query::<FormatQueryString>(serde_qs::Config::default()).and_then(
-        |format_qs: FormatQueryString| async move { Result::<_, Infallible>::Ok(format_qs.format) },
-    )
+pub(crate) fn extract_format_from_qs(
+) -> impl Filter<Extract = (BodyFormat,), Error = Rejection> + Clone {
+    serde_qs::warp::query::<FormatQueryString>(serde_qs::Config::default())
+        .map(|format_qs: FormatQueryString| format_qs.format)
 }
 
 pub(crate) fn make_response<T: Serialize, E: ServiceError + ToString>(
     result: Result<T, E>,
-    format: Format,
+    format: BodyFormat,
 ) -> impl Reply {
     format.make_rest_reply(result)
 }
@@ -89,7 +86,7 @@ pub(crate) struct ApiError {
     pub message: String,
 }
 
-impl Format {
+impl BodyFormat {
     pub(crate) fn make_rest_reply<T, E>(
         self,
         result: Result<T, E>,
@@ -106,8 +103,8 @@ impl Format {
 
     fn resp_body<T: serde::Serialize>(self, val: &T) -> serde_json::Result<String> {
         match self {
-            Format::Json => serde_json::to_string(val),
-            Format::PrettyJson => serde_json::to_string_pretty(&val),
+            BodyFormat::Json => serde_json::to_string(val),
+            BodyFormat::PrettyJson => serde_json::to_string_pretty(&val),
         }
     }
 

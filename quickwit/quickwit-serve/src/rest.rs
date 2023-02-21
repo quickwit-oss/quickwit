@@ -42,7 +42,7 @@ use crate::ingest_api::ingest_api_handlers;
 use crate::node_info_handler::node_info_handler;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
-use crate::{with_arg, Format, QuickwitServices};
+use crate::{with_arg, BodyFormat, QuickwitServices};
 
 /// Starts REST services.
 pub(crate) async fn start_rest_server(
@@ -175,7 +175,7 @@ async fn swagger_ui_handler(
 // We may use this work on the PR is merged: https://github.com/seanmonstar/warp/pull/909.
 pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     let err = get_status_with_error(rejection);
-    Ok(Format::PrettyJson.make_reply_for_err(err))
+    Ok(BodyFormat::PrettyJson.make_reply_for_err(err))
 }
 
 fn get_status_with_error(rejection: Rejection) -> ApiError {

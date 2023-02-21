@@ -48,7 +48,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use format::Format;
+use format::BodyFormat;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Mailbox, Universe};

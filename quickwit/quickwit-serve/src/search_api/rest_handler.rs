@@ -33,7 +33,7 @@ use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
-use crate::{with_arg, Format};
+use crate::{with_arg, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
@@ -44,7 +44,7 @@ use crate::{with_arg, Format};
         SortByField,
         SortOrder,
         OutputFormat,
-        Format,
+        BodyFormat,
     ),)
 )]
 pub struct SearchApi;
@@ -158,7 +158,7 @@ pub struct SearchRequestQueryString {
     pub start_offset: u64,
     /// The output format.
     #[serde(default)]
-    pub format: Format,
+    pub format: BodyFormat,
     /// Specifies how documents are sorted.
     #[param(value_type = Option<String>)]
     #[serde(deserialize_with = "sort_by_field_mini_dsl")]
@@ -483,7 +483,7 @@ mod tests {
                 search_fields: None,
                 start_timestamp: None,
                 max_hits: 10,
-                format: Format::default(),
+                format: BodyFormat::default(),
                 sort_by_field: None,
                 aggs: Some(json!({"range":[]})),
                 ..Default::default()
@@ -512,7 +512,7 @@ mod tests {
                 end_timestamp: Some(1450720000),
                 max_hits: 10,
                 start_offset: 22,
-                format: Format::default(),
+                format: BodyFormat::default(),
                 sort_by_field: None,
                 ..Default::default()
             }
@@ -540,7 +540,7 @@ mod tests {
                 end_timestamp: Some(1450720000),
                 max_hits: 20,
                 start_offset: 0,
-                format: Format::default(),
+                format: BodyFormat::default(),
                 sort_by_field: None,
                 ..Default::default()
             }
@@ -564,7 +564,7 @@ mod tests {
                 end_timestamp: None,
                 max_hits: 20,
                 start_offset: 0,
-                format: Format::Json,
+                format: BodyFormat::Json,
                 search_fields: None,
                 sort_by_field: None,
                 ..Default::default()
@@ -588,7 +588,7 @@ mod tests {
                 end_timestamp: None,
                 max_hits: 20,
                 start_offset: 0,
-                format: Format::Json,
+                format: BodyFormat::Json,
                 search_fields: None,
                 sort_by_field: Some(SortByField {
                     field_name: "field".to_string(),
@@ -612,7 +612,7 @@ mod tests {
                 end_timestamp: None,
                 max_hits: 20,
                 start_offset: 0,
-                format: Format::Json,
+                format: BodyFormat::Json,
                 search_fields: None,
                 sort_by_field: Some(SortByField {
                     field_name: "field".to_string(),
@@ -636,7 +636,7 @@ mod tests {
                 end_timestamp: None,
                 max_hits: 20,
                 start_offset: 0,
-                format: Format::Json,
+                format: BodyFormat::Json,
                 search_fields: None,
                 sort_by_field: Some(SortByField {
                     field_name: "field".to_string(),

@@ -31,7 +31,7 @@ use thiserror::Error;
 use warp::{reject, Filter, Rejection};
 
 use crate::format::{extract_format_from_qs, make_response};
-use crate::{Format, with_arg};
+use crate::{with_arg, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(ingest, tail_endpoint, elastic_ingest,))]
@@ -124,7 +124,7 @@ fn ingest_handler(
     ingest_filter()
         .and(with_arg(ingest_service))
         .then(ingest)
-        .map(|result| Format::default().make_rest_reply(result))
+        .map(|result| BodyFormat::default().make_rest_reply(result))
 }
 
 fn lines(body: &str) -> impl Iterator<Item = &str> {
