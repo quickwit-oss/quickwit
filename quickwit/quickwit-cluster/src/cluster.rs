@@ -677,7 +677,7 @@ mod tests {
             .unwrap();
         }
 
-        // Readd tasks.
+        // Re-add tasks.
         cluster1
             .update_self_node_indexing_tasks(&indexing_tasks)
             .await

@@ -163,7 +163,7 @@ pub(crate) fn build_cluster_member(
 }
 
 /// Parses indexing tasks serialized in keys formatted as `INDEXING_TASK_PREFIX:index_id:source_id`.
-/// Malformatted keys and values are ignored, just warnings are emitted.
+/// Malformed keys and values are ignored, just warnings are emitted.
 pub(crate) fn parse_indexing_tasks(node_state: &NodeState, node_id: &str) -> Vec<IndexingTask> {
     node_state
         .iter_key_values(|key, _| key.starts_with(INDEXING_TASK_PREFIX))
