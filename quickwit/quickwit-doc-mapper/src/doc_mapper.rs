@@ -195,11 +195,12 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use quickwit_proto::SearchRequest;
+    use quickwit_query::validate_sort_by_field;
     use tantivy::schema::{Cardinality, Field, FieldType, Term};
 
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions};
     use crate::{
-        DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, WarmupInfo, DYNAMIC_FIELD_NAME,
+        DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, WarmupInfo, DYNAMIC_FIELD_NAME, query_to_serialized_ast,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -285,7 +286,7 @@ mod tests {
         let schema = doc_mapper.schema();
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
-            query: "json_field.toto.titi:hello".to_string(),
+            query: query_to_serialized_ast("json_field.toto.titi:hello"),
             search_fields: vec![],
             snippet_fields: vec![],
             start_timestamp: None,
@@ -305,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn test_doc_mapper_query_with_invalid_sort_field() {
+    fn test_validate_query_with_invalid_sort_field() {
         let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
         let text_opt = QuickwitTextOptions {
             fast: true,
@@ -321,24 +322,11 @@ mod tests {
             .push("text_field".to_string());
         let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
-        let search_request = SearchRequest {
-            index_id: "quickwit-index".to_string(),
-            query: "text_field:hello".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 10,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: Some("text_field".to_string()),
-            aggregation_request: None,
-            ..Default::default()
-        };
-        let query = doc_mapper.query(schema, &search_request).unwrap_err();
+        
+        let query = validate_sort_by_field("text_field", &schema, None).unwrap_err();
         assert_eq!(
             format!("{query:?}"),
-            "QueryParserError(Sort by field on type text is currently not supported `text_field`.)"
+            "Sort by field on type text is currently not supported `text_field`."
         );
     }
 
@@ -357,9 +345,10 @@ mod tests {
             .push("json_field".to_string());
         let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
+        let json_field = schema.get_field("json_field").unwrap();
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
-            query: "toto.titi:hello".to_string(),
+            query: query_to_serialized_ast("toto.titi:hello"),
             search_fields: vec![],
             snippet_fields: vec![],
             start_timestamp: None,
@@ -369,6 +358,7 @@ mod tests {
             sort_order: None,
             sort_by_field: None,
             aggregation_request: None,
+            resolved_search_fields: vec![json_field.field_id()],
             ..Default::default()
         };
         let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
@@ -393,9 +383,10 @@ mod tests {
         };
         let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
+        let json_field = schema.get_field("json_field").unwrap();
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
-            query: "toto:5".to_string(),
+            query: query_to_serialized_ast("toto:5"),
             search_fields: vec![],
             snippet_fields: vec![],
             start_timestamp: None,
@@ -405,6 +396,7 @@ mod tests {
             sort_order: None,
             sort_by_field: None,
             aggregation_request: None,
+            resolved_search_fields: vec![json_field.field_id()],
             ..Default::default()
         };
         let (query, _) = doc_mapper.query(schema, &search_request).unwrap();

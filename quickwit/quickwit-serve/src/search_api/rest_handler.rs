@@ -187,10 +187,10 @@ async fn search_endpoint(
     search_service: &dyn SearchService,
 ) -> Result<SearchResponseRest, SearchError> {
     let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
-    
+
     let search_input_ast = parse_tantivy_dsl(&search_request.query)?;
-    let query = serde_json::to_string(&search_input_ast)
-        .expect("could not serialize SearchInputAst");
+    let query =
+        serde_json::to_string(&search_input_ast).expect("Failed to serialize SearchInputAst.");
 
     let search_request = quickwit_proto::SearchRequest {
         index_id,
@@ -203,7 +203,7 @@ async fn search_endpoint(
         start_offset: search_request.start_offset,
         aggregation_request: search_request
             .aggs
-            .map(|agg| serde_json::to_string(&agg).expect("could not serialize JsonValue")),
+            .map(|agg| serde_json::to_string(&agg).expect("Failed to serialize JsonValue.")),
         sort_order,
         sort_by_field,
         resolved_search_fields: Vec::new(),
@@ -348,9 +348,13 @@ async fn search_stream_endpoint(
     search_request: SearchStreamRequestQueryString,
     search_service: &dyn SearchService,
 ) -> Result<hyper::Body, SearchError> {
+    let search_input_ast = parse_tantivy_dsl(&search_request.query)?;
+    let query =
+        serde_json::to_string(&search_input_ast).expect("Failed to serialize SearchInputAst.");
+
     let request = quickwit_proto::SearchStreamRequest {
         index_id,
-        query: search_request.query,
+        query,
         search_fields: search_request.search_fields.unwrap_or_default(),
         snippet_fields: search_request.snippet_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,

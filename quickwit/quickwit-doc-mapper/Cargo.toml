@@ -24,7 +24,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 siphasher = { workspace = true }
 tantivy = { workspace = true }
-tantivy-query-grammar = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 time-fmt = "0.3.8"

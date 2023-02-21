@@ -29,7 +29,7 @@ use tokio_stream::StreamMap;
 use tracing::*;
 
 use crate::cluster_client::ClusterClient;
-use crate::root::SearchJob;
+use crate::root::{SearchJob, validate_request};
 use crate::{list_relevant_splits, SearchError, SearchJobPlacer, SearchServiceClient};
 
 /// Perform a distributed search stream.
@@ -48,19 +48,23 @@ pub async fn root_search_stream(
         .index_metadata(&search_request.index_id)
         .await?
         .into_index_config();
-    let split_metadatas = list_relevant_splits(&search_request, metastore).await?;
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
             SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
-    // Validates the query by effectively building it against the current schema.
-    doc_mapper.query(doc_mapper.schema(), &search_request)?;
+    // Validates the query & extract useful info
+    let validated_search_request = validate_request(
+        &doc_mapper.schema(),
+        &doc_mapper.default_search_field_names(),
+        &search_request,
+    )?;
 
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
     })?;
 
+    let split_metadatas = list_relevant_splits(&validated_search_request, metastore).await?;
     let index_uri: &Uri = &index_config.index_uri;
     let leaf_search_jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
 

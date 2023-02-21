@@ -31,8 +31,8 @@ use quickwit_proto::{
     SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
 use quickwit_query::{
-    extract_field_with_ranges, needs_default_search_field, resolve_fields,
-    validate_requested_snippet_fields, validate_sort_by_field, SearchInputAst, extract_term_set_query_fields,
+    extract_field_with_ranges, extract_term_set_query_fields, needs_default_search_field,
+    resolve_fields, validate_requested_snippet_fields, validate_sort_by_field, SearchInputAst,
 };
 use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
@@ -144,7 +144,7 @@ pub(crate) fn validate_request(
     }
 
     let search_input_ast: SearchInputAst =
-        serde_json::from_str(&search_request.query).expect("could not deserialize SearchInputAst");
+        serde_json::from_str(&search_request.query).expect("Could not deserialize SearchInputAst.");
 
     if needs_default_search_field(&search_input_ast)
         && search_request.search_fields.is_empty()
@@ -156,23 +156,23 @@ pub(crate) fn validate_request(
     }
 
     validate_requested_snippet_fields(
-        &schema,
-        &search_request,
+        schema,
+        search_request,
         &search_input_ast,
         default_field_names,
     )?;
 
     let search_fields = if search_request.search_fields.is_empty() {
-        resolve_fields(&schema, default_field_names)?
+        resolve_fields(schema, default_field_names)?
     } else {
-        resolve_fields(&schema, &search_request.search_fields)?
+        resolve_fields(schema, &search_request.search_fields)?
     };
 
     if let Some(sort_by_field) = &search_request.sort_by_field {
-        validate_sort_by_field(sort_by_field, &schema, Some(&search_fields))?;
+        validate_sort_by_field(sort_by_field, schema, Some(&search_fields))?;
     }
 
-    let fast_field_names = extract_field_with_ranges(&schema, &search_input_ast)?;
+    let fast_field_names = extract_field_with_ranges(schema, &search_input_ast)?;
     let term_set_query_fields = extract_term_set_query_fields(&search_input_ast);
 
     let validated_search_request = SearchRequest {
@@ -210,12 +210,6 @@ pub async fn root_search(
         .map_err(|err| {
             SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
-
-    // TODO: no need to build, just do the appropriate checking
-    // Validates the query by effectively building it against the current schema.
-    // doc_mapper.query(doc_mapper.schema(), search_request)?;
-    // let search_input_ast: SearchInputAst =  serde_json::from_str(&search_request.query)
-    //     .expect("could not deserialize SearchInputAst");
 
     // Validates the query & extract useful info
     let validated_search_request = validate_request(
