@@ -140,6 +140,7 @@ pub fn channel<T>(queue_capacity: QueueCapacity) -> (Sender<T>, Receiver<T>) {
         high_priority_rx,
         _high_priority_tx: high_priority_tx.clone(),
         pending_low_priority_message: LockedOption::none(),
+        _clone_is_forbidden: CloneIsForbidden,
     };
     let sender = Sender {
         low_priority_tx,
@@ -174,11 +175,29 @@ impl<T> Sender<T> {
     }
 }
 
+// Message to future generations. I created this flag to prevent you
+// from naively making a struct cloneable.
+// The drop implementation drains the elements in the channel.
+struct CloneIsForbidden;
+
 pub struct Receiver<T> {
     low_priority_rx: flume::Receiver<T>,
     high_priority_rx: flume::Receiver<T>,
     _high_priority_tx: flume::Sender<T>,
     pending_low_priority_message: LockedOption<T>,
+    _clone_is_forbidden: CloneIsForbidden,
+}
+
+impl<T> Drop for Receiver<T> {
+    fn drop(&mut self) {
+        // Flume strangely (tokio::mpsc does not behave like this for instance)
+        // does not drop the message in the channel when all receiver are dropped.
+        //
+        // They are only dropped when both the receivers AND the sender are dropped.
+        // We fix this behavior by drainng the channel upon drop.
+        self.high_priority_rx.drain();
+        self.low_priority_rx.drain();
+    }
 }
 
 impl<T> Receiver<T> {
@@ -301,9 +320,24 @@ impl<T> Receiver<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::time::Duration;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_channel_with_priority_drop_receiver_drop_messages() {
+        let arc_high = Arc::new(());
+        let arc_low = Arc::new(());
+        let (tx, rx) = super::channel(QueueCapacity::Bounded(2));
+        tx.send_high_priority(arc_high.clone()).unwrap();
+        tx.send_low_priority(arc_low.clone()).await.unwrap();
+        assert_eq!(Arc::strong_count(&arc_high), 2);
+        assert_eq!(Arc::strong_count(&arc_low), 2);
+        drop(rx);
+        assert_eq!(Arc::strong_count(&arc_high), 1);
+        assert_eq!(Arc::strong_count(&arc_low), 1);
+    }
 
     #[test]
     fn test_locked_option_new_empty() {
