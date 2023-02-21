@@ -22,24 +22,25 @@ use hyper::StatusCode;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::{self, Deserialize, Serialize, Serializer};
 use warp::reply::{self, WithHeader, WithStatus};
+use warp::{Filter, Rejection, Reply};
 
 const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 
 /// Output format for the search results.
 #[derive(Deserialize, Clone, Debug, Eq, PartialEq, Copy, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum Format {
+pub enum BodyFormat {
     Json,
     PrettyJson,
 }
 
-impl Default for Format {
+impl Default for BodyFormat {
     fn default() -> Self {
-        Format::PrettyJson
+        BodyFormat::PrettyJson
     }
 }
 
-impl ToString for Format {
+impl ToString for BodyFormat {
     fn to_string(&self) -> String {
         match &self {
             Self::Json => "json".to_string(),
@@ -48,56 +49,75 @@ impl ToString for Format {
     }
 }
 
-impl Serialize for Format {
+impl Serialize for BodyFormat {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
         serializer.serialize_str(&self.to_string())
     }
 }
 
+/// This struct represents a QueryString passed to
+/// the REST API.
+#[derive(Deserialize, Debug, Eq, PartialEq, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+struct FormatQueryString {
+    /// The output format requested.
+    #[serde(default)]
+    pub format: BodyFormat,
+}
+
+pub(crate) fn extract_format_from_qs(
+) -> impl Filter<Extract = (BodyFormat,), Error = Rejection> + Clone {
+    serde_qs::warp::query::<FormatQueryString>(serde_qs::Config::default())
+        .map(|format_qs: FormatQueryString| format_qs.format)
+}
+
+pub(crate) fn make_response<T: Serialize, E: ServiceError + ToString>(
+    result: Result<T, E>,
+    format: BodyFormat,
+) -> impl Reply {
+    format.make_rest_reply(result)
+}
+
 #[derive(Serialize)]
-pub(crate) struct FormatError {
+pub(crate) struct ApiError {
     #[serde(skip_serializing)]
     pub code: ServiceErrorCode,
-    pub error: String,
+    pub message: String,
 }
 
-impl ToString for FormatError {
-    fn to_string(&self) -> String {
-        self.error.clone()
+impl BodyFormat {
+    pub(crate) fn make_rest_reply<T, E>(
+        self,
+        result: Result<T, E>,
+    ) -> WithStatus<WithHeader<String>>
+    where
+        T: serde::Serialize,
+        E: ServiceError + ToString,
+    {
+        self.internal_make_rest_reply(result.map_err(|err| ApiError {
+            code: err.status_code(),
+            message: err.to_string(),
+        }))
     }
-}
 
-impl ServiceError for FormatError {
-    fn status_code(&self) -> ServiceErrorCode {
-        self.code
-    }
-}
-
-impl Format {
     fn resp_body<T: serde::Serialize>(self, val: &T) -> serde_json::Result<String> {
         match self {
-            Format::Json => serde_json::to_string(val),
-            Format::PrettyJson => serde_json::to_string_pretty(&val),
+            BodyFormat::Json => serde_json::to_string(val),
+            BodyFormat::PrettyJson => serde_json::to_string_pretty(&val),
         }
     }
 
-    pub(crate) fn make_reply_for_err<E: ServiceError + Serialize>(
-        &self,
-        err: E,
-    ) -> WithStatus<WithHeader<String>> {
-        let status_code: StatusCode = err.status_code().to_http_status_code();
-        let body_json = self.resp_body(&err).unwrap_or_else(|_| {
-            tracing::error!("Error: the response serialization failed.");
-            "Error: Failed to serialize response.".to_string()
-        });
+    pub(crate) fn make_reply_for_err(&self, err: ApiError) -> WithStatus<WithHeader<String>> {
+        let body_json =
+            serde_json::to_string(&err).expect("ApiError serialization should never fail.");
         let reply_with_header = reply::with_header(body_json, CONTENT_TYPE, "application/json");
-        reply::with_status(reply_with_header, status_code)
+        reply::with_status(reply_with_header, err.code.to_http_status_code())
     }
 
-    pub(crate) fn make_rest_reply<T: serde::Serialize, E: ServiceError + Serialize>(
+    fn internal_make_rest_reply<T: serde::Serialize>(
         self,
-        result: Result<T, E>,
+        result: Result<T, ApiError>,
     ) -> WithStatus<WithHeader<String>> {
         match result {
             Ok(success) => {
@@ -110,28 +130,14 @@ impl Format {
                     }
                     Err(_) => {
                         tracing::error!("Error: the response serialization failed.");
-                        self.make_reply_for_err(FormatError {
+                        self.make_reply_for_err(ApiError {
                             code: ServiceErrorCode::Internal,
-                            error: JSON_SERIALIZATION_ERROR.to_string(),
+                            message: JSON_SERIALIZATION_ERROR.to_string(),
                         })
                     }
                 }
             }
             Err(err) => self.make_reply_for_err(err),
         }
-    }
-
-    pub(crate) fn make_rest_reply_non_serializable_error<T, E>(
-        self,
-        result: Result<T, E>,
-    ) -> WithStatus<WithHeader<String>>
-    where
-        T: serde::Serialize,
-        E: ServiceError + ToString,
-    {
-        self.make_rest_reply(result.map_err(|err| FormatError {
-            code: err.status_code(),
-            error: err.to_string(),
-        }))
     }
 }

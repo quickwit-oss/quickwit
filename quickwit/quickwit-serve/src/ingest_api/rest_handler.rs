@@ -30,7 +30,8 @@ use serde_json::Value as JsonValue;
 use thiserror::Error;
 use warp::{reject, Filter, Rejection};
 
-use crate::{with_arg, Format};
+use crate::format::{extract_format_from_qs, make_response};
+use crate::{with_arg, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(ingest, tail_endpoint, elastic_ingest,))]
@@ -123,7 +124,7 @@ fn ingest_handler(
     ingest_filter()
         .and(with_arg(ingest_service))
         .then(ingest)
-        .map(|result| Format::default().make_rest_reply_non_serializable_error(result))
+        .map(|result| BodyFormat::default().make_rest_reply(result))
 }
 
 fn lines(body: &str) -> impl Iterator<Item = &str> {
@@ -174,7 +175,8 @@ pub fn tail_handler(
     tail_filter()
         .and(with_arg(ingest_service))
         .then(tail_endpoint)
-        .map(|result| Format::default().make_rest_reply_non_serializable_error(result))
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
@@ -221,7 +223,8 @@ pub fn elastic_bulk_handler(
     elastic_bulk_filter()
         .and(with_arg(ingest_service))
         .then(elastic_ingest)
-        .map(|result| Format::default().make_rest_reply_non_serializable_error(result))
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[utoipa::path(
