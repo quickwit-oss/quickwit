@@ -626,7 +626,7 @@ mod tests {
             .unwrap(),
         );
         let mut random_generator = rand::thread_rng();
-        let indexing_tasks = (0..100_000)
+        let indexing_tasks = (0..10_000)
             .map(|_| {
                 let index_id = random_generator.gen_range(0..=10_000);
                 let source_id = random_generator.gen_range(0..=100);

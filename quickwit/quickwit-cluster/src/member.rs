@@ -162,9 +162,25 @@ pub(crate) fn build_cluster_member(
     ))
 }
 
-// fn parse_indexing_tasks_key_value(key: &str, versioned_value: &VersionedValue) {
-    
-// }
+// Parses indexing task key into the pair (index_id, source_id).
+fn parse_indexing_task_key(key: &str) -> anyhow::Result<(&str, &str)> {
+    let (_prefix, key_without_prefix) =
+        key.split_once(INDEXING_TASK_SEPARATOR).ok_or_else(|| {
+            anyhow!(
+                "Indexing task must contain the delimiter character `:`: `{}`",
+                key
+            )
+        })?;
+    let (index_id, source_id) = key_without_prefix
+        .split_once(INDEXING_TASK_SEPARATOR)
+        .ok_or_else(|| {
+            anyhow!(
+                "Indexing task index ID and source ID must be separated by character `:`:  `{}`",
+                key_without_prefix
+            )
+        })?;
+    Ok((index_id, source_id))
+}
 
 /// Parses indexing tasks serialized in keys formatted as `INDEXING_TASK_PREFIX:index_id:source_id`.
 /// Malformed keys and values are ignored, just warnings are emitted.
@@ -172,22 +188,7 @@ pub(crate) fn parse_indexing_tasks(node_state: &NodeState, node_id: &str) -> Vec
     node_state
         .iter_key_values(|key, _| key.starts_with(INDEXING_TASK_PREFIX))
         .map(|(key, versioned_value)| {
-            let (_prefix, key_without_prefix) =
-                key.split_once(INDEXING_TASK_SEPARATOR).ok_or_else(|| {
-                    anyhow!(
-                        "Indexing task must contain the delimiter character `:`: `{}`",
-                        key
-                    )
-                })?;
-            let (index_id, source_id) = key_without_prefix
-                .split_once(INDEXING_TASK_SEPARATOR)
-                .ok_or_else(|| {
-                    anyhow!(
-                            "Indexing task index ID and source ID must be separated by character \
-                             `:`:  `{}`",
-                            key_without_prefix
-                        )
-                })?;
+            let (index_id, source_id) = parse_indexing_task_key(key)?;
             let num_tasks: usize = versioned_value.value.parse()?;
             Ok((0..num_tasks).map(|_| IndexingTask {
                 index_id: index_id.to_string(),
