@@ -1101,10 +1101,8 @@ mod tests {
         doc_mapper: &dyn DocMapper,
         query_str: &str,
     ) -> Result<String, String> {
-        let query_ast =  parse_tantivy_dsl(query_str)
-            .map_err(|err| err.to_string())?;
-        let query = serde_json::to_string(&query_ast)
-            .map_err(|err| err.to_string())?;
+        let query_ast = parse_tantivy_dsl(query_str).map_err(|err| err.to_string())?;
+        let query = serde_json::to_string(&query_ast).map_err(|err| err.to_string())?;
         let search_request = SearchRequest {
             query,
             ..Default::default()

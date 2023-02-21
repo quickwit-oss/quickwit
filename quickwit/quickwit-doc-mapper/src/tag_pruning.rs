@@ -358,9 +358,8 @@ pub fn no_tag(tag: impl ToString) -> TagFilterAst {
 }
 #[cfg(test)]
 mod test {
-    use crate::query_to_serialized_ast;
-
     use super::extract_tags_from_query;
+    use crate::query_to_serialized_ast;
 
     // #[test]
     // fn test_extract_tags_from_query_invalid_query() -> anyhow::Result<()> {
@@ -370,13 +369,19 @@ mod test {
 
     #[test]
     fn test_extract_tags_from_query_all() -> anyhow::Result<()> {
-        assert_eq!(extract_tags_from_query(&query_to_serialized_ast("*"))?, None);
+        assert_eq!(
+            extract_tags_from_query(&query_to_serialized_ast("*"))?,
+            None
+        );
         Ok(())
     }
 
     #[test]
     fn test_extract_tags_from_query_range_query() -> anyhow::Result<()> {
-        assert_eq!(extract_tags_from_query(&query_to_serialized_ast("title:>foo lang:fr"))?, None);
+        assert_eq!(
+            extract_tags_from_query(&query_to_serialized_ast("title:>foo lang:fr"))?,
+            None
+        );
         Ok(())
     }
 
@@ -405,9 +410,11 @@ mod test {
     #[test]
     fn test_extract_tags_from_query_and_or() -> anyhow::Result<()> {
         assert_eq!(
-            extract_tags_from_query(&query_to_serialized_ast("title:foo AND (user:bart OR lang:fr)"))?
-                .unwrap()
-                .to_string(),
+            extract_tags_from_query(&query_to_serialized_ast(
+                "title:foo AND (user:bart OR lang:fr)"
+            ))?
+            .unwrap()
+            .to_string(),
             "(¬title! ∨ title:foo) ∧ ((¬user! ∨ user:bart) ∨ (¬lang! ∨ lang:fr))"
         );
         Ok(())

@@ -200,7 +200,8 @@ mod tests {
 
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions};
     use crate::{
-        DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, WarmupInfo, DYNAMIC_FIELD_NAME, query_to_serialized_ast,
+        query_to_serialized_ast, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, WarmupInfo,
+        DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -322,7 +323,7 @@ mod tests {
             .push("text_field".to_string());
         let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
-        
+
         let query = validate_sort_by_field("text_field", &schema, None).unwrap_err();
         assert_eq!(
             format!("{query:?}"),

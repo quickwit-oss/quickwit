@@ -29,7 +29,7 @@ use tokio_stream::StreamMap;
 use tracing::*;
 
 use crate::cluster_client::ClusterClient;
-use crate::root::{SearchJob, validate_request};
+use crate::root::{validate_request, SearchJob};
 use crate::{list_relevant_splits, SearchError, SearchJobPlacer, SearchServiceClient};
 
 /// Perform a distributed search stream.

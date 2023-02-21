@@ -78,13 +78,13 @@ pub(crate) fn build_query(
 mod test {
     use itertools::Itertools;
     use quickwit_proto::SearchRequest;
-    use quickwit_query::{validate_requested_snippet_fields, SearchInputAst, extract_term_set_query_fields};
+    use quickwit_query::extract_term_set_query_fields;
     use tantivy::schema::{
         Cardinality, DateOptions, IpAddrOptions, Schema, FAST, INDEXED, STORED, TEXT,
     };
 
     use super::build_query;
-    use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME, query_to_serialized_ast};
+    use crate::{query_to_serialized_ast, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
 
     enum TestExpectation {
         Err(&'static str),
@@ -124,8 +124,8 @@ mod test {
         expected: TestExpectation,
     ) -> anyhow::Result<()> {
         let schema = make_schema();
-        let resolved_search_fields =
-            default_search_fields.unwrap_or_else(|| vec!["title".to_string(), "desc".to_string()])
+        let resolved_search_fields = default_search_fields
+            .unwrap_or_else(|| vec!["title".to_string(), "desc".to_string()])
             .iter()
             .map(|field_name| schema.get_field(field_name).unwrap().field_id())
             .collect_vec();
@@ -418,39 +418,40 @@ mod test {
     //     .unwrap();
     // }
 
-    #[track_caller]
-    fn check_snippet_fields_validation(
-        query_str: &str,
-        search_fields: Vec<String>,
-        snippet_fields: Vec<String>,
-        default_search_fields: Option<Vec<String>>,
-    ) -> anyhow::Result<()> {
-        let schema = make_schema();
-        let request = SearchRequest {
-            aggregation_request: None,
-            index_id: "test_index".to_string(),
-            query: query_str.to_string(),
-            search_fields,
-            snippet_fields,
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 20,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            ..Default::default()
-        };
-        let search_input_ast = SearchInputAst::empty_query();
-        let default_field_names =
-            default_search_fields.unwrap_or_else(|| vec!["title".to_string(), "desc".to_string()]);
+    // #[track_caller]
+    // fn check_snippet_fields_validation(
+    //     query_str: &str,
+    //     search_fields: Vec<String>,
+    //     snippet_fields: Vec<String>,
+    //     default_search_fields: Option<Vec<String>>,
+    // ) -> anyhow::Result<()> {
+    //     let schema = make_schema();
+    //     let request = SearchRequest {
+    //         aggregation_request: None,
+    //         index_id: "test_index".to_string(),
+    //         query: query_str.to_string(),
+    //         search_fields,
+    //         snippet_fields,
+    //         start_timestamp: None,
+    //         end_timestamp: None,
+    //         max_hits: 20,
+    //         start_offset: 0,
+    //         sort_order: None,
+    //         sort_by_field: None,
+    //         ..Default::default()
+    //     };
+    //     let search_input_ast = SearchInputAst::empty_query();
+    //     let default_field_names =
+    //         default_search_fields.unwrap_or_else(|| vec!["title".to_string(),
+    // "desc".to_string()]);
 
-        validate_requested_snippet_fields(
-            &schema,
-            &request,
-            &search_input_ast,
-            &default_field_names,
-        )
-    }
+    //     validate_requested_snippet_fields(
+    //         &schema,
+    //         &request,
+    //         &search_input_ast,
+    //         &default_field_names,
+    //     )
+    // }
 
     #[test]
     #[should_panic(expected = "provided string was not `true` or `false`")]
@@ -504,8 +505,8 @@ mod test {
     //     );
     //     // Unknown searched field
     //     let validation_result =
-    //         check_snippet_fields_validation("foo", vec![], vec!["server.name".to_string()], None);
-    //     assert_eq!(
+    //         check_snippet_fields_validation("foo", vec![], vec!["server.name".to_string()],
+    // None);     assert_eq!(
     //         validation_result.unwrap_err().to_string(),
     //         "The snippet field `server.name` should be a default search field or appear in the \
     //          query."
@@ -549,8 +550,7 @@ mod test {
             let ast = quickwit_query::parse_tantivy_dsl("title: IN [hello]")
                 .expect("Failed to parse query.");
             let term_set_query_fields = extract_term_set_query_fields(&ast);
-            let query = serde_json::to_string(&ast)
-                .expect("Failed to serialize SearchInputAst.");
+            let query = serde_json::to_string(&ast).expect("Failed to serialize SearchInputAst.");
             let request_with_set = SearchRequest {
                 aggregation_request: None,
                 index_id: "test_index".to_string(),
@@ -567,7 +567,7 @@ mod test {
                 term_set_query_fields,
                 ..Default::default()
             };
-            
+
             let (_, warmup_info) = build_query(schema, &request_with_set)?;
             assert_eq!(warmup_info.term_dict_field_names.len(), 1);
             assert_eq!(warmup_info.posting_field_names.len(), 1);
@@ -581,11 +581,10 @@ mod test {
                 .iter()
                 .map(|field_name| schema.get_field(field_name).unwrap().field_id())
                 .collect_vec();
-            let ast = quickwit_query::parse_tantivy_dsl("title:hello")
-                .expect("Failed to parse query.");
+            let ast =
+                quickwit_query::parse_tantivy_dsl("title:hello").expect("Failed to parse query.");
             let term_set_query_fields = extract_term_set_query_fields(&ast);
-            let query = serde_json::to_string(&ast)
-                .expect("Failed to serialize SearchInputAst.");
+            let query = serde_json::to_string(&ast).expect("Failed to serialize SearchInputAst.");
             let request_without_set = SearchRequest {
                 aggregation_request: None,
                 index_id: "test_index".to_string(),
@@ -602,8 +601,7 @@ mod test {
                 term_set_query_fields,
                 ..Default::default()
             };
-            let (_, warmup_info) =
-                build_query(schema, &request_without_set)?;
+            let (_, warmup_info) = build_query(schema, &request_without_set)?;
             assert!(warmup_info.term_dict_field_names.is_empty());
             assert!(warmup_info.posting_field_names.is_empty());
         }

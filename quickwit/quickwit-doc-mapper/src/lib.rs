@@ -150,8 +150,6 @@ pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
 
 #[cfg(test)]
 fn query_to_serialized_ast(query_str: &str) -> String {
-    let ast = quickwit_query::parse_tantivy_dsl(query_str)
-        .expect("Failed to parse query.");
-    serde_json::to_string(&ast)
-        .expect("Failed to serialize SearchInputAst.")
+    let ast = quickwit_query::parse_tantivy_dsl(query_str).expect("Failed to parse query.");
+    serde_json::to_string(&ast).expect("Failed to serialize SearchInputAst.")
 }
