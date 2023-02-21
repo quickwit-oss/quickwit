@@ -140,18 +140,18 @@ impl Default for SearcherConfig {
 #[serde(deny_unknown_fields)]
 pub struct IngestApiConfig {
     #[serde(default = "IngestApiConfig::default_max_queue_memory_usage")]
-    pub max_queue_memory_usage: usize,
+    pub max_queue_memory_usage: Byte,
     #[serde(default = "IngestApiConfig::default_max_queue_disk_usage")]
-    pub max_queue_disk_usage: usize,
+    pub max_queue_disk_usage: Byte,
 }
 
 impl IngestApiConfig {
-    fn default_max_queue_memory_usage() -> usize {
-        2 * 1024 * 1024 * 1024 // 2 GiB // TODO maybe we want more?
+    fn default_max_queue_memory_usage() -> Byte {
+        Byte::from_bytes(2 * 1024 * 1024 * 1024) // 2 GiB // TODO maybe we want more?
     }
 
-    fn default_max_queue_disk_usage() -> usize {
-        4 * 1024 * 1024 * 1024 // 4 GiB // TODO maybe we want more?
+    fn default_max_queue_disk_usage() -> Byte {
+        Byte::from_bytes(4 * 1024 * 1024 * 1024) // 4 GiB // TODO maybe we want more?
     }
 }
 

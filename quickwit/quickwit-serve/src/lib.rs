@@ -59,16 +59,16 @@ use quickwit_control_plane::scheduler::IndexingScheduler;
 use quickwit_control_plane::start_control_plane_service;
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
-use quickwit_grpc_clients::ControlPlaneGrpcClient;
+use quickwit_grpc_clients::{create_balance_channel_from_watched_members, ControlPlaneGrpcClient};
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
-use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
+use quickwit_ingest_api::{start_ingest_api_service, IngestServiceClient};
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, Metastore, MetastoreError, MetastoreGrpcClient,
     MetastoreWithControlPlaneTriggers, RetryingMetastore,
 };
-use quickwit_opentelemetry::otlp::OTEL_TRACE_INDEX_CONFIG;
+use quickwit_opentelemetry::otlp::{OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG};
 use quickwit_search::{start_searcher_service, SearchJobPlacer, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
@@ -100,7 +100,7 @@ struct QuickwitServices {
     pub search_service: Arc<dyn SearchService>,
     pub indexing_service: Option<Mailbox<IndexingService>>,
     pub janitor_service: Option<Mailbox<JanitorService>>,
-    pub ingest_api_service: Option<Mailbox<IngestApiService>>,
+    pub ingest_service: IngestServiceClient,
     pub index_service: Arc<IndexService>,
     pub services: HashSet<QuickwitService>,
 }
@@ -172,7 +172,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
 
     let universe = Universe::new();
 
-    let (ingest_api_service, indexing_service) = if config
+    let (ingest_service, indexing_service) = if config
         .enabled_services
         .contains(&QuickwitService::Indexer)
     {
@@ -180,18 +180,20 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
             start_ingest_api_service(&universe, &config.data_dir_path, &config.ingest_api_config)
                 .await?;
         if config.indexer_config.enable_otlp_endpoint {
-            let index_config = load_index_config_from_user_config(
-                ConfigFormat::Yaml,
-                OTEL_TRACE_INDEX_CONFIG.as_bytes(),
-                &config.default_index_root_uri,
-            )?;
-            match index_service.create_index(index_config, false).await {
-                Ok(_)
-                | Err(IndexServiceError::MetastoreError(MetastoreError::IndexAlreadyExists {
-                    ..
-                })) => Ok(()),
-                Err(error) => Err(error),
-            }?;
+            for index_config_content in [OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG] {
+                let index_config = load_index_config_from_user_config(
+                    ConfigFormat::Yaml,
+                    index_config_content.as_bytes(),
+                    &config.default_index_root_uri,
+                )?;
+                match index_service.create_index(index_config, false).await {
+                    Ok(_)
+                    | Err(IndexServiceError::MetastoreError(
+                        MetastoreError::IndexAlreadyExists { .. },
+                    )) => Ok(()),
+                    Err(error) => Err(error),
+                }?;
+            }
         }
         let indexing_service = start_indexing_service(
             &universe,
@@ -201,9 +203,16 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
             storage_resolver.clone(),
         )
         .await?;
-        (Some(ingest_api_service), Some(indexing_service))
+        let ingest_service = IngestServiceClient::from_mailbox(ingest_api_service);
+        (ingest_service, Some(indexing_service))
     } else {
-        (None, None)
+        let (channel, _) = create_balance_channel_from_watched_members(
+            cluster.ready_member_change_watcher(),
+            QuickwitService::Indexer,
+        )
+        .await?;
+        let ingest_service = IngestServiceClient::from_channel(channel);
+        (ingest_service, None)
     };
 
     let search_job_placer = SearchJobPlacer::new(
@@ -253,7 +262,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         search_service,
         indexing_service,
         janitor_service,
-        ingest_api_service,
+        ingest_service,
         index_service,
         services,
     };

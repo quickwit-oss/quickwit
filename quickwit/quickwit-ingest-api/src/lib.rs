@@ -29,8 +29,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
-pub use errors::IngestApiError;
-use errors::Result;
+pub use errors::IngestServiceError;
 pub use ingest_api_service::{GetPartitionId, IngestApiService};
 use metrics::INGEST_METRICS;
 use once_cell::sync::OnceCell;
@@ -38,10 +37,13 @@ pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::IngestApiConfig;
-use quickwit_proto::ingest_api::DocBatch;
 use tokio::sync::Mutex;
+mod ingest_service;
+pub use ingest_service::*;
 
 pub const QUEUES_DIR_NAME: &str = "queues";
+
+pub type Result<T> = std::result::Result<T, IngestServiceError>;
 
 type IngestApiServiceMailboxes = HashMap<PathBuf, Mailbox<IngestApiService>>;
 
@@ -63,8 +65,8 @@ pub async fn init_ingest_api(
     }
     let ingest_api_actor = IngestApiService::with_queues_dir(
         queues_dir_path,
-        config.max_queue_memory_usage,
-        config.max_queue_disk_usage,
+        config.max_queue_memory_usage.get_bytes() as usize,
+        config.max_queue_disk_usage.get_bytes() as usize,
     )
     .await
     .with_context(|| {
@@ -132,10 +134,11 @@ pub fn iter_doc_payloads(doc_batch: &DocBatch) -> impl Iterator<Item = &[u8]> {
 #[cfg(test)]
 mod tests {
 
+    use byte_unit::Byte;
     use quickwit_actors::AskError;
-    use quickwit_proto::ingest_api::{CreateQueueRequest, IngestRequest, SuggestTruncateRequest};
 
     use super::*;
+    use crate::{CreateQueueRequest, IngestRequest, SuggestTruncateRequest};
 
     #[tokio::test]
     async fn test_get_ingest_api_service() {
@@ -172,6 +175,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_ingest_multiple_index_api_service() {
+        let universe = Universe::with_accelerated_time();
+        let tempdir = tempfile::tempdir().unwrap();
+
+        let queues_0_dir_path = tempdir.path().join("queues-0");
+        let ingest_api_service =
+            init_ingest_api(&universe, &queues_0_dir_path, &IngestApiConfig::default())
+                .await
+                .unwrap();
+        ingest_api_service
+            .ask_for_res(CreateQueueRequest {
+                queue_id: "index-1".to_string(),
+            })
+            .await
+            .unwrap();
+        let ingest_request = IngestRequest {
+            doc_batches: vec![
+                DocBatch {
+                    index_id: "index-1".to_string(),
+                    concat_docs: vec![10, 11, 12],
+                    doc_lens: vec![2],
+                },
+                DocBatch {
+                    index_id: "index-2".to_string(),
+                    concat_docs: vec![10, 11, 12],
+                    doc_lens: vec![2],
+                },
+            ],
+        };
+        let ingest_result = ingest_api_service.ask_for_res(ingest_request).await;
+        assert!(ingest_result.is_err());
+        match ingest_result.unwrap_err() {
+            AskError::ErrorReply(ingest_error) => {
+                assert!(ingest_error.to_string().contains("index-2"));
+            }
+            _ => panic!("wrong error type"),
+        }
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
     async fn test_queue_limit() {
         let universe = Universe::with_accelerated_time();
         let tempdir = tempfile::tempdir().unwrap();
@@ -182,8 +226,8 @@ mod tests {
             &universe,
             &queues_dir_path,
             &IngestApiConfig {
-                max_queue_memory_usage: 1024,
-                max_queue_disk_usage: 1024 * 1024 * 256,
+                max_queue_memory_usage: Byte::from_bytes(1024),
+                max_queue_disk_usage: Byte::from_bytes(1024 * 1024 * 256),
             },
         )
         .await
@@ -221,7 +265,7 @@ mod tests {
                 .ask_for_res(ingest_request.clone())
                 .await
                 .unwrap_err(),
-            AskError::ErrorReply(IngestApiError::RateLimited)
+            AskError::ErrorReply(IngestServiceError::RateLimited)
         ));
 
         // delete the first batch

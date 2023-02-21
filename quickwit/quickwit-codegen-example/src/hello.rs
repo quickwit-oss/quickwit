@@ -36,11 +36,33 @@ impl HelloClient {
             inner: Box::new(instance),
         }
     }
+    pub fn from_channel(channel: tower::timeout::Timeout<tonic::transport::Channel>) -> Self {
+        HelloClient::new(HelloGrpcClientAdapter::new(
+            hello_grpc_client::HelloGrpcClient::new(channel),
+        ))
+    }
+    pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
+    where
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        HelloMailbox<A>: Hello,
+    {
+        HelloClient::new(HelloMailbox::new(mailbox))
+    }
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mock() -> MockHello {
+        MockHello::new()
+    }
 }
 #[async_trait::async_trait]
 impl Hello for HelloClient {
     async fn hello(&mut self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
         self.inner.hello(request).await
+    }
+}
+#[cfg(any(test, feature = "testsuite"))]
+impl From<MockHello> for HelloClient {
+    fn from(mock: MockHello) -> Self {
+        HelloClient::new(mock)
     }
 }
 pub type BoxFuture<T, E> =
@@ -59,6 +81,92 @@ impl tower::Service<HelloRequest> for HelloClient {
         let mut svc = self.clone();
         let fut = async move { svc.hello(request).await };
         Box::pin(fut)
+    }
+}
+#[derive(Debug, Clone)]
+struct MailboxAdapter<A: quickwit_actors::Actor, E> {
+    inner: quickwit_actors::Mailbox<A>,
+    phantom: std::marker::PhantomData<E>,
+}
+impl<A, E> std::ops::Deref for MailboxAdapter<A, E>
+where A: quickwit_actors::Actor
+{
+    type Target = quickwit_actors::Mailbox<A>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+#[derive(Debug)]
+pub struct HelloMailbox<A: quickwit_actors::Actor> {
+    inner: MailboxAdapter<A, crate::HelloError>,
+}
+impl<A: quickwit_actors::Actor> HelloMailbox<A> {
+    pub fn new(instance: quickwit_actors::Mailbox<A>) -> Self {
+        let inner = MailboxAdapter {
+            inner: instance,
+            phantom: std::marker::PhantomData,
+        };
+        Self { inner }
+    }
+}
+impl<A: quickwit_actors::Actor> Clone for HelloMailbox<A> {
+    fn clone(&self) -> Self {
+        let inner = MailboxAdapter {
+            inner: self.inner.clone(),
+            phantom: std::marker::PhantomData,
+        };
+        Self { inner }
+    }
+}
+use tower::Service;
+impl<A, M, T, E> tower::Service<M> for HelloMailbox<A>
+where
+    A: quickwit_actors::Actor
+        + quickwit_actors::Handler<M, Reply = Result<T, E>>
+        + Send
+        + Sync
+        + 'static,
+    M: std::fmt::Debug + Send + Sync + 'static,
+    T: Send + Sync + 'static,
+    E: std::fmt::Debug + Send + Sync + 'static,
+    crate::HelloError: From<quickwit_actors::AskError<E>>,
+{
+    type Response = T;
+    type Error = crate::HelloError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        //! This does not work with balance middlewares such as `tower::balance::pool::Pool` because
+        //! this always returns `Poll::Ready`. The fix is to acquire a permit from the
+        //! mailbox in `poll_ready` and consume it in `call`.
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, message: M) -> Self::Future {
+        let mailbox = self.inner.clone();
+        let fut = async move {
+            mailbox
+                .ask_for_res(message)
+                .await
+                .map_err(|error| error.into())
+        };
+        Box::pin(fut)
+    }
+}
+#[async_trait::async_trait]
+impl<A> Hello for HelloMailbox<A>
+where
+    A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+    HelloMailbox<A>: tower::Service<
+        HelloRequest,
+        Response = HelloResponse,
+        Error = crate::HelloError,
+        Future = BoxFuture<HelloResponse, crate::HelloError>,
+    >,
+{
+    async fn hello(&mut self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
+        self.call(request).await
     }
 }
 #[derive(Debug, Clone)]

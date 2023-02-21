@@ -20,11 +20,9 @@
 
 syntax = "proto3";
 
-// We remap this to quickwit_proto::ingest_api;
+package ingest_service;
 
-package quickwit_ingest_api;
-
-service IngestAPIService {
+service IngestService {
   /// Ingests document in a given queue.
   ///
   /// Upon any kind of error, the client should

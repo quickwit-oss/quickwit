@@ -31,15 +31,16 @@ mod tests {
     use std::time::Duration;
 
     use async_trait::async_trait;
+    use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
     use tonic::transport::{Endpoint, Server};
+    use tower::timeout::Timeout;
     use tower::Service;
 
-    use crate::hello::hello_grpc_client::HelloGrpcClient;
     use crate::hello::hello_grpc_server::HelloGrpcServer;
     use crate::hello::{
-        Hello, HelloClient, HelloGrpcClientAdapter, HelloGrpcServerAdapter, HelloRequest,
-        HelloResponse, MockHello,
+        Hello, HelloClient, HelloGrpcServerAdapter, HelloRequest, HelloResponse, MockHello,
     };
+    use crate::HelloError;
 
     #[tokio::test]
     async fn test_hello_codegen() {
@@ -115,11 +116,13 @@ mod tests {
                     .unwrap();
             }
         });
-        let channel = Endpoint::from_static("http://127.0.0.1:6666")
-            .connect_timeout(Duration::from_secs(1))
-            .connect_lazy();
-        let mut grpc_client =
-            HelloClient::new(HelloGrpcClientAdapter::new(HelloGrpcClient::new(channel)));
+        let channel = Timeout::new(
+            Endpoint::from_static("http://127.0.0.1:6666")
+                .connect_timeout(Duration::from_secs(1))
+                .connect_lazy(),
+            Duration::from_secs(1),
+        );
+        let mut grpc_client = HelloClient::from_channel(channel);
 
         assert_eq!(
             grpc_client
@@ -143,5 +146,59 @@ mod tests {
                 message: "Hello, Tower!".to_string()
             }
         );
+
+        #[derive(Debug)]
+        struct HelloActor;
+
+        impl Actor for HelloActor {
+            type ObservableState = ();
+
+            fn observable_state(&self) -> Self::ObservableState {}
+        }
+
+        #[async_trait]
+        impl Handler<HelloRequest> for HelloActor {
+            type Reply = Result<HelloResponse, HelloError>;
+
+            async fn handle(
+                &mut self,
+                message: HelloRequest,
+                _ctx: &ActorContext<Self>,
+            ) -> Result<Self::Reply, ActorExitStatus> {
+                Ok(Ok(HelloResponse {
+                    message: format!("Hello, {} actor!", message.name),
+                }))
+            }
+        }
+
+        let universe = Universe::new();
+        let hello_actor = HelloActor;
+        let (actor_mailbox, _actor_handle) = universe.spawn_builder().spawn(hello_actor);
+        let mut actor_client = HelloClient::from_mailbox(actor_mailbox);
+
+        assert_eq!(
+            actor_client
+                .hello(HelloRequest {
+                    name: "beautiful".to_string()
+                })
+                .await
+                .unwrap(),
+            HelloResponse {
+                message: "Hello, beautiful actor!".to_string()
+            }
+        );
+        assert_eq!(
+            actor_client
+                .call(HelloRequest {
+                    name: "exquisite".to_string()
+                })
+                .await
+                .unwrap(),
+            HelloResponse {
+                message: "Hello, exquisite actor!".to_string()
+            }
+        );
+
+        universe.assert_quit().await;
     }
 }

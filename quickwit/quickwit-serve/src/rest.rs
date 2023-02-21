@@ -38,7 +38,7 @@ use crate::format::FormatError;
 use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
-use crate::ingest_api::{elastic_bulk_handler, ingest_handler, tail_handler};
+use crate::ingest_api::ingest_api_handlers;
 use crate::node_info_handler::node_info_handler;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
@@ -80,6 +80,8 @@ pub(crate) async fn start_rest_server(
         .and(warp::get())
         .map(metrics::metrics_handler);
 
+    let ingest_service = quickwit_services.ingest_service.clone();
+
     // `/api/v1/*` routes.
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
     let api_v1_routes = cluster_handler(quickwit_services.cluster.clone())
@@ -97,11 +99,7 @@ pub(crate) async fn start_rest_server(
         .or(search_stream_handler(
             quickwit_services.search_service.clone(),
         ))
-        .or(ingest_handler(quickwit_services.ingest_api_service.clone()))
-        .or(tail_handler(quickwit_services.ingest_api_service.clone()))
-        .or(elastic_bulk_handler(
-            quickwit_services.ingest_api_service.clone(),
-        ))
+        .or(ingest_api_handlers(ingest_service.clone()))
         .or(index_management_handlers(
             quickwit_services.index_service.clone(),
             quickwit_services.config.clone(),
@@ -181,12 +179,7 @@ pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
 }
 
 fn get_status_with_error(rejection: Rejection) -> FormatError {
-    if let Some(error) = rejection.find::<crate::ingest_api::BulkApiError>() {
-        FormatError {
-            code: ServiceErrorCode::BadRequest,
-            error: error.to_string(),
-        }
-    } else if let Some(error) = rejection.find::<crate::index_api::UnsupportedContentType>() {
+    if let Some(error) = rejection.find::<crate::index_api::UnsupportedContentType>() {
         FormatError {
             code: ServiceErrorCode::UnsupportedMediaType,
             error: error.to_string(),
