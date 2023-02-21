@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 
 use anyhow::anyhow;
-use chitchat::{ClusterStateSnapshot, NodeId, NodeState};
+use chitchat::{ClusterStateSnapshot, NodeId, NodeState, VersionedValue};
 use itertools::Itertools;
 use quickwit_proto::indexing_api::IndexingTask;
 use tracing::{error, warn};
@@ -34,7 +34,7 @@ pub(crate) const ENABLED_SERVICES_KEY: &str = "enabled_services";
 // An indexing task key is formatted as
 // `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
 pub(crate) const INDEXING_TASK_PREFIX: &str = "indexing_task";
-pub(crate) const INDEXING_TASK_SEPARATOR: char = '\u{0000}';
+pub(crate) const INDEXING_TASK_SEPARATOR: char = ':';
 
 /// Cluster member.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -161,6 +161,10 @@ pub(crate) fn build_cluster_member(
         indexing_tasks,
     ))
 }
+
+// fn parse_indexing_tasks_key_value(key: &str, versioned_value: &VersionedValue) {
+    
+// }
 
 /// Parses indexing tasks serialized in keys formatted as `INDEXING_TASK_PREFIX:index_id:source_id`.
 /// Malformed keys and values are ignored, just warnings are emitted.
