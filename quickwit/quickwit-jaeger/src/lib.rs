@@ -337,32 +337,39 @@ impl JaegerService {
         let current_span = RuntimeSpan::current();
 
         tokio::task::spawn(async move {
-            const CHUNK_SIZE: usize = 1_000;
+            const MAX_CHUNK_LEN: usize = 1_000;
+            const MAX_CHUNK_NUM_BYTES: usize = 4 * 1024 * 1024 - 1024; // 4 MiB, the default max size of gRPC messages, minus some headroom.
 
-            let chunk_size = spans.len().min(CHUNK_SIZE);
-            let mut chunk = Vec::with_capacity(chunk_size);
+            let chunk_len = MAX_CHUNK_LEN.min(spans.len());
+            let mut chunk = Vec::with_capacity(chunk_len);
             let mut chunk_num_bytes = 0;
             let mut num_spans_total = 0;
             let mut num_bytes_total = 0;
 
             while let Some(span) = spans.pop() {
-                chunk_num_bytes += span.encoded_len();
-                chunk.push(span);
+                let span_num_bytes = span.encoded_len();
 
-                if chunk.len() == CHUNK_SIZE {
-                    num_spans_total += chunk.len();
+                if chunk.len() == MAX_CHUNK_LEN
+                    || chunk_num_bytes + span_num_bytes > MAX_CHUNK_NUM_BYTES
+                {
+                    let num_spans = chunk.len();
+                    num_spans_total += num_spans;
                     num_bytes_total += chunk_num_bytes;
 
-                    let chunk_size = spans.len().min(CHUNK_SIZE);
-                    let chunk = mem::replace(&mut chunk, Vec::with_capacity(chunk_size));
+                    // + 1 to account for the span we just popped from `spans` but haven't yet
+                    // appended to `chunk`.
+                    let chunk_len = MAX_CHUNK_LEN.min(spans.len() + 1);
+                    let chunk = mem::replace(&mut chunk, Vec::with_capacity(chunk_len));
                     if let Err(send_error) = tx.send(Ok(SpansResponseChunk { spans: chunk })).await
                     {
                         debug!("Client disconnected: {send_error:?}");
                         return;
                     }
-                    record_send(operation_name, CHUNK_SIZE, chunk_num_bytes);
+                    record_send(operation_name, num_spans, chunk_num_bytes);
                     chunk_num_bytes = 0;
                 }
+                chunk_num_bytes += span_num_bytes;
+                chunk.push(span);
             }
             if !chunk.is_empty() {
                 let num_spans = chunk.len();
