@@ -558,7 +558,7 @@ mod tests {
     async fn test_indexing_pipeline_num_fails_before_success(
         mut num_fails: usize,
     ) -> anyhow::Result<bool> {
-        let universe = Universe::with_accelerated_time();
+        let universe = Universe::new();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_index_metadata()
@@ -586,7 +586,6 @@ mod tests {
         metastore
             .expect_stage_splits()
             .withf(|index_id, _metadata| -> bool { index_id == "test-index" })
-            .times(1)
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
@@ -601,7 +600,6 @@ mod tests {
                             .ends_with(":(00000000000000000000..00000000000000001030])")
                 },
             )
-            .times(1)
             .returning(|_, _, _, _| Ok(()));
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
@@ -677,7 +675,6 @@ mod tests {
         metastore
             .expect_stage_splits()
             .withf(|index_id, _metadata| index_id == "test-index")
-            .times(1)
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
@@ -692,9 +689,8 @@ mod tests {
                             .ends_with(":(00000000000000000000..00000000000000001030])")
                 },
             )
-            .times(1)
             .returning(|_, _, _, _| Ok(()));
-        let universe = Universe::with_accelerated_time();
+        let universe = Universe::new();
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
