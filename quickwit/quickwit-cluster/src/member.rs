@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 
 use anyhow::anyhow;
-use chitchat::{ClusterStateSnapshot, NodeId, NodeState, VersionedValue};
+use chitchat::{ClusterStateSnapshot, NodeId, NodeState};
 use itertools::Itertools;
 use quickwit_proto::indexing_api::IndexingTask;
 use tracing::{error, warn};
