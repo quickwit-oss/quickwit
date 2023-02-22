@@ -94,7 +94,8 @@ struct BulkActionMeta {
     #[serde(alias = "_index")]
     index: String,
     #[serde(alias = "_id")]
-    id: String,
+    #[serde(default)]
+    id: Option<String>,
 }
 
 pub(crate) fn ingest_api_handlers(
@@ -299,7 +300,22 @@ mod tests {
                 bulk_action,
                 BulkAction::Create(BulkActionMeta {
                     index: "test".to_string(),
-                    id: "2".to_string()
+                    id: Some("2".to_string()),
+                })
+            );
+        }
+        {
+            let bulk_action_json = r#"{
+                "create": {
+                    "_index": "test"
+                }
+            }"#;
+            let bulk_action = serde_json::from_str::<BulkAction>(bulk_action_json).unwrap();
+            assert_eq!(
+                bulk_action,
+                BulkAction::Create(BulkActionMeta {
+                    index: "test".to_string(),
+                    id: None,
                 })
             );
         }
@@ -444,6 +460,8 @@ mod tests {
             {"id": 1, "message": "push"}
             { "create" : { "_index" : "my-index-2", "_id" : "1"} }
             {"id": 1, "message": "push"}
+            { "create" : { "_index" : "my-index-1" } }
+            {"id": 2, "message": "push"}
         "#;
         let resp = warp::test::request()
             .path("/_bulk")
@@ -453,7 +471,7 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 200);
         let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
-        assert_eq!(ingest_response.num_docs_for_processing, 2);
+        assert_eq!(ingest_response.num_docs_for_processing, 3);
         universe.assert_quit().await;
     }
 
