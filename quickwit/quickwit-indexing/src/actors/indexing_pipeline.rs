@@ -558,7 +558,7 @@ mod tests {
     async fn test_indexing_pipeline_num_fails_before_success(
         mut num_fails: usize,
     ) -> anyhow::Result<bool> {
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_index_metadata()
@@ -690,7 +690,7 @@ mod tests {
                 },
             )
             .returning(|_, _, _, _| Ok(()));
-        let universe = Universe::new();
+        let universe = Universe::with_accelerated_time();
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
