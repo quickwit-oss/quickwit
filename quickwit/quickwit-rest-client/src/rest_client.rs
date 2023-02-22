@@ -20,6 +20,8 @@
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
+use futures::pin_mut;
+use futures::stream::StreamExt;
 use quickwit_common::FileEntry;
 use quickwit_config::{ConfigFormat, SourceConfig};
 use quickwit_metastore::{IndexMetadata, Split};
@@ -31,13 +33,14 @@ use serde::Serialize;
 use serde_json::json;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
+use tokio_stream::wrappers::LinesStream;
 
 use crate::error::Error;
 use crate::models::{ApiResponse, IngestSource};
 
 pub static DEFAULT_ADDRESS: &str = "http://127.0.0.1:7280";
 pub static DEFAULT_CONTENT_TYPE: &str = "application/json";
-pub static INGEST_CHUNK_SIZE_IN_BYTES: usize = 6 * 1024 * 1024; // 6 MiB
+pub static INGEST_CHUNK_SIZE_IN_BYTES: usize = 9 * 1024 * 1024; // 9MiB
 
 pub struct Transport {
     base_url: Url,
@@ -149,20 +152,30 @@ impl QuickwitClient {
             }
             IngestSource::Stdin => Box::new(tokio::io::stdin()),
         };
-        let mut buf_reader = BufReader::new(reader);
+        let buf_reader = BufReader::new(reader);
+        let peekable_reader = LinesStream::new(buf_reader.lines()).peekable();
+        pin_mut!(peekable_reader);
 
         let start = Instant::now();
         let mut num_bytes_sent = 0;
 
         loop {
             let mut buffer = Vec::with_capacity(INGEST_CHUNK_SIZE_IN_BYTES);
-            loop {
-                if buf_reader.read_until(b'\n', &mut buffer).await? == 0 {
-                    break;
-                }
-                if buffer.len() >= INGEST_CHUNK_SIZE_IN_BYTES {
-                    break;
-                }
+            while let Some(read_result) = peekable_reader
+                .as_mut()
+                .next_if(|read_result| {
+                    match read_result {
+                        Ok(payload_line) => {
+                            buffer.len() + payload_line.len() + 1 < INGEST_CHUNK_SIZE_IN_BYTES
+                        }
+                        Err(_) => true, // Forward io error
+                    }
+                })
+                .await
+            {
+                let mut payload_line = read_result?;
+                payload_line.push('\n');
+                buffer.extend(payload_line.as_bytes());
             }
 
             if buffer.is_empty() {

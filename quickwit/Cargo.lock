@@ -4942,6 +4942,7 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "bytes",
+ "futures",
  "quickwit-actors",
  "quickwit-common",
  "quickwit-config",
@@ -4954,6 +4955,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "wiremock",
 ]
 
