@@ -37,7 +37,7 @@ use crate::models::{ApiResponse, IngestSource};
 
 pub static DEFAULT_ADDRESS: &str = "http://127.0.0.1:7280";
 pub static DEFAULT_CONTENT_TYPE: &str = "application/json";
-pub static INGEST_CHUNK_SIZE_IN_BYTES: usize = 4 * 1024 * 1024;
+pub static INGEST_CHUNK_SIZE_IN_BYTES: usize = 6 * 1024 * 1024; // 6 MiB
 
 pub struct Transport {
     base_url: Url,
@@ -156,8 +156,11 @@ impl QuickwitClient {
 
         loop {
             let mut buffer = Vec::with_capacity(INGEST_CHUNK_SIZE_IN_BYTES);
-            for _ in 0..5_000 {
+            loop {
                 if buf_reader.read_until(b'\n', &mut buffer).await? == 0 {
+                    break;
+                }
+                if buffer.len() >= INGEST_CHUNK_SIZE_IN_BYTES {
                     break;
                 }
             }
