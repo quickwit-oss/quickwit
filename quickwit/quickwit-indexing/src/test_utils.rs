@@ -112,7 +112,7 @@ impl TestSandbox {
             indexer_config,
             cluster,
             metastore.clone(),
-            ingest_api_service,
+            Some(ingest_api_service),
             storage_resolver.clone(),
         )
         .await?;

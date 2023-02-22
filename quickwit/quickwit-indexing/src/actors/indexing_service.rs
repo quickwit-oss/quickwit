@@ -132,7 +132,7 @@ pub struct IndexingService {
     data_dir_path: PathBuf,
     cluster: Arc<Cluster>,
     metastore: Arc<dyn Metastore>,
-    ingest_api_service: Mailbox<IngestApiService>,
+    ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     counters: IndexingServiceCounters,
@@ -149,7 +149,7 @@ impl IndexingService {
         indexer_config: IndexerConfig,
         cluster: Arc<Cluster>,
         metastore: Arc<dyn Metastore>,
-        ingest_api_service: Mailbox<IngestApiService>,
+        ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
         storage_resolver: StorageUriResolver,
     ) -> anyhow::Result<IndexingService> {
         let split_store_space_quota = SplitStoreQuota::new(
@@ -164,7 +164,7 @@ impl IndexingService {
             data_dir_path,
             cluster,
             metastore,
-            ingest_api_service,
+            ingest_api_service_opt,
             storage_resolver,
             local_split_store: Arc::new(local_split_store),
             indexing_pipeline_handles: Default::default(),
@@ -586,8 +586,13 @@ impl IndexingService {
 
     /// Garbage collects ingest API queues of deleted indexes.
     async fn run_ingest_api_queues_gc(&mut self) -> anyhow::Result<()> {
-        let queues: HashSet<String> = self
-            .ingest_api_service
+        let ingest_api_service =
+            if let Some(ingest_api_service) = self.ingest_api_service_opt.as_ref() {
+                ingest_api_service
+            } else {
+                return Ok(());
+            };
+        let queues: HashSet<String> = ingest_api_service
             .ask_for_res(ListQueuesRequest {})
             .await
             .context("Failed to list queues.")?
@@ -609,8 +614,7 @@ impl IndexingService {
         let queue_ids_to_delete = queues.difference(&index_ids);
 
         for queue_id in queue_ids_to_delete {
-            let delete_queue_res = self
-                .ingest_api_service
+            let delete_queue_res = ingest_api_service
                 .ask_for_res(DropQueueRequest {
                     queue_id: queue_id.to_string(),
                 })
@@ -843,7 +847,7 @@ mod tests {
             indexer_config,
             cluster,
             metastore,
-            ingest_api_service,
+            Some(ingest_api_service),
             storage_resolver.clone(),
         )
         .await
@@ -1217,7 +1221,7 @@ mod tests {
             indexer_config,
             cluster.clone(),
             metastore.clone(),
-            ingest_api_service,
+            Some(ingest_api_service),
             storage_resolver.clone(),
         )
         .await
@@ -1403,7 +1407,7 @@ mod tests {
             indexer_config,
             cluster.clone(),
             metastore.clone(),
-            ingest_api_service.clone(),
+            Some(ingest_api_service.clone()),
             storage_resolver.clone(),
         )
         .await

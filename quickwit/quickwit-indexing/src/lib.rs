@@ -82,7 +82,7 @@ pub async fn start_indexing_service(
         config.indexer_config.clone(),
         cluster,
         metastore.clone(),
-        ingest_api_service,
+        Some(ingest_api_service),
         storage_resolver,
     )
     .await?;
