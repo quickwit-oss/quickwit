@@ -34,10 +34,9 @@ use quickwit_common::fs::get_cache_directory_path;
 use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
-use quickwit_ingest_api::{IngestApiService, QUEUES_DIR_NAME};
+use quickwit_ingest_api::{IngestApiService, QUEUES_DIR_NAME, DropQueueRequest, ListQueuesRequest};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
-use quickwit_proto::ingest_api::{DropQueueRequest, ListQueuesRequest};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
@@ -691,13 +690,7 @@ impl Actor for IndexingService {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        // We don't want to block on a GC task during initialization so we just send a message.
-        // Note(fmassot): garbage collecting requires to `ask_for_res` on the ingest API service.
-        // If you try to await for the garbage collect in the initialization, some tests
-        // may run indefinitely. Indeed, the `universe.assert_quit()` called at the
-        // end of tests will potentially shutdown first the ingest API service and the initialize
-        // of the indexing service will hang indefinitely.
-        let _ = ctx.send_self_message(GCIngestApiQueues).await;
+        self.run_ingest_api_queues_gc().await?;
         self.handle(SuperviseLoop, ctx).await
     }
 }
@@ -841,10 +834,9 @@ mod tests {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
     use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, VecSourceParams};
-    use quickwit_ingest_api::init_ingest_api;
+    use quickwit_ingest_api::{init_ingest_api, CreateQueueIfNotExistsRequest};
     use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore};
     use quickwit_proto::indexing_api::IndexingTask;
-    use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
 
     use super::*;
 
