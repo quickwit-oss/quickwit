@@ -86,7 +86,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "sum(rate(quickwit_indexing_processed_bytes{index=\"$index\", namespace=\"$namespace\", instance=~\"$instance\", docs_processed_status=\"valid\"}[$quickwit_rate_interval]))",
+          "expr": "sum(rate(quickwit_indexing_processed_bytes{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\", docs_processed_status=\"valid\"}[$quickwit_rate_interval]))",
           "legendFormat": "{{docs_processed_status}}",
           "range": true,
           "refId": "A"
@@ -152,7 +152,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "rate(quickwit_indexing_processed_docs_total{index=\"$index\", namespace=\"$namespace\", instance=~\"$instance\", docs_processed_status=\"valid\"}[$quickwit_rate_interval])",
+          "expr": "rate(quickwit_indexing_processed_docs_total{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\", docs_processed_status=\"valid\"}[$quickwit_rate_interval])",
           "legendFormat": "{{docs_processed_status}}",
           "range": true,
           "refId": "A"
@@ -282,7 +282,7 @@
           },
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "rate(quickwit_indexing_processed_bytes{index=\"$index\", namespace=\"$namespace\", instance=~\"$instance\"}[$quickwit_rate_interval])",
+          "expr": "rate(quickwit_indexing_processed_bytes{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\"}[$quickwit_rate_interval])",
           "format": "time_series",
           "instant": false,
           "interval": "",
@@ -400,7 +400,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "rate(quickwit_write_bytes{index=\"$index\"}[$quickwit_rate_interval])",
+          "expr": "rate(quickwit_write_bytes{index=~\"$index\"}[$quickwit_rate_interval])",
           "hide": false,
           "legendFormat": "{{component}}",
           "range": true,
@@ -626,7 +626,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "sum by(docs_processed_status) (rate(quickwit_indexing_processed_docs_total{index=\"$index\", namespace=\"$namespace\", instance=~\"$instance\"}[$quickwit_rate_interval]))",
+          "expr": "sum by(docs_processed_status) (rate(quickwit_indexing_processed_docs_total{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\"}[$quickwit_rate_interval]))",
           "hide": false,
           "legendFormat": "{{docs_processed_status}}",
           "range": true,
