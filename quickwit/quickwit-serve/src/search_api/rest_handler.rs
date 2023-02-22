@@ -141,9 +141,11 @@ pub struct SearchRequestQueryString {
     #[serde(serialize_with = "to_simple_list")]
     pub snippet_fields: Option<Vec<String>>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
+    /// This timestamp is expressed in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_timestamp: Option<i64>,
     /// If set, restrict search to documents with a `timestamp < end_timestamp``.
+    /// This timestamp is expressed in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_timestamp: Option<i64>,
     /// Maximum number of hits to return (by default 20).

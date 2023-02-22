@@ -20,11 +20,11 @@
 use std::fmt;
 
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-use tantivy::Document;
+use tantivy::{DateTime, Document};
 
 pub struct PreparedDoc {
     pub doc: Document,
-    pub timestamp_opt: Option<i64>,
+    pub timestamp_opt: Option<DateTime>,
     pub partition: u64,
     pub num_bytes: usize,
 }

@@ -357,12 +357,8 @@ async fn leaf_search_single_split(
     let split_id = split.split_id.to_string();
     let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
     let split_schema = index.schema();
-    let quickwit_collector = make_collector_for_split(
-        split_id.clone(),
-        doc_mapper.as_ref(),
-        search_request,
-        &split_schema,
-    )?;
+    let quickwit_collector =
+        make_collector_for_split(split_id.clone(), doc_mapper.as_ref(), search_request)?;
     let (query, mut warmup_info) = doc_mapper.query(split_schema, search_request)?;
     let reader = index
         .reader_builder()
