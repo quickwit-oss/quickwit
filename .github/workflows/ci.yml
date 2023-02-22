@@ -36,7 +36,7 @@ jobs:
             command: cargo doc --no-deps --all-features --document-private-items
             cache: true
           - name: cargo nextest
-            command: cargo nextest run -p quickwit-indexing --test-threads 1
+            command: RUST_LOG=debug cargo nextest run -p quickwit-indexing
             cache: true
           - name: License headers check
             command: bash scripts/check_license_headers.sh

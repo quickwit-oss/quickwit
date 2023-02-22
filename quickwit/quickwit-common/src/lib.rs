@@ -63,7 +63,9 @@ pub fn into_u64_range(range: Range<usize>) -> Range<u64> {
 }
 
 pub fn setup_logging_for_tests() {
-    let _ = env_logger::builder().format_timestamp(None).try_init();
+    let _ = env_logger::builder()
+        .format_timestamp(Some(env_logger::TimestampPrecision::Millis))
+        .try_init();
 }
 
 pub fn split_file(split_id: &str) -> String {

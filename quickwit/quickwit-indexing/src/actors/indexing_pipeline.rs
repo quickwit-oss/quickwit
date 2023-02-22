@@ -558,6 +558,7 @@ mod tests {
     async fn test_indexing_pipeline_num_fails_before_success(
         mut num_fails: usize,
     ) -> anyhow::Result<bool> {
+        quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
         let mut metastore = MockMetastore::default();
         metastore
@@ -656,6 +657,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_pipeline_simple() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_index_metadata()
