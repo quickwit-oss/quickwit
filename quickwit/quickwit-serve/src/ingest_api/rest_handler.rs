@@ -51,7 +51,7 @@ struct InvalidUtf8;
 
 impl warp::reject::Reject for InvalidUtf8 {}
 
-const CONTENT_LENGTH_LIMIT: u64 = 10_000_000; // 10M
+const CONTENT_LENGTH_LIMIT: u64 = 10 * 1024 * 1024; // 10MiB
 
 #[derive(Error, Debug)]
 pub enum IngestRestApiError {

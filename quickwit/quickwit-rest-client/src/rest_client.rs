@@ -29,15 +29,14 @@ use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, Method, StatusCode, Url};
 use serde::Serialize;
 use serde_json::json;
-use tokio::fs::File;
-use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 
 use crate::error::Error;
 use crate::models::{ApiResponse, IngestSource};
+use crate::BatchLineReader;
 
-pub static DEFAULT_ADDRESS: &str = "http://127.0.0.1:7280";
-pub static DEFAULT_CONTENT_TYPE: &str = "application/json";
-pub static INGEST_CHUNK_SIZE_IN_BYTES: usize = 4 * 1024 * 1024;
+pub const DEFAULT_BASE_URL: &str = "http://127.0.0.1:7280";
+pub const DEFAULT_CONTENT_TYPE: &str = "application/json";
+pub const INGEST_CONTENT_LENGTH_LIMIT: usize = 10 * 1024 * 1024; // 10MiB
 
 pub struct Transport {
     base_url: Url,
@@ -46,7 +45,7 @@ pub struct Transport {
 
 impl Default for Transport {
     fn default() -> Self {
-        let base_url = Url::parse(DEFAULT_ADDRESS).unwrap();
+        let base_url = Url::parse(DEFAULT_BASE_URL).unwrap();
         Self::new(base_url)
     }
 }
@@ -142,35 +141,20 @@ impl QuickwitClient {
 
     pub async fn ingest(&self, index_id: &str, ingest_source: IngestSource) -> Result<(), Error> {
         let ingest_path = format!("{index_id}/ingest");
-        let reader: Box<dyn AsyncRead + Send + Sync + Unpin> = match ingest_source {
+        let mut batch_reader = match ingest_source {
             IngestSource::File(filepath) => {
-                let file = File::open(&filepath).await?;
-                Box::new(file)
+                BatchLineReader::from_file(&filepath, INGEST_CONTENT_LENGTH_LIMIT).await?
             }
-            IngestSource::Stdin => Box::new(tokio::io::stdin()),
+            IngestSource::Stdin => BatchLineReader::from_stdin(INGEST_CONTENT_LENGTH_LIMIT),
         };
-        let mut buf_reader = BufReader::new(reader);
-
         let start = Instant::now();
-        let mut num_bytes_sent = 0;
+        let mut num_bytes_ingested = 0;
 
-        loop {
-            let mut buffer = Vec::with_capacity(INGEST_CHUNK_SIZE_IN_BYTES);
-            for _ in 0..5_000 {
-                if buf_reader.read_until(b'\n', &mut buffer).await? == 0 {
-                    break;
-                }
-            }
-
-            if buffer.is_empty() {
-                break;
-            }
-            let body = Bytes::from(buffer);
-
+        while let Some(batch) = batch_reader.next_batch().await? {
             loop {
                 let response = self
                     .transport
-                    .send::<()>(Method::POST, &ingest_path, None, None, Some(body.clone()))
+                    .send::<()>(Method::POST, &ingest_path, None, None, Some(batch.clone()))
                     .await?;
 
                 if response.status_code() == StatusCode::TOO_MANY_REQUESTS {
@@ -181,13 +165,12 @@ impl QuickwitClient {
                     break;
                 }
             }
-            num_bytes_sent += body.len();
+            num_bytes_ingested += batch.len();
 
             let throughput =
-                num_bytes_sent as f64 / start.elapsed().as_secs_f64() / 1024.0 / 1024.0;
-            println!("Indexing throughput: {throughput} MB/s");
+                num_bytes_ingested as f64 / start.elapsed().as_secs_f64() / 1024.0 / 1024.0;
+            println!("Indexing throughput: {throughput:.1} MiB/s");
         }
-
         Ok(())
     }
 }
