@@ -20,10 +20,10 @@
 use std::collections::HashSet;
 use std::net::SocketAddr;
 
+use anyhow::anyhow;
 use chitchat::{ClusterStateSnapshot, NodeId, NodeState};
 use itertools::Itertools;
 use quickwit_proto::indexing_api::IndexingTask;
-use serde::{Deserialize, Serialize};
 use tracing::{error, warn};
 
 use crate::QuickwitService;
@@ -31,7 +31,10 @@ use crate::QuickwitService;
 // Keys used to store member's data in chitchat state.
 pub(crate) const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
 pub(crate) const ENABLED_SERVICES_KEY: &str = "enabled_services";
-pub(crate) const RUNNING_INDEXING_PLAN: &str = "running_indexing_plan";
+// An indexing task key is formatted as
+// `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
+pub(crate) const INDEXING_TASK_PREFIX: &str = "indexing_task";
+pub(crate) const INDEXING_TASK_SEPARATOR: char = ':';
 
 /// Cluster member.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -54,7 +57,7 @@ pub struct ClusterMember {
     /// Running indexing plan.
     /// None if the node is not an indexer or the indexer has not yet started some indexing
     /// pipelines.
-    pub running_indexing_plan: Option<RunningIndexingPlan>,
+    pub indexing_tasks: Vec<IndexingTask>,
 }
 
 impl ClusterMember {
@@ -64,7 +67,7 @@ impl ClusterMember {
         enabled_services: HashSet<QuickwitService>,
         gossip_advertise_addr: SocketAddr,
         grpc_advertise_addr: SocketAddr,
-        running_indexing_plan: Option<RunningIndexingPlan>,
+        indexing_tasks: Vec<IndexingTask>,
     ) -> Self {
         Self {
             node_id,
@@ -72,7 +75,7 @@ impl ClusterMember {
             enabled_services,
             gossip_advertise_addr,
             grpc_advertise_addr,
-            running_indexing_plan,
+            indexing_tasks,
         }
     }
 
@@ -85,15 +88,6 @@ impl From<ClusterMember> for NodeId {
     fn from(member: ClusterMember) -> Self {
         Self::new(member.chitchat_id(), member.gossip_advertise_addr)
     }
-}
-
-/// Running indexing plan on an indexer.
-// Note(fmassot) We could have used just a `Vec<IndexingTaks>` but
-// we will most likely add some metadata about the running plan in the near future:
-// metastore version, errors, applied date, ... thus using a struct is more appropriate.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RunningIndexingPlan {
-    pub indexing_tasks: Vec<IndexingTask>,
 }
 
 // Builds cluster members with the given `NodeId`s and `ClusterStateSnapshot`.
@@ -139,7 +133,7 @@ pub(crate) fn build_cluster_member(
         })
         .map(|enabled_services_str| {
             parse_enabled_services_str(enabled_services_str, &chitchat_node.id)
-        })??;
+        })?;
     let grpc_advertise_addr = node_state
         .get(GRPC_ADVERTISE_ADDR_KEY)
         .ok_or_else(|| {
@@ -150,10 +144,7 @@ pub(crate) fn build_cluster_member(
             )
         })
         .map(|addr_str| addr_str.parse::<SocketAddr>())??;
-    let running_indexing_plan = node_state
-        .get(RUNNING_INDEXING_PLAN)
-        .map(serde_json::from_str::<RunningIndexingPlan>)
-        .transpose()?;
+    let indexing_tasks = parse_indexing_tasks(node_state, &chitchat_node.id);
     let (node_id, start_timestamp_str) = chitchat_node.id.split_once('/').ok_or_else(|| {
         anyhow::anyhow!(
             "Failed to create cluster member instance from NodeId `{}`.",
@@ -167,14 +158,66 @@ pub(crate) fn build_cluster_member(
         enabled_services,
         chitchat_node.gossip_public_address,
         grpc_advertise_addr,
-        running_indexing_plan,
+        indexing_tasks,
     ))
+}
+
+// Parses indexing task key into the pair (index_id, source_id).
+fn parse_indexing_task_key(key: &str) -> anyhow::Result<(&str, &str)> {
+    let (_prefix, key_without_prefix) =
+        key.split_once(INDEXING_TASK_SEPARATOR).ok_or_else(|| {
+            anyhow!(
+                "Indexing task must contain the delimiter character `:`: `{}`",
+                key
+            )
+        })?;
+    let (index_id, source_id) = key_without_prefix
+        .split_once(INDEXING_TASK_SEPARATOR)
+        .ok_or_else(|| {
+            anyhow!(
+                "Indexing task index ID and source ID must be separated by character `:`:  `{}`",
+                key_without_prefix
+            )
+        })?;
+    Ok((index_id, source_id))
+}
+
+/// Parses indexing tasks serialized in keys formatted as `INDEXING_TASK_PREFIX:index_id:source_id`.
+/// Malformed keys and values are ignored, just warnings are emitted.
+pub(crate) fn parse_indexing_tasks(node_state: &NodeState, node_id: &str) -> Vec<IndexingTask> {
+    node_state
+        .iter_key_values(|key, _| key.starts_with(INDEXING_TASK_PREFIX))
+        .map(|(key, versioned_value)| {
+            let (index_id, source_id) = parse_indexing_task_key(key)?;
+            let num_tasks: usize = versioned_value.value.parse()?;
+            Ok((0..num_tasks).map(|_| IndexingTask {
+                index_id: index_id.to_string(),
+                source_id: source_id.to_string(),
+            }))
+        })
+        .flatten_ok()
+        .filter_map(
+            |indexing_task_parsing_result: anyhow::Result<IndexingTask>| {
+                match indexing_task_parsing_result {
+                    Ok(indexing_task) => Some(indexing_task),
+                    Err(error) => {
+                        warn!(
+                            node_id=%node_id,
+                            error=%error,
+                            "Malformated indexing task key and value on node."
+                        );
+                        None
+                    }
+                }
+            },
+        )
+        .collect()
 }
 
 fn parse_enabled_services_str(
     enabled_services_str: &str,
     node_id: &str,
-) -> anyhow::Result<HashSet<QuickwitService>> {
+) -> HashSet<QuickwitService> {
     let enabled_services: HashSet<QuickwitService> = enabled_services_str
         .split(',')
         .filter(|service_str| !service_str.is_empty())
@@ -196,5 +239,5 @@ fn parse_enabled_services_str(
             "Node has no enabled services."
         )
     }
-    Ok(enabled_services)
+    enabled_services
 }

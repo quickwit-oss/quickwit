@@ -20,8 +20,29 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use futures::Future;
 use hyper::service::Service;
 use hyper::Uri;
+use tokio::time::error::Elapsed;
+
+pub async fn wait_until_predicate<Fut>(
+    predicate: impl Fn() -> Fut,
+    timeout: Duration,
+    retry_interval: Duration,
+) -> Result<(), Elapsed>
+where
+    Fut: Future<Output = Result<bool, anyhow::Error>>,
+{
+    tokio::time::timeout(timeout, async move {
+        loop {
+            if predicate().await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(retry_interval).await
+        }
+    })
+    .await
+}
 
 /// Tries to connect at most 3 times to `SocketAddr`.
 /// If not successful, returns an error.

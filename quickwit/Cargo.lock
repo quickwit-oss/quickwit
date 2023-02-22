@@ -740,7 +740,7 @@ dependencies = [
 [[package]]
 name = "chitchat"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/chitchat?rev=08e6799#08e6799dfa4301e9c1cadb2efb7d5dd31640326c"
+source = "git+https://github.com/quickwit-oss/chitchat?rev=4973853#497385319d05eab8d4e77d1dcbb2e67fe1541206"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4455,6 +4455,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-proto",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "tempfile",
@@ -4514,6 +4515,7 @@ dependencies = [
  "async-speed-limit",
  "colored",
  "env_logger 0.9.3",
+ "futures",
  "home",
  "hyper",
  "itertools",
