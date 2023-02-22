@@ -139,7 +139,7 @@ mod tests {
             HashSet::from([QuickwitService::ControlPlane]),
             grpc_addr_1,
             grpc_addr_1,
-            None,
+            Vec::new(),
         );
         let member_2 = ClusterMember::new(
             "2".to_string(),
@@ -147,7 +147,7 @@ mod tests {
             HashSet::from([QuickwitService::ControlPlane]),
             grpc_addr_2,
             grpc_addr_2,
-            None,
+            Vec::new(),
         );
         let member_3 = ClusterMember::new(
             "3".to_string(),
@@ -155,7 +155,7 @@ mod tests {
             HashSet::from([QuickwitService::ControlPlane]),
             grpc_addr_3,
             grpc_addr_3,
-            None,
+            Vec::new(),
         );
         let member_4 = ClusterMember::new(
             "4".to_string(),
@@ -163,7 +163,7 @@ mod tests {
             HashSet::from([QuickwitService::Indexer]),
             grpc_addr_4,
             grpc_addr_4,
-            None,
+            Vec::new(),
         );
 
         let (members_tx, members_rx) = watch::channel::<Vec<ClusterMember>>(vec![member_1.clone()]);

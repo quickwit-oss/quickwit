@@ -28,7 +28,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz, Mailbox,
     Observation,
 };
-use quickwit_cluster::{Cluster, RunningIndexingPlan};
+use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_config::{build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_ingest_api::QUEUES_DIR_NAME;
@@ -547,10 +547,9 @@ impl IndexingService {
             })
             .collect_vec();
 
-        let running_plan = RunningIndexingPlan { indexing_tasks };
         if let Err(error) = self
             .cluster
-            .set_self_node_running_indexing_plan(&running_plan)
+            .update_self_node_indexing_tasks(&indexing_tasks)
             .await
         {
             error!(
@@ -944,14 +943,7 @@ mod tests {
 
         let self_member = &cluster.ready_members_from_chitchat_state().await[0];
         assert_eq!(
-            HashSet::<_>::from_iter(
-                self_member
-                    .running_indexing_plan
-                    .as_ref()
-                    .unwrap()
-                    .indexing_tasks
-                    .iter()
-            ),
+            HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
             HashSet::from_iter(indexing_tasks.iter())
         );
         let indexing_tasks = vec![
@@ -981,14 +973,7 @@ mod tests {
         indexing_server_handle.process_pending_and_observe().await;
         let self_member = &cluster.ready_members_from_chitchat_state().await[0];
         assert_eq!(
-            HashSet::<_>::from_iter(
-                self_member
-                    .running_indexing_plan
-                    .as_ref()
-                    .unwrap()
-                    .indexing_tasks
-                    .iter()
-            ),
+            HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
             HashSet::from_iter(indexing_tasks.iter())
         );
 

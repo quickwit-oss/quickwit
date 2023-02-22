@@ -203,15 +203,7 @@ impl IndexingScheduler {
         let indexers = self.get_indexers_from_cluster_state().await;
         let running_indexing_tasks_by_node_id: HashMap<String, Vec<IndexingTask>> = indexers
             .into_iter()
-            .map(|cluster_member| {
-                (
-                    cluster_member.node_id,
-                    cluster_member
-                        .running_indexing_plan
-                        .map(|plan| plan.indexing_tasks)
-                        .unwrap_or_default(),
-                )
-            })
+            .map(|cluster_member| (cluster_member.node_id, cluster_member.indexing_tasks))
             .collect();
         // TODO(fmassot): in the case where we have the same set of nodes in the two plans, a
         // rescheduling is not needed, we probably should just reapply the same plan on the
@@ -420,9 +412,7 @@ mod tests {
 
     use chitchat::transport::ChannelTransport;
     use quickwit_actors::Universe;
-    use quickwit_cluster::{
-        create_cluster_for_test, grpc_addr_from_listen_addr_for_test, RunningIndexingPlan,
-    };
+    use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test};
     use quickwit_config::{KafkaSourceParams, SourceConfig, SourceParams};
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::indexing_client::IndexingServiceClient;
@@ -514,11 +504,8 @@ mod tests {
 
         // Update the indexer state and check that the indexer does not receive any new
         // `ApplyIndexingPlanRequest`.
-        let running_plan = RunningIndexingPlan {
-            indexing_tasks: indexing_tasks.clone(),
-        };
         cluster
-            .set_self_node_running_indexing_plan(&running_plan)
+            .update_self_node_indexing_tasks(&indexing_tasks)
             .await
             .unwrap();
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
@@ -529,11 +516,8 @@ mod tests {
 
         // Update the indexer state with a different plan and check that the indexer does now
         // receive a new `ApplyIndexingPlanRequest`.
-        let modified_running_plan = RunningIndexingPlan {
-            indexing_tasks: vec![indexing_tasks[0].clone()],
-        };
         cluster
-            .set_self_node_running_indexing_plan(&modified_running_plan)
+            .update_self_node_indexing_tasks(&[indexing_tasks[0].clone()])
             .await
             .unwrap();
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;

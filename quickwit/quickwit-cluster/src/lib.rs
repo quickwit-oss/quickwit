@@ -36,7 +36,7 @@ pub use crate::cluster::{
     Cluster, ClusterSnapshot, NodeIdSchema,
 };
 pub use crate::error::{ClusterError, ClusterResult};
-pub use crate::member::{ClusterMember, RunningIndexingPlan};
+pub use crate::member::ClusterMember;
 
 fn unix_timestamp() -> u64 {
     let duration_since_epoch = std::time::SystemTime::now()
@@ -55,7 +55,7 @@ pub async fn start_cluster_service(
         enabled_services.clone(),
         quickwit_config.gossip_advertise_addr,
         quickwit_config.grpc_advertise_addr,
-        None,
+        Vec::new(),
     );
 
     let cluster = Cluster::join(
