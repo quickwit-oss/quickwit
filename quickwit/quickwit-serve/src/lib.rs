@@ -62,7 +62,7 @@ use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 use quickwit_grpc_clients::{create_balance_channel_from_watched_members, ControlPlaneGrpcClient};
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
-use quickwit_ingest_api::{start_ingest_api_service, IngestServiceClient};
+use quickwit_ingest_api::{start_ingest_api_service, GetIngestServiceImpl, IngestServiceClient};
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, Metastore, MetastoreError, MetastoreGrpcClient,
@@ -203,7 +203,8 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
             storage_resolver.clone(),
         )
         .await?;
-        let ingest_service = IngestServiceClient::from_mailbox(ingest_api_service);
+        let ingest_service_impl = ingest_api_service.ask(GetIngestServiceImpl).await?;
+        let ingest_service = IngestServiceClient::new(ingest_service_impl);
         (ingest_service, Some(indexing_service))
     } else {
         let (channel, _) = create_balance_channel_from_watched_members(

@@ -99,3 +99,7 @@ indexer:
 # -------------------------------- Jaeger settings --------------------------------
 jaeger:
   enable_endpoint: ${QW_ENABLE_JAEGER_ENDPOINT:-true}
+
+ingest_api:
+  max_queue_memory_usage: 4000000000
+  max_queue_disk_usage: 12000000000
