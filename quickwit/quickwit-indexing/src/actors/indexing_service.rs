@@ -34,7 +34,7 @@ use quickwit_common::fs::get_cache_directory_path;
 use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
-use quickwit_ingest_api::{IngestApiService, QUEUES_DIR_NAME, DropQueueRequest, ListQueuesRequest};
+use quickwit_ingest_api::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -538,7 +538,12 @@ impl IndexingService {
             .difference(&updated_pipeline_ids)
             .any(|pipeline_id_to_remove| pipeline_id_to_remove.source_id == INGEST_API_SOURCE_ID);
         if should_gc_ingest_api_queues {
-            let _ = self.handle(GCIngestApiQueues, ctx).await;
+            if let Err(error) = self.run_ingest_api_queues_gc().await {
+                warn!(
+                    err=?error,
+                    "Ingest API queues garbage collect error.",
+                );
+            }
         }
 
         if !failed_spawning_pipeline_ids.is_empty() {
@@ -785,28 +790,6 @@ impl Handler<ApplyIndexingPlanRequest> for IndexingService {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.apply_indexing_plan(ctx, plan_request).await)
-    }
-}
-
-#[derive(Debug)]
-struct GCIngestApiQueues;
-
-#[async_trait]
-impl Handler<GCIngestApiQueues> for IndexingService {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        _request: GCIngestApiQueues,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        if let Err(error) = self.run_ingest_api_queues_gc().await {
-            warn!(
-                err=?error,
-                "Ingest API queues garbage collect error.",
-            );
-        }
-        Ok(())
     }
 }
 
