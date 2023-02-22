@@ -47,7 +47,7 @@ use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
 use crate::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingPipelineId, Observe, ObservePipeline,
-    ScratchDirectory, ShutdownPipeline, ShutdownPipelines, SpawnPipeline, WeakScratchDirectory,
+    ScratchDirectory, SpawnPipeline, WeakScratchDirectory,
 };
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
@@ -586,12 +586,9 @@ impl IndexingService {
 
     /// Garbage collects ingest API queues of deleted indexes.
     async fn run_ingest_api_queues_gc(&mut self) -> anyhow::Result<()> {
-        let ingest_api_service =
-            if let Some(ingest_api_service) = self.ingest_api_service_opt.as_ref() {
-                ingest_api_service
-            } else {
-                return Ok(());
-            };
+        let Some(ingest_api_service) = &self.ingest_api_service_opt else {
+            return Ok(());
+        };
         let queues: HashSet<String> = ingest_api_service
             .ask_for_res(ListQueuesRequest {})
             .await
@@ -732,55 +729,6 @@ impl Handler<Observe> for IndexingService {
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::ObservableState, ActorExitStatus> {
         Ok(self.observable_state())
-    }
-}
-
-#[async_trait]
-impl Handler<ShutdownPipelines> for IndexingService {
-    type Reply = Result<(), IndexingServiceError>;
-    async fn handle(
-        &mut self,
-        message: ShutdownPipelines,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        let source_filter_fn = |pipeline_id: &IndexingPipelineId| {
-            message
-                .source_id
-                .as_ref()
-                .map(|source_id| pipeline_id.source_id == *source_id)
-                .unwrap_or(true)
-        };
-        let pipelines_to_shutdown: Vec<IndexingPipelineId> = self
-            .indexing_pipeline_handles
-            .keys()
-            .filter(|pipeline_id| {
-                pipeline_id.index_id == message.index_id && source_filter_fn(pipeline_id)
-            })
-            .cloned()
-            .collect();
-        for pipeline_id in pipelines_to_shutdown {
-            if let Some(pipeline_handle) = self.indexing_pipeline_handles.remove(&pipeline_id) {
-                pipeline_handle.quit().await;
-                self.counters.num_running_pipelines -= 1;
-            }
-        }
-        Ok(Ok(()))
-    }
-}
-
-#[async_trait]
-impl Handler<ShutdownPipeline> for IndexingService {
-    type Reply = Result<(), IndexingServiceError>;
-    async fn handle(
-        &mut self,
-        message: ShutdownPipeline,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        if let Some(pipeline_handle) = self.indexing_pipeline_handles.remove(&message.pipeline_id) {
-            pipeline_handle.quit().await;
-            self.counters.num_running_pipelines -= 1;
-        }
-        Ok(Ok(()))
     }
 }
 
@@ -1228,7 +1176,7 @@ mod tests {
         .unwrap();
         let (indexing_server_mailbox, indexing_server_handle) =
             universe.spawn_builder().spawn(indexing_server);
-        indexing_server_mailbox
+        let pipeline_id = indexing_server_mailbox
             .ask_for_res(SpawnPipeline {
                 index_id: index_id.clone(),
                 source_config,
@@ -1243,13 +1191,11 @@ mod tests {
         assert_eq!(observation.num_running_merge_pipelines, 1);
 
         // Test `shutdown_pipeline`
-        indexing_server_mailbox
-            .ask_for_res(ShutdownPipelines {
-                index_id: index_id.clone(),
-                source_id: None,
-            })
+        let pipeline = indexing_server_mailbox
+            .ask_for_res(DetachIndexingPipeline { pipeline_id })
             .await
             .unwrap();
+        pipeline.quit().await;
 
         // Let the service cleanup the merge pipelines.
         universe.sleep(HEARTBEAT).await;
