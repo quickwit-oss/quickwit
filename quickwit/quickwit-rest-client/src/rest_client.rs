@@ -20,8 +20,6 @@
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use futures::pin_mut;
-use futures::stream::StreamExt;
 use quickwit_common::FileEntry;
 use quickwit_config::{ConfigFormat, SourceConfig};
 use quickwit_metastore::{IndexMetadata, Split};
@@ -33,14 +31,13 @@ use serde::Serialize;
 use serde_json::json;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
-use tokio_stream::wrappers::LinesStream;
 
 use crate::error::Error;
 use crate::models::{ApiResponse, IngestSource};
 
 pub static DEFAULT_ADDRESS: &str = "http://127.0.0.1:7280";
 pub static DEFAULT_CONTENT_TYPE: &str = "application/json";
-pub static INGEST_CHUNK_SIZE_IN_BYTES: usize = 9 * 1024 * 1024; // 9MiB
+pub static INGEST_CHUNK_SIZE_IN_BYTES: usize = 10_000_000; // 10MB
 
 pub struct Transport {
     base_url: Url,
@@ -152,36 +149,44 @@ impl QuickwitClient {
             }
             IngestSource::Stdin => Box::new(tokio::io::stdin()),
         };
-        let buf_reader = BufReader::new(reader);
-        let peekable_reader = LinesStream::new(buf_reader.lines()).peekable();
-        pin_mut!(peekable_reader);
+        let mut buf_reader = BufReader::new(reader);
 
         let start = Instant::now();
         let mut num_bytes_sent = 0;
+        let mut last_line = None;
 
         loop {
             let mut buffer = Vec::with_capacity(INGEST_CHUNK_SIZE_IN_BYTES);
-            while let Some(read_result) = peekable_reader
-                .as_mut()
-                .next_if(|read_result| {
-                    match read_result {
-                        Ok(payload_line) => {
-                            buffer.len() + payload_line.len() + 1 < INGEST_CHUNK_SIZE_IN_BYTES
-                        }
-                        Err(_) => true, // Forward io error
-                    }
-                })
-                .await
-            {
-                let mut payload_line = read_result?;
-                payload_line.push('\n');
-                buffer.extend(payload_line.as_bytes());
+            if let Some(line) = last_line {
+                buffer.extend(line);
+                last_line = None;
+            }
+
+            loop {
+                if buf_reader.read_until(b'\n', &mut buffer).await? == 0 {
+                    break;
+                }
+                if buffer.len() >= INGEST_CHUNK_SIZE_IN_BYTES {
+                    break;
+                }
             }
 
             if buffer.is_empty() {
                 break;
             }
-            let body = Bytes::from(buffer);
+
+            let body = if buffer.len() > INGEST_CHUNK_SIZE_IN_BYTES {
+                // Ignore the trailing line break.
+                let last_line_index = buffer[0..buffer.len() - 1]
+                    .iter()
+                    .rposition(|byte| *byte == b'\n')
+                    .expect("Expected a line break.");
+
+                last_line = Some(Vec::from(&buffer[last_line_index..]));
+                Bytes::from(Vec::from(&buffer[0..last_line_index]))
+            } else {
+                Bytes::from(buffer)
+            };
 
             loop {
                 let response = self
