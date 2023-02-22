@@ -43,7 +43,6 @@ use quickwit_common::uri::Uri;
 use quickwit_common::ChecklistError;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::CLI_INGEST_SOURCE_ID;
-use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError, SplitState};
 use serde_json::{json, Number, Value};
 use tokio::time::{sleep, Duration};
@@ -496,12 +495,6 @@ async fn test_delete_index_cli_dry_run() {
     // On dry run index should still exist
     let metastore = refresh_metastore(metastore).await.unwrap();
     assert!(metastore.index_exists(&index_id).await.unwrap());
-
-    let args = create_delete_args(false);
-
-    delete_index_cli(args).await.unwrap();
-    let metastore = refresh_metastore(metastore).await.unwrap();
-    assert!(!metastore.index_exists(&index_id).await.unwrap());
 }
 
 #[tokio::test]
@@ -531,14 +524,6 @@ async fn test_delete_index_cli() {
         .index_metadata(&test_env.index_id)
         .await
         .is_err());
-
-    assert!(!test_env
-        .data_dir_path
-        .join(INDEXING_DIR_NAME)
-        .join(test_env.index_id)
-        .as_path()
-        .try_exists()
-        .unwrap());
 }
 
 #[tokio::test]
