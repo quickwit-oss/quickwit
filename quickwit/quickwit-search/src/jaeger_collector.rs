@@ -24,7 +24,7 @@ use fnv::FnvHashMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tantivy::collector::{Collector, SegmentCollector};
-use tantivy::fastfield::{Column, MultiValuedFastFieldReader};
+use tantivy::fastfield::Column;
 use tantivy::{DateTime, DocId, InvertedIndexReader, Score, SegmentReader};
 
 type TraceId = Vec<u8>;
@@ -78,19 +78,18 @@ impl Collector for FindTraceIdsCollector {
         _segment_local_id: u32,
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Self::Child> {
-        let trace_id_ff_reader = segment_reader
+        let trace_id_ff_reader: Column<u64> = segment_reader
             .fast_fields()
-            .u64s(&self.trace_id_field_name)?;
-        let span_timestamp_column = segment_reader
+            .u64(&self.trace_id_field_name)?;
+        let span_timestamp_column: Column<DateTime> = segment_reader
             .fast_fields()
             .date(&self.span_timestamp_field_name)?;
-
         let trace_id_field = segment_reader
             .schema()
             .get_field(&self.trace_id_field_name)?;
         let inverted_index_reader = segment_reader.inverted_index(trace_id_field)?;
 
-        Ok(Self::Child {
+        Ok(FindTraceIdsSegmentCollector {
             num_traces: self.num_traces,
             trace_id_ff_reader,
             span_timestamp_column,
@@ -135,8 +134,8 @@ impl Collector for FindTraceIdsCollector {
 /// will follow.
 pub struct FindTraceIdsSegmentCollector {
     num_traces: usize,
-    trace_id_ff_reader: MultiValuedFastFieldReader<u64>,
-    span_timestamp_column: Arc<dyn Column<DateTime>>,
+    trace_id_ff_reader: Column<u64>,
+    span_timestamp_column: Column<DateTime>,
     inverted_index_reader: Arc<InvertedIndexReader>,
     buckets: FnvHashMap<TraceIdTermOrd, SpanTimestamp>,
 }
@@ -144,7 +143,7 @@ pub struct FindTraceIdsSegmentCollector {
 impl FindTraceIdsSegmentCollector {
     fn trace_id_term_ord(&self, doc: DocId) -> TraceIdTermOrd {
         self.trace_id_ff_reader
-            .get_first_val(doc)
+            .first(doc)
             .expect("There should be exactly one trace ID per span.")
     }
 
@@ -158,8 +157,10 @@ impl FindTraceIdsSegmentCollector {
     }
 
     fn span_timestamp(&self, doc: DocId) -> SpanTimestamp {
+        // TODO Optim... We can probably check that we have the full cardinality.
         self.span_timestamp_column
-            .get_val(doc)
+            .first(doc)
+            .unwrap_or_default()
             .into_timestamp_micros()
     }
 }

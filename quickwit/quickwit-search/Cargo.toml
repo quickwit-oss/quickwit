@@ -16,7 +16,6 @@ bytes = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
-fastfield_codecs = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 lru = { workspace = true }

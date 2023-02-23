@@ -17,7 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use tantivy::schema::{Cardinality, Type};
+use tantivy::schema::Type;
+use crate::Cardinality;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use crate::default_doc_mapper::field_mapping_entry::{

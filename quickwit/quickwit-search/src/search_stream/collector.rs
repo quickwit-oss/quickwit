@@ -23,7 +23,8 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use tantivy::collector::{Collector, SegmentCollector};
-use tantivy::fastfield::{Column, FastValue};
+use tantivy::columnar::ColumnValues;
+use tantivy::fastfield::FastValue;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 
 use crate::filters::{TimestampFilter, TimestampFilterBuilder};
@@ -31,13 +32,13 @@ use crate::filters::{TimestampFilter, TimestampFilterBuilder};
 #[derive(Clone)]
 pub struct FastFieldSegmentCollector<Item: FastValue> {
     fast_field_values: Vec<Item>,
-    fast_field_reader: Arc<dyn Column<Item>>,
+    fast_field_reader: Arc<dyn ColumnValues<Item>>,
     timestamp_filter_opt: Option<TimestampFilter>,
 }
 
 impl<Item: FastValue> FastFieldSegmentCollector<Item> {
     pub fn new(
-        fast_field_reader: Arc<dyn Column<Item>>,
+        fast_field_reader: Arc<dyn ColumnValues<Item>>,
         timestamp_filter_opt: Option<TimestampFilter>,
     ) -> Self {
         Self {
@@ -185,8 +186,8 @@ pub struct PartitionedFastFieldSegmentCollector<
     PartitionItem: FastValue + Eq + Hash,
 > {
     fast_field_values: std::collections::HashMap<PartitionItem, Vec<Item>>,
-    fast_field_reader: Arc<dyn Column<Item>>,
-    partition_by_fast_field_reader: Arc<dyn Column<PartitionItem>>,
+    fast_field_reader: Arc<dyn ColumnValues<Item>>,
+    partition_by_fast_field_reader: Arc<dyn ColumnValues<PartitionItem>>,
     timestamp_filter_opt: Option<TimestampFilter>,
 }
 
@@ -194,8 +195,8 @@ impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash>
     PartitionedFastFieldSegmentCollector<Item, PartitionItem>
 {
     pub fn new(
-        fast_field_reader: Arc<dyn Column<Item>>,
-        partition_by_fast_field_reader: Arc<dyn Column<PartitionItem>>,
+        fast_field_reader: Arc<dyn ColumnValues<Item>>,
+        partition_by_fast_field_reader: Arc<dyn ColumnValues<PartitionItem>>,
         timestamp_filter_opt: Option<TimestampFilter>,
     ) -> Self {
         Self {
@@ -246,11 +247,7 @@ mod helpers {
     pub fn make_fast_field_reader<T: FastValue>(
         segment_reader: &SegmentReader,
         fast_field_to_collect: &str,
-    ) -> tantivy::Result<Arc<dyn Column<T>>> {
-        let field = segment_reader.schema().get_field(fast_field_to_collect)?;
-        let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
-        let bytes = fast_field_slice.read_bytes()?;
-        let column = fastfield_codecs::open(bytes)?;
-        Ok(column)
+    ) -> tantivy::Result<Arc<dyn ColumnValues<T>>> {
+        todo!();
     }
 }

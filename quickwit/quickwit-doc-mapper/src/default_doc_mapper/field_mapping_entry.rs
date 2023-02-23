@@ -23,11 +23,12 @@ use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
-    Cardinality, IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
+    IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
 };
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::{default_as_true, FieldMappingType};
+use crate::Cardinality;
 use crate::default_doc_mapper::field_mapping_type::QuickwitFieldType;
 use crate::default_doc_mapper::validate_field_mapping_name;
 

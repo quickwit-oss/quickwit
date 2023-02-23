@@ -19,7 +19,6 @@
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
-use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_doc_mapper::{DocMapper, WarmupInfo};
@@ -55,8 +54,9 @@ pub(crate) enum SortBy {
 enum SortingFieldComputer {
     /// If undefined, we simply sort by DocIds.
     DocId,
+    Zero,
     FastField {
-        fast_field_reader: Arc<dyn Column<u64>>,
+        fast_field_reader: Column<u64>,
         order: SortOrder,
     },
     Score {
@@ -72,16 +72,20 @@ impl SortingFieldComputer {
                 fast_field_reader,
                 order,
             } => {
-                let field_val = fast_field_reader.get_val(doc_id);
-                match order {
-                    // Descending is our most common case.
-                    SortOrder::Desc => field_val,
-                    // We get Ascending order by using a decreasing mapping over u64 as the
-                    // sorting_field.
-                    SortOrder::Asc => u64::MAX - field_val,
+                if let Some(field_val) = fast_field_reader.first(doc_id) {
+                    match order {
+                        // Descending is our most common case.
+                        SortOrder::Desc => field_val,
+                        // We get Ascending order by using a decreasing mapping over u64 as the
+                        // sorting_field.
+                        SortOrder::Asc => u64::MAX - field_val,
+                    }
+                } else {
+                    0u64
                 }
-            }
-            SortingFieldComputer::DocId => 0u64,
+           }
+            SortingFieldComputer::DocId => doc_id as u64,
+            SortingFieldComputer::Zero => 0u64,
             SortingFieldComputer::Score { order } => {
                 let u64_score = f32_to_u64(score);
                 match order {
@@ -111,11 +115,16 @@ fn resolve_sort_by(
     match sort_by {
         SortBy::DocId => Ok(SortingFieldComputer::DocId),
         SortBy::FastField { field_name, order } => {
-            let fast_field_reader = segment_reader.fast_fields().u64_lenient(field_name)?;
-            Ok(SortingFieldComputer::FastField {
-                fast_field_reader,
-                order: *order,
-            })
+            let fast_field_reader_opt: Option<Column<u64>> = segment_reader.fast_fields()
+                .u64_lenient(field_name)?;
+            if let Some(fast_field_reader) = fast_field_reader_opt {
+                Ok(SortingFieldComputer::FastField {
+                    fast_field_reader,
+                    order: *order,
+                })
+            } else {
+                Ok(SortingFieldComputer::Zero)
+            }
         }
         SortBy::Score { order } => Ok(SortingFieldComputer::Score { order: *order }),
     }

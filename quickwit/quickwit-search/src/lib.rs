@@ -204,7 +204,6 @@ pub async fn single_node_search(
     } else {
         None
     };
-    let schema = doc_mapper.schema();
 
     let fetch_docs_response = fetch_docs(
         searcher_context.clone(),
@@ -243,7 +242,7 @@ pub async fn single_node_search(
                 let res: IntermediateAggregationResults =
                     serde_json::from_str(&intermediate_aggregation_result)?;
                 let res: AggregationResults =
-                    res.into_final_bucket_result(aggregations, &schema)?;
+                    res.into_final_bucket_result(aggregations)?;
                 Some(serde_json::to_string(&res)?)
             }
         }

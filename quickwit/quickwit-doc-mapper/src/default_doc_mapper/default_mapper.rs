@@ -25,7 +25,7 @@ use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
-use tantivy::schema::{Cardinality, Field, FieldType, Schema, Value as TantivyValue, STORED};
+use tantivy::schema::{Field, FieldType, Schema, Type, Value as TantivyValue, STORED};
 use tantivy::Document;
 
 use super::field_mapping_entry::QuickwitTextTokenizer;
@@ -182,23 +182,12 @@ fn resolve_timestamp_field(
                 timestamp_field_name
             )
         }
-        match timestamp_field_entry.field_type() {
-            FieldType::Date(options) => {
-                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
-                    bail!(
-                        "Timestamp field cannot be an array, please change your field `{}` from \
-                         an array to a single value.",
-                        timestamp_field_name
-                    )
-                }
-            }
-            _ => {
-                bail!(
-                    "Timestamp field must be of type datetime, please change your field type `{}` \
+        if timestamp_field_entry.field_type().value_type() != Type::Date {
+            bail!(
+                "Timestamp field must be of type datetime, please change your field type `{}` \
                      to datetime.",
-                    timestamp_field_name
-                )
-            }
+                timestamp_field_name
+            )
         }
     }
     Ok(())
@@ -216,6 +205,8 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         } else {
             None
         };
+
+        // TODO check the cardinality of the time field (has to be SingleValued).
 
         let dynamic_field = if let Mode::Dynamic(json_options) = &mode {
             Some(schema_builder.add_json_field(DYNAMIC_FIELD_NAME, json_options.clone()))
