@@ -414,7 +414,7 @@ impl DocMapper for DefaultDocMapper {
     }
 
     fn timestamp_field_name(&self) -> Option<&str> {
-        self.timestamp_field_name.as_ref().map(String::as_str)
+        self.timestamp_field_name.as_deref()
     }
 
     fn tag_field_names(&self) -> BTreeSet<String> {

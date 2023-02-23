@@ -156,8 +156,7 @@ async fn leaf_search_stream_single_split(
             search_request.end_timestamp,
         );
 
-    let requires_scoring =
-        search_request.sort_by_field.as_ref().map(String::as_str) == Some("_score");
+    let requires_scoring = search_request.sort_by_field.as_deref() == Some("_score");
 
     // TODO no test fail if this line get removed
     warmup_info.field_norms |= requires_scoring;
@@ -401,7 +400,7 @@ impl<'a> SearchStreamRequestFields {
     }
 
     pub fn timestamp_field_name(&self) -> Option<&str> {
-        self.timestamp_field_name.as_ref().map(String::as_str)
+        self.timestamp_field_name.as_deref()
     }
 
     pub fn fast_field_name(&self) -> &str {
