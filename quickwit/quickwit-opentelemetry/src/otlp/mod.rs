@@ -152,17 +152,6 @@ impl From<B64TraceId> for TraceId {
     }
 }
 
-impl TryFrom<&[u8]> for B64TraceId {
-    type Error = TryFromB64TraceIdError;
-
-    fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
-        let trace_id = slice
-            .try_into()
-            .map_err(|_| TryFromB64TraceIdError(slice.len()))?;
-        Ok(B64TraceId(trace_id))
-    }
-}
-
 impl TryFrom<Vec<u8>> for B64TraceId {
     type Error = TryFromB64TraceIdError;
 
@@ -177,8 +166,12 @@ impl TryFrom<Vec<u8>> for B64TraceId {
 impl FromStr for B64TraceId {
     type Err = TryFromB64TraceIdError;
 
-    fn from_str(trace_id: &str) -> Result<Self, Self::Err> {
-        trace_id.as_bytes().try_into()
+    fn from_str(b64_trace_id_str: &str) -> Result<Self, Self::Err> {
+        let trace_id = b64_trace_id_str
+            .as_bytes()
+            .try_into()
+            .map_err(|_| TryFromB64TraceIdError(b64_trace_id_str.len()))?;
+        Ok(B64TraceId(trace_id))
     }
 }
 

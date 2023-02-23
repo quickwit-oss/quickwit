@@ -166,16 +166,17 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
 
     let highlight_json: JsonValue =
         serde_json::from_str(single_node_result.hits[0].snippet.as_ref().unwrap())?;
-    let expected_json: JsonValue = json!({"title": [], "body": ["Snoopy is an anthropomorphic <b>beagle</b> in the comic strip"]});
-    assert_json_eq!(highlight_json, expected_json);
-
-    let highlight_json: JsonValue =
-        serde_json::from_str(single_node_result.hits[1].snippet.as_ref().unwrap())?;
     let expected_json: JsonValue = json!({
         "title": ["<b>beagle</b>"],
         "body": ["The <b>beagle</b> is a breed of small scent hound"]
     });
+
     assert_json_eq!(highlight_json, expected_json);
+    let highlight_json: JsonValue =
+        serde_json::from_str(single_node_result.hits[1].snippet.as_ref().unwrap())?;
+    let expected_json: JsonValue = json!({"title": [], "body": ["Snoopy is an anthropomorphic <b>beagle</b> in the comic strip"]});
+    assert_json_eq!(highlight_json, expected_json);
+
     test_sandbox.assert_quit().await;
     Ok(())
 }
@@ -736,7 +737,7 @@ async fn test_search_dynamic_mode() -> anyhow::Result<()> {
     test_sandbox.add_documents(docs).await.unwrap();
     {
         let docs = test_search_dynamic_util(&test_sandbox, "body:hello").await;
-        assert_eq!(&docs[..], &[0u32, 1u32]);
+        assert_eq!(&docs[..], &[1u32, 0u32]);
     }
     {
         let docs = test_search_dynamic_util(&test_sandbox, "body_dynamic:hello").await;
@@ -1046,7 +1047,7 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_single_node_aggregation_missing_fast_field() -> anyhow::Result<()> {
+async fn test_single_node_aggregation_missing_fast_field() {
     let index_id = "single-node-agg-2";
     let doc_mapping_yaml = r#"
             field_mappings:
@@ -1056,7 +1057,9 @@ async fn test_single_node_aggregation_missing_fast_field() -> anyhow::Result<()>
                 type: f64
                 fast: true
         "#;
-    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"]).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"])
+        .await
+        .unwrap();
     let docs = vec![
         json!({"color": "blue", "price": 10.0}),
         json!({"color": "blue", "price": 15.0}),
@@ -1083,7 +1086,7 @@ async fn test_single_node_aggregation_missing_fast_field() -> anyhow::Result<()>
    }
  }"#;
 
-    test_sandbox.add_documents(docs.clone()).await?;
+    test_sandbox.add_documents(docs.clone()).await.unwrap();
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
         query: "*".to_string(),
@@ -1098,14 +1101,14 @@ async fn test_single_node_aggregation_missing_fast_field() -> anyhow::Result<()>
         &*test_sandbox.metastore(),
         test_sandbox.storage_uri_resolver(),
     )
-    .await?;
+    .await
+    .unwrap();
     assert_eq!(single_node_result.num_hits, 0);
     assert_eq!(single_node_result.errors.len(), 1);
     assert!(single_node_result.errors[0].contains("color"));
-    assert!(single_node_result.errors[0].contains("is not a fast field"));
+    assert!(single_node_result.errors[0].contains("is not configured as"));
+    assert!(single_node_result.errors[0].contains("fast field"));
     test_sandbox.assert_quit().await;
-
-    Ok(())
 }
 
 #[tokio::test]
@@ -1445,7 +1448,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_single_node_find_trace_ids_collector() -> anyhow::Result<()> {
+async fn test_single_node_find_trace_ids_collector() {
     let index_id = "single-node-find-trace-ids-collector";
     let doc_mapping_yaml = r#"
             field_mappings:
@@ -1476,8 +1479,10 @@ async fn test_single_node_find_trace_ids_collector() -> anyhow::Result<()> {
         json!({"trace_id": qux_trace_id.to_string(), "span_timestamp_secs": "2025-01-10T15:13:35Z"}),
         json!({"trace_id": baz_trace_id.to_string(), "span_timestamp_secs": "2022-01-10T15:13:35Z"}),
     ];
-    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[]).await?;
-    test_sandbox.add_documents(docs).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
+    test_sandbox.add_documents(docs).await.unwrap();
     {
         let aggregations = r#"{
             "num_traces": 3,
@@ -1502,7 +1507,8 @@ async fn test_single_node_find_trace_ids_collector() -> anyhow::Result<()> {
             &*test_sandbox.metastore(),
             test_sandbox.storage_uri_resolver(),
         )
-        .await?;
+        .await
+        .unwrap();
         let aggregation = single_node_result.aggregation.unwrap();
         let trace_ids: Vec<Span> = serde_json::from_str(&aggregation).unwrap();
         assert_eq!(trace_ids.len(), 3);
@@ -1524,5 +1530,4 @@ async fn test_single_node_find_trace_ids_collector() -> anyhow::Result<()> {
         );
     }
     test_sandbox.assert_quit().await;
-    Ok(())
 }

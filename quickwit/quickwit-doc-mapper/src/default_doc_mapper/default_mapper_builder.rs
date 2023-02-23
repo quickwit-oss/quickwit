@@ -90,6 +90,14 @@ impl Default for DefaultDocMapperBuilder {
     }
 }
 
+// By default, in dynamic mode, all fields are fast fields.
+fn default_dynamic_mapping() -> QuickwitJsonOptions {
+    QuickwitJsonOptions {
+        fast: true,
+        ..Default::default()
+    }
+}
+
 impl DefaultDocMapperBuilder {
     pub(crate) fn mode(&self) -> anyhow::Result<Mode> {
         if self.mode != ModeType::Dynamic && self.dynamic_mapping.is_some() {
@@ -101,7 +109,11 @@ impl DefaultDocMapperBuilder {
         Ok(match self.mode {
             ModeType::Lenient => Mode::Lenient,
             ModeType::Strict => Mode::Strict,
-            ModeType::Dynamic => Mode::Dynamic(self.dynamic_mapping.clone().unwrap_or_default()),
+            ModeType::Dynamic => Mode::Dynamic(
+                self.dynamic_mapping
+                    .clone()
+                    .unwrap_or_else(default_dynamic_mapping),
+            ),
         })
     }
 

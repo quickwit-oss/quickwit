@@ -47,6 +47,7 @@ use metrics::SEARCH_METRICS;
 use quickwit_doc_mapper::DocMapper;
 use root::validate_request;
 use service::SearcherContext;
+use tantivy::aggregation::AggregationLimits;
 use tantivy::schema::NamedFieldDocument;
 
 /// Refer to this as `crate::Result<T>`.
@@ -205,7 +206,6 @@ pub async fn single_node_search(
     } else {
         None
     };
-    let schema = doc_mapper.schema();
 
     let fetch_docs_response = fetch_docs(
         searcher_context.clone(),
@@ -244,7 +244,7 @@ pub async fn single_node_search(
                 let res: IntermediateAggregationResults =
                     serde_json::from_str(&intermediate_aggregation_result)?;
                 let res: AggregationResults =
-                    res.into_final_bucket_result(aggregations, &schema)?;
+                    res.into_final_bucket_result(aggregations, &AggregationLimits::default())?;
                 Some(serde_json::to_string(&res)?)
             }
         }
