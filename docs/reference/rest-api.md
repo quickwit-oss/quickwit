@@ -63,7 +63,7 @@ POST api/v1/<index id>/search
 | **search_field**    | `[String]` | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2"                                             | index_config.search_settings.default_search_fields |
 | **snippet_fields**  | `[String]` | Fields to extract snippet on. Comma-separated list, e.g. "field1,field2"                                                                               |                                                    |
 | **sort_by_field**   | `String`   | Field to sort query results by. You can sort by a field (must be a fast field) and by BM25 `_score`. By default, hits are sorted by their document ID. |                                                    |
-| **format**          | `Enum`     | The output format. Allowed values are "json" or "prettyjson"                                                                                           | `prettyjson`                                       |
+| **format**          | `Enum`     | The output format. Allowed values are "json" or "pretty_json"                                                                                           | `pretty_json`                                       |
 | **aggs**            | `JSON`     | The aggregations request. See the [aggregations doc](aggregation.md) for supported aggregations.                                                       |                                                    |
 
 :::info
@@ -402,14 +402,14 @@ Delete source of ID `<source id>`.
 This endpoint lets you check the state of the cluster from the point of view of the node handling the request.
 
 ```
-GET api/v1/cluster?format=prettyjson
+GET api/v1/cluster?format=pretty_json
 ```
 
 #### Parameters
 
 Name | Type | Description | Default value
 --- | --- | --- | ---
-**format** | `String` | The output format requested for the response: `json` or `prettyjson` | `prettyjson`
+**format** | `String` | The output format requested for the response: `json` or `pretty_json` | `pretty_json`
 
 
 ## Delete API
