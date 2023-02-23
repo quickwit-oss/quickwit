@@ -179,7 +179,10 @@ async fn warm_up_term_dict_fields(
             .schema()
             .get_field(term_dict_field_name)
             .with_context(|| {
-                format!("Couldn't get field named {term_dict_field_name:?} from schema.")
+                format!(
+                    "Couldn't get field named {term_dict_field_name:?} from schema to warm up \
+                     term dicts."
+                )
             })?;
 
         term_dict_fields.push(term_dict_field);
@@ -205,10 +208,9 @@ async fn warm_up_postings(
 ) -> anyhow::Result<()> {
     let mut fields = Vec::new();
     for field_name in field_names.iter() {
-        let field = searcher
-            .schema()
-            .get_field(field_name)
-            .with_context(|| format!("Couldn't get field named {field_name:?} from schema."))?;
+        let field = searcher.schema().get_field(field_name).with_context(|| {
+            format!("Couldn't get field named {field_name:?} from schema to warm up postings.")
+        })?;
 
         fields.push(field);
     }
@@ -229,12 +231,14 @@ async fn warm_up_fastfield(
     fast_field_name: &str,
 ) -> anyhow::Result<()> {
     let columns = fast_field_reader
-        .columnar()
-        .read_columns_async(fast_field_name)
+        .list_dynamic_column_handles(fast_field_name)
         .await?;
-    for column in columns {
-        column.file_slice().read_bytes_async().await?;
-    }
+    futures::future::try_join_all(
+        columns
+            .into_iter()
+            .map(|col| async move { col.file_slice().read_bytes_async().await }),
+    )
+    .await?;
     Ok(())
 }
 
@@ -254,39 +258,6 @@ async fn warm_up_fastfields(
     }
     futures::future::try_join_all(warm_up_futures).await?;
     Ok(())
-    // let mut fast_fields: Vec<String> = Vec::new();
-    // for fast_field_name in fast_field_names.iter() {
-    //     let fast_field = searcher
-    //         .schema()
-    //         .get_field(fast_field_name)
-    //         .with_context(|| {
-    //             format!("Couldn't get field named {fast_field_name:?} from schema.")
-    //         })?;
-    //     let field_entry = searcher.schema().get_field_entry(fast_field);
-    //     if !field_entry.is_fast() {
-    //         anyhow::bail!("Field {:?} is not a fast field.", fast_field_name);
-    //     }
-    //     fast_fields.push(fast_field);
-    // }
-
-    // type SendableFuture = dyn Future<Output = io::Result<OwnedBytes>> + Send;
-    // let mut warm_up_futures: Vec<Pin<Box<SendableFuture>>> = Vec::new();
-    // for fast_field in fast_fields {
-    //     for segment_reader in searcher.segment_readers() {
-    //         segment_reader
-    //             .fast_fields()
-    //             .
-    //         for &fast_field_idx in fast_field_idxs(cardinality) {
-    //             let fast_field_slice = segment_reader
-    //                 .fast_fields()
-    //                 .fast_field_data(field, fast_field_idx)?;
-    //             warm_up_futures.push(Box::pin(async move {
-    //                 fast_field_slice.read_bytes_async().await
-    //             }));
-    //         }
-    //     }
-    // }
-    // try_join_all(warm_up_futures).await?;
 }
 
 async fn warm_up_terms(
@@ -459,7 +430,7 @@ async fn leaf_list_terms_single_split(
         .get_field(&search_request.field)
         .with_context(|| {
             format!(
-                "Couldn't get field named {:?} from schema.",
+                "Couldn't get field named {:?} from schema to list terms.",
                 search_request.field
             )
         })?;

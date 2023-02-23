@@ -25,19 +25,20 @@ use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
-use tantivy::schema::{Field, FieldType, Schema, Type, Value as TantivyValue, STORED};
+use tantivy::schema::{Field, FieldType, Schema, Value as TantivyValue, STORED};
 use tantivy::Document;
 
 use super::field_mapping_entry::QuickwitTextTokenizer;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{build_mapping_tree, MappingNode, MappingTree};
+use crate::default_doc_mapper::FieldMappingType;
 pub use crate::default_doc_mapper::QuickwitJsonOptions;
 use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
-    DocMapper, DocParsingError, ModeType, QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME,
-    SOURCE_FIELD_NAME,
+    Cardinality, DocMapper, DocParsingError, ModeType, QueryParserError, WarmupInfo,
+    DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
 };
 
 /// Defines how an unmapped field should be handled.
@@ -165,30 +166,28 @@ fn list_required_fields(field_mappings: &MappingTree) -> Vec<Field> {
     }
 }
 
-fn resolve_timestamp_field(
-    timestamp_field_name_opt: Option<&String>,
-    schema: &Schema,
-) -> anyhow::Result<()> {
-    if let Some(ref timestamp_field_name) = timestamp_field_name_opt {
-        let timestamp_field = schema
-            .get_field(timestamp_field_name)
-            .with_context(|| format!("Unknown timestamp field: `{timestamp_field_name}`"))?;
-
-        let timestamp_field_entry = schema.get_field_entry(timestamp_field);
-        if !timestamp_field_entry.is_fast() {
+fn validate_timestamp_field_if_any(builder: &DefaultDocMapperBuilder) -> anyhow::Result<()> {
+    let Some(timestamp_fieldname) = builder.timestamp_field.as_ref() else {
+        return Ok(());
+    };
+    let Some(timestamp_field_entry) = builder.field_mappings.iter().find(|mapping| {
+                &mapping.name == timestamp_fieldname
+            }) else {
+                bail!("Missing timestamp field in field mappings: `{}`", timestamp_fieldname);
+            };
+    if let FieldMappingType::DateTime(date_time_option, cardinality) =
+        &timestamp_field_entry.mapping_type
+    {
+        if cardinality != &Cardinality::SingleValue {
             bail!(
-                "Timestamp field must be a fast field, please add the fast property to your field \
-                 `{}`.",
-                timestamp_field_name
-            )
+                "Multiple values are forbidden for  the timestamp field (`{timestamp_fieldname}`)."
+            );
         }
-        if timestamp_field_entry.field_type().value_type() != Type::Date {
-            bail!(
-                "Timestamp field must be of type datetime, please change your field type `{}` to \
-                 datetime.",
-                timestamp_field_name
-            )
+        if !date_time_option.fast {
+            bail!("The timestamp field `{timestamp_fieldname}`is required to be a fast field.");
         }
+    } else {
+        bail!("The timestamp field `{timestamp_fieldname}` is required to have the datetime type.");
     }
     Ok(())
 }
@@ -206,7 +205,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             None
         };
 
-        // TODO check the cardinality of the time field (has to be SingleValued).
+        validate_timestamp_field_if_any(&builder)?;
 
         let dynamic_field = if let Mode::Dynamic(json_options) = &mode {
             Some(schema_builder.add_json_field(DYNAMIC_FIELD_NAME, json_options.clone()))
@@ -230,8 +229,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
                 .with_context(|| format!("Unknown default search field: `{field_name}`"))?;
             default_search_field_names.push(field_name.clone());
         }
-
-        resolve_timestamp_field(builder.timestamp_field.as_ref(), &schema)?;
 
         // Resolve tag fields
         let mut tag_field_names: BTreeSet<String> = Default::default();

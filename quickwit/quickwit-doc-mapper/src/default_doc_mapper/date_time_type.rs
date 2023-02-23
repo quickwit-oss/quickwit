@@ -144,12 +144,11 @@ impl<'de> Deserialize<'de> for InputFormats {
 #[cfg(test)]
 mod tests {
 
-    use tantivy::schema::Cardinality;
     use time::macros::datetime;
 
     use super::*;
     use crate::default_doc_mapper::FieldMappingType;
-    use crate::FieldMappingEntry;
+    use crate::{Cardinality, FieldMappingEntry};
 
     #[test]
     fn test_date_time_options_single_value_deser() {

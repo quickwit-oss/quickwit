@@ -65,7 +65,7 @@ impl<Item: HasAssociatedColumnType> SegmentCollector for FastFieldSegmentCollect
         if !self.accept_document(doc_id) {
             return;
         }
-        self.fast_field_values.extend(column.doc_values(doc_id));
+        self.fast_field_values.extend(column.values_for_doc(doc_id));
     }
 
     fn harvest(self) -> Vec<Item> {
@@ -232,7 +232,7 @@ impl<Item: HasAssociatedColumnType, PartitionItem: HasAssociatedColumnType + Has
             self.fast_field_values
                 .entry(partition)
                 .or_default()
-                .extend(column.doc_values(doc_id));
+                .extend(column.values_for_doc(doc_id));
         }
     }
 

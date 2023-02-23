@@ -24,9 +24,7 @@ use itertools::Itertools;
 use quickwit_doc_mapper::{DocMapper, WarmupInfo};
 use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest, SortOrder};
 use serde::Deserialize;
-use tantivy::aggregation::agg_req::{
-    get_fast_field_names, get_term_dict_field_names, Aggregations,
-};
+use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::AggregationSegmentCollector;
 use tantivy::collector::{Collector, SegmentCollector};
@@ -303,17 +301,6 @@ impl QuickwitAggregations {
             }
         }
     }
-
-    fn term_dict_field_names(&self) -> HashSet<String> {
-        match self {
-            QuickwitAggregations::FindTraceIdsAggregation(collector) => {
-                collector.term_dict_field_names()
-            }
-            QuickwitAggregations::TantivyAggregations(aggregations) => {
-                get_term_dict_field_names(aggregations)
-            }
-        }
-    }
 }
 
 /// The quickwit collector is the tantivy Collector used in Quickwit.
@@ -348,17 +335,9 @@ impl QuickwitCollector {
         fast_field_names
     }
 
-    pub fn term_dict_field_names(&self) -> HashSet<String> {
-        let mut term_dict_field_names = HashSet::default();
-        if let Some(aggregations) = &self.aggregation {
-            term_dict_field_names.extend(aggregations.term_dict_field_names());
-        }
-        term_dict_field_names
-    }
-
     pub fn warmup_info(&self) -> WarmupInfo {
         WarmupInfo {
-            term_dict_field_names: self.term_dict_field_names(),
+            term_dict_field_names: Default::default(),
             fast_field_names: self.fast_field_names(),
             field_norms: self.requires_scoring(),
             ..WarmupInfo::default()

@@ -22,8 +22,8 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
+use tantivy::query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
-use tantivy_query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
 
 use crate::{QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME, QUICKWIT_TOKENIZER_MANAGER};
 
@@ -33,7 +33,7 @@ pub(crate) fn build_query(
     request: &SearchRequest,
     default_field_names: &[String],
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
-    let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
+    let user_input_ast = tantivy::query_grammar::parse_query(&request.query)
         .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
 
     let fast_field_names: HashSet<String> = extract_field_with_ranges(&schema, &user_input_ast)?;
@@ -303,9 +303,7 @@ fn validate_sort_by_score(
 mod test {
     use quickwit_proto::SearchRequest;
     use tantivy::query::QueryParserError;
-    use tantivy::schema::{
-        Cardinality, DateOptions, IpAddrOptions, Schema, FAST, INDEXED, STORED, TEXT,
-    };
+    use tantivy::schema::{Schema, FAST, INDEXED, STORED, TEXT};
 
     use super::{build_query, validate_requested_snippet_fields};
     use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
@@ -325,15 +323,9 @@ mod test {
         schema_builder.add_text_field(SOURCE_FIELD_NAME, TEXT);
         schema_builder.add_json_field(DYNAMIC_FIELD_NAME, TEXT);
         schema_builder.add_ip_addr_field("ip", FAST | STORED);
-        schema_builder.add_ip_addr_field(
-            "ips",
-            IpAddrOptions::default().set_fast(Cardinality::MultiValues),
-        );
+        schema_builder.add_ip_addr_field("ips", FAST);
         schema_builder.add_ip_addr_field("ip_notff", STORED);
-        schema_builder.add_date_field(
-            "dt",
-            DateOptions::default().set_fast(Cardinality::SingleValue),
-        );
+        schema_builder.add_date_field("dt", FAST);
         schema_builder.add_u64_field("u64_fast", FAST | STORED);
         schema_builder.add_i64_field("i64_fast", FAST | STORED);
         schema_builder.add_f64_field("f64_fast", FAST | STORED);
@@ -657,7 +649,7 @@ mod test {
             sort_order: None,
             sort_by_field: None,
         };
-        let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
+        let user_input_ast = tantivy::query_grammar::parse_query(&request.query)
             .map_err(|_| QueryParserError::SyntaxError(request.query.clone()))
             .unwrap();
         let default_field_names =
