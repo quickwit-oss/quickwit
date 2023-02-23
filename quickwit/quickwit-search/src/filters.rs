@@ -115,8 +115,7 @@ fn is_segment_always_within_timestamp_range(
     segment_range: RangeInclusive<DateTime>,
     timestamp_range: impl RangeBounds<DateTime>,
 ) -> bool {
-    timestamp_range.contains(segment_range.start()) &&
-    timestamp_range.contains(segment_range.end())
+    timestamp_range.contains(segment_range.start()) && timestamp_range.contains(segment_range.end())
 }
 
 #[cfg(test)]

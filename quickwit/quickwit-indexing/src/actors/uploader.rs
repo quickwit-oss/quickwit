@@ -583,7 +583,10 @@ mod tests {
                 pipeline_id: pipeline_id.clone(),
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
-                time_range: Some(DateTime::from_timestamp_secs(1_628_203_589)..=DateTime::from_timestamp_secs(1_628_203_640)),
+                time_range: Some(
+                    DateTime::from_timestamp_secs(1_628_203_589)
+                        ..=DateTime::from_timestamp_secs(1_628_203_640),
+                ),
                 replaced_split_ids: vec![
                     "replaced-split-1".to_string(),
                     "replaced-split-2".to_string(),
@@ -603,7 +606,10 @@ mod tests {
                 pipeline_id,
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
-                time_range: Some(DateTime::from_timestamp_secs(1_628_203_589)..=DateTime::from_timestamp_secs(1_628_203_640)),
+                time_range: Some(
+                    DateTime::from_timestamp_secs(1_628_203_589)
+                        ..=DateTime::from_timestamp_secs(1_628_203_640),
+                ),
                 replaced_split_ids: vec![
                     "replaced-split-1".to_string(),
                     "replaced-split-2".to_string(),

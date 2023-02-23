@@ -317,13 +317,15 @@ mod tests {
     use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
-    use tantivy::{doc, Index, DateTime};
+    use tantivy::{doc, DateTime, Index};
     use tracing::Span;
 
     use super::*;
     use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
 
-    fn make_indexed_split_for_test(segment_timestamps: &[DateTime]) -> anyhow::Result<IndexedSplit> {
+    fn make_indexed_split_for_test(
+        segment_timestamps: &[DateTime],
+    ) -> anyhow::Result<IndexedSplit> {
         let split_scratch_directory = ScratchDirectory::for_test();
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
@@ -418,7 +420,10 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
         let (mailbox, inbox) = universe.create_test_mailbox();
-        let indexed_split = make_indexed_split_for_test(&[DateTime::from_timestamp_secs(1628203589), DateTime::from_timestamp_secs(1628203640)])?;
+        let indexed_split = make_indexed_split_for_test(&[
+            DateTime::from_timestamp_secs(1628203589),
+            DateTime::from_timestamp_secs(1628203640),
+        ])?;
         let tag_fields = get_tag_fields(
             indexed_split.index.schema(),
             &[
@@ -461,7 +466,13 @@ mod tests {
                 "tag_u64:42"
             ]
         );
-        assert_eq!(split.split_attrs.time_range, Some(DateTime::from_timestamp_secs(1628203589)..=DateTime::from_timestamp_secs(1628203640)));
+        assert_eq!(
+            split.split_attrs.time_range,
+            Some(
+                DateTime::from_timestamp_secs(1628203589)
+                    ..=DateTime::from_timestamp_secs(1628203640)
+            )
+        );
         universe.assert_quit().await;
         Ok(())
     }

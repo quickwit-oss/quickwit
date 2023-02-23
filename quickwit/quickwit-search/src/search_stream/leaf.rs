@@ -520,7 +520,7 @@ mod tests {
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
         let mut docs = vec![];
-        let mut filtered_timestamp_values = vec![];
+        let mut filtered_timestamp_values = Vec::new();
         let start_date = OffsetDateTime::now_utc();
         let num_days = 20;
         for i in 0..30 {
@@ -528,7 +528,7 @@ mod tests {
             let body = format!("info @ t:{}", i + 1);
             docs.push(json!({"body": body, "ts": dt.unix_timestamp()}));
             if i + 1 < num_days {
-                let ts_secs = dt.unix_timestamp();
+                let ts_secs = dt.unix_timestamp() * 1_000_000;
                 filtered_timestamp_values.push(ts_secs.to_string());
             }
         }
