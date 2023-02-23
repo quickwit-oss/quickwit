@@ -36,6 +36,7 @@ use quickwit_storage::{
 };
 use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
+use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
@@ -223,11 +224,36 @@ async fn warm_up_postings(
     Ok(())
 }
 
+async fn warm_up_fastfield(
+    fast_field_reader: &FastFieldReaders,
+    fast_field_name: &str,
+) -> anyhow::Result<()> {
+    let columns = fast_field_reader
+        .columnar()
+        .read_columns_async(fast_field_name)
+        .await?;
+    for column in columns {
+        column.file_slice().read_bytes_async().await?;
+    }
+    Ok(())
+}
+
+/// Populate the short-lived cache with the data for
+/// all of the fast field passed in argument.
 async fn warm_up_fastfields(
     searcher: &Searcher,
     fast_field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
-    todo!();
+    let mut warm_up_futures = Vec::new();
+    for segment_reader in searcher.segment_readers() {
+        let fast_field_reader = segment_reader.fast_fields();
+        for fast_field_name in fast_field_names {
+            let warm_up_fut = warm_up_fastfield(fast_field_reader, &fast_field_name);
+            warm_up_futures.push(Box::pin( warm_up_fut));
+        }
+    }
+    futures::future::try_join_all(warm_up_futures).await?;
+    Ok(())
     // let mut fast_fields: Vec<String> = Vec::new();
     // for fast_field_name in fast_field_names.iter() {
     //     let fast_field = searcher
@@ -261,7 +287,6 @@ async fn warm_up_fastfields(
     //     }
     // }
     // try_join_all(warm_up_futures).await?;
-    Ok(())
 }
 
 async fn warm_up_terms(
