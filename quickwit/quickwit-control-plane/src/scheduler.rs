@@ -161,13 +161,13 @@ impl IndexingScheduler {
         let indexing_tasks = build_indexing_plan(&indexers, &source_configs);
         let new_physical_plan =
             build_physical_indexing_plan(&indexers, &source_configs, indexing_tasks);
-        if let Some(last_applied_plan) = self.state.last_applied_physical_plan.as_ref() {
+        if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
                 last_applied_plan.indexing_tasks_per_node(),
                 new_physical_plan.indexing_tasks_per_node(),
             );
+            // No need to apply the new plan as it is the same as the old one.
             if plans_diff.is_empty() {
-                info!("plan diff emtpy, do nothing");
                 return Ok(());
             }
         }
@@ -201,8 +201,8 @@ impl IndexingScheduler {
 
     /// Checks if the last applied plan corresponds to the running indexing tasks present in the
     /// chitchat cluster state. If true, do nothing.
-    /// If node IDs differ, schedule a new indexing plan.
-    /// If indexing tasks differ, apply again the last plan.
+    /// - If node IDs differ, schedule a new indexing plan.
+    /// - If indexing tasks differ, apply again the last plan.
     async fn control_running_plan(&mut self) -> anyhow::Result<()> {
         let last_applied_plan =
             if let Some(last_applied_plan) = self.state.last_applied_physical_plan.as_ref() {
@@ -225,9 +225,13 @@ impl IndexingScheduler {
 
         let indexers = self.get_indexers_from_cluster_state().await;
         let running_indexing_tasks_by_node_id: HashMap<String, Vec<IndexingTask>> = indexers
-            .clone()
-            .into_iter()
-            .map(|cluster_member| (cluster_member.node_id, cluster_member.indexing_tasks))
+            .iter()
+            .map(|cluster_member| {
+                (
+                    cluster_member.node_id.clone(),
+                    cluster_member.indexing_tasks.clone(),
+                )
+            })
             .collect();
 
         let indexing_plans_diff = get_indexing_plans_diff(
@@ -285,10 +289,6 @@ impl IndexingScheduler {
             }
         }
         self.state.num_applied_physical_indexing_plan += 1;
-        info!(
-            "num applied plan {}",
-            self.state.num_applied_physical_indexing_plan
-        );
         self.state.last_applied_plan_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp());
         self.state.last_applied_physical_plan = Some(new_physical_plan);
     }
@@ -303,7 +303,7 @@ impl Handler<NotifyIndexChangeRequest> for IndexingScheduler {
         _: NotifyIndexChangeRequest,
         _: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        info!("Index change notification: shedule indexing plan.");
+        debug!("Index change notification: shedule indexing plan.");
         self.schedule_indexing_plan_if_needed()
             .await
             .context("Error when scheduling indexing plan")?;
@@ -352,20 +352,30 @@ impl Handler<RefreshPlanLoop> for IndexingScheduler {
     }
 }
 
-struct IndexingPlanDiff<'a> {
+struct IndexingPlansDiff<'a> {
     pub missing_node_ids: HashSet<&'a str>,
     pub unplanned_node_ids: HashSet<&'a str>,
     pub missing_tasks_by_node_id: HashMap<&'a str, Vec<&'a IndexingTask>>,
     pub unplanned_tasks_by_node_id: HashMap<&'a str, Vec<&'a IndexingTask>>,
 }
 
-impl<'a> IndexingPlanDiff<'a> {
+impl<'a> IndexingPlansDiff<'a> {
     pub fn has_same_nodes(&self) -> bool {
         self.missing_node_ids.is_empty() && self.unplanned_node_ids.is_empty()
     }
 
     pub fn has_same_tasks(&self) -> bool {
-        self.missing_tasks_by_node_id.is_empty() && self.unplanned_tasks_by_node_id.is_empty()
+        self.missing_tasks_by_node_id
+            .values()
+            .map(Vec::len)
+            .sum::<usize>()
+            == 0
+            && self
+                .unplanned_tasks_by_node_id
+                .values()
+                .map(Vec::len)
+                .sum::<usize>()
+                == 0
     }
 
     pub fn is_empty(&self) -> bool {
@@ -373,7 +383,7 @@ impl<'a> IndexingPlanDiff<'a> {
     }
 }
 
-impl<'a> fmt::Debug for IndexingPlanDiff<'a> {
+impl<'a> fmt::Debug for IndexingPlansDiff<'a> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         if self.has_same_nodes() && self.has_same_tasks() {
             return write!(formatter, "EmptyIndexingPlanDiff");
@@ -416,7 +426,7 @@ impl<'a> fmt::Debug for IndexingPlanDiff<'a> {
 fn get_indexing_plans_diff<'a>(
     running_plan: &'a HashMap<String, Vec<IndexingTask>>,
     last_applied_plan: &'a HashMap<String, Vec<IndexingTask>>,
-) -> IndexingPlanDiff<'a> {
+) -> IndexingPlansDiff<'a> {
     // Nodes diff.
     let running_node_ids: HashSet<&str> = running_plan
         .iter()
@@ -426,7 +436,6 @@ fn get_indexing_plans_diff<'a>(
         .iter()
         .map(|(node_id, _)| node_id.as_str())
         .collect();
-    let common_node_ids = running_node_ids.intersection(&planned_node_ids);
     let missing_node_ids: HashSet<&str> = planned_node_ids
         .difference(&running_node_ids)
         .copied()
@@ -436,76 +445,23 @@ fn get_indexing_plans_diff<'a>(
         .copied()
         .collect();
     // Tasks diff.
-    // Note(fmassot): the diff code is too complex...
     let mut missing_tasks_by_node_id: HashMap<&str, Vec<&IndexingTask>> = HashMap::new();
     let mut unplanned_tasks_by_node_id: HashMap<&str, Vec<&IndexingTask>> = HashMap::new();
-    for common_node_id in common_node_ids {
-        let grouped_running_tasks: HashMap<&IndexingTask, usize> = running_plan
-            .get(*common_node_id)
-            .map(|tasks| {
-                tasks
-                    .iter()
-                    .group_by(|&task| task)
-                    .into_iter()
-                    .map(|(key, group)| (key, group.count()))
-                    .collect::<HashMap<_, _>>()
-            })
-            .unwrap_or_default();
-        let grouped_desired_tasks: HashMap<&IndexingTask, usize> = last_applied_plan
-            .get(*common_node_id)
-            .map(|tasks| {
-                tasks
-                    .iter()
-                    .group_by(|&task| task)
-                    .into_iter()
-                    .map(|(key, group)| (key, group.count()))
-                    .collect::<HashMap<_, _>>()
-            })
-            .unwrap_or_default();
-        let all_tasks: HashSet<&IndexingTask> = grouped_running_tasks
-            .keys()
-            .copied()
-            .chain(grouped_desired_tasks.keys().copied())
-            .collect();
-        for task in all_tasks {
-            let running_task_count = grouped_running_tasks.get(task).unwrap_or(&0);
-            let desired_task_count = grouped_desired_tasks.get(task).unwrap_or(&0);
-            match running_task_count.cmp(desired_task_count) {
-                Ordering::Greater => {
-                    let unplanned_tasks = unplanned_tasks_by_node_id
-                        .entry(common_node_id)
-                        .or_default();
-                    (0..running_task_count - desired_task_count).for_each(|_| {
-                        unplanned_tasks.push(task);
-                    });
-                }
-                Ordering::Less => {
-                    let missing_tasks = missing_tasks_by_node_id.entry(common_node_id).or_default();
-                    (0..desired_task_count - running_task_count).for_each(|_| {
-                        missing_tasks.push(task);
-                    });
-                }
-                _ => {}
-            }
-        }
+    for node_id in running_node_ids.iter().chain(planned_node_ids.iter()) {
+        let running_tasks = running_plan
+            .get(*node_id)
+            .map(Vec::as_slice)
+            .unwrap_or_else(|| &[]);
+        let last_applied_tasks = last_applied_plan
+            .get(*node_id)
+            .map(Vec::as_slice)
+            .unwrap_or_else(|| &[]);
+        let (missing_tasks, unplanned_tasks) =
+            get_indexing_tasks_diff(running_tasks, last_applied_tasks);
+        missing_tasks_by_node_id.insert(*node_id, missing_tasks);
+        unplanned_tasks_by_node_id.insert(*node_id, unplanned_tasks);
     }
-    for missing_node_id in missing_node_ids.iter() {
-        if let Some(missing_tasks) = last_applied_plan.get(*missing_node_id) {
-            if !missing_tasks.is_empty() {
-                missing_tasks_by_node_id
-                    .insert(missing_node_id, missing_tasks.iter().collect_vec());
-            }
-        }
-    }
-    for unplanned_node_id in unplanned_node_ids.iter() {
-        if let Some(unplanned_tasks) = running_plan.get(*unplanned_node_id) {
-            if !unplanned_tasks.is_empty() {
-                unplanned_tasks_by_node_id
-                    .insert(unplanned_node_id, unplanned_tasks.iter().collect_vec());
-            }
-        }
-    }
-    IndexingPlanDiff {
+    IndexingPlansDiff {
         missing_node_ids,
         unplanned_node_ids,
         missing_tasks_by_node_id,
@@ -513,19 +469,59 @@ fn get_indexing_plans_diff<'a>(
     }
 }
 
+/// Computes the difference between `running_tasks` and `last_applied_tasks` and returns a tuple
+/// of `missing_tasks` and `unplanned_tasks`.
+/// Note: we need to handle duplicate tasks in each array, so we count them and make the diff.
+fn get_indexing_tasks_diff<'a>(
+    running_tasks: &'a [IndexingTask],
+    last_applied_tasks: &'a [IndexingTask],
+) -> (Vec<&'a IndexingTask>, Vec<&'a IndexingTask>) {
+    let mut missing_tasks: Vec<&IndexingTask> = Vec::new();
+    let mut unplanned_tasks: Vec<&IndexingTask> = Vec::new();
+    let grouped_running_tasks: HashMap<&IndexingTask, usize> = running_tasks
+        .iter()
+        .group_by(|&task| task)
+        .into_iter()
+        .map(|(key, group)| (key, group.count()))
+        .collect();
+    let grouped_last_applied_tasks: HashMap<&IndexingTask, usize> = last_applied_tasks
+        .iter()
+        .group_by(|&task| task)
+        .into_iter()
+        .map(|(key, group)| (key, group.count()))
+        .collect();
+    let all_tasks: HashSet<&IndexingTask> =
+        HashSet::from_iter(running_tasks.iter().chain(last_applied_tasks.iter()));
+    for task in all_tasks {
+        let running_task_count = grouped_running_tasks.get(task).unwrap_or(&0);
+        let desired_task_count = grouped_last_applied_tasks.get(task).unwrap_or(&0);
+        match running_task_count.cmp(desired_task_count) {
+            Ordering::Greater => {
+                unplanned_tasks
+                    .extend_from_slice(&vec![task; running_task_count - desired_task_count]);
+            }
+            Ordering::Less => {
+                missing_tasks
+                    .extend_from_slice(&vec![task; desired_task_count - running_task_count])
+            }
+            _ => {}
+        }
+    }
+
+    (missing_tasks, unplanned_tasks)
+}
+
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
     use std::collections::{HashMap, HashSet};
-    use std::future::Future;
     use std::sync::Arc;
     use std::time::Duration;
 
     use chitchat::transport::ChannelTransport;
     use quickwit_actors::{ActorHandle, Inbox, Universe, HEARTBEAT};
-    use quickwit_cluster::{
-        create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster,
-    };
+    use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster};
+    use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::{KafkaSourceParams, SourceConfig, SourceParams};
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::indexing_client::IndexingServiceClient;
@@ -533,7 +529,6 @@ mod tests {
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
     use serde_json::json;
-    use tokio::time::error::Elapsed;
 
     use super::IndexingScheduler;
     use crate::scheduler::{get_indexing_plans_diff, REFRESH_PLAN_LOOP_INTERVAL};
@@ -702,7 +697,112 @@ mod tests {
         universe.assert_quit().await;
     }
 
-    
+    #[tokio::test]
+    async fn test_scheduler_scheduling_multiple_indexers() {
+        quickwit_common::setup_logging_for_tests();
+        let transport = ChannelTransport::default();
+        let cluster = Arc::new(
+            create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
+                .await
+                .unwrap(),
+        );
+        let cluster_indexer_1 = create_cluster_for_test(
+            vec![cluster.node_id.gossip_public_address.to_string()],
+            &["indexer"],
+            &transport,
+            true,
+        )
+        .await
+        .unwrap();
+        let cluster_indexer_2 = create_cluster_for_test(
+            vec![cluster.node_id.gossip_public_address.to_string()],
+            &["indexer"],
+            &transport,
+            true,
+        )
+        .await
+        .unwrap();
+        let universe = Universe::new();
+        let (indexing_service_inboxes, scheduler_handler) = start_scheduler(
+            cluster.clone(),
+            &[&cluster_indexer_1, &cluster_indexer_2],
+            &universe,
+        )
+        .await;
+        let indexing_service_inbox_1 = indexing_service_inboxes[0].clone();
+        let indexing_service_inbox_2 = indexing_service_inboxes[1].clone();
+        let scheduler_handler_arc = Arc::new(scheduler_handler);
+
+        // No indexer.
+        let scheduler_state = scheduler_handler_arc.process_pending_and_observe().await;
+        let indexing_service_inbox_messages =
+            indexing_service_inbox_1.drain_for_test_typed::<ApplyIndexingPlanRequest>();
+        assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 0);
+        assert_eq!(scheduler_state.num_schedule_indexing_plan, 0);
+        assert!(scheduler_state.last_applied_physical_plan.is_none());
+        assert_eq!(indexing_service_inbox_messages.len(), 0);
+
+        // Wait for chitchat update, sheduler will detect new indexers and schedule a plan.
+        wait_until_predicate(
+            || {
+                let scheduler_handler_arc_clone = scheduler_handler_arc.clone();
+                async move {
+                    let scheduler_state = scheduler_handler_arc_clone
+                        .process_pending_and_observe()
+                        .await;
+                    scheduler_state.num_schedule_indexing_plan == 1
+                }
+            },
+            HEARTBEAT * 4,
+            Duration::from_millis(100),
+        )
+        .await
+        .unwrap();
+        let scheduler_state = scheduler_handler_arc.process_pending_and_observe().await;
+        assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 1);
+        let indexing_service_inbox_messages_1 =
+            indexing_service_inbox_1.drain_for_test_typed::<ApplyIndexingPlanRequest>();
+        let indexing_service_inbox_messages_2 =
+            indexing_service_inbox_2.drain_for_test_typed::<ApplyIndexingPlanRequest>();
+        assert_eq!(indexing_service_inbox_messages_1.len(), 1);
+        assert_eq!(indexing_service_inbox_messages_2.len(), 1);
+        cluster_indexer_1
+            .update_self_node_indexing_tasks(&indexing_service_inbox_messages_1[0].indexing_tasks)
+            .await
+            .unwrap();
+        cluster_indexer_2
+            .update_self_node_indexing_tasks(&indexing_service_inbox_messages_2[0].indexing_tasks)
+            .await
+            .unwrap();
+
+        // Wait 2 heartbeats again and check the scheduler will not apply the plan several times.
+        universe.sleep(HEARTBEAT * 2).await;
+        let scheduler_state = scheduler_handler_arc.process_pending_and_observe().await;
+        assert!(scheduler_state.num_applied_physical_indexing_plan < 3);
+        assert_eq!(scheduler_state.num_schedule_indexing_plan, 1);
+
+        // Shutdown cluster and wait until the new scheduling.
+        cluster_indexer_2.shutdown().await;
+        wait_until_predicate(
+            || {
+                let scheduler_handler_arc_clone = scheduler_handler_arc.clone();
+                async move {
+                    let scheduler_state = scheduler_handler_arc_clone
+                        .process_pending_and_observe()
+                        .await;
+                    scheduler_state.num_schedule_indexing_plan == 2
+                        && scheduler_state.num_applied_physical_indexing_plan < 4
+                }
+            },
+            HEARTBEAT * 8,
+            Duration::from_millis(100),
+        )
+        .await
+        .unwrap();
+
+        universe.assert_quit().await;
+    }
+
     #[test]
     fn test_indexing_plans_diff() {
         {
@@ -778,7 +878,7 @@ mod tests {
             );
             assert_eq!(
                 indexing_plans_diff.missing_tasks_by_node_id,
-                HashMap::from_iter([("indexer-1", vec![&task_1])])
+                HashMap::from_iter([("indexer-1", vec![&task_1]), ("indexer-2", Vec::new())])
             );
         }
         {
@@ -803,25 +903,5 @@ mod tests {
                 HashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
             );
         }
-    }
-
-    // TODO(fmassot): remove when this function is available in quickwit-common.
-    pub async fn wait_until_predicate<Fut>(
-        predicate: impl Fn() -> Fut,
-        timeout: Duration,
-        retry_interval: Duration,
-    ) -> Result<(), Elapsed>
-    where
-        Fut: Future<Output = bool>,
-    {
-        tokio::time::timeout(timeout, async move {
-            loop {
-                if predicate().await {
-                    break;
-                }
-                tokio::time::sleep(retry_interval).await
-            }
-        })
-        .await
     }
 }
