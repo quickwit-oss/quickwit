@@ -249,7 +249,7 @@ async fn warm_up_fastfields(
         let fast_field_reader = segment_reader.fast_fields();
         for fast_field_name in fast_field_names {
             let warm_up_fut = warm_up_fastfield(fast_field_reader, &fast_field_name);
-            warm_up_futures.push(Box::pin( warm_up_fut));
+            warm_up_futures.push(Box::pin(warm_up_fut));
         }
     }
     futures::future::try_join_all(warm_up_futures).await?;

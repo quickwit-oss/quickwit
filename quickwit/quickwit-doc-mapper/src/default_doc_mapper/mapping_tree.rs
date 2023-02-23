@@ -27,8 +27,8 @@ use base64::prelude::{Engine, BASE64_STANDARD};
 use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
-    BytesOptions, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions,
-    NumericOptions, SchemaBuilder, TextOptions, Value as TantivyValue,
+    BytesOptions, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions, NumericOptions,
+    SchemaBuilder, TextOptions, Value as TantivyValue,
 };
 use tantivy::{DateOptions, Document};
 use tracing::warn;
@@ -38,7 +38,7 @@ use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
 };
 use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
-use crate::{DocParsingError, FieldMappingEntry, ModeType, Cardinality};
+use crate::{Cardinality, DocParsingError, FieldMappingEntry, ModeType};
 
 #[derive(Clone, Debug)]
 pub enum LeafType {
@@ -547,9 +547,7 @@ fn get_bytes_options(quickwit_numeric_options: &QuickwitNumericOptions) -> Bytes
     bytes_options
 }
 
-fn get_ip_address_options(
-    quickwit_ip_address_options: &QuickwitIpAddrOptions,
-) -> IpAddrOptions {
+fn get_ip_address_options(quickwit_ip_address_options: &QuickwitIpAddrOptions) -> IpAddrOptions {
     let mut ip_address_options = IpAddrOptions::default();
     if quickwit_ip_address_options.stored {
         ip_address_options = ip_address_options.set_stored();
@@ -704,11 +702,11 @@ mod tests {
     use time::macros::datetime;
 
     use super::{LeafType, MappingLeaf};
-    use crate::Cardinality;
     use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::default_doc_mapper::field_mapping_entry::{
         QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitTextOptions,
     };
+    use crate::Cardinality;
 
     #[test]
     fn test_field_name_from_field_path() {

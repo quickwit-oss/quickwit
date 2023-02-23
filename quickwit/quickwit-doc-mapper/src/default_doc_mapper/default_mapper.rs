@@ -184,8 +184,8 @@ fn resolve_timestamp_field(
         }
         if timestamp_field_entry.field_type().value_type() != Type::Date {
             bail!(
-                "Timestamp field must be of type datetime, please change your field type `{}` \
-                     to datetime.",
+                "Timestamp field must be of type datetime, please change your field type `{}` to \
+                 datetime.",
                 timestamp_field_name
             )
         }

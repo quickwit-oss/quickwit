@@ -28,15 +28,14 @@ pub struct TimestampFilter {
     /// The time range represented as (lower_bound, upper_bound).
     // TODO replace this with a RangeInclusive<DateTime> if it improves perf?
     time_range: (Bound<DateTime>, Bound<DateTime>),
-    /// The timestamp fast field reader.
-    time_column: Column<DateTime>,
+    timestamp_column: Column<DateTime>,
 }
 
 impl TimestampFilter {
     pub fn is_within_range(&self, doc_id: DocId) -> bool {
-        self.time_column
+        self.timestamp_column
             .first(doc_id)
-            .map(|dt| { self.time_range.contains(&dt) })
+            .map(|dt| self.time_range.contains(&dt))
             .unwrap_or(false)
     }
 }
@@ -87,24 +86,28 @@ impl TimestampFilterBuilder {
         }
     }
 
+    /// None means that all
     pub fn build(
         &self,
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Option<TimestampFilter>> {
-        let timestamp_field_reader: Option<Column<DateTime>> = segment_reader
-            .fast_fields()
-            .column_opt::<DateTime>(&self.timestamp_field_name)?;
-        todo!();
-        // let segment_range: RangeInclusive<DateTime> =
-        //     timestamp_field_reader.min_value()..=timestamp_field_reader.max_value();
-        // let time_range = (self.start_timestamp, self.end_timestamp);
-        // if is_segment_always_within_timestamp_range(segment_range, time_range) {
-        //     return Ok(None);
-        // }
-        // Ok(Some(TimestampFilter {
-        //     time_range,
-        //     time_column: timestamp_field_reader,
-        // }))
+        let timestamp_column_opt: Option<Column<DateTime>> =
+            segment_reader
+                .fast_fields()
+                .column_opt::<DateTime>(&self.timestamp_field_name)?;
+        let Some(timestamp_column) = timestamp_column_opt else {
+            return Ok(None);
+        };
+        let segment_range: RangeInclusive<DateTime> =
+            timestamp_column.min_value()..=timestamp_column.max_value();
+        let time_range = (self.start_timestamp, self.end_timestamp);
+        if is_segment_always_within_timestamp_range(segment_range, time_range) {
+            return Ok(None);
+        }
+        Ok(Some(TimestampFilter {
+            time_range,
+            timestamp_column,
+        }))
     }
 }
 

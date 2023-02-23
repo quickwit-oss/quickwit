@@ -18,18 +18,18 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use tantivy::schema::Type;
-use crate::Cardinality;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitIpAddrOptions, QuickwitJsonOptions, QuickwitNumericOptions, QuickwitObjectOptions,
     QuickwitTextOptions,
 };
+use crate::Cardinality;
 
 /// A `FieldMappingType` defines the type and indexing options
 /// of a mapping field.
 #[derive(Clone, Debug, PartialEq)]
-pub enum FieldMappingType {
+pub(crate) enum FieldMappingType {
     /// String mapping type configuration.
     Text(QuickwitTextOptions, Cardinality),
     /// Signed 64-bit integer mapping type configuration.

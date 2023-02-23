@@ -22,15 +22,13 @@ use std::convert::TryFrom;
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use tantivy::schema::{
-    IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
-};
+use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type};
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::{default_as_true, FieldMappingType};
-use crate::Cardinality;
 use crate::default_doc_mapper::field_mapping_type::QuickwitFieldType;
 use crate::default_doc_mapper::validate_field_mapping_name;
+use crate::Cardinality;
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 pub struct QuickwitObjectOptions {
@@ -48,7 +46,7 @@ pub struct FieldMappingEntry {
     /// Field name in the index schema.
     pub name: String,
     /// Property parameters which defines the type and the way the value must be indexed.
-    pub mapping_type: FieldMappingType,
+    pub(crate) mapping_type: FieldMappingType,
 }
 
 // Struct used for serialization and deserialization

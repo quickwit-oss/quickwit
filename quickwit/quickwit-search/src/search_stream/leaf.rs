@@ -29,7 +29,8 @@ use quickwit_proto::{
     SplitIdAndFooterOffsets,
 };
 use quickwit_storage::Storage;
-use tantivy::fastfield::FastValue;
+use tantivy::columnar::{DynamicColumn, HasAssociatedColumnType};
+use tantivy::fastfield::Column;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Type};
 use tantivy::{ReloadPolicy, Searcher};
@@ -276,13 +277,16 @@ async fn leaf_search_stream_single_split(
     })
 }
 
-fn collect_values<TFastValue: FastValue>(
+fn collect_values<Item: HasAssociatedColumnType>(
     request_fields: &SearchStreamRequestFields,
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     searcher: &Searcher,
     query: &dyn Query,
-) -> crate::Result<Vec<TFastValue>> {
-    let collector = FastFieldCollector::<TFastValue> {
+) -> crate::Result<Vec<Item>>
+where
+    DynamicColumn: Into<Option<Column<Item>>>,
+{
+    let collector = FastFieldCollector::<Item> {
         fast_field_to_collect: request_fields.fast_field_name().to_string(),
         timestamp_filter_builder_opt,
         _marker: PhantomData,
@@ -291,13 +295,19 @@ fn collect_values<TFastValue: FastValue>(
     Ok(result)
 }
 
-fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue + Eq + Hash>(
+fn collect_partitioned_values<
+    Item: HasAssociatedColumnType,
+    TPartitionValue: HasAssociatedColumnType + Eq + Hash,
+>(
     request_fields: &SearchStreamRequestFields,
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     searcher: &Searcher,
     query: &dyn Query,
-) -> crate::Result<Vec<PartitionValues<TFastValue, TPartitionValue>>> {
-    let collector = PartionnedFastFieldCollector::<TFastValue, TPartitionValue> {
+) -> crate::Result<Vec<PartitionValues<Item, TPartitionValue>>>
+where
+    DynamicColumn: Into<Option<Column<Item>>> + Into<Option<Column<TPartitionValue>>>,
+{
+    let collector = PartionnedFastFieldCollector::<Item, TPartitionValue> {
         fast_field_to_collect: request_fields.fast_field_name().to_string(),
         partition_by_fast_field: request_fields
             .partition_by_fast_field_name()

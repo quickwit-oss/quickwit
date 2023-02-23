@@ -83,7 +83,7 @@ impl SortingFieldComputer {
                 } else {
                     0u64
                 }
-           }
+            }
             SortingFieldComputer::DocId => doc_id as u64,
             SortingFieldComputer::Zero => 0u64,
             SortingFieldComputer::Score { order } => {
@@ -115,8 +115,8 @@ fn resolve_sort_by(
     match sort_by {
         SortBy::DocId => Ok(SortingFieldComputer::DocId),
         SortBy::FastField { field_name, order } => {
-            let fast_field_reader_opt: Option<Column<u64>> = segment_reader.fast_fields()
-                .u64_lenient(field_name)?;
+            let fast_field_reader_opt: Option<Column<u64>> =
+                segment_reader.fast_fields().u64_lenient(field_name)?;
             if let Some(fast_field_reader) = fast_field_reader_opt {
                 Ok(SortingFieldComputer::FastField {
                     fast_field_reader,
