@@ -258,7 +258,7 @@ impl DocProcessor {
     }
 }
 
-fn extract_timestamp_field(doc_mapper: &dyn DocMapper) -> Result<Option<Field>, anyhow::Error> {
+fn extract_timestamp_field(doc_mapper: &dyn DocMapper) -> anyhow::Result<Option<Field>> {
     let schema = doc_mapper.schema();
     let Some(timestamp_field_name) = doc_mapper.timestamp_field_name() else {
         return Ok(None);
