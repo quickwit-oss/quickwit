@@ -38,7 +38,7 @@ use tracing::*;
 
 use super::collector::{PartionnedFastFieldCollector, PartitionValues};
 use super::FastFieldCollector;
-use crate::filters::TimestampFilterBuilder;
+use crate::filters::{create_timestamp_filter_builder, TimestampFilterBuilder};
 use crate::leaf::{open_index_with_caches, warmup};
 use crate::service::SearcherContext;
 use crate::{Result, SearchError};
@@ -149,17 +149,14 @@ async fn leaf_search_stream_single_split(
         .try_into()?;
     let searcher = reader.searcher();
 
-    let timestamp_filter_builder_opt: Option<TimestampFilterBuilder> = TimestampFilterBuilder::new(
-        request_fields
-            .timestamp_field_name()
-            .map(ToString::to_string),
-        request_fields.timestamp_field,
-        search_request.start_timestamp,
-        search_request.end_timestamp,
-    );
+    let timestamp_filter_builder_opt: Option<TimestampFilterBuilder> =
+        create_timestamp_filter_builder(
+            request_fields.timestamp_field_name(),
+            search_request.start_timestamp,
+            search_request.end_timestamp,
+        );
 
-    let requires_scoring =
-        matches!(&search_request.sort_by_field, Some(field_name) if field_name == "_score");
+    let requires_scoring = search_request.sort_by_field.as_deref() == Some("_score");
 
     // TODO no test fail if this line get removed
     warmup_info.field_norms |= requires_scoring;
@@ -318,7 +315,7 @@ fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue 
 struct SearchStreamRequestFields {
     fast_field: Field,
     partition_by_fast_field: Option<Field>,
-    timestamp_field: Option<Field>,
+    timestamp_field_name: Option<String>,
     schema: Schema,
 }
 
@@ -353,7 +350,7 @@ impl<'a> SearchStreamRequestFields {
             )));
         }
 
-        let timestamp_field = doc_mapper.timestamp_field(schema);
+        let timestamp_field_name = doc_mapper.timestamp_field_name().map(ToString::to_string);
         let partition_by_fast_field = stream_request
             .partition_by_field
             .as_deref()
@@ -372,7 +369,7 @@ impl<'a> SearchStreamRequestFields {
             schema: schema.to_owned(),
             fast_field,
             partition_by_fast_field,
-            timestamp_field,
+            timestamp_field_name,
         })
     }
 
@@ -403,8 +400,7 @@ impl<'a> SearchStreamRequestFields {
     }
 
     pub fn timestamp_field_name(&self) -> Option<&str> {
-        self.timestamp_field
-            .map(|field| self.schema.get_field_name(field))
+        self.timestamp_field_name.as_deref()
     }
 
     pub fn fast_field_name(&self) -> &str {
@@ -523,7 +519,7 @@ mod tests {
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
         let mut docs = vec![];
-        let mut filtered_timestamp_values = vec![];
+        let mut filtered_timestamp_values = Vec::new();
         let start_date = OffsetDateTime::now_utc();
         let num_days = 20;
         for i in 0..30 {
@@ -531,8 +527,8 @@ mod tests {
             let body = format!("info @ t:{}", i + 1);
             docs.push(json!({"body": body, "ts": dt.unix_timestamp()}));
             if i + 1 < num_days {
-                let ts_micros = dt.unix_timestamp() * 1_000_000;
-                filtered_timestamp_values.push(ts_micros.to_string());
+                let ts_secs = dt.unix_timestamp() * 1_000_000;
+                filtered_timestamp_values.push(ts_secs.to_string());
             }
         }
         test_sandbox.add_documents(docs).await?;

@@ -427,6 +427,7 @@ mod tests {
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
+    use tantivy::DateTime;
     use tokio::sync::oneshot;
 
     use super::*;
@@ -476,7 +477,10 @@ mod tests {
                     split_attrs: SplitAttrs {
                         partition_id: 3u64,
                         pipeline_id,
-                        time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+                        time_range: Some(
+                            DateTime::from_timestamp_secs(1_628_203_589)
+                                ..=DateTime::from_timestamp_secs(1_628_203_640),
+                        ),
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
                         replaced_split_ids: Vec::new(),
@@ -579,7 +583,10 @@ mod tests {
                 pipeline_id: pipeline_id.clone(),
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
-                time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+                time_range: Some(
+                    DateTime::from_timestamp_secs(1_628_203_589)
+                        ..=DateTime::from_timestamp_secs(1_628_203_640),
+                ),
                 replaced_split_ids: vec![
                     "replaced-split-1".to_string(),
                     "replaced-split-2".to_string(),
@@ -599,7 +606,10 @@ mod tests {
                 pipeline_id,
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
-                time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+                time_range: Some(
+                    DateTime::from_timestamp_secs(1_628_203_589)
+                        ..=DateTime::from_timestamp_secs(1_628_203_640),
+                ),
                 replaced_split_ids: vec![
                     "replaced-split-1".to_string(),
                     "replaced-split-2".to_string(),

@@ -147,10 +147,12 @@ pub struct ListSplitsQueryParams {
     #[serde(default)]
     pub split_states: Option<Vec<SplitState>>,
     /// If set, restrict splits to documents with a `timestamp >= start_timestamp`.
+    /// This timestamp is in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub start_timestamp: Option<i64>,
     /// If set, restrict splits to documents with a `timestamp < end_timestamp`.
+    /// This timestamp is in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub end_timestamp: Option<i64>,

@@ -38,7 +38,7 @@ use quickwit_metastore::Metastore;
 use serde::Serialize;
 use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
-use tantivy::{IndexBuilder, IndexSettings};
+use tantivy::{DateTime, IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
 use tracing::{info, info_span, warn, Span};
 use ulid::Ulid;
@@ -348,12 +348,10 @@ impl Actor for Indexer {
     }
 }
 
-fn record_timestamp(timestamp: i64, time_range: &mut Option<RangeInclusive<i64>>) {
-    let new_timestamp_range = match time_range.as_ref() {
-        Some(range) => {
-            RangeInclusive::new(timestamp.min(*range.start()), timestamp.max(*range.end()))
-        }
-        None => RangeInclusive::new(timestamp, timestamp),
+fn record_timestamp(timestamp: DateTime, time_range: &mut Option<RangeInclusive<DateTime>>) {
+    let new_timestamp_range = match time_range {
+        Some(range) => timestamp.min(*range.start())..=timestamp.max(*range.end()),
+        None => timestamp..=timestamp,
     };
     *time_range = Some(new_timestamp_range);
 }
@@ -573,12 +571,30 @@ mod tests {
     #[test]
     fn test_record_timestamp() {
         let mut time_range = None;
-        record_timestamp(1628664679, &mut time_range);
-        assert_eq!(time_range, Some(1628664679..=1628664679));
-        record_timestamp(1628664112, &mut time_range);
-        assert_eq!(time_range, Some(1628664112..=1628664679));
-        record_timestamp(1628665112, &mut time_range);
-        assert_eq!(time_range, Some(1628664112..=1628665112))
+        record_timestamp(DateTime::from_timestamp_secs(1628664679), &mut time_range);
+        assert_eq!(
+            time_range,
+            Some(
+                DateTime::from_timestamp_secs(1628664679)
+                    ..=DateTime::from_timestamp_secs(1628664679)
+            )
+        );
+        record_timestamp(DateTime::from_timestamp_secs(1628664112), &mut time_range);
+        assert_eq!(
+            time_range,
+            Some(
+                DateTime::from_timestamp_secs(1628664112)
+                    ..=DateTime::from_timestamp_secs(1628664679)
+            )
+        );
+        record_timestamp(DateTime::from_timestamp_secs(1628665112), &mut time_range);
+        assert_eq!(
+            time_range,
+            Some(
+                DateTime::from_timestamp_secs(1628664112)
+                    ..=DateTime::from_timestamp_secs(1628665112)
+            )
+        )
     }
 
     #[tokio::test]
@@ -623,18 +639,18 @@ mod tests {
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document",
-                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_001i64)
+                            timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
                         ),
-                        timestamp_opt: Some(1_662_529_435_000_001i64),
+                        timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                         partition: 1,
                         num_bytes: 30,
                     },
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 2",
-                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_002i64)
+                            timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
                         ),
-                        timestamp_opt: Some(1_662_529_435_000_002i64),
+                        timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                         partition: 1,
                         num_bytes: 30,
                     },
@@ -648,18 +664,18 @@ mod tests {
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 3",
-                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_003i64)
+                            timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435i64)
                         ),
-                        timestamp_opt: Some(1_662_529_435_000_003i64),
+                        timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435i64)),
                         partition: 1,
                         num_bytes: 30,
                     },
                     PreparedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 4",
-                            timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_004i64)
+                            timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
                         ),
-                        timestamp_opt: Some(1_662_529_435_000_004i64),
+                        timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                         partition: 1,
                         num_bytes: 30,
                     },
@@ -672,9 +688,9 @@ mod tests {
                 docs: vec![PreparedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
-                        timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_005i64)
+                        timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
                     ),
-                    timestamp_opt: Some(1_662_529_435_000_005i64),
+                    timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                     partition: 1,
                     num_bytes: 30,
                 }],
@@ -825,9 +841,9 @@ mod tests {
                 docs: vec![PreparedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
-                        timestamp_field=>DateTime::from_timestamp_micros(1_662_529_435_000_005i64)
+                        timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
                     ),
-                    timestamp_opt: Some(1_662_529_435_000_005i64),
+                    timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                     partition: 1,
                     num_bytes: 30,
                 }],
@@ -911,9 +927,9 @@ mod tests {
                 docs: vec![PreparedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
-                        timestamp_field=> DateTime::from_timestamp_micros(1_662_529_435_000_005i64)
+                        timestamp_field=> DateTime::from_timestamp_secs(1_662_529_435)
                     ),
-                    timestamp_opt: Some(1_662_529_435_000_005i64),
+                    timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                     partition: 1,
                     num_bytes: 30,
                 }],

@@ -17,85 +17,91 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::ops::{Bound, RangeBounds};
+use std::ops::{Bound, RangeBounds, RangeInclusive};
+use std::sync::Arc;
 
-use quickwit_doc_mapper::fast_field_reader::{timestamp_field_reader, GenericFastFieldReader};
-use tantivy::schema::Field;
-use tantivy::{DocId, SegmentReader};
+use fastfield_codecs::Column;
+use tantivy::{DateTime, DocId, SegmentReader};
 
 /// A filter that only retains docs within a time range.
 #[derive(Clone)]
 pub struct TimestampFilter {
     /// The time range represented as (lower_bound, upper_bound).
-    time_range: (Bound<i64>, Bound<i64>),
+    // TODO replace this with a RangeInclusive<DateTime> if it improves perf?
+    time_range: (Bound<DateTime>, Bound<DateTime>),
     /// The timestamp fast field reader.
-    timestamp_field_reader: GenericFastFieldReader,
+    time_column: Arc<dyn Column<DateTime>>,
 }
 
 impl TimestampFilter {
     pub fn is_within_range(&self, doc_id: DocId) -> bool {
-        let timestamp_value = self.timestamp_field_reader.get(doc_id);
+        let timestamp_value: DateTime = self.time_column.get_val(doc_id);
         self.time_range.contains(&timestamp_value)
     }
+}
+
+/// Creates a timestamp field depending on the user request.
+///
+/// The start/end timestamp are in seconds and are interpreted as
+/// a semi-open interval [start, end).
+pub fn create_timestamp_filter_builder(
+    timestamp_field_opt: Option<&str>,
+    start_timestamp_secs: Option<i64>,
+    end_timestamp_secs: Option<i64>,
+) -> Option<TimestampFilterBuilder> {
+    let timestamp_field = timestamp_field_opt?;
+    if start_timestamp_secs.is_none() && end_timestamp_secs.is_none() {
+        return None;
+    }
+    let start_timestamp_bound: Bound<DateTime> = start_timestamp_secs
+        .map(|timestamp_secs| Bound::Included(DateTime::from_timestamp_secs(timestamp_secs)))
+        .unwrap_or(Bound::Unbounded);
+    let end_timestamp_bound: Bound<DateTime> = end_timestamp_secs
+        .map(|timestamp_secs| Bound::Excluded(DateTime::from_timestamp_secs(timestamp_secs)))
+        .unwrap_or(Bound::Unbounded);
+    Some(TimestampFilterBuilder::new(
+        timestamp_field.to_string(),
+        start_timestamp_bound,
+        end_timestamp_bound,
+    ))
 }
 
 #[derive(Clone, Debug)]
 pub struct TimestampFilterBuilder {
     pub timestamp_field_name: String,
-    timestamp_field: Field,
-    start_timestamp_opt: Option<i64>,
-    end_timestamp_opt: Option<i64>,
+    start_timestamp: Bound<DateTime>,
+    end_timestamp: Bound<DateTime>,
 }
 
 impl TimestampFilterBuilder {
     pub fn new(
-        timestamp_field_name_opt: Option<String>,
-        timestamp_field_opt: Option<Field>,
-        start_timestamp_opt: Option<i64>,
-        end_timestamp_opt: Option<i64>,
-    ) -> Option<TimestampFilterBuilder> {
-        let timestamp_field_name = timestamp_field_name_opt?;
-        let timestamp_field = timestamp_field_opt?;
-        if start_timestamp_opt.is_none() && end_timestamp_opt.is_none() {
-            return None;
-        }
-        Some(TimestampFilterBuilder {
+        timestamp_field_name: String,
+        start_timestamp: Bound<DateTime>,
+        end_timestamp: Bound<DateTime>,
+    ) -> TimestampFilterBuilder {
+        TimestampFilterBuilder {
             timestamp_field_name,
-            timestamp_field,
-            start_timestamp_opt,
-            end_timestamp_opt,
-        })
+            start_timestamp,
+            end_timestamp,
+        }
     }
 
     pub fn build(
         &self,
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Option<TimestampFilter>> {
-        let timestamp_field_reader = timestamp_field_reader(self.timestamp_field, segment_reader)?;
-        let segment_range = (
-            timestamp_field_reader.min_value(),
-            timestamp_field_reader.max_value(),
-        );
-        let timestamp_range = (
-            self.start_timestamp_opt.unwrap_or(i64::MIN),
-            self.end_timestamp_opt.unwrap_or(i64::MAX),
-        );
-        if is_segment_always_within_timestamp_range(segment_range, timestamp_range) {
+        let timestamp_field_reader = segment_reader
+            .fast_fields()
+            .date(&self.timestamp_field_name)?;
+        let segment_range: RangeInclusive<DateTime> =
+            timestamp_field_reader.min_value()..=timestamp_field_reader.max_value();
+        let time_range = (self.start_timestamp, self.end_timestamp);
+        if is_segment_always_within_timestamp_range(segment_range, time_range) {
             return Ok(None);
         }
-
-        let lower_bound = self
-            .start_timestamp_opt
-            .map(Bound::Included)
-            .unwrap_or(Bound::Unbounded);
-        let upper_bound = self
-            .end_timestamp_opt
-            .map(Bound::Excluded)
-            .unwrap_or(Bound::Unbounded);
-
         Ok(Some(TimestampFilter {
-            time_range: (lower_bound, upper_bound),
-            timestamp_field_reader,
+            time_range,
+            time_column: timestamp_field_reader,
         }))
     }
 }
@@ -106,40 +112,47 @@ impl TimestampFilterBuilder {
 /// - segment_range: is an inclusive range on both ends `[min, max]`.
 /// - timestamp_range: is a half open range `[min, max[`.
 fn is_segment_always_within_timestamp_range(
-    segment_range: (i64, i64),
-    timestamp_range: (i64, i64),
+    segment_range: RangeInclusive<DateTime>,
+    timestamp_range: impl RangeBounds<DateTime>,
 ) -> bool {
-    segment_range.0 >= timestamp_range.0 && segment_range.1 < timestamp_range.1
+    timestamp_range.contains(segment_range.start()) && timestamp_range.contains(segment_range.end())
 }
 
 #[cfg(test)]
 mod tests {
+    use tantivy::DateTime;
+
     use super::is_segment_always_within_timestamp_range;
+
+    const TEST_START: DateTime = DateTime::from_timestamp_secs(1_662_529_435);
+    const TEST_MIDDLE: DateTime = DateTime::from_timestamp_secs(1_662_629_435);
+    const TEST_END: DateTime = DateTime::from_timestamp_secs(1_662_639_435);
 
     #[test]
     fn test_is_segment_always_within_timestamp_range() {
         assert_eq!(
-            is_segment_always_within_timestamp_range((20, 30), (i64::MIN, i64::MAX)),
+            is_segment_always_within_timestamp_range(TEST_START..=TEST_END, ..),
             true
         );
 
         assert_eq!(
-            is_segment_always_within_timestamp_range((20, 30), (20, 35)),
+            is_segment_always_within_timestamp_range(
+                TEST_START..=TEST_MIDDLE,
+                TEST_START..TEST_END
+            ),
             true
         );
 
         assert_eq!(
-            is_segment_always_within_timestamp_range((20, 30), (20, 25)),
+            is_segment_always_within_timestamp_range(
+                TEST_START..=TEST_END,
+                TEST_START..TEST_MIDDLE
+            ),
             false
         );
 
         assert_eq!(
-            is_segment_always_within_timestamp_range((20, 30), (20, 30)),
-            false
-        );
-
-        assert_eq!(
-            is_segment_always_within_timestamp_range((i64::MIN, i64::MAX), (i64::MIN, i64::MAX)),
+            is_segment_always_within_timestamp_range(TEST_START..=TEST_END, TEST_START..TEST_END),
             false
         );
     }
