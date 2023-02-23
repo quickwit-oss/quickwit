@@ -63,7 +63,7 @@ pub fn build_split_command<'a>() -> Command<'a> {
                     //     .display_order(6)
                     //     .required(false)
                     //     .use_value_delimiter(true),
-                    arg!(--"output-format" <OUTPUT_FORMAT> "Output format. Possible values are `table`, `json`, and `prettyjson`.")
+                    arg!(--"output-format" <OUTPUT_FORMAT> "Output format. Possible values are `table`, `json`, and `pretty_json`.")
                         .alias("format")
                         .display_order(7)
                         .required(false)
@@ -114,10 +114,10 @@ impl FromStr for OutputFormat {
         match output_format_str {
             "table" => Ok(OutputFormat::Table),
             "json" => Ok(OutputFormat::Json),
-            "prettyjson" => Ok(OutputFormat::PrettyJson),
+            "pretty_json" => Ok(OutputFormat::PrettyJson),
             _ => bail!(
                 "Failed to parse output format `{output_format_str}`. Supported formats are: \
-                 `table`, `json`, and `prettyjson`."
+                 `table`, `json`, and `pretty_json`."
             ),
         }
     }

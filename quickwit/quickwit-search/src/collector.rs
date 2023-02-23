@@ -32,10 +32,9 @@ use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResult
 use tantivy::aggregation::AggregationSegmentCollector;
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::Column;
-use tantivy::schema::Schema;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 
-use crate::filters::{TimestampFilter, TimestampFilterBuilder};
+use crate::filters::{create_timestamp_filter_builder, TimestampFilter, TimestampFilterBuilder};
 use crate::jaeger_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector};
 use crate::partial_hit_sorting_key;
 
@@ -539,16 +538,13 @@ pub(crate) fn make_collector_for_split(
     split_id: String,
     doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
-    split_schema: &Schema,
 ) -> crate::Result<QuickwitCollector> {
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
         None => None,
     };
-    let timestamp_field_opt = doc_mapper.timestamp_field(split_schema);
-    let timestamp_filter_builder_opt = TimestampFilterBuilder::new(
+    let timestamp_filter_builder_opt = create_timestamp_filter_builder(
         doc_mapper.timestamp_field_name(),
-        timestamp_field_opt,
         search_request.start_timestamp,
         search_request.end_timestamp,
     );

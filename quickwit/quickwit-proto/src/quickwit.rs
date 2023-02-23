@@ -11,7 +11,9 @@ pub struct SearchRequest {
     /// Fields to search on
     #[prost(string, repeated, tag = "3")]
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Time filter
+    /// Time filter, expressed in seconds since epoch.
+    /// That filter is to be interpreted as the semi-open interval:
+    /// [start_timestamp, end_timestamp).
     #[prost(int64, optional, tag = "4")]
     pub start_timestamp: ::core::option::Option<i64>,
     #[prost(int64, optional, tag = "5")]

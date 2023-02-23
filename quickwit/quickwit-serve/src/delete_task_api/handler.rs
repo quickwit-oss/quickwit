@@ -21,13 +21,13 @@ use std::sync::Arc;
 
 use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_janitor::error::JanitorError;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{Metastore, MetastoreError};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_proto::SearchRequest;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
-use crate::format::Format;
+use crate::format::{extract_format_from_qs, make_response};
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
@@ -67,6 +67,8 @@ pub fn get_delete_tasks_handler(
         .and(warp::get())
         .and(with_arg(metastore))
         .then(get_delete_tasks)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[utoipa::path(
@@ -87,9 +89,12 @@ pub fn get_delete_tasks_handler(
 // Explanation: we don't want to expose any delete tasks endpoints without a running
 // `DeleteTaskService`. This is ensured by requiring a `Mailbox<DeleteTaskService>` in
 // `get_delete_tasks_handler` and consequently we get the mailbox in `get_delete_tasks` signature.
-pub async fn get_delete_tasks(index_id: String, metastore: Arc<dyn Metastore>) -> impl warp::Reply {
-    let delete_tasks = metastore.list_delete_tasks(&index_id, 0).await;
-    Format::PrettyJson.make_rest_reply(delete_tasks)
+pub async fn get_delete_tasks(
+    index_id: String,
+    metastore: Arc<dyn Metastore>,
+) -> Result<Vec<DeleteTask>, MetastoreError> {
+    let delete_tasks = metastore.list_delete_tasks(&index_id, 0).await?;
+    Ok(delete_tasks)
 }
 
 pub fn post_delete_tasks_handler(
@@ -100,7 +105,8 @@ pub fn post_delete_tasks_handler(
         .and(warp::post())
         .and(with_arg(metastore))
         .then(post_delete_request)
-        .map(|create_delete_res| Format::PrettyJson.make_rest_reply(create_delete_res))
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[utoipa::path(
@@ -198,7 +204,7 @@ mod tests {
             .reply(&delete_query_api_handlers)
             .await;
         assert_eq!(resp.status(), 400);
-        assert!(String::from_utf8_lossy(resp.body()).contains("InvalidDeleteQuery"));
+        assert!(String::from_utf8_lossy(resp.body()).contains("Invalid delete query"));
 
         // GET delete tasks.
         let resp = warp::test::request()

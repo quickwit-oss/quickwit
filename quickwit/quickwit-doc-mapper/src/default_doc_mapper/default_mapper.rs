@@ -288,7 +288,9 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
         };
         Self {
             store_source: default_doc_mapper.source_field.is_some(),
-            timestamp_field: default_doc_mapper.timestamp_field_name(),
+            timestamp_field: default_doc_mapper
+                .timestamp_field_name()
+                .map(ToString::to_string),
             field_mappings: default_doc_mapper.field_mappings.into(),
             tag_fields: default_doc_mapper.tag_field_names.into_iter().collect(),
             default_search_fields: default_doc_mapper.default_search_field_names,
@@ -411,8 +413,8 @@ impl DocMapper for DefaultDocMapper {
         self.schema.clone()
     }
 
-    fn timestamp_field_name(&self) -> Option<String> {
-        self.timestamp_field_name.clone()
+    fn timestamp_field_name(&self) -> Option<&str> {
+        self.timestamp_field_name.as_deref()
     }
 
     fn tag_field_names(&self) -> BTreeSet<String> {

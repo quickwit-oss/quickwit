@@ -36,7 +36,7 @@
 //! Below we test panics at different steps in the indexing pipeline.
 
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Barrier, Mutex};
 use std::time::Duration;
 
 use fail::FailScenario;
@@ -307,20 +307,27 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     // aborted not by the actor framework, before the message is being processed.
     //
     // To do so, we
-    // - pause the actor right before the merge operation
-    // - send the message
-    // - wait 500ms to make sure the test has reached the "pause" point
+    // - set two barrier so the actor pauses right upon entering the process_merge function
+    // - send the merge message
+    // - wait on the first barrier to ensure that the actor has reached the process_merge function
     // - kill the universe
-    // - unpause
+    // - wait and release the second barrier so the actor can continue processing the merge message
     //
     // Before the controlled directory, the merge operation would have continued until it
     // finished, taking hundreds of millisecs to terminate.
-    fail::cfg("before-merge-split", "pause").unwrap();
+    let before_universe_kill = Arc::new(Barrier::new(2));
+    let after_universe_kill = Arc::new(Barrier::new(2));
+    let before_universe_kill_clone = before_universe_kill.clone();
+    let after_universe_kill_clone = after_universe_kill.clone();
+    fail::cfg_callback("before-merge-split", move || {
+        before_universe_kill_clone.wait();
+        after_universe_kill_clone.wait();
+    })
+    .unwrap();
     merge_executor_mailbox.send_message(merge_scratch).await?;
-
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    before_universe_kill.wait();
     universe.kill();
-
+    after_universe_kill.wait();
     fail::cfg("before-merge-split", "off").unwrap();
 
     let (exit_status, _) = merge_executor_handle.join().await;

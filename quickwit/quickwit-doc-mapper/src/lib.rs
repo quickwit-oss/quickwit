@@ -28,9 +28,6 @@
 mod default_doc_mapper;
 mod doc_mapper;
 mod error;
-
-#[allow(missing_docs)]
-pub mod fast_field_reader;
 mod query_builder;
 mod routing_expression;
 mod tokenizers;

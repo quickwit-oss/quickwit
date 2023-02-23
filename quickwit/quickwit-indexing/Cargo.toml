@@ -65,7 +65,7 @@ vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored", "rdkafka/gssap
 vendored-kafka-macos = ["kafka", "libz-sys/static", "openssl/vendored"]
 kinesis = ["rusoto_core", "rusoto_kinesis", "quickwit-aws/kinesis"]
 kinesis-localstack-tests = []
-testsuite = []
+testsuite = ["quickwit-actors/testsuite"]
 
 [dev-dependencies]
 bytes = { workspace = true }

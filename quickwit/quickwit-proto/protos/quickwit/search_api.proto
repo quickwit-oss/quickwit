@@ -73,7 +73,9 @@ message SearchRequest {
   // Fields to search on
   repeated string  search_fields = 3;
 
-  // Time filter
+  // Time filter, expressed in seconds since epoch.
+  // That filter is to be interpreted as the semi-open interval:
+  // [start_timestamp, end_timestamp).
   optional int64 start_timestamp = 4;
   optional int64 end_timestamp = 5;
 
@@ -98,7 +100,7 @@ message SearchRequest {
 
   // json serialized aggregation_request
   optional string aggregation_request = 11;
-  
+
   // Fields to extract snippet on
   repeated string  snippet_fields = 12;
 }
@@ -185,7 +187,7 @@ message LeafHit {
   string leaf_json = 1;
   // The partial hit (ie: the sorting field + the document address)
   PartialHit partial_hit = 2;
-  // A snippet of the matching content 
+  // A snippet of the matching content
   optional string leaf_snippet_json = 3;
 }
 
@@ -194,7 +196,7 @@ message Hit {
   string json = 1;
   // The partial hit (ie: the sorting field + the document address)
   PartialHit partial_hit = 2;
-  // A snippet of the matching content 
+  // A snippet of the matching content
   optional string snippet = 3;
 }
 

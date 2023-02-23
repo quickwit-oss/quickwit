@@ -396,7 +396,7 @@ quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query
 # Start a Quickwit server.
 quickwit run --config=./config/quickwit.yaml
 # Open a new terminal and run:
-quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "Barack Obama" --sort-by-score
+quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "camp" --sort-by-score
 
 ```
 
@@ -617,7 +617,7 @@ quickwit split list
 `--create-date` Selects the splits whose creation dates are before this date. \
 `--start-date` Selects the splits that contain documents after this date (time-series indexes only). \
 `--end-date` Selects the splits that contain documents before this date (time-series indexes only). \
-`--output-format` Output format. Possible values are `table`, `json`, and `prettyjson`. \
+`--output-format` Output format. Possible values are `table`, `json`, and `pretty_json`. \
 ### split describe
 
 Displays metadata about a split.  

@@ -28,14 +28,13 @@ use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitState,
 };
-use quickwit_proto::ServiceError;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
-use warp::{Filter, Rejection, Reply};
+use warp::{Filter, Rejection};
 
-use crate::format::Format;
+use crate::format::{extract_format_from_qs, make_response};
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
@@ -72,10 +71,6 @@ pub fn index_management_handlers(
         .or(create_source_handler(index_service.clone()))
         .or(get_source_handler(index_service.metastore()))
         .or(delete_source_handler(index_service.metastore()))
-}
-
-fn format_response<T: Serialize, E: ServiceError + ToString>(result: Result<T, E>) -> impl Reply {
-    Format::default().make_rest_reply_non_serializable_error(result)
 }
 
 fn json_body<T: DeserializeOwned + Send>(
@@ -117,7 +112,8 @@ fn get_index_metadata_handler(
         .and(warp::get())
         .and(with_arg(metastore))
         .then(get_index_metadata)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 async fn get_index_metadata(
@@ -135,7 +131,8 @@ fn get_indexes_metadatas_handler(
         .and(warp::get())
         .and(with_arg(metastore))
         .then(get_indexes_metadatas)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 /// This struct represents the QueryString passed to
@@ -150,10 +147,12 @@ pub struct ListSplitsQueryParams {
     #[serde(default)]
     pub split_states: Option<Vec<SplitState>>,
     /// If set, restrict splits to documents with a `timestamp >= start_timestamp`.
+    /// This timestamp is in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub start_timestamp: Option<i64>,
     /// If set, restrict splits to documents with a `timestamp < end_timestamp`.
+    /// This timestamp is in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub end_timestamp: Option<i64>,
@@ -206,7 +205,8 @@ fn list_splits_handler(
         .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(with_arg(metastore))
         .then(list_splits)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[derive(Deserialize)]
@@ -252,7 +252,8 @@ fn mark_splits_for_deletion_handler(
         .and(json_body())
         .and(with_arg(metastore))
         .then(mark_splits_for_deletion)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[utoipa::path(
@@ -292,7 +293,8 @@ fn create_index_handler(
         .and(with_arg(index_service))
         .and(with_arg(quickwit_config))
         .then(create_index)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[utoipa::path(
@@ -335,7 +337,8 @@ fn clear_index_handler(
         .and(warp::put())
         .and(with_arg(index_service))
         .then(clear_index)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[utoipa::path(
@@ -373,7 +376,8 @@ fn delete_index_handler(
         .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(with_arg(index_service))
         .then(delete_index)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[utoipa::path(
@@ -411,7 +415,8 @@ fn create_source_handler(
         .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
         .then(create_source)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[utoipa::path(
@@ -449,7 +454,8 @@ fn get_source_handler(
         .and(warp::get())
         .and(with_arg(metastore))
         .then(get_source)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 async fn get_source(
@@ -477,7 +483,8 @@ fn reset_source_checkpoint_handler(
         .and(warp::put())
         .and(with_arg(metastore))
         .then(reset_source_checkpoint)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[utoipa::path(
@@ -511,7 +518,8 @@ fn toggle_source_handler(
         .and(json_body())
         .and(with_arg(metastore))
         .then(toggle_source)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[derive(Deserialize)]
@@ -552,7 +560,8 @@ fn delete_source_handler(
         .and(warp::delete())
         .and(with_arg(metastore))
         .then(delete_source)
-        .map(format_response)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }
 
 #[utoipa::path(

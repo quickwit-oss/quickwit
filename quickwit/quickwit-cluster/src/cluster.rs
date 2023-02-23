@@ -31,6 +31,7 @@ use chitchat::{
     NodeId, NodeState,
 };
 use itertools::Itertools;
+use quickwit_proto::indexing_api::IndexingTask;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::timeout;
@@ -40,8 +41,8 @@ use tracing::{debug, error, info};
 
 use crate::error::{ClusterError, ClusterResult};
 use crate::member::{
-    build_cluster_members, ClusterMember, RunningIndexingPlan, ENABLED_SERVICES_KEY,
-    GRPC_ADVERTISE_ADDR_KEY, RUNNING_INDEXING_PLAN,
+    build_cluster_members, ClusterMember, ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY,
+    INDEXING_TASK_PREFIX, INDEXING_TASK_SEPARATOR,
 };
 use crate::QuickwitService;
 
@@ -49,6 +50,12 @@ const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(25)
 } else {
     Duration::from_secs(1)
+};
+
+const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "testsuite")) {
+    100 // ~ HEARTBEAT * 100 = 2.5 seconds.
+} else {
+    5_000 // ~ HEARTBEAT * 5_000 ~ 4 hours.
 };
 
 // Health key and values used to store node's health in chitchat state.
@@ -117,6 +124,7 @@ impl Cluster {
             seed_nodes: peer_seed_addrs,
             failure_detector_config,
             is_ready_predicate: Some(Box::new(is_ready_predicate)),
+            marked_for_deletion_grace_period: MARKED_FOR_DELETION_GRACE_PERIOD,
         };
         let chitchat_handle = spawn_chitchat(
             chitchat_config,
@@ -314,13 +322,40 @@ impl Cluster {
         is_ready_predicate(node_state)
     }
 
-    pub async fn set_self_node_running_indexing_plan(
+    /// Updates indexing tasks in chitchat state.
+    /// Tasks are grouped by (index_id, source_id), each group is stored in a key as follows:
+    /// - key: `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`
+    /// - value: Number of indexing tasks in the group.
+    /// Keys present in chitchat state but not in the given `indexing_tasks` are marked for
+    /// deletion.
+    pub async fn update_self_node_indexing_tasks(
         &self,
-        running_indexing_plan: &RunningIndexingPlan,
+        indexing_tasks: &[IndexingTask],
     ) -> anyhow::Result<()> {
-        let running_indexing_plan_json_string = serde_json::to_string(running_indexing_plan)?;
-        self.set_key_value(RUNNING_INDEXING_PLAN, running_indexing_plan_json_string)
-            .await;
+        let chitchat = self.chitchat_handle.chitchat();
+        let mut chitchat_guard = chitchat.lock().await;
+        let mut current_indexing_tasks_keys: HashSet<_> = chitchat_guard
+            .self_node_state()
+            .iter_key_values(|key, _| key.starts_with(INDEXING_TASK_PREFIX))
+            .map(|(key, _)| key.to_string())
+            .collect();
+        for (indexing_task, indexing_tasks_group) in
+            indexing_tasks.iter().group_by(|&task| task).into_iter()
+        {
+            let key = format!(
+                "{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{}{INDEXING_TASK_SEPARATOR}{}",
+                indexing_task.index_id, indexing_task.source_id
+            );
+            current_indexing_tasks_keys.remove(&key);
+            chitchat_guard
+                .self_node_state()
+                .set(key, indexing_tasks_group.count().to_string());
+        }
+        for obsolete_task_key in current_indexing_tasks_keys {
+            chitchat_guard
+                .self_node_state()
+                .mark_for_deletion(&obsolete_task_key);
+        }
         Ok(())
     }
 }
@@ -397,7 +432,7 @@ pub async fn create_cluster_for_test_with_id(
             enabled_services.clone(),
             gossip_advertise_addr,
             grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
-            None,
+            Vec::new(),
         ),
         gossip_advertise_addr,
         cluster_id,
@@ -451,12 +486,15 @@ pub async fn create_fake_cluster_for_cli() -> anyhow::Result<Cluster> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::net::SocketAddr;
     use std::time::Duration;
 
     use chitchat::transport::ChannelTransport;
     use itertools::Itertools;
+    use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_proto::indexing_api::IndexingTask;
+    use rand::Rng;
 
     use super::*;
 
@@ -522,14 +560,11 @@ mod tests {
             index_id: "index-1".to_string(),
             source_id: "source-1".to_string(),
         };
-        let running_indexing_plan = RunningIndexingPlan {
-            indexing_tasks: vec![indexing_task.clone()],
-        };
         cluster2
             .set_key_value(GRPC_ADVERTISE_ADDR_KEY, "127.0.0.1:1001")
             .await;
         cluster2
-            .set_self_node_running_indexing_plan(&running_indexing_plan)
+            .update_self_node_indexing_tasks(&[indexing_task.clone(), indexing_task.clone()])
             .await
             .unwrap();
         cluster1
@@ -549,7 +584,7 @@ mod tests {
             member_node_1.enabled_services,
             HashSet::from_iter([QuickwitService::Indexer])
         );
-        assert!(member_node_1.running_indexing_plan.is_none());
+        assert!(member_node_1.indexing_tasks.is_empty());
         assert_eq!(
             member_node_2.grpc_advertise_addr,
             ([127, 0, 0, 1], 1001).into()
@@ -559,11 +594,160 @@ mod tests {
             HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Metastore].into_iter())
         );
         assert_eq!(
-            member_node_2.running_indexing_plan,
-            Some(running_indexing_plan)
+            member_node_2.indexing_tasks,
+            vec![indexing_task.clone(), indexing_task.clone()]
         );
     }
 
+    #[tokio::test]
+    async fn test_chitchat_state_set_high_number_of_tasks() {
+        let transport = ChannelTransport::default();
+        let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let cluster2 = Arc::new(
+            create_cluster_for_test(
+                vec![cluster1.gossip_listen_addr.to_string()],
+                &["indexer", "metastore"],
+                &transport,
+                true,
+            )
+            .await
+            .unwrap(),
+        );
+        let cluster3 = Arc::new(
+            create_cluster_for_test(
+                vec![cluster1.gossip_listen_addr.to_string()],
+                &["indexer", "metastore"],
+                &transport,
+                true,
+            )
+            .await
+            .unwrap(),
+        );
+        let mut random_generator = rand::thread_rng();
+        let indexing_tasks = (0..10_000)
+            .map(|_| {
+                let index_id = random_generator.gen_range(0..=10_000);
+                let source_id = random_generator.gen_range(0..=100);
+                IndexingTask {
+                    index_id: format!("index-{index_id}"),
+                    source_id: format!("source-{source_id}"),
+                }
+            })
+            .collect_vec();
+        cluster1
+            .update_self_node_indexing_tasks(&indexing_tasks)
+            .await
+            .unwrap();
+        for cluster in [&cluster2, &cluster3] {
+            let cluster_clone = cluster.clone();
+            let indexing_tasks_clone = indexing_tasks.clone();
+            wait_until_predicate(
+                move || {
+                    test_indexing_tasks_in_given_node(
+                        cluster_clone.clone(),
+                        cluster1.node_id.gossip_public_address,
+                        indexing_tasks_clone.clone(),
+                    )
+                },
+                Duration::from_secs(4),
+                Duration::from_millis(500),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Mark tasks for deletion.
+        cluster1.update_self_node_indexing_tasks(&[]).await.unwrap();
+        for cluster in [&cluster2, &cluster3] {
+            let cluster_clone = cluster.clone();
+            wait_until_predicate(
+                move || {
+                    test_indexing_tasks_in_given_node(
+                        cluster_clone.clone(),
+                        cluster1.node_id.gossip_public_address,
+                        Vec::new(),
+                    )
+                },
+                Duration::from_secs(4),
+                Duration::from_millis(500),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Re-add tasks.
+        cluster1
+            .update_self_node_indexing_tasks(&indexing_tasks)
+            .await
+            .unwrap();
+        for cluster in [&cluster2, &cluster3] {
+            let cluster_clone = cluster.clone();
+            let indexing_tasks_clone = indexing_tasks.clone();
+            wait_until_predicate(
+                move || {
+                    test_indexing_tasks_in_given_node(
+                        cluster_clone.clone(),
+                        cluster1.node_id.gossip_public_address,
+                        indexing_tasks_clone.clone(),
+                    )
+                },
+                Duration::from_secs(4),
+                Duration::from_millis(500),
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    async fn test_indexing_tasks_in_given_node(
+        cluster: Arc<Cluster>,
+        gossip_public_address: SocketAddr,
+        indexing_tasks: Vec<IndexingTask>,
+    ) -> anyhow::Result<bool> {
+        let members = cluster.ready_members_from_chitchat_state().await;
+        let node = members
+            .iter()
+            .find(|member| member.gossip_advertise_addr == gossip_public_address)
+            .ok_or_else(|| anyhow!("no cluster member"))?;
+        let node_grouped_tasks: HashMap<IndexingTask, usize> = node
+            .indexing_tasks
+            .iter()
+            .group_by(|task| (*task).clone())
+            .into_iter()
+            .map(|(key, group)| (key, group.count()))
+            .collect();
+        let grouped_tasks: HashMap<IndexingTask, usize> = indexing_tasks
+            .iter()
+            .group_by(|task| (*task).clone())
+            .into_iter()
+            .map(|(key, group)| (key, group.count()))
+            .collect();
+        Ok(node_grouped_tasks == grouped_tasks)
+    }
+
+    #[tokio::test]
+    async fn test_chitchat_state_with_malformatted_indexing_task_key() {
+        let transport = ChannelTransport::default();
+        let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        {
+            let chitchat_handle = cluster1.chitchat_handle.chitchat();
+            let mut chitchat_guard = chitchat_handle.lock().await;
+            chitchat_guard.self_node_state().set(
+                format!("{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}my_good_index{INDEXING_TASK_SEPARATOR}my_source"),
+                "2".to_string(),
+            );
+            chitchat_guard.self_node_state().set(
+                format!("{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}my_bad_index{INDEXING_TASK_SEPARATOR}my_source"),
+                "malformatted value".to_string(),
+            );
+        }
+        let member = cluster1.ready_members_from_chitchat_state().await;
+        assert_eq!(member[0].indexing_tasks.len(), 2);
+    }
     #[tokio::test]
     async fn test_cluster_available_searcher() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
@@ -821,7 +1005,7 @@ mod tests {
                 HashSet::default(),
                 cluster2_listen_addr,
                 grpc_addr,
-                None,
+                Vec::new(),
             ),
             cluster2_listen_addr,
             cluster_id.to_string(),
@@ -927,7 +1111,7 @@ mod tests {
                 HashSet::default(),
                 cluster2_listen_addr,
                 grpc_addr,
-                None,
+                Vec::new(),
             ),
             cluster2_listen_addr,
             cluster_id.to_string(),
@@ -946,7 +1130,7 @@ mod tests {
                 HashSet::default(),
                 cluster3_listen_addr,
                 grpc_addr,
-                None,
+                Vec::new(),
             ),
             cluster3_listen_addr,
             cluster_id.to_string(),

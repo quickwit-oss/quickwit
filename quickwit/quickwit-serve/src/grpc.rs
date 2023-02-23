@@ -20,7 +20,6 @@
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 
-use anyhow::Context;
 use quickwit_config::service::QuickwitService;
 use quickwit_control_plane::grpc_adapter::GrpcControlPlaneAdapter;
 use quickwit_indexing::grpc_adapter::GrpcIndexingAdapter;
@@ -90,11 +89,8 @@ pub(crate) async fn start_grpc_server(
         && services.services.contains(&QuickwitService::Indexer)
     {
         enabled_grpc_services.insert("otlp-trace");
-        let ingest_api_service = services
-            .ingest_api_service
-            .clone()
-            .context("Failed to instantiate OTLP trace service: the ingest API is disabled.")?;
-        let trace_service = TraceServiceServer::new(OtlpGrpcTraceService::new(ingest_api_service))
+        let ingest_service = services.ingest_service.clone();
+        let trace_service = TraceServiceServer::new(OtlpGrpcTraceService::new(ingest_service))
             .accept_compressed(CompressionEncoding::Gzip);
         Some(trace_service)
     } else {
@@ -104,11 +100,8 @@ pub(crate) async fn start_grpc_server(
         && services.services.contains(&QuickwitService::Indexer)
     {
         enabled_grpc_services.insert("otlp-logs");
-        let ingest_api_service = services
-            .ingest_api_service
-            .clone()
-            .context("Failed to instantiate OTLP logs service: the ingest API is disabled.")?;
-        let logs_service = LogsServiceServer::new(OtlpGrpcLogsService::new(ingest_api_service))
+        let ingest_service = services.ingest_service.clone();
+        let logs_service = LogsServiceServer::new(OtlpGrpcLogsService::new(ingest_service))
             .accept_compressed(CompressionEncoding::Gzip);
         Some(logs_service)
     } else {

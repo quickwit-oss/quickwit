@@ -17,12 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_actors::Mailbox;
-use quickwit_indexing::actors::IndexingService;
+use std::convert::Infallible;
+
+use quickwit_actors::{AskError, Mailbox};
+use quickwit_indexing::actors::{IndexingService, IndexingServiceCounters};
 use quickwit_indexing::models::Observe;
 use warp::{Filter, Rejection};
 
-use crate::format::Format;
+use crate::format::{extract_format_from_qs, make_response};
 use crate::require;
 
 #[derive(utoipa::OpenApi)]
@@ -38,9 +40,11 @@ pub struct IndexingApi;
     ),
 )]
 /// Observe Indexing Pipeline
-async fn indexing_endpoint(indexing_service_mailbox: Mailbox<IndexingService>) -> impl warp::Reply {
-    let obs = indexing_service_mailbox.ask(Observe).await;
-    Format::PrettyJson.make_rest_reply_non_serializable_error(obs)
+async fn indexing_endpoint(
+    indexing_service_mailbox: Mailbox<IndexingService>,
+) -> Result<IndexingServiceCounters, AskError<Infallible>> {
+    let counters = indexing_service_mailbox.ask(Observe).await?;
+    Ok(counters)
 }
 
 fn indexing_get_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
@@ -53,4 +57,6 @@ pub fn indexing_get_handler(
     indexing_get_filter()
         .and(require(indexing_service_mailbox_opt))
         .then(indexing_endpoint)
+        .and(extract_format_from_qs())
+        .map(make_response)
 }

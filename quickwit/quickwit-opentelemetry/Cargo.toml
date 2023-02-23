@@ -27,3 +27,4 @@ quickwit-ingest-api = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
+quickwit-actors = { workspace = true, features = ["testsuite"] }

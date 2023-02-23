@@ -120,7 +120,7 @@ mod tests {
             HashSet::from([QuickwitService::ControlPlane]),
             control_plane_grpc_addr,
             control_plane_grpc_addr,
-            None,
+            Vec::new(),
         );
         let (_members_tx, members_rx) =
             watch::channel::<Vec<ClusterMember>>(vec![control_plane_service_member.clone()]);

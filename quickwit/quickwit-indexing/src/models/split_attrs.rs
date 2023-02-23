@@ -22,6 +22,7 @@ use std::fmt;
 use std::ops::{Range, RangeInclusive};
 
 use quickwit_metastore::SplitMetadata;
+use tantivy::DateTime;
 use time::OffsetDateTime;
 
 use crate::models::IndexingPipelineId;
@@ -51,7 +52,7 @@ pub struct SplitAttrs {
     // invalid.
     pub uncompressed_docs_size_in_bytes: u64,
 
-    pub time_range: Option<RangeInclusive<i64>>,
+    pub time_range: Option<RangeInclusive<DateTime>>,
 
     pub replaced_split_ids: Vec<String>,
 
@@ -91,7 +92,10 @@ pub fn create_split_metadata(
         source_id: split_attrs.pipeline_id.source_id.clone(),
         node_id: split_attrs.pipeline_id.node_id.clone(),
         num_docs: split_attrs.num_docs as usize,
-        time_range: split_attrs.time_range.clone(),
+        time_range: split_attrs
+            .time_range
+            .as_ref()
+            .map(|range| range.start().into_timestamp_secs()..=range.end().into_timestamp_secs()),
         uncompressed_docs_size_in_bytes: split_attrs.uncompressed_docs_size_in_bytes,
         create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         tags,
