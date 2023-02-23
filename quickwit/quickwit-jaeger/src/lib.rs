@@ -338,7 +338,7 @@ impl JaegerService {
 
         tokio::task::spawn(async move {
             const MAX_CHUNK_LEN: usize = 1_000;
-            const MAX_CHUNK_NUM_BYTES: usize = 4 * 1024 * 1024 - 1024; // 4 MiB, the default max size of gRPC messages, minus some headroom.
+            const MAX_CHUNK_NUM_BYTES: usize = 4 * 1024 * 1024 - 10 * 1024; // 4 MiB, the default max size of gRPC messages, minus some headroom.
 
             let chunk_len = MAX_CHUNK_LEN.min(spans.len());
             let mut chunk = Vec::with_capacity(chunk_len);

@@ -26,10 +26,11 @@ use quickwit_cluster::create_cluster_for_test;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{
-    build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams,
-    VecSourceParams,
+    build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, IngestApiConfig, SourceConfig,
+    SourceParams, VecSourceParams,
 };
 use quickwit_doc_mapper::DocMapper;
+use quickwit_ingest_api::{init_ingest_api, QUEUES_DIR_NAME};
 use quickwit_metastore::file_backed_metastore::FileBackedMetastoreFactory;
 use quickwit_metastore::{Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState};
 use quickwit_storage::{Storage, StorageUriResolver};
@@ -102,12 +103,16 @@ impl TestSandbox {
         metastore.create_index(index_config.clone()).await?;
         let storage = storage_resolver.resolve(&index_uri)?;
         let universe = Universe::with_accelerated_time();
+        let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
+        let ingest_api_service =
+            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default()).await?;
         let indexing_service_actor = IndexingService::new(
             node_id.to_string(),
             temp_dir.path().to_path_buf(),
             indexer_config,
             cluster,
             metastore.clone(),
+            Some(ingest_api_service),
             storage_resolver.clone(),
         )
         .await?;
@@ -204,7 +209,7 @@ impl TestSandbox {
         &self.universe
     }
 
-    /// Gracefully quits all registered actors in the underlying universr and asserts that none of
+    /// Gracefully quits all registered actors in the underlying universe and asserts that none of
     /// them panicked.
     ///
     /// This is useful for testing purposes to detect failed asserts in actors

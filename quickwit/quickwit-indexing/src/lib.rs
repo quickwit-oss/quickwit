@@ -30,8 +30,8 @@ use quickwit_storage::StorageUriResolver;
 use tracing::info;
 
 pub use crate::actors::{
-    IndexingPipeline, IndexingPipelineParams, IndexingService, IndexingServiceError,
-    IngestApiGarbageCollector, PublisherType, Sequencer, SplitsUpdateMailbox,
+    IndexingPipeline, IndexingPipelineParams, IndexingService, IndexingServiceError, PublisherType,
+    Sequencer, SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::IndexingStatistics;
@@ -72,6 +72,9 @@ pub async fn start_indexing_service(
     storage_resolver: StorageUriResolver,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("Starting indexer service.");
+    let queues_dir_path = config.data_dir_path.join(QUEUES_DIR_NAME);
+    let ingest_api_service = get_ingest_api_service(&queues_dir_path).await?;
+
     // Spawn indexing service.
     let indexing_service = IndexingService::new(
         config.node_id.clone(),
@@ -79,16 +82,11 @@ pub async fn start_indexing_service(
         config.indexer_config.clone(),
         cluster,
         metastore.clone(),
+        Some(ingest_api_service),
         storage_resolver,
     )
     .await?;
     let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);
 
-    // Spawn Ingest Api garbage collector.
-    let queues_dir_path = config.data_dir_path.join(QUEUES_DIR_NAME);
-    let ingest_api_service = get_ingest_api_service(&queues_dir_path).await?;
-    let ingest_api_garbage_collector =
-        IngestApiGarbageCollector::new(metastore, ingest_api_service, indexing_service.clone());
-    universe.spawn_builder().spawn(ingest_api_garbage_collector);
     Ok(indexing_service)
 }

@@ -12,11 +12,12 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = { workspace = true }
 bytes = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-reqwest = { workspace = true }
+tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }

@@ -495,12 +495,35 @@ async fn test_delete_index_cli_dry_run() {
     // On dry run index should still exist
     let metastore = refresh_metastore(metastore).await.unwrap();
     assert!(metastore.index_exists(&index_id).await.unwrap());
+}
 
-    let args = create_delete_args(false);
+#[tokio::test]
+async fn test_delete_index_cli() {
+    let index_id = append_random_suffix("test-delete-cmd");
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    test_env.start_server().await.unwrap();
+    create_logs_index(&test_env).await.unwrap();
+
+    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
+        .await
+        .unwrap();
+
+    let args = DeleteIndexArgs {
+        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        index_id: index_id.clone(),
+        assume_yes: true,
+        dry_run: false,
+    };
 
     delete_index_cli(args).await.unwrap();
-    let metastore = refresh_metastore(metastore).await.unwrap();
-    assert!(!metastore.index_exists(&index_id).await.unwrap());
+
+    assert!(test_env
+        .metastore()
+        .await
+        .unwrap()
+        .index_metadata(&test_env.index_id)
+        .await
+        .is_err());
 }
 
 #[tokio::test]
