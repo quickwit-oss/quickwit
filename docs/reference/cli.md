@@ -617,7 +617,7 @@ quickwit split list
 `--create-date` Selects the splits whose creation dates are before this date. \
 `--start-date` Selects the splits that contain documents after this date (time-series indexes only). \
 `--end-date` Selects the splits that contain documents before this date (time-series indexes only). \
-`--output-format` Output format. Possible values are `table`, `json`, and `prettyjson`. \
+`--output-format` Output format. Possible values are `table`, `json`, and `pretty_json`. \
 ### split describe
 
 Displays metadata about a split.  
