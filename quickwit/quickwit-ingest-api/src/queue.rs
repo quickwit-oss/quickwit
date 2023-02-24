@@ -179,7 +179,7 @@ impl Queues {
             if first_key_opt.is_none() {
                 first_key_opt = Some(pos);
             }
-            num_bytes += add_doc(record, &mut doc_batch);
+            num_bytes += add_doc(&record, &mut doc_batch);
             if num_bytes > size_limit {
                 break;
             }

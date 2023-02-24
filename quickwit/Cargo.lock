@@ -3049,7 +3049,7 @@ dependencies = [
 [[package]]
 name = "mrecordlog"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/mrecordlog?rev=8b0e0cfacbbbfc9a544011b01380d689a6c7a3ae#8b0e0cfacbbbfc9a544011b01380d689a6c7a3ae"
+source = "git+https://github.com/quickwit-oss/mrecordlog?rev=1c864ed9144f7dc8b8f4f7d3d080ea8a61667b27#1c864ed9144f7dc8b8f4f7d3d080ea8a61667b27"
 dependencies = [
  "async-trait",
  "crc32fast",
