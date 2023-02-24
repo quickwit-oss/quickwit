@@ -160,8 +160,8 @@ impl QuickwitClient {
                     .await?;
 
                 if response.status_code() == StatusCode::TOO_MANY_REQUESTS {
-                    if let Some(f) = on_ingest_event.as_ref() {
-                        f(IngestEvent::Sleep)
+                    if let Some(event_fn) = &on_ingest_event {
+                        event_fn(IngestEvent::Sleep)
                     }
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 } else {
@@ -169,8 +169,8 @@ impl QuickwitClient {
                     break;
                 }
             }
-            if let Some(f) = on_ingest_event.as_ref() {
-                f(IngestEvent::IngestedNumBytes(batch.len()))
+            if let Some(event_fn) = on_ingest_event.as_ref() {
+                event_fn(IngestEvent::IngestedDocBatch(batch.len()))
             }
         }
         Ok(())
@@ -178,7 +178,7 @@ impl QuickwitClient {
 }
 
 pub enum IngestEvent {
-    IngestedNumBytes(usize),
+    IngestedDocBatch(usize),
     Sleep,
 }
 
