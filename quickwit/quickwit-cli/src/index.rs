@@ -731,11 +731,15 @@ impl DescriptiveStats {
 
 pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     debug!(args=?args, "ingest-docs");
-    println!("❯ Start ingesting documents...");
+    if let Some(input_path) = &args.input_path_opt {
+        println!("❯ Ingesting documents from {}.", input_path.display());
+    } else {
+        println!("❯ Ingesting documents from stdin.");
+    }
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
     let progress_bar = match &args.input_path_opt {
         Some(filepath) => {
-            let file_len = std::fs::metadata(filepath).context("context")?.len();
+            let file_len = std::fs::metadata(filepath).context("File not found")?.len();
             ProgressBar::new(file_len)
         }
         None => ProgressBar::new_spinner(),
@@ -745,7 +749,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     progress_bar.set_message("0MiB/s");
     let update_progress_bar = |ingest_event: IngestEvent| {
         match ingest_event {
-            IngestEvent::IngestedNumBytes(num_bytes) => progress_bar.inc(num_bytes as u64),
+            IngestEvent::IngestedDocBatch(num_bytes) => progress_bar.inc(num_bytes as u64),
             IngestEvent::Sleep => {} // To
         };
         let throughput =
@@ -764,7 +768,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .await?;
     progress_bar.finish();
     println!(
-        "{} Documents successfully ingested.",
+        "Ingested {} documents successfully.",
         "✔".color(GREEN_COLOR)
     );
     Ok(())
@@ -774,7 +778,7 @@ fn progress_bar_style() -> ProgressStyle {
     ProgressStyle::with_template(
         "{spinner:.blue} [{elapsed_precise}] {bytes}/{total_bytes} ({msg})",
     )
-    .unwrap()
+    .expect("Progress style should always be valid.")
     .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
 }
 
