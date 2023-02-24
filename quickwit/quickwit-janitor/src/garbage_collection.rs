@@ -138,7 +138,7 @@ pub async fn run_garbage_collect(
         .await?;
     }
 
-    // We delete marked for deleteion splits with update date is inferior
+    // We delete splits marked for deletion that have an update timestamp anterior
     // to `now - deletion_grace_period`.
     let updated_before_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - deletion_grace_period.as_secs() as i64;
