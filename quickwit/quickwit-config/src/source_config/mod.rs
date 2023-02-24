@@ -48,7 +48,6 @@ pub const INGEST_API_SOURCE_ID: &str = "_ingest-api-source";
 pub struct SourceConfig {
     pub source_id: String,
 
-    #[doc(hidden)]
     /// Maximum number of indexing pipelines spawned for the source on a given indexer.
     /// The maximum is reached only if there is enough `desired_num_pipelines` to run.
     /// The value is only used by sources that Quickwit knows how to distribute accross
@@ -89,8 +88,10 @@ impl SourceConfig {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
-        if self.source_type() != "kafka" && (self.desired_num_pipelines > 1) {
-            warn!("Quickwit currently supports multiple pipelines only for Kafka sources. Open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types.");
+        if !["kafka", "pulsar"].contains(&self.source_type())
+            && (self.desired_num_pipelines > 1 || self.max_num_pipelines_per_indexer > 1)
+        {
+            bail!("Quickwit currently supports multiple pipelines only for Kafka and Pulsar sources. Open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types.");
         }
         if self.desired_num_pipelines == 0 {
             bail!("Source config is not valid: `desired_num_pipelines` must be strictly positive.");
@@ -135,7 +136,7 @@ impl SourceConfig {
     /// Returns `desired_num_pipelines` if it's a Kafka source, else 1.
     pub fn desired_num_pipelines(&self) -> usize {
         match &self.source_params {
-            SourceParams::Kafka(_) => self.desired_num_pipelines,
+            SourceParams::Kafka(_) | SourceParams::Pulsar(_) => self.desired_num_pipelines,
             _ => 1,
         }
     }
@@ -143,7 +144,7 @@ impl SourceConfig {
     /// Returns `max_num_pipelines_per_indexer` if it's a Kafka source, else 1.
     pub fn max_num_pipelines_per_indexer(&self) -> usize {
         match &self.source_params {
-            SourceParams::Kafka(_) => self.max_num_pipelines_per_indexer,
+            SourceParams::Kafka(_) | SourceParams::Pulsar(_) => self.max_num_pipelines_per_indexer,
             _ => 1,
         }
     }
@@ -593,14 +594,134 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_invalid_source_config() {
-        let source_config_filepath = get_source_config_filepath("invalid-void-source.json");
-        let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
-        let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
-        let source_config =
-            SourceConfig::load(&source_config_uri, file_content.as_bytes()).unwrap_err();
-        assert!(source_config
-            .to_string()
-            .contains("`desired_num_pipelines` must be"));
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-void-source",
+                "desired_num_pipelines": 0,
+                "max_num_pipelines_per_indexer": 1,
+                "source_type": "void",
+                "params": {}
+            }
+            "#;
+            let source_config = SourceConfig::load(
+                &Uri::from_well_formed("file://source-config.json"),
+                content.as_bytes(),
+            )
+            .unwrap_err();
+            assert!(source_config
+                .to_string()
+                .contains("`desired_num_pipelines` must be"));
+        }
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-void-source",
+                "desired_num_pipelines": 1,
+                "max_num_pipelines_per_indexer": 0,
+                "source_type": "void",
+                "params": {}
+            }
+            "#;
+            let source_config = SourceConfig::load(
+                &Uri::from_well_formed("file://source-config.json"),
+                content.as_bytes(),
+            )
+            .unwrap_err();
+            println!("source_config {:?}", source_config);
+            assert!(source_config
+                .to_string()
+                .contains("`max_num_pipelines_per_indexer` must be"));
+        }
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-void-source",
+                "desired_num_pipelines": 1,
+                "max_num_pipelines_per_indexer": 2,
+                "source_type": "void",
+                "params": {}
+            }
+            "#;
+            let source_config = SourceConfig::load(
+                &Uri::from_well_formed("file://source-config.json"),
+                content.as_bytes(),
+            )
+            .unwrap_err();
+            assert!(source_config
+                .to_string()
+                .contains("supports multiple pipelines"));
+        }
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-void-source",
+                "desired_num_pipelines": 2,
+                "max_num_pipelines_per_indexer": 1,
+                "source_type": "void",
+                "params": {}
+            }
+            "#;
+            let source_config = SourceConfig::load(
+                &Uri::from_well_formed("file://source-config.json"),
+                content.as_bytes(),
+            )
+            .unwrap_err();
+            assert!(source_config
+                .to_string()
+                .contains("supports multiple pipelines"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_load_valid_distributed_source_config() {
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-kafka-source",
+                "desired_num_pipelines": 3,
+                "max_num_pipelines_per_indexer": 3,
+                "source_type": "kafka",
+                "params": {
+                    "topic": "my-topic"
+                }
+            }
+            "#;
+            let source_config = SourceConfig::load(
+                &Uri::from_well_formed("file://source-config.json"),
+                content.as_bytes(),
+            )
+            .unwrap();
+            assert_eq!(source_config.desired_num_pipelines(), 3);
+            assert_eq!(source_config.max_num_pipelines_per_indexer(), 3);
+        }
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-pulsar-source",
+                "desired_num_pipelines": 3,
+                "max_num_pipelines_per_indexer": 3,
+                "source_type": "pulsar",
+                "params": {
+                    "topics": ["my-topic"],
+                    "address": "http://localhost:6650"
+                }
+            }
+            "#;
+            let source_config = SourceConfig::load(
+                &Uri::from_well_formed("file://source-config.json"),
+                content.as_bytes(),
+            )
+            .unwrap();
+            assert_eq!(source_config.desired_num_pipelines(), 3);
+            assert_eq!(source_config.max_num_pipelines_per_indexer(), 3);
+        }
     }
 
     #[test]
