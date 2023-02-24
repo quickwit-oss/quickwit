@@ -354,9 +354,17 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     }
 
     pub async fn toggle(&self, source_id: &str, enable: bool) -> Result<(), Error> {
-        let path = format!("{}/{source_id}", self.sources_root_url());
+        let json_value = json!({ "enable": enable });
+        let json_bytes = serde_json::to_vec(&json_value).expect("Serialization should never fail.");
+        let path = format!("{}/{source_id}/toggle", self.sources_root_url());
         self.transport
-            .send(Method::PUT, &path, None, Some(&[("enable", enable)]), None)
+            .send(
+                Method::PUT,
+                &path,
+                None,
+                Some(&[("enable", enable)]),
+                Some(Bytes::from(json_bytes)),
+            )
             .await?;
         Ok(())
     }
