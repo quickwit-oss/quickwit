@@ -89,14 +89,17 @@ release-feature-set = [
   "quickwit-metastore/azure",
   "quickwit-indexing/kafka",
   "quickwit-indexing/kinesis",
+  "quickwit-indexing/pulsar",
   "openssl-support",
   "jemalloc",
 ]
+
 release-feature-vendored-set = [
   "quickwit-metastore/postgres",
   "quickwit-metastore/azure",
   "quickwit-indexing/vendored-kafka",
   "quickwit-indexing/kinesis",
+  "quickwit-indexing/pulsar",
   "openssl-support",
   "jemalloc",
 ]
@@ -106,6 +109,7 @@ release-macos-feature-vendored-set = [
   "quickwit-metastore/azure",
   "quickwit-indexing/vendored-kafka-macos",
   "quickwit-indexing/kinesis",
+  "quickwit-indexing/pulsar",
   "openssl-support",
   "jemalloc",
 ]
