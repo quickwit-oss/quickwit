@@ -30,6 +30,7 @@ use bytes::Bytes;
 use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
+use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType};
 use quickwit_common::uri::Uri;
@@ -40,7 +41,7 @@ use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::{IndexMetadata, Split};
 use quickwit_proto::SortOrder;
 use quickwit_rest_client::models::IngestSource;
-use quickwit_rest_client::rest_client::{QuickwitClient, Transport};
+use quickwit_rest_client::rest_client::{IngestEvent, QuickwitClient, Transport};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortByField};
 use quickwit_storage::load_file;
@@ -730,20 +731,51 @@ impl DescriptiveStats {
 
 pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     debug!(args=?args, "ingest-docs");
-    println!("❯ Ingesting documents with the ingest API...");
+    println!("❯ Start ingesting documents...");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
+    let progress_bar = match &args.input_path_opt {
+        Some(filepath) => {
+            let file_len = std::fs::metadata(filepath).context("context")?.len();
+            ProgressBar::new(file_len)
+        }
+        None => ProgressBar::new_spinner(),
+    };
+    progress_bar.enable_steady_tick(Duration::from_millis(100));
+    progress_bar.set_style(progress_bar_style());
+    progress_bar.set_message("0MiB/s");
+    let update_progress_bar = |ingest_event: IngestEvent| {
+        match ingest_event {
+            IngestEvent::IngestedNumBytes(num_bytes) => progress_bar.inc(num_bytes as u64),
+            IngestEvent::Sleep => {} // To
+        };
+        let throughput =
+            progress_bar.position() as f64 / progress_bar.elapsed().as_secs_f64() / 1024.0 / 1024.0;
+        progress_bar.set_message(format!("{throughput:.1} MiB/s"));
+    };
+
     let transport = Transport::new(args.cluster_endpoint);
     let qw_client = QuickwitClient::new(transport);
     let ingest_source = match args.input_path_opt {
         Some(filepath) => IngestSource::File(filepath),
         None => IngestSource::Stdin,
     };
-    qw_client.ingest(&args.index_id, ingest_source).await?;
+    qw_client
+        .ingest(&args.index_id, ingest_source, Some(&update_progress_bar))
+        .await?;
+    progress_bar.finish();
     println!(
         "{} Documents successfully ingested.",
         "✔".color(GREEN_COLOR)
     );
     Ok(())
+}
+
+fn progress_bar_style() -> ProgressStyle {
+    ProgressStyle::with_template(
+        "{spinner:.blue} [{elapsed_precise}] {bytes}/{total_bytes} ({msg})",
+    )
+    .unwrap()
+    .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
 }
 
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponseRest> {

@@ -79,6 +79,7 @@ hyper = { version = "0.14", features = [
 ] }
 hyper-rustls = "0.23"
 indexmap = { version = "1.9.2", features = ["serde"] }
+indicatif = "0.17.3"
 itertools = "0.10.5"
 json_comments = "0.2"
 libz-sys = "1.1.8"

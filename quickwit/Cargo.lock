@@ -4403,6 +4403,7 @@ dependencies = [
  "futures",
  "humansize",
  "humantime",
+ "indicatif",
  "itertools",
  "once_cell",
  "openssl-probe",

@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bytes::Bytes;
 use quickwit_common::FileEntry;
@@ -139,7 +139,12 @@ impl QuickwitClient {
         SourceClient::new(&self.transport, index_id)
     }
 
-    pub async fn ingest(&self, index_id: &str, ingest_source: IngestSource) -> Result<(), Error> {
+    pub async fn ingest(
+        &self,
+        index_id: &str,
+        ingest_source: IngestSource,
+        on_ingest_event: Option<&dyn Fn(IngestEvent)>,
+    ) -> Result<(), Error> {
         let ingest_path = format!("{index_id}/ingest");
         let mut batch_reader = match ingest_source {
             IngestSource::File(filepath) => {
@@ -147,9 +152,6 @@ impl QuickwitClient {
             }
             IngestSource::Stdin => BatchLineReader::from_stdin(INGEST_CONTENT_LENGTH_LIMIT),
         };
-        let start = Instant::now();
-        let mut num_bytes_ingested = 0;
-
         while let Some(batch) = batch_reader.next_batch().await? {
             loop {
                 let response = self
@@ -158,21 +160,26 @@ impl QuickwitClient {
                     .await?;
 
                 if response.status_code() == StatusCode::TOO_MANY_REQUESTS {
-                    println!("Rate limited, retrying in 1 second...");
+                    if let Some(f) = on_ingest_event.as_ref() {
+                        f(IngestEvent::Sleep)
+                    }
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 } else {
                     response.check().await?;
                     break;
                 }
             }
-            num_bytes_ingested += batch.len();
-
-            let throughput =
-                num_bytes_ingested as f64 / start.elapsed().as_secs_f64() / 1024.0 / 1024.0;
-            println!("Indexing throughput: {throughput:.1} MiB/s");
+            if let Some(f) = on_ingest_event.as_ref() {
+                f(IngestEvent::IngestedNumBytes(batch.len()))
+            }
         }
         Ok(())
     }
+}
+
+pub enum IngestEvent {
+    IngestedNumBytes(usize),
+    Sleep,
 }
 
 /// Client for indexes APIs.
@@ -503,7 +510,10 @@ mod test {
             .mount(&mock_server)
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
-        qw_client.ingest("my-index", ingest_source).await.unwrap();
+        qw_client
+            .ingest("my-index", ingest_source, None)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -529,7 +539,7 @@ mod test {
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
         let error = qw_client
-            .ingest("my-index", ingest_source)
+            .ingest("my-index", ingest_source, None)
             .await
             .unwrap_err();
         assert!(matches!(error, Error::Api(_)));
