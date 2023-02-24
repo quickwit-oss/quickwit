@@ -77,7 +77,7 @@ OTEL_BSP_MAX_EXPORT_BATCH_SIZE=8
 
 If you are on MacOS, the default UDP packet size is 9216 bytes which is too low compared to the jaeger exporter max size set by default at 65000 bytes. As a workaround, you can increase the limit at your own risk: `sudo sysctl -w net.inet.udp.maxdgram=65535`.
 
-The `OTEL_BSP_MAX_EXPORT_BATCH_SIZE` is the key parameter, it sets the maximum number of spans sent to Jaeger in one batch. Quickwit tends to produce spans of relatively big size and if the batch size is greater than the maximum UDP packet size, the sending of the batch to Jaeger will fail and the following error will appear in the logs: 
+The `OTEL_BSP_MAX_EXPORT_BATCH_SIZE` is the key parameter, it sets the maximum number of spans sent to Jaeger in one batch. Quickwit tends to produce spans of relatively big size and if the batch size is greater than the maximum UDP packet size, the sending of the batch to Jaeger will fail and the following error will appear in the logs:
 
 ```
 OpenTelemetry trace error occurred. Exporter jaeger encountered the following error(s): thrift agent failed with transport error
@@ -91,7 +91,7 @@ Ref: https://github.com/open-telemetry/opentelemetry-rust/issues/851
 ## Using tokio console
 1. Install tokio-console by running `cargo install tokio-console`.
 2. Install the quickwit binary in the quickwit-cli folder `RUSTFLAGS="--cfg tokio_unstable" cargo install --path . --features tokio-console`
-3. Launch a long running command such as index and activate tokio with the: `QW_TOKIO_CONSOLE_ENABLED=1 quickwit index ...`
+3. Launch a long running command such as index and activate tokio with the: `QW_ENABLE_TOKIO_CONSOLE=1 quickwit index ...`
 4. Run `tokio-console`.
 
 ## Building binaries
