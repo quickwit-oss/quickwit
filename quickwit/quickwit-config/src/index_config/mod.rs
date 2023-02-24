@@ -297,6 +297,7 @@ impl IndexConfig {
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
         let index_uri = Uri::from_str(index_uri).unwrap();
         let doc_mapping_json = r#"{
+            "mode": "lenient",
             "field_mappings": [
                 {
                     "name": "timestamp",
@@ -685,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn test_minimal_index_config_default_lenient() {
+    fn test_minimal_index_config_default_dynamic() {
         let config_yaml = r#"
             version: 0.6
             index_id: hdfs-logs
@@ -698,7 +699,7 @@ mod tests {
             &Uri::from_well_formed("s3://my-index"),
         )
         .unwrap();
-        assert_eq!(minimal_config.doc_mapping.mode, ModeType::Lenient);
+        assert_eq!(minimal_config.doc_mapping.mode, ModeType::Dynamic);
     }
 
     #[test]
