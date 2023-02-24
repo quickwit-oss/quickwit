@@ -422,7 +422,7 @@ pub async fn toggle_ingest_api_cli(args: ToggleIngestApiArgs) -> anyhow::Result<
     let qw_client = QuickwitClient::new(transport);
     qw_client
         .sources(&args.index_id)
-        .toggle(&INGEST_API_SOURCE_ID, args.enable)
+        .toggle(INGEST_API_SOURCE_ID, args.enable)
         .await
         .context("Failed to update source")?;
     let toggled_state_name = if args.enable { "enabled" } else { "disabled" };
