@@ -376,9 +376,9 @@ field_mappings:
 The `mode` describes how Quickwit should behave when it receives a field that is not defined in the field mapping.
 
 Quickwit offers you three different modes:
-- `lenient` (default value): unmapped fields are dismissed by Quickwit.
+- `dynamic` (default value): unmapped fields are gathered by Quickwit and handled as defined in the `dynamic_mapping` parameter.
+- `lenient`: unmapped fields are dismissed by Quickwit.
 - `strict`: if a document contains a field that is not mapped, quickwit will dismiss it, and count it as an error.
-- `dynamic`: unmapped fields are gathered by Quickwit and handled as defined in the `dynamic_mapping` parameter.
 
 `dynamic_mapping` offers the same configuration options as when configuring a `json` field. It defaults to:
 
@@ -401,12 +401,9 @@ For instance, in a entirely schemaless settings, a minimal index configuration c
 ```yaml
 version: 0.4
 index_id: my-dynamic-index
-# note we did not map anything.
-doc_mapping:
-  mode: dynamic
 ```
 
-We could then index a complex document like the following:
+With such a simple configuration, we can index a complex document like the following:
 
 ```json
 {
@@ -456,7 +453,7 @@ For field names containing the `.` character, you will need to escape it when re
 
 ### Behavior with null values or missing fields
 
-Fields with `null` or missing fields in your JSON document will be silently ignored when indexing with the exception of non-text fast fields. Non-text fast fields are required and entire record will be rejected with an error if at least one fast field is missing. 
+Fields with `null` or missing fields in your JSON document will be silently ignored when indexing with the exception of non-text fast fields. Non-text fast fields are required and entire record will be rejected with an error if at least one fast field is missing.
 
 ## Indexing settings
 

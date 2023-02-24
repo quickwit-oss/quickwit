@@ -186,7 +186,8 @@ mod tests {
 
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions};
     use crate::{
-        DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, WarmupInfo, DYNAMIC_FIELD_NAME,
+        DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType, WarmupInfo,
+        DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -337,6 +338,7 @@ mod tests {
                 Cardinality::SingleValue,
             ),
         });
+        doc_mapper_builder.mode = ModeType::Lenient;
         doc_mapper_builder
             .default_search_fields
             .push("json_field".to_string());
@@ -372,6 +374,7 @@ mod tests {
                     Cardinality::SingleValue,
                 ),
             }],
+            mode: crate::ModeType::Lenient,
             default_search_fields: vec!["json_field".to_string()],
             ..Default::default()
         };

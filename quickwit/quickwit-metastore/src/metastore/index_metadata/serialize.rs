@@ -46,7 +46,7 @@ impl TryFrom<VersionedIndexMetadata> for IndexMetadata {
         match index_metadata {
             // When we have more than one version, you should chain version conversion.
             // ie. Implement conversion from V_k -> V_{k+1}
-            VersionedIndexMetadata::V0_4(v3) => v3.try_into(),
+            VersionedIndexMetadata::V0_4(v4) => v4.try_into(),
         }
     }
 }
