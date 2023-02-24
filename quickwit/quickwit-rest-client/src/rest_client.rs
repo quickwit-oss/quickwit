@@ -234,9 +234,11 @@ impl<'a> IndexClient<'a> {
 
     pub async fn clear(&self, index_id: &str) -> Result<(), Error> {
         let path = format!("indexes/{index_id}/clear");
-        self.transport
+        let response = self
+            .transport
             .send::<()>(Method::PUT, &path, None, None, None)
             .await?;
+        response.check().await?;
         Ok(())
     }
 
@@ -290,7 +292,6 @@ impl<'a, 'b> SplitClient<'a, 'b> {
                 None,
             )
             .await?;
-
         let splits = response.deserialize().await?;
         Ok(splits)
     }
@@ -298,9 +299,11 @@ impl<'a, 'b> SplitClient<'a, 'b> {
     pub async fn mark_for_deletion(&self, split_ids: Vec<String>) -> Result<(), Error> {
         let path = format!("{}/mark-for-deletion", self.splits_root_url());
         let body = Bytes::from(serde_json::to_vec(&json!({ "split_ids": split_ids }))?);
-        self.transport
+        let response = self
+            .transport
             .send::<()>(Method::PUT, &path, None, None, Some(body))
             .await?;
+        response.check().await?;
         Ok(())
     }
 }
@@ -354,18 +357,30 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     }
 
     pub async fn toggle(&self, source_id: &str, enable: bool) -> Result<(), Error> {
-        let path = format!("{}/{source_id}", self.sources_root_url());
-        self.transport
-            .send(Method::PUT, &path, None, Some(&[("enable", enable)]), None)
+        let json_value = json!({ "enable": enable });
+        let json_bytes = serde_json::to_vec(&json_value).expect("Serialization should never fail.");
+        let path = format!("{}/{source_id}/toggle", self.sources_root_url());
+        let response = self
+            .transport
+            .send::<()>(
+                Method::PUT,
+                &path,
+                None,
+                None,
+                Some(Bytes::from(json_bytes)),
+            )
             .await?;
+        response.check().await?;
         Ok(())
     }
 
     pub async fn reset_checkpoint(&self, source_id: &str) -> Result<(), Error> {
         let path = format!("{}/{source_id}/reset-checkpoint", self.sources_root_url());
-        self.transport
+        let response = self
+            .transport
             .send::<()>(Method::PUT, &path, None, None, None)
             .await?;
+        response.check().await?;
         Ok(())
     }
 
@@ -374,16 +389,17 @@ impl<'a, 'b> SourceClient<'a, 'b> {
             .transport
             .send::<()>(Method::GET, &self.sources_root_url(), None, None, None)
             .await?;
-
         let source_configs = response.deserialize().await?;
         Ok(source_configs)
     }
 
     pub async fn delete(&self, source_id: &str) -> Result<(), Error> {
         let path = format!("{}/{source_id}", self.sources_root_url());
-        self.transport
+        let response = self
+            .transport
             .send::<()>(Method::DELETE, &path, None, None, None)
             .await?;
+        response.check().await?;
         Ok(())
     }
 }
@@ -463,6 +479,7 @@ mod test {
             .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(
                 json!({"num_hits": 0, "hits": [], "elapsed_time_micros": 100, "errors": []}),
             ))
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         assert_eq!(
@@ -507,6 +524,7 @@ mod test {
             .and(path("/api/v1/my-index/ingest"))
             .and(body_bytes(buffer))
             .respond_with(ResponseTemplate::new(StatusCode::OK))
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
@@ -533,8 +551,9 @@ mod test {
             .and(path("/api/v1/my-index/ingest"))
             .and(body_bytes(buffer.clone()))
             .respond_with(
-                ResponseTemplate::new(500).set_body_json(json!({"message": "internal error"})),
+                ResponseTemplate::new(405).set_body_json(json!({"message": "internal error"})),
             )
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
@@ -558,6 +577,7 @@ mod test {
             .respond_with(
                 ResponseTemplate::new(StatusCode::OK).set_body_json(vec![index_metadata.clone()]),
             )
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         assert_eq!(
@@ -573,6 +593,7 @@ mod test {
             .respond_with(
                 ResponseTemplate::new(StatusCode::OK).set_body_json(index_metadata.clone()),
             )
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         let post_body = Bytes::from(serde_json::to_vec(&index_config_to_create).unwrap());
@@ -592,6 +613,7 @@ mod test {
             .respond_with(
                 ResponseTemplate::new(StatusCode::OK).set_body_json(index_metadata.clone()),
             )
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         assert_eq!(
@@ -607,9 +629,19 @@ mod test {
         Mock::given(method("PUT"))
             .and(path("/api/v1/indexes/my-index/clear"))
             .respond_with(ResponseTemplate::new(StatusCode::OK))
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         qw_client.indexes().clear("my-index").await.unwrap();
+
+        // PUT clear index returns an error
+        Mock::given(method("PUT"))
+            .and(path("/api/v1/indexes/my-index/clear"))
+            .respond_with(ResponseTemplate::new(StatusCode::BAD_REQUEST))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        qw_client.indexes().clear("my-index").await.unwrap_err();
 
         // DELETE index
         Mock::given(method("DELETE"))
@@ -619,9 +651,23 @@ mod test {
                 ResponseTemplate::new(StatusCode::OK)
                     .set_body_json(json!([{"file_name": "filename", "file_size_in_bytes": 100}])),
             )
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         qw_client.indexes().delete("my-index", true).await.unwrap();
+
+        // DELETE index returns an error
+        Mock::given(method("DELETE"))
+            .and(path("/api/v1/indexes/my-index"))
+            .respond_with(ResponseTemplate::new(StatusCode::UNSUPPORTED_MEDIA_TYPE))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        qw_client
+            .indexes()
+            .delete("my-index", true)
+            .await
+            .unwrap_err();
     }
 
     #[tokio::test]
@@ -639,6 +685,7 @@ mod test {
             .and(path("/api/v1/indexes/my-index/splits"))
             .and(query_param("start_timestamp", "1"))
             .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(vec![split.clone()]))
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         assert_eq!(
@@ -650,12 +697,14 @@ mod test {
             vec![split.clone()]
         );
 
+        // Mark for deletion
         Mock::given(method("PUT"))
             .and(path("/api/v1/indexes/my-index/splits/mark-for-deletion"))
             .respond_with(
                 ResponseTemplate::new(StatusCode::OK)
                     .set_body_json(json!({"split_ids": ["split-1"]})),
             )
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         qw_client
@@ -663,6 +712,19 @@ mod test {
             .mark_for_deletion(vec!["split-1".to_string()])
             .await
             .unwrap();
+
+        // Mark for deletion returns an error
+        Mock::given(method("PUT"))
+            .and(path("/api/v1/indexes/my-index/splits/mark-for-deletion"))
+            .respond_with(ResponseTemplate::new(StatusCode::METHOD_NOT_ALLOWED))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        qw_client
+            .splits("my-index")
+            .mark_for_deletion(vec!["split-1".to_string()])
+            .await
+            .unwrap_err();
     }
 
     #[tokio::test]
@@ -678,6 +740,7 @@ mod test {
             .respond_with(
                 ResponseTemplate::new(StatusCode::OK).set_body_json(source_config.clone()),
             )
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         assert_eq!(
@@ -695,6 +758,7 @@ mod test {
             .respond_with(
                 ResponseTemplate::new(StatusCode::OK).set_body_json(vec![source_config.clone()]),
             )
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         assert_eq!(
@@ -704,17 +768,31 @@ mod test {
 
         // Toggle source
         Mock::given(method("PUT"))
-            .and(path("/api/v1/indexes/my-index/sources/my-source/toggle"))
+            .and(path("/api/v1/indexes/my-index/sources/my-source-1/toggle"))
             .respond_with(
                 ResponseTemplate::new(StatusCode::OK).set_body_json(json!({"enable": true})),
             )
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         qw_client
             .sources("my-index")
-            .toggle("my-source", true)
+            .toggle("my-source-1", true)
             .await
             .unwrap();
+
+        // Toggle source returns an error
+        Mock::given(method("PUT"))
+            .and(path("/api/v1/indexes/my-index/sources/my-source-2/toggle"))
+            .respond_with(ResponseTemplate::new(StatusCode::BAD_REQUEST))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        qw_client
+            .sources("my-index")
+            .toggle("my-source-2", true)
+            .await
+            .unwrap_err();
 
         // PUT reset checkpoint
         Mock::given(method("PUT"))
@@ -722,6 +800,7 @@ mod test {
                 "/api/v1/indexes/my-index/sources/my-source/reset-checkpoint",
             ))
             .respond_with(ResponseTemplate::new(StatusCode::OK))
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         qw_client
@@ -730,10 +809,26 @@ mod test {
             .await
             .unwrap();
 
+        // PUT reset checkpoint returns an error
+        Mock::given(method("PUT"))
+            .and(path(
+                "/api/v1/indexes/my-index/sources/my-source/reset-checkpoint",
+            ))
+            .respond_with(ResponseTemplate::new(StatusCode::BAD_GATEWAY))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        qw_client
+            .sources("my-index")
+            .reset_checkpoint("my-source")
+            .await
+            .unwrap_err();
+
         // DELETE source
         Mock::given(method("DELETE"))
             .and(path("/api/v1/indexes/my-index/sources/my-source"))
             .respond_with(ResponseTemplate::new(StatusCode::OK))
+            .up_to_n_times(1)
             .mount(&mock_server)
             .await;
         qw_client
@@ -741,5 +836,18 @@ mod test {
             .delete("my-source")
             .await
             .unwrap();
+
+        // DELETE source returns an error
+        Mock::given(method("DELETE"))
+            .and(path("/api/v1/indexes/my-index/sources/my-source"))
+            .respond_with(ResponseTemplate::new(StatusCode::BAD_GATEWAY))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        qw_client
+            .sources("my-index")
+            .delete("my-source")
+            .await
+            .unwrap_err();
     }
 }

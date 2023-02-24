@@ -1323,6 +1323,12 @@ mod tests {
         )
         .recover(recover_fn);
         let resp = warp::test::request()
+            .path("/indexes/quickwit-demo-index/sources/source-to-toggle")
+            .method("PUT")
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 405);
+        let resp = warp::test::request()
             .path("/indexes/quickwit-demo-index/sources/source-to-toggle/toggle")
             .method("PUT")
             .json(&true)

@@ -414,14 +414,17 @@ async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
 
 pub async fn toggle_ingest_api_cli(args: ToggleIngestApiArgs) -> anyhow::Result<()> {
     debug!(args=?args, "toggle-ingest-api");
-    println!("❯ Toggling ingest API...");
-    toggle_source_cli(ToggleSourceArgs {
-        cluster_endpoint: args.cluster_endpoint,
-        enable: args.enable,
-        index_id: args.index_id,
-        source_id: INGEST_API_SOURCE_ID.to_string(),
-    })
-    .await?;
+    println!(
+        "❯ {}abling ingest API...",
+        if args.enable { "En" } else { "Dis" }
+    );
+    let transport = Transport::new(args.cluster_endpoint);
+    let qw_client = QuickwitClient::new(transport);
+    qw_client
+        .sources(&args.index_id)
+        .toggle(INGEST_API_SOURCE_ID, args.enable)
+        .await
+        .context("Failed to update source")?;
     let toggled_state_name = if args.enable { "enabled" } else { "disabled" };
     println!(
         "{} Source successfully {}.",
