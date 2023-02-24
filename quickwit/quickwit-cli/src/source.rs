@@ -414,7 +414,10 @@ async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
 
 pub async fn toggle_ingest_api_cli(args: ToggleIngestApiArgs) -> anyhow::Result<()> {
     debug!(args=?args, "toggle-ingest-api");
-    println!("❯ {}abling ingest API...", if args.enabled { "En" } else { "Dis" });
+    println!(
+        "❯ {}abling ingest API...",
+        if args.enabled { "En" } else { "Dis" }
+    );
     let transport = Transport::new(args.cluster_endpoint);
     let qw_client = QuickwitClient::new(transport);
     qw_client
