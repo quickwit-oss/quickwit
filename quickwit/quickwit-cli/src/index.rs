@@ -38,7 +38,7 @@ use quickwit_common::GREEN_COLOR;
 use quickwit_config::{ConfigFormat, IndexConfig};
 use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::IndexingPipeline;
-use quickwit_metastore::{IndexMetadata, Split};
+use quickwit_metastore::{IndexMetadata, Split, SplitState};
 use quickwit_proto::SortOrder;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{IngestEvent, QuickwitClient, Transport};
@@ -571,7 +571,11 @@ impl IndexStats {
         index_metadata: IndexMetadata,
         splits: Vec<Split>,
     ) -> anyhow::Result<Self> {
-        let splits_num_docs = splits
+        let published_splits: Vec<Split> = splits
+            .into_iter()
+            .filter(|split| split.split_state == SplitState::Published)
+            .collect();
+        let splits_num_docs = published_splits
             .iter()
             .map(|split| split.split_metadata.num_docs)
             .sorted()
@@ -579,8 +583,9 @@ impl IndexStats {
 
         let total_num_docs = splits_num_docs.iter().sum::<usize>();
 
-        let splits_bytes = splits
+        let splits_bytes = published_splits
             .iter()
+            .filter(|split| split.split_state == SplitState::Published)
             .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
             .sorted()
             .collect_vec();
@@ -592,12 +597,12 @@ impl IndexStats {
             .timestamp_field
             .is_some()
         {
-            let time_min = splits
+            let time_min = published_splits
                 .iter()
                 .flat_map(|split| split.split_metadata.time_range.clone())
                 .map(|time_range| *time_range.start())
                 .min();
-            let time_max = splits
+            let time_max = published_splits
                 .iter()
                 .flat_map(|split| split.split_metadata.time_range.clone())
                 .map(|time_range| *time_range.end())
@@ -611,7 +616,7 @@ impl IndexStats {
             None
         };
 
-        let (num_docs_descriptive, num_bytes_descriptive) = if !splits.is_empty() {
+        let (num_docs_descriptive, num_bytes_descriptive) = if !published_splits.is_empty() {
             (
                 DescriptiveStats::maybe_new(&splits_num_docs),
                 DescriptiveStats::maybe_new(&splits_bytes),
@@ -624,7 +629,7 @@ impl IndexStats {
         Ok(Self {
             index_id: index_config.index_id.clone(),
             index_uri: index_config.index_uri.clone(),
-            num_published_splits: splits.len(),
+            num_published_splits: published_splits.len(),
             num_published_docs: total_num_docs,
             size_published_docs: total_bytes,
             timestamp_field_name: index_config.doc_mapping.timestamp_field,
@@ -638,14 +643,14 @@ impl IndexStats {
         let index_stats_table = create_table(self, "General Information");
 
         let index_stats_table = if let Some(docs_stats) = &self.num_docs_descriptive {
-            let doc_stats_table = create_table(docs_stats, "Document count stats");
+            let doc_stats_table = create_table(docs_stats, "Document count stats (published)");
             index_stats_table.with(Concat::vertical(doc_stats_table))
         } else {
             index_stats_table
         };
 
         let index_stats_table = if let Some(size_stats) = &self.num_bytes_descriptive {
-            let size_stats_table = create_table(size_stats, "Size in MB stats");
+            let size_stats_table = create_table(size_stats, "Size in MB stats (published)");
             index_stats_table.with(Concat::vertical(size_stats_table))
         } else {
             index_stats_table
@@ -1056,27 +1061,38 @@ mod test {
         let mut split_metadata = SplitMetadata::for_test(split_id.to_string());
         split_metadata.num_docs = num_docs;
         split_metadata.time_range = Some(time_range);
-        split_metadata.footer_offsets = 0..size;
+        split_metadata.footer_offsets = (size - 10)..size;
         split_metadata
     }
 
     #[test]
     fn test_index_stats() -> anyhow::Result<()> {
         let index_id = "index-stats-env".to_string();
-        let split_id = "test_split_id".to_string();
+        let split_id_1 = "test_split_id_1".to_string();
+        let split_id_2 = "test_split_id_2".to_string();
         let index_uri = "s3://some-test-bucket";
 
         let index_metadata = IndexMetadata::for_test(&index_id, index_uri);
-        let split_metadata = split_metadata_for_test(&split_id, 100_000, 1111..=2222, 15_000_000);
+        let split_metadata_1 =
+            split_metadata_for_test(&split_id_1, 100_000, 1111..=2222, 15_000_000);
+        let split_metadata_2 =
+            split_metadata_for_test(&split_id_2, 100_000, 1000..=3000, 30_000_000);
 
-        let split_data = Split {
-            split_metadata,
+        let split_data_1 = Split {
+            split_metadata: split_metadata_1,
             split_state: quickwit_metastore::SplitState::Published,
             update_timestamp: 0,
             publish_timestamp: Some(0),
         };
+        let split_data_2 = Split {
+            split_metadata: split_metadata_2,
+            split_state: quickwit_metastore::SplitState::MarkedForDeletion,
+            update_timestamp: 0,
+            publish_timestamp: Some(0),
+        };
 
-        let index_stats = IndexStats::from_metadata(index_metadata, vec![split_data])?;
+        let index_stats =
+            IndexStats::from_metadata(index_metadata, vec![split_data_1, split_data_2])?;
 
         assert_eq!(index_stats.index_id, index_id);
         assert_eq!(index_stats.index_uri.as_str(), index_uri);
