@@ -26,6 +26,7 @@ use std::time::{Duration, Instant};
 use std::{fmt, io};
 
 use anyhow::{bail, Context};
+use byte_unit::Byte;
 use bytes::Bytes;
 use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
@@ -514,8 +515,8 @@ pub struct IndexStats {
     pub index_id: String,
     pub index_uri: Uri,
     pub num_published_splits: usize,
-    pub num_published_docs: usize,
-    pub size_published_docs: usize,
+    pub num_published_docs: u64,
+    pub size_published_docs: Byte,
     pub timestamp_field_name: Option<String>,
     pub timestamp_range: Option<(i64, i64)>,
     pub num_docs_descriptive: Option<DescriptiveStats>,
@@ -531,7 +532,9 @@ impl Tabled for IndexStats {
             self.index_uri.to_string(),
             self.num_published_splits.to_string(),
             self.num_published_docs.to_string(),
-            format!("{} MB", self.size_published_docs),
+            self.size_published_docs
+                .get_appropriate_unit(false)
+                .to_string(),
             display_option_in_table(&self.timestamp_field_name),
             display_timestamp_range(&self.timestamp_range),
         ]
@@ -577,19 +580,19 @@ impl IndexStats {
             .collect();
         let splits_num_docs = published_splits
             .iter()
-            .map(|split| split.split_metadata.num_docs)
+            .map(|split| split.split_metadata.num_docs as u64)
             .sorted()
             .collect_vec();
 
-        let total_num_docs = splits_num_docs.iter().sum::<usize>();
+        let total_num_docs = splits_num_docs.iter().sum::<u64>();
 
         let splits_bytes = published_splits
             .iter()
             .filter(|split| split.split_state == SplitState::Published)
-            .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
+            .map(|split| split.split_metadata.footer_offsets.end)
             .sorted()
             .collect_vec();
-        let total_bytes = splits_bytes.iter().sum::<usize>();
+        let total_bytes = splits_bytes.iter().sum::<u64>();
 
         let timestamp_range = if index_metadata
             .index_config()
@@ -631,7 +634,7 @@ impl IndexStats {
             index_uri: index_config.index_uri.clone(),
             num_published_splits: published_splits.len(),
             num_published_docs: total_num_docs,
-            size_published_docs: total_bytes,
+            size_published_docs: Byte::from(total_bytes),
             timestamp_field_name: index_config.doc_mapping.timestamp_field,
             timestamp_range,
             num_docs_descriptive,
@@ -650,7 +653,19 @@ impl IndexStats {
         };
 
         let index_stats_table = if let Some(size_stats) = &self.num_bytes_descriptive {
-            let size_stats_table = create_table(size_stats, "Size in MB stats (published)");
+            // size_stats is in byte, we have to divide all stats by 1_000_000 to be in MB.
+            let size_stats_in_mb = DescriptiveStats {
+                max_val: size_stats.max_val / 1_000_000,
+                min_val: size_stats.min_val / 1_000_000,
+                mean_val: size_stats.mean_val / 1_000_000.0,
+                q1: size_stats.q1 / 1_000_000.0,
+                q25: size_stats.q25 / 1_000_000.0,
+                q50: size_stats.q50 / 1_000_000.0,
+                q75: size_stats.q75 / 1_000_000.0,
+                q99: size_stats.q99 / 1_000_000.0,
+                std_val: size_stats.std_val / 1_000_000.0,
+            };
+            let size_stats_table = create_table(size_stats_in_mb, "Size in MB stats (published)");
             index_stats_table.with(Concat::vertical(size_stats_table))
         } else {
             index_stats_table
@@ -682,8 +697,8 @@ fn create_table(table: impl Tabled, header: &str) -> Table {
 pub struct DescriptiveStats {
     mean_val: f32,
     std_val: f32,
-    min_val: usize,
-    max_val: usize,
+    min_val: u64,
+    max_val: u64,
     q1: f32,
     q25: f32,
     q50: f32,
@@ -716,7 +731,7 @@ impl Tabled for DescriptiveStats {
 }
 
 impl DescriptiveStats {
-    pub fn maybe_new(values: &[usize]) -> Option<DescriptiveStats> {
+    pub fn maybe_new(values: &[u64]) -> Option<DescriptiveStats> {
         if values.is_empty() {
             return None;
         }
@@ -1098,7 +1113,7 @@ mod test {
         assert_eq!(index_stats.index_uri.as_str(), index_uri);
         assert_eq!(index_stats.num_published_splits, 1);
         assert_eq!(index_stats.num_published_docs, 100_000);
-        assert_eq!(index_stats.size_published_docs, 15);
+        assert_eq!(index_stats.size_published_docs, Byte::from(15_000_000usize));
         assert_eq!(
             index_stats.timestamp_field_name,
             Some("timestamp".to_string())
@@ -1136,13 +1151,13 @@ mod test {
 
         let splits_num_docs = splits
             .iter()
-            .map(|split| split.split_metadata.num_docs)
+            .map(|split| split.split_metadata.num_docs as u64)
             .sorted()
             .collect_vec();
 
         let splits_bytes = splits
             .iter()
-            .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
+            .map(|split| split.split_metadata.footer_offsets.end)
             .sorted()
             .collect_vec();
 
