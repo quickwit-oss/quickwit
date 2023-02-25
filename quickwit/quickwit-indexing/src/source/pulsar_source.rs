@@ -77,7 +77,7 @@ impl TypedSourceFactory for PulsarSourceFactory {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PulsarSourceState {
     /// Number of bytes processed by the source.
     pub num_bytes_processed: u64,
@@ -470,7 +470,7 @@ mod pulsar_broker_tests {
     use std::sync::Arc;
 
     use futures::future::join_all;
-    use quickwit_actors::{ActorHandle, Inbox, Universe};
+    use quickwit_actors::{ActorHandle, Inbox, Universe, HEARTBEAT};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{
@@ -1149,5 +1149,63 @@ mod pulsar_broker_tests {
         });
         assert_eq!(exit_state1, expected_state);
         assert_eq!(exit_state2, expected_state);
+    }
+
+    #[tokio::test]
+    async fn test_partitioned_topic_multi_consumer_ingestion_with_failure() {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let metastore = metastore_for_test();
+        let topic =
+            append_random_suffix("test-pulsar-source--partitioned-multi-consumer-failure--topic");
+
+        let index_id =
+            append_random_suffix("test-pulsar-source--partitioned-multi-consumer-failure--index");
+        let (source_id, source_config) = get_source_config([&topic]);
+
+        create_partitioned_topic(&topic, 2).await;
+        setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+
+        let topic_partition_1 = format!("{topic}-partition-0");
+        let topic_partition_2 = format!("{topic}-partition-1");
+
+        let (_source_handle1, doc_processor_inbox1) = create_source(
+            &universe,
+            metastore.clone(),
+            &index_id,
+            source_config.clone(),
+            SourceCheckpoint::default(),
+        )
+        .await
+        .expect("Create source");
+
+        // Send 10 messages on each topic and kill the source 5 times.
+        for _ in 0..5 {
+            let (source_handle2, _) = create_source(
+                &universe,
+                metastore.clone(),
+                &index_id,
+                source_config.clone(),
+                SourceCheckpoint::default(),
+            )
+            .await
+            .expect("Create source");
+            populate_topic(
+                [&topic_partition_1, &topic_partition_2],
+                10,
+                message_generator,
+            )
+            .await
+            .unwrap();
+            tokio::time::sleep(HEARTBEAT * 5).await;
+            source_handle2.kill().await;
+        }
+
+        let messages1: Vec<RawDocBatch> = doc_processor_inbox1.drain_for_test_typed();
+        assert!(!messages1.is_empty());
+        let num_docs_sent_to_doc_processor: usize =
+            messages1.iter().map(|batch| batch.docs.len()).sum();
+        assert_eq!(100, num_docs_sent_to_doc_processor); // The test fails because we have more than
+                                                         // 100 docs.
     }
 }
