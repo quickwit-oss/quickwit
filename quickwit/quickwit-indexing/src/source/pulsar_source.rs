@@ -191,7 +191,7 @@ impl PulsarSource {
             // This is because Pulsar may replay messages which have not yet been acknowledged but
             // are in the process of being published, this can occur in situations like pulsar
             // re-balancing topic partitions if a node leaves, node failure, etc...
-            if &msg_position < current_position {
+            if &msg_position <= current_position {
                 self.state.num_skipped_messages += 1;
                 return Ok(());
             }
@@ -1205,7 +1205,9 @@ mod pulsar_broker_tests {
         assert!(!messages1.is_empty());
         let num_docs_sent_to_doc_processor: usize =
             messages1.iter().map(|batch| batch.docs.len()).sum();
+        println!("num_docs_sent_to_doc_processor {num_docs_sent_to_doc_processor}");
         assert_eq!(100, num_docs_sent_to_doc_processor); // The test fails because we have more than
                                                          // 100 docs.
+        universe.assert_quit().await;
     }
 }
