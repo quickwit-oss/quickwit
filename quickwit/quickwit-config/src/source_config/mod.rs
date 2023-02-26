@@ -362,9 +362,10 @@ pub struct PulsarSourceParams {
     #[serde(default = "default_consumer_name")]
     /// The name to register with the pulsar source.
     pub consumer_name: String,
-
-    // Serde yaml has some weird behaviour by default when deserializing
-    // enums and defaulting on options.
+    // Serde yaml has some specific behaviour when deserializing
+    // enums (see https://github.com/dtolnay/serde-yaml/issues/342)
+    // and requires explicitly stating `default` in order to make the parameter
+    // optional on the yaml config.
     #[serde(default, with = "serde_yaml::with::singleton_map")]
     /// Authentication for pulsar.
     pub authentication: Option<PulsarSourceAuth>,
