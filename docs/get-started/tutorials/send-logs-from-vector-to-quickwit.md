@@ -14,6 +14,32 @@ it is well-known for collecting logs from every parts of your infrastructure, tr
 
 In this guide, we will show you how to connect it to Quickwit.
 
+## Start Quickwit server
+
+<Tabs>
+
+<TabItem value="cli" label="CLI">
+
+```bash
+# Create Quickwit data dir.
+mkdir qwdata
+./quickwit run
+```
+
+</TabItem>
+
+<TabItem value="docker" label="Docker">
+
+```bash
+# Create Quickwit data dir.
+mkdir qwdata
+docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit run
+```
+
+</TabItem>
+
+</Tabs>
+
 ## Create an index for logs
 
 Let's embrace the OpenTelemetry standard and create an index compatible with its [log data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md).
@@ -26,7 +52,7 @@ Let's embrace the OpenTelemetry standard and create an index compatible with its
 
 version: 0.4
 
-index_id: otel-log-v0
+index_id: vector-otel-logs
 
 doc_mapping:
   field_mappings:
@@ -52,25 +78,25 @@ doc_mapping:
 
 search_settings:
   default_search_fields: [severity, body]
+
+indexing_settings:
+  commit_timeout_secs: 10
 ```
 
-Let's create this index with `docker` or the `CLI`:
+First create the YAML file:
+
+```bash
+curl -o vector-otel-logs.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/vector-otel-logs/index-config.yaml
+```
+
+And then create the index with `cURL` or the `CLI`:
 
 <Tabs>
 
-<TabItem value="docker" label="Docker">
+<TabItem value="curl" label="cURL">
 
 ```bash
-curl -o otel-logs.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/otel-logs/index-config.yaml
-# Create quickwit datadir.
-mkdir -p qwdata
-# Create index.
-docker run -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/otel-logs.yaml:/quickwit/index-config.yaml quickwit/quickwit index create --index-config /quickwit/index-config.yaml
-```
-
-Then we start Quickwit server that will be ready so receive logs on `/api/v1/otel-logs/ingest` endpoint:
-```bash
-docker run --init --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit run
+curl -XPOST http://localhost:7280/api/v1/indexes -H "content-type: application/yaml" --data-binary @vector-otel-logs.yaml
 ```
 
 </TabItem>
@@ -78,17 +104,7 @@ docker run --init --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 
 <TabItem value="cli" label="CLI">
 
 ```bash
-curl -o otel-logs.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/otel-logs/index-config.yaml
-# Create quickwit datadir.
-mkdir -p qwdata
-# Create index.
-./quickwit index create --index-config otel-logs.yaml
-```
-
-Then we start Quickwit server that will be ready so receive logs on `/api/v1/otel-logs/ingest` endpoint:
-
-```bash
-./quickwit run
+./quickwit index create --index-config vector-otel-logs.yaml
 ```
 
 </TabItem>
@@ -139,17 +155,18 @@ source = '''
   .name = structured.msgid
 '''
 
-[sinks.emit_syslog]
-inputs = ["remap_syslog"]
-type = "console"
-encoding.codec = "json"
+# useful to see the logs in the terminal
+#[sinks.emit_syslog]
+#inputs = ["remap_syslog"]
+#type = "console"
+#encoding.codec = "json"
 
 [sinks.quickwit_logs]
 type = "http"
 inputs = ["remap_syslog"]
 encoding.codec = "json"
 framing.method = "newline_delimited"
-uri = "http://host.docker.internal:7280/api/v1/otel-logs/ingest"
+uri = "http://host.docker.internal:7280/api/v1/vector-otel-logs/ingest"
 ```
 
 Now let's start Vector to start send logs to Quickwit.
@@ -161,40 +178,40 @@ docker run -v $(pwd)/vector.toml:/etc/vector/vector.toml:ro -p 8383:8383 --add-h
 ## Search logs
 
 Quickwit is now ingesting logs coming from Vector and you can search them either with `curl` or by using the UI:
-- `curl -XGET http://127.0.0.1:7280/api/v1/otel-logs/search\?query\=severity:ERROR`
-- Open your browser at `http://127.0.0.1:7280/ui/search?query=severity:ERROR&index_id=otel-logs&max_hits=10` and play with it!
+- `curl -XGET http://127.0.0.1:7280/api/v1/vector-otel-logs/search\?query\=severity:ERROR`
+- Open your browser at `http://127.0.0.1:7280/ui/search?query=severity:ERROR&index_id=vector-otel-logs&max_hits=10` and play with it!
 
 
 ## Compute aggregation on severity
 
 For aggregations, we can't use yet Quickwit UI but we can use cURL.
 
-Let's craft a nice aggregation query to count how many `INFO`, `DEBUG`, `WARN`, and `ERROR` per ten seconds we have:
+Let's craft a nice aggregation query to count how many `INFO`, `DEBUG`, `WARN`, and `ERROR` per minute (all datetime are stored in microseconds thus the interval of 60_000_000 microseconds) we have:
 
 ```json title=aggregation-query.json
 {
-    "query": "*",
-    "max_hits": 0,
-    "aggs": {
-        "count_per_ten_seconds": {
-            "histogram": {
-                "field": "timestamp",
-                "interval": 60000
-            },
-            "aggs": {
-              "severity_count": {
-                "terms": {
-                  "field": "severity"
-                }
-              }
-            }
+  "query": "*",
+  "max_hits": 0,
+  "aggs": {
+    "count_per_minute": {
+      "histogram": {
+          "field": "timestamp",
+          "interval": 60000000
+      },
+      "aggs": {
+        "severity_count": {
+          "terms": {
+            "field": "severity"
+          }
         }
+      }
     }
+  }
 }
 ```
 
 ```bash
-curl -XPOST -H "Content-Type: application/json" http://127.0.0.1:7280/api/v1/otel-logs/search --data @aggregation-query.json
+curl -XPOST -H "Content-Type: application/json" http://127.0.0.1:7280/api/v1/vector-otel-logs/search --data @aggregation-query.json
 ```
 
 ## Further improvements

@@ -362,6 +362,11 @@ pub struct PulsarSourceParams {
     #[serde(default = "default_consumer_name")]
     /// The name to register with the pulsar source.
     pub consumer_name: String,
+    // Serde yaml has some specific behaviour when deserializing
+    // enums (see https://github.com/dtolnay/serde-yaml/issues/342)
+    // and requires explicitly stating `default` in order to make the parameter
+    // optional on the yaml config.
+    #[serde(default, with = "serde_yaml::with::singleton_map")]
     /// Authentication for pulsar.
     pub authentication: Option<PulsarSourceAuth>,
 }
@@ -824,6 +829,129 @@ mod tests {
                 "#;
             let error = serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap_err();
             assert!(error.to_string().starts_with("Kinesis source parameters "));
+        }
+    }
+
+    #[test]
+    fn test_pulsar_source_params_deserialization() {
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://localhost:6560
+                    consumer_name: my-pulsar-consumer
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: "my-pulsar-consumer".to_string(),
+                    authentication: None,
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://localhost:6560
+                    consumer_name: my-pulsar-consumer
+                    authentication:
+                        token: my-token
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: "my-pulsar-consumer".to_string(),
+                    authentication: Some(PulsarSourceAuth::Token("my-token".to_string())),
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://localhost:6560
+                    consumer_name: my-pulsar-consumer
+                    authentication:
+                        oauth2:
+                            issuer_url: https://my-issuer:9000/path
+                            credentials_url: https://my-credentials.com/path
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: "my-pulsar-consumer".to_string(),
+                    authentication: Some(PulsarSourceAuth::Oauth2 {
+                        issuer_url: "https://my-issuer:9000/path".to_string(),
+                        credentials_url: "https://my-credentials.com/path".to_string(),
+                        audience: None,
+                        scope: None,
+                    }),
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://localhost:6560
+                    consumer_name: my-pulsar-consumer
+                    authentication:
+                        oauth2:
+                            issuer_url: https://my-issuer:9000/path
+                            credentials_url: https://my-credentials.com/path
+                            audience: my-audience
+                            scope: "read+write"
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: "my-pulsar-consumer".to_string(),
+                    authentication: Some(PulsarSourceAuth::Oauth2 {
+                        issuer_url: "https://my-issuer:9000/path".to_string(),
+                        credentials_url: "https://my-credentials.com/path".to_string(),
+                        audience: Some("my-audience".to_string()),
+                        scope: Some("read+write".to_string()),
+                    }),
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                "#;
+            serde_yaml::from_str::<PulsarSourceParams>(yaml)
+                .expect_err("Parameters should error on missing address");
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://localhost:6560
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: default_consumer_name(),
+                    authentication: None,
+                }
+            );
         }
     }
 
