@@ -21,6 +21,8 @@ In this guide, we will show you how to connect it to Quickwit.
 <TabItem value="cli" label="CLI">
 
 ```bash
+# Create Quickwit data dir.
+mkdir qwdata
 ./quickwit run
 ```
 
@@ -85,11 +87,6 @@ First create the YAML file:
 
 ```bash
 curl -o vector-otel-logs.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/vector-otel-logs/index-config.yaml
-# Set a short commit timeout so documents are searchable ~10 seconds after ingestion.
-cat <<EOT >> vector-otel-logs.yaml
-indexing_settings:
-  commit_timeout_secs: 10
-EOT
 ```
 
 And then create the index with `cURL` or the `CLI`:
