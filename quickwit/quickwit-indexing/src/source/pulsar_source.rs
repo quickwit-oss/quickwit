@@ -477,7 +477,7 @@ mod pulsar_broker_tests {
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpointDelta,
     };
     use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
-    use reqwest::StatusCode;
+    use reqwest::{header, StatusCode};
 
     use super::*;
     use crate::new_split_id;
@@ -487,6 +487,7 @@ mod pulsar_broker_tests {
     static PULSAR_URI: &str = "pulsar://localhost:6650";
     static PULSAR_ADMIN_URI: &str = "http://localhost:8081";
     static CLIENT_NAME: &str = "quickwit-tester";
+    static TEST_TOKEN: &str = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbi0xIn0.6gTYdkpTjagFkpz_RYtzRRUdjS3yXBpzS9FHVY5DD_A";
 
     macro_rules! positions {
         ($($partition:expr => $position:expr $(,)?)*) => {{
@@ -565,7 +566,7 @@ mod pulsar_broker_tests {
                 topics: topics.into_iter().map(|v| v.as_ref().to_string()).collect(),
                 address: PULSAR_URI.to_string(),
                 consumer_name: CLIENT_NAME.to_string(),
-                authentication: None,
+                authentication: Some(PulsarSourceAuth::Token(TEST_TOKEN.to_string())),
             }),
             transform_config: None,
         };
@@ -695,6 +696,7 @@ mod pulsar_broker_tests {
             ))
             .body(num_partitions.to_string())
             .header("content-type", b"application/json".as_ref())
+            .header(header::AUTHORIZATION, TEST_TOKEN)
             .send()
             .await
             .expect("Send admin request");
