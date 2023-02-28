@@ -81,6 +81,14 @@ impl QuickwitRestClient {
         }
         Ok(false)
     }
+
+    pub fn client(&self) -> hyper::Client<HttpConnector, Body> {
+        self.client.clone()
+    }
+
+    pub fn root_url(&self) -> String {
+        self.root_url.clone()
+    }
 }
 
 async fn parse_body<T: DeserializeOwned>(mut response: Response<Body>) -> anyhow::Result<T> {

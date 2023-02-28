@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chitchat::transport::ChannelTransport;
+use hyper::{Body, Method, Request, StatusCode};
 use quickwit_cluster::create_cluster_for_test;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
@@ -79,12 +80,29 @@ async fn test_standalone_server_no_indexer() {
 
     assert!(sandbox.rest_client.is_ready().await.unwrap());
 
-    // The indexing service is no longer running.
-    sandbox
-        .rest_client
-        .indexing_service_counters()
-        .await
-        .unwrap_err();
+    {
+        let client = sandbox.rest_client.client();
+        let root_uri = format!("{}/", sandbox.rest_client.root_url())
+            .parse::<hyper::Uri>()
+            .unwrap();
+        let response = client.get(root_uri.clone()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
+        let post_request = Request::builder()
+            .uri(root_uri)
+            .method(Method::POST)
+            .body(Body::from("{}"))
+            .unwrap();
+        let response = client.request(post_request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    }
+    {
+        // The indexing service is not running.
+        sandbox
+            .rest_client
+            .indexing_service_counters()
+            .await
+            .unwrap_err();
+    }
 }
 
 #[tokio::test]
