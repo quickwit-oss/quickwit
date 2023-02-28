@@ -110,8 +110,9 @@ pub(crate) async fn start_rest_server(
         .or(elastic_api_handlers());
 
     let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
-    let redirect_root_to_ui_route =
-        warp::path::end().map(|| redirect(http::Uri::from_static("/ui/search")));
+    let redirect_root_to_ui_route = warp::path::end()
+        .and(warp::get())
+        .map(|| redirect(http::Uri::from_static("/ui/search")));
 
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
