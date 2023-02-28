@@ -485,9 +485,9 @@ mod pulsar_broker_tests {
     use crate::source::{quickwit_supported_sources, SuggestTruncate};
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
-    static PULSAR_ADMIN_URI: &str = "http://localhost:8081";
+    static PULSAR_ADMIN_URI: &str = "http://localhost:8080";
     static CLIENT_NAME: &str = "quickwit-tester";
-    static TEST_TOKEN: &str = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbi0xIn0.6gTYdkpTjagFkpz_RYtzRRUdjS3yXBpzS9FHVY5DD_A";
+    static TEST_TOKEN: &str = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJxdWlja3dpdCJ9.Kv1pChPCv3BtWr6tXZuiQFMmwog11FVo4l4yVn9CfSo";
 
     macro_rules! positions {
         ($($partition:expr => $position:expr $(,)?)*) => {{

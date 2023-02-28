@@ -55,13 +55,12 @@ services:
   pulsar-broker:
     image: apachepulsar/pulsar:2.11.0
     container_name: pulsar-broker
-    command: bin/pulsar standalone
+    command: bin/pulsar standalone -nfw -nss
     ports:
       - "6650:6650"
-      - "8081:8080"
+      - "8080:8080"
     volumes:
       - "${PWD}/compose-configs/pulsar/standalone.conf:/pulsar/conf/standalone.conf"
-      - "${PWD}/compose-configs/pulsar:/pulsar/outputs"
     environment:
       PULSAR_MEM: " -Xms512m -Xmx512m -XX:MaxDirectMemorySize=2g"
     profiles:
