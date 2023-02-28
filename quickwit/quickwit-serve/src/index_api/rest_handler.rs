@@ -23,7 +23,9 @@ use bytes::Bytes;
 use hyper::header::CONTENT_TYPE;
 use quickwit_common::simple_list::{from_simple_list, to_simple_list};
 use quickwit_common::FileEntry;
-use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig};
+use quickwit_config::{
+    ConfigFormat, QuickwitConfig, SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
+};
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitState,
@@ -548,6 +550,15 @@ async fn toggle_source(
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), MetastoreError> {
     info!(index_id = %index_id, source_id = %source_id, enable = toggle_source.enable, "toggle-source");
+    metastore.index_exists(&index_id).await?;
+    if [CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID].contains(&source_id.as_str()) {
+        return Err(MetastoreError::Forbidden {
+            message: format!(
+                "Source `{source_id}` is managed by Quickwit, you cannot enable or disable a \
+                 source managed by Quickwit."
+            ),
+        });
+    }
     metastore
         .toggle_source(&index_id, &source_id, toggle_source.enable)
         .await
@@ -583,6 +594,15 @@ async fn delete_source(
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), MetastoreError> {
     info!(index_id = %index_id, source_id = %source_id, "delete-source");
+    metastore.index_exists(&index_id).await?;
+    if [INGEST_API_SOURCE_ID, CLI_INGEST_SOURCE_ID].contains(&source_id.as_str()) {
+        return Err(MetastoreError::Forbidden {
+            message: format!(
+                "Source `{source_id}` is managed by Quickwit, you cannot delete a source managed \
+                 by Quickwit."
+            ),
+        });
+    }
     metastore.delete_source(&index_id, &source_id).await
 }
 
@@ -1066,6 +1086,23 @@ mod tests {
         let index_metadata = metastore.index_metadata("hdfs-logs").await.unwrap();
         assert!(!index_metadata.sources.contains_key("file-source"));
 
+        // Check cannot delete source managed by Quickwit.
+        let resp = warp::test::request()
+            .path(format!("/indexes/hdfs-logs/sources/{INGEST_API_SOURCE_ID}").as_str())
+            .method("DELETE")
+            .body(&source_config_body)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 405);
+
+        let resp = warp::test::request()
+            .path(format!("/indexes/hdfs-logs/sources/{CLI_INGEST_SOURCE_ID}").as_str())
+            .method("DELETE")
+            .body(&source_config_body)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 405);
+
         // Check get a non exising source returns 404.
         let resp = warp::test::request()
             .path("/indexes/hdfs-logs/sources/file-source")
@@ -1245,6 +1282,9 @@ mod tests {
                 ))
             });
         metastore
+            .expect_index_exists()
+            .return_once(|index_id: &str| Ok(index_id == "quickwit-demo-index"));
+        metastore
             .expect_delete_source()
             .return_once(|index_id, source_id| {
                 assert_eq!(index_id, "quickwit-demo-index");
@@ -1305,6 +1345,10 @@ mod tests {
     #[tokio::test]
     async fn test_source_toggle() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_exists()
+            .returning(|index_id| Ok(index_id == "quickwit-demo-index"))
+            .times(3);
         metastore.expect_toggle_source().return_once(
             |index_id: &str, source_id: &str, enable: bool| {
                 if index_id == "quickwit-demo-index" && source_id == "source-to-toggle" && enable {
@@ -1322,6 +1366,7 @@ mod tests {
             Arc::new(QuickwitConfig::for_test()),
         )
         .recover(recover_fn);
+        // Check server returns 405 if sources root path is used.
         let resp = warp::test::request()
             .path("/indexes/quickwit-demo-index/sources/source-to-toggle")
             .method("PUT")
@@ -1344,6 +1389,22 @@ mod tests {
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 400);
+        // Check cannot toggle source managed by Quickwit.
+        let resp = warp::test::request()
+            .path(format!("/indexes/hdfs-logs/sources/{INGEST_API_SOURCE_ID}/toggle").as_str())
+            .method("PUT")
+            .body(r#"{"enable": true}"#)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 405);
+
+        let resp = warp::test::request()
+            .path(format!("/indexes/hdfs-logs/sources/{CLI_INGEST_SOURCE_ID}/toggle").as_str())
+            .method("PUT")
+            .body(r#"{"enable": true}"#)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 405);
         Ok(())
     }
 }

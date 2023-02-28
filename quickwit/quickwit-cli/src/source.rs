@@ -26,9 +26,7 @@ use colored::Colorize;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
-use quickwit_config::{
-    validate_identifier, ConfigFormat, SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
-};
+use quickwit_config::{validate_identifier, ConfigFormat, SourceConfig};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_rest_client::rest_client::{QuickwitClient, Transport};
 use quickwit_storage::load_file;
@@ -144,13 +142,6 @@ pub struct ToggleSourceArgs {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct ToggleIngestApiArgs {
-    pub cluster_endpoint: Url,
-    pub index_id: String,
-    pub enable: bool,
-}
-
-#[derive(Debug, Eq, PartialEq)]
 pub struct DeleteSourceArgs {
     pub cluster_endpoint: Url,
     pub index_id: String,
@@ -183,7 +174,6 @@ pub struct ResetCheckpointArgs {
 pub enum SourceCliCommand {
     CreateSource(CreateSourceArgs),
     ToggleSource(ToggleSourceArgs),
-    ToggleIngestApi(ToggleIngestApiArgs),
     DeleteSource(DeleteSourceArgs),
     DescribeSource(DescribeSourceArgs),
     ListSources(ListSourcesArgs),
@@ -195,7 +185,6 @@ impl SourceCliCommand {
         match self {
             Self::CreateSource(args) => create_source_cli(args).await,
             Self::ToggleSource(args) => toggle_source_cli(args).await,
-            Self::ToggleIngestApi(args) => toggle_ingest_api_cli(args).await,
             Self::DeleteSource(args) => delete_source_cli(args).await,
             Self::DescribeSource(args) => describe_source_cli(args).await,
             Self::ListSources(args) => list_sources_cli(args).await,
@@ -214,9 +203,6 @@ impl SourceCliCommand {
             }
             "disable" => {
                 Self::parse_toggle_source_args(subcommand, submatches).map(Self::ToggleSource)
-            }
-            "ingest-api" => {
-                Self::parse_toggle_ingest_api_args(submatches).map(Self::ToggleIngestApi)
             }
             "delete" => Self::parse_delete_args(submatches).map(Self::DeleteSource),
             "describe" => Self::parse_describe_args(submatches).map(Self::DescribeSource),
@@ -269,23 +255,6 @@ impl SourceCliCommand {
             cluster_endpoint,
             index_id,
             source_id,
-            enable,
-        })
-    }
-
-    fn parse_toggle_ingest_api_args(matches: &ArgMatches) -> anyhow::Result<ToggleIngestApiArgs> {
-        let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
-        let index_id = matches
-            .value_of("index")
-            .expect("`index` is a required arg.")
-            .to_string();
-        let enable = matches.is_present("enable");
-        Ok(ToggleIngestApiArgs {
-            cluster_endpoint,
-            index_id,
             enable,
         })
     }
@@ -388,13 +357,6 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
 async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
     debug!(args=?args, "toggle-source");
     println!("❯ Toggling source...");
-    if args.source_id == CLI_INGEST_SOURCE_ID {
-        bail!(
-            "Source `{}` is managed by Quickwit, you cannot enable or disable a source managed by \
-             Quickwit.",
-            args.source_id
-        );
-    }
     let transport = Transport::new(args.cluster_endpoint);
     let qw_client = QuickwitClient::new(transport);
     qw_client
@@ -412,37 +374,9 @@ async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn toggle_ingest_api_cli(args: ToggleIngestApiArgs) -> anyhow::Result<()> {
-    debug!(args=?args, "toggle-ingest-api");
-    println!(
-        "❯ {}abling ingest API...",
-        if args.enable { "En" } else { "Dis" }
-    );
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
-    qw_client
-        .sources(&args.index_id)
-        .toggle(INGEST_API_SOURCE_ID, args.enable)
-        .await
-        .context("Failed to update source")?;
-    let toggled_state_name = if args.enable { "enabled" } else { "disabled" };
-    println!(
-        "{} Source successfully {}.",
-        toggled_state_name,
-        "✔".color(GREEN_COLOR)
-    );
-    Ok(())
-}
-
 async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
     debug!(args=?args, "delete-source");
     println!("❯ Deleting source...");
-    if args.source_id == INGEST_API_SOURCE_ID || args.source_id == CLI_INGEST_SOURCE_ID {
-        bail!(
-            "Source `{}` is managed by Quickwit, you cannot delete a source managed by Quickwit.",
-            args.source_id
-        );
-    }
     validate_identifier("Source ID", &args.source_id)?;
 
     if !args.assume_yes {
@@ -732,63 +666,6 @@ mod tests {
                     enable: false,
                 }));
             assert_eq!(command, expected_command);
-        }
-    }
-
-    #[test]
-    fn test_parse_toggle_ingest_api_args() {
-        {
-            let app = build_cli().no_binary_name(true);
-            let matches = app
-                .try_get_matches_from(vec![
-                    "source",
-                    "ingest-api",
-                    "--endpoint",
-                    "https://quickwit-cluster.io",
-                    "--index",
-                    "foo",
-                    "--enable",
-                ])
-                .unwrap();
-            let command = CliCommand::parse_cli_args(&matches).unwrap();
-            let expected_command =
-                CliCommand::Source(SourceCliCommand::ToggleIngestApi(ToggleIngestApiArgs {
-                    cluster_endpoint: Url::from_str("https://quickwit-cluster.io").unwrap(),
-                    index_id: "foo".to_string(),
-                    enable: true,
-                }));
-            assert_eq!(command, expected_command);
-        }
-        {
-            let app = build_cli().no_binary_name(true);
-            let matches = app
-                .try_get_matches_from(vec!["source", "ingest-api", "--index", "foo", "--disable"])
-                .unwrap();
-            let command = CliCommand::parse_cli_args(&matches).unwrap();
-            let expected_command =
-                CliCommand::Source(SourceCliCommand::ToggleIngestApi(ToggleIngestApiArgs {
-                    cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
-                    index_id: "foo".to_string(),
-                    enable: false,
-                }));
-            assert_eq!(command, expected_command);
-        }
-        {
-            let app = build_cli().no_binary_name(true);
-            let matches = app.try_get_matches_from(vec![
-                "source",
-                "ingest-api",
-                "--index",
-                "foo",
-                "--enable",
-                "--disable",
-            ]);
-            assert!(matches.is_err());
-        }
-        {
-            let app = build_cli().no_binary_name(true);
-            let matches = app.try_get_matches_from(vec!["source", "ingest-api", "--index", "foo"]);
-            assert!(matches.is_err());
         }
     }
 
