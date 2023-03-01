@@ -13,7 +13,8 @@ Learn how Quickwit can help you manage your logs:
 - [Supported agents](#supported-agents): OpenTelemetry, Vector, Fluentbit and more.
 - [Enabling OLTP gRPC service](#oltp-grpc-service)
 - Tutorials
-  - [Sending logs with Vector](./send-logs-from-vector-to-quickwit.md)
+  - [Sending logs from Vector](./send-logs-from-vector-to-quickwit.md)
+  - [Sending logs from Fluentbit](./send-logs-from-vector-to-quickwit.md)
   - [Sending Kubernetes logs with OTEL collectors](./deploy-quickwit-otel-with-helm.md)
   - More soon!
 - [Logs data model](#logs-data-model)
@@ -61,12 +62,12 @@ Find more configuration details on the [OpenTelemetry documentation](https://ope
 
 ### HTTP-based agents
 
-It's also possible to use other agents that sends HTTP requests to Quickwit Ingest API. Quickwit also partially support Elasticseardch `_bulk` API. Thus, any agent using this API to send logs to Elasticsearch have a good chance to be Quickwit-compatible.
+It's also possible to use other agents that sends HTTP requests to Quickwit Ingest API. Quickwit also partially support Elasticseardch `_bulk` API. Thus, there is a good chance that your agent is already compatible with Quickwit.
 Currently, we tested the following HTTP-based agents:
 
 - [Vector](./send-logs-from-vector-to-quickwit.md)
-- Fluentbit (tutorial coming soon)
-- Logstash (tutorial coming soon)
+- [Fluentbit](./send-logs-from-fluentbit-to-quickwit.md)
+- FluentD (tutorial coming soon)
 
 ## OLTP gRPC service
 
