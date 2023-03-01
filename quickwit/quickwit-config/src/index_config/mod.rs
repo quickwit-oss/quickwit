@@ -78,14 +78,6 @@ pub struct DocMapping {
     pub max_num_partitions: NonZeroU32,
 }
 
-impl Default for DocMapping {
-    fn default() -> Self {
-        // The safest way to make sure the default implementation is
-        // in line the serde default values.
-        serde_json::from_str("{}").unwrap()
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingResources {
@@ -698,6 +690,7 @@ mod tests {
             version: 0.4
             index_id: hdfs-logs
             index_uri: "s3://my-index"
+            doc_mapping: {}
         "#;
         let minimal_config: IndexConfig = load_index_config_from_user_config(
             ConfigFormat::Yaml,

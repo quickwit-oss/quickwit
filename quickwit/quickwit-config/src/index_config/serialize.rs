@@ -136,7 +136,6 @@ pub struct IndexConfigV0_4 {
     #[schema(value_type = String)]
     #[serde(default)]
     pub index_uri: Option<Uri>,
-    #[serde(default)]
     pub doc_mapping: DocMapping,
     #[serde(default)]
     pub indexing_settings: IndexingSettings,

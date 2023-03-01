@@ -401,6 +401,10 @@ For instance, in a entirely schemaless settings, a minimal index configuration c
 ```yaml
 version: 0.4
 index_id: my-dynamic-index
+doc_mapping:
+    # If you have a timestamp field, it is important to tell quickwit about it.
+    timestamp_field: unix_timestamp
+    # mode: dynamic #< Commented out, as dynamic is the default mode.
 ```
 
 With such a simple configuration, we can index a complex document like the following:

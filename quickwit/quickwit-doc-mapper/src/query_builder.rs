@@ -49,14 +49,18 @@ pub(crate) fn build_query(
 
     validate_requested_snippet_fields(&schema, request, &user_input_ast, default_field_names)?;
 
-    let search_fields = if request.search_fields.is_empty() {
-        resolve_fields(&schema, default_field_names)?
+    // If a term does not target a specific field (= is not prepended by `field_name:`),
+    // `field_name_if_unspecified` is the list of fields that should be searched.
+    let field_name_if_unspecified = if request.search_fields.is_empty() {
+        default_field_names
     } else {
-        resolve_fields(&schema, &request.search_fields)?
+        &request.search_fields[..]
     };
 
+    let search_fields = resolve_fields(&schema, field_name_if_unspecified)?;
+
     if let Some(sort_by_field) = &request.sort_by_field {
-        validate_sort_by_field(sort_by_field, &schema, Some(&search_fields))?;
+        validate_sort_by_field(sort_by_field, &schema)?;
     }
 
     let mut query_parser =
@@ -252,13 +256,15 @@ fn validate_requested_snippet_fields(
     Ok(())
 }
 
-pub(crate) fn validate_sort_by_field(
-    field_name: &str,
-    schema: &Schema,
-    search_fields_opt: Option<&Vec<Field>>,
-) -> anyhow::Result<()> {
+fn validate_sort_by_field(field_name: &str, schema: &Schema) -> anyhow::Result<()> {
     if field_name == "_score" {
-        return validate_sort_by_score(schema, search_fields_opt);
+        // Note we used to check here, that fieldnorms were present ...
+        // But it is actually quite common to sort by, and yet use a term query
+        // to further filter the results.
+        //
+        // If that filter is coming from a dynamic field, it makes sense to end up with a search
+        // field that do not have fieldnorm.
+        return Ok(());
     }
     let sort_by_field = schema
         .get_field(field_name)
@@ -278,24 +284,6 @@ pub(crate) fn validate_sort_by_field(
         )
     }
 
-    Ok(())
-}
-
-fn validate_sort_by_score(
-    schema: &Schema,
-    search_fields_opt: Option<&Vec<Field>>,
-) -> anyhow::Result<()> {
-    if let Some(fields) = search_fields_opt {
-        for field in fields {
-            if !schema.get_field_entry(*field).has_fieldnorms() {
-                bail!(
-                    "Fieldnorms for field `{}` is missing. Fieldnorms must be stored for the \
-                     field to compute the BM25 score of the documents.",
-                    schema.get_field_name(*field)
-                )
-            }
-        }
-    }
     Ok(())
 }
 
