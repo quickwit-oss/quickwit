@@ -19,6 +19,8 @@
 
 mod box_layer;
 mod box_service;
+mod buffer;
 
 pub use box_layer::BoxLayer;
 pub use box_service::BoxService;
+pub use buffer::{Buffer, BufferLayer};
