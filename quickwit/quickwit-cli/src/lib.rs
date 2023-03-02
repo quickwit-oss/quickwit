@@ -76,6 +76,7 @@ fn config_cli_arg<'a>() -> Arg<'a> {
 fn cluster_endpoint_arg<'a>() -> Arg<'a> {
     arg!(--"endpoint" <QW_CLUSTER_ENDPOINT> "Quickwit cluster endpoint.")
         .default_value("http://127.0.0.1:7280")
+        .env("QW_CLUSTER_ENDPOINT")
         .required(false)
         .display_order(1)
         .global(true)
