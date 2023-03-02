@@ -28,7 +28,7 @@ mod collector;
 mod error;
 mod fetch_docs;
 mod filters;
-mod jaeger_collector;
+mod find_trace_ids_collector;
 mod leaf;
 mod retry;
 mod root;
@@ -42,7 +42,7 @@ mod metrics;
 #[cfg(test)]
 mod tests;
 
-use collector::QuickwitAggregations;
+pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
 use quickwit_doc_mapper::DocMapper;
 use root::validate_request;
@@ -56,6 +56,7 @@ use std::cmp::Reverse;
 use std::sync::Arc;
 
 use anyhow::Context;
+pub use find_trace_ids_collector::FindTraceIdsCollector;
 use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, QuickwitConfig, SearcherConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;

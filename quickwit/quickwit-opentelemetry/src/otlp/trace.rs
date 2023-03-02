@@ -35,8 +35,8 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
-use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
+use crate::otlp::{extract_attributes, B64TraceId, TraceId};
 
 pub const OTEL_TRACE_INDEX_ID: &str = "otel-trace-v0";
 
@@ -147,11 +147,11 @@ search_settings:
   default_search_fields: []
 "#;
 
-pub type Base64 = String;
+pub type B64SpanId = String; // A base64-encoded 8-byte array.
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Span {
-    pub trace_id: Base64,
+    pub trace_id: B64TraceId,
     pub trace_state: Option<String>,
     pub service_name: String,
     pub resource_attributes: HashMap<String, JsonValue>,
@@ -160,7 +160,7 @@ pub struct Span {
     pub scope_version: Option<String>,
     pub scope_attributes: HashMap<String, JsonValue>,
     pub scope_dropped_attributes_count: u32,
-    pub span_id: Base64,
+    pub span_id: B64SpanId,
     pub span_kind: u64,
     pub span_name: String,
     pub span_fingerprint: Option<SpanFingerprint>,
@@ -179,7 +179,7 @@ pub struct Span {
     pub span_dropped_events_count: u32,
     pub span_dropped_links_count: u32,
     pub span_status: Option<SpanStatus>,
-    pub parent_span_id: Option<Base64>,
+    pub parent_span_id: Option<B64SpanId>,
     #[serde(default)]
     pub events: Vec<Event>,
     #[serde(default)]
@@ -215,7 +215,7 @@ impl PartialOrd for OrdSpan {
 
 impl PartialEq for OrdSpan {
     fn eq(&self, other: &Self) -> bool {
-        self.0.span_id == other.0.span_id
+        self.cmp(other) == Ordering::Equal
     }
 }
 
@@ -390,9 +390,9 @@ pub struct Event {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Link {
-    pub link_trace_id: Base64,
+    pub link_trace_id: B64TraceId,
     pub link_trace_state: String,
-    pub link_span_id: Base64,
+    pub link_span_id: B64SpanId,
     pub link_attributes: HashMap<String, JsonValue>,
     pub link_dropped_attributes_count: u32,
 }
@@ -517,7 +517,9 @@ impl OtlpGrpcTraceService {
                 for span in scope_span.spans {
                     num_spans += 1;
 
-                    let trace_id = BASE64_STANDARD.encode(span.trace_id);
+                    let trace_id = TraceId::try_from(span.trace_id)
+                        .map_err(|error| Status::invalid_argument(error.to_string()))?
+                        .b64_encode();
                     let span_id = BASE64_STANDARD.encode(span.span_id);
                     let parent_span_id = if !span.parent_span_id.is_empty() {
                         Some(BASE64_STANDARD.encode(span.parent_span_id))
@@ -553,14 +555,17 @@ impl OtlpGrpcTraceService {
                     let links: Vec<Link> = span
                         .links
                         .into_iter()
-                        .map(|link| Link {
-                            link_trace_id: BASE64_STANDARD.encode(link.trace_id),
-                            link_trace_state: link.trace_state,
-                            link_span_id: BASE64_STANDARD.encode(link.span_id),
-                            link_attributes: extract_attributes(link.attributes),
-                            link_dropped_attributes_count: link.dropped_attributes_count,
+                        .map(|link| {
+                            TraceId::try_from(link.trace_id).map(|trace_id| Link {
+                                link_trace_id: trace_id.b64_encode(),
+                                link_trace_state: link.trace_state,
+                                link_span_id: BASE64_STANDARD.encode(link.span_id),
+                                link_attributes: extract_attributes(link.attributes),
+                                link_dropped_attributes_count: link.dropped_attributes_count,
+                            })
                         })
-                        .collect();
+                        .collect::<Result<_, _>>()
+                        .map_err(|error| Status::invalid_argument(error.to_string()))?;
                     let trace_state = if span.trace_state.is_empty() {
                         None
                     } else {

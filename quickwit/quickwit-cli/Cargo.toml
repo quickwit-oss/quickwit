@@ -76,6 +76,7 @@ predicates = { workspace = true }
 reqwest = { workspace = true }
 serial_test = { workspace = true }
 
+quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
