@@ -110,7 +110,7 @@ impl ServiceError for MetastoreError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
             Self::ConnectionError { .. } => ServiceErrorCode::Internal,
-            Self::Forbidden { .. } => ServiceErrorCode::Internal,
+            Self::Forbidden { .. } => ServiceErrorCode::MethodNotAllowed,
             Self::IncompatibleCheckpointDelta(_) => ServiceErrorCode::BadRequest,
             Self::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             Self::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,

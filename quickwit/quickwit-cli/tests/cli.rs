@@ -34,7 +34,6 @@ use quickwit_cli::index::{
     SearchIndexArgs,
 };
 use quickwit_cli::service::RunCliCommand;
-use quickwit_cli::source::{toggle_ingest_api_cli, ToggleIngestApiArgs};
 use quickwit_cli::tool::{
     garbage_collect_index_cli, local_ingest_docs_cli, GarbageCollectIndexArgs, LocalIngestDocsArgs,
 };
@@ -43,7 +42,7 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_common::ChecklistError;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID};
+use quickwit_config::CLI_INGEST_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError, SplitState};
 use serde_json::{json, Number, Value};
 use tokio::time::{sleep, Duration};
@@ -154,59 +153,6 @@ fn test_cmd_create_with_ill_formed_command() {
     assert_eq!(
         result.unwrap_err().kind(),
         ErrorKind::MissingRequiredArgument
-    );
-}
-
-#[tokio::test]
-async fn test_cmd_toggle_ingest_api_source() {
-    quickwit_common::setup_logging_for_tests();
-    let index_id = append_random_suffix("test-create-cmd");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
-    test_env.start_server().await.unwrap();
-    create_logs_index(&test_env).await.unwrap();
-
-    // Disable
-    let toggle_args = ToggleIngestApiArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
-        enable: false,
-        index_id: index_id.to_string(),
-    };
-    toggle_ingest_api_cli(toggle_args).await.unwrap();
-    let index_metadata = test_env
-        .metastore()
-        .await
-        .unwrap()
-        .index_metadata(&index_id)
-        .await
-        .unwrap();
-    assert!(
-        !index_metadata
-            .sources
-            .get(INGEST_API_SOURCE_ID)
-            .unwrap()
-            .enabled
-    );
-
-    // Enable
-    let toggle_args = ToggleIngestApiArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
-        enable: true,
-        index_id: index_id.to_string(),
-    };
-    toggle_ingest_api_cli(toggle_args).await.unwrap();
-    let index_metadata = test_env
-        .metastore()
-        .await
-        .unwrap()
-        .index_metadata(&index_id)
-        .await
-        .unwrap();
-    assert!(
-        index_metadata
-            .sources
-            .get(INGEST_API_SOURCE_ID)
-            .unwrap()
-            .enabled
     );
 }
 
