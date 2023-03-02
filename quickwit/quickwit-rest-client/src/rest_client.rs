@@ -54,7 +54,7 @@ impl Transport {
     pub fn new(endpoint: Url) -> Self {
         let base_url = endpoint
             .join("api/v1/")
-            .expect("Endpoint shoud not be malformed.");
+            .expect("Endpoint should not be malformed.");
         Self {
             base_url,
             client: Client::new(),

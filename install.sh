@@ -4,7 +4,7 @@
 #
 # This is just a little script that can be downloaded from the internet to
 # install Quickwit.
-# It just does platform detection, fetches the lastest appropriate release version from github
+# It just does platform detection, fetches the latest appropriate release version from github
 # and execute the appropriate commands to download the binary.
 #
 # Heavily inspired by the Vector & Meilisearch installation scripts
@@ -199,7 +199,7 @@ get_latest_version() {
     latest=""
     current_tag=""
     for release_info in $releases; do
-        if [ $i -eq 0 ]; then # Cheking tag_name
+        if [ $i -eq 0 ]; then # Checking tag_name
             if echo "$release_info" | grep -q "$GREP_SEMVER_REGEXP"; then # If it's not an alpha or beta release
                 current_tag=$release_info
             else

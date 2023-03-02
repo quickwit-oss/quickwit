@@ -271,7 +271,7 @@ impl DeleteTaskPlanner {
         Ok((splits_with_deletes, splits_without_deletes))
     }
 
-    /// Executes a `LeafSearchRequet` on the split and returns true
+    /// Executes a `LeafSearchRequest` on the split and returns true
     /// if it matches documents.
     async fn has_split_docs_to_delete(
         &self,

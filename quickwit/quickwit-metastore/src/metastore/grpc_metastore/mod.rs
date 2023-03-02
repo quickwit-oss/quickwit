@@ -635,8 +635,8 @@ mod tests {
         metastore: Arc<dyn Metastore>,
     ) -> anyhow::Result<()> {
         tokio::spawn(async move {
-            let grpc_adpater = GrpcMetastoreAdapter::from(metastore);
-            let service = MetastoreApiServiceServer::new(grpc_adpater);
+            let grpc_adapter = GrpcMetastoreAdapter::from(metastore);
+            let service = MetastoreApiServiceServer::new(grpc_adapter);
             Server::builder()
                 .add_service(service)
                 .serve(address)

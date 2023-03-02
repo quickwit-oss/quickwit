@@ -31,7 +31,7 @@ use tokio::sync::oneshot;
 /// queue of message by sending `oneshot::Receiver<Message>` to the `Sequencer`.
 ///
 /// The Sequencer then simply resolves these messages and forwards them to the
-/// targetted actor.
+/// targeted actor.
 ///
 /// It is used by the uploader actor, to run uploads concurrently and yet
 /// ensures that publish message are send in the right order.

@@ -126,9 +126,9 @@ impl PhysicalIndexingPlan {
 /// Builds a [`PhysicalIndexingPlan`] by assigning each indexing tasks to a node ID.
 /// The algorithm first sort indexing tasks by (index_id, source_id).
 /// Then for each indexing tasks, it performs the following steps:
-/// 1. Sort node by rendez-vous hashing to make the assigment stable (it makes it
+/// 1. Sort node by rendez-vous hashing to make the assignment stable (it makes it
 ///    deterministic too). This is not bullet proof as the node score has an impact
-///    on the assigment too.
+///    on the assignment too.
 /// 2. Select node candidates that can run the task, see [`select_node_candidates`]
 ///    function.
 /// 3. For each node, compute a score for this task, the higher, the better, see
@@ -162,7 +162,7 @@ pub(crate) fn build_physical_indexing_plan(
             .expect("SourceConfig should always be present.");
         let candidates = select_node_candidates(&node_ids, &plan, source_config, &indexing_task);
 
-        // It's theoritically possible to have no candidate as all indexers can already
+        // It's theoretically possible to have no candidate as all indexers can already
         // have more than `max_num_pipelines_per_indexer` assigned for a given source.
         // But, when building the list of indexing tasks to run on the cluster in
         // `build_indexing_plan`, we make sure to always respect the constraint

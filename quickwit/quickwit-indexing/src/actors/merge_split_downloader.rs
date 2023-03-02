@@ -185,9 +185,9 @@ mod tests {
         merge_split_downloader_handler
             .process_pending_and_observe()
             .await;
-        let merge_scratchs = merge_executor_inbox.drain_for_test();
-        assert_eq!(merge_scratchs.len(), 1);
-        let merge_scratch = merge_scratchs
+        let merge_scratches = merge_executor_inbox.drain_for_test();
+        assert_eq!(merge_scratches.len(), 1);
+        let merge_scratch = merge_scratches
             .into_iter()
             .next()
             .unwrap()

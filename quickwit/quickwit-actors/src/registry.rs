@@ -248,7 +248,7 @@ impl ActorJoinHandle {
         })
     }
 
-    /// Joins the actor and returns its exit status on the frist invocation.
+    /// Joins the actor and returns its exit status on the first invocation.
     /// Returns None afterwards.
     pub(crate) async fn join(&self) -> ActorExitStatus {
         self.holder.clone().await

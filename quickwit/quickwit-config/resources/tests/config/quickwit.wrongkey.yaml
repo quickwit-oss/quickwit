@@ -1,5 +1,5 @@
 version: 0.4
 searcher:
   fast_field_cache_capacity: 10G
-  # Typo here. It is supposed to be searchs.
-  max_num_concurrent_split_searchs: 150
+  # Typo here. It is supposed to be searches.
+  max_num_concurrent_split_searchs_with_typo: 150

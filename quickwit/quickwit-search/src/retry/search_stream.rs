@@ -23,7 +23,7 @@ use tracing::warn;
 
 use super::RetryPolicy;
 
-pub struct SuccessfullSplitIds(pub Vec<String>);
+pub struct SuccessfulSplitIds(pub Vec<String>);
 
 /// Retry policy for consuming the result stream of a LeafSearchStreamRequest.
 /// A retry is only made if there are some missing splits.
@@ -33,7 +33,7 @@ pub struct LeafSearchStreamRetryPolicy {}
 impl
     RetryPolicy<
         LeafSearchStreamRequest,
-        SuccessfullSplitIds,
+        SuccessfulSplitIds,
         SendError<crate::Result<LeafSearchStreamResponse>>,
     > for LeafSearchStreamRetryPolicy
 {
@@ -44,12 +44,12 @@ impl
         &self,
         mut request: LeafSearchStreamRequest,
         response_res: &Result<
-            SuccessfullSplitIds,
+            SuccessfulSplitIds,
             SendError<crate::Result<LeafSearchStreamResponse>>,
         >,
     ) -> Option<LeafSearchStreamRequest> {
         match response_res {
-            Ok(SuccessfullSplitIds(successful_split_ids)) => {
+            Ok(SuccessfulSplitIds(successful_split_ids)) => {
                 if successful_split_ids.len() == request.split_offsets.len() {
                     // All splits were successful!
                     return None;
@@ -80,7 +80,7 @@ mod tests {
     };
     use tokio::sync::mpsc::error::SendError;
 
-    use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfullSplitIds};
+    use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfulSplitIds};
     use crate::retry::RetryPolicy;
 
     #[tokio::test]
@@ -97,7 +97,7 @@ mod tests {
     async fn test_retry_policy_search_stream_should_not_retry_on_successful_response() {
         let retry_policy = LeafSearchStreamRetryPolicy {};
         let request = LeafSearchStreamRequest::default();
-        let response_res = Ok(SuccessfullSplitIds(Vec::new()));
+        let response_res = Ok(SuccessfulSplitIds(Vec::new()));
         let retry_req_opt = retry_policy.retry_request(request, &response_res);
         assert!(retry_req_opt.is_none());
     }
@@ -119,7 +119,7 @@ mod tests {
             split_offsets: vec![split_1, split_2],
             ..Default::default()
         };
-        let response_res = Ok(SuccessfullSplitIds(vec!["split_1".to_string()]));
+        let response_res = Ok(SuccessfulSplitIds(vec!["split_1".to_string()]));
         let retry_req = retry_policy.retry_request(request, &response_res).unwrap();
         assert_eq!(retry_req.split_offsets.len(), 1);
         assert_eq!(retry_req.split_offsets[0].split_id, "split_2");

@@ -83,7 +83,7 @@ export function LanguageFeatures(): any {
 
         // @ annotations.
         // As an example, we emit a debugging log message on these tokens.
-        // Note: message are supressed during the first load -- change some lines to see them.
+        // Note: message are suppressed during the first load -- change some lines to see them.
         [/@\s*[a-zA-Z_$][\w$]*/, { token: 'annotation', log: 'annotation token: $0' }],
 
         // numbers
@@ -95,7 +95,7 @@ export function LanguageFeatures(): any {
         [/[;,.]/, 'delimiter'],
 
         // strings
-        [/"([^"\\]|\\.)*$/, 'string.invalid' ],  // non-teminated string
+        [/"([^"\\]|\\.)*$/, 'string.invalid' ],  // non-terminated string
         [/"/,  { token: 'string.quote', bracket: '@open', next: '@string' } ],
 
         // characters

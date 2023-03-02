@@ -83,7 +83,7 @@ pub fn print_checklist(check_list_results: &[(&str, anyhow::Result<()>)]) {
 
 /// Run a checklist and print out its successes and failures on stdout.
 ///
-/// If an error is encountered, the proccess will exit with exit code 1.
+/// If an error is encountered, the process will exit with exit code 1.
 pub fn run_checklist(checks: Vec<(&str, anyhow::Result<()>)>) -> Result<(), ChecklistError> {
     print_checklist(&checks);
     if !checks

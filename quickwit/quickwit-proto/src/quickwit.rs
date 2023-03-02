@@ -55,7 +55,7 @@ pub struct SearchResponse {
     /// server-side and expressed in microseconds.
     #[prost(uint64, tag = "3")]
     pub elapsed_time_micros: u64,
-    /// The searcherrors that occured formatted as string.
+    /// The searcherrors that occurred formatted as string.
     #[prost(string, repeated, tag = "4")]
     pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Serialized aggregation response
@@ -66,7 +66,7 @@ pub struct SearchResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitSearchError {
-    /// The searcherror that occured formatted as string.
+    /// The searcherror that occurred formatted as string.
     #[prost(string, tag = "1")]
     pub error: ::prost::alloc::string::String,
     /// Split id that failed.
@@ -107,7 +107,7 @@ pub struct SplitIdAndFooterOffsets {
     /// The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
     #[prost(uint64, tag = "2")]
     pub split_footer_start: u64,
-    /// The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
+    /// The offset of the end of the footer in split bundle. The footer contains the file bundle metadata and the hotcache.
     #[prost(uint64, tag = "3")]
     pub split_footer_end: u64,
 }
@@ -278,7 +278,7 @@ pub struct ListTermsResponse {
     /// server-side and expressed in microseconds.
     #[prost(uint64, tag = "3")]
     pub elapsed_time_micros: u64,
-    /// The searcherrors that occured formatted as string.
+    /// The searcherrors that occurred formatted as string.
     #[prost(string, repeated, tag = "4")]
     pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }

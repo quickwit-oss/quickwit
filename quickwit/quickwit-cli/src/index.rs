@@ -888,7 +888,7 @@ pub async fn start_statistics_reporting_loop(
 
     loop {
         // TODO fixme. The way we wait today is a bit lame: if the indexing pipeline exits, we will
-        // stil wait up to an entire heartbeat...  Ideally we should  select between two
+        // still wait up to an entire heartbeat...  Ideally we should  select between two
         // futures.
         report_interval.tick().await;
         // Try to receive with a timeout of 1 second.

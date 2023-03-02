@@ -50,7 +50,7 @@ pub struct SourceConfig {
 
     /// Maximum number of indexing pipelines spawned for the source on a given indexer.
     /// The maximum is reached only if there is enough `desired_num_pipelines` to run.
-    /// The value is only used by sources that Quickwit knows how to distribute accross
+    /// The value is only used by sources that Quickwit knows how to distribute across
     /// pipelines/nodes, that is for Kafka sources only.
     /// Example:
     /// - `max_num_pipelines_per_indexer=2`
@@ -59,7 +59,7 @@ pub struct SourceConfig {
     pub max_num_pipelines_per_indexer: usize,
     /// Number of desired indexing pipelines to run on a cluster for the source.
     /// This number could not be reach if there is not enough indexers.
-    /// The value is only used by sources that Quickwit knows how to distribute accross
+    /// The value is only used by sources that Quickwit knows how to distribute across
     /// pipelines/nodes, that is for Kafka sources only.
     /// Example:
     /// - `max_num_pipelines_per_indexer=1`

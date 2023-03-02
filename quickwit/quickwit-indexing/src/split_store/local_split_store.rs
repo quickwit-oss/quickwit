@@ -210,7 +210,7 @@ impl InnerLocalSplitStore {
 
     /// Tries to move a `split_folder` file into the cache.
     ///
-    /// Move is not an image here. We are litterally moving the directory.
+    /// Move is not an image here. We are literally moving the directory.
     ///
     /// If the cache capacity does not allow it, this function
     /// just logs a warning and returns Ok(false).
@@ -396,7 +396,7 @@ impl LocalSplitStore {
 
     /// Tries to move a `split_folder` file into the cache.
     ///
-    /// Move is not an image here. We are litterally moving the directory.
+    /// Move is not an image here. We are literally moving the directory.
     ///
     /// If the cache capacity does not allow it, this function
     /// just logs a warning and returns Ok(false).

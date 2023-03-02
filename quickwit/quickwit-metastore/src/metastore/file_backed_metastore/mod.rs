@@ -65,7 +65,7 @@ pub(crate) enum IndexState {
 /// Metastore that stores all of the metadata associated to each index
 /// into as many files and stores a map of indexes
 /// (index_id, index_state) in a dedicated file `indexes_states.json`.
-/// An `IndexState` describes the lifecyle of an index: `Creating` and
+/// An `IndexState` describes the lifecycle of an index: `Creating` and
 /// `Deleting` are transitioning states that indicates that index is not
 /// yet available. On the contrary, `Alive` state indicates the index is ready
 /// to be retrieved / updated.
@@ -240,7 +240,7 @@ impl FileBackedMetastore {
             return get_index_mutex(index_id, index_state).await;
         }
 
-        // We need to instanciate a `LazyFileBackedIndex` that will hold the mutex
+        // We need to instantiate a `LazyFileBackedIndex` that will hold the mutex
         // and take care of spawning the polling if needed.
         let index = index_result?;
         let lazy_index = LazyFileBackedIndex::new(

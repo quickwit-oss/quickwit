@@ -65,7 +65,7 @@ a few faulty documents.
 Quickwit allows you to configure how document are routed with a simple DSL. Here are some sample expression with a short description of their result:
 
 - `tenant_id`: create one partition per tenant\_id
-- `tenant_id,app_id`: create one partiton per unique combination of tenant\_id and app\_id
+- `tenant_id,app_id`: create one partition per unique combination of tenant\_id and app\_id
 - `tenant_id,hash_mod(app_id, 8)`: for each tenant, create up to 8 partitions containing each data related to some applications
 - `hash_mod((tenant_id,app_id), 50)`: create 50 partition in total, containing some combination of tenant and apps.
 

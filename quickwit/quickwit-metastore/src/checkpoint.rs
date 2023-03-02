@@ -200,7 +200,7 @@ impl IndexCheckpoint {
 
 /// A source checkpoint is a map of the last processed position for every partition.
 ///
-/// If a partition is missing, it implicitely means that none of its message
+/// If a partition is missing, it implicitly means that none of its message
 /// has been processed.
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct SourceCheckpoint {

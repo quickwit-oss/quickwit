@@ -1103,7 +1103,7 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 405);
 
-        // Check get a non exising source returns 404.
+        // Check get a non existing source returns 404.
         let resp = warp::test::request()
             .path("/indexes/hdfs-logs/sources/file-source")
             .method("GET")

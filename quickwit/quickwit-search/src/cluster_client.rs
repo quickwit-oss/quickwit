@@ -29,7 +29,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::debug;
 
 use crate::retry::search::LeafSearchRetryPolicy;
-use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfullSplitIds};
+use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfulSplitIds};
 use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
 use crate::{SearchError, SearchJobPlacer, SearchServiceClient};
 
@@ -207,7 +207,7 @@ async fn forward_leaf_search_stream(
     mut stream: UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>>,
     sender: UnboundedSender<crate::Result<LeafSearchStreamResponse>>,
     send_error: bool,
-) -> Result<SuccessfullSplitIds, SendError<crate::Result<LeafSearchStreamResponse>>> {
+) -> Result<SuccessfulSplitIds, SendError<crate::Result<LeafSearchStreamResponse>>> {
     let mut successful_split_ids: Vec<String> = Vec::new();
     while let Some(result) = stream.next().await {
         match result {
@@ -222,7 +222,7 @@ async fn forward_leaf_search_stream(
             }
         }
     }
-    Ok(SuccessfullSplitIds(successful_split_ids))
+    Ok(SuccessfulSplitIds(successful_split_ids))
 }
 
 #[cfg(test)]

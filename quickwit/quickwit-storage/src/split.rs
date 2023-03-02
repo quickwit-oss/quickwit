@@ -121,7 +121,7 @@ impl SplitPayloadBuilder {
     /// Adds the file to the bundle file.
     ///
     /// The hotcache needs to be the last file that is added, in order to be able to read
-    /// the hotcache and the metadata in one continous read.
+    /// the hotcache and the metadata in one continuous read.
     pub fn add_file(&mut self, path: &Path) -> io::Result<()> {
         let file = std::fs::metadata(path)?;
         let file_range = self.current_offset as u64..self.current_offset as u64 + file.len();
@@ -387,7 +387,7 @@ mod tests {
         // border 2 case skip and take cross adjacent blocks
         assert_eq!(fetch_data(&split_streamer, 1..3).await?, vec![76, 99]);
 
-        // border 3 case skip and take in seperate blocks with full block between
+        // border 3 case skip and take in separate blocks with full block between
         assert_eq!(
             fetch_data(&split_streamer, 1..6).await?,
             vec![76, 99, 55, 44, 123]

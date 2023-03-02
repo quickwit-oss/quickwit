@@ -20,7 +20,7 @@
 use std::str::FromStr;
 
 use quickwit_common::simple_list::{from_simple_list, to_simple_list, SimpleList};
-/// This file is auto-generated, any change can be overriden.
+/// This file is auto-generated, any change can be overridden.
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 

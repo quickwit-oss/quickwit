@@ -281,7 +281,7 @@ impl SearchService for SearchServiceImpl {
 }
 
 /// [`SearcherContext`] provides a common set of variables
-/// shared by a searcher instance (which instanciates a
+/// shared by a searcher instance (which instantiates a
 /// [`SearchServiceImpl`]).
 pub struct SearcherContext {
     /// Searcher config.

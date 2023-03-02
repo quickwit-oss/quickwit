@@ -47,7 +47,7 @@ use crate::{Result, SearchError};
 // Note: we return a stream of a result with a tonic::Status error
 // to be compatible with the stream coming from the grpc client.
 // It would be better to have a SearchError but we need then
-// to process stream in grpc_adapater.rs to change SearchError
+// to process stream in grpc_adapter.rs to change SearchError
 // to tonic::Status as tonic::Status is required by the stream result
 // signature defined by proto generated code.
 pub async fn leaf_search_stream(
