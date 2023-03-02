@@ -86,7 +86,6 @@ openssl-support = ["openssl-probe"]
 tokio-console = ["console-subscriber"]
 release-feature-set = [
   "quickwit-metastore/postgres",
-  "quickwit-metastore/azure",
   "quickwit-indexing/kafka",
   "quickwit-indexing/kinesis",
   "openssl-support",
@@ -94,7 +93,6 @@ release-feature-set = [
 ]
 release-feature-vendored-set = [
   "quickwit-metastore/postgres",
-  "quickwit-metastore/azure",
   "quickwit-indexing/vendored-kafka",
   "quickwit-indexing/kinesis",
   "openssl-support",
@@ -103,7 +101,6 @@ release-feature-vendored-set = [
 
 release-macos-feature-vendored-set = [
   "quickwit-metastore/postgres",
-  "quickwit-metastore/azure",
   "quickwit-indexing/vendored-kafka-macos",
   "quickwit-indexing/kinesis",
   "openssl-support",

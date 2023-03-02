@@ -13,12 +13,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "RustyXML"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b5ace29ee3216de37c0546865ad08edef58b0f9e76838ed8959a84a990e58c5"
-
-[[package]]
 name = "adler"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -151,7 +145,7 @@ checksum = "8f1f8f5a6f3d50d89e3797d7593a50f96bb2aaa20ca0cc7be1fb673232c91d72"
 [[package]]
 name = "api_generator"
 version = "8.7.0-alpha.1"
-source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=c157b19#c157b1915e5cb01835061f86a1fbc54a9925476c"
+source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=dca3aba#dca3aba113be72e13ff4ac60229299b1953ba9c7"
 dependencies = [
  "Inflector",
  "anyhow",
@@ -232,6 +226,19 @@ dependencies = [
  "concurrent-queue",
  "event-listener",
  "futures-core",
+]
+
+[[package]]
+name = "async-compression"
+version = "0.3.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "942c7cd7ae39e91bde4820d74132e9862e62c2f386c3aa90ccf55949f5bad63a"
+dependencies = [
+ "flate2",
+ "futures-core",
+ "memchr",
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
@@ -348,81 +355,6 @@ dependencies = [
  "rustversion",
  "tower-layer",
  "tower-service",
-]
-
-[[package]]
-name = "azure_core"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6424becb946de1b1eff7bf5fbc86fabf7457637c88b63dd967b219a712c322c"
-dependencies = [
- "async-trait",
- "base64 0.13.1",
- "bytes",
- "dyn-clone",
- "futures",
- "getrandom 0.2.8",
- "http-types",
- "log",
- "paste",
- "pin-project",
- "rand 0.8.5",
- "reqwest",
- "rustc_version 0.4.0",
- "serde",
- "serde-xml-rs",
- "serde_json",
- "time 0.3.17",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "azure_storage"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28d0de4ed66067ca1afa0a07d787a6fe001288a162409b8308c45909044552ca"
-dependencies = [
- "RustyXML",
- "async-trait",
- "azure_core",
- "base64 0.13.1",
- "bytes",
- "futures",
- "hmac 0.12.1",
- "log",
- "once_cell",
- "serde",
- "serde-xml-rs",
- "serde_derive",
- "serde_json",
- "sha2 0.10.6",
- "time 0.3.17",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "azure_storage_blobs"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a69ea7177f0b3c64196766fcd442ac9664658a194070d082ae8876406800040b"
-dependencies = [
- "RustyXML",
- "azure_core",
- "azure_storage",
- "base64 0.13.1",
- "bytes",
- "futures",
- "log",
- "md5",
- "serde",
- "serde-xml-rs",
- "serde_derive",
- "serde_json",
- "time 0.3.17",
- "url",
- "uuid",
 ]
 
 [[package]]
@@ -2417,19 +2349,6 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-io-timeout",
-]
-
-[[package]]
-name = "hyper-tls"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6183ddfa99b85da61a140bea0efc93fdf56ceaa041b37d553518030827f9905"
-dependencies = [
- "bytes",
- "hyper",
- "native-tls",
- "tokio",
- "tokio-native-tls",
 ]
 
 [[package]]
@@ -5017,10 +4936,6 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "azure_core",
- "azure_storage",
- "azure_storage_blobs",
- "base64 0.21.0",
  "bytes",
  "fnv",
  "futures",
@@ -5068,7 +4983,7 @@ dependencies = [
 [[package]]
 name = "quickwit_elastic_api_generation"
 version = "8.7.0-alpha.1"
-source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=c157b19#c157b1915e5cb01835061f86a1fbc54a9925476c"
+source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=dca3aba#dca3aba113be72e13ff4ac60229299b1953ba9c7"
 dependencies = [
  "anyhow",
  "api_generator",
@@ -5323,6 +5238,7 @@ version = "0.11.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21eed90ec8570952d53b772ecf8f206aa1ec9a3d76b2521c56c42973f2d91ee9"
 dependencies = [
+ "async-compression",
  "base64 0.21.0",
  "bytes",
  "encoding_rs",
@@ -5333,12 +5249,10 @@ dependencies = [
  "http-body",
  "hyper",
  "hyper-rustls",
- "hyper-tls",
  "ipnet",
  "js-sys",
  "log",
  "mime",
- "native-tls",
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
@@ -5348,14 +5262,12 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "tokio",
- "tokio-native-tls",
  "tokio-rustls",
  "tokio-util",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-streams",
  "web-sys",
  "webpki-roots 0.22.6",
  "winreg",
@@ -5888,18 +5800,6 @@ checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
 dependencies = [
  "ordered-float 2.10.0",
  "serde",
-]
-
-[[package]]
-name = "serde-xml-rs"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb3aa78ecda1ebc9ec9847d5d3aba7d618823446a049ba2491940506da6e2782"
-dependencies = [
- "log",
- "serde",
- "thiserror",
- "xml-rs",
 ]
 
 [[package]]
@@ -8094,19 +7994,6 @@ name = "wasm-bindgen-shared"
 version = "0.2.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c38c045535d93ec4f0b4defec448e4291638ee608530863b1e2ba115d4fff7f"
-
-[[package]]
-name = "wasm-streams"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bbae3363c08332cadccd13b67db371814cd214c2524020932f0804b8cf7c078"
-dependencies = [
- "futures-util",
- "js-sys",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
 
 [[package]]
 name = "web-sys"

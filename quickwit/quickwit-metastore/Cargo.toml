@@ -57,4 +57,3 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 testsuite = ["mockall", "tempfile", "quickwit-config/testsuite"]
 ci-test = []
 postgres = ["sqlx"]
-azure = ["quickwit-storage/azure"]
