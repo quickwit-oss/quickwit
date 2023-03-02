@@ -151,7 +151,7 @@ checksum = "8f1f8f5a6f3d50d89e3797d7593a50f96bb2aaa20ca0cc7be1fb673232c91d72"
 [[package]]
 name = "api_generator"
 version = "8.7.0-alpha.1"
-source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=c157b19#c157b1915e5cb01835061f86a1fbc54a9925476c"
+source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=dca3aba#dca3aba113be72e13ff4ac60229299b1953ba9c7"
 dependencies = [
  "Inflector",
  "anyhow",
@@ -232,6 +232,19 @@ dependencies = [
  "concurrent-queue",
  "event-listener",
  "futures-core",
+]
+
+[[package]]
+name = "async-compression"
+version = "0.3.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "942c7cd7ae39e91bde4820d74132e9862e62c2f386c3aa90ccf55949f5bad63a"
+dependencies = [
+ "flate2",
+ "futures-core",
+ "memchr",
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
@@ -2438,19 +2451,6 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-io-timeout",
-]
-
-[[package]]
-name = "hyper-tls"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6183ddfa99b85da61a140bea0efc93fdf56ceaa041b37d553518030827f9905"
-dependencies = [
- "bytes",
- "hyper",
- "native-tls",
- "tokio",
- "tokio-native-tls",
 ]
 
 [[package]]
@@ -5120,7 +5120,7 @@ dependencies = [
 [[package]]
 name = "quickwit_elastic_api_generation"
 version = "8.7.0-alpha.1"
-source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=c157b19#c157b1915e5cb01835061f86a1fbc54a9925476c"
+source = "git+https://github.com/quickwit-oss/elasticsearch-rs?rev=dca3aba#dca3aba113be72e13ff4ac60229299b1953ba9c7"
 dependencies = [
  "anyhow",
  "api_generator",
@@ -5366,6 +5366,7 @@ version = "0.11.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21eed90ec8570952d53b772ecf8f206aa1ec9a3d76b2521c56c42973f2d91ee9"
 dependencies = [
+ "async-compression",
  "base64 0.21.0",
  "bytes",
  "encoding_rs",
@@ -5376,12 +5377,10 @@ dependencies = [
  "http-body",
  "hyper",
  "hyper-rustls",
- "hyper-tls",
  "ipnet",
  "js-sys",
  "log",
  "mime",
- "native-tls",
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
@@ -5391,7 +5390,6 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "tokio",
- "tokio-native-tls",
  "tokio-rustls",
  "tokio-util",
  "tower-service",

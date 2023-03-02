@@ -39,9 +39,9 @@ assert-json-diff = "2"
 async-speed-limit = "0.4"
 async-trait = "0.1"
 atty = "0.2"
-azure_core = "0.5.0"
-azure_storage = "0.6.0"
-azure_storage_blobs = "0.6.0"
+azure_core = {version = "0.5.0", features = ["enable_reqwest_rustls"] }
+azure_storage = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"]}
+azure_storage_blobs = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"]}
 backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.21"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
