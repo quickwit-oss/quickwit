@@ -17,14 +17,38 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_codegen::Codegen;
+use std::collections::BinaryHeap;
+use std::iter::FusedIterator;
 
-fn main() {
-    Codegen::run(
-        "src/hello.proto",
-        "src/",
-        "crate::HelloResult",
-        "crate::HelloError",
-    )
-    .unwrap();
+// TODO: Remove this once `BinaryHeap::into_iter_sorted` is stabilized.
+
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+#[derive(Clone, Debug)]
+pub struct IntoIterSorted<T> {
+    inner: BinaryHeap<T>,
 }
+
+impl<T> IntoIterSorted<T> {
+    pub fn new(instance: BinaryHeap<T>) -> Self {
+        Self { inner: instance }
+    }
+}
+
+impl<T: Ord> Iterator for IntoIterSorted<T> {
+    type Item = T;
+
+    #[inline]
+    fn next(&mut self) -> Option<T> {
+        self.inner.pop()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let exact = self.inner.len();
+        (exact, Some(exact))
+    }
+}
+
+impl<T: Ord> ExactSizeIterator for IntoIterSorted<T> {}
+
+impl<T: Ord> FusedIterator for IntoIterSorted<T> {}

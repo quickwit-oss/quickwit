@@ -35,7 +35,7 @@ use tantivy::fastfield::Column;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 
 use crate::filters::{create_timestamp_filter_builder, TimestampFilter, TimestampFilterBuilder};
-use crate::jaeger_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector};
+use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector};
 use crate::partial_hit_sorting_key;
 
 #[derive(Clone, Debug)]
@@ -276,10 +276,14 @@ impl SegmentCollector for QuickwitSegmentCollector {
     }
 }
 
+/// Available aggregation types.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum QuickwitAggregations {
+    /// Aggregation used by the Jaeger service to find trace IDs that match a
+    /// [`quickwit_proto::jaeger::storage::v1::FindTraceIDsRequest`].
     FindTraceIdsAggregation(FindTraceIdsCollector),
+    /// Your classic Tantivy aggregation.
     TantivyAggregations(Aggregations),
 }
 
@@ -584,10 +588,9 @@ pub(crate) fn make_collector_for_split(
 pub(crate) fn make_merge_collector(
     search_request: &SearchRequest,
 ) -> crate::Result<QuickwitCollector> {
-    let aggregation = if let Some(agg) = search_request.aggregation_request.as_ref() {
-        Some(serde_json::from_str(agg)?)
-    } else {
-        None
+    let aggregation = match &search_request.aggregation_request {
+        Some(aggregation) => Some(serde_json::from_str(aggregation)?),
+        None => None,
     };
     Ok(QuickwitCollector {
         split_id: String::default(),
