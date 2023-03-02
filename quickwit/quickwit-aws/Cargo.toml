@@ -25,7 +25,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-quickwit-actors = { workspace = true }
+quickwit-actors = { workspace = true, features = ["testsuite"] }
 
 [features]
 kinesis = ["rusoto_kinesis"]
