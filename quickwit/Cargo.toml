@@ -172,7 +172,7 @@ tokio-util = { version = "0.7", features = ["full"] }
 toml = "0.6.0"
 tonic = { version = "0.8.3", features = ["gzip"] }
 tonic-build = "0.8.4"
-tower = "0.4.13"
+tower = { version = "0.4.13", features = ["util"] }
 tracing = "0.1.37"
 tracing-opentelemetry = "0.18.0"
 tracing-subscriber = { version = "0.3.16", features = [

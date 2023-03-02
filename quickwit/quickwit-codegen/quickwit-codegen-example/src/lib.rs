@@ -36,7 +36,7 @@ mod tests {
     use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
     use tonic::transport::{Endpoint, Server};
     use tower::timeout::Timeout;
-    use tower::Service;
+    use tower::ServiceBuilder;
 
     use crate::hello::hello_grpc_server::HelloGrpcServer;
     use crate::hello::{
@@ -105,7 +105,7 @@ mod tests {
             }
         );
 
-        let grpc_server_adapter = HelloGrpcServerAdapter::new(hello);
+        let grpc_server_adapter = HelloGrpcServerAdapter::new(hello.clone());
         let grpc_server = HelloGrpcServer::new(grpc_server_adapter);
         let addr: SocketAddr = "127.0.0.1:6666".parse().unwrap();
 
@@ -135,17 +135,6 @@ mod tests {
                 .unwrap(),
             HelloResponse {
                 message: "Hello, Client!".to_string()
-            }
-        );
-        assert_eq!(
-            grpc_client
-                .call(HelloRequest {
-                    name: "Tower".to_string()
-                })
-                .await
-                .unwrap(),
-            HelloResponse {
-                message: "Hello, Tower!".to_string()
             }
         );
 
@@ -189,18 +178,22 @@ mod tests {
                 message: "Hello, beautiful actor!".to_string()
             }
         );
+        universe.assert_quit().await;
+
+        let mut hello_tower = HelloClient::tower()
+            .hello_layer(ServiceBuilder::new().concurrency_limit(1).into())
+            .service(hello.clone());
+
         assert_eq!(
-            actor_client
-                .call(HelloRequest {
-                    name: "exquisite".to_string()
+            hello_tower
+                .hello(HelloRequest {
+                    name: "Tower".to_string()
                 })
                 .await
                 .unwrap(),
             HelloResponse {
-                message: "Hello, exquisite actor!".to_string()
+                message: "Hello, Tower!".to_string()
             }
         );
-
-        universe.assert_quit().await;
     }
 }
