@@ -11,7 +11,7 @@ makes Quickwit well integrated in the observabitility ecosystem.
 Learn how Quickwit can help you manage your logs:
 
 - [Supported agents](#supported-agents): OpenTelemetry, Vector, Fluentbit and more.
-- [Enabling OLTP gRPC service](#oltp-grpc-service)
+- [Enabling OTLP gRPC service](#otlp-grpc-service)
 - Tutorials
   - [Sending logs from Vector](./send-logs-from-vector-to-quickwit.md)
   - [Sending logs from Fluentbit](./send-logs-from-vector-to-quickwit.md)
@@ -30,7 +30,7 @@ Learn how Quickwit can help you manage your logs:
 ### gRPC-based agent: OpenTelemetry agent
 
 Before using an [OpenTelemety collector](https://opentelemetry.io/docs/collector/), you need to enable [Quickwit OTEL gRPC service](#otel-grpc-service).
-Once enabled, Quickwit is ready to receive OpenTelemetry gRPC requests.
+Once started, Quickwit is ready to receive OpenTelemetry gRPC requests.
 
 To configure an OpenTelemetry agent, here is a typical configuration file to send logs to Quickwit:
 
@@ -59,7 +59,6 @@ config:
 
 Find more configuration details on the [OpenTelemetry documentation](https://opentelemetry.io/docs/collector/configuration/).
 
-
 ### HTTP-based agents
 
 It's also possible to use other agents that sends HTTP requests to Quickwit Ingest API. Quickwit also partially support Elasticseardch `_bulk` API. Thus, there is a good chance that your agent is already compatible with Quickwit.
@@ -68,12 +67,13 @@ Currently, we tested the following HTTP-based agents:
 - [Vector](./send-logs-from-vector-to-quickwit.md)
 - [Fluentbit](./send-logs-from-fluentbit-to-quickwit.md)
 - FluentD (tutorial coming soon)
+- Logstash: Quickwit does not support the Elasticsearch output. However it's possible to send logs with the HTTP output but with `json` [format](https://www.elastic.co/guide/en/logstash/current/plugins-outputs-http.html) only.
 
-## OLTP gRPC service
+## OTLP gRPC service
 
-Quickwit natively support the [OpenTelemetry Protocol (OLTP)](https://opentelemetry.io/docs/reference/specification/protocol/otlp/). OTLP defines the API interface and the [logs data model](#logs-data-model).
+Quickwit natively support the [OpenTelemetry Protocol (OTLP)](https://opentelemetry.io/docs/reference/specification/protocol/otlp/). OTLP defines the API interface and the [logs data model](#logs-data-model).
 
-Enabling Quickwit OLTP service is done in the [node configuration file](/docs/configuration/node-config.md) by configuring the indexer setting `enable_otlp_endpoint` to `true`. This gives the following lines in your node config file:
+Enabling Quickwit OTLP service is done in the [node configuration file](/docs/configuration/node-config.md) by configuring the indexer setting `enable_otlp_endpoint` to `true`. This gives the following lines in your node config file:
 
 ```yaml title=node-config.yaml
 # ... Indexer configuration ...
@@ -81,11 +81,15 @@ indexer:
     enable_otlp_endpoint: true
 ```
 
-On starting, Quickwit will create automatically an index `otel-logs-v0` described in the [logs data model section](#logs-data-model). Quickwit will be then ready to receive gRPC requests.
+When starting Quickwit, it will create automatically an index `otel-logs-v0` ready to receive logs from OTLP gRPC service. Its doc mapping is described in the following [section](#otlp-logs-data-model).
 
-## Logs data model
+You can also send your logs to this index by using the [ingest API](/docs/reference/rest-api.md#ingest-data-into-an-index).
 
-Quickwit logs data model is 
+## OTLP logs data model
+
+The logs data model is derived from the [OpenTelemetry logs data model](https://opentelemetry.io/docs/reference/specification/logs/data-model/).
+
+Below is the index configuration of the `otel-logs-v0` index that maps OpenTelemetry logs to a indexed document in Quickwit. 
 
 ```yaml
 
@@ -167,9 +171,16 @@ search_settings:
 
 ## UI Integration
 
-Currenlty Quickwit provides a simplistic UI to get basic information from the cluster, indexes and search documents.
-If a simple UI is sufficient for you but you need additional features, please open an issue on [GitHub]()!
+Currently Quickwit provides a simplistic UI to get basic information from the cluster, indexes and search documents.
+If a simple UI is not sufficient for you but you need additional features, Grafana and Elasticsearch query API support are planned for Q2 2023, stay tuned!
 
-Grafana and Elasticsearch query DSL support are planned for Q2 2023, stay tuned!
+Please open an issue on [GitHub](https://github.com/quickwit-oss/quickwit) if you want to have other integrations.
 
-## Limitations
+## Known limitations
+
+There are few limitations on the logs management setup in Quickwit 0.5:
+- Aggregations are not available on sparse fields and JSON field, this will be fixed in 0.6. This means that only the timestamp field can support aggregations.
+- The ingest API does not provide High-Availibility and High-Durability, this will be fixed in Q2/Q3.
+- OTLP grpc service index documents only in the `otel-logs-v0` index. 
+
+If you are interested in new features or discover other limitations, please open an issue on [GitHub](https://github.com/quickwit-oss/quickwit).

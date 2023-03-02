@@ -83,7 +83,11 @@ indexing_settings:
   commit_timeout_secs: 10
 ```
 
+<<<<<<< HEAD
 First create the YAML file:
+=======
+First download the YAML file:
+>>>>>>> d7a12bca (Finalize logs management section.)
 
 ```bash
 curl -o vector-otel-logs.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/vector-otel-logs/index-config.yaml
@@ -163,7 +167,10 @@ source = '''
 
 [sinks.quickwit_logs]
 type = "http"
+<<<<<<< HEAD
 method = "post"
+=======
+>>>>>>> d7a12bca (Finalize logs management section.)
 inputs = ["remap_syslog"]
 encoding.codec = "json"
 framing.method = "newline_delimited"
