@@ -42,6 +42,7 @@ quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-grpc-clients = { workspace = true }
 quickwit-metastore = { workspace = true }
+quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
 

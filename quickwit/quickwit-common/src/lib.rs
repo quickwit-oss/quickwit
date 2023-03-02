@@ -22,6 +22,7 @@
 mod checklist;
 mod coolid;
 
+pub mod binary_heap;
 mod file_entry;
 pub mod fs;
 pub mod io;
