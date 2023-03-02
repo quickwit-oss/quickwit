@@ -18,6 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod error;
+
+#[path = "codegen/hello.rs"]
 mod hello;
 
 pub use error::HelloError;
