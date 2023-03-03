@@ -7,7 +7,7 @@ Quickwit is built from the ground up to [index efficiently unstructured data](..
 
 Moreover, Quickwit is OpenTelemetry native and provides a REST API ready to ingest any JSON formatted logs, this makes Quickwit well integrated in the observability ecosystem.
 
-![Quickwit Logs Management Overview](../assets/images/logs-management-overview.svg)
+![Quickwit Log Management Overview](../assets/images/logs-management-overview.svg)
 
 ## Learn how to manage your logs with Quickwit
 
@@ -180,7 +180,7 @@ Please open an issue on [GitHub](https://github.com/quickwit-oss/quickwit) if yo
 
 ## Known limitations
 
-There are a few limitations on the logs management setup in Quickwit 0.5:
+There are a few limitations on the log management setup in Quickwit 0.5:
 - Aggregations are not available on sparse fields and JSON field, this will be fixed in 0.6. This means that only the timestamp field can support aggregations.
 - The ingest API does not provide High-Availibility and High-Durability, this will be fixed in Q2/Q3.
 - OTLP gRPC service index documents only in the `otel-logs-v0` index.
