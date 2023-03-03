@@ -20,7 +20,7 @@ In this guide, we will show you how to connect it to Quickwit.
 - [Install Fluentbit](https://docs.fluentbit.io/manual/installation/getting-started-with-fluent-bit)
 
 
-## Create an simple index for Fluentbit logs
+## Create a simple index for Fluentbit logs
 
 Let's create a schemaless index with only one field `timestamp`. The mode `dynamic` indicates that Quickwit will index all fields even if they are not defined in the doc mapping.
 

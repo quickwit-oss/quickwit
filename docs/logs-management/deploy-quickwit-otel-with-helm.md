@@ -110,7 +110,7 @@ If the CLI did not return an error, you are ready to install the chart:
 helm install quickwit quickwit/quickwit -f qw-tutorial-values.yaml
 ```
 
-After a few instant, you will see the pods running Quickwit services:
+In a few moments, you will see the pods running Quickwit services:
 
 ```bash
 kubectl get pods
