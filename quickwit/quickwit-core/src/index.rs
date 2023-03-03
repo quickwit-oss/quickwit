@@ -51,8 +51,10 @@ pub enum IndexServiceError {
     InvalidConfig(anyhow::Error),
     #[error("Invalid identifier: {0}.")]
     InvalidIdentifier(String),
+    #[error("Operation not allowed: {0}.")]
+    OperationNotAllowed(String),
     #[error("Internal error: {0}.")]
-    InternalError(String),
+    Internal(String),
 }
 
 impl ServiceError for IndexServiceError {
@@ -63,7 +65,8 @@ impl ServiceError for IndexServiceError {
             Self::SplitDeletionError(_) => ServiceErrorCode::Internal,
             Self::InvalidConfig(_) => ServiceErrorCode::BadRequest,
             Self::InvalidIdentifier(_) => ServiceErrorCode::BadRequest,
-            Self::InternalError(_) => ServiceErrorCode::Internal,
+            Self::OperationNotAllowed(_) => ServiceErrorCode::MethodNotAllowed,
+            Self::Internal(_) => ServiceErrorCode::Internal,
         }
     }
 }
@@ -301,7 +304,7 @@ impl IndexService {
             .sources
             .get(&source_id)
             .ok_or_else(|| {
-                IndexServiceError::InternalError(
+                IndexServiceError::Internal(
                     "Created source is not in index metadata, this should never happen."
                         .to_string(),
                 )
