@@ -25,7 +25,7 @@ qwdata
 
 - `indexing`: This directory hold the local indexing directory of each index managed by Quickwit. The local indexing directories are further separated by indexing source. In the above tree, you can see there is an indexing folder corresponding to `_ingest-api-source` source for `wikipedia` index. This directory gets created only on nodes running the indexing service.
 
-- `delete_task_service`: This directory is used by the Janitor service to apply deletes on indexes. During this process, splits are downloaded, a new split is created while applying deletes and uploaded to the target storage. This directory gets created only on node running Janitor service.
+- `delete_task_service`: This directory is used by the Janitor service to apply deletes on indexes. During this process, splits are downloaded, a new split is created while applying deletes and uploaded to the target storage. This directory gets created only on nodes running Janitor service.
 
 - `cache`: This directory is used for caching splits created on this node. As we want to reduce time-to-search, we often creates splits that are far from mature in size and number of document. This leads to new splits going through a set of merges before getting mature. In order to avoid downloading a split that already existed on disk, we keep hold of newly created splits in cache as much as possible. This cache limits on number of splits as well as the overall size of splits it holds. Splits are evicted based on age only (oldest gets evicted).
 
