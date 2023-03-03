@@ -21,7 +21,7 @@ qwdata
     └── wal-00000000000000000029
 ```
 
-- `/queues`: This directory contains write ahead log files allowing hight performance data ingestion on the ingest API. When data is sent to Quickwit via the ingest API, the data is stored in these queues to guard against data lost. The indexing pipelines then consume those queues at their own pace. Whenever an indexing pipeline commits based on `commit_timeout_secs`, the queue is truncated to free up the unnecessarily occupied storage. This directory gets created only on node running the ingest API service.
+- `/queues`: This directory contains write ahead log files of the ingest API. When data is sent to Quickwit via the ingest API, the data is stored in these queues to guard against data lost. The indexing pipelines then consume those queues at their own pace. Whenever an indexing pipeline commits based on `commit_timeout_secs`, the queue is truncated to free up the unnecessarily occupied storage. This directory is created only if the ingest API service is running on your node.
 
 - `indexing`: This directory hold the local indexing directory of each index managed by Quickwit. The local indexing directories are further separated by indexing source. In the above tree, you can see there is an indexing folder corresponding to `_ingest-api-source` source for `wikipedia` index. This directory gets created only on node running the indexing service.
 
