@@ -486,7 +486,7 @@ mod tests {
         .await
         .unwrap_err();
         assert!(format!("{parsing_error:?}")
-            .contains("unknown field `max_num_concurrent_split_searches_with_typo`"));
+            .contains("unknown field `max_num_concurrent_split_searchs_with_typo`"));
     }
 
     #[tokio::test]
