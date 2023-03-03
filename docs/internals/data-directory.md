@@ -1,6 +1,6 @@
 # Quickwit data directory
 
-Quickwit operates on a local directory to store intermediates files. By default, this working directory is named `qwdata` and placed right next to the Quickwit binary. The following is a tree of how that directory might look like after some time of operating Quickwit.
+Quickwit operates on a local directory to store temporary files. By default, this working directory is named `qwdata` and placed right next to the Quickwit binary. The following is a tree of how that directory might look like after some time of operating Quickwit.
 
 ```bash
 qwdata
