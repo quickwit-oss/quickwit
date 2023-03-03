@@ -17,27 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod balance_channel;
-pub mod service_client_pool;
+use quickwit_codegen::Codegen;
 
-pub use balance_channel::create_balance_channel_from_watched_members;
-use tonic::transport::{Channel, Endpoint, Uri};
-use tower::service_fn;
-
-// For tests.
-pub async fn create_channel_from_duplex_stream(
-    client: tokio::io::DuplexStream,
-) -> anyhow::Result<Channel> {
-    let mut client = Some(client);
-    let channel = Endpoint::try_from("http://test.server")?
-        .connect_with_connector(service_fn(move |_: Uri| {
-            let client = client.take();
-            async move {
-                client.ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::Other, "Client already taken")
-                })
-            }
-        }))
-        .await?;
-    Ok(channel)
+fn main() {
+    Codegen::run(
+        "src/control_plane.proto",
+        "src/codegen/",
+        "crate::Result",
+        "crate::ControlPlaneError",
+    )
+    .unwrap();
 }

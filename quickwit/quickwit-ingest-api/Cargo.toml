@@ -5,9 +5,6 @@ edition = "2021"
 license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit is a cost-efficient search engine."
 
-[features]
-testsuite = ["mockall"]
-
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -44,3 +41,6 @@ quickwit-actors = { workspace = true, features = ["testsuite"] }
 
 [build-dependencies]
 quickwit-codegen = { workspace = true }
+
+[features]
+testsuite = ["mockall"]

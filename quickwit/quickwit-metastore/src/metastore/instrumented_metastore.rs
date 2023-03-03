@@ -293,3 +293,27 @@ impl Metastore for InstrumentedMetastore {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use quickwit_storage::RamStorage;
+
+    use super::*;
+    use crate::tests::test_suite::DefaultForTest;
+    use crate::FileBackedMetastore;
+
+    #[async_trait]
+    impl DefaultForTest for InstrumentedMetastore {
+        async fn default_for_test() -> Self {
+            InstrumentedMetastore {
+                underlying: Box::new(FileBackedMetastore::for_test(Arc::new(
+                    RamStorage::default(),
+                ))),
+            }
+        }
+    }
+
+    metastore_test_suite!(crate::metastore::instrumented_metastore::InstrumentedMetastore);
+}

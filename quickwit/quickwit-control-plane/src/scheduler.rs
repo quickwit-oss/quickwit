@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,7 +32,6 @@ use quickwit_config::SourceConfig;
 use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 use quickwit_indexing::indexing_client::IndexingServiceClient;
 use quickwit_metastore::Metastore;
-use quickwit_proto::control_plane_api::NotifyIndexChangeRequest;
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
 use serde::Serialize;
 use time::OffsetDateTime;
@@ -40,6 +40,7 @@ use tracing::{debug, error, info, warn};
 use crate::indexing_plan::{
     build_indexing_plan, build_physical_indexing_plan, IndexSourceId, PhysicalIndexingPlan,
 };
+use crate::{NotifyIndexChangeRequest, NotifyIndexChangeResponse};
 
 const REFRESH_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_secs(3)
@@ -98,6 +99,19 @@ pub struct IndexingScheduler {
     metastore: Arc<dyn Metastore>,
     indexing_client_pool: ServiceClientPool<IndexingServiceClient>,
     state: IndexingSchedulerState,
+}
+
+impl fmt::Debug for IndexingScheduler {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IndexingScheduler")
+            .field("cluster_id", &self.cluster.cluster_id)
+            .field("metastore_uri", &self.metastore.uri())
+            .field(
+                "last_applied_plan_ts",
+                &self.state.last_applied_plan_timestamp,
+            )
+            .finish()
+    }
 }
 
 #[async_trait]
@@ -264,18 +278,18 @@ impl IndexingScheduler {
 
 #[async_trait]
 impl Handler<NotifyIndexChangeRequest> for IndexingScheduler {
-    type Reply = ();
+    type Reply = crate::Result<NotifyIndexChangeResponse>;
 
     async fn handle(
         &mut self,
         _: NotifyIndexChangeRequest,
         _: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
+    ) -> Result<Self::Reply, ActorExitStatus> {
         info!("Index change notification: schedule indexing plan.");
         self.schedule_indexing_plan()
             .await
             .context("Error when scheduling indexing plan")?;
-        Ok(())
+        Ok(Ok(NotifyIndexChangeResponse {}))
     }
 }
 

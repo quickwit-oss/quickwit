@@ -53,20 +53,20 @@ use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, QuickwitConfig};
-use quickwit_control_plane::scheduler::IndexingScheduler;
-use quickwit_control_plane::start_control_plane_service;
+use quickwit_control_plane::{start_control_plane_service, ControlPlaneServiceClient};
 use quickwit_core::{IndexService, IndexServiceError};
+use quickwit_grpc_clients::create_balance_channel_from_watched_members;
 use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
-use quickwit_grpc_clients::{create_balance_channel_from_watched_members, ControlPlaneGrpcClient};
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest_api::{start_ingest_api_service, IngestServiceClient};
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
-    quickwit_metastore_uri_resolver, Metastore, MetastoreError, MetastoreGrpcClient,
-    MetastoreWithControlPlaneTriggers, RetryingMetastore,
+    quickwit_metastore_uri_resolver, Metastore, MetastoreError, MetastoreEvent,
+    MetastoreEventPublisher, MetastoreGrpcClient, RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::{OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG};
 use quickwit_search::{start_searcher_service, SearchJobPlacer, SearchService};
@@ -93,7 +93,7 @@ struct QuickwitServices {
     pub build_info: &'static QuickwitBuildInfo,
     pub cluster: Arc<Cluster>,
     pub metastore: Arc<dyn Metastore>,
-    pub indexing_scheduler_service: Option<Mailbox<IndexingScheduler>>,
+    pub control_plane_client: Option<ControlPlaneServiceClient>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
@@ -114,6 +114,8 @@ fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
 }
 
 pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
+    let universe = Universe::new();
+    let event_broker = EventBroker::default();
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     let cluster =
         quickwit_cluster::start_cluster_service(&config, &config.enabled_services).await?;
@@ -127,13 +129,9 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&config.metastore_uri)
             .await?;
-        let control_plane_client = ControlPlaneGrpcClient::create_and_update_from_members(
-            cluster.ready_member_change_watcher(),
-        )
-        .await?;
-        Arc::new(MetastoreWithControlPlaneTriggers::new(
+        Arc::new(MetastoreEventPublisher::new(
             metastore,
-            control_plane_client,
+            event_broker.clone(),
         ))
     } else {
         // Wait 10 seconds for nodes running a `Metastore` service.
@@ -170,7 +168,20 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         storage_resolver.clone(),
     ));
 
-    let universe = Universe::new();
+    // Instantiate the control plane first so that we can listen to events and take the appropriate
+    // actions when the other components start.
+    let indexing_scheduler_service: Option<ControlPlaneServiceClient> = if config
+        .enabled_services
+        .contains(&QuickwitService::ControlPlane)
+    {
+        let control_plane_mailbox =
+            start_control_plane_service(&universe, cluster.clone(), metastore.clone()).await?;
+        let control_plane_service = ControlPlaneServiceClient::from_mailbox(control_plane_mailbox);
+        event_broker.subscribe::<MetastoreEvent>(control_plane_service.clone());
+        Some(control_plane_service)
+    } else {
+        None
+    };
 
     let (ingest_service, indexing_service) = if config
         .enabled_services
@@ -241,15 +252,6 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     )
     .await?;
 
-    let indexing_scheduler_service: Option<Mailbox<IndexingScheduler>> = if config
-        .enabled_services
-        .contains(&QuickwitService::ControlPlane)
-    {
-        Some(start_control_plane_service(&universe, cluster.clone(), metastore.clone()).await?)
-    } else {
-        None
-    };
-
     let grpc_listen_addr = config.grpc_listen_addr;
     let rest_listen_addr = config.rest_listen_addr;
     let services = config.enabled_services.clone();
@@ -258,7 +260,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         build_info: quickwit_build_info(),
         cluster: cluster.clone(),
         metastore: metastore.clone(),
-        indexing_scheduler_service,
+        control_plane_client: indexing_scheduler_service,
         search_service,
         indexing_service,
         janitor_service,

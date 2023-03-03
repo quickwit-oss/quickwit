@@ -150,8 +150,8 @@ impl SourceConfig {
     }
 
     /// Creates the default ingest-api source config.
-    pub fn ingest_api_default() -> SourceConfig {
-        SourceConfig {
+    pub fn ingest_api_default() -> Self {
+        Self {
             source_id: INGEST_API_SOURCE_ID.to_string(),
             max_num_pipelines_per_indexer: 1,
             desired_num_pipelines: 1,
@@ -162,13 +162,25 @@ impl SourceConfig {
     }
 
     /// Creates the default cli-ingest source config.
-    pub fn cli_ingest_source() -> SourceConfig {
-        SourceConfig {
+    pub fn cli_ingest_source() -> Self {
+        Self {
             source_id: CLI_INGEST_SOURCE_ID.to_string(),
             max_num_pipelines_per_indexer: 1,
             desired_num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestCli,
+            transform_config: None,
+        }
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(source_id: &str, source_params: SourceParams) -> Self {
+        Self {
+            source_id: source_id.to_string(),
+            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: 1,
+            enabled: true,
+            source_params,
             transform_config: None,
         }
     }
