@@ -42,7 +42,7 @@ docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwi
 
 ## Create an index for logs
 
-Let's embrace the OpenTelemetry standard and create an index compatible with its [log data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md).
+Let's embrace the OpenTelemetry standard and create an index compatible with its [logs data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md).
 
 ```yaml title="index-config.yaml"
 #
