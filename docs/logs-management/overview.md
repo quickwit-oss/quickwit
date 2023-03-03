@@ -12,7 +12,7 @@ Moreover, Quickwit is OpenTelemetry native and provides a REST API ready to inge
 ## Learn how to manage your logs with Quickwit
 
 - [Supported agents](#supported-agents): OpenTelemetry, Vector, Fluentbit and more.
-- [Enabling OpenTelemetry service](#otlp-service)
+- [Enabling OpenTelemetry service](#opentelemetry-service)
 - Tutorials
   - [Sending logs from Vector](./send-logs-from-vector-to-quickwit.md)
   - [Sending logs from Fluentbit](./send-logs-from-vector-to-quickwit.md)
@@ -29,7 +29,7 @@ Moreover, Quickwit is OpenTelemetry native and provides a REST API ready to inge
 
 ### OpenTelemetry agent
 
-Before using an [OpenTelemety collector](https://opentelemetry.io/docs/collector/), you need to enable [Quickwit OTEL gRPC service](#otel-grpc-service).
+Before using an [OpenTelemety collector](https://opentelemetry.io/docs/collector/), you need to enable [Quickwit OpenTelemetry service](#opentelemetry-service).
 Once started, Quickwit is ready to receive OpenTelemetry gRPC requests.
 
 To configure an OpenTelemetry agent, here is a typical configuration file to send logs to Quickwit:
@@ -81,11 +81,13 @@ indexer:
     enable_otlp_endpoint: true
 ```
 
-When starting Quickwit, it will start the gRPC service ready to receive logs from an OpenTelemetry collector. If not already present, Quickwit will create automatically the index `otel-logs-v0` . Its doc mapping is described in the following [section](#otlp-logs-data-model).
+When starting Quickwit, it will start the gRPC service ready to receive logs from an OpenTelemetry collector. If not already present, Quickwit will create automatically the index `otel-logs-v0` . Its doc mapping is described in the following [section](#opentelemetry-logs-data-model).
 
-Quickwit does not start an OTLP HTTP service but please [open an issue](https://github.com/quickwit-oss/quickwit) if you need it. You can also send your logs to this index by using the [ingest API](/docs/reference/rest-api.md#ingest-data-into-an-index).
+You can also send your logs to this index by using the [ingest API](/docs/reference/rest-api.md#ingest-data-into-an-index).
 
-## OTLP logs data model
+In 0.5, Quickwit does not start an OTLP HTTP service, if you need it, but please [open an issue](https://github.com/quickwit-oss/quickwit).
+
+## OpenTelemetry logs data model
 
 The logs data model is derived from the [OpenTelemetry logs data model](https://opentelemetry.io/docs/reference/specification/logs/data-model/).
 
@@ -181,6 +183,8 @@ Please open an issue on [GitHub](https://github.com/quickwit-oss/quickwit) if yo
 There are a few limitations on the logs management setup in Quickwit 0.5:
 - Aggregations are not available on sparse fields and JSON field, this will be fixed in 0.6. This means that only the timestamp field can support aggregations.
 - The ingest API does not provide High-Availibility and High-Durability, this will be fixed in Q2/Q3.
-- OTLP grpc service index documents only in the `otel-logs-v0` index. 
+- OTLP gRPC service index documents only in the `otel-logs-v0` index.
+- OTLP HTTP is not available but it should be easy to add.
+
 
 If you are interested in new features or discover other limitations, please open an issue on [GitHub](https://github.com/quickwit-oss/quickwit).
