@@ -20,7 +20,15 @@
 mod box_layer;
 mod box_service;
 mod buffer;
+mod rate;
+mod rate_limit;
 
 pub use box_layer::BoxLayer;
 pub use box_service::BoxService;
 pub use buffer::{Buffer, BufferLayer};
+pub use rate::{ConstantRate, Rate};
+pub use rate_limit::{RateLimit, RateLimitLayer};
+
+pub trait Cost {
+    fn cost(&self) -> u64;
+}
