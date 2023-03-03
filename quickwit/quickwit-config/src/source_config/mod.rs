@@ -635,7 +635,6 @@ mod tests {
                 content.as_bytes(),
             )
             .unwrap_err();
-            println!("source_config {:?}", source_config);
             assert!(source_config
                 .to_string()
                 .contains("`max_num_pipelines_per_indexer` must be"));
