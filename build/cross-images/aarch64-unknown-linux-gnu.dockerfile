@@ -4,7 +4,7 @@ ARG PBC_URL="https://github.com/protocolbuffers/protobuf/releases/download/v21.5
 
 #TODO: 
 # We can switch to static linking (remove `libsasl2-dev:arm64`) using 
-# `rdkafka/gssapi-vendored` feature when there is a release incuding: 
+# `rdkafka/gssapi-vendored` feature when there is a release including: 
 # https://github.com/MaterializeInc/rust-sasl/pull/48
 
 RUN dpkg --add-architecture arm64 && \

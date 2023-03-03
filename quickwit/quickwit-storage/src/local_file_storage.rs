@@ -129,7 +129,7 @@ fn delete_all_dirs_if_empty<'a>(
         let full_path = root.join(path);
         let path_entries_result = full_path.read_dir();
         if let Err(err) = &path_entries_result {
-            // Ignore `ErrorKind::NotFound` as this could be deleted by another concurent task.
+            // Ignore `ErrorKind::NotFound` as this could be deleted by another concurrent task.
             if err.kind() == ErrorKind::NotFound {
                 return Ok(());
             }
@@ -142,7 +142,7 @@ fn delete_all_dirs_if_empty<'a>(
 
         let delete_result = fs::remove_dir(full_path).await;
         if let Err(err) = &delete_result {
-            // Ignore `ErrorKind::NotFound` as this could be deleted by another concurent task.
+            // Ignore `ErrorKind::NotFound` as this could be deleted by another concurrent task.
             if err.kind() == ErrorKind::NotFound {
                 return Ok(());
             }

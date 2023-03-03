@@ -434,7 +434,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_try_recv_prority_corner_case() -> anyhow::Result<()> {
+    async fn test_try_recv_priority_corner_case() -> anyhow::Result<()> {
         let (sender, receiver) = super::channel::<usize>(QueueCapacity::Unbounded);
         tokio::task::spawn(async move {
             tokio::time::sleep(Duration::from_millis(10)).await;

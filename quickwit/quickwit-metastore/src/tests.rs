@@ -719,7 +719,7 @@ pub mod test_suite {
             cleanup_index(&metastore, &index_id).await;
         }
 
-        // Publish a published split and non-existant split on an index
+        // Publish a published split and non-existent split on an index
         {
             metastore.create_index(index_config.clone()).await.unwrap();
 
@@ -760,7 +760,7 @@ pub mod test_suite {
             cleanup_index(&metastore, &index_id).await;
         }
 
-        // Publish a non-staged split and non-existant split on an index
+        // Publish a non-staged split and non-existent split on an index
         {
             metastore.create_index(index_config.clone()).await.unwrap();
 

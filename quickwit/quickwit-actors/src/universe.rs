@@ -216,7 +216,7 @@ mod tests {
     async fn test_schedule_for_actor() {
         let universe = Universe::with_accelerated_time();
         let actor_with_schedule = CountingMinutesActor::default();
-        let (_maibox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
+        let (_mailbox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
         let count_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(count_after_initialization, 1);
         universe.sleep(Duration::from_secs(200)).await;
@@ -229,7 +229,7 @@ mod tests {
     async fn test_actor_quit_after_universe_quit() {
         let universe = Universe::with_accelerated_time();
         let actor_with_schedule = CountingMinutesActor::default();
-        let (_maibox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
+        let (_mailbox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
         universe.sleep(Duration::from_secs(200)).await;
         let res = universe.quit().await;
         assert_eq!(res.len(), 1);
@@ -241,7 +241,7 @@ mod tests {
     async fn test_universe_join_after_actor_quit() {
         let universe = Universe::default();
         let actor_with_schedule = CountingMinutesActor::default();
-        let (_maibox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
+        let (_mailbox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
         assert!(matches!(handler.quit().await, (ActorExitStatus::Quit, 1)));
         assert!(!universe
             .quit()
@@ -255,8 +255,8 @@ mod tests {
         let universe = Universe::default();
         let panicking_actor = ExitPanickingActor::default();
         let actor_with_schedule = CountingMinutesActor::default();
-        let (_maibox, _handler) = universe.spawn_builder().spawn(panicking_actor);
-        let (_maibox, _handler) = universe.spawn_builder().spawn(actor_with_schedule);
+        let (_mailbox, _handler) = universe.spawn_builder().spawn(panicking_actor);
+        let (_mailbox, _handler) = universe.spawn_builder().spawn(actor_with_schedule);
         assert!(universe
             .quit()
             .await

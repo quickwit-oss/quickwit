@@ -244,7 +244,7 @@ impl Actor for Uploader {
         // a queue capacity.
         //
         // Having a large queue is costly too, because each message is a handle over
-        // a split directory. We DO need agressive backpressure here.
+        // a split directory. We DO need aggressive backpressure here.
         QueueCapacity::Bounded(0)
     }
 
@@ -275,7 +275,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         // This is not a valid usage of protected zone here.
         //
         // Protected zone are supposed to be used when the cause for blocking is
-        // outside of the responsability of the current actor.
+        // outside of the responsibility of the current actor.
         // For instance, when sending a message on a downstream actor with a saturated
         // mailbox.
         // This is meant to be fixed with ParallelActors.

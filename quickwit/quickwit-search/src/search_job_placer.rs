@@ -35,7 +35,7 @@ use crate::SearchServiceClient;
 /// The `split_id` is used to define an affinity between a leaf nodes and a job.
 /// The `cost` is used to spread the work evenly amongst nodes.
 pub trait Job {
-    /// SplitId of the split that is targetted.
+    /// SplitId of the split that is targeted.
     fn split_id(&self) -> &str;
     /// Estimation of the load associated with running a given job.
     ///
@@ -102,7 +102,7 @@ impl SearchJobPlacer {
             // TODO optimize the case where there are few jobs and many clients.
             let clients = self.clients();
 
-            // when exclude_addresses excludes all adresses we discard it
+            // when exclude_addresses excludes all addresses we discard it
             let empty_set = HashSet::default();
             let exclude_addresses_if_not_saturated = if exclude_addresses.len() == clients.len() {
                 &empty_set

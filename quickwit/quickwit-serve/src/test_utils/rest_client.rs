@@ -93,7 +93,7 @@ impl QuickwitRestClient {
 
 async fn parse_body<T: DeserializeOwned>(mut response: Response<Body>) -> anyhow::Result<T> {
     if response.status() != StatusCode::OK {
-        anyhow::bail!("Unexepected status {}", response.status());
+        anyhow::bail!("Unexpected status {}", response.status());
     }
     let mut body = Vec::new();
     while let Some(chunk) = response.body_mut().next().await {

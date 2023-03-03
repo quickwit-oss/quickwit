@@ -555,7 +555,7 @@ mod tests {
             .await
             .unwrap();
         // That second message will present some backpressure, since the capacity is 0 and
-        // the first message willl take 1000 micros to be processed.
+        // the first message will take 1000 micros to be processed.
         mailbox
             .send_message_with_backpressure_counter(
                 Duration::default(),

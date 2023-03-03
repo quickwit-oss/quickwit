@@ -173,7 +173,7 @@ impl Handler<SuperviseLoop> for DeleteTaskService {
     ) -> Result<(), ActorExitStatus> {
         let result = self.update_pipeline_handles(ctx).await;
         if let Err(error) = result {
-            error!("Delete task pipelines udpate failed: {}", error);
+            error!("Delete task pipelines update failed: {}", error);
         }
         ctx.schedule_self_msg(HEARTBEAT, SuperviseLoop).await;
         Ok(())

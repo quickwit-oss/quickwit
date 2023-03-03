@@ -45,7 +45,7 @@ const GENERATED_FILE_HEADER: &str = r#"
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-/// This file is auto-generated, any change can be overriden.
+/// This file is auto-generated, any change can be overridden.
 "#;
 
 pub static ROOT_DIR: Lazy<path::PathBuf> = Lazy::new(|| {

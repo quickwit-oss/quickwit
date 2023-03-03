@@ -75,7 +75,7 @@ use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 /// applied to all the splits of the index.
 ///
 /// Quickwit needs a way to track that a delete task has been applied to a split. This is ensured
-/// by two mecanisms:
+/// by two mechanisms:
 /// - On creation of a delete task, we give to the task a monotically increasing opstamp (uniqueness
 ///   and monotonically increasing must be true at the index level).
 /// - When a delete task is executed on a split, that is when the documents matched by the search
@@ -85,7 +85,7 @@ use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 ///   `delete_optstamp` will be inferior to the `opstamp` of the new tasks.
 ///
 /// For splits created after a given delete task, Quickwit's indexing ensures that these splits
-/// are created with a `delete_optstamp` equal the lastest opstamp of the tasks of the
+/// are created with a `delete_optstamp` equal the latest opstamp of the tasks of the
 /// corresponding index.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]

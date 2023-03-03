@@ -113,7 +113,7 @@ impl<A: Actor> Handler<Command> for A {
 
 /// Asks the actor to update its ObservableState.
 ///
-/// The observation is then available using the `ActorHander::last_observation()`
+/// The observation is then available using the `ActorHandler::last_observation()`
 /// method.
 #[derive(Debug)]
 pub(crate) struct Observe;

@@ -956,7 +956,7 @@ mod tests {
             }
             universe.sleep(Duration::from_millis(100)).await;
         }
-        panic!("Pipeline not exited succesfully.");
+        panic!("Pipeline not exited successfully.");
     }
 
     #[tokio::test]

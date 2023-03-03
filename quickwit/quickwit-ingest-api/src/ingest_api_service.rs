@@ -111,7 +111,7 @@ impl IngestApiService {
             });
         }
 
-        let (memory, disk) = self.queues.ressource_usage();
+        let (memory, disk) = self.queues.resource_usage();
         if memory > self.memory_limit {
             info!("Ingestion rejected due to memory limits");
             return Err(IngestServiceError::RateLimited);

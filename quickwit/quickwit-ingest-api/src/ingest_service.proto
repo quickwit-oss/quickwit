@@ -41,7 +41,7 @@ service IngestService {
   ///
   /// Fetching does not necessarily return all of the available records.
   /// If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
-  /// the reponse will be partial.
+  /// the response will be partial.
   rpc Fetch(FetchRequest) returns (FetchResponse);
 
   /// Returns a batch containing the last records.

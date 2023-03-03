@@ -76,7 +76,7 @@ pub fn region_from_str(region_str: &str) -> anyhow::Result<Region> {
         return Ok(region);
     }
     // Maybe this is a custom endpoint (for MinIO for instance).
-    // We require custom endpoints to explicitely state the http/https protocol`.
+    // We require custom endpoints to explicitly state the http/https protocol`.
     if !region_str.starts_with("http") {
         anyhow::bail!(
             "Invalid AWS region. Quickwit expects an AWS region code like `us-east-1` or a \

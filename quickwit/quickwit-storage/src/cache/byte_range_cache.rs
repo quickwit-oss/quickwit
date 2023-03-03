@@ -258,7 +258,7 @@ pub struct ByteRangeCache {
 }
 
 impl ByteRangeCache {
-    /// Creates a slice cache that nevers removes any entry.
+    /// Creates a slice cache that never removes any entry.
     pub fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
         ByteRangeCache {
             inner: Mutex::new(NeedMutByteRangeCache::with_infinite_capacity(

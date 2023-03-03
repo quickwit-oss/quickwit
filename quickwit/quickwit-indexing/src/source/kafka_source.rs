@@ -602,7 +602,7 @@ fn spawn_consumer_poll_loop(
                 // consumer might not call `poll()` for a duration that exceeds
                 // `max.poll.interval.ms`. When that happens the consumer is kicked out of the group
                 // and the source fails. This should not happen in practice with a
-                // sufficiently large value for `max.poll.interval.ms`. The defaut value is 5
+                // sufficiently large value for `max.poll.interval.ms`. The default value is 5
                 // minutes.
                 if events_tx.blocking_send(event).is_err() {
                     break;
@@ -1191,7 +1191,7 @@ mod kafka_broker_tests {
         create_topic(&admin_client, &topic, 1).await.unwrap();
 
         let metastore = metastore_for_test();
-        let index_id = append_random_suffix("test-kafka-source--process-partiton-eof--index");
+        let index_id = append_random_suffix("test-kafka-source--process-partition-eof--index");
         let (_source_id, source_config) = get_source_config(&topic);
         let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
             params

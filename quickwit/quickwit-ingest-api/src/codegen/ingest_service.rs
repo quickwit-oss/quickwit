@@ -524,7 +524,7 @@ pub mod ingest_service_grpc_client {
         /// /
         /// / Fetching does not necessarily return all of the available records.
         /// / If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
-        /// / the reponse will be partial.
+        /// / the response will be partial.
         pub async fn fetch(
             &mut self,
             request: impl tonic::IntoRequest<super::FetchRequest>,
@@ -597,7 +597,7 @@ pub mod ingest_service_grpc_server {
         /// /
         /// / Fetching does not necessarily return all of the available records.
         /// / If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
-        /// / the reponse will be partial.
+        /// / the response will be partial.
         async fn fetch(
             &self,
             request: tonic::Request<super::FetchRequest>,

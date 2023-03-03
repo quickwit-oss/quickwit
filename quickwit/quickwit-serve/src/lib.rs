@@ -82,7 +82,7 @@ pub use crate::metrics::SERVE_METRICS;
 use crate::rest::recover_fn;
 pub use crate::search_api::{SearchRequestQueryString, SortByField};
 
-const READYNESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
+const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(25)
 } else {
     Duration::from_secs(10)
@@ -118,8 +118,8 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     let cluster =
         quickwit_cluster::start_cluster_service(&config, &config.enabled_services).await?;
 
-    // Instanciate either a file-backed or postgresql [`Metastore`] if the node runs a `Metastore`
-    // service, else instanciate a [`MetastoreGrpcClient`].
+    // Instantiate either a file-backed or postgresql [`Metastore`] if the node runs a `Metastore`
+    // service, else instantiate a [`MetastoreGrpcClient`].
     let metastore: Arc<dyn Metastore> = if config
         .enabled_services
         .contains(&QuickwitService::Metastore)
@@ -298,7 +298,7 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
 async fn node_readiness_reporting_task(cluster: Arc<Cluster>, metastore: Arc<dyn Metastore>) {
-    let mut interval = tokio::time::interval(READYNESS_REPORTING_INTERVAL);
+    let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
     loop {
         interval.tick().await;
         let node_ready = metastore.check_connectivity().await.is_ok();

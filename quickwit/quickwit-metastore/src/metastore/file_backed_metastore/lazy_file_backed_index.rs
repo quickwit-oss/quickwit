@@ -29,7 +29,7 @@ use super::store_operations::fetch_index;
 use crate::MetastoreResult;
 
 /// Lazy [`FileBackedIndex`]. It loads a `FileBackedIndex`
-/// on demand and optionaly spawns a task to poll
+/// on demand and optionally spawns a task to poll
 /// regularly the storage and update the index.
 pub(crate) struct LazyFileBackedIndex {
     index_id: String,

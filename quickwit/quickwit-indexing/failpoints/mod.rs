@@ -27,7 +27,7 @@
 //! They rely on a global variable, which requires them to be executed in a single
 //! thread.
 //! For this reason, we isolate them from the other unit tests and define an
-//! independant binary target.
+//! independent binary target.
 //!
 //! They are not executed by default.
 //! They are executed in CI and can be executed locally
@@ -138,7 +138,7 @@ async fn test_failpoint_uploader_panics_right_away() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_failpoint_uploader_panics_after_one_sucess() -> anyhow::Result<()> {
+async fn test_failpoint_uploader_panics_after_one_success() -> anyhow::Result<()> {
     let scenario = FailScenario::setup();
     fail::cfg_callback("uploader:before", deterministic_panic_sequence(vec![true])).unwrap();
     aux_test_failpoints().await?;

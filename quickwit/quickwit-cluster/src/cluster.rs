@@ -278,7 +278,7 @@ impl Cluster {
         info!(self_addr = ?self.gossip_listen_addr, "Shutting down chitchat.");
         let result = self.chitchat_handle.shutdown().await;
         if let Err(error) = result {
-            error!(self_addr = ?self.gossip_listen_addr, error = ?error, "Error while shuting down chitchat.");
+            error!(self_addr = ?self.gossip_listen_addr, error = ?error, "Error while shutting down chitchat.");
         }
 
         self.stop.store(true, Ordering::Relaxed);
@@ -304,7 +304,7 @@ impl Cluster {
         Ok(())
     }
 
-    /// Set self readyness value.
+    /// Set self readiness value.
     pub async fn set_self_node_ready(&self, ready: bool) {
         let health_value = if ready {
             HEALTH_VALUE_READY
@@ -499,7 +499,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_cluster_single_node_readyness() -> anyhow::Result<()> {
+    async fn test_cluster_single_node_readiness() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false).await?;
         let members: Vec<SocketAddr> = cluster

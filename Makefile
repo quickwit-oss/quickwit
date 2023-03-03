@@ -41,6 +41,9 @@ fmt:
 fix:
 	@$(MAKE) -C $(QUICKWIT_SRC) fix
 
+typos:
+	typos
+
 # Usage:
 # `make test-all` starts the Docker services and runs all the tests.
 # `make -k test-all docker-compose-down`, tears down the Docker services after running all the tests.

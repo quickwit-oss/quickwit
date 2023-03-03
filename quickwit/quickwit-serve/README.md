@@ -14,7 +14,7 @@ The API is split into:
 The APIs are usually accessible both via gRPC and REST.
 This is done consistently using the following pattern.
 
-A service async trait mimicks the tonic service api, but without the `tonic`
+A service async trait mimics the tonic service api, but without the `tonic`
 wrapping of the request and with a rich and specific error type instead of tonic::Status.
 The argument and the response on the other hand are typically using protobuf object
 directly whenever sensible.
@@ -31,9 +31,9 @@ The rest API then relies on calling this service.
 
 ```mermaid
 graph TD
-    grpc_ser[grpc::BlopService] --> |wraps| ser(Go shopping)
-    rest[blop_handler] --> |calls| ser(Go shopping)
-    ser[BlopService]
+    grpc_service[grpc::BlopService] --> |wraps| service(Go shopping)
+    rest[blop_handler] --> |calls| service(Go shopping)
+    service[BlopService]
 ```
 
 ## UI

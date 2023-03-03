@@ -53,7 +53,7 @@ use crate::models::{
 ///
 /// This includes the following steps:
 /// - commit: this step is CPU heavy
-/// - indentifying the list of tags for the splits, and labelling it accordingly
+/// - identifying the list of tags for the splits, and labelling it accordingly
 /// - creating a bundle file
 /// - computing the hotcache
 /// - appending it to the split file.

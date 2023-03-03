@@ -195,7 +195,7 @@ impl<K: Hash + Eq> MemorySizedCache<K> {
         }
     }
 
-    /// Creates a slice cache that nevers removes any entry.
+    /// Creates a slice cache that never removes any entry.
     pub fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
         MemorySizedCache {
             inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(
