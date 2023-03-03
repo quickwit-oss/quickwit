@@ -193,7 +193,7 @@ Example of queries:
 - [resource_attributes.k8s.container.restart_count:1](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.restart_count%3A1&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs)
 
  
-![UI screenshot](../../assets/screenshot-ui-otel-logs.png)
+![UI screenshot](../assets/screenshot-ui-otel-logs.png)
 
 And that's all folks!
 
