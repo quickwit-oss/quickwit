@@ -103,7 +103,7 @@ fluent-bit -c fluent-bit.conf
 
 ## Search logs
 
-Quickwit is now ingesting logs coming from Vector and you can search them either with `curl` or by using the UI:
+Quickwit is now ingesting logs coming from Fluentbit and you can search them either with `curl` or by using the UI:
 - `curl "http://127.0.0.1:7280/api/v1/fluentbit-logs/search?query=severity:DEBUG"`
 - Open your browser at `http://127.0.0.1:7280/ui/search?query=severity:DEBUG&index_id=fluentbit-logs&max_hits=10`.
 

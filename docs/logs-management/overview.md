@@ -62,7 +62,7 @@ Find more configuration details on the [OpenTelemetry documentation](https://ope
 ### HTTP-based agents
 
 It's also possible to use other agents that send HTTP requests to Quickwit Ingest API. Quickwit also partially supports Elasticseardch `_bulk` API. Thus, there is a good chance that your agent is already compatible with Quickwit.
-Currently, we tested the following HTTP-based agents:
+Currently, we have tested the following HTTP-based agents:
 
 - [Vector](./send-logs-from-vector-to-quickwit.md)
 - [Fluentbit](./send-logs-from-fluentbit-to-quickwit.md)
@@ -85,7 +85,7 @@ When starting Quickwit, it will start the gRPC service ready to receive logs fro
 
 You can also send your logs to this index by using the [ingest API](/docs/reference/rest-api.md#ingest-data-into-an-index).
 
-In 0.5, Quickwit does not start an OTLP HTTP service, if you need it, but please [open an issue](https://github.com/quickwit-oss/quickwit).
+In 0.5, Quickwit does not start an OTLP HTTP service, if you need it, please [open an issue](https://github.com/quickwit-oss/quickwit).
 
 ## OpenTelemetry logs data model
 

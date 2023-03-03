@@ -20,7 +20,7 @@ You will need the following to complete this tutorial:
 - A Kubernetes cluster.
 - The command line tool [kubectl](https://kubernetes.io/docs/reference/kubectl/).
 - The command line tool [Helm](https://helm.sh/).
-- An access to an object storage like AWS S3, GCS, Azure blob storage, Scaleway, to store index data.
+- An access to an object storage like AWS S3, GCS, Azure blob storage, or Scaleway to store index data.
 
 
 ## Install with Helm
