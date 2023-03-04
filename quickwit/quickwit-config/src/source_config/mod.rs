@@ -88,10 +88,10 @@ impl SourceConfig {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
-        if !["kafka", "pulsar"].contains(&self.source_type())
+        if !["kafka"].contains(&self.source_type())
             && (self.desired_num_pipelines > 1 || self.max_num_pipelines_per_indexer > 1)
         {
-            bail!("Quickwit currently supports multiple pipelines only for Kafka and Pulsar sources. Open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types.");
+            bail!("Quickwit currently supports multiple pipelines only for Kafka sources. Open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types.");
         }
         if self.desired_num_pipelines == 0 {
             bail!("Source config is not valid: `desired_num_pipelines` must be strictly positive.");
@@ -718,13 +718,14 @@ mod tests {
                 }
             }
             "#;
-            let source_config = SourceConfig::load(
+            SourceConfig::load(
                 &Uri::from_well_formed("file://source-config.json"),
                 content.as_bytes(),
             )
-            .unwrap();
-            assert_eq!(source_config.desired_num_pipelines(), 3);
-            assert_eq!(source_config.max_num_pipelines_per_indexer(), 3);
+            .unwrap_err();
+            // TODO: uncomment asserts once distributed indexing is activated for pulsar.
+            // assert_eq!(source_config.desired_num_pipelines(), 3);
+            // assert_eq!(source_config.max_num_pipelines_per_indexer(), 3);
         }
     }
 
