@@ -3,14 +3,14 @@ title: Send logs from Vector
 description: A simple tutorial to send logs from Vector to Quickwit in a few minutes.
 icon_url: /img/tutorials/vector-logo.png
 tags: [logs, ingestion]
-sidebar_position: 3
+sidebar_position: 2
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 [Vector](https://vector.dev/) is an amazing piece of software (in Rust obviously) and brings a new fresh wind in the observability space,
-it is well-known for collecting logs from every parts of your infrastructure, transform and aggregate them, and finally forward them to a sink.
+it is well-known for collecting logs from every part of your infrastructure, transforming and aggregating them, and finally forwarding them to a sink.
 
 In this guide, we will show you how to connect it to Quickwit.
 
@@ -42,7 +42,7 @@ docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwi
 
 ## Create an index for logs
 
-Let's embrace the OpenTelemetry standard and create an index compatible with its [log data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md).
+Let's embrace the OpenTelemetry standard and create an index compatible with its [logs data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md).
 
 ```yaml title="index-config.yaml"
 #
@@ -83,7 +83,7 @@ indexing_settings:
   commit_timeout_secs: 10
 ```
 
-First create the YAML file:
+First download the YAML file:
 
 ```bash
 curl -o vector-otel-logs.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/vector-otel-logs/index-config.yaml

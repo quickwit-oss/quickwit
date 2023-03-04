@@ -3,24 +3,24 @@ title: Deploy Quickwit with Helm and search your k8s logs
 description: Deploy Quickwit and OTEL collectors with Helm and search your kubernetes logs.
 tags: [k8s, helm]
 icon_url: /img/tutorials/helm-otel-k8s-tutorial-illustation.jpg
-sidebar_position: 9
+sidebar_position: 3
 ---
 
-This guide will help you to unlock log search on your k8s cluster. We will first deploy Quickwit and OTEL collectors with Helm and then see how to index and search them.
+This guide will help you to unlock log search on your k8s cluster logs. We will first deploy Quickwit and OTEL collectors with [Helm](https://helm.sh/) and then see how to index and search them.
 
 :::warning
 
-This tutorial uses Quickwit [Ingest API](/docs/reference/rest-api#ingest-data-into-an-index) which is not yet production ready and the OTEL gRPC endpoint which is currently experimental.
+This tutorial uses Quickwit [Ingest API](/docs/reference/rest-api#ingest-data-into-an-index) which is not yet production ready and the OTEL logs index that is currently experimental.
 
 :::
 
 ## Prerequisites
 
 You will need the following to complete this tutorial:
-- A k8s cluster.
+- A Kubernetes cluster.
 - The command line tool [kubectl](https://kubernetes.io/docs/reference/kubectl/).
 - The command line tool [Helm](https://helm.sh/).
-- An access to a shared storage like AWS S3, GCS, Azure blob storage, Scaleway, to store index data.
+- An access to an object storage like AWS S3, GCS, Azure blob storage, or Scaleway to store index data.
 
 
 ## Install with Helm
@@ -72,6 +72,8 @@ metastore:
   replicaCount: 1
 janitor:
   enabled: true
+control_plane:
+  enabled: true
 
 environment:
   # Remove ANSI colors.
@@ -92,7 +94,7 @@ config:
   indexer:
     # By activating the OTEL service, Quickwit will be able
     # to receive gRPC requests from OTEL collectors.
-    enable_opentelemetry_otlp_service: true
+    enable_otlp_endpoint: true
 " > qw-tutorial-values.yaml
 ```
 
@@ -108,15 +110,16 @@ If the CLI did not return an error, you are ready to install the chart:
 helm install quickwit quickwit/quickwit -f qw-tutorial-values.yaml
 ```
 
-After a few instant, you will see the pods running Quickwit services:
+In a few moments, you will see the pods running Quickwit services:
 
 ```bash
 kubectl get pods
-NAME                                 READY   STATUS    RESTARTS      AGE
-quickwit-indexer-0                   1/1     Running   2 (25s ago)   37s
-quickwit-janitor-79758cb7c7-5kvpr    0/1     Running   2 (36s ago)   37s
-quickwit-metastore-6dc6f747f-fr4d6   1/1     Running   1 (36s ago)   37s
-quickwit-searcher-0                  0/1     Running   2 (36s ago)   37s
+NAME                                      READY   STATUS    RESTARTS      AGE
+quickwit-control-plane-7fc495f4c4-slqv4   1/1     Running   2 (84s ago)   87s
+quickwit-indexer-0                        1/1     Running   2 (84s ago)   87s
+quickwit-janitor-7f75f4bc8-jrfv6          1/1     Running   2 (84s ago)   87s
+quickwit-metastore-6989978fc-9s82j        1/1     Running   2 (85s ago)   87s
+quickwit-searcher-0                       1/1     Running   2 (84s ago)   87s
 ```
 
 Let's check Quickwit is working:
@@ -125,7 +128,7 @@ Let's check Quickwit is working:
 kubectl port-forward svc/quickwit-searcher 7280
 ```
 
-Then open your browser `http://localhost:7280/ui/cluster`. You should see the cluster state in JSON :). If everything is fine, keep the kubectl command running and open a new terminal.
+Then open your browser `http://localhost:7280/ui/indexes`. You should see the list of indexes. If everything is fine, keep the kubectl command running and open a new terminal.
 
 ### Deploy OTEL collectors
 
@@ -162,85 +165,7 @@ config:
 helm install otel-collector open-telemetry/opentelemetry-collector -f otel-values.yaml
 ```
 
-## Create an OTEL index.
-
-Quickwit is configured to receive OTEL logs on a specific index called `otel-log-v0`.
-However it is not yet created in Quickwit metastore, let's do it. Here the OTEL schema in JSON, useful format for REST API. 
-
-```json title=otel-index-config.json
-{
-  "version": "0.4",
-  "index_id": "otel-log-v0",
-  "doc_mapping": {
-    "field_mappings": [
-      {
-        "name": "timestamp",
-        "type": "datetime",
-        "input_formats": [
-          "unix_timestamp"
-        ],
-        "output_format": "unix_timestamp_secs",
-        "fast": true
-      },
-      {
-        "name": "severity",
-        "type": "text",
-        "tokenizer": "raw",
-        "fast": true
-      },
-      {
-        "name": "body",
-        "type": "text",
-        "tokenizer": "default",
-        "record": "position"
-      },
-      {
-        "name": "attributes",
-        "type": "json"
-      },
-      {
-        "name": "resource",
-        "type": "json"
-      }
-    ],
-    "timestamp_field": "timestamp"
-  },
-  "search_settings": {
-    "default_search_fields": [
-      "severity",
-      "body"
-    ]
-  },
-  "indexing_settings": {
-    "commit_timeout_secs": 10
-  }
-}
-```
-
-We need to make a POST request that will hit a searcher instance which itself will call the metastore with a gRPC requests. 
-
-```bash
-curl -o otel-index-config.json https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/otel-logs/otel-index-config.json
-curl -XPOST http://127.0.0.1:7280/api/v1/indexes --data @otel-index-config.json -H "Content-Type: application/json"
-```
-
-The server will respond a 200 and returns the created index metadata (pretty much the same data you sent with some additional info). You can also view your fresh new index in the [Quickwit UI](http://localhost:7280/ui/indexes/otel-log-v0).
-
-Unfortunately, Quickwit indexers needs to be restarted to start indexing, this will be fixed the next release.
-In the meantime, you need to restart indexer, you can do it by executing the following command:
-
-```
-kubectl scale statefulset quickwit-indexer --replicas=0
-# And then
-kubectl scale statefulset quickwit-indexer --replicas=1
-```
-
-After 10 or 30 seconds, the indexer is up and running, let's have a look the logs to see that everything goes well.
-```bash
-kubectl logs quickwit-indexer-0 -f
-```
-
-You should see logs that look like these:
+After a few seconds, you should see logs on your indexer that show indexing has started. It looks like this:
 ```
 2022-11-30T18:27:37.628Z  INFO spawn_merge_pipeline{index=otel-log-v0 gen=0}: quickwit_indexing::actors::merge_pipeline: Spawning merge pipeline. index_id=otel-log-v0 source_id=_ingest-api-source pipeline_ord=0 root_dir=/quickwit/qwdata/indexing/otel-log-v0/_ingest-api-source merge_policy=StableLogMergePolicy { config: StableLogMergePolicyConfig { min_level_num_docs: 100000, merge_factor: 10, max_merge_factor: 12, maturation_period: 172800s }, split_num_docs_target: 10000000 }
 2022-11-30T18:27:37.628Z  INFO quickwit_serve::grpc: Starting gRPC server. enabled_grpc_services={"otlp-log", "otlp-trace"} grpc_listen_addr=0.0.0.0:7281
@@ -259,16 +184,16 @@ If you see some errors there, it's probably coming from a misconfiguration of yo
 
 ### Ready to search logs
 
-You are now ready to search: just [open the UI](http://localhost:7280/ui/search?query=*&index_id=otel-log-v0&max_hits=10&sort_by_field=-timestamp) and play with it. Funny thing you will see quickwit logs in it :).
+You are now ready to search, wait 30 seconds and you will see the first indexed logs: just [open the UI](http://localhost:7280/ui/search?query=*&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs) and play with it. Funny thing you will see quickwit logs in it :).
 
 Example of queries:
 
-- [quickwit](http://localhost:7280/ui/search?query=quickwit&index_id=otel-log-v0&max_hits=10&sort_by_field=-timestamp)
-- [resource.k8s.container.name:quickwit](http://localhost:7280/ui/search?query=resource.k8s.container.name%3Aquickwit&index_id=otel-log-v0&max_hits=10&sort_by_field=-timestamp)
-- [resource.k8s.container.restart_count:1](http://localhost:7280/ui/search?query=resource.k8s.container.restart_count%3A1&index_id=otel-log-v0&max_hits=10&sort_by_field=-timestamp)
+- [body.message:quickwit](http://localhost:7280/ui/search?query=body.message:quickwit&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs)
+- [resource_attributes.k8s.container.name:quickwit](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.name%3Aquickwit&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs)
+- [resource_attributes.k8s.container.restart_count:1](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.restart_count%3A1&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs)
 
  
-![UI screenshot](../../assets/screenshot-ui-otel-logs.png)
+![UI screenshot](../assets/screenshot-ui-otel-logs.png)
 
 And that's all folks!
 
@@ -278,7 +203,7 @@ Let's first delete the index and then uninstall the charts.
 
 ```bash
 # Delete the index. The command will return the list of delete split files.
-curl -XDELETE http://127.0.0.1:7280/api/v1/indexes/otel-log-v0
+curl -XDELETE http://127.0.0.1:7280/api/v1/indexes/otel-logs-v0
 
 # Uninstall charts
 helm uninstall otel-collector
