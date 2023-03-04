@@ -15,7 +15,7 @@ Moreover, Quickwit is OpenTelemetry native and provides a REST API ready to inge
 - [Enabling OpenTelemetry service](#opentelemetry-service)
 - Tutorials
   - [Sending logs from Vector](./send-logs-from-vector-to-quickwit.md)
-  - [Sending logs from Fluentbit](./send-logs-from-vector-to-quickwit.md)
+  - [Sending logs from Fluentbit](./send-logs-from-fluentbit-to-quickwit.md)
   - [Sending Kubernetes logs with OTEL collectors](./deploy-quickwit-otel-with-helm.md)
   - More soon!
 - [Logs data model](#logs-data-model)
