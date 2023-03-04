@@ -163,6 +163,7 @@ source = '''
 
 [sinks.quickwit_logs]
 type = "http"
+method = "post"
 inputs = ["remap_syslog"]
 encoding.codec = "json"
 framing.method = "newline_delimited"
