@@ -2,7 +2,7 @@ import json
 import pulsar
 
 client = pulsar.Client('pulsar://localhost:6650')
-producer = client.create_producer('quickwit/pulsar/stackoverflow')
+producer = client.create_producer('stackoverflow')
 
 with open('stackoverflow.posts.transformed-10000.json', encoding='utf8') as file:
    for i, line in enumerate(file):
