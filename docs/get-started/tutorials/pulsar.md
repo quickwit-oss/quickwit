@@ -6,7 +6,7 @@ icon_url: /img/tutorials/pulsar.svg
 sidebar_position: 5
 ---
 
-In this tutorial, we will describe how to set up Quickwit to ingest data from Pulsar in a few minutes. First, we will create an index and configure a Pulsar source. Then, we will create a Pulsar topic and load some events from the [Stackoverflow dataset](link to SO) into it. Finally, we will execute some search.
+In this tutorial, we will describe how to set up Quickwit to ingest data from Pulsar in a few minutes. First, we will create an index and configure a Pulsar source. Then, we will create a Pulsar topic and load some events from the [Stack Overflow dataset](link to SO) into it. Finally, we will execute some searches.
 
 ## Prerequisites
 
@@ -39,11 +39,11 @@ bin/pulsar standalone
 
 ## Prepare Quickwit
 
-First, let's create a new index. Here is the index config and doc mapping corresponding to the schema of stackoverflow posts:
+First, let's create a new index. Here is the index config and doc mapping corresponding to the schema of Stack Overflow posts:
 
 ```yaml title="index-config.yaml"
 #
-# Index config file for stackoverflow dataset.
+# Index config file for Stack Overflow dataset.
 #
 version: 0.4
 
@@ -168,10 +168,10 @@ Run these commands to download the source config file and create the source.
 
 ```bash
 # Download Pulsar source config.
-wget -O so-pulsar-source.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/stackoverflow/pulsar-source.yaml
+wget -O stackoverflow-pulsar-source.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/stackoverflow/pulsar-source.yaml
 
 # Create source.
-./quickwit source create --index stackoverflow --source-config so-pulsar-source.yaml
+./quickwit source create --index stackoverflow --source-config stackoverflow-pulsar-source.yaml
 ```
 
 As soon as the Pulsar source is created, Quickwit Control Plane will ask an indexer to start a new indexing pipeline. You can observe that by looking at the logs of indexers. On Kubernetes for example:
