@@ -1,6 +1,6 @@
 ---
 title: Telemetry
-sidebar_position: 10
+sidebar_position: 12
 ---
 
 Quickwit, Inc. collects anonymous data regarding general usage to help us drive our development. Privacy and transparency are at the heart of Quickwit values and we only collect the minimal useful data and don't use any third party tool for the collection.
