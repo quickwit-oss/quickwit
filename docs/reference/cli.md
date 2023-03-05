@@ -43,11 +43,12 @@ The CLI is structured into high-level commands with subcommands.
 -->
 
 ## run
+
 Starts Quickwit server with all services by default: `indexer`, `searcher`, `metastore`, `control_plane` and `janitor`.
 
 ### Indexer service
 
-The indexer service runs indexing pipelines assigned by the Control Plane.
+The indexer service runs indexing pipelines assigned by the control plane.
 
 ### Searcher service 
 Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
@@ -64,10 +65,9 @@ The metastore service exposes Quickwit metastore over the network. This is a cor
 The control plane service schedules indexing tasks to indexers. It listens to metastore events such as
 an source create, delete, toggle, or index delete and reacts accordingly to update the indexing plan.
 
-
 ### Janitor service
 
-The Janitor service runs maintenance indexes tasks: garbage collection, documents delete, and retention policy tasks.
+The Janitor service runs maintenance tasks on indexes: garbage collection, documents delete, and retention policy tasks.
 
 :::note
 Quickwit needs to open the following port for cluster formation and workload distribution:
@@ -99,11 +99,6 @@ quickwit run
 *Starts an indexer and a metastore services*
 ```bash
 quickwit run --service indexer --service metastore --endpoint=http://127.0.0.1:7280
-```
-
-*Start a searcher and a metastore services*
-```bash
-quickwit run --service searcher --config=./config/quickwit.yaml
 ```
 
 *Start a control plane, metastore and janitor services*
@@ -396,7 +391,7 @@ quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query
 # Start a Quickwit server.
 quickwit run --config=./config/quickwit.yaml
 # Open a new terminal and run:
-quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "camp" --sort-by-score
+quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "obama" --sort-by-score
 
 ```
 
@@ -416,9 +411,9 @@ quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query
 # Start a Quickwit server.
 quickwit run --config=./config/quickwit.yaml
 # Open a new terminal and run:
-quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "search" --search-fields title
+quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "obama" --search-fields body
 # If you have jq installed.
-quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "search" --search-fields title | jq '.hits[].title'
+quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "obama" --search-fields body | jq '.hits[].title'
 
 ```
 
@@ -737,14 +732,17 @@ quickwit tool gc
 
 ## Environment Variables
 
+### QW_CLUSTER_ENDPOINT
+
+Specifies the address of the cluster to connect to. Management commands `index`, `split` and `source` require the `cluster_endpoint`, which you can set once and for all with the `QW_CLUSTER_ENDPOINT` environment variable.
+
 ### QW_CONFIG
 
-Specifies the path to the [quickwit config](../configuration/node-config.md). Every command requires the `config`, which you can set once and for all with the `QW_CONFIG` environment variable.
+Specifies the path to the [quickwit config](../configuration/node-config.md). Commands `run` and `tools` require the `config`, which you can set once and for all with the `QW_CONFIG` environment variable.
 
 *Example*
 
 `export QW_CONFIG=config/quickwit.yaml`
-
 
 ### QW_DISABLE_TELEMETRY
 
