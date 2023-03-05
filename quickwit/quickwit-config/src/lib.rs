@@ -47,9 +47,9 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 pub use source_config::{
-    FileSourceParams, KafkaSourceParams, KinesisSourceParams, PulsarSourceAuth, PulsarSourceParams,
-    RegionOrEndpoint, SourceConfig, SourceParams, TransformConfig, VecSourceParams,
-    VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
+    load_source_config_from_user_config, FileSourceParams, KafkaSourceParams, KinesisSourceParams,
+    PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint, SourceConfig, SourceParams,
+    TransformConfig, VecSourceParams, VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use tracing::warn;
 

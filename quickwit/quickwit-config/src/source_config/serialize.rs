@@ -22,7 +22,8 @@ use serde::{Deserialize, Serialize};
 
 use super::TransformConfig;
 use crate::{
-    validate_identifier, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
+    validate_identifier, ConfigFormat, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
+    INGEST_API_SOURCE_ID,
 };
 
 type SourceConfigForSerialization = SourceConfigV0_4;
@@ -33,6 +34,90 @@ type SourceConfigForSerialization = SourceConfigV0_4;
 pub enum VersionedSourceConfig {
     #[serde(rename = "0.4")]
     V0_4(SourceConfigV0_4),
+}
+
+impl From<VersionedSourceConfig> for SourceConfigForSerialization {
+    fn from(versioned_source_config: VersionedSourceConfig) -> Self {
+        match versioned_source_config {
+            VersionedSourceConfig::V0_4(v0_4) => v0_4,
+        }
+    }
+}
+
+/// Parses and validates an [`SourceConfig`] as supplied by a user with a given [`ConfigFormat`],
+/// and config content.
+pub fn load_source_config_from_user_config(
+    config_format: ConfigFormat,
+    config_content: &[u8],
+) -> anyhow::Result<SourceConfig> {
+    let versioned_source_config: VersionedSourceConfig = config_format.parse(config_content)?;
+    let source_config_for_serialization: SourceConfigForSerialization =
+        versioned_source_config.into();
+    source_config_for_serialization.validate_and_build()
+}
+
+impl SourceConfigForSerialization {
+    /// Checks the validity of the `SourceConfig` as a "deserializable source".
+    ///
+    /// Two remarks:
+    /// - This does not check connectivity. (See `check_connectivity(..)`)
+    /// This just validate configuration, without performing any IO.
+    /// - This is only here to validate user input.
+    /// When ingesting from stdin, we programmatically create an invalid `SourceConfig`.
+    ///
+    /// TODO refactor #1065
+    fn validate_and_build(self) -> anyhow::Result<SourceConfig> {
+        if self.source_id != CLI_INGEST_SOURCE_ID && self.source_id != INGEST_API_SOURCE_ID {
+            validate_identifier("Source ID", &self.source_id)?;
+        }
+        match &self.source_params {
+            // We want to forbid source_config with no filepath
+            SourceParams::File(file_params) => {
+                if file_params.filepath.is_none() {
+                    bail!(
+                        "Source `{}` of type `file` must contain a filepath.",
+                        self.source_id
+                    )
+                }
+            }
+            SourceParams::Kafka(_) | SourceParams::Kinesis(_) | SourceParams::Pulsar(_) => {
+                // TODO consider any validation opportunity
+            }
+            SourceParams::Vec(_)
+            | SourceParams::Void(_)
+            | SourceParams::IngestApi
+            | SourceParams::IngestCli => {}
+        }
+        match &self.source_params {
+            SourceParams::Kafka(_) => {}
+            _ => {
+                if self.desired_num_pipelines > 1 || self.max_num_pipelines_per_indexer > 1 {
+                    bail!("Quickwit currently supports multiple pipelines only for Kafka sources. Open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types.");
+                }
+            }
+        }
+        if self.desired_num_pipelines == 0 {
+            bail!("Source config is not valid: `desired_num_pipelines` must be strictly positive.");
+        }
+        if self.max_num_pipelines_per_indexer == 0 {
+            bail!(
+                "Source config is not valid: `max_num_pipelines_per_indexer` must be strictly \
+                 positive."
+            );
+        }
+        if let Some(transform_config) = &self.transform {
+            transform_config.compile_vrl_script()?;
+        }
+
+        Ok(SourceConfig {
+            source_id: self.source_id,
+            max_num_pipelines_per_indexer: self.max_num_pipelines_per_indexer,
+            desired_num_pipelines: self.desired_num_pipelines,
+            enabled: self.enabled,
+            source_params: self.source_params,
+            transform_config: self.transform,
+        })
+    }
 }
 
 impl From<SourceConfig> for SourceConfigV0_4 {
@@ -60,14 +145,6 @@ impl TryFrom<VersionedSourceConfig> for SourceConfig {
     fn try_from(versioned_source_config: VersionedSourceConfig) -> anyhow::Result<Self> {
         let v1: SourceConfigV0_4 = versioned_source_config.into();
         v1.validate_and_build()
-    }
-}
-
-impl From<VersionedSourceConfig> for SourceConfigForSerialization {
-    fn from(versioned_source_config: VersionedSourceConfig) -> Self {
-        match versioned_source_config {
-            VersionedSourceConfig::V0_4(v0_4) => v0_4,
-        }
     }
 }
 
@@ -105,91 +182,4 @@ pub struct SourceConfigV0_4 {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transform: Option<TransformConfig>,
-}
-
-impl SourceConfigV0_4 {
-    /// Checks the validity of the `SourceConfig` as a "serializable source".
-    ///
-    /// Two remarks:
-    /// - This does not check connectivity. (See `check_connectivity(..)`)
-    /// This just validate configuration, without performing any IO.
-    /// - This is only here to validate user input.
-    /// When ingesting from stdin, we programmatically create an invalid `SourceConfig`.
-    ///
-    /// TODO refactor #1065
-    pub(crate) fn validate_and_build(self) -> anyhow::Result<SourceConfig> {
-        if self.source_id != CLI_INGEST_SOURCE_ID && self.source_id != INGEST_API_SOURCE_ID {
-            validate_identifier("Source ID", &self.source_id)?;
-        }
-        match &self.source_params {
-            // We want to forbid source_config with no filepath
-            SourceParams::File(file_params) => {
-                if file_params.filepath.is_none() {
-                    bail!(
-                        "Source `{}` of type `file` must contain a filepath.",
-                        self.source_id
-                    )
-                }
-            }
-            SourceParams::Kafka(_) | SourceParams::Kinesis(_) | SourceParams::Pulsar(_) => {
-                // TODO consider any validation opportunity
-            }
-            SourceParams::Vec(_)
-            | SourceParams::Void(_)
-            | SourceParams::IngestApi
-            | SourceParams::IngestCli => {}
-        }
-
-        if let Some(transform_config) = &self.transform {
-            transform_config.compile_vrl_script()?;
-        }
-
-        Ok(SourceConfig {
-            source_id: self.source_id,
-            max_num_pipelines_per_indexer: self.max_num_pipelines_per_indexer,
-            desired_num_pipelines: self.desired_num_pipelines,
-            enabled: self.enabled,
-            source_params: self.source_params,
-            transform_config: self.transform,
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_source_config_validation() {
-        {
-            let source_config = SourceConfigForSerialization {
-                source_id: "file_source".to_string(),
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 1,
-                enabled: true,
-                source_params: SourceParams::stdin(),
-                transform: None,
-            };
-            assert!(source_config
-                .validate_and_build()
-                .unwrap_err()
-                .to_string()
-                .contains("must contain a filepath"));
-        }
-        {
-            let source_config = SourceConfigForSerialization {
-                source_id: "kafka_source".to_string(),
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 1,
-                enabled: true,
-                source_params: SourceParams::void(),
-                transform: Some(TransformConfig::for_test("foo")),
-            };
-            assert!(source_config
-                .validate_and_build()
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to compile"));
-        }
-    }
 }

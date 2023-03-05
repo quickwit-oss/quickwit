@@ -24,8 +24,8 @@ use hyper::header::CONTENT_TYPE;
 use quickwit_common::simple_list::{from_simple_list, to_simple_list};
 use quickwit_common::FileEntry;
 use quickwit_config::{
-    ConfigFormat, QuickwitConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
-    INGEST_API_SOURCE_ID,
+    load_source_config_from_user_config, ConfigFormat, QuickwitConfig, SourceConfig, SourceParams,
+    CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_metastore::{
@@ -443,9 +443,9 @@ async fn create_source(
     source_config_bytes: Bytes,
     index_service: Arc<IndexService>,
 ) -> Result<SourceConfig, IndexServiceError> {
-    let source_config: SourceConfig = config_format
-        .parse(&source_config_bytes)
-        .map_err(IndexServiceError::InvalidConfig)?;
+    let source_config: SourceConfig =
+        load_source_config_from_user_config(config_format, &source_config_bytes)
+            .map_err(IndexServiceError::InvalidConfig)?;
     if let SourceParams::File(_) = &source_config.source_params {
         return Err(IndexServiceError::OperationNotAllowed(
             "File sources are limited to a local usage. Please use the CLI command `quickwit tool \

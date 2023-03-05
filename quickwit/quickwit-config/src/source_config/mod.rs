@@ -28,13 +28,14 @@ use quickwit_common::{is_false, no_color};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
+pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
 use tracing::warn;
 use vrl::diagnostic::Formatter;
 use vrl::{CompilationResult, Program, TimeZone};
 
-use crate::{ConfigFormat, TestableForRegression};
+use crate::TestableForRegression;
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_INGEST_SOURCE_ID: &str = "_ingest-cli-source";
@@ -79,32 +80,6 @@ pub struct SourceConfig {
 }
 
 impl SourceConfig {
-    /// Parses and validates a [`SourceConfig`] from a given URI and config content.
-    pub fn load(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
-        let config_format = ConfigFormat::sniff_from_uri(uri)?;
-        let source_config: SourceConfig = config_format.parse(file_content)?;
-        source_config.validate()?;
-        Ok(source_config)
-    }
-
-    fn validate(&self) -> anyhow::Result<()> {
-        if !["kafka"].contains(&self.source_type())
-            && (self.desired_num_pipelines > 1 || self.max_num_pipelines_per_indexer > 1)
-        {
-            bail!("Quickwit currently supports multiple pipelines only for Kafka sources. Open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types.");
-        }
-        if self.desired_num_pipelines == 0 {
-            bail!("Source config is not valid: `desired_num_pipelines` must be strictly positive.");
-        }
-        if self.max_num_pipelines_per_indexer == 0 {
-            bail!(
-                "Source config is not valid: `max_num_pipelines_per_indexer` must be strictly \
-                 positive."
-            );
-        }
-        Ok(())
-    }
-
     pub fn source_type(&self) -> &str {
         match self.source_params {
             SourceParams::File(_) => "file",
@@ -131,22 +106,6 @@ impl SourceConfig {
             SourceParams::Pulsar(params) => serde_json::to_value(params),
         }
         .unwrap()
-    }
-
-    /// Returns `desired_num_pipelines` if it's a Kafka source, else 1.
-    pub fn desired_num_pipelines(&self) -> usize {
-        match &self.source_params {
-            SourceParams::Kafka(_) | SourceParams::Pulsar(_) => self.desired_num_pipelines,
-            _ => 1,
-        }
-    }
-
-    /// Returns `max_num_pipelines_per_indexer` if it's a Kafka source, else 1.
-    pub fn max_num_pipelines_per_indexer(&self) -> usize {
-        match &self.source_params {
-            SourceParams::Kafka(_) | SourceParams::Pulsar(_) => self.max_num_pipelines_per_indexer,
-            _ => 1,
-        }
     }
 
     /// Creates the default ingest-api source config.
@@ -493,8 +452,9 @@ mod tests {
         let source_config_filepath = get_source_config_filepath("kafka-source.json");
         let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
         let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
+        let config_format = ConfigFormat::sniff_from_uri(&source_config_uri).unwrap();
         let source_config =
-            SourceConfig::load(&source_config_uri, file_content.as_bytes()).unwrap();
+            load_source_config_from_user_config(config_format, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kafka-source".to_string(),
             max_num_pipelines_per_indexer: 2,
@@ -512,7 +472,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines(), 2);
+        assert_eq!(source_config.desired_num_pipelines, 2);
     }
 
     #[test]
@@ -588,8 +548,9 @@ mod tests {
         let source_config_filepath = get_source_config_filepath("kinesis-source.yaml");
         let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
         let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
+        let config_format = ConfigFormat::sniff_from_uri(&source_config_uri).unwrap();
         let source_config =
-            SourceConfig::load(&source_config_uri, file_content.as_bytes()).unwrap();
+            load_source_config_from_user_config(config_format, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kinesis-source".to_string(),
             max_num_pipelines_per_indexer: 1,
@@ -606,7 +567,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines(), 1);
+        assert_eq!(source_config.desired_num_pipelines, 1);
     }
 
     #[tokio::test]
@@ -622,11 +583,9 @@ mod tests {
                 "params": {}
             }
             "#;
-            let source_config = SourceConfig::load(
-                &Uri::from_well_formed("file://source-config.json"),
-                content.as_bytes(),
-            )
-            .unwrap_err();
+            let source_config =
+                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                    .unwrap_err();
             assert!(source_config
                 .to_string()
                 .contains("`desired_num_pipelines` must be"));
@@ -642,11 +601,9 @@ mod tests {
                 "params": {}
             }
             "#;
-            let source_config = SourceConfig::load(
-                &Uri::from_well_formed("file://source-config.json"),
-                content.as_bytes(),
-            )
-            .unwrap_err();
+            let source_config =
+                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                    .unwrap_err();
             assert!(source_config
                 .to_string()
                 .contains("`max_num_pipelines_per_indexer` must be"));
@@ -662,11 +619,9 @@ mod tests {
                 "params": {}
             }
             "#;
-            let source_config = SourceConfig::load(
-                &Uri::from_well_formed("file://source-config.json"),
-                content.as_bytes(),
-            )
-            .unwrap_err();
+            let source_config =
+                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                    .unwrap_err();
             assert!(source_config
                 .to_string()
                 .contains("supports multiple pipelines"));
@@ -682,11 +637,9 @@ mod tests {
                 "params": {}
             }
             "#;
-            let source_config = SourceConfig::load(
-                &Uri::from_well_formed("file://source-config.json"),
-                content.as_bytes(),
-            )
-            .unwrap_err();
+            let source_config =
+                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                    .unwrap_err();
             assert!(source_config
                 .to_string()
                 .contains("supports multiple pipelines"));
@@ -708,13 +661,11 @@ mod tests {
                 }
             }
             "#;
-            let source_config = SourceConfig::load(
-                &Uri::from_well_formed("file://source-config.json"),
-                content.as_bytes(),
-            )
-            .unwrap();
-            assert_eq!(source_config.desired_num_pipelines(), 3);
-            assert_eq!(source_config.max_num_pipelines_per_indexer(), 3);
+            let source_config =
+                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                    .unwrap();
+            assert_eq!(source_config.desired_num_pipelines, 3);
+            assert_eq!(source_config.max_num_pipelines_per_indexer, 3);
         }
         {
             let content = r#"
@@ -730,11 +681,8 @@ mod tests {
                 }
             }
             "#;
-            SourceConfig::load(
-                &Uri::from_well_formed("file://source-config.json"),
-                content.as_bytes(),
-            )
-            .unwrap_err();
+            load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                .unwrap_err();
             // TODO: uncomment asserts once distributed indexing is activated for pulsar.
             // assert_eq!(source_config.desired_num_pipelines(), 3);
             // assert_eq!(source_config.max_num_pipelines_per_indexer(), 3);
@@ -984,7 +932,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines(), 1);
+        assert_eq!(source_config.desired_num_pipelines, 1);
     }
 
     #[test]

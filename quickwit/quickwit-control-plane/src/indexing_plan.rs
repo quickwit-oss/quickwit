@@ -228,7 +228,7 @@ fn select_node_candidates<'a>(
                 node_id,
                 &indexing_task.index_id,
                 &indexing_task.source_id,
-            ) < source_config.max_num_pipelines_per_indexer()
+            ) < source_config.max_num_pipelines_per_indexer
         })
         .collect_vec()
 }
@@ -295,8 +295,8 @@ pub(crate) fn build_indexing_plan(
             // The num desired pipelines is constrained by the number of indexer and the maximum
             // of pipelines that can run on each indexer.
             std::cmp::min(
-                source_config.desired_num_pipelines(),
-                source_config.max_num_pipelines_per_indexer() * indexers.len(),
+                source_config.desired_num_pipelines,
+                source_config.max_num_pipelines_per_indexer * indexers.len(),
             )
         };
         for _ in 0..num_pipelines {
@@ -368,8 +368,8 @@ mod tests {
             .iter()
             .map(|(_, source_config)| {
                 std::cmp::min(
-                    num_indexers * source_config.max_num_pipelines_per_indexer(),
-                    source_config.desired_num_pipelines(),
+                    num_indexers * source_config.max_num_pipelines_per_indexer,
+                    source_config.desired_num_pipelines,
                 )
             })
             .sum()
