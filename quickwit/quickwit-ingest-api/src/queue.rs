@@ -495,6 +495,6 @@ mod tests {
         println!("{elapsed:?}");
         println!("{num_bytes}");
         let throughput = num_bytes as f64 / (elapsed.as_micros() as f64);
-        println!("Throughput: {}", throughput);
+        println!("Throughput: {throughput}");
     }
 }
