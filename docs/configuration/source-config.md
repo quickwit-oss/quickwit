@@ -16,19 +16,19 @@ A source is declared using an object called source config. A source config uniqu
 - desired number of pipelines (optional)
 - transform parameters (optional)
 
-*Source ID*
+## Source ID
 
 The source ID is a string that uniquely identifies the source within an index. It may only contain uppercase or lowercase ASCII letters, digits, hyphens (`-`), and underscores (`_`). Finally, it must start with a letter and contain at least 3 characters but no more than 255.
 
-*Source type*
+## Source type
 
-The source type designates the kind of source being configured. As of version 0.3, available source types are `file`, `ingest-api`, `kafka`, `kinesis` and `pulsar`.
+The source type designates the kind of source being configured. As of version 0.5, available source types are `ingest-api`, `kafka`, `kinesis` and `pulsar`. The `file` type is also supported but only for local ingestion from [the CLI](/docs/reference/cli.md#tool-local-ingest). 
 
-*Source parameters*
+## Source parameters
 
 The source parameters indicate how to connect to a data store and are specific to the source type.
 
-## File source
+### File source (CLI only)
 
 A file source reads data from a local file. The file must consist of JSON objects separated by a newline.
 As of version 0.5, a file source can only be ingested with the [CLI command](/docs/reference/cli.md#tool-local-ingest). Compressed files (bz2, gzip, ...) and remote files (Amazon S3, HTTP, ...) are not supported.
@@ -37,20 +37,17 @@ As of version 0.5, a file source can only be ingested with the [CLI command](/do
 ./quickwit tool local-ingest --input-path <INPUT_PATH>
 ```
 
-## Ingest API source
+### Ingest API source
 
-An ingest source reads data from the [Ingest API](/docs/reference/rest-api.md#ingest-data-into-an-index). This source is automatically created at the index creation. 
-It can be disabled with [the CLI](/docs/reference/cli.md#source-ingest-api) or the [REST API](/docs/reference/rest-api.md#create-a-source):
+An ingest source reads data from the [Ingest API](/docs/reference/rest-api.md#ingest-data-into-an-index). This source is automatically created at the index creation and cannot be deleted nor disabled.
 
-```
-./quickwit source ingest-api --index {your-index} --disable
-```
-
-## Kafka source
+### Kafka source
 
 A Kafka source reads data from a Kafka stream. Each message in the stream must hold a JSON object.
 
-### Kafka source parameters
+A tutorial is available [here](/docs/get-started/tutorials/kafka.md).
+
+#### Kafka source parameters
 
 The Kafka source consumes a `topic` using the client library [librdkafka](https://github.com/edenhill/librdkafka) and forwards the key-value pairs carried by the parameter `client_params` to the underlying librdkafka consumer. Common `client_params` options are bootstrap servers (`bootstrap.servers`), or security protocol (`security.protocol`). Please, refer to [Kafka](https://kafka.apache.org/documentation/#consumerconfigs) and [librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) documentation pages for more advanced options.
 
@@ -61,7 +58,7 @@ The Kafka source consumes a `topic` using the client library [librdkafka](https:
 | client_params | librdkafka client configuration parameters. | {} |
 | enable_backfill_mode | Backfill mode stops the source after reaching the end of the topic. | false |
 
-#### Kafka client parameters
+**Kafka client parameters**
 
 - `bootstrap.servers`
 Comma-separated list of host and port pairs that are the addresses of a subset of the Kafka brokers in the Kafka cluster.
@@ -91,11 +88,13 @@ EOF
 ./quickwit source create --index my-index --source-config source-config.yaml
 ```
 
-## Kinesis source
+### Kinesis source
 
 A Kinesis source reads data from an [Amazon Kinesis](https://aws.amazon.com/kinesis/) stream. Each message in the stream must hold a JSON object.
 
-### Kinesis source parameters
+A tutorial is available [here](/docs/get-started/tutorials/kinesis.md).
+
+**Kinesis source parameters**
 
 The Kinesis source consumes a stream identified by a `stream_name` and a `region`.
 
@@ -128,11 +127,13 @@ EOF
 quickwit source create --index my-index --source-config source-config.yaml
 ```
 
-## Pulsar source
+### Pulsar source
 
 A Puslar source reads data from one or several Pulsar topics. Each message in topic(s) must hold a JSON object.
 
-### Pulsar source parameters
+A tutorial is available [here](/docs/get-started/tutorials/pulsar.md).
+
+**Pulsar source parameters**
 
 The Pulsar source consumes `topics` using the client library [pulsar-rs](https://github.com/streamnative/pulsar-rs).
 
@@ -157,10 +158,9 @@ EOF
 ./quickwit source create --index my-index --source-config source-config.yaml
 ```
 
+## Max number of pipelines per indexer
 
-*Max number of pipelines per indexer*
-
-This parameter is only available for sources that can be distributed: Kafka and Pulsar (coming soon).
+`max_num_pipelines_per_indexer` parameter is only available for sources that can be distributed: Kafka and Pulsar (coming soon).
 
 The maximum number of indexing pipelines defines the limit of pipelines spawned for this source on a given indexer.
 The maximum can be reached only if there is enough `desired_num_pipelines` to run.
@@ -174,9 +174,9 @@ With the following parameters, only one pipeline will run on one indexer.
 
 :::
 
-*Desired number of pipelines*
+## Desired number of pipelines
 
-This parameter is only available for sources that can be distributed: Kafka and Pulsar (coming soon).
+`desired_num_pipelines` parameter is only available for sources that can be distributed: Kafka and Pulsar (coming soon).
 
 The desired number of indexing pipelines defines the number of pipelines to run on a cluster for the source. It is a "desired"
 number as it cannot be reach it there is not enough indexers in
@@ -191,7 +191,7 @@ With the following parameters, only one pipeline will start on the sole indexer.
 
 :::
 
-*Transform parameters*
+## Transform parameters
 
 For all source types but the `ingest-api`, ingested documents can be transformed before being indexed using [Vector Remap Language (VRL)](https://vector.dev/docs/reference/vrl/) scripts.
 
