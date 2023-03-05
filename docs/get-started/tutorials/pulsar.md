@@ -1,5 +1,5 @@
 ---
-title: Ingest from Pulsar
+title: Ingest data from Pulsar
 description: A short tutorial describing how to set up Quickwit to ingest data from Pulsar in a few minutes
 tags: [pulsar, integration]
 icon_url: /img/tutorials/pulsar.svg
@@ -33,9 +33,9 @@ Test the cluster is running:
 
 ### Pulsar setup
 
-</TabItem>
+<Tabs>
 
-<TabItem value="local" label="LOCAL">
+<TabItem value="Local" label="Local">
 
 ```bash
 wget https://archive.apache.org/dist/pulsar/pulsar-2.11.0/apache-pulsar-2.11.0-bin.tar.gz
@@ -46,7 +46,7 @@ bin/pulsar standalone
 
 </TabItem>
 
-<TabItem value="cli" label="CLI">
+<TabItem value="Docker" label="Docker">
 
 ```bash
 docker run -it -p 6650:6650 -p 8080:8080 apachepulsar/pulsar:2.11.0 bin/pulsar standalone
