@@ -284,8 +284,10 @@ pub struct IncompatibleCheckpointDelta {
 pub enum PartitionDeltaError {
     #[error(transparent)]
     IncompatibleCheckpointDelta(#[from] IncompatibleCheckpointDelta),
-    #[error("NegativeDelta at partition: {partition_id:?} {from_position:?} >= {to_position:?}")]
-    NegativeDelta {
+    #[error(
+        "EmptyOrNegativeDelta at partition: {partition_id:?} {from_position:?} >= {to_position:?}"
+    )]
+    EmptyOrNegativeDelta {
         /// One PartitionId for which the negative delta has been detected.
         partition_id: PartitionId,
         /// Delta from position.
@@ -417,7 +419,7 @@ impl IndexCheckpointDelta {
     pub fn for_test(source_id: &str, pos_range: Range<u64>) -> Self {
         IndexCheckpointDelta {
             source_id: source_id.to_string(),
-            source_delta: SourceCheckpointDelta::try_from(pos_range).unwrap(),
+            source_delta: SourceCheckpointDelta::from_range(pos_range),
         }
     }
 }
@@ -506,8 +508,9 @@ impl SourceCheckpointDelta {
         from_position: Position,
         to_position: Position,
     ) -> Result<(), PartitionDeltaError> {
+        // `from_position == to_position` means delta is empty.
         if from_position >= to_position {
-            return Err(PartitionDeltaError::NegativeDelta {
+            return Err(PartitionDeltaError::EmptyOrNegativeDelta {
                 partition_id,
                 from_position,
                 to_position,
@@ -527,7 +530,6 @@ impl SourceCheckpointDelta {
                 }
             }
             Entry::Vacant(vacant_entry) => {
-                assert!(from_position <= to_position);
                 let partition_delta = PartitionDelta {
                     from: from_position,
                     to: to_position,
@@ -570,12 +572,12 @@ mod tests {
 
     #[test]
     fn test_delta_from_range() {
-        let checkpoint_delta = SourceCheckpointDelta::try_from(0..3).unwrap();
+        let checkpoint_delta = SourceCheckpointDelta::from_range(0..3);
         assert_eq!(
             format!("{checkpoint_delta:?}"),
             "∆(:(..00000000000000000002])"
         );
-        let checkpoint_delta = SourceCheckpointDelta::try_from(1..4).unwrap();
+        let checkpoint_delta = SourceCheckpointDelta::from_range(1..4);
         assert_eq!(
             format!("{checkpoint_delta:?}"),
             "∆(:(00000000000000000000..00000000000000000003])"
@@ -786,7 +788,10 @@ mod tests {
                 Position::from("20"),
             )
             .unwrap_err();
-            matches!(delta_error, PartitionDeltaError::NegativeDelta { .. });
+            matches!(
+                delta_error,
+                PartitionDeltaError::EmptyOrNegativeDelta { .. }
+            );
         }
         {
             let mut delta = SourceCheckpointDelta::from_range(10..20);
@@ -797,7 +802,10 @@ mod tests {
                     Position::from("10"),
                 )
                 .unwrap_err();
-            matches!(delta_error, PartitionDeltaError::NegativeDelta { .. });
+            matches!(
+                delta_error,
+                PartitionDeltaError::EmptyOrNegativeDelta { .. }
+            );
         }
     }
 
