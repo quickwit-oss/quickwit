@@ -105,7 +105,8 @@ impl Source for VecSource {
             self.partition.clone(),
             position_from_offset(from_item_idx),
             position_from_offset(to_item_idx),
-        );
+        )
+        .unwrap();
         ctx.send_message(batch_sink, doc_batch).await?;
         Ok(Duration::default())
     }
@@ -202,7 +203,7 @@ mod tests {
             partition: "".to_string(),
         };
         let mut checkpoint = SourceCheckpoint::default();
-        checkpoint.try_apply_delta(SourceCheckpointDelta::from(0u64..2u64))?;
+        checkpoint.try_apply_delta(SourceCheckpointDelta::from_range(0u64..2u64))?;
 
         let metastore = metastore_for_test();
         let vec_source = VecSourceFactory::typed_create_source(

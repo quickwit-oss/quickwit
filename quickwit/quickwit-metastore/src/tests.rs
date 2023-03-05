@@ -964,7 +964,8 @@ pub mod test_suite {
                     PartitionId::from(partition_id as u64),
                     Position::Beginning,
                     Position::from(partition_id as u64),
-                );
+                )
+                .unwrap();
                 let checkpoint_delta = IndexCheckpointDelta {
                     source_id,
                     source_delta,

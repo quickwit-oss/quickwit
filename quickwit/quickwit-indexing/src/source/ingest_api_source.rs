@@ -362,8 +362,9 @@ mod tests {
             partition_id.clone(),
             Position::from(0u64),
             Position::from(1200u64),
-        );
-        checkpoint.try_apply_delta(checkpoint_delta)?;
+        )
+        .unwrap();
+        checkpoint.try_apply_delta(checkpoint_delta).unwrap();
 
         let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
