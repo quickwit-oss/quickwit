@@ -1275,7 +1275,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_source_with_bad_config() -> anyhow::Result<()> {
+    async fn test_create_source_with_bad_config() {
         let metastore = build_metastore_for_test().await;
         let index_service = IndexService::new(metastore, StorageUriResolver::for_test());
         let index_management_handler = super::index_management_handlers(
@@ -1283,17 +1283,34 @@ mod tests {
             Arc::new(QuickwitConfig::for_test()),
         )
         .recover(recover_fn);
-        let resp = warp::test::request()
-            .path("/indexes/my-index/sources")
-            .method("POST")
-            .json(&true)
-            .body(r#"{"version": 0.4, "source_id": "file-source"}"#)
-            .reply(&index_management_handler)
-            .await;
-        assert_eq!(resp.status(), 400);
-        let body = from_utf8_lossy(resp.body());
-        assert!(body.contains("invalid type: floating point `0.4`"));
-        Ok(())
+        {
+            // Source config with bad version.
+            let resp = warp::test::request()
+                .path("/indexes/my-index/sources")
+                .method("POST")
+                .json(&true)
+                .body(r#"{"version": 0.4, "source_id": "file-source"}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 400);
+            let body = from_utf8_lossy(resp.body());
+            assert!(body.contains("invalid type: floating point `0.4`"));
+        }
+        {
+            // Invalid pulsar source config with number of pipelines > 1, not supported yet.
+            let resp = warp::test::request()
+                .path("/indexes/my-index/sources")
+                .method("POST")
+                .json(&true)
+                .body(r#"{"version": "0.4", "source_id": "pulsar-source", "desired_num_pipelines": 2, "source_type": "pulsar", "params": {"topics": ["my-topic"], "address": "pulsar://localhost:6650" }}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 400);
+            let body = from_utf8_lossy(resp.body());
+            println!("{}", body);
+            assert!(body
+                .contains("Quickwit currently supports multiple pipelines only for Kafka sources"));
+        }
     }
 
     #[tokio::test]
