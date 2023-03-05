@@ -1,9 +1,9 @@
 ---
-title: Ingest data from Pulsar
+title: Pulsar
 description: A short tutorial describing how to set up Quickwit to ingest data from Pulsar in a few minutes
 tags: [pulsar, integration]
 icon_url: /img/tutorials/pulsar.svg
-sidebar_position: 5
+sidebar_position: 3
 ---
 
 import Tabs from '@theme/Tabs';

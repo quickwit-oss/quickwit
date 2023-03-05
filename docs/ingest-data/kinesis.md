@@ -1,9 +1,9 @@
 ---
-title: Ingest data from Kinesis
+title: Kinesis
 description: A short tutorial describing how to set up Quickwit to ingest data from Kinesis in a few minutes
 tags: [aws, integration]
 icon_url: /img/tutorials/aws-kinesis.svg
-sidebar_position: 5
+sidebar_position: 4
 ---
 
 In this tutorial, we will describe how to set up Quickwit to ingest data from Kinesis in a few minutes. First, we will create an index and configure a Kinesis source. Then, we will create a Kinesis stream and load some events from the [GH Archive](https://www.gharchive.org/) into it. Finally, we will execute some search and aggregation queries to explore the freshly ingested data.
