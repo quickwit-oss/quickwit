@@ -66,8 +66,8 @@ pub struct FetchResponse {
 pub struct DocBatch {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "2")]
-    pub concat_docs: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "bytes", tag = "2")]
+    pub concat_docs: ::prost::bytes::Bytes,
     #[prost(uint64, repeated, tag = "3")]
     pub doc_lens: ::prost::alloc::vec::Vec<u64>,
 }

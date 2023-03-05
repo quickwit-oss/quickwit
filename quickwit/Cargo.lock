@@ -4735,6 +4735,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "byte-unit",
+ "bytes",
  "dyn-clone",
  "flume",
  "futures",

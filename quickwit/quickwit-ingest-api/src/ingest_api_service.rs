@@ -28,10 +28,9 @@ use ulid::Ulid;
 
 use crate::metrics::INGEST_METRICS;
 use crate::{
-    iter_doc_payloads, CreateQueueIfNotExistsRequest, CreateQueueRequest, DropQueueRequest,
-    FetchRequest, FetchResponse, IngestRequest, IngestResponse, IngestServiceError,
-    ListQueuesRequest, ListQueuesResponse, QueueExistsRequest, Queues, SuggestTruncateRequest,
-    TailRequest,
+    CreateQueueIfNotExistsRequest, CreateQueueRequest, DropQueueRequest, FetchRequest,
+    FetchResponse, IngestRequest, IngestResponse, IngestServiceError, ListQueuesRequest,
+    ListQueuesResponse, QueueExistsRequest, Queues, SuggestTruncateRequest, TailRequest,
 };
 
 pub struct IngestApiService {
@@ -125,7 +124,7 @@ impl IngestApiService {
         for doc_batch in &request.doc_batches {
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
-            let records_it = iter_doc_payloads(doc_batch);
+            let records_it = doc_batch.iter_raw();
             self.queues
                 .append_batch(&doc_batch.index_id, records_it, ctx)
                 .await?;

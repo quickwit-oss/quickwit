@@ -12,6 +12,7 @@ testsuite = ["mockall"]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 byte-unit = { workspace = true }
+bytes = { workspace = true }
 dyn-clone = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
@@ -38,6 +39,7 @@ quickwit-proto = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
 tempfile = { workspace = true }
+mockall = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 

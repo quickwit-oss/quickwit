@@ -40,6 +40,7 @@ impl Codegen {
                 ".",
                 "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]",
             )
+            .bytes(["DocBatch.concat_docs"])
             .out_dir(out_dir);
 
         let service_generator = Box::new(QuickwitServiceGenerator::new(
