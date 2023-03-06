@@ -17,22 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod box_layer;
-mod box_service;
-mod buffer;
-mod estimate_rate;
-mod rate;
-mod rate_estimator;
-mod rate_limit;
+use std::time::Instant;
 
-pub use box_layer::BoxLayer;
-pub use box_service::BoxService;
-pub use buffer::{Buffer, BufferLayer};
-pub use estimate_rate::{EstimateRate, EstimateRateLayer};
-pub use rate::{ConstantRate, Rate};
-pub use rate_estimator::RateEstimator;
-pub use rate_limit::{RateLimit, RateLimitLayer};
+use super::Rate;
 
-pub trait Cost {
-    fn cost(&self) -> u64;
+pub trait RateEstimator: Rate {
+    fn update(&mut self, started_at: Instant, ended_at: Instant, work: u64);
 }
