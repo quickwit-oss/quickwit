@@ -761,6 +761,7 @@ impl Handler<Healthz> for IndexingService {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
     use std::time::Duration;
 
     use chitchat::transport::ChannelTransport;
@@ -768,6 +769,7 @@ mod tests {
     use quickwit_cluster::create_cluster_for_test;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
+    use quickwit_common::NON_ZERO_USIZE_MIN;
     use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, VecSourceParams};
     use quickwit_ingest_api::{init_ingest_api, CreateQueueIfNotExistsRequest};
     use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore};
@@ -839,8 +841,8 @@ mod tests {
         // Test `spawn_pipeline`.
         let source_config_0 = SourceConfig {
             source_id: "test-indexing-service--source-0".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -929,8 +931,8 @@ mod tests {
         // Test `supervise_pipelines`
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::Vec(VecSourceParams {
                 docs: Vec::new(),
@@ -990,8 +992,8 @@ mod tests {
         // Test `apply plan`.
         let source_config_1 = SourceConfig {
             source_id: "test-indexing-service--source-1".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1024,8 +1026,8 @@ mod tests {
 
         let source_config_2 = SourceConfig {
             source_id: "test-indexing-service--source-2".to_string(),
-            max_num_pipelines_per_indexer: 2,
-            desired_num_pipelines: 2,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1140,8 +1142,8 @@ mod tests {
 
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -1258,8 +1260,8 @@ mod tests {
         let mut index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
         let source_config = SourceConfig {
             source_id: "test-indexing-service--source".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,

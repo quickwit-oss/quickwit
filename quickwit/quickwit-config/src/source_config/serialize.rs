@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::num::NonZeroUsize;
+
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
@@ -70,6 +72,12 @@ impl SourceConfigForSerialization {
         if self.source_id != CLI_INGEST_SOURCE_ID && self.source_id != INGEST_API_SOURCE_ID {
             validate_identifier("Source ID", &self.source_id)?;
         }
+        let desired_num_pipelines = NonZeroUsize::new(self.desired_num_pipelines)
+            .ok_or_else(|| anyhow::anyhow!("`desired_num_pipelines` must be strictly positive."))?;
+        let max_num_pipelines_per_indexer = NonZeroUsize::new(self.max_num_pipelines_per_indexer)
+            .ok_or_else(|| {
+            anyhow::anyhow!("`max_num_pipelines_per_indexer` must be strictly positive.")
+        })?;
         match &self.source_params {
             // We want to forbid source_config with no filepath
             SourceParams::File(file_params) => {
@@ -96,23 +104,13 @@ impl SourceConfigForSerialization {
                 }
             }
         }
-        if self.desired_num_pipelines == 0 {
-            bail!("Source config is not valid: `desired_num_pipelines` must be strictly positive.");
-        }
-        if self.max_num_pipelines_per_indexer == 0 {
-            bail!(
-                "Source config is not valid: `max_num_pipelines_per_indexer` must be strictly \
-                 positive."
-            );
-        }
         if let Some(transform_config) = &self.transform {
             transform_config.compile_vrl_script()?;
         }
-
         Ok(SourceConfig {
             source_id: self.source_id,
-            max_num_pipelines_per_indexer: self.max_num_pipelines_per_indexer,
-            desired_num_pipelines: self.desired_num_pipelines,
+            max_num_pipelines_per_indexer,
+            desired_num_pipelines,
             enabled: self.enabled,
             source_params: self.source_params,
             transform_config: self.transform,
@@ -124,8 +122,8 @@ impl From<SourceConfig> for SourceConfigV0_4 {
     fn from(source_config: SourceConfig) -> Self {
         SourceConfigV0_4 {
             source_id: source_config.source_id,
-            max_num_pipelines_per_indexer: source_config.max_num_pipelines_per_indexer,
-            desired_num_pipelines: source_config.desired_num_pipelines,
+            max_num_pipelines_per_indexer: source_config.max_num_pipelines_per_indexer.get(),
+            desired_num_pipelines: source_config.desired_num_pipelines.get(),
             enabled: source_config.enabled,
             source_params: source_config.source_params,
             transform: source_config.transform_config,

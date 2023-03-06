@@ -535,6 +535,7 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{Command, Universe};
+    use quickwit_common::NON_ZERO_USIZE_MIN;
     use quickwit_config::{IndexingSettings, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
@@ -611,8 +612,8 @@ mod tests {
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
             transform_config: None,
@@ -701,8 +702,8 @@ mod tests {
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
             transform_config: None,
@@ -760,8 +761,8 @@ mod tests {
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::Void(VoidSourceParams),
             transform_config: None,

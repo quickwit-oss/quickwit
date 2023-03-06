@@ -43,6 +43,7 @@ pub mod uri;
 
 use std::env;
 use std::fmt::Debug;
+use std::num::NonZeroUsize;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
@@ -54,6 +55,9 @@ pub use file_entry::FileEntry;
 pub use kill_switch::KillSwitch;
 pub use progress::{Progress, ProtectedZoneGuard};
 use tracing::{error, info};
+
+// TODO: remove `NON_ZERO_USIZE_MIN` once `NonZeroUsize::MIN` is stabilized.
+pub const NON_ZERO_USIZE_MIN: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(1) };
 
 pub fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {
     range.clone().step_by(chunk_size).map(move |block_start| {

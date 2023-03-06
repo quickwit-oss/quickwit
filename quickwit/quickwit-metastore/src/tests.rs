@@ -27,6 +27,7 @@ pub mod test_suite {
     use futures::future::try_join_all;
     use itertools::Itertools;
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::NON_ZERO_USIZE_MIN;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::metastore_api::DeleteQuery;
@@ -239,8 +240,8 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -302,8 +303,8 @@ pub mod test_suite {
         let source_id = format!("{index_id}--source");
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -346,8 +347,8 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -398,8 +399,8 @@ pub mod test_suite {
         for (source_id, split_id) in source_ids.iter().zip(split_ids.iter()) {
             let source = SourceConfig {
                 source_id: source_id.clone(),
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 1,
+                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                desired_num_pipelines: NON_ZERO_USIZE_MIN,
                 enabled: true,
                 source_params: SourceParams::void(),
                 transform_config: None,

@@ -19,12 +19,13 @@
 
 pub(crate) mod serialize;
 
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use quickwit_common::uri::Uri;
-use quickwit_common::{is_false, no_color};
+use quickwit_common::{is_false, no_color, NON_ZERO_USIZE_MIN};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
@@ -57,7 +58,7 @@ pub struct SourceConfig {
     /// - `max_num_pipelines_per_indexer=2`
     /// - `desired_num_pipelines=1`
     /// => Only one pipeline will run on one indexer.
-    pub max_num_pipelines_per_indexer: usize,
+    pub max_num_pipelines_per_indexer: NonZeroUsize,
     /// Number of desired indexing pipelines to run on a cluster for the source.
     /// This number could not be reach if there is not enough indexers.
     /// The value is only used by sources that Quickwit knows how to distribute across
@@ -67,7 +68,7 @@ pub struct SourceConfig {
     /// - `desired_num_pipelines=2`
     /// - 1 indexer
     /// => Only one pipeline will start on the sole indexer.
-    pub desired_num_pipelines: usize,
+    pub desired_num_pipelines: NonZeroUsize,
 
     // Denotes if this source is enabled.
     pub enabled: bool,
@@ -112,8 +113,8 @@ impl SourceConfig {
     pub fn ingest_api_default() -> Self {
         Self {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,
@@ -124,8 +125,8 @@ impl SourceConfig {
     pub fn cli_ingest_source() -> Self {
         Self {
             source_id: CLI_INGEST_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::IngestCli,
             transform_config: None,
@@ -149,8 +150,8 @@ impl TestableForRegression for SourceConfig {
     fn sample_for_regression() -> Self {
         SourceConfig {
             source_id: "kafka-source".to_string(),
-            max_num_pipelines_per_indexer: 2,
-            desired_num_pipelines: 2,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "kafka-topic".to_string(),
@@ -457,8 +458,8 @@ mod tests {
             load_source_config_from_user_config(config_format, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kafka-source".to_string(),
-            max_num_pipelines_per_indexer: 2,
-            desired_num_pipelines: 2,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "cloudera-cluster-logs".to_string(),
@@ -472,7 +473,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines, 2);
+        assert_eq!(source_config.desired_num_pipelines.get(), 2);
     }
 
     #[test]
@@ -553,8 +554,8 @@ mod tests {
             load_source_config_from_user_config(config_format, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kinesis-source".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::Kinesis(KinesisSourceParams {
                 stream_name: "emr-cluster-logs".to_string(),
@@ -567,7 +568,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines, 1);
+        assert_eq!(source_config.desired_num_pipelines.get(), 1);
     }
 
     #[tokio::test]
@@ -583,10 +584,9 @@ mod tests {
                 "params": {}
             }
             "#;
-            let source_config =
-                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
-                    .unwrap_err();
-            assert!(source_config
+            let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                .unwrap_err();
+            assert!(error
                 .to_string()
                 .contains("`desired_num_pipelines` must be"));
         }
@@ -601,10 +601,9 @@ mod tests {
                 "params": {}
             }
             "#;
-            let source_config =
-                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
-                    .unwrap_err();
-            assert!(source_config
+            let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                .unwrap_err();
+            assert!(error
                 .to_string()
                 .contains("`max_num_pipelines_per_indexer` must be"));
         }
@@ -619,12 +618,9 @@ mod tests {
                 "params": {}
             }
             "#;
-            let source_config =
-                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
-                    .unwrap_err();
-            assert!(source_config
-                .to_string()
-                .contains("supports multiple pipelines"));
+            let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                .unwrap_err();
+            assert!(error.to_string().contains("supports multiple pipelines"));
         }
         {
             let content = r#"
@@ -637,12 +633,9 @@ mod tests {
                 "params": {}
             }
             "#;
-            let source_config =
-                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
-                    .unwrap_err();
-            assert!(source_config
-                .to_string()
-                .contains("supports multiple pipelines"));
+            let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                .unwrap_err();
+            assert!(error.to_string().contains("supports multiple pipelines"));
         }
     }
 
@@ -664,8 +657,8 @@ mod tests {
             let source_config =
                 load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
                     .unwrap();
-            assert_eq!(source_config.desired_num_pipelines, 3);
-            assert_eq!(source_config.max_num_pipelines_per_indexer, 3);
+            assert_eq!(source_config.desired_num_pipelines.get(), 3);
+            assert_eq!(source_config.max_num_pipelines_per_indexer.get(), 3);
         }
         {
             let content = r#"
@@ -922,8 +915,8 @@ mod tests {
         let source_config: SourceConfig = ConfigFormat::Json.parse(&file_content).unwrap();
         let expected_source_config = SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: Some(TransformConfig {
@@ -932,7 +925,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines, 1);
+        assert_eq!(source_config.desired_num_pipelines.get(), 1);
     }
 
     #[test]

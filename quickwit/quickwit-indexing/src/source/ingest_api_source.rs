@@ -220,6 +220,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::NON_ZERO_USIZE_MIN;
     use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, INGEST_API_SOURCE_ID};
     use quickwit_ingest_api::{add_doc, init_ingest_api, DocBatch, IngestRequest};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
@@ -252,8 +253,8 @@ mod tests {
     fn make_source_config() -> SourceConfig {
         SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            desired_num_pipelines: 1,
-            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,

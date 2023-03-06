@@ -572,6 +572,7 @@ fn flatten_json(value: JsonValue) -> Vec<(String, JsonValue)> {
 mod tests {
     use std::str::FromStr;
 
+    use quickwit_common::NON_ZERO_USIZE_MIN;
     use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::{PartitionId, Position};
     use serde_json::json;
@@ -757,8 +758,8 @@ mod tests {
             .collect();
         let sources = vec![SourceConfig {
             source_id: "foo-source".to_string(),
-            desired_num_pipelines: 1,
-            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::file("path/to/file"),
             transform_config: None,
@@ -817,16 +818,16 @@ mod tests {
         let sources = [
             SourceConfig {
                 source_id: "foo-source".to_string(),
-                desired_num_pipelines: 1,
-                max_num_pipelines_per_indexer: 1,
+                desired_num_pipelines: NON_ZERO_USIZE_MIN,
+                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
                 enabled: true,
                 source_params: SourceParams::stdin(),
                 transform_config: None,
             },
             SourceConfig {
                 source_id: "bar-source".to_string(),
-                desired_num_pipelines: 1,
-                max_num_pipelines_per_indexer: 1,
+                desired_num_pipelines: NON_ZERO_USIZE_MIN,
+                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
                 enabled: true,
                 source_params: SourceParams::stdin(),
                 transform_config: None,

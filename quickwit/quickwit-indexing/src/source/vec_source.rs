@@ -127,6 +127,7 @@ mod tests {
     use std::path::PathBuf;
 
     use quickwit_actors::{Actor, Command, Universe};
+    use quickwit_common::NON_ZERO_USIZE_MIN;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::metastore_for_test;
     use serde_json::json;
@@ -154,8 +155,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
-                    desired_num_pipelines: 1,
-                    max_num_pipelines_per_indexer: 1,
+                    desired_num_pipelines: NON_ZERO_USIZE_MIN,
+                    max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
                     enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                     transform_config: None,
@@ -213,8 +214,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
-                    desired_num_pipelines: 1,
-                    max_num_pipelines_per_indexer: 1,
+                    desired_num_pipelines: NON_ZERO_USIZE_MIN,
+                    max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
                     enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                     transform_config: None,

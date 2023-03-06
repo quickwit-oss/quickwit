@@ -474,6 +474,7 @@ mod pulsar_broker_tests {
     use futures::future::join_all;
     use quickwit_actors::{ActorHandle, Inbox, Universe, HEARTBEAT};
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::NON_ZERO_USIZE_MIN;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpointDelta,
@@ -560,8 +561,8 @@ mod pulsar_broker_tests {
         let source_id = append_random_suffix("test-pulsar-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NON_ZERO_USIZE_MIN,
             enabled: true,
             source_params: SourceParams::Pulsar(PulsarSourceParams {
                 topics: topics.into_iter().map(|v| v.as_ref().to_string()).collect(),
