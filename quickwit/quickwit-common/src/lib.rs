@@ -36,6 +36,7 @@ pub mod runtimes;
 pub mod simple_list;
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;
+pub mod tower;
 pub mod uri;
 
 use std::env;
