@@ -5,8 +5,8 @@ sidebar_position: 1
 
 import DocCardList from '@theme/DocCardList';
 
-Quickwit is built from the ground up to [index efficiently unstructured data](../guides/schemaless.md), and search directly your data sitting on cloud storage.
-Moreover, Quickwit is OpenTelemetry native and provides a REST API ready to ingest any JSON formatted logs.
+Quickwit is built from the ground up to [efficiently index unstructured data](../guides/schemaless.md), and search it effortlessly on cloud storage.
+Moreover, Quickwit supports OpenTelemetry out of the box and provides a REST API ready to ingest any JSON formatted logs.
 **This makes Quickwit a perfect fit for logs!**.
 
 ![Quickwit Log Management Overview](../assets/images/logs-management-overview.svg)
@@ -19,10 +19,10 @@ Moreover, Quickwit is OpenTelemetry native and provides a REST API ready to inge
 
 ### OpenTelemetry agent
 
-Before using an [OpenTelemety collector](https://opentelemetry.io/docs/collector/), check that [Quickwit OpenTelemetry service](#opentelemetry-service) is enabled.
-Once started, Quickwit is then ready to receive OpenTelemetry gRPC requests.
+Before using an [OpenTelemetry collector](https://opentelemetry.io/docs/collector/), check that [Quickwit OpenTelemetry service](#opentelemetry-service) is enabled.
+Once started, Quickwit is then ready to receive and ingest OpenTelemetry gRPC requests.
 
-Here is configuration example of an OpenTelemetry agent that sends logs into Quickwit:
+Here is a configuration example of an OpenTelemetry agent that sends logs into Quickwit:
 
 ```yaml
 mode: daemonset
@@ -47,7 +47,7 @@ config:
           - otlp
 ```
 
-Find more configuration details on the [OpenTelemetry documentation](https://opentelemetry.io/docs/collector/configuration/). You can also follow our [tutorial to send Kubernetes logs](deploy-quickwit-otel-with-helm.md) to Quickwit.
+Find more configuration details on the [OpenTelemetry documentation](https://opentelemetry.io/docs/collector/configuration/). You can also check out our [tutorial to send Kubernetes logs](deploy-quickwit-otel-with-helm.md) to Quickwit.
 
 ### HTTP-based agents
 
