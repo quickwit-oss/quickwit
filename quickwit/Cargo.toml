@@ -142,7 +142,7 @@ rusoto_s3 = { version = "0.48", default-features = false, features = [
 rusoto_sts = { version = "0.48", default-features = false, features = [
   "rustls",
 ] }
-rust-embed = "6.4.2"
+rust-embed = "6.6.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_cbor = "0.11"
 serde_json = "1.0"
