@@ -34,7 +34,8 @@ presets:
 config:
   exporters:
     otlp:
-      # Local instance localhost:7281
+      # Replace quickwit-host with the hostname of your Quickwit node/service.
+      # On k8s, it should be of the form `{quickwit-indexer-service-name}.{namespace}.svc.cluster.local:7281
       endpoint: quickwit-host:7281
       # Quickwit OTEL gRPC endpoint does not support compression yet.
       compression: none
@@ -164,6 +165,8 @@ search_settings:
 
 Currently, Quickwit provides a simplistic UI to get basic information from the cluster, indexes and search documents.
 If a simple UI is not sufficient for you and you need additional features, Grafana and Elasticsearch query API support are planned for Q2 2023, stay tuned!
+
+You can also send traces to Quickwit that you can visualize in Jaeger UI. Tutorial coming soon.
 
 ## Known limitations
 
