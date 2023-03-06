@@ -77,7 +77,7 @@ impl TypedSourceFactory for PulsarSourceFactory {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PulsarSourceState {
     /// Number of bytes processed by the source.
     pub num_bytes_processed: u64,
@@ -187,11 +187,11 @@ impl PulsarSource {
         let num_bytes = doc.as_bytes().len();
 
         if let Some(current_position) = self.current_positions.get(&partition) {
-            // We skip messages which are older than the current recorded position.
+            // We skip messages older or equal to the current recorded position.
             // This is because Pulsar may replay messages which have not yet been acknowledged but
             // are in the process of being published, this can occur in situations like pulsar
             // re-balancing topic partitions if a node leaves, node failure, etc...
-            if &msg_position < current_position {
+            if &msg_position <= current_position {
                 self.state.num_skipped_messages += 1;
                 return Ok(());
             }
@@ -466,11 +466,13 @@ fn subscription_name(index_id: &str, source_id: &str) -> String {
 
 #[cfg(all(test, feature = "pulsar-broker-tests"))]
 mod pulsar_broker_tests {
+    use std::collections::HashSet;
+    use std::ops::Range;
     use std::path::PathBuf;
     use std::sync::Arc;
 
     use futures::future::join_all;
-    use quickwit_actors::{ActorHandle, Inbox, Universe};
+    use quickwit_actors::{ActorHandle, Inbox, Universe, HEARTBEAT};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{
@@ -609,7 +611,7 @@ mod pulsar_broker_tests {
     /// for each topic provided.
     async fn populate_topic<'a, S: AsRef<str> + 'a, M>(
         topics: impl IntoIterator<Item = S>,
-        num_messages: usize,
+        range_message_ids: Range<usize>,
         message_fn: M,
     ) -> anyhow::Result<Vec<TopicData>>
     where
@@ -619,7 +621,7 @@ mod pulsar_broker_tests {
 
         let mut pending_messages = Vec::new();
         for topic in topics {
-            let mut topic_messages = Vec::with_capacity(num_messages);
+            let mut topic_messages = Vec::with_capacity(range_message_ids.len());
             let mut producer = client
                 .producer()
                 .with_name(append_random_suffix(CLIENT_NAME))
@@ -627,7 +629,7 @@ mod pulsar_broker_tests {
                 .build()
                 .await?;
 
-            for id in 0..num_messages {
+            for id in range_message_ids.clone() {
                 let msg = (message_fn)(topic.as_ref(), id).to_string();
                 topic_messages.push(msg);
             }
@@ -735,11 +737,25 @@ mod pulsar_broker_tests {
 
     fn message_generator(topic: &str, id: usize) -> JsonValue {
         json!({
-            "id": id,
+            "id": id.to_string(),
             "topic": topic,
             "timestamp": 1674515715,
             "body": "Hello, world! This is some test data.",
         })
+    }
+
+    fn count_unique_messages_in_batches(batches: &[RawDocBatch]) -> usize {
+        let message_ids_topic: HashSet<String> = batches
+            .iter()
+            .flat_map(|batch| batch.docs.iter())
+            .map(|doc_string| {
+                let doc_json = serde_json::from_str::<serde_json::Value>(doc_string).unwrap();
+                let id: &str = doc_json.get("id").unwrap().as_str().unwrap();
+                let topic: &str = doc_json.get("topic").unwrap().as_str().unwrap();
+                format!("{id}-{topic}")
+            })
+            .collect();
+        message_ids_topic.len()
     }
 
     #[test]
@@ -910,7 +926,7 @@ mod pulsar_broker_tests {
         .await
         .expect("Create source");
 
-        let expected_docs = populate_topic([&topic], 10, message_generator)
+        let expected_docs = populate_topic([&topic], 0..10, message_generator)
             .await
             .unwrap();
 
@@ -967,7 +983,7 @@ mod pulsar_broker_tests {
         .await
         .expect("Create source");
 
-        let expected_docs = populate_topic([&topic1, &topic2], 10, message_generator)
+        let expected_docs = populate_topic([&topic1, &topic2], 0..10, message_generator)
             .await
             .unwrap();
 
@@ -1036,7 +1052,7 @@ mod pulsar_broker_tests {
         .await
         .expect("Create source");
 
-        let expected_docs = populate_topic([&topic], 10, message_generator)
+        let expected_docs = populate_topic([&topic], 0..10, message_generator)
             .await
             .unwrap();
 
@@ -1105,7 +1121,7 @@ mod pulsar_broker_tests {
 
         let expected_docs = populate_topic(
             [&topic_partition_1, &topic_partition_2],
-            10,
+            0..10,
             message_generator,
         )
         .await
@@ -1149,5 +1165,66 @@ mod pulsar_broker_tests {
         });
         assert_eq!(exit_state1, expected_state);
         assert_eq!(exit_state2, expected_state);
+    }
+
+    #[tokio::test]
+    async fn test_partitioned_topic_multi_consumer_ingestion_with_failover() {
+        // We test successive failures of one source and observe pulsar failover mechanism.
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let metastore = metastore_for_test();
+        let topic =
+            append_random_suffix("test-pulsar-source--partitioned-multi-consumer-failure--topic");
+
+        let index_id =
+            append_random_suffix("test-pulsar-source--partitioned-multi-consumer-failure--index");
+        let (source_id, source_config) = get_source_config([&topic]);
+
+        create_partitioned_topic(&topic, 2).await;
+        setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+
+        let topic_partition_1 = format!("{topic}-partition-0");
+        let topic_partition_2 = format!("{topic}-partition-1");
+
+        let (_source_handle1, doc_processor_inbox1) = create_source(
+            &universe,
+            metastore.clone(),
+            &index_id,
+            source_config.clone(),
+            SourceCheckpoint::default(),
+        )
+        .await
+        .expect("Create source");
+
+        // Send 10 messages on each topic and kill the source 5 times.
+        for idx in 0..5 {
+            let (source_handle2, _) = create_source(
+                &universe,
+                metastore.clone(),
+                &index_id,
+                source_config.clone(),
+                SourceCheckpoint::default(),
+            )
+            .await
+            .expect("Create source");
+            populate_topic(
+                [&topic_partition_1, &topic_partition_2],
+                idx * 10..(idx + 1) * 10,
+                message_generator,
+            )
+            .await
+            .unwrap();
+            tokio::time::sleep(HEARTBEAT * 5).await;
+            source_handle2.kill().await;
+        }
+
+        let messages1: Vec<RawDocBatch> = doc_processor_inbox1.drain_for_test_typed();
+        assert!(!messages1.is_empty());
+        let num_docs_sent_to_doc_processor: usize =
+            messages1.iter().map(|batch| batch.docs.len()).sum();
+        assert_eq!(100, num_docs_sent_to_doc_processor);
+        // Check that we have received all the messages without duplicates.
+        assert_eq!(100, count_unique_messages_in_batches(&messages1));
+        universe.assert_quit().await;
     }
 }
