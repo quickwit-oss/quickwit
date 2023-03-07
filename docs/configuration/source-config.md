@@ -45,7 +45,7 @@ An ingest source reads data from the [Ingest API](/docs/reference/rest-api.md#in
 
 A Kafka source reads data from a Kafka stream. Each message in the stream must hold a JSON object.
 
-A tutorial is available [here](/docs/get-started/tutorials/kafka.md).
+A tutorial is available [here](/docs/ingest-data/kafka.md).
 
 #### Kafka source parameters
 
@@ -92,7 +92,7 @@ EOF
 
 A Kinesis source reads data from an [Amazon Kinesis](https://aws.amazon.com/kinesis/) stream. Each message in the stream must hold a JSON object.
 
-A tutorial is available [here](/docs/get-started/tutorials/kinesis.md).
+A tutorial is available [here](/docs/ingest-data/kinesis.md).
 
 **Kinesis source parameters**
 
@@ -131,7 +131,7 @@ quickwit source create --index my-index --source-config source-config.yaml
 
 A Puslar source reads data from one or several Pulsar topics. Each message in topic(s) must hold a JSON object.
 
-A tutorial is available [here](/docs/get-started/tutorials/pulsar.md).
+A tutorial is available [here](/docs/ingest-data/pulsar.md).
 
 **Pulsar source parameters**
 
