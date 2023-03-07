@@ -44,7 +44,7 @@ Open the Jaeger UI at [http://localhost:16686](http://localhost:16686) and searc
 - `root_search` is Quickwit search entry point. It calls search on each split (piece of index) in parallel, in a distributed manner, or just locally if there is only one node.
 - `leaf_search` is the search entry point on each node. It calls `leaf_search_single_split` on each split.
 - `leaf_search_single_split` is the search entry point on a split. It will call consecutively `warmup` and `tantivy_search`.
-- `warmup` is the warmup phase of the search. It is prefetches data needed from the storage to execute the search query.
+- `warmup` is the warmup phase of the search. It prefetches data needed to execute the search query.
 - `tantivy_search` is the search phase of the search. It is executing the search query at horse speeds with the [Tantivy](https://github.com/quickwit-oss/tantivy).
 
 ![Quickwit trace in Jaeger UI](../assets/images/jaeger-ui-quickwit-trace-analysis.png)
