@@ -9,13 +9,13 @@ sidebar_position: 1
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-In this tutorial, we will describe how to send data in Quickwit using the ingest API.
+In this tutorial, we will describe how to send data to Quickwit using the ingest API.
 
-You will need a [local Quickwit instance](/docs/get-started/installation) up and running to follow this tutorial.
+You will need a [local Quickwit instance](../get-started/installation) up and running to follow this tutorial.
 
 To start it, run `./quickwit run` in a terminal.
 
-### Create an index
+## Create an index
 
 First, let's create a schemaless index.
 
@@ -44,10 +44,9 @@ Let's first download a sample of the [StackOverflow dataset](https://www.kaggle.
 curl -O https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.transformed-10000.json
 ```
 
-You can ingest data either with the CLI or with cURL. The CLI is more convenient for ingesting several GB as Quickwit may return `429` responses if it ingest queue is full. Quickwit CLI will automatically retry ingestion in this case.
+You can ingest data either with the CLI or with cURL. The CLI is more convenient for ingesting several GB as Quickwit may return `429` responses if the ingest queue is full. Quickwit CLI will automatically retry ingestion in this case.
 
 ```bash
-
 # Ingest the first 10_000 Stackoverflow posts articles with the CLI...
 ./quickwit index ingest --index stackoverflow-schemaless --input-path stackoverflow.posts.transformed-10000.json
 
@@ -55,7 +54,7 @@ You can ingest data either with the CLI or with cURL. The CLI is more convenient
 curl -XPOST -H 'Content-Type: application/json' 'http://localhost:7280/api/v1/stackoverflow-schemaless/ingest' --data-binary @stackoverflow.posts.transformed-10000.json
 ```
 
-## Check the indexed data with a search query
+## Execute the query
 
 You can now search the index.
 
@@ -69,4 +68,4 @@ curl 'http://localhost:7280/api/v1/stackoverflow-schemaless/search?query=body:py
 curl -XDELETE 'http://localhost:7280/api/v1/indexes/stackoverflow-schemaless'
 ```
 
-This concludes the tutorial. You can now move on to the [next tutorial](/docs/ingest-data/kafka) to learn how to ingest data from Kafka.
+This concludes the tutorial. You can now move on to the [next tutorial](/docs/ingest-data/kafka.md) to learn how to ingest data from Kafka.

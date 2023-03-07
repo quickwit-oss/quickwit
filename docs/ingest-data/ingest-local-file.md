@@ -13,7 +13,7 @@ In this tutorial, we will describe how to index a local file with the Quickwit C
 
 You will need the [Quickwit binary](/docs/get-started/installation.md) to follow this tutorial.
 
-### Create an index
+## Create an index
 
 First, let's create a schemaless index. We need to start a Quickwit server only for the creation so we will start it and shut it down afterwards.
 
@@ -43,13 +43,13 @@ You can now shutdown the server by pressing `Ctrl+C` in the first terminal.
 
 ## Ingest the file
 
-To ingest a file, you just need to executed the following command.
+To ingest a file, you just need to execute the following command:
 
 ```bash
 ./quickwit tool local-ingest --index stackoverflow-schemaless --input-path stackoverflow.posts.transformed-10000.json
 ```
 
-After a few seconds you should see the following output.
+After a few seconds you should see the following output:
 
 ```bash
 ❯ Ingesting documents locally...
@@ -74,13 +74,13 @@ Clearing local cache directory...
 
 ## Tear down resources (optional)
 
-That's it! You can now tear down the resources you created. You can do so by running the following command.
+That's it! You can now tear down the resources you created. You can do so by running the following command:
 
 ```bash
 ./quickwit run
 ```
 
-And in a separate terminal.
+And in a separate terminal:
 
 ```bash
 ./quickwit index delete --index-id stackoverflow-schemaless
