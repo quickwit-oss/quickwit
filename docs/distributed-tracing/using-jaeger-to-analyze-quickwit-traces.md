@@ -1,12 +1,12 @@
 ---
-title: Using Jaeger to analyze Quickwit traces
+title: Using Jaeger with Quickwit
 description: A simple tutorial to analyze Quickwit traces in Jaeger.
 icon_url: /img/tutorials/quickwit-logo.png
 tags: [traces, ingestion]
 sidebar_position: 1
 ---
 
-In this tutorial, we will show you how Quickwit can eat its dog food: we will send Quickwit traces into Jaeger and analyze them, which will generate new traces to analyze :)
+In this tutorial, we will show you how Quickwit can eat its own dog food: we will send Quickwit traces into Jaeger and analyze them, which will generate new traces to analyze :)
 
 ## Start Quickwit with the OTLP service enabled.
 

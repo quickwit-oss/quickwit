@@ -1,7 +1,9 @@
 ---
-title: Overview
+title: Distributed Tracing with Quickwit
 sidebar_position: 1
 ---
+
+import DocCardList from '@theme/DocCardList';
 
 Distributed Tracing is a process that tracks your application requests flowing through your different services: frontend, backend, databases and more. It's a powerful tool to understand how your application works and to debug performance issues.
 
@@ -9,9 +11,9 @@ Quickwit is a cloud-native engine to index and search unstructured data which ma
 
 Moreover, Quickwit supports natively the [OpenTelemetry protocol](https://opentelemetry.io/docs/reference/specification/protocol/otlp/) and the [Jaeger UI](https://www.jaegertracing.io/). **This means that you can use Quickwit to store your traces and to query them with Jaeger UI**.
 
-![Quickwit Distributed Tracing Overview](../assets/images/distributed-tracing-overview.svg)
+![Quickwit Distributed Tracing](../assets/images/distributed-tracing-overview-light.svg#gh-light-mode-only)![Quickwit Distributed Tracing](../assets/images/distributed-tracing-overview-dark.svg#gh-dark-mode-only)
 
-## Sending traces to Quickwit
+## Sending traces to Quickwit and analyzing them with Jaeger UI
 
 <DocCardList />
 
@@ -19,6 +21,7 @@ Moreover, Quickwit supports natively the [OpenTelemetry protocol](https://opente
 
 Quickwit implements a gRPC service compatible with Jaeger UI. It's then possible to use Jaeger UI to visualize your traces stored in Quickwit.
 
+[Learn how to analyze Quickwit traces in Jaeger UI](using-jaeger-to-analyze-quickwit-traces.md).
 
 ## Enabling OpenTelemetry service
 

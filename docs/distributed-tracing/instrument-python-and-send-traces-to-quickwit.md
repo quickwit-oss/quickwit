@@ -1,5 +1,5 @@
 ---
-title: Instrument your Python application and send traces to Quickwit
+title: Instrument your Python app
 description: A simple tutorial to send traces to Quickwit from a Python Flask app.
 icon_url: /img/tutorials/python-logo.png
 tags: [python, traces, ingestion]
