@@ -144,7 +144,7 @@ pub(crate) async fn start_rest_server(
         .service(warp_service);
 
     info!("Searcher ready to accept requests at http://{rest_listen_addr}/");
-    
+
     hyper::Server::bind(&rest_listen_addr)
         .serve(Shared::new(service))
         .await?;
