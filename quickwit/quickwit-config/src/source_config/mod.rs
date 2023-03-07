@@ -25,7 +25,7 @@ use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use quickwit_common::uri::Uri;
-use quickwit_common::{is_false, no_color, NON_ZERO_USIZE_MIN};
+use quickwit_common::{is_false, no_color};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
@@ -113,8 +113,8 @@ impl SourceConfig {
     pub fn ingest_api_default() -> Self {
         Self {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
-            desired_num_pipelines: NON_ZERO_USIZE_MIN,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,
@@ -125,8 +125,8 @@ impl SourceConfig {
     pub fn cli_ingest_source() -> Self {
         Self {
             source_id: CLI_INGEST_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
-            desired_num_pipelines: NON_ZERO_USIZE_MIN,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::IngestCli,
             transform_config: None,
@@ -137,8 +137,8 @@ impl SourceConfig {
     pub fn for_test(source_id: &str, source_params: SourceParams) -> Self {
         Self {
             source_id: source_id.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params,
             transform_config: None,
@@ -554,8 +554,8 @@ mod tests {
             load_source_config_from_user_config(config_format, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kinesis-source".to_string(),
-            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
-            desired_num_pipelines: NON_ZERO_USIZE_MIN,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Kinesis(KinesisSourceParams {
                 stream_name: "emr-cluster-logs".to_string(),
@@ -915,8 +915,8 @@ mod tests {
         let source_config: SourceConfig = ConfigFormat::Json.parse(&file_content).unwrap();
         let expected_source_config = SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
-            desired_num_pipelines: NON_ZERO_USIZE_MIN,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: Some(TransformConfig {

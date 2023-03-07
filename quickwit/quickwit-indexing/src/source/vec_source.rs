@@ -124,10 +124,10 @@ impl Source for VecSource {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
     use quickwit_actors::{Actor, Command, Universe};
-    use quickwit_common::NON_ZERO_USIZE_MIN;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::metastore_for_test;
     use serde_json::json;
@@ -155,8 +155,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
-                    desired_num_pipelines: NON_ZERO_USIZE_MIN,
-                    max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                     enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                     transform_config: None,
@@ -214,8 +214,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
-                    desired_num_pipelines: NON_ZERO_USIZE_MIN,
-                    max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                     enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                     transform_config: None,

@@ -319,7 +319,6 @@ mod tests {
     use proptest::prelude::*;
     use quickwit_cluster::ClusterMember;
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_common::NON_ZERO_USIZE_MIN;
     use quickwit_config::service::QuickwitService;
     use quickwit_config::{
         FileSourceParams, KafkaSourceParams, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
@@ -389,7 +388,7 @@ mod tests {
             index_source_id.clone(),
             SourceConfig {
                 source_id: index_source_id.source_id.to_string(),
-                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
@@ -423,7 +422,7 @@ mod tests {
             index_source_id.clone(),
             SourceConfig {
                 source_id: index_source_id.source_id.to_string(),
-                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
                 enabled: true,
                 source_params: SourceParams::IngestApi,
@@ -465,7 +464,7 @@ mod tests {
             file_index_source_id.clone(),
             SourceConfig {
                 source_id: file_index_source_id.source_id,
-                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
                 enabled: true,
                 source_params: SourceParams::File(FileSourceParams { filepath: None }),
@@ -476,7 +475,7 @@ mod tests {
             cli_ingest_index_source_id.clone(),
             SourceConfig {
                 source_id: cli_ingest_index_source_id.source_id,
-                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
                 enabled: true,
                 source_params: SourceParams::IngestCli,
@@ -487,7 +486,7 @@ mod tests {
             kafka_index_source_id.clone(),
             SourceConfig {
                 source_id: kafka_index_source_id.source_id,
-                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
                 enabled: false,
                 source_params: kafka_source_params_for_test(),
@@ -532,7 +531,7 @@ mod tests {
             kafka_index_source_id_2.clone(),
             SourceConfig {
                 source_id: kafka_index_source_id_2.source_id,
-                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
@@ -599,7 +598,7 @@ mod tests {
             kafka_index_source_id_1.clone(),
             SourceConfig {
                 source_id: kafka_index_source_id_1.source_id,
-                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
                 enabled: true,
                 source_params: kafka_source_params_for_test(),

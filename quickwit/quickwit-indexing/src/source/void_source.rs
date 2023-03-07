@@ -71,10 +71,10 @@ impl TypedSourceFactory for VoidSourceFactory {
 #[cfg(test)]
 mod tests {
 
+    use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
     use quickwit_actors::{Health, Supervisable, Universe};
-    use quickwit_common::NON_ZERO_USIZE_MIN;
     use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use quickwit_metastore::metastore_for_test;
@@ -87,8 +87,8 @@ mod tests {
     async fn test_void_source_loading() {
         let source_config = SourceConfig {
             source_id: "test-void-source".to_string(),
-            desired_num_pipelines: NON_ZERO_USIZE_MIN,
-            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -118,8 +118,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-void-source".to_string(),
-                    desired_num_pipelines: NON_ZERO_USIZE_MIN,
-                    max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                     enabled: true,
                     source_params: SourceParams::void(),
                     transform_config: None,

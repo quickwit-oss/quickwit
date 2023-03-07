@@ -371,7 +371,8 @@ impl Handler<SuggestTruncate> for SourceActor {
 #[cfg(test)]
 mod tests {
 
-    use quickwit_common::NON_ZERO_USIZE_MIN;
+    use std::num::NonZeroUsize;
+
     use quickwit_config::VecSourceParams;
 
     use super::*;
@@ -381,8 +382,8 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "void".to_string(),
-                desired_num_pipelines: NON_ZERO_USIZE_MIN,
-                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::void(),
                 transform_config: None,
@@ -392,8 +393,8 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "vec".to_string(),
-                desired_num_pipelines: NON_ZERO_USIZE_MIN,
-                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
                 transform_config: None,
@@ -403,8 +404,8 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                desired_num_pipelines: NON_ZERO_USIZE_MIN,
-                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::file("file-does-not-exist.json"),
                 transform_config: None,
@@ -414,8 +415,8 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                desired_num_pipelines: NON_ZERO_USIZE_MIN,
-                max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
+                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::file("data/test_corpus.json"),
                 transform_config: None,

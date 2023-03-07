@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -25,7 +26,6 @@ use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::create_cluster_for_test;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::{Protocol, Uri};
-use quickwit_common::NON_ZERO_USIZE_MIN;
 use quickwit_config::{
     build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, IngestApiConfig, SourceConfig,
     SourceParams, VecSourceParams,
@@ -148,8 +148,8 @@ impl TestSandbox {
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source_config = SourceConfig {
             source_id: self.index_id.clone(),
-            max_num_pipelines_per_indexer: NON_ZERO_USIZE_MIN,
-            desired_num_pipelines: NON_ZERO_USIZE_MIN,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Vec(VecSourceParams {
                 docs,
