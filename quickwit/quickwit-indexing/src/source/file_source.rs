@@ -318,17 +318,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_file_source_resume_from_checkpoint() -> anyhow::Result<()> {
+    async fn test_file_source_resume_from_checkpoint() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         use tempfile::NamedTempFile;
-        let mut temp_file = NamedTempFile::new()?;
+        let mut temp_file = NamedTempFile::new().unwrap();
         for i in 0..100 {
-            temp_file.write_all(format!("{i}\n").as_bytes())?;
+            temp_file.write_all(format!("{i}\n").as_bytes()).unwrap();
         }
-        temp_file.flush()?;
-        let temp_file_path = temp_file.path().canonicalize()?;
+        temp_file.flush().unwrap();
+        let temp_file_path = temp_file.path().canonicalize().unwrap();
         let params = FileSourceParams::file(&temp_file_path);
         let mut checkpoint = SourceCheckpoint::default();
         let partition_id = PartitionId::from(temp_file_path.to_string_lossy().to_string());
@@ -336,8 +336,9 @@ mod tests {
             partition_id,
             Position::from(0u64),
             Position::from(4u64),
-        );
-        checkpoint.try_apply_delta(checkpoint_delta)?;
+        )
+        .unwrap();
+        checkpoint.try_apply_delta(checkpoint_delta).unwrap();
 
         let metastore = metastore_for_test();
         let source = FileSourceFactory::typed_create_source(
@@ -357,7 +358,8 @@ mod tests {
             params,
             checkpoint,
         )
-        .await?;
+        .await
+        .unwrap();
         let file_source_actor = SourceActor {
             source: Box::new(source),
             doc_processor_mailbox,
@@ -376,6 +378,5 @@ mod tests {
         );
         let indexer_messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(indexer_messages[0].docs[0].starts_with("2\n"));
-        Ok(())
     }
 }

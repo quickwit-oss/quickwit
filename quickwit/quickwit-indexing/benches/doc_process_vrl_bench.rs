@@ -18,7 +18,7 @@ macro_rules! bench_func {
         $group.throughput(criterion::Throughput::Bytes($input.len() as u64));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let checkpoint_delta = SourceCheckpointDelta::from(0..$input.len() as u64);
+        let checkpoint_delta = SourceCheckpointDelta::from_range(0..$input.len() as u64);
 
         $group.bench_function(BenchmarkId::new($name, $param), |b| {
             b.to_async(&runtime).iter_batched(

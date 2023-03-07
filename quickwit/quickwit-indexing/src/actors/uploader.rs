@@ -469,7 +469,7 @@ mod tests {
         let split_scratch_directory = ScratchDirectory::for_test();
         let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
             source_id: "test-source".to_string(),
-            source_delta: SourceCheckpointDelta::from(3..15),
+            source_delta: SourceCheckpointDelta::from_range(3..15),
         });
         uploader_mailbox
             .send_message(PackagedSplitBatch::new(
@@ -529,7 +529,7 @@ mod tests {
         assert_eq!(checkpoint_delta.source_id, "test-source");
         assert_eq!(
             checkpoint_delta.source_delta,
-            SourceCheckpointDelta::from(3..15)
+            SourceCheckpointDelta::from_range(3..15)
         );
         assert!(replaced_split_ids.is_empty());
         let mut files = ram_storage.list_files().await;
@@ -711,7 +711,7 @@ mod tests {
         let split_scratch_directory = ScratchDirectory::for_test();
         let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
             source_id: "test-source".to_string(),
-            source_delta: SourceCheckpointDelta::from(3..15),
+            source_delta: SourceCheckpointDelta::from_range(3..15),
         });
         uploader_mailbox
             .send_message(PackagedSplitBatch::new(

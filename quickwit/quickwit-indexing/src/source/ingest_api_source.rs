@@ -155,10 +155,13 @@ impl Source for IngestApiSource {
             .checkpoint_delta
             .record_partition_delta(
                 partition_id,
-                Position::from(self.counters.previous_offset.unwrap_or(0)),
+                self.counters
+                    .previous_offset
+                    .map(Position::from)
+                    .unwrap_or(Position::Beginning),
                 Position::from(current_offset),
             )
-            .unwrap();
+            .map_err(anyhow::Error::from)?;
 
         self.update_counters(current_offset, raw_doc_batch.docs.len() as u64);
         ctx.send_message(batch_sink, raw_doc_batch).await?;
@@ -362,8 +365,9 @@ mod tests {
             partition_id.clone(),
             Position::from(0u64),
             Position::from(1200u64),
-        );
-        checkpoint.try_apply_delta(checkpoint_delta)?;
+        )
+        .unwrap();
+        checkpoint.try_apply_delta(checkpoint_delta).unwrap();
 
         let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
