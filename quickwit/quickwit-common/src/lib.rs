@@ -30,6 +30,7 @@ mod kill_switch;
 pub mod metrics;
 pub mod net;
 mod progress;
+pub mod pubsub;
 pub mod rand;
 pub mod rendezvous_hasher;
 pub mod runtimes;
@@ -37,6 +38,7 @@ pub mod simple_list;
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;
 pub mod tower;
+pub mod type_map;
 pub mod uri;
 
 use std::env;

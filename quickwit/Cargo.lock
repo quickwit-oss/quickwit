@@ -4488,6 +4488,7 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-speed-limit",
+ "async-trait",
  "byte-unit",
  "colored",
  "dyn-clone",
@@ -4549,13 +4550,16 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chitchat",
+ "dyn-clone",
  "itertools",
+ "mockall",
  "proptest",
+ "prost",
  "quickwit-actors",
  "quickwit-cluster",
+ "quickwit-codegen",
  "quickwit-common",
  "quickwit-config",
- "quickwit-core",
  "quickwit-grpc-clients",
  "quickwit-indexing",
  "quickwit-metastore",
@@ -4568,8 +4572,10 @@ dependencies = [
  "time 0.3.20",
  "tokio",
  "tokio-stream",
+ "tonic",
  "tower",
  "tracing",
+ "utoipa",
 ]
 
 [[package]]

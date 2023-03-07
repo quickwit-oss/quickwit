@@ -21,7 +21,7 @@ pub mod file_backed_metastore;
 pub mod grpc_metastore;
 pub(crate) mod index_metadata;
 mod instrumented_metastore;
-pub mod metastore_with_control_plane_triggers;
+pub mod metastore_event_publisher;
 #[cfg(feature = "postgres")]
 pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
@@ -32,7 +32,6 @@ use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
-pub use metastore_with_control_plane_triggers::MetastoreWithControlPlaneTriggers;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
