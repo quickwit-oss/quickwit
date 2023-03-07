@@ -422,6 +422,7 @@ fn are_indexing_plans_equal(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::num::NonZeroUsize;
     use std::sync::Arc;
 
     use chitchat::transport::ChannelTransport;
@@ -446,8 +447,9 @@ mod tests {
         let source_config = SourceConfig {
             enabled: true,
             source_id: source_id.to_string(),
-            max_num_pipelines_per_indexer,
-            desired_num_pipelines,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(max_num_pipelines_per_indexer)
+                .unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(desired_num_pipelines).unwrap(),
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "topic".to_string(),
                 client_log_level: None,

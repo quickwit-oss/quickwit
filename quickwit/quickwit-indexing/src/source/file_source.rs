@@ -170,6 +170,7 @@ impl TypedSourceFactory for FileSourceFactory {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
+    use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
     use quickwit_actors::{Command, Universe};
@@ -194,8 +195,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
-                    desired_num_pipelines: 1,
-                    max_num_pipelines_per_indexer: 1,
+                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                     enabled: true,
                     source_params: SourceParams::File(params.clone()),
                     transform_config: None,
@@ -259,8 +260,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
-                    desired_num_pipelines: 1,
-                    max_num_pipelines_per_indexer: 1,
+                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                     enabled: true,
                     source_params: SourceParams::File(params.clone()),
                     transform_config: None,
@@ -348,8 +349,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
-                    desired_num_pipelines: 1,
-                    max_num_pipelines_per_indexer: 1,
+                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                     enabled: true,
                     source_params: SourceParams::File(params.clone()),
                     transform_config: None,
