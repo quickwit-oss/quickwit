@@ -9,13 +9,24 @@ sidebar_position: 2
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-In this tutorial, we will show you how to instrument a Python [Flask](https://flask.palletsprojects.com/en/2.2.x/) app with OpenTelemetry and send traces to Quickwit. This tutorial is based on the [Python OpenTelemetry](https://opentelemetry.io/docs/instrumentation/python/getting-started/) documentation.
+In this tutorial, we will show you how to instrument a Python [Flask](https://flask.palletsprojects.com/en/2.2.x/) app with OpenTelemetry and send traces to Quickwit. This tutorial was inspired by the [Python OpenTelemetry](https://opentelemetry.io/docs/instrumentation/python/getting-started/) documentation, huge thanks to the OpenTelemetry team!
 
 ## Prerequisites
 
-- Python3 in a virtual environment (`python3 -m venv . && source ./bin/activate`)
-- A running [Quickwit instance](/docs/get-started/installation.md) with OTLP service enabled: `QW_ENABLE_OTLP_ENDPOINT=true ./quickwit run`
-- A running Jaeger UI instance:
+- Python3 installed
+- Docker installed
+
+## Start a Quickwit instance
+
+[Install Quickwit](/docs/get-started/installation.md) and start a Quickwit instance with OTLP service enabled:
+
+```bash
+QW_ENABLE_OTLP_ENDPOINT=true ./quickwit run
+```
+
+## Start Jaeger UI
+
+Let's start a Jaeger UI instance with docker
 
 ```bash
 docker run --rm --name jaeger-qw \
@@ -25,11 +36,16 @@ docker run --rm --name jaeger-qw \
     jaegertracing/jaeger-query:latest
 ```
 
-## Create a Flask app
+## Run a simple Flask app
 
-We will implement a flask application that doing three things: fetching an IP address, parsing it, and displaying it. Our golang app will be instrumenting each step with OpenTelemetry and send traces to Quickwit.
+We will start a flask application that is doing three things on each HTTP call `http://localhost:5000/process-ip`:
 
-Let's intall the dependencies:
+- Fetching an IP address from [https://httpbin.org/ip](https://httpbin.org/ip).
+- Parsing it and fake processing it with a random sleep.
+- Displaying it with a random sleep.
+
+
+Let's first intall the dependencies:
 
 ```bash
 pip install flask
@@ -41,13 +57,11 @@ The opentelemetry-distro package installs the API, SDK, and the opentelemetry-bo
 Here is the code of our app:
 
 ```python title=app.py
-import ipaddress
 import random
 import time
 import requests
 
-from random import randint
-from flask import Flask, request
+from flask import Flask
 
 app = Flask(__name__)
 
@@ -90,30 +104,33 @@ OpenTelemetry provides a tool called `opentelemetry-bootstrap` that automaticall
 opentelemetry-bootstrap -a install
 ```
 
-Now we are ready to run the app (we don't need metrics so we disable them):
+And that's it, we are now ready to run the app:
 
 ```bash
-OTEL_METRICS_EXPORTER=none opentelemetry-instrument \
-    --traces_exporter console \
-    python app.py
+# We don't need metrics.
+OTEL_METRICS_EXPORTER=none \
+OTEL_TRACE_EXPORTER=console \
+OTEL_SERVICE_NAME=my_app \
+python app.py
 ```
 
 By hitting [http://localhost:5000/process-ip](http://localhost:5000/process-ip) you should see the corresponding trace in the console.
 
+This is nice but it would be even better if we could have the time passed in each steps, get the status code of the HTTP request, and the content type of the response. Let's do that by manually instrumentating our app!
+
 ## Manual instrumentation
 
-For the sake of the tutorial, we will now add a manual intrumentation by creating manually spans.
-
-```python title=intrumented_app.py
-import ipaddress
+```python title=my_instrumented_app.py
 import random
 import time
 import requests
 
-from random import randint
-from flask import Flask, request
+from flask import Flask
 
 from opentelemetry import trace
+
+# Creates a tracer from the global tracer provider
+tracer = trace.get_tracer(__name__)
 
 app = Flask(__name__)
 
@@ -160,22 +177,24 @@ def display(ip):
 
 if __name__ == "__main__":
     app.run(port=5000)
+
 ```
 
-Start the instrumented app:
+We can now start the new instrumented app:
 
 ```bash
-OTEL_METRICS_EXPORTER=none opentelemetry-instrument \
-    --traces_exporter console \
-    python instrumented_app.py
+OTEL_METRICS_EXPORTER=none \
+OTEL_TRACE_EXPORTER=console \
+OTEL_SERVICE_NAME=my_app \
+opentelemetry-instrument python my_instrumented_app.py
 ```
 
-If you hit again [http://localhost:5000/process-ip](http://localhost:5000/process-ip), you should see new spans with name `fetch`, `parse`, and `display` and with the corresponding custom attributes.
+If you hit again [http://localhost:5000/process-ip](http://localhost:5000/process-ip), you should see new spans with name `fetch`, `parse`, and `display` and with the corresponding custom attributes!
 
 
-## Sending traces directly to Quickwit
+## Time to send traces to Quickwit
 
-To send traces directly to Quickwit, we need to use the OTLP exporter. We will also add a service name to identify the service that sends the traces in Quickwit and Jaeger UI.
+To send traces to Quickwit, we need to use the OTLP exporter. This is a simple as this:
 
 ```bash
 OTEL_METRICS_EXPORTER=none \ # We don't need metrics
@@ -190,20 +209,20 @@ Now, if you hit [http://localhost:5000/process-ip](http://localhost:5000/process
 
 ```bash
 curl -XPOST http://localhost:7280/api/v1/otel-trace-v0/search -H 'Content-Type: application/json' -d '{
-    "query": "resource_attributes.service.name:flask"
+    "query": "resource_attributes.service.name:my_app"
 }'
 ```
 
-You can now open Jaeger UI [localhost:16686](http://localhost:16686/) and play with, you have now a Quickwit working backend.
+And then open the Jaeger UI [localhost:16686](http://localhost:16686/) and play with it, you have now a Jaeger UI powered by a Quickwit storage backend!
 
 ![Flask trace analysis in Jaeger UI](../assets/images/jaeger-ui-python-app-trace-analysis.png)
 
 ![Flask traces in Jaeger UI](../assets/images/jaeger-ui-python-app-traces.png)
 
-## Sending traces to an OpenTelemetry collector
+## Wrap up
 
-Coming soon.
+In this tutorial, we have seen how to instrument a Python application with OpenTelemetry and send traces to Quickwit. We have also seen how to use the Jaeger UI to analyze traces.
 
-## Further improvements
+All the code snippets in our [tutorial repository](https://github.com/quickwit-oss/tutorials).
 
-You will soon be able to do aggregations on dynamic fields (planned for 0.6).
+Please let us know what you think about this tutorial, and if you have any questions, feel free to reach out to us on [Discord](https://discord.gg/7eNYX4d) or [Twitter](https://twitter.com/quickwit_inc).
