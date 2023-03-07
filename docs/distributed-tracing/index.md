@@ -11,25 +11,25 @@ Quickwit is a cloud-native engine to index and search unstructured data which ma
 
 Moreover, Quickwit supports natively the [OpenTelemetry protocol](https://opentelemetry.io/docs/reference/specification/protocol/otlp/) and the [Jaeger UI](https://www.jaegertracing.io/). **This means that you can use Quickwit to store your traces and to query them with Jaeger UI**.
 
-![Quickwit Distributed Tracing](../assets/images/distributed-tracing-overview-light.svg#gh-light-mode-only)![Quickwit Distributed Tracing](../assets/images/distributed-tracing-overview-dark.svg#gh-dark-mode-only)
+![Quickwit Distributed Tracing](../assets/images/distributed-tracing-overview-light.png#gh-light-mode-only)![Quickwit Distributed Tracing](../assets/images/distributed-tracing-overview-dark.png#gh-dark-mode-only)
 
-## Sending traces to Quickwit and analyzing them with Jaeger UI
+## Tracing tutorials
 
 <DocCardList />
 
-## Using Jaeger UI
+## Jaeger with Quickwit backend
 
-Quickwit implements a gRPC service compatible with Jaeger UI. It's then possible to use Jaeger UI to visualize your traces stored in Quickwit.
+Quickwit implements a gRPC service compatible with Jaeger UI. To use Quickwit with Quickwit, all you need to to is configure Jaeger with a (span) storage of type `grpc-plugin` and you will be able to visualize in Jeager your traces stored in Quickwit.
 
-[Learn how to analyze Quickwit traces in Jaeger UI](using-jaeger-to-analyze-quickwit-traces.md).
+We made a tutorial on [how to analyze Quickwit traces in Jaeger UI](using-jaeger-to-analyze-quickwit-traces.md) that will guide you through the process.
 
 ## Enabling OpenTelemetry service
 
-Quickwit natively supports the [OpenTelemetry Protocol (OTLP)](https://opentelemetry.io/docs/reference/specification/protocol/otlp/). You can use it to send your traces to Quickwit directly from your application or via an OpenTelemetry collector.
+Quickwit natively supports the [OpenTelemetry Protocol (OTLP)](https://opentelemetry.io/docs/reference/specification/protocol/otlp/) and provides a gRPC endpoint to receive spans from an OpenTelemetry collector. This endpoint is enabled by default.
 
-To enable Quickwit OTLP service, you can:
-- Set `QW_ENABLE_OTLP_ENDPOINT` environment variable to `true` when starting Quickwit.
-- Or [configure your indexer](/docs/configuration/node-config.md) by setting the indexer setting `enable_otlp_endpoint` to `true`:
+You can enable/disable it by:
+- Set `QW_ENABLE_OTLP_ENDPOINT` environment variable to `true`/`false` when starting Quickwit.
+- Or [configure the node config](/docs/configuration/node-config.md) by setting the indexer setting `enable_otlp_endpoint` to `true`/`false`:
 
 ```yaml title=node-config.yaml
 # ... Indexer configuration ...
@@ -37,11 +37,11 @@ indexer:
     enable_otlp_endpoint: true
 ```
 
-When starting Quickwit, it will start the gRPC service ready to receive spans from an OpenTelemetry collector or from your applications. If not already present, Quickwit will create automatically the index `otel-trace-v0` . Its doc mapping is described in the following [section](#opentelemetry-traces-data-model).
+When starting Quickwit with `enable_otlp_endpoint: true`, Quickwit will start the gRPC service ready to receive spans from an OpenTelemetry collector. The spans are indexed on  the `otel-trace-v0` index, this index will be automatically created if not present. The index doc mapping is described in the next [section](#opentelemetry-traces-data-model).
 
 ## Trace and span data model
 
-A trace is a collection of spans that represents a single request. A span represents a single operation within a trace. OpenTelemetry collectors send spans, Quickwit will then indexes them in the `otel-trace-v0` index that maps OpenTelemetry spans model to an indexed document in Quickwit.
+A trace is a collection of spans that represents a single request. A span represents a single operation within a trace. OpenTelemetry collectors send spans, Quickwit will then indexes them in the `otel-trace-v0` index that maps OpenTelemetry span model to an indexed document in Quickwit.
 
 The span model is derived from the [OpenTelemetry specification](https://opentelemetry.io/docs/reference/specification/trace/api/).
 
