@@ -276,15 +276,16 @@ async fn elastic_ingest(
 
 #[cfg(test)]
 mod tests {
+
     use byte_unit::Byte;
-    use quickwit_actors::Universe;
     use quickwit_config::IngestApiConfig;
     use quickwit_ingest_api::{
         init_ingest_api, CreateQueueIfNotExistsRequest, FetchResponse, IngestResponse,
-        IngestServiceClient, QUEUES_DIR_NAME,
+        IngestServiceClient,
     };
 
-    use super::{ingest_api_handlers, BulkAction, BulkActionMeta};
+    use super::{BulkAction, BulkActionMeta};
+    use crate::ingest_api::ingest_api_handlers;
 
     #[test]
     fn test_bulk_action_serde() {
@@ -333,29 +334,25 @@ mod tests {
     async fn setup_ingest_service(
         queues: &[&str],
         config: &IngestApiConfig,
-    ) -> (Universe, tempfile::TempDir, IngestServiceClient) {
-        let universe = Universe::with_accelerated_time();
+    ) -> (tempfile::TempDir, IngestServiceClient) {
         let temp_dir = tempfile::tempdir().unwrap();
-        let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
-        let ingest_service_mailbox = init_ingest_api(&universe, &queues_dir_path, config)
-            .await
-            .unwrap();
+        let ingest_api_service = init_ingest_api(temp_dir.path(), config).await.unwrap();
         for queue in queues {
             let create_queue_req = CreateQueueIfNotExistsRequest {
                 queue_id: queue.to_string(),
             };
-            ingest_service_mailbox
-                .ask_for_res(create_queue_req)
+            ingest_api_service
+                .create_queue_if_not_exists(create_queue_req)
                 .await
                 .unwrap();
         }
-        let ingest_service = IngestServiceClient::from_mailbox(ingest_service_mailbox);
-        (universe, temp_dir, ingest_service)
+        let ingest_service = IngestServiceClient::new(ingest_api_service);
+        (temp_dir, ingest_service)
     }
 
     #[tokio::test]
     async fn test_ingest_api_returns_200_when_ingest_json_and_fetch() {
-        let (universe, _temp_dir, ingest_service) =
+        let (_temp_dir, ingest_service) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let resp = warp::test::request()
@@ -383,13 +380,11 @@ mod tests {
             doc_batch.doc_lens.iter().sum::<u64>() as usize,
             doc_batch.concat_docs.len()
         );
-
-        universe.assert_quit().await;
     }
 
     #[tokio::test]
     async fn test_ingest_api_returns_200_when_ingest_ndjson_and_fetch() {
-        let (universe, _temp_dir, ingest_service) =
+        let (_temp_dir, ingest_service) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let payload = r#"
@@ -406,13 +401,11 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(ingest_response.num_docs_for_processing, 3);
-
-        universe.assert_quit().await;
     }
 
     #[tokio::test]
     async fn test_ingest_api_bulk_request_returns_404_if_index_id_does_not_exist() {
-        let (universe, _temp_dir, ingest_service) =
+        let (_temp_dir, ingest_service) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let payload = r#"
@@ -428,12 +421,11 @@ mod tests {
             .reply(&ingest_api_handlers)
             .await;
         assert_eq!(resp.status(), 404);
-        universe.assert_quit().await;
     }
 
     #[tokio::test]
     async fn test_ingest_api_bulk_request_returns_400_if_malformed_source() {
-        let (universe, _temp_dir, ingest_service) =
+        let (_temp_dir, ingest_service) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let payload = r#"
@@ -447,12 +439,11 @@ mod tests {
             .reply(&ingest_api_handlers)
             .await;
         assert_eq!(resp.status(), 400);
-        universe.assert_quit().await;
     }
 
     #[tokio::test]
     async fn test_ingest_api_bulk_returns_200() {
-        let (universe, _temp_dir, ingest_service) =
+        let (_temp_dir, ingest_service) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let payload = r#"
@@ -472,7 +463,6 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(ingest_response.num_docs_for_processing, 3);
-        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -481,8 +471,7 @@ mod tests {
             max_queue_memory_usage: Byte::from_bytes(0),
             ..Default::default()
         };
-        let (universe, _temp_dir, ingest_service) =
-            setup_ingest_service(&["my-index"], &config).await;
+        let (_temp_dir, ingest_service) = setup_ingest_service(&["my-index"], &config).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let resp = warp::test::request()
             .path("/my-index/ingest")
@@ -492,6 +481,5 @@ mod tests {
             .reply(&ingest_api_handlers)
             .await;
         assert_eq!(resp.status(), 429);
-        universe.assert_quit().await;
     }
 }

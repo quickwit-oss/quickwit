@@ -183,48 +183,45 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         None
     };
 
-    let (ingest_service, indexing_service) = if config
-        .enabled_services
-        .contains(&QuickwitService::Indexer)
-    {
-        let ingest_api_service =
-            start_ingest_api_service(&universe, &config.data_dir_path, &config.ingest_api_config)
-                .await?;
-        if config.indexer_config.enable_otlp_endpoint {
-            for index_config_content in [OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG] {
-                let index_config = load_index_config_from_user_config(
-                    ConfigFormat::Yaml,
-                    index_config_content.as_bytes(),
-                    &config.default_index_root_uri,
-                )?;
-                match index_service.create_index(index_config, false).await {
-                    Ok(_)
-                    | Err(IndexServiceError::MetastoreError(
-                        MetastoreError::IndexAlreadyExists { .. },
-                    )) => Ok(()),
-                    Err(error) => Err(error),
-                }?;
+    let (ingest_service, indexing_service) =
+        if config.enabled_services.contains(&QuickwitService::Indexer) {
+            let ingest_api_service =
+                start_ingest_api_service(&config.data_dir_path, &config.ingest_api_config).await?;
+            if config.indexer_config.enable_otlp_endpoint {
+                for index_config_content in [OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG] {
+                    let index_config = load_index_config_from_user_config(
+                        ConfigFormat::Yaml,
+                        index_config_content.as_bytes(),
+                        &config.default_index_root_uri,
+                    )?;
+                    match index_service.create_index(index_config, false).await {
+                        Ok(_)
+                        | Err(IndexServiceError::MetastoreError(
+                            MetastoreError::IndexAlreadyExists { .. },
+                        )) => Ok(()),
+                        Err(error) => Err(error),
+                    }?;
+                }
             }
-        }
-        let indexing_service = start_indexing_service(
-            &universe,
-            &config,
-            cluster.clone(),
-            metastore.clone(),
-            storage_resolver.clone(),
-        )
-        .await?;
-        let ingest_service = IngestServiceClient::from_mailbox(ingest_api_service);
-        (ingest_service, Some(indexing_service))
-    } else {
-        let (channel, _) = create_balance_channel_from_watched_members(
-            cluster.ready_member_change_watcher(),
-            QuickwitService::Indexer,
-        )
-        .await?;
-        let ingest_service = IngestServiceClient::from_channel(channel);
-        (ingest_service, None)
-    };
+            let indexing_service = start_indexing_service(
+                &universe,
+                &config,
+                cluster.clone(),
+                metastore.clone(),
+                storage_resolver.clone(),
+            )
+            .await?;
+            let ingest_service = IngestServiceClient::new(ingest_api_service);
+            (ingest_service, Some(indexing_service))
+        } else {
+            let (channel, _) = create_balance_channel_from_watched_members(
+                cluster.ready_member_change_watcher(),
+                QuickwitService::Indexer,
+            )
+            .await?;
+            let ingest_service = IngestServiceClient::from_channel(channel);
+            (ingest_service, None)
+        };
 
     let search_job_placer = SearchJobPlacer::new(
         ServiceClientPool::create_and_update_members(cluster.ready_member_change_watcher()).await?,

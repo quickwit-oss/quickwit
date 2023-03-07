@@ -106,7 +106,7 @@ impl TestSandbox {
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
         let ingest_api_service =
-            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default()).await?;
+            init_ingest_api(&queues_dir_path, &IngestApiConfig::default()).await?;
         let indexing_service_actor = IndexingService::new(
             node_id.to_string(),
             temp_dir.path().to_path_buf(),

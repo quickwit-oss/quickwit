@@ -19,52 +19,48 @@
 
 #![deny(clippy::disallowed_methods)]
 
+mod concurrent_log;
 mod errors;
 mod ingest_api_service;
+#[path = "codegen/ingest_service.rs"]
+mod ingest_service;
 mod metrics;
 mod position;
-mod queue;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
+pub use concurrent_log::ConcurrentMultiRecordLog;
 pub use errors::IngestServiceError;
-pub use ingest_api_service::{GetPartitionId, IngestApiService};
+pub use ingest_api_service::IngestApiService;
+pub use ingest_service::*;
 use metrics::INGEST_METRICS;
 use once_cell::sync::OnceCell;
 pub use position::Position;
-pub use queue::Queues;
-use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::IngestApiConfig;
 use tokio::sync::Mutex;
-#[path = "codegen/ingest_service.rs"]
-mod ingest_service;
-pub use ingest_service::*;
 
 pub const QUEUES_DIR_NAME: &str = "queues";
 
 pub type Result<T> = std::result::Result<T, IngestServiceError>;
 
-type IngestApiServiceMailboxes = HashMap<PathBuf, Mailbox<IngestApiService>>;
-
-pub static INGEST_API_SERVICE_MAILBOXES: OnceCell<Mutex<IngestApiServiceMailboxes>> =
+pub static INGEST_API_SERVICE_MAILBOXES: OnceCell<Mutex<HashMap<PathBuf, IngestApiService>>> =
     OnceCell::new();
 
 /// Initializes an [`IngestApiService`] consuming the queue located at `queue_path`.
 pub async fn init_ingest_api(
-    universe: &Universe,
     queues_dir_path: &Path,
     config: &IngestApiConfig,
-) -> anyhow::Result<Mailbox<IngestApiService>> {
+) -> anyhow::Result<IngestApiService> {
     let mut guard = INGEST_API_SERVICE_MAILBOXES
-        .get_or_init(|| Mutex::new(HashMap::new()))
+        .get_or_init(Default::default)
         .lock()
         .await;
-    if let Some(mailbox) = guard.get(queues_dir_path) {
-        return Ok(mailbox.clone());
+    if let Some(ingest_service) = guard.get(queues_dir_path) {
+        return Ok(ingest_service.clone());
     }
-    let ingest_api_actor = IngestApiService::with_queues_dir(
+    let ingest_api_service = IngestApiService::with_queues_dir(
         queues_dir_path,
         config.max_queue_memory_usage.get_bytes() as usize,
         config.max_queue_disk_usage.get_bytes() as usize,
@@ -76,21 +72,18 @@ pub async fn init_ingest_api(
             queues_dir_path.display()
         )
     })?;
-    let (ingest_api_service, _ingest_api_handle) = universe.spawn_builder().spawn(ingest_api_actor);
     guard.insert(queues_dir_path.to_path_buf(), ingest_api_service.clone());
     Ok(ingest_api_service)
 }
 
 /// Returns the instance of the single IngestApiService via a copy of it's Mailbox.
-pub async fn get_ingest_api_service(
-    queues_dir_path: &Path,
-) -> anyhow::Result<Mailbox<IngestApiService>> {
+pub async fn get_ingest_api_service(queues_dir_path: &Path) -> anyhow::Result<IngestApiService> {
     let guard = INGEST_API_SERVICE_MAILBOXES
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .await;
-    if let Some(mailbox) = guard.get(queues_dir_path) {
-        return Ok(mailbox.clone());
+    if let Some(ingest_api_service) = guard.get(queues_dir_path) {
+        return Ok(ingest_api_service.clone());
     }
     bail!(
         "Ingest API service with queues directory located at `{}` is not initialized.",
@@ -100,12 +93,11 @@ pub async fn get_ingest_api_service(
 
 /// Starts an [`IngestApiService`] instance at `<data_dir_path>/queues`.
 pub async fn start_ingest_api_service(
-    universe: &Universe,
     data_dir_path: &Path,
     config: &IngestApiConfig,
-) -> anyhow::Result<Mailbox<IngestApiService>> {
+) -> anyhow::Result<IngestApiService> {
     let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-    init_ingest_api(universe, &queues_dir_path, config).await
+    init_ingest_api(&queues_dir_path, config).await
 }
 
 /// Adds a document raw bytes to a [`DocBatch`]
@@ -136,96 +128,98 @@ pub fn iter_doc_payloads(doc_batch: &DocBatch) -> impl Iterator<Item = &[u8]> {
 mod tests {
 
     use byte_unit::Byte;
-    use quickwit_actors::AskError;
 
     use super::*;
     use crate::{CreateQueueRequest, IngestRequest, SuggestTruncateRequest};
 
     #[tokio::test]
     async fn test_get_ingest_api_service() {
-        let universe = Universe::with_accelerated_time();
         let tempdir = tempfile::tempdir().unwrap();
+        {
+            let queues_dir_path = tempdir.path().join("queues-0");
+            get_ingest_api_service(&queues_dir_path).await.unwrap_err();
 
-        let queues_0_dir_path = tempdir.path().join("queues-0");
-        get_ingest_api_service(&queues_0_dir_path)
-            .await
-            .unwrap_err();
-        init_ingest_api(&universe, &queues_0_dir_path, &IngestApiConfig::default())
-            .await
-            .unwrap();
-        let ingest_api_service_0 = get_ingest_api_service(&queues_0_dir_path).await.unwrap();
-        ingest_api_service_0
-            .ask_for_res(CreateQueueRequest {
-                queue_id: "test-queue".to_string(),
-            })
-            .await
-            .unwrap();
+            let ingest_api_service = init_ingest_api(&queues_dir_path, &IngestApiConfig::default())
+                .await
+                .unwrap();
 
-        let queues_1_dir_path = tempdir.path().join("queues-1");
-        init_ingest_api(&universe, &queues_1_dir_path, &IngestApiConfig::default())
-            .await
-            .unwrap();
-        let ingest_api_service_1 = get_ingest_api_service(&queues_1_dir_path).await.unwrap();
-        ingest_api_service_1
-            .ask_for_res(CreateQueueRequest {
-                queue_id: "test-queue".to_string(),
-            })
-            .await
-            .unwrap();
-        universe.assert_quit().await;
+            let partition_id = get_ingest_api_service(&queues_dir_path)
+                .await
+                .unwrap()
+                .partition_id()
+                .to_string();
+            assert_eq!(ingest_api_service.partition_id(), partition_id);
+
+            ingest_api_service
+                .create_queue(CreateQueueRequest {
+                    queue_id: "test-queue".to_string(),
+                })
+                .await
+                .unwrap();
+        }
+        {
+            let queues_dir_path = tempdir.path().join("queues-1");
+            let ingest_api_service = init_ingest_api(&queues_dir_path, &IngestApiConfig::default())
+                .await
+                .unwrap();
+            ingest_api_service
+                .create_queue(CreateQueueRequest {
+                    queue_id: "test-queue".to_string(),
+                })
+                .await
+                .unwrap();
+        }
     }
 
     #[tokio::test]
     async fn test_get_ingest_multiple_index_api_service() {
-        let universe = Universe::with_accelerated_time();
         let tempdir = tempfile::tempdir().unwrap();
 
-        let queues_0_dir_path = tempdir.path().join("queues-0");
-        let ingest_api_service =
-            init_ingest_api(&universe, &queues_0_dir_path, &IngestApiConfig::default())
-                .await
-                .unwrap();
+        let mut ingest_api_service = init_ingest_api(tempdir.path(), &IngestApiConfig::default())
+            .await
+            .unwrap();
         ingest_api_service
-            .ask_for_res(CreateQueueRequest {
-                queue_id: "index-1".to_string(),
+            .create_queue(CreateQueueRequest {
+                queue_id: "test-index-1".to_string(),
             })
             .await
             .unwrap();
         let ingest_request = IngestRequest {
             doc_batches: vec![
                 DocBatch {
-                    index_id: "index-1".to_string(),
+                    index_id: "test-index-1".to_string(),
                     concat_docs: vec![10, 11, 12],
                     doc_lens: vec![2],
                 },
                 DocBatch {
-                    index_id: "index-2".to_string(),
+                    index_id: "test-index-2".to_string(),
                     concat_docs: vec![10, 11, 12],
                     doc_lens: vec![2],
                 },
             ],
         };
-        let ingest_result = ingest_api_service.ask_for_res(ingest_request).await;
-        assert!(ingest_result.is_err());
-        match ingest_result.unwrap_err() {
-            AskError::ErrorReply(ingest_error) => {
-                assert!(ingest_error.to_string().contains("index-2"));
+        let error = ingest_api_service.ingest(ingest_request).await.unwrap_err();
+        assert_eq!(
+            error,
+            IngestServiceError::IndexNotFound {
+                index_id: "test-index-2".to_string()
             }
-            _ => panic!("wrong error type"),
-        }
-        universe.assert_quit().await;
+        );
+        let fetch_request = FetchRequest {
+            index_id: "test-index-1".to_string(),
+            start_after: None,
+            num_bytes_limit: None,
+        };
+        let fetch_response = ingest_api_service.fetch(fetch_request).await.unwrap();
+        assert_eq!(fetch_response.doc_batch.unwrap().concat_docs.len(), 0);
     }
 
     #[tokio::test]
     async fn test_queue_limit() {
-        let universe = Universe::with_accelerated_time();
         let tempdir = tempfile::tempdir().unwrap();
 
-        let queues_dir_path = tempdir.path().join("queues-0");
-        get_ingest_api_service(&queues_dir_path).await.unwrap_err();
-        init_ingest_api(
-            &universe,
-            &queues_dir_path,
+        let mut ingest_api_service = init_ingest_api(
+            tempdir.path(),
             &IngestApiConfig {
                 max_queue_memory_usage: Byte::from_bytes(1024),
                 max_queue_disk_usage: Byte::from_bytes(1024 * 1024 * 256),
@@ -233,10 +227,9 @@ mod tests {
         )
         .await
         .unwrap();
-        let ingest_api_service = get_ingest_api_service(&queues_dir_path).await.unwrap();
 
         ingest_api_service
-            .ask_for_res(CreateQueueRequest {
+            .create_queue(CreateQueueRequest {
                 queue_id: "test-queue".to_string(),
             })
             .await
@@ -251,27 +244,27 @@ mod tests {
         };
 
         ingest_api_service
-            .ask_for_res(ingest_request.clone())
+            .ingest(ingest_request.clone())
             .await
             .unwrap();
 
         ingest_api_service
-            .ask_for_res(ingest_request.clone())
+            .ingest(ingest_request.clone())
             .await
             .unwrap();
 
         // we have to much in memory
         assert!(matches!(
             ingest_api_service
-                .ask_for_res(ingest_request.clone())
+                .ingest(ingest_request.clone())
                 .await
                 .unwrap_err(),
-            AskError::ErrorReply(IngestServiceError::RateLimited)
+            IngestServiceError::RateLimited
         ));
 
         // delete the first batch
         ingest_api_service
-            .ask_for_res(SuggestTruncateRequest {
+            .suggest_truncate(SuggestTruncateRequest {
                 index_id: "test-queue".to_string(),
                 up_to_position_included: 29,
             })
@@ -279,10 +272,6 @@ mod tests {
             .unwrap();
 
         // now we should be okay
-        ingest_api_service
-            .ask_for_res(ingest_request)
-            .await
-            .unwrap();
-        universe.assert_quit().await;
+        ingest_api_service.ingest(ingest_request).await.unwrap();
     }
 }

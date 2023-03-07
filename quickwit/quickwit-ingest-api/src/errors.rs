@@ -24,7 +24,7 @@ use quickwit_actors::AskError;
 use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
 use serde::Serialize;
 
-#[derive(Debug, Clone, thiserror::Error, Serialize)]
+#[derive(Debug, Clone, thiserror::Error, Eq, PartialEq, Serialize)]
 pub enum IngestServiceError {
     #[error("Data corruption: {0}.")]
     Corruption(String),
