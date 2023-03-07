@@ -24,8 +24,8 @@ use hyper::header::CONTENT_TYPE;
 use quickwit_common::simple_list::{from_simple_list, to_simple_list};
 use quickwit_common::FileEntry;
 use quickwit_config::{
-    ConfigFormat, QuickwitConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
-    INGEST_API_SOURCE_ID,
+    load_source_config_from_user_config, ConfigFormat, QuickwitConfig, SourceConfig, SourceParams,
+    CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_metastore::{
@@ -443,9 +443,9 @@ async fn create_source(
     source_config_bytes: Bytes,
     index_service: Arc<IndexService>,
 ) -> Result<SourceConfig, IndexServiceError> {
-    let source_config: SourceConfig = config_format
-        .parse(&source_config_bytes)
-        .map_err(IndexServiceError::InvalidConfig)?;
+    let source_config: SourceConfig =
+        load_source_config_from_user_config(config_format, &source_config_bytes)
+            .map_err(IndexServiceError::InvalidConfig)?;
     if let SourceParams::File(_) = &source_config.source_params {
         return Err(IndexServiceError::OperationNotAllowed(
             "File sources are limited to a local usage. Please use the CLI command `quickwit tool \
@@ -1275,7 +1275,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_source_with_bad_config() -> anyhow::Result<()> {
+    async fn test_create_source_with_bad_config() {
         let metastore = build_metastore_for_test().await;
         let index_service = IndexService::new(metastore, StorageUriResolver::for_test());
         let index_management_handler = super::index_management_handlers(
@@ -1283,17 +1283,34 @@ mod tests {
             Arc::new(QuickwitConfig::for_test()),
         )
         .recover(recover_fn);
-        let resp = warp::test::request()
-            .path("/indexes/my-index/sources")
-            .method("POST")
-            .json(&true)
-            .body(r#"{"version": 0.4, "source_id": "file-source"}"#)
-            .reply(&index_management_handler)
-            .await;
-        assert_eq!(resp.status(), 400);
-        let body = from_utf8_lossy(resp.body());
-        assert!(body.contains("invalid type: floating point `0.4`"));
-        Ok(())
+        {
+            // Source config with bad version.
+            let resp = warp::test::request()
+                .path("/indexes/my-index/sources")
+                .method("POST")
+                .json(&true)
+                .body(r#"{"version": 0.4, "source_id": "file-source"}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 400);
+            let body = from_utf8_lossy(resp.body());
+            assert!(body.contains("invalid type: floating point `0.4`"));
+        }
+        {
+            // Invalid pulsar source config with number of pipelines > 1, not supported yet.
+            let resp = warp::test::request()
+                .path("/indexes/my-index/sources")
+                .method("POST")
+                .json(&true)
+                .body(r#"{"version": "0.4", "source_id": "pulsar-source", "desired_num_pipelines": 2, "source_type": "pulsar", "params": {"topics": ["my-topic"], "address": "pulsar://localhost:6650" }}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 400);
+            let body = from_utf8_lossy(resp.body());
+            println!("{}", body);
+            assert!(body
+                .contains("Quickwit currently supports multiple pipelines only for Kafka sources"));
+        }
     }
 
     #[tokio::test]

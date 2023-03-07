@@ -20,6 +20,7 @@
 #[cfg(test)]
 pub mod test_suite {
     use std::collections::BTreeSet;
+    use std::num::NonZeroUsize;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -239,8 +240,8 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -302,8 +303,8 @@ pub mod test_suite {
         let source_id = format!("{index_id}--source");
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -346,8 +347,8 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
@@ -398,8 +399,8 @@ pub mod test_suite {
         for (source_id, split_id) in source_ids.iter().zip(split_ids.iter()) {
             let source = SourceConfig {
                 source_id: source_id.clone(),
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 1,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::void(),
                 transform_config: None,

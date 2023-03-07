@@ -467,6 +467,7 @@ fn subscription_name(index_id: &str, source_id: &str) -> String {
 #[cfg(all(test, feature = "pulsar-broker-tests"))]
 mod pulsar_broker_tests {
     use std::collections::HashSet;
+    use std::num::NonZeroUsize;
     use std::ops::Range;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -560,8 +561,8 @@ mod pulsar_broker_tests {
         let source_id = append_random_suffix("test-pulsar-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Pulsar(PulsarSourceParams {
                 topics: topics.into_iter().map(|v| v.as_ref().to_string()).collect(),
