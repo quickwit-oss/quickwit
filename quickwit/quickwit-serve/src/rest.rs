@@ -132,8 +132,8 @@ pub(crate) async fn start_rest_server(
         .recover(recover_fn);
 
     let warp_service = warp::service(rest_routes);
-    let compression_predicate = DefaultPredicate::new()
-        .and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
+    let compression_predicate =
+        DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
 
     let service = ServiceBuilder::new()
         .layer(
