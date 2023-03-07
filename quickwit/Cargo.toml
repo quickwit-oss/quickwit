@@ -173,6 +173,7 @@ toml = "0.6.0"
 tonic = { version = "0.8.3", features = ["gzip"] }
 tonic-build = "0.8.4"
 tower = { version = "0.4.13", features = ["buffer", "load", "util"] }
+tower-http = { version = "0.4.0", features = ["compression-gzip"] }
 tracing = "0.1.37"
 tracing-opentelemetry = "0.18.0"
 tracing-subscriber = { version = "0.3.16", features = [
