@@ -31,8 +31,7 @@ use crate::metrics::INGEST_METRICS;
 use crate::{
     CreateQueueIfNotExistsRequest, CreateQueueRequest, DropQueueRequest, FetchRequest,
     FetchResponse, IngestRequest, IngestResponse, IngestServiceError, ListQueuesRequest,
-    ListQueuesResponse, MemoryCapacity, QueueExistsRequest, Queues, SuggestTruncateRequest,
-    TailRequest,
+    ListQueuesResponse, MemoryCapacity, Queues, SuggestTruncateRequest, TailRequest,
 };
 
 impl Cost for IngestRequest {
@@ -206,30 +205,35 @@ impl Actor for IngestApiService {
     }
 }
 
-#[async_trait]
-impl Handler<QueueExistsRequest> for IngestApiService {
-    type Reply = crate::Result<bool>;
-    async fn handle(
-        &mut self,
-        queue_exists_req: QueueExistsRequest,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(Ok(self.queues.queue_exists(&queue_exists_req.queue_id)))
-    }
-}
-
 #[derive(Debug)]
 pub struct GetPartitionId;
 
 #[async_trait]
 impl Handler<GetPartitionId> for IngestApiService {
     type Reply = String;
+
     async fn handle(
         &mut self,
-        _: GetPartitionId,
+        _request: GetPartitionId,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.partition_id.clone())
+    }
+}
+
+#[derive(Debug)]
+pub struct GetMemoryCapacity;
+
+#[async_trait]
+impl Handler<GetMemoryCapacity> for IngestApiService {
+    type Reply = MemoryCapacity;
+
+    async fn handle(
+        &mut self,
+        _request: GetMemoryCapacity,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.memory_capacity.clone())
     }
 }
 

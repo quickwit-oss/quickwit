@@ -102,9 +102,9 @@ impl MemoryCapacity {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Returns the current capacity as a ratio of the current capacity to the maximum capacity.
-    pub fn capacity_ratio(&self) -> f64 {
-        self.capacity() as f64 / self.max_capacity() as f64
+    /// Returns the ratio of used capacity to maximum capacity.
+    pub fn usage_ratio(&self) -> f64 {
+        1.0 - (self.capacity() as f64 / self.max_capacity() as f64)
     }
 }
 
@@ -127,22 +127,22 @@ mod tests {
         let memory_capacity = MemoryCapacity::new(10);
         assert_eq!(memory_capacity.max_capacity(), 10);
         assert_eq!(memory_capacity.capacity(), 10);
-        assert_eq!(memory_capacity.capacity_ratio(), 1.0);
+        assert_eq!(memory_capacity.usage_ratio(), 0.0);
 
         memory_capacity.reserve_capacity(6).unwrap();
         assert_eq!(memory_capacity.max_capacity(), 10);
         assert_eq!(memory_capacity.capacity(), 4);
-        assert_eq!(memory_capacity.capacity_ratio(), 0.4);
+        assert_eq!(memory_capacity.usage_ratio(), 0.6);
 
         memory_capacity.reserve_capacity(3).unwrap();
         assert_eq!(memory_capacity.max_capacity(), 10);
         assert_eq!(memory_capacity.capacity(), 1);
-        assert_eq!(memory_capacity.capacity_ratio(), 0.1);
+        assert_eq!(memory_capacity.usage_ratio(), 0.9);
 
         memory_capacity.reserve_capacity(1).unwrap();
         assert_eq!(memory_capacity.max_capacity(), 10);
         assert_eq!(memory_capacity.capacity(), 0);
-        assert_eq!(memory_capacity.capacity_ratio(), 0.0);
+        assert_eq!(memory_capacity.usage_ratio(), 1.0);
 
         memory_capacity.reserve_capacity(1).unwrap_err();
 

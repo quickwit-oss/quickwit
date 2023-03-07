@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
 pub use errors::IngestServiceError;
-pub use ingest_api_service::{GetPartitionId, IngestApiService};
+pub use ingest_api_service::{GetMemoryCapacity, GetPartitionId, IngestApiService};
 pub use ingest_service::*;
 pub use memory_capacity::MemoryCapacity;
 use once_cell::sync::OnceCell;
