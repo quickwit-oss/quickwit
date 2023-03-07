@@ -17,27 +17,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod balance_channel;
-pub mod service_client_pool;
+mod box_layer;
+mod box_service;
+mod buffer;
+mod estimate_rate;
+mod rate;
+mod rate_estimator;
+mod rate_limit;
 
-pub use balance_channel::create_balance_channel_from_watched_members;
-use tonic::transport::{Channel, Endpoint, Uri};
-use tower::service_fn;
+pub use box_layer::BoxLayer;
+pub use box_service::BoxService;
+pub use buffer::{Buffer, BufferLayer};
+pub use estimate_rate::{EstimateRate, EstimateRateLayer};
+pub use rate::{ConstantRate, Rate};
+pub use rate_estimator::RateEstimator;
+pub use rate_limit::{RateLimit, RateLimitLayer};
 
-// For tests.
-pub async fn create_channel_from_duplex_stream(
-    client: tokio::io::DuplexStream,
-) -> anyhow::Result<Channel> {
-    let mut client = Some(client);
-    let channel = Endpoint::try_from("http://test.server")?
-        .connect_with_connector(service_fn(move |_: Uri| {
-            let client = client.take();
-            async move {
-                client.ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::Other, "Client already taken")
-                })
-            }
-        }))
-        .await?;
-    Ok(channel)
+pub trait Cost {
+    fn cost(&self) -> u64;
 }

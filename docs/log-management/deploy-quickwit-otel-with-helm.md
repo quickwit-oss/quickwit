@@ -1,6 +1,6 @@
 ---
-title: Deploy Quickwit with Helm and search your k8s logs
-description: Deploy Quickwit and OTEL collectors with Helm and search your kubernetes logs.
+title: Send K8s logs with OTEL
+description: Send K8s logs with OTEL collectors and Helm to Quickwit in a few minutes.
 tags: [k8s, helm]
 icon_url: /img/tutorials/helm-otel-k8s-tutorial-illustation.jpg
 sidebar_position: 3

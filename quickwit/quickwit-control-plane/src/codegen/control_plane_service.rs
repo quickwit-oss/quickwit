@@ -1,87 +1,85 @@
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct HelloRequest {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-}
+pub struct NotifyIndexChangeRequest {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct HelloResponse {
-    #[prost(string, tag = "1")]
-    pub message: ::prost::alloc::string::String,
-}
+pub struct NotifyIndexChangeResponse {}
 /// BEGIN quickwit-codegen
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
-pub trait Hello: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
-    async fn hello(
+pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+    async fn notify_index_change(
         &mut self,
-        request: HelloRequest,
-    ) -> crate::HelloResult<HelloResponse>;
+        request: NotifyIndexChangeRequest,
+    ) -> crate::Result<NotifyIndexChangeResponse>;
 }
-dyn_clone::clone_trait_object!(Hello);
+dyn_clone::clone_trait_object!(ControlPlaneService);
 #[cfg(any(test, feature = "testsuite"))]
-impl Clone for MockHello {
+impl Clone for MockControlPlaneService {
     fn clone(&self) -> Self {
-        MockHello::new()
+        MockControlPlaneService::new()
     }
 }
 #[derive(Debug, Clone)]
-pub struct HelloClient {
-    inner: Box<dyn Hello>,
+pub struct ControlPlaneServiceClient {
+    inner: Box<dyn ControlPlaneService>,
 }
-impl HelloClient {
+impl ControlPlaneServiceClient {
     pub fn new<T>(instance: T) -> Self
     where
-        T: Hello,
+        T: ControlPlaneService,
     {
         Self { inner: Box::new(instance) }
     }
     pub fn from_channel(
         channel: tower::timeout::Timeout<tonic::transport::Channel>,
     ) -> Self {
-        HelloClient::new(
-            HelloGrpcClientAdapter::new(hello_grpc_client::HelloGrpcClient::new(channel)),
+        ControlPlaneServiceClient::new(
+            ControlPlaneServiceGrpcClientAdapter::new(
+                control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
+                    channel,
+                ),
+            ),
         )
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
         A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
-        HelloMailbox<A>: Hello,
+        ControlPlaneServiceMailbox<A>: ControlPlaneService,
     {
-        HelloClient::new(HelloMailbox::new(mailbox))
+        ControlPlaneServiceClient::new(ControlPlaneServiceMailbox::new(mailbox))
     }
-    pub fn tower() -> HelloTowerBlockBuilder {
-        HelloTowerBlockBuilder::default()
+    pub fn tower() -> ControlPlaneServiceTowerBlockBuilder {
+        ControlPlaneServiceTowerBlockBuilder::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn mock() -> MockHello {
-        MockHello::new()
+    pub fn mock() -> MockControlPlaneService {
+        MockControlPlaneService::new()
     }
 }
 #[async_trait::async_trait]
-impl Hello for HelloClient {
-    async fn hello(
+impl ControlPlaneService for ControlPlaneServiceClient {
+    async fn notify_index_change(
         &mut self,
-        request: HelloRequest,
-    ) -> crate::HelloResult<HelloResponse> {
-        self.inner.hello(request).await
+        request: NotifyIndexChangeRequest,
+    ) -> crate::Result<NotifyIndexChangeResponse> {
+        self.inner.notify_index_change(request).await
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-impl From<MockHello> for HelloClient {
-    fn from(mock: MockHello) -> Self {
-        HelloClient::new(mock)
+impl From<MockControlPlaneService> for ControlPlaneServiceClient {
+    fn from(mock: MockControlPlaneService) -> Self {
+        ControlPlaneServiceClient::new(mock)
     }
 }
 pub type BoxFuture<T, E> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
 >;
-impl tower::Service<HelloRequest> for Box<dyn Hello> {
-    type Response = HelloResponse;
-    type Error = crate::HelloError;
+impl tower::Service<NotifyIndexChangeRequest> for Box<dyn ControlPlaneService> {
+    type Response = NotifyIndexChangeResponse;
+    type Error = crate::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
         &mut self,
@@ -89,73 +87,76 @@ impl tower::Service<HelloRequest> for Box<dyn Hello> {
     ) -> std::task::Poll<Result<(), Self::Error>> {
         std::task::Poll::Ready(Ok(()))
     }
-    fn call(&mut self, request: HelloRequest) -> Self::Future {
+    fn call(&mut self, request: NotifyIndexChangeRequest) -> Self::Future {
         let mut svc = self.clone();
-        let fut = async move { svc.hello(request).await };
+        let fut = async move { svc.notify_index_change(request).await };
         Box::pin(fut)
     }
 }
 /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
 #[derive(Debug)]
-struct HelloTowerBlock {
-    hello_svc: quickwit_common::tower::BoxService<
-        HelloRequest,
-        HelloResponse,
-        crate::HelloError,
+struct ControlPlaneServiceTowerBlock {
+    notify_index_change_svc: quickwit_common::tower::BoxService<
+        NotifyIndexChangeRequest,
+        NotifyIndexChangeResponse,
+        crate::ControlPlaneError,
     >,
 }
-impl Clone for HelloTowerBlock {
+impl Clone for ControlPlaneServiceTowerBlock {
     fn clone(&self) -> Self {
         Self {
-            hello_svc: self.hello_svc.clone(),
+            notify_index_change_svc: self.notify_index_change_svc.clone(),
         }
     }
 }
 #[async_trait::async_trait]
-impl Hello for HelloTowerBlock {
-    async fn hello(
+impl ControlPlaneService for ControlPlaneServiceTowerBlock {
+    async fn notify_index_change(
         &mut self,
-        request: HelloRequest,
-    ) -> crate::HelloResult<HelloResponse> {
-        self.hello_svc.ready().await?.call(request).await
+        request: NotifyIndexChangeRequest,
+    ) -> crate::Result<NotifyIndexChangeResponse> {
+        self.notify_index_change_svc.ready().await?.call(request).await
     }
 }
 #[derive(Debug, Default)]
-pub struct HelloTowerBlockBuilder {
-    hello_layer: Option<
+pub struct ControlPlaneServiceTowerBlockBuilder {
+    notify_index_change_layer: Option<
         quickwit_common::tower::BoxLayer<
-            Box<dyn Hello>,
-            HelloRequest,
-            HelloResponse,
-            crate::HelloError,
+            Box<dyn ControlPlaneService>,
+            NotifyIndexChangeRequest,
+            NotifyIndexChangeResponse,
+            crate::ControlPlaneError,
         >,
     >,
 }
-impl HelloTowerBlockBuilder {
-    pub fn hello_layer(
+impl ControlPlaneServiceTowerBlockBuilder {
+    pub fn notify_index_change_layer(
         mut self,
         layer: quickwit_common::tower::BoxLayer<
-            Box<dyn Hello>,
-            HelloRequest,
-            HelloResponse,
-            crate::HelloError,
+            Box<dyn ControlPlaneService>,
+            NotifyIndexChangeRequest,
+            NotifyIndexChangeResponse,
+            crate::ControlPlaneError,
         >,
     ) -> Self {
-        self.hello_layer = Some(layer);
+        self.notify_index_change_layer = Some(layer);
         self
     }
-    pub fn service<T>(self, instance: T) -> HelloClient
+    pub fn service<T>(self, instance: T) -> ControlPlaneServiceClient
     where
-        T: Hello + Clone,
+        T: ControlPlaneService + Clone,
     {
-        let boxed_instance: Box<dyn Hello> = Box::new(instance);
-        let hello_svc = if let Some(layer) = self.hello_layer {
+        let boxed_instance: Box<dyn ControlPlaneService> = Box::new(instance);
+        let notify_index_change_svc = if let Some(layer) = self.notify_index_change_layer
+        {
             layer.layer(boxed_instance.clone())
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
-        let tower_block = HelloTowerBlock { hello_svc };
-        HelloClient::new(tower_block)
+        let tower_block = ControlPlaneServiceTowerBlock {
+            notify_index_change_svc,
+        };
+        ControlPlaneServiceClient::new(tower_block)
     }
 }
 #[derive(Debug, Clone)]
@@ -173,10 +174,10 @@ where
     }
 }
 #[derive(Debug)]
-pub struct HelloMailbox<A: quickwit_actors::Actor> {
-    inner: MailboxAdapter<A, crate::HelloError>,
+pub struct ControlPlaneServiceMailbox<A: quickwit_actors::Actor> {
+    inner: MailboxAdapter<A, crate::ControlPlaneError>,
 }
-impl<A: quickwit_actors::Actor> HelloMailbox<A> {
+impl<A: quickwit_actors::Actor> ControlPlaneServiceMailbox<A> {
     pub fn new(instance: quickwit_actors::Mailbox<A>) -> Self {
         let inner = MailboxAdapter {
             inner: instance,
@@ -185,7 +186,7 @@ impl<A: quickwit_actors::Actor> HelloMailbox<A> {
         Self { inner }
     }
 }
-impl<A: quickwit_actors::Actor> Clone for HelloMailbox<A> {
+impl<A: quickwit_actors::Actor> Clone for ControlPlaneServiceMailbox<A> {
     fn clone(&self) -> Self {
         let inner = MailboxAdapter {
             inner: self.inner.clone(),
@@ -195,17 +196,17 @@ impl<A: quickwit_actors::Actor> Clone for HelloMailbox<A> {
     }
 }
 use tower::{Layer, Service, ServiceExt};
-impl<A, M, T, E> tower::Service<M> for HelloMailbox<A>
+impl<A, M, T, E> tower::Service<M> for ControlPlaneServiceMailbox<A>
 where
     A: quickwit_actors::Actor + quickwit_actors::Handler<M, Reply = Result<T, E>> + Send
         + Sync + 'static,
     M: std::fmt::Debug + Send + Sync + 'static,
     T: Send + Sync + 'static,
     E: std::fmt::Debug + Send + Sync + 'static,
-    crate::HelloError: From<quickwit_actors::AskError<E>>,
+    crate::ControlPlaneError: From<quickwit_actors::AskError<E>>,
 {
     type Response = T;
-    type Error = crate::HelloError;
+    type Error = crate::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
         &mut self,
@@ -225,36 +226,39 @@ where
     }
 }
 #[async_trait::async_trait]
-impl<A> Hello for HelloMailbox<A>
+impl<A> ControlPlaneService for ControlPlaneServiceMailbox<A>
 where
     A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
-    HelloMailbox<
+    ControlPlaneServiceMailbox<
         A,
     >: tower::Service<
-        HelloRequest,
-        Response = HelloResponse,
-        Error = crate::HelloError,
-        Future = BoxFuture<HelloResponse, crate::HelloError>,
+        NotifyIndexChangeRequest,
+        Response = NotifyIndexChangeResponse,
+        Error = crate::ControlPlaneError,
+        Future = BoxFuture<NotifyIndexChangeResponse, crate::ControlPlaneError>,
     >,
 {
-    async fn hello(
+    async fn notify_index_change(
         &mut self,
-        request: HelloRequest,
-    ) -> crate::HelloResult<HelloResponse> {
+        request: NotifyIndexChangeRequest,
+    ) -> crate::Result<NotifyIndexChangeResponse> {
         self.call(request).await
     }
 }
 #[derive(Debug, Clone)]
-pub struct HelloGrpcClientAdapter<T> {
+pub struct ControlPlaneServiceGrpcClientAdapter<T> {
     inner: T,
 }
-impl<T> HelloGrpcClientAdapter<T> {
+impl<T> ControlPlaneServiceGrpcClientAdapter<T> {
     pub fn new(instance: T) -> Self {
         Self { inner: instance }
     }
 }
 #[async_trait::async_trait]
-impl<T> Hello for HelloGrpcClientAdapter<hello_grpc_client::HelloGrpcClient<T>>
+impl<T> ControlPlaneService
+for ControlPlaneServiceGrpcClientAdapter<
+    control_plane_service_grpc_client::ControlPlaneServiceGrpcClient<T>,
+>
 where
     T: tonic::client::GrpcService<tonic::body::BoxBody> + std::fmt::Debug + Clone + Send
         + Sync + 'static,
@@ -263,53 +267,54 @@ where
         + Send,
     T::Future: Send,
 {
-    async fn hello(
+    async fn notify_index_change(
         &mut self,
-        request: HelloRequest,
-    ) -> crate::HelloResult<HelloResponse> {
+        request: NotifyIndexChangeRequest,
+    ) -> crate::Result<NotifyIndexChangeResponse> {
         self.inner
-            .hello(request)
+            .notify_index_change(request)
             .await
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
     }
 }
 #[derive(Debug)]
-pub struct HelloGrpcServerAdapter {
-    inner: Box<dyn Hello>,
+pub struct ControlPlaneServiceGrpcServerAdapter {
+    inner: Box<dyn ControlPlaneService>,
 }
-impl HelloGrpcServerAdapter {
+impl ControlPlaneServiceGrpcServerAdapter {
     pub fn new<T>(instance: T) -> Self
     where
-        T: Hello,
+        T: ControlPlaneService,
     {
         Self { inner: Box::new(instance) }
     }
 }
 #[async_trait::async_trait]
-impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
-    async fn hello(
+impl control_plane_service_grpc_server::ControlPlaneServiceGrpc
+for ControlPlaneServiceGrpcServerAdapter {
+    async fn notify_index_change(
         &self,
-        request: tonic::Request<HelloRequest>,
-    ) -> Result<tonic::Response<HelloResponse>, tonic::Status> {
+        request: tonic::Request<NotifyIndexChangeRequest>,
+    ) -> Result<tonic::Response<NotifyIndexChangeResponse>, tonic::Status> {
         self.inner
             .clone()
-            .hello(request.into_inner())
+            .notify_index_change(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(Into::into)
     }
 }
 /// Generated client implementations.
-pub mod hello_grpc_client {
+pub mod control_plane_service_grpc_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
-    pub struct HelloGrpcClient<T> {
+    pub struct ControlPlaneServiceGrpcClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl HelloGrpcClient<tonic::transport::Channel> {
+    impl ControlPlaneServiceGrpcClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -320,7 +325,7 @@ pub mod hello_grpc_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> HelloGrpcClient<T>
+    impl<T> ControlPlaneServiceGrpcClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
         T::Error: Into<StdError>,
@@ -338,7 +343,7 @@ pub mod hello_grpc_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> HelloGrpcClient<InterceptedService<T, F>>
+        ) -> ControlPlaneServiceGrpcClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -352,7 +357,9 @@ pub mod hello_grpc_client {
                 http::Request<tonic::body::BoxBody>,
             >>::Error: Into<StdError> + Send + Sync,
         {
-            HelloGrpcClient::new(InterceptedService::new(inner, interceptor))
+            ControlPlaneServiceGrpcClient::new(
+                InterceptedService::new(inner, interceptor),
+            )
         }
         /// Compress requests with the given encoding.
         ///
@@ -369,10 +376,16 @@ pub mod hello_grpc_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
-        pub async fn hello(
+        /// / Notify the Control Plane that a change on an index occurred. The change
+        /// / can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
+        /// Note(fmassot): it's not very clear for a user to know which change triggers a control plane notification.
+        /// This can be explicited in the attributes of `NotifyIndexChangeRequest` with an enum that describes the
+        /// type of change. The index ID and/or source ID could also be added.
+        /// However, these attributes will not be used by the Control Plane, at least at short term.
+        pub async fn notify_index_change(
             &mut self,
-            request: impl tonic::IntoRequest<super::HelloRequest>,
-        ) -> Result<tonic::Response<super::HelloResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::NotifyIndexChangeRequest>,
+        ) -> Result<tonic::Response<super::NotifyIndexChangeResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -383,31 +396,39 @@ pub mod hello_grpc_client {
                     )
                 })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/hello.Hello/Hello");
+            let path = http::uri::PathAndQuery::from_static(
+                "/control_plane_service.ControlPlaneService/notifyIndexChange",
+            );
             self.inner.unary(request.into_request(), path, codec).await
         }
     }
 }
 /// Generated server implementations.
-pub mod hello_grpc_server {
+pub mod control_plane_service_grpc_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with HelloGrpcServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with ControlPlaneServiceGrpcServer.
     #[async_trait]
-    pub trait HelloGrpc: Send + Sync + 'static {
-        async fn hello(
+    pub trait ControlPlaneServiceGrpc: Send + Sync + 'static {
+        /// / Notify the Control Plane that a change on an index occurred. The change
+        /// / can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
+        /// Note(fmassot): it's not very clear for a user to know which change triggers a control plane notification.
+        /// This can be explicited in the attributes of `NotifyIndexChangeRequest` with an enum that describes the
+        /// type of change. The index ID and/or source ID could also be added.
+        /// However, these attributes will not be used by the Control Plane, at least at short term.
+        async fn notify_index_change(
             &self,
-            request: tonic::Request<super::HelloRequest>,
-        ) -> Result<tonic::Response<super::HelloResponse>, tonic::Status>;
+            request: tonic::Request<super::NotifyIndexChangeRequest>,
+        ) -> Result<tonic::Response<super::NotifyIndexChangeResponse>, tonic::Status>;
     }
     #[derive(Debug)]
-    pub struct HelloGrpcServer<T: HelloGrpc> {
+    pub struct ControlPlaneServiceGrpcServer<T: ControlPlaneServiceGrpc> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
-    impl<T: HelloGrpc> HelloGrpcServer<T> {
+    impl<T: ControlPlaneServiceGrpc> ControlPlaneServiceGrpcServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -441,9 +462,10 @@ pub mod hello_grpc_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for HelloGrpcServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>>
+    for ControlPlaneServiceGrpcServer<T>
     where
-        T: HelloGrpc,
+        T: ControlPlaneServiceGrpc,
         B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
@@ -459,22 +481,26 @@ pub mod hello_grpc_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/hello.Hello/Hello" => {
+                "/control_plane_service.ControlPlaneService/notifyIndexChange" => {
                     #[allow(non_camel_case_types)]
-                    struct HelloSvc<T: HelloGrpc>(pub Arc<T>);
-                    impl<T: HelloGrpc> tonic::server::UnaryService<super::HelloRequest>
-                    for HelloSvc<T> {
-                        type Response = super::HelloResponse;
+                    struct notifyIndexChangeSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<super::NotifyIndexChangeRequest>
+                    for notifyIndexChangeSvc<T> {
+                        type Response = super::NotifyIndexChangeResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::HelloRequest>,
+                            request: tonic::Request<super::NotifyIndexChangeRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move { (*inner).hello(request).await };
+                            let fut = async move {
+                                (*inner).notify_index_change(request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -483,7 +509,7 @@ pub mod hello_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = HelloSvc(inner);
+                        let method = notifyIndexChangeSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -510,7 +536,7 @@ pub mod hello_grpc_server {
             }
         }
     }
-    impl<T: HelloGrpc> Clone for HelloGrpcServer<T> {
+    impl<T: ControlPlaneServiceGrpc> Clone for ControlPlaneServiceGrpcServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -520,7 +546,7 @@ pub mod hello_grpc_server {
             }
         }
     }
-    impl<T: HelloGrpc> Clone for _Inner<T> {
+    impl<T: ControlPlaneServiceGrpc> Clone for _Inner<T> {
         fn clone(&self) -> Self {
             Self(self.0.clone())
         }
@@ -530,7 +556,8 @@ pub mod hello_grpc_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: HelloGrpc> tonic::server::NamedService for HelloGrpcServer<T> {
-        const NAME: &'static str = "hello.Hello";
+    impl<T: ControlPlaneServiceGrpc> tonic::server::NamedService
+    for ControlPlaneServiceGrpcServer<T> {
+        const NAME: &'static str = "control_plane_service.ControlPlaneService";
     }
 }

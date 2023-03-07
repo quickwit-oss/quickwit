@@ -17,27 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod balance_channel;
-pub mod service_client_pool;
+use std::time::Instant;
 
-pub use balance_channel::create_balance_channel_from_watched_members;
-use tonic::transport::{Channel, Endpoint, Uri};
-use tower::service_fn;
+use super::Rate;
 
-// For tests.
-pub async fn create_channel_from_duplex_stream(
-    client: tokio::io::DuplexStream,
-) -> anyhow::Result<Channel> {
-    let mut client = Some(client);
-    let channel = Endpoint::try_from("http://test.server")?
-        .connect_with_connector(service_fn(move |_: Uri| {
-            let client = client.take();
-            async move {
-                client.ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::Other, "Client already taken")
-                })
-            }
-        }))
-        .await?;
-    Ok(channel)
+pub trait RateEstimator: Rate {
+    fn update(&mut self, started_at: Instant, ended_at: Instant, work: u64);
 }
