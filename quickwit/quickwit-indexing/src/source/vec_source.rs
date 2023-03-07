@@ -124,6 +124,7 @@ impl Source for VecSource {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
     use quickwit_actors::{Actor, Command, Universe};
@@ -154,8 +155,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
-                    desired_num_pipelines: 1,
-                    max_num_pipelines_per_indexer: 1,
+                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                     enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                     transform_config: None,
@@ -213,8 +214,8 @@ mod tests {
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
-                    desired_num_pipelines: 1,
-                    max_num_pipelines_per_indexer: 1,
+                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                     enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                     transform_config: None,

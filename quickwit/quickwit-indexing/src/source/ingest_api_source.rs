@@ -216,6 +216,7 @@ impl TypedSourceFactory for IngestApiSourceFactory {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
     use std::time::Duration;
 
     use quickwit_actors::Universe;
@@ -252,8 +253,8 @@ mod tests {
     fn make_source_config() -> SourceConfig {
         SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            desired_num_pipelines: 1,
-            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,
