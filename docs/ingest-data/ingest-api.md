@@ -54,7 +54,7 @@ You can ingest data either with the CLI or with cURL. The CLI is more convenient
 curl -XPOST -H 'Content-Type: application/json' 'http://localhost:7280/api/v1/stackoverflow-schemaless/ingest' --data-binary @stackoverflow.posts.transformed-10000.json
 ```
 
-## Execute the query
+## Execute search queries
 
 You can now search the index.
 
