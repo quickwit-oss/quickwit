@@ -42,7 +42,7 @@ More details about [storage configuration](../reference/storage-uri.md).
 
 ## Indexer configuration
 
-This section contains the configuration options for an indexer. The split store is documented in the  [indexing document](../concepts/indexing.md#split-store).
+This section contains the configuration options for an indexer. The split store is documented in the  [indexing document](../overview/concepts/indexing.md#split-store).
 
 | Property | Description | Default value |
 | --- | --- | --- |
