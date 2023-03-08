@@ -441,7 +441,7 @@ mod tests {
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
-        let checkpoint_delta = SourceCheckpointDelta::from(0..4);
+        let checkpoint_delta = SourceCheckpointDelta::from_range(0..4);
         doc_processor_mailbox
             .send_message(RawDocBatch {
                 docs: vec![
@@ -539,7 +539,7 @@ mod tests {
                     r#"{"tenant": "tenant_1", "body": "second doc for tenant 1"}"#.to_string(),
                     r#"{"tenant": "tenant_2", "body": "second doc for tenant 2"}"#.to_string(),
                 ],
-                checkpoint_delta: SourceCheckpointDelta::from(0..2),
+                checkpoint_delta: SourceCheckpointDelta::from_range(0..2),
             })
             .await?;
         universe
@@ -620,7 +620,7 @@ mod tests {
                 docs: vec![
                         r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(),
                     ],
-                checkpoint_delta: SourceCheckpointDelta::from(0..1),
+                checkpoint_delta: SourceCheckpointDelta::from_range(0..1),
             })
             .await.unwrap();
         universe
@@ -652,7 +652,7 @@ mod tests {
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
-        let checkpoint_delta = SourceCheckpointDelta::from(0..4);
+        let checkpoint_delta = SourceCheckpointDelta::from_range(0..4);
         doc_processor_mailbox
             .send_message(RawDocBatch {
                 docs: vec![

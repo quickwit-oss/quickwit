@@ -531,6 +531,7 @@ pub struct IndexingPipelineParams {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -611,8 +612,8 @@ mod tests {
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
             transform_config: None,
@@ -701,8 +702,8 @@ mod tests {
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
             transform_config: None,
@@ -760,8 +761,8 @@ mod tests {
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Void(VoidSourceParams),
             transform_config: None,

@@ -44,7 +44,7 @@ pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
 pub use metastore::file_backed_metastore::FileBackedMetastore;
 pub use metastore::grpc_metastore::{GrpcMetastoreAdapter, MetastoreGrpcClient};
 pub(crate) use metastore::index_metadata::serialize::{IndexMetadataV0_4, VersionedIndexMetadata};
-pub use metastore::metastore_with_control_plane_triggers::MetastoreWithControlPlaneTriggers;
+pub use metastore::metastore_event_publisher::{MetastoreEvent, MetastoreEventPublisher};
 #[cfg(feature = "postgres")]
 pub use metastore::postgresql_metastore::PostgresqlMetastore;
 pub use metastore::retrying_metastore::RetryingMetastore;

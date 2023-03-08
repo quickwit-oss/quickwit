@@ -761,6 +761,7 @@ fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
 
 #[cfg(all(test, feature = "kafka-broker-tests"))]
 mod kafka_broker_tests {
+    use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
     use quickwit_actors::{ActorContext, Universe};
@@ -868,8 +869,8 @@ mod kafka_broker_tests {
         let source_id = append_random_suffix("test-kafka-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
-            desired_num_pipelines: 1,
-            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: topic.to_string(),

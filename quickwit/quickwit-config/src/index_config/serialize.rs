@@ -45,14 +45,14 @@ impl From<VersionedIndexConfig> for IndexConfigForSerialization {
     }
 }
 
-/// Parses and validates an [`IndexConfig`] as supplied by a user with a given URI and config
-/// content.
+/// Parses and validates an [`IndexConfig`] as supplied by a user with a given [`ConfigFormat`],
+/// config content and a `default_index_root_uri`.
 pub fn load_index_config_from_user_config(
     config_format: ConfigFormat,
-    file_content: &[u8],
+    config_content: &[u8],
     default_index_root_uri: &Uri,
 ) -> anyhow::Result<IndexConfig> {
-    let versioned_index_config: VersionedIndexConfig = config_format.parse(file_content)?;
+    let versioned_index_config: VersionedIndexConfig = config_format.parse(config_content)?;
     let index_config_for_serialization: IndexConfigForSerialization = versioned_index_config.into();
     index_config_for_serialization.validate_and_build(Some(default_index_root_uri))
 }
@@ -124,7 +124,7 @@ impl TryFrom<VersionedIndexConfig> for IndexConfig {
 
     fn try_from(versioned_index_config: VersionedIndexConfig) -> anyhow::Result<Self> {
         match versioned_index_config {
-            VersionedIndexConfig::V0_4(v3) => v3.validate_and_build(None),
+            VersionedIndexConfig::V0_4(v0_4) => v0_4.validate_and_build(None),
         }
     }
 }

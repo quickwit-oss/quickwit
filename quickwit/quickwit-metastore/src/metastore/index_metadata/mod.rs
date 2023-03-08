@@ -131,7 +131,8 @@ impl TestableForRegression for IndexMetadata {
             PartitionId::from(0i64),
             Position::Beginning,
             Position::from(42u64),
-        );
+        )
+        .unwrap();
         source_checkpoint.try_apply_delta(delta).unwrap();
         let mut per_source_checkpoint: BTreeMap<String, SourceCheckpoint> = BTreeMap::default();
         per_source_checkpoint.insert("kafka-source".to_string(), source_checkpoint);

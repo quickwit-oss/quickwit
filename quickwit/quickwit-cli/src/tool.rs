@@ -19,6 +19,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::io::{stdout, Stdout, Write};
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -296,8 +297,8 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .map(|vrl_script| TransformConfig::new(vrl_script, None));
     let source_config = SourceConfig {
         source_id: CLI_INGEST_SOURCE_ID.to_string(),
-        max_num_pipelines_per_indexer: 1,
-        desired_num_pipelines: 1,
+        max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+        desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
         enabled: true,
         source_params,
         transform_config,
@@ -429,8 +430,8 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
             index_id: args.index_id,
             source_config: SourceConfig {
                 source_id: args.source_id,
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 1,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
                 transform_config: None,

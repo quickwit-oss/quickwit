@@ -18,11 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 pub mod balance_channel;
-pub mod control_plane_client;
 pub mod service_client_pool;
 
 pub use balance_channel::create_balance_channel_from_watched_members;
-pub use control_plane_client::ControlPlaneGrpcClient;
 use tonic::transport::{Channel, Endpoint, Uri};
 use tower::service_fn;
 

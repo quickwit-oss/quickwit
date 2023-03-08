@@ -162,10 +162,13 @@ impl Source for IngestApiSource {
             .checkpoint_delta
             .record_partition_delta(
                 partition_id,
-                Position::from(self.counters.previous_offset.unwrap_or(0)),
+                self.counters
+                    .previous_offset
+                    .map(Position::from)
+                    .unwrap_or(Position::Beginning),
                 Position::from(current_offset),
             )
-            .unwrap();
+            .map_err(anyhow::Error::from)?;
 
         self.update_counters(current_offset, raw_doc_batch.docs.len() as u64);
         ctx.send_message(batch_sink, raw_doc_batch).await?;
@@ -220,6 +223,7 @@ impl TypedSourceFactory for IngestApiSourceFactory {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
     use std::time::Duration;
 
     use quickwit_actors::Universe;
@@ -252,8 +256,8 @@ mod tests {
     fn make_source_config() -> SourceConfig {
         SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            desired_num_pipelines: 1,
-            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,
@@ -365,8 +369,9 @@ mod tests {
             partition_id.clone(),
             Position::from(0u64),
             Position::from(1200u64),
-        );
-        checkpoint.try_apply_delta(checkpoint_delta)?;
+        )
+        .unwrap();
+        checkpoint.try_apply_delta(checkpoint_delta).unwrap();
 
         let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
