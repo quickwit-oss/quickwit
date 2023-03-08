@@ -41,7 +41,7 @@ const COMMIT_CODE_V1: u8 = 1;
 impl<T> DocCommand<T>
 where T: Buf
 {
-    /// Returns the
+    /// Returns the binary serializetion code of the current version of this command.
     pub fn code(&self) -> u8 {
         match self {
             DocCommand::Ingest { payload: _ } => INGEST_CODE_V1,
