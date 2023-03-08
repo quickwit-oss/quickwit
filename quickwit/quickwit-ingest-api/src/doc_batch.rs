@@ -50,8 +50,7 @@ where T: Buf
     }
 
     /// Builds a command for bytes::Buf
-    pub fn read(buf: T) -> Self {
-        let mut buf = buf;
+    pub fn read(mut buf: T) -> Self {
         match buf.get_u8() {
             INGEST_CODE_V1 => DocCommand::Ingest { payload: buf },
             COMMIT_CODE_V1 => DocCommand::Commit,
