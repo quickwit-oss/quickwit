@@ -3,12 +3,17 @@ title: Deployment modes
 sidebar_position: 1
 ---
 
-Quickwit is composed of 3 services:
-- the indexer service: it starts the indexing pipelines and serves the [Ingest API](../reference/rest-api.md);
-- the searcher service: it serves the [Search and Aggregation API](../reference/rest-api.md);
-- the UI service: it serves the static assets required by the UI React app.
 
-Quickwit is compiled as a single binary or Docker image, and you can choose to start the indexer or the searcher or both of them. As for the UI service, it is always launched.
+Quickwit distributed search engine relies on 4 major services and one maintenance service:
+
+- The Searchers for executing search queries from the REST API.
+- The Indexers that index data from data sources.
+- The Metastore that stores the index metadata.
+- The Control plane that schedules indexing tasks to the indexers.
+- The Janitor that executes periodic maintenance tasks.
+
+Quickwit is compiled as a single binary or Docker image, and you can choose to start the indexer or the searcher or both of them. Each node also always serves the UI static assets required by the UI React app.
+
 You can deploy Quickwit on a single node or multiple nodes. However, please note that some deployment configurations are still rough around the edges, so read the current limitations carefully.
 
 ## Single-node
@@ -25,25 +30,7 @@ As soon as you are running at least 2 nodes, there are several restrictions:
 
 ## Multiple indexers, multiple searchers
 
-Coming soon :)
-
-## General limitations
-
-:::note
-We're actively working on removing those limitations. Most of them should be resolved in the next releases.
-:::
-
-### CLI limitations
-
-While running one or several nodes, we strongly discourage you to use the [CLI](../reference/cli.md) to manage indexes (add/delete operations) as we do not notify the running services of the modifications.
-
-For example, if you create an index with the CLI while an indexer is running, it will not be notified of the creation event and will not accept ingest requests for this new index. Therefore, you will need to restart the indexer to be able to ingest documents for this index.
-A searcher will behave similarly on index creation but not on index deletion. For example, a file-backed metastore server will not be aware of the index deletion and will continue trying to serve search queries and return 500 errors.
-
-Generally speaking:
-- when you create/delete indexes, you should restart your indexer;
-- when you delete indexes, you should restart your searchers if you use a file-backed metastore.
-
+Indexing a single data source on several indexers is currenlty only possible with a Kafka sources. It is planend for 2 to support indexing distribution for Pulsar and the Ingest API sources.
 
 ### File-backed metastore limitations
 

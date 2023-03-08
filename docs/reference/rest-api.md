@@ -212,13 +212,13 @@ Create an index by posting an `IndexConfig` JSON payload.
 
 | Variable              | Type               | Description                                                                                                           | Default value                         |
 |-----------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------|---------------------------------------|
-| **version**           | `String`           | Config format version, use the same as your Quickwit version. (mandatory)                                             |                                       |
-| **index_id**          | `String`           | Index ID, see its [validation rules](../configuration/index-config.md#index-id) on identifiers. (mandatory)           |                                       |
-| **index_uri**         | `String`           | Defines where the index files are stored. This parameter expects a [storage URI](../reference/storage-uri).           | `{default_index_root_uri}/{index_id}` |
-| **doc_mapping**       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping) (mandatory)  |                                       |
-| **indexing_settings** | `IndexingSettings` | Indexing settings object as specified in the [index config docs](../configuration/index-config.md#indexing-settings). |                                       |
-| **search_settings**   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).     |                                       |
-| **retention**         | `Retention`        | Retention policy object as specified in the [index config docs](../configuration/index-config.md#retention-policy).   |                                       |
+| `version`          | `String`           | Config format version, use the same as your Quickwit version. (mandatory)                                             |                                       |
+| `index_id`          | `String`           | Index ID, see its [validation rules](../configuration/index-config.md#index-id) on identifiers. (mandatory)           |                                       |
+| `index_uri`         | `String`           | Defines where the index files are stored. This parameter expects a [storage URI](../reference/storage-uri).           | `{default_index_root_uri}/{index_id}` |
+| `doc_mapping`       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping) (mandatory)  |                                       |
+| `indexing_settings` | `IndexingSettings` | Indexing settings object as specified in the [index config docs](../configuration/index-config.md#indexing-settings). |                                       |
+| `search_settings`   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).     |                                       |
+| `retention`         | `Retention`        | Retention policy object as specified in the [index config docs](../configuration/index-config.md#retention-policy).   |                                       |
 
 
 **Payload Example**
@@ -286,10 +286,10 @@ The response is the index metadata of the created index, and the content type is
 
 | Field                | Description                               |         Type          |
 |----------------------|-------------------------------------------|:---------------------:|
-| **index_config**     | The posted index config.                  |     `IndexConfig`     |
-| **checkpoint**       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
-| **create_timestamp** | Index creation timestamp                  |       `number`        |
-| **sources**          | List of the index sources configurations. | `Array<SourceConfig>` |
+| `index_config`     | The posted index config.                  |     `IndexConfig`     |
+| `checkpoint`       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
+| `create_timestamp` | Index creation timestamp                  |       `number`        |
+| `sources`          | List of the index sources configurations. | `Array<SourceConfig>` |
 
 
 ### Get an index metadata
@@ -306,10 +306,10 @@ The response is the index metadata of the requested index, and the content type 
 
 | Field                | Description                               |         Type          |
 |----------------------|-------------------------------------------|:---------------------:|
-| **index_config**     | The posted index config.                  |     `IndexConfig`     |
-| **checkpoint**       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
-| **create_timestamp** | Index creation timestamp.                 |       `number`        |
-| **sources**          | List of the index sources configurations. | `Array<SourceConfig>` |
+| `index_config`     | The posted index config.                  |     `IndexConfig`     |
+| `checkpoint`       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
+| `create_timestamp` | Index creation timestamp.                 |       `number`        |
+| `sources`          | List of the index sources configurations. | `Array<SourceConfig>` |
 
 
 ### Delete an index
@@ -358,11 +358,11 @@ Create source by posting a source config JSON payload.
 
 | Variable          | Type     | Description                                                                                          | Default value |
 |-------------------|----------|------------------------------------------------------------------------------------------------------|---------------|
-| **version**       | `String` | Config format version, put your current Quickwit version. (mandatory)                                |               |
-| **source_id**     | `String` | Source ID. See ID [validation rules](../configuration/source-config.md)(mandatory)                   |               |
-| **source_type**   | `String` | Source type: `kafka`, `kinesis`, `file`. (mandatory)                                                 |               |
-| **num_pipelines** | `usize`  | Number of running indexing pipelines per node for this source.                                       | 1             |
-| **params**        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). (mandatory) |               |
+| `version**       | `String` | Config format version, put your current Quickwit version. (mandatory)                                |               |
+| `source_id`     | `String` | Source ID. See ID [validation rules](../configuration/source-config.md)(mandatory)                   |               |
+| `source_type`   | `String` | Source type: `kafka`, `kinesis`, `file`. (mandatory)                                                 |               |
+| `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                                       | 1             |
+| `params`        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). (mandatory) |               |
 
 
 **Payload Example**
@@ -409,7 +409,7 @@ GET api/v1/cluster?format=pretty_json
 
 Name | Type | Description | Default value
 --- | --- | --- | ---
-**format** | `String` | The output format requested for the response: `json` or `pretty_json` | `pretty_json`
+`format` | `String` | The output format requested for the response: `json` or `pretty_json` | `pretty_json`
 
 
 ## Delete API
@@ -429,7 +429,7 @@ The endpoint simply appends your delete task to the delete task queue in the met
 
 | Variable      | Description   |
 | ------------- | ------------- |
-| **index id**  | The index id  |
+| `index id`  | The index id  |
 
 
 #### POST payload `DeleteQuery`
@@ -437,10 +437,10 @@ The endpoint simply appends your delete task to the delete task queue in the met
 
 | Variable            | Type       | Description                                                                                               | Default value                                      |
 |---------------------|------------|-----------------------------------------------------------------------------------------------------------|----------------------------------------------------|
-| **query**           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                   |                                                    |
-| **search_field**    | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2"                                           | index_config.search_settings.default_search_fields |
-| **start_timestamp** | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds. |                                                    |
-| **end_timestamp**   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.    |                                                    |
+| `query`           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                   |                                                    |
+| `search_field`    | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2"                                           | index_config.search_settings.default_search_fields |
+| `start_timestamp` | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds. |                                                    |
+| `end_timestamp`   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.    |                                                    |
 
 
 **Example**
@@ -459,9 +459,9 @@ The response is the created delete task represented in JSON, `DeleteTask`, the c
 
 | Field                | Description                                            |     Type      |
 |----------------------|--------------------------------------------------------|:-------------:|
-| **create_timestamp** | Create timestamp of the delete query in seconds        |     `i64`     |
-| **opstamp**          | Unique operation stamp associated with the delete task |     `u64`     |
-| **delete_query**     | The posted delete query                                | `DeleteQuery` |
+| `create_timestamp` | Create timestamp of the delete query in seconds        |     `i64`     |
+| `opstamp`          | Unique operation stamp associated with the delete task |     `u64`     |
+| `delete_query`     | The posted delete query                                | `DeleteQuery` |
 
 
 ### GET a delete query

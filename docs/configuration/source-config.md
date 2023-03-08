@@ -53,10 +53,10 @@ The Kafka source consumes a `topic` using the client library [librdkafka](https:
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| topic | Name of the topic to consume. | required |
-| client_log_level | librdkafka client log level. Possible values are: debug, info, warn, error. | info |
-| client_params | librdkafka client configuration parameters. | {} |
-| enable_backfill_mode | Backfill mode stops the source after reaching the end of the topic. | false |
+| `topic` | Name of the topic to consume. | required |
+| `client_log_level` | librdkafka client log level. Possible values are: debug, info, warn, error. | `info` |
+| `client_params` | librdkafka client configuration parameters. | `{}` |
+| `enable_backfill_mode` | Backfill mode stops the source after reaching the end of the topic. | `false` |
 
 **Kafka client parameters**
 
@@ -100,9 +100,9 @@ The Kinesis source consumes a stream identified by a `stream_name` and a `region
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| stream_name | Name of the stream to consume. | required |
-| region | The AWS region of the stream. Mutually exclusive with `endpoint`. | us-east-1 |
-| endpoint | Custom endpoint for use with AWS-compatible Kinesis service. Mutually exclusive with `region`. | optional |
+| `stream_name` | Name of the stream to consume. | required |
+| `region` | The AWS region of the stream. Mutually exclusive with `endpoint`. | `us-east-1` |
+| `endpoint` | Custom endpoint for use with AWS-compatible Kinesis service. Mutually exclusive with `region`. | optional |
 
 If no region is specified, Quickwit will attempt to find one in multiple other locations and with the following order of precedence:
 
@@ -139,9 +139,9 @@ The Pulsar source consumes `topics` using the client library [pulsar-rs](https:/
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| topics | List of topics to consume. | required |
-| address | Pulsar URL (pulsar:// and pulsar+ssl://). | required |
-| consumer_name | The consumer name to register with the pulsar source. | quickwit |
+| `topics` | List of topics to consume. | required |
+| `address` | Pulsar URL (pulsar:// and pulsar+ssl://). | required |
+| `consumer_name` | The consumer name to register with the pulsar source. | `quickwit` |
 
 *Adding a Pulsar source to an index with the [CLI](../reference/cli.md#source)*
 
@@ -197,8 +197,8 @@ For all source types but the `ingest-api`, ingested documents can be transformed
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| script | source code of the VRL program executed to transform documents | required |
-| timezone | Timezone used in the VRL program for date and time manipulations. Must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | UTC |
+| `script` | source code of the VRL program executed to transform documents | required |
+| `timezone` | Timezone used in the VRL program for date and time manipulations. Must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | `UTC` |
 
 ```yaml
 # Your source config here
