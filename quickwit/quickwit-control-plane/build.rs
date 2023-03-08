@@ -25,7 +25,7 @@ fn main() {
         "src/codegen/",
         "crate::Result",
         "crate::ControlPlaneError",
-        &[]
+        &[],
     )
     .unwrap();
 }
