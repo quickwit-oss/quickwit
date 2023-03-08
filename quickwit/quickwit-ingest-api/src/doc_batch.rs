@@ -21,7 +21,6 @@ use bytes::buf::Writer;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use serde::Serialize;
 
-use crate::metrics::INGEST_METRICS;
 use crate::DocBatch;
 
 #[derive(Debug)]
@@ -128,26 +127,8 @@ impl DocBatchBuilder {
         }
     }
 
-    /// Returns the total number of bytes in the batch
-    pub fn len(&self) -> usize {
-        self.concat_docs.len()
-    }
-
-    /// Returns true if the batch is empty
-    pub fn is_empty(&self) -> bool {
-        self.doc_lens.is_empty()
-    }
-
-    /// Returns the number of document in the batch
-    pub fn count(&self) -> usize {
-        self.doc_lens.len()
-    }
-
     /// Builds the batch
     pub fn build(self) -> DocBatch {
-        INGEST_METRICS
-            .ingested_num_bytes
-            .inc_by(self.concat_docs.len() as u64);
         DocBatch {
             index_id: self.index_id,
             concat_docs: self.concat_docs.freeze(),
@@ -318,28 +299,14 @@ mod tests {
     #[test]
     fn test_batch_builder() {
         let mut batch = DocBatchBuilder::new("test".to_string());
-        assert!(batch.is_empty());
         batch.ingest_doc(&b"hello"[..]);
         batch.ingest_doc(&b" "[..]);
-        assert!(!batch.is_empty());
         batch.command(DocCommand::Ingest {
             payload: Bytes::from("world"),
         });
         batch.commit();
-        assert_eq!(batch.count(), 4);
-        assert_eq!(batch.len(), 5 + 1 + 5 + batch.count());
-        assert!(!batch.is_empty());
 
-        let before_bytes = INGEST_METRICS.ingested_num_bytes.get();
-        let before_docs = INGEST_METRICS.ingested_num_docs.get();
         let batch = batch.build();
-        assert_eq!(
-            INGEST_METRICS.ingested_num_bytes.get(),
-            before_bytes + 5 + 1 + 5 + 4
-        );
-        // Shouldn't change, we change it later in ingest api service
-        assert_eq!(INGEST_METRICS.ingested_num_docs.get(), before_docs);
-
         assert_eq!(batch.index_id, "test");
         assert_eq!(batch.doc_lens.len(), 4);
         assert_eq!(batch.concat_docs.len(), 5 + 1 + 5 + 4);
@@ -390,9 +357,6 @@ mod tests {
 
         let mut batch = batch.into_inner();
         batch.commit();
-        assert_eq!(batch.count(), 3);
-        assert_eq!(batch.len(), 12 + 12 + batch.count());
-        assert!(!batch.is_empty());
 
         let batch = batch.build();
         assert_eq!(batch.index_id, "test");

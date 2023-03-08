@@ -237,7 +237,7 @@ mod tests {
         let mut doc_id = 0usize;
         for _ in 0..num_batch {
             let mut doc_batch_builder = DocBatchBuilder::new(index_id.clone());
-            while doc_batch_builder.count() < batch_size {
+            for _ in 0..batch_size {
                 doc_batch_builder.ingest_doc(
                     format!("{doc_id:0>6} - The quick brown fox jumps over the lazy dog")
                         .as_bytes(),

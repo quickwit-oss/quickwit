@@ -129,7 +129,11 @@ impl IngestApiService {
                 .append_batch(&doc_batch.index_id, records_it, ctx)
                 .await?;
             let batch_num_docs = doc_batch.doc_lens.len();
+            let batch_num_bytes = doc_batch.concat_docs.len();
             num_docs += batch_num_docs;
+            INGEST_METRICS
+                .ingested_num_bytes
+                .inc_by(batch_num_bytes as u64);
             INGEST_METRICS
                 .ingested_num_docs
                 .inc_by(batch_num_docs as u64);
