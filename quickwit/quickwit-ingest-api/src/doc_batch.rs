@@ -91,7 +91,7 @@ impl DocBatchBuilder {
     }
 
     /// Adds an ingest command to the batch
-    pub fn ingest_doc(&mut self, payload: impl Buf + Default) -> usize {
+    pub fn ingest_doc(&mut self, payload: impl Buf) -> usize {
         let command = DocCommand::Ingest { payload };
         self.command(command)
     }
@@ -104,7 +104,7 @@ impl DocBatchBuilder {
 
     /// Adds a parsed command to the batch
     pub fn command<T>(&mut self, command: DocCommand<T>) -> usize
-    where T: Buf + Default {
+    where T: Buf {
         let len = command.write(&mut self.concat_docs);
         self.doc_lens.push(len as u64);
         len
