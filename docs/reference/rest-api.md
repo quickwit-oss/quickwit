@@ -7,7 +7,12 @@ sidebar_position: 1
 
 All the API endpoints start with the `api/v1/` prefix. `v1` indicates that we are currently using version 1 of the API.
 
-### Parameters
+
+## OpenAPI specification
+
+The OpenAPI specification of the REST API is available at `/openapi.json` and a Swagger UI version is available at `/swagger-ui`.
+
+## Parameters
 
 Parameters passed in the URL must be properly URL-encoded, using the UTF-8 encoding for non-ASCII characters.
 
@@ -15,15 +20,15 @@ Parameters passed in the URL must be properly URL-encoded, using the UTF-8 encod
 GET [..]/search?query=barack%20obama
 ```
 
-### Error handling
+## Error handling
 
 Successful requests return a 2xx HTTP status code.
 
-Failed requests return a 4xx HTTP status code. The response body of failed requests holds a JSON object containing an `error_message` field that describes the error.
+Failed requests return a 4xx HTTP status code. The response body of failed requests holds a JSON object containing an `message` field that describes the error.
 
 ```json
 {
- "error_message": "Failed to parse query"
+ "message": "Failed to parse query"
 }
 ```
 
@@ -49,7 +54,7 @@ POST api/v1/<index id>/search
 
 | Variable      | Description   |
 | ------------- | ------------- |
-| **index id**  | The index id  |
+| `index id`  | The index id  |
 
 #### Parameters
 
@@ -198,7 +203,7 @@ The response is a JSON object, and the content type is `application/json; charse
 | **num_docs_for_processing** | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
 
 
-## Index management API
+## Index API
 
 ### Create an index
 
@@ -206,7 +211,7 @@ The response is a JSON object, and the content type is `application/json; charse
 POST api/v1/indexes
 ```
 
-Create an index by posting an `IndexConfig` JSON payload.
+Create an index by posting an `IndexConfig` payload. The API accepts JSON wiht `content-type: application/json`) and YAML `content-type: application/yaml`.
 
 #### POST payload
 
@@ -312,6 +317,17 @@ The response is the index metadata of the requested index, and the content type 
 | `sources`          | List of the index sources configurations. | `Array<SourceConfig>` |
 
 
+### Clears an index
+
+```
+PUT api/v1/indexes/<index id>/clear
+```
+
+Clears index of ID `index id`: all splits will be deleted (metastore + storage) and all source checkpoints will be reset.
+
+It returns an empty body.
+
+
 ### Delete an index
 
 ```
@@ -386,6 +402,34 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes/my-index/sources --data @source_c
 #### Response
 
 The response is the created source config, and the content type is `application/json; charset=UTF-8.`
+
+### Toggle source
+
+```
+PUT api/v1/indexes/<index id>/sources/<source id>/toggle
+```
+
+Toggle index of ID `index id`: all splits will be deleted (metastore + storage) and all source checkpoints will be reset.
+
+It returns an empty body.
+
+#### PUT payload
+
+| Variable          | Type     | Description                                                                                          | Default value |
+|-------------------|----------|------------------------------------------------------------------------------------------------------|---------------|
+| `enable`       | `String` | Config format version, put your current Quickwit version. (mandatory)                                |               |
+
+
+
+### Reset source checkpoint
+
+```
+PUT api/v1/indexes/<index id>/sources/<source id>/reset-checkpoint
+```
+
+Clears index of ID `index id`: all splits will be deleted (metastore + storage) and all source checkpoints will be reset.
+
+It returns an empty body.
 
 
 ### Delete a source
