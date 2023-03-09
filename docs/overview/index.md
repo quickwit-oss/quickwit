@@ -30,6 +30,6 @@ to='/docs/main-branch/get-started/quickstart'>
 
 ## Reference
 
-- [Configuration](../configuration)
+- [Configuration](../configuration/index.md)
 - [REST API](../reference/rest-api.md)
 - [CLI](../reference/cli.md)
