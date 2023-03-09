@@ -19,10 +19,13 @@
 
 use std::sync::Arc;
 
+use byte_unit::Byte;
 use bytes::Bytes;
+use itertools::Itertools;
 use hyper::header::CONTENT_TYPE;
 use quickwit_common::simple_list::{from_simple_list, to_simple_list};
 use quickwit_common::FileEntry;
+use quickwit_common::uri::Uri;
 use quickwit_config::{
     ConfigFormat, QuickwitConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
     INGEST_API_SOURCE_ID,
@@ -47,6 +50,7 @@ use crate::with_arg;
     delete_index,
     get_indexes_metadatas,
     list_splits,
+    describe_index,
     mark_splits_for_deletion,
     create_source,
     reset_source_checkpoint,
@@ -67,6 +71,7 @@ pub fn index_management_handlers(
         .or(delete_index_handler(index_service.clone()))
         // Splits handlers
         .or(list_splits_handler(index_service.metastore()))
+        .or(describe_index_handler(index_service.metastore()))
         .or(mark_splits_for_deletion_handler(index_service.metastore()))
         // Sources handlers.
         .or(reset_source_checkpoint_handler(index_service.metastore()))
@@ -138,6 +143,129 @@ fn get_indexes_metadatas_handler(
         .map(make_response)
 }
 
+
+
+// This structure represents describe Index
+
+#[derive(Serialize, Deserialize)]
+pub struct IndexStats {
+    pub index_id: String,
+    pub index_uri: Uri,
+    pub num_published_splits: usize,
+    pub num_published_docs: u64,
+    pub size_published_docs: Byte,
+    pub timestamp_field_name: Option<String>,
+    pub timestamp_range: Option<(i64, i64)>,
+}
+
+#[utoipa::path(
+    get,
+    tag = "Indexes",
+    path = "/indexes/{index_id}/describe",
+    responses(
+        (status = 200, description = "Successfully fetched stats about Index.", body = IndexStats)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to retrieve index metadata and split data."),
+    )
+)]
+
+// Get describe index
+async fn describe_index(
+    index_id: String,
+    metastore: Arc<dyn Metastore>,
+) -> Result<IndexStats, MetastoreError> {
+    
+    //get index_metadata struct
+    let index_metadata = metastore.index_metadata(&index_id).await;
+    let index_metadata = match index_metadata{
+        Ok(index_metadata) => index_metadata,
+        Err(e) => return Err(e)
+    };
+
+    //get splits_metadata struct
+    let query = ListSplitsQuery::for_index(&index_id);
+    let splits = metastore.list_splits(query).await;
+    let splits = match splits{
+        Ok(splits) => splits,
+        Err(e) => return Err(e)
+    };
+
+    let published_splits: Vec<Split> = splits
+            .into_iter()
+            .filter(|split| split.split_state == SplitState::Published)
+            .collect();
+    
+    let splits_num_docs = published_splits
+        .iter()
+        .map(|split| split.split_metadata.num_docs as u64)
+        .sorted()
+        .collect_vec();
+
+    let total_num_docs = splits_num_docs.iter().sum::<u64>();
+
+    let splits_bytes = published_splits
+        .iter()
+        .filter(|split| split.split_state == SplitState::Published)
+        .map(|split| split.split_metadata.footer_offsets.end)
+        .sorted()
+        .collect_vec();
+    let total_bytes = splits_bytes.iter().sum::<u64>();
+
+    let timestamp_range = if index_metadata
+        .index_config()
+        .doc_mapping
+        .timestamp_field
+        .is_some()
+    {
+        let time_min = published_splits
+            .iter()
+            .flat_map(|split| split.split_metadata.time_range.clone())
+            .map(|time_range| *time_range.start())
+            .min();
+        let time_max = published_splits
+            .iter()
+            .flat_map(|split| split.split_metadata.time_range.clone())
+            .map(|time_range| *time_range.end())
+            .max();
+        if let (Some(time_min), Some(time_max)) = (time_min, time_max) {
+            Some((time_min, time_max))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let index_config = index_metadata.into_index_config();
+
+    //initialize object index_stats
+    let index_stats = IndexStats{
+        index_id: String::from(index_id),
+        index_uri: index_config.index_uri.clone(),
+        num_published_splits: published_splits.len(),
+        num_published_docs: total_num_docs,
+        size_published_docs: Byte::from(total_bytes),
+        timestamp_field_name: index_config.doc_mapping.timestamp_field,
+        timestamp_range,
+    };
+    
+    Ok(index_stats)
+}
+
+
+fn describe_index_handler(
+    metastore: Arc<dyn Metastore>
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("indexes" / String / "describe")
+        .and(warp::get())
+        .and(with_arg(metastore))
+        .then(describe_index)
+        .and(extract_format_from_qs())
+        .map(make_response)
+}
+
+
 /// This struct represents the QueryString passed to
 /// the rest API to filter splits.
 #[derive(Debug, Clone, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema, Default)]
@@ -177,6 +305,8 @@ pub struct ListSplitsQueryParams {
         ("index_id" = String, Path, description = "The index ID to retrieve delete tasks for."),
     )
 )]
+
+
 /// Get splits.
 async fn list_splits(
     index_id: String,
