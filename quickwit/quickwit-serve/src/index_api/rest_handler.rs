@@ -41,18 +41,21 @@ use crate::format::{extract_format_from_qs, make_response};
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(
-    create_index,
-    clear_index,
-    delete_index,
-    get_indexes_metadatas,
-    list_splits,
-    mark_splits_for_deletion,
-    create_source,
-    reset_source_checkpoint,
-    toggle_source,
-    delete_source,
-))]
+#[openapi(
+    paths(
+        create_index,
+        clear_index,
+        delete_index,
+        get_indexes_metadatas,
+        list_splits,
+        mark_splits_for_deletion,
+        create_source,
+        reset_source_checkpoint,
+        toggle_source,
+        delete_source,
+    ),
+    components(schemas(ToggleSource, SplitsForDeletion,))
+)]
 pub struct IndexApi;
 
 pub fn index_management_handlers(
@@ -212,7 +215,7 @@ fn list_splits_handler(
         .map(make_response)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 struct SplitsForDeletion {
     pub split_ids: Vec<String>,
@@ -230,7 +233,7 @@ struct SplitsForDeletion {
         ("index_id" = String, Path, description = "The index ID to mark splits for deletion for."),
     )
 )]
-/// Mark splits for deletion.
+/// Marks splits for deletion.
 async fn mark_splits_for_deletion(
     index_id: String,
     splits_for_deletion: SplitsForDeletion,
@@ -268,7 +271,7 @@ fn mark_splits_for_deletion_handler(
         (status = 200, description = "Successfully fetched all indexes.", body = [VersionedIndexMetadata])
     ),
 )]
-/// Get Indexes Metadata
+/// Gets indexes metadata.
 async fn get_indexes_metadatas(
     metastore: Arc<dyn Metastore>,
 ) -> Result<Vec<IndexMetadata>, MetastoreError> {
@@ -313,7 +316,7 @@ fn create_index_handler(
         CreateIndexQueryParams,
     )
 )]
-/// Creates Index.
+/// Creates index.
 async fn create_index(
     create_index_query_params: CreateIndexQueryParams,
     config_format: ConfigFormat,
@@ -347,7 +350,7 @@ fn clear_index_handler(
 #[utoipa::path(
     put,
     tag = "Indexes",
-    path = "indexes/{index_id}",
+    path = "indexes/{index_id}/clear",
     responses(
         (status = 200, description = "Successfully cleared index.")
     ),
@@ -355,7 +358,7 @@ fn clear_index_handler(
         ("index_id" = String, Path, description = "The index ID to clear."),
     )
 )]
-/// Clears Index.
+/// Clears index.
 async fn clear_index(
     index_id: String,
     index_service: Arc<IndexService>,
@@ -396,7 +399,7 @@ fn delete_index_handler(
         ("index_id" = String, Path, description = "The index ID to delete."),
     )
 )]
-/// Delete Index
+/// Deletes index.
 async fn delete_index(
     index_id: String,
     delete_index_query_param: DeleteIndexQueryParam,
@@ -435,7 +438,6 @@ fn create_source_handler(
         ("index_id" = String, Path, description = "The index ID to create a source for."),
     )
 )]
-
 /// Creates Source.
 async fn create_source(
     index_id: String,
@@ -509,6 +511,7 @@ fn reset_source_checkpoint_handler(
         ("source_id" = String, Path, description = "The source ID whose checkpoint is reset."),
     )
 )]
+/// Resets source checkpoint.
 async fn reset_source_checkpoint(
     index_id: String,
     source_id: String,
@@ -532,7 +535,7 @@ fn toggle_source_handler(
         .map(make_response)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 struct ToggleSource {
     enable: bool,
@@ -551,6 +554,7 @@ struct ToggleSource {
         ("source_id" = String, Path, description = "The source ID to toggle."),
     )
 )]
+/// Toggles source.
 async fn toggle_source(
     index_id: String,
     source_id: String,
@@ -594,7 +598,7 @@ fn delete_source_handler(
         ("source_id" = String, Path, description = "The source ID to remove from the index."),
     )
 )]
-/// Delete Source
+/// Deletes source.
 async fn delete_source(
     index_id: String,
     source_id: String,

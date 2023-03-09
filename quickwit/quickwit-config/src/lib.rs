@@ -78,9 +78,14 @@ use crate::source_config::serialize::{SourceConfigV0_4, VersionedSourceConfig};
     FileSourceParams,
     KafkaSourceParams,
     KinesisSourceParams,
+    PulsarSourceParams,
+    PulsarSourceAuth,
     RegionOrEndpoint,
     ConstWriteAmplificationMergePolicyConfig,
     StableLogMergePolicyConfig,
+    TransformConfig,
+    VecSourceParams,
+    VoidSourceParams,
 )))]
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct ConfigApiSchemas;

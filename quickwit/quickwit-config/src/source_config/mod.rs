@@ -310,7 +310,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VecSourceParams {
     pub docs: Vec<String>,
@@ -319,7 +319,7 @@ pub struct VecSourceParams {
     pub partition: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
 
@@ -359,7 +359,7 @@ fn default_consumer_name() -> String {
     "quickwit".to_string()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TransformConfig {
     /// [VRL] source code of the transform compiled to a VRL [`Program`].
