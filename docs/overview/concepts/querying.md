@@ -1,12 +1,12 @@
 ---
 title: Querying
-sidebar_position: 3
+sidebar_position: 2
 ---
 
 Quickwit provides two endpoints with full-text search queries identified by the `query` parameter:
 
-- A search endpoint that returns a [JSON](../reference/rest-api.md)
-- A search stream endpoint that returns a stream of the requested [field values](../reference/rest-api.md)
+- A search endpoint that returns a [JSON](../../reference/rest-api.md)
+- A search stream endpoint that returns a stream of the requested [field values](../../reference/rest-api.md)
 
 A search query received by a searcher will be executed using a map-reduce approach following these steps:
 
@@ -27,7 +27,7 @@ The following query parameters are available to apply timestamped pruning to you
 
 ### Tag pruning
 
-Quickwit also provides pruning on a second dimension called `tags`. By [setting a field as tagged](../configuration/index-config.md) Quickwit will generate split metadata at indexing in order to filter splits that match requested tags at query time. Note that this metadata is only generated when the cardinality of the field is less than 1,000.
+Quickwit also provides pruning on a second dimension called `tags`. By [setting a field as tagged](../../configuration/index-config.md) Quickwit will generate split metadata at indexing in order to filter splits that match requested tags at query time. Note that this metadata is only generated when the cardinality of the field is less than 1,000.
 
 Tag pruning is notably useful on multi-tenant datasets.
 
@@ -103,4 +103,4 @@ Quickwit does caching in many places to deliver a highly performing query engine
 
 ### Scoring
 
-Quickwit supports sorting docs by their BM25 scores. In order to query by score, [fieldnorms](../configuration/index-config.md#text-type) must be enabled for the field. By default BM25 scoring is disabled to improve query times but it can be opt-in by setting `sort_by_field` option to `_score` in queries.
+Quickwit supports sorting docs by their BM25 scores. In order to query by score, [fieldnorms](../../configuration/index-config.md#text-type) must be enabled for the field. By default BM25 scoring is disabled to improve query times but it can be opt-in by setting `sort_by_field` option to `_score` in queries.

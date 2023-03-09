@@ -18,14 +18,16 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::sync::Arc;
 
-use futures::Future;
 use hyper::header::CONTENT_TYPE;
 use hyper::{http, Response, StatusCode, Uri};
 use quickwit_common::metrics;
 use quickwit_proto::ServiceErrorCode;
+use tower::make::Shared;
+use tower::ServiceBuilder;
+use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove};
+use tower_http::compression::CompressionLayer;
 use tracing::{error, info};
 use utoipa_swagger_ui::Config;
 use warp::path::{FullPath, Tail};
@@ -43,6 +45,10 @@ use crate::node_info_handler::node_info_handler;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
 use crate::{with_arg, BodyFormat, QuickwitServices};
+
+/// The minimum size a response body must be in order to
+/// be automatically compressed with gzip.
+const MINIMUM_RESPONSE_COMPRESSION_SIZE: u16 = 10 << 10;
 
 /// Starts REST services.
 pub(crate) async fn start_rest_server(
@@ -125,10 +131,23 @@ pub(crate) async fn start_rest_server(
         .with(request_counter)
         .recover(recover_fn);
 
+    let warp_service = warp::service(rest_routes);
+    let compression_predicate =
+        DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
+
+    let service = ServiceBuilder::new()
+        .layer(
+            CompressionLayer::new()
+                .gzip(true)
+                .compress_when(compression_predicate),
+        )
+        .service(warp_service);
+
     info!("Searcher ready to accept requests at http://{rest_listen_addr}/");
-    let rest_server: Pin<Box<dyn Future<Output = ()> + Send>> =
-        Box::pin(warp::serve(rest_routes).run(rest_listen_addr));
-    rest_server.await;
+
+    hyper::Server::bind(&rest_listen_addr)
+        .serve(Shared::new(service))
+        .await?;
     Ok(())
 }
 

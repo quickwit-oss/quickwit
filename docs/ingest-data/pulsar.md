@@ -1,31 +1,31 @@
 ---
-title: Ingest data from Pulsar
+title: Pulsar
 description: A short tutorial describing how to set up Quickwit to ingest data from Pulsar in a few minutes
 tags: [pulsar, integration]
 icon_url: /img/tutorials/pulsar.svg
-sidebar_position: 5
+sidebar_position: 3
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-In this tutorial, we will describe how to set up Quickwit to ingest data from Pulsar in a few minutes. First, we will create an index and configure a Pulsar source. Then, we will create a Pulsar topic and load some events from the [Stack Overflow dataset](link to SO) into it. Finally, we will execute some searches.
+In this tutorial, we will describe how to set up Quickwit to ingest data from Pulsar in a few minutes. First, we will create an index and configure a Pulsar source. Then, we will create a Pulsar topic and load some events from the [Stack Overflow dataset](https://www.kaggle.com/stackoverflow/stacksample) into it. Finally, we will execute some searches.
 
 ## Prerequisites
 
 You will need the following to complete this tutorial:
-- A local running [Quickwit instance](/docs/get-started/installation)
+- A local running [Quickwit instance](/docs/get-started/installation.md)
 - A local running [Pulsar instance](https://pulsar.apache.org/docs/next/getting-started-standalone/)
 
 ### Quickwit setup
 
-[Download](/docs/get-started/installation) Quicwkit and start a server. Then open a new terminal to execute CLI commands with the same binary. 
+[Download](/docs/get-started/installation.md) Quickwit and start a server. Then open a new terminal to execute CLI commands with the same binary. 
 
 ```bash
 ./quickwit run
 ```
 
-Test the cluster is running:
+Test that the cluster is running:
 
 ```bash
 ./quickwit index list

@@ -27,8 +27,8 @@ use quickwit_common::simple_list::{from_simple_list, to_simple_list};
 use quickwit_common::FileEntry;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    ConfigFormat, QuickwitConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
-    INGEST_API_SOURCE_ID,
+    load_source_config_from_user_config, ConfigFormat, QuickwitConfig, SourceConfig, SourceParams,
+    CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_metastore::{
@@ -44,19 +44,22 @@ use crate::format::{extract_format_from_qs, make_response};
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(
-    create_index,
-    clear_index,
-    delete_index,
-    get_indexes_metadatas,
-    list_splits,
-    describe_index,
-    mark_splits_for_deletion,
-    create_source,
-    reset_source_checkpoint,
-    toggle_source,
-    delete_source,
-))]
+#[openapi(
+    paths(
+        create_index,
+        clear_index,
+        delete_index,
+        get_indexes_metadatas,
+        list_splits,
+        describe_index,
+        mark_splits_for_deletion,
+        create_source,
+        reset_source_checkpoint,
+        toggle_source,
+        delete_source,
+    ),
+    components(schemas(ToggleSource, SplitsForDeletion,))
+)]
 pub struct IndexApi;
 
 pub fn index_management_handlers(
@@ -342,7 +345,7 @@ fn list_splits_handler(
         .map(make_response)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 struct SplitsForDeletion {
     pub split_ids: Vec<String>,
@@ -360,7 +363,7 @@ struct SplitsForDeletion {
         ("index_id" = String, Path, description = "The index ID to mark splits for deletion for."),
     )
 )]
-/// Mark splits for deletion.
+/// Marks splits for deletion.
 async fn mark_splits_for_deletion(
     index_id: String,
     splits_for_deletion: SplitsForDeletion,
@@ -398,7 +401,7 @@ fn mark_splits_for_deletion_handler(
         (status = 200, description = "Successfully fetched all indexes.", body = [VersionedIndexMetadata])
     ),
 )]
-/// Get Indexes Metadata
+/// Gets indexes metadata.
 async fn get_indexes_metadatas(
     metastore: Arc<dyn Metastore>,
 ) -> Result<Vec<IndexMetadata>, MetastoreError> {
@@ -443,7 +446,7 @@ fn create_index_handler(
         CreateIndexQueryParams,
     )
 )]
-/// Creates Index.
+/// Creates index.
 async fn create_index(
     create_index_query_params: CreateIndexQueryParams,
     config_format: ConfigFormat,
@@ -477,7 +480,7 @@ fn clear_index_handler(
 #[utoipa::path(
     put,
     tag = "Indexes",
-    path = "indexes/{index_id}",
+    path = "indexes/{index_id}/clear",
     responses(
         (status = 200, description = "Successfully cleared index.")
     ),
@@ -485,7 +488,7 @@ fn clear_index_handler(
         ("index_id" = String, Path, description = "The index ID to clear."),
     )
 )]
-/// Clears Index.
+/// Clears index.
 async fn clear_index(
     index_id: String,
     index_service: Arc<IndexService>,
@@ -526,7 +529,7 @@ fn delete_index_handler(
         ("index_id" = String, Path, description = "The index ID to delete."),
     )
 )]
-/// Delete Index
+/// Deletes index.
 async fn delete_index(
     index_id: String,
     delete_index_query_param: DeleteIndexQueryParam,
@@ -565,7 +568,6 @@ fn create_source_handler(
         ("index_id" = String, Path, description = "The index ID to create a source for."),
     )
 )]
-
 /// Creates Source.
 async fn create_source(
     index_id: String,
@@ -573,9 +575,9 @@ async fn create_source(
     source_config_bytes: Bytes,
     index_service: Arc<IndexService>,
 ) -> Result<SourceConfig, IndexServiceError> {
-    let source_config: SourceConfig = config_format
-        .parse(&source_config_bytes)
-        .map_err(IndexServiceError::InvalidConfig)?;
+    let source_config: SourceConfig =
+        load_source_config_from_user_config(config_format, &source_config_bytes)
+            .map_err(IndexServiceError::InvalidConfig)?;
     if let SourceParams::File(_) = &source_config.source_params {
         return Err(IndexServiceError::OperationNotAllowed(
             "File sources are limited to a local usage. Please use the CLI command `quickwit tool \
@@ -639,6 +641,7 @@ fn reset_source_checkpoint_handler(
         ("source_id" = String, Path, description = "The source ID whose checkpoint is reset."),
     )
 )]
+/// Resets source checkpoint.
 async fn reset_source_checkpoint(
     index_id: String,
     source_id: String,
@@ -662,7 +665,7 @@ fn toggle_source_handler(
         .map(make_response)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 struct ToggleSource {
     enable: bool,
@@ -681,6 +684,7 @@ struct ToggleSource {
         ("source_id" = String, Path, description = "The source ID to toggle."),
     )
 )]
+/// Toggles source.
 async fn toggle_source(
     index_id: String,
     source_id: String,
@@ -724,7 +728,7 @@ fn delete_source_handler(
         ("source_id" = String, Path, description = "The source ID to remove from the index."),
     )
 )]
-/// Delete Source
+/// Deletes source.
 async fn delete_source(
     index_id: String,
     source_id: String,
@@ -1405,7 +1409,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_source_with_bad_config() -> anyhow::Result<()> {
+    async fn test_create_source_with_bad_config() {
         let metastore = build_metastore_for_test().await;
         let index_service = IndexService::new(metastore, StorageUriResolver::for_test());
         let index_management_handler = super::index_management_handlers(
@@ -1413,17 +1417,34 @@ mod tests {
             Arc::new(QuickwitConfig::for_test()),
         )
         .recover(recover_fn);
-        let resp = warp::test::request()
-            .path("/indexes/my-index/sources")
-            .method("POST")
-            .json(&true)
-            .body(r#"{"version": 0.4, "source_id": "file-source"}"#)
-            .reply(&index_management_handler)
-            .await;
-        assert_eq!(resp.status(), 400);
-        let body = from_utf8_lossy(resp.body());
-        assert!(body.contains("invalid type: floating point `0.4`"));
-        Ok(())
+        {
+            // Source config with bad version.
+            let resp = warp::test::request()
+                .path("/indexes/my-index/sources")
+                .method("POST")
+                .json(&true)
+                .body(r#"{"version": 0.4, "source_id": "file-source"}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 400);
+            let body = from_utf8_lossy(resp.body());
+            assert!(body.contains("invalid type: floating point `0.4`"));
+        }
+        {
+            // Invalid pulsar source config with number of pipelines > 1, not supported yet.
+            let resp = warp::test::request()
+                .path("/indexes/my-index/sources")
+                .method("POST")
+                .json(&true)
+                .body(r#"{"version": "0.4", "source_id": "pulsar-source", "desired_num_pipelines": 2, "source_type": "pulsar", "params": {"topics": ["my-topic"], "address": "pulsar://localhost:6650" }}"#)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 400);
+            let body = from_utf8_lossy(resp.body());
+            println!("{}", body);
+            assert!(body
+                .contains("Quickwit currently supports multiple pipelines only for Kafka sources"));
+        }
     }
 
     #[tokio::test]

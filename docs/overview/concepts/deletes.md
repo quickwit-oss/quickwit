@@ -1,9 +1,9 @@
 ---
 title: Deletes
-sidebar_position: 4
+sidebar_position: 3
 ---
 
-Quickwit supports deletes thanks to the [delete API](../reference/rest-api.md#delete-api). It's important to note that this feature is mainly intended to comply with GDPR (General Data Protection Regulation) and should be used parsimoniously as deletes are expensive: typically a few queries per hour or day is recommended.
+Quickwit supports deletes thanks to the [delete API](../../reference/rest-api.md#delete-api). It's important to note that this feature is mainly intended to comply with GDPR (General Data Protection Regulation) and should be used parsimoniously as deletes are expensive: typically a few queries per hour or day is recommended.
 
 ## Delete tasks
 
@@ -17,13 +17,13 @@ Quickwit batches delete operations on a given split: for example, if a split has
 
 ## Delete API
 
-Delete tasks are created through the [Delete REST API](../reference/rest-api.md#delete-api).
+Delete tasks are created through the [Delete REST API](../../reference/rest-api.md#delete-api).
 
 ## Pitfalls
 
 ### Immature splits
 
-Delete operations are applied only to “mature” splits, that is splits that do not undergo merges. Whether a split is mature depends on the [merge policy](../configuration/index-config.md#merge-policies). It is possible to define `maturation_period` after which a split will be mature. Thus, a delete request created at `t0` will first apply deletes to mature splits and, in the worst case, will wait the `t0 maturation_period` for immature splits to become mature.
+Delete operations are applied only to “mature” splits, that is splits that do not undergo merges. Whether a split is mature depends on the [merge policy](../../configuration/index-config.md#merge-policies). It is possible to define `maturation_period` after which a split will be mature. Thus, a delete request created at `t0` will first apply deletes to mature splits and, in the worst case, will wait the `t0 maturation_period` for immature splits to become mature.
 
 
 ### Monitoring and dev XP

@@ -21,12 +21,12 @@ use std::collections::BTreeSet;
 use std::net::SocketAddr;
 
 use quickwit_config::service::QuickwitService;
-use quickwit_control_plane::grpc_adapter::GrpcControlPlaneAdapter;
+use quickwit_control_plane::control_plane_service_grpc_server::ControlPlaneServiceGrpcServer;
+use quickwit_control_plane::ControlPlaneServiceGrpcServerAdapter;
 use quickwit_indexing::grpc_adapter::GrpcIndexingAdapter;
 use quickwit_jaeger::JaegerService;
 use quickwit_metastore::GrpcMetastoreAdapter;
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTraceService};
-use quickwit_proto::control_plane_api::control_plane_service_server::ControlPlaneServiceServer;
 use quickwit_proto::indexing_api::indexing_service_server::IndexingServiceServer;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::metastore_api::metastore_api_service_server::MetastoreApiServiceServer;
@@ -72,10 +72,10 @@ pub(crate) async fn start_grpc_server(
     };
     // Mount gRPC control plane service if `QuickwitService::ControlPlane` is enabled on node.
     let control_plane_grpc_service = if services.services.contains(&QuickwitService::ControlPlane) {
-        if let Some(indexing_scheduler_service) = services.indexing_scheduler_service.as_ref() {
-            enabled_grpc_services.insert("control_plane");
-            let grpc_indexing = GrpcControlPlaneAdapter::from(indexing_scheduler_service.clone());
-            Some(ControlPlaneServiceServer::new(grpc_indexing))
+        if let Some(control_plane_client) = &services.control_plane_client {
+            enabled_grpc_services.insert("control-plane");
+            let adapter = ControlPlaneServiceGrpcServerAdapter::new(control_plane_client.clone());
+            Some(ControlPlaneServiceGrpcServer::new(adapter))
         } else {
             None
         }

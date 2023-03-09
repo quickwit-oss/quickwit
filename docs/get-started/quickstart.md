@@ -158,7 +158,7 @@ curl -XPOST http://127.0.0.1:7280/api/v1/indexes --header "content-type: applica
 
 </Tabs>
 
-Check that a directory `./qwdata/indexes/stackoverflow` has been created, Quickwit will write index files here and a `metastore.json` which contains the [index metadata](/docs/concepts/architecture.md#index).
+Check that a directory `./qwdata/indexes/stackoverflow` has been created, Quickwit will write index files here and a `metastore.json` which contains the [index metadata](../overview/architecture.md#index).
 You're now ready to fill the index.
 
 

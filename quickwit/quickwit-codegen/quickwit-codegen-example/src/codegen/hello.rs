@@ -53,6 +53,9 @@ impl HelloClient {
     {
         HelloClient::new(HelloMailbox::new(mailbox))
     }
+    pub fn tower() -> HelloTowerBlockBuilder {
+        HelloTowerBlockBuilder::default()
+    }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn mock() -> MockHello {
         MockHello::new()
@@ -76,7 +79,7 @@ impl From<MockHello> for HelloClient {
 pub type BoxFuture<T, E> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
 >;
-impl tower::Service<HelloRequest> for HelloClient {
+impl tower::Service<HelloRequest> for Box<dyn Hello> {
     type Response = HelloResponse;
     type Error = crate::HelloError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -90,6 +93,69 @@ impl tower::Service<HelloRequest> for HelloClient {
         let mut svc = self.clone();
         let fut = async move { svc.hello(request).await };
         Box::pin(fut)
+    }
+}
+/// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
+#[derive(Debug)]
+struct HelloTowerBlock {
+    hello_svc: quickwit_common::tower::BoxService<
+        HelloRequest,
+        HelloResponse,
+        crate::HelloError,
+    >,
+}
+impl Clone for HelloTowerBlock {
+    fn clone(&self) -> Self {
+        Self {
+            hello_svc: self.hello_svc.clone(),
+        }
+    }
+}
+#[async_trait::async_trait]
+impl Hello for HelloTowerBlock {
+    async fn hello(
+        &mut self,
+        request: HelloRequest,
+    ) -> crate::HelloResult<HelloResponse> {
+        self.hello_svc.ready().await?.call(request).await
+    }
+}
+#[derive(Debug, Default)]
+pub struct HelloTowerBlockBuilder {
+    hello_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn Hello>,
+            HelloRequest,
+            HelloResponse,
+            crate::HelloError,
+        >,
+    >,
+}
+impl HelloTowerBlockBuilder {
+    pub fn hello_layer(
+        mut self,
+        layer: quickwit_common::tower::BoxLayer<
+            Box<dyn Hello>,
+            HelloRequest,
+            HelloResponse,
+            crate::HelloError,
+        >,
+    ) -> Self {
+        self.hello_layer = Some(layer);
+        self
+    }
+    pub fn service<T>(self, instance: T) -> HelloClient
+    where
+        T: Hello + Clone,
+    {
+        let boxed_instance: Box<dyn Hello> = Box::new(instance);
+        let hello_svc = if let Some(layer) = self.hello_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
+        let tower_block = HelloTowerBlock { hello_svc };
+        HelloClient::new(tower_block)
     }
 }
 #[derive(Debug, Clone)]
@@ -128,7 +194,7 @@ impl<A: quickwit_actors::Actor> Clone for HelloMailbox<A> {
         Self { inner }
     }
 }
-use tower::Service;
+use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for HelloMailbox<A>
 where
     A: quickwit_actors::Actor + quickwit_actors::Handler<M, Reply = Result<T, E>> + Send

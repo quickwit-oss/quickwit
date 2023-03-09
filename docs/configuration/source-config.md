@@ -45,7 +45,7 @@ An ingest source reads data from the [Ingest API](/docs/reference/rest-api.md#in
 
 A Kafka source reads data from a Kafka stream. Each message in the stream must hold a JSON object.
 
-A tutorial is available [here](/docs/get-started/tutorials/kafka.md).
+A tutorial is available [here](/docs/ingest-data/kafka.md).
 
 #### Kafka source parameters
 
@@ -53,10 +53,10 @@ The Kafka source consumes a `topic` using the client library [librdkafka](https:
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| topic | Name of the topic to consume. | required |
-| client_log_level | librdkafka client log level. Possible values are: debug, info, warn, error. | info |
-| client_params | librdkafka client configuration parameters. | {} |
-| enable_backfill_mode | Backfill mode stops the source after reaching the end of the topic. | false |
+| `topic` | Name of the topic to consume. | required |
+| `client_log_level` | librdkafka client log level. Possible values are: debug, info, warn, error. | `info` |
+| `client_params` | librdkafka client configuration parameters. | `{}` |
+| `enable_backfill_mode` | Backfill mode stops the source after reaching the end of the topic. | `false` |
 
 **Kafka client parameters**
 
@@ -64,7 +64,7 @@ The Kafka source consumes a `topic` using the client library [librdkafka](https:
 Comma-separated list of host and port pairs that are the addresses of a subset of the Kafka brokers in the Kafka cluster.
 
 - `enable.auto.commit`
-The Kafka source manages commit offsets manually using the [checkpoint API](../concepts/indexing.md#checkpoint) and disables auto-commit.
+The Kafka source manages commit offsets manually using the [checkpoint API](../overview/concepts/indexing.md#checkpoint) and disables auto-commit.
 
 - `group.id`
 Kafka-based distributed indexing relies on consumer groups. The group ID assigned to each consumer managed by the source is `quickwit-{index_id}-{source_id}`.
@@ -92,7 +92,7 @@ EOF
 
 A Kinesis source reads data from an [Amazon Kinesis](https://aws.amazon.com/kinesis/) stream. Each message in the stream must hold a JSON object.
 
-A tutorial is available [here](/docs/get-started/tutorials/kinesis.md).
+A tutorial is available [here](/docs/ingest-data/kinesis.md).
 
 **Kinesis source parameters**
 
@@ -100,9 +100,9 @@ The Kinesis source consumes a stream identified by a `stream_name` and a `region
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| stream_name | Name of the stream to consume. | required |
-| region | The AWS region of the stream. Mutually exclusive with `endpoint`. | us-east-1 |
-| endpoint | Custom endpoint for use with AWS-compatible Kinesis service. Mutually exclusive with `region`. | optional |
+| `stream_name` | Name of the stream to consume. | required |
+| `region` | The AWS region of the stream. Mutually exclusive with `endpoint`. | `us-east-1` |
+| `endpoint` | Custom endpoint for use with AWS-compatible Kinesis service. Mutually exclusive with `region`. | optional |
 
 If no region is specified, Quickwit will attempt to find one in multiple other locations and with the following order of precedence:
 
@@ -131,7 +131,7 @@ quickwit source create --index my-index --source-config source-config.yaml
 
 A Puslar source reads data from one or several Pulsar topics. Each message in topic(s) must hold a JSON object.
 
-A tutorial is available [here](/docs/get-started/tutorials/pulsar.md).
+A tutorial is available [here](/docs/ingest-data/pulsar.md).
 
 **Pulsar source parameters**
 
@@ -139,9 +139,9 @@ The Pulsar source consumes `topics` using the client library [pulsar-rs](https:/
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| topics | List of topics to consume. | required |
-| address | Pulsar URL (pulsar:// and pulsar+ssl://). | required |
-| consumer_name | The consumer name to register with the pulsar source. | quickwit |
+| `topics` | List of topics to consume. | required |
+| `address` | Pulsar URL (pulsar:// and pulsar+ssl://). | required |
+| `consumer_name` | The consumer name to register with the pulsar source. | `quickwit` |
 
 *Adding a Pulsar source to an index with the [CLI](../reference/cli.md#source)*
 
@@ -197,8 +197,8 @@ For all source types but the `ingest-api`, ingested documents can be transformed
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| script | source code of the VRL program executed to transform documents | required |
-| timezone | Timezone used in the VRL program for date and time manipulations. Must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | UTC |
+| `script` | source code of the VRL program executed to transform documents | required |
+| `timezone` | Timezone used in the VRL program for date and time manipulations. Must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | `UTC` |
 
 ```yaml
 # Your source config here

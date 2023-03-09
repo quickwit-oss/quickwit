@@ -228,7 +228,7 @@ fn select_node_candidates<'a>(
                 node_id,
                 &indexing_task.index_id,
                 &indexing_task.source_id,
-            ) < source_config.max_num_pipelines_per_indexer()
+            ) < source_config.max_num_pipelines_per_indexer.get()
         })
         .collect_vec()
 }
@@ -295,8 +295,8 @@ pub(crate) fn build_indexing_plan(
             // The num desired pipelines is constrained by the number of indexer and the maximum
             // of pipelines that can run on each indexer.
             std::cmp::min(
-                source_config.desired_num_pipelines(),
-                source_config.max_num_pipelines_per_indexer() * indexers.len(),
+                source_config.desired_num_pipelines.get(),
+                source_config.max_num_pipelines_per_indexer.get() * indexers.len(),
             )
         };
         for _ in 0..num_pipelines {
@@ -313,6 +313,7 @@ pub(crate) fn build_indexing_plan(
 mod tests {
     use std::collections::{HashMap, HashSet};
     use std::net::SocketAddr;
+    use std::num::NonZeroUsize;
 
     use itertools::Itertools;
     use proptest::prelude::*;
@@ -368,8 +369,8 @@ mod tests {
             .iter()
             .map(|(_, source_config)| {
                 std::cmp::min(
-                    num_indexers * source_config.max_num_pipelines_per_indexer(),
-                    source_config.desired_num_pipelines(),
+                    num_indexers * source_config.max_num_pipelines_per_indexer.get(),
+                    source_config.desired_num_pipelines.get(),
                 )
             })
             .sum()
@@ -387,8 +388,8 @@ mod tests {
             index_source_id.clone(),
             SourceConfig {
                 source_id: index_source_id.source_id.to_string(),
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 3,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
                 transform_config: None,
@@ -421,8 +422,8 @@ mod tests {
             index_source_id.clone(),
             SourceConfig {
                 source_id: index_source_id.source_id.to_string(),
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 3,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
                 enabled: true,
                 source_params: SourceParams::IngestApi,
                 transform_config: None,
@@ -463,8 +464,8 @@ mod tests {
             file_index_source_id.clone(),
             SourceConfig {
                 source_id: file_index_source_id.source_id,
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 3,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
                 enabled: true,
                 source_params: SourceParams::File(FileSourceParams { filepath: None }),
                 transform_config: None,
@@ -474,8 +475,8 @@ mod tests {
             cli_ingest_index_source_id.clone(),
             SourceConfig {
                 source_id: cli_ingest_index_source_id.source_id,
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 3,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
                 enabled: true,
                 source_params: SourceParams::IngestCli,
                 transform_config: None,
@@ -485,8 +486,8 @@ mod tests {
             kafka_index_source_id.clone(),
             SourceConfig {
                 source_id: kafka_index_source_id.source_id,
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 3,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
                 enabled: false,
                 source_params: kafka_source_params_for_test(),
                 transform_config: None,
@@ -519,8 +520,8 @@ mod tests {
             kafka_index_source_id_1.clone(),
             SourceConfig {
                 source_id: kafka_index_source_id_1.source_id,
-                max_num_pipelines_per_indexer: 2,
-                desired_num_pipelines: 4,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+                desired_num_pipelines: NonZeroUsize::new(4).unwrap(),
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
                 transform_config: None,
@@ -530,8 +531,8 @@ mod tests {
             kafka_index_source_id_2.clone(),
             SourceConfig {
                 source_id: kafka_index_source_id_2.source_id,
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 2,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
                 transform_config: None,
@@ -597,8 +598,8 @@ mod tests {
             kafka_index_source_id_1.clone(),
             SourceConfig {
                 source_id: kafka_index_source_id_1.source_id,
-                max_num_pipelines_per_indexer: 1,
-                desired_num_pipelines: 2,
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+                desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
                 transform_config: None,
@@ -653,13 +654,13 @@ mod tests {
 
     prop_compose! {
       fn gen_kafka_source()
-        (index_idx in 0usize..100usize, desired_num_pipelines in 0usize..50usize, max_num_pipelines_per_indexer in 0usize..4usize) -> (String, SourceConfig) {
+        (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize, max_num_pipelines_per_indexer in 1usize..5usize) -> (String, SourceConfig) {
           let index_id = format!("index-id-{index_idx}");
           let source_id = append_random_suffix("kafka-source");
           (index_id, SourceConfig {
               source_id,
-              desired_num_pipelines,
-              max_num_pipelines_per_indexer,
+              desired_num_pipelines: NonZeroUsize::new(desired_num_pipelines).unwrap(),
+              max_num_pipelines_per_indexer: NonZeroUsize::new(max_num_pipelines_per_indexer).unwrap(),
               enabled: true,
               source_params: kafka_source_params_for_test(),
               transform_config: None,

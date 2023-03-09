@@ -280,6 +280,23 @@ pub struct IncompatibleCheckpointDelta {
     pub delta_position_from: Position,
 }
 
+#[derive(Clone, Debug, Error, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PartitionDeltaError {
+    #[error(transparent)]
+    IncompatibleCheckpointDelta(#[from] IncompatibleCheckpointDelta),
+    #[error(
+        "EmptyOrNegativeDelta at partition: {partition_id:?} {from_position:?} >= {to_position:?}"
+    )]
+    EmptyOrNegativeDelta {
+        /// One PartitionId for which the negative delta has been detected.
+        partition_id: PartitionId,
+        /// Delta from position.
+        from_position: Position,
+        /// Delta to position.
+        to_position: Position,
+    },
+}
+
 impl SourceCheckpoint {
     /// Returns the position reached for a given partition.
     pub fn position_for_partition(&self, partition_id: &PartitionId) -> Option<&Position> {
@@ -402,7 +419,7 @@ impl IndexCheckpointDelta {
     pub fn for_test(source_id: &str, pos_range: Range<u64>) -> Self {
         IndexCheckpointDelta {
             source_id: source_id.to_string(),
-            source_delta: SourceCheckpointDelta::from(pos_range),
+            source_delta: SourceCheckpointDelta::from_range(pos_range),
         }
     }
 }
@@ -434,8 +451,10 @@ impl fmt::Debug for SourceCheckpointDelta {
     }
 }
 
-impl From<Range<u64>> for SourceCheckpointDelta {
-    fn from(range: Range<u64>) -> Self {
+impl TryFrom<Range<u64>> for SourceCheckpointDelta {
+    type Error = PartitionDeltaError;
+
+    fn try_from(range: Range<u64>) -> Result<Self, Self::Error> {
         // Checkpoint delta are expressed as (from, to] intervals while ranges
         // are [start, end) intervals
         let from_position = if range.start == 0 {
@@ -457,15 +476,22 @@ impl From<Range<u64>> for SourceCheckpointDelta {
 }
 
 impl SourceCheckpointDelta {
+    /// Used for tests only.
+    /// Panics if the range is not strictly increasing.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn from_range(range: Range<u64>) -> Self {
+        SourceCheckpointDelta::try_from(range).expect("Invalid position range")
+    }
+
     /// Creates a new checkpoint delta initialized with a single partition delta.
     pub fn from_partition_delta(
         partition_id: PartitionId,
         from_position: Position,
         to_position: Position,
-    ) -> Self {
+    ) -> Result<Self, PartitionDeltaError> {
         let mut delta = SourceCheckpointDelta::default();
-        let _ = delta.record_partition_delta(partition_id, from_position, to_position);
-        delta
+        delta.record_partition_delta(partition_id, from_position, to_position)?;
+        Ok(delta)
     }
 
     /// Returns the checkpoint associated with the endpoint of the delta.
@@ -481,22 +507,29 @@ impl SourceCheckpointDelta {
         partition_id: PartitionId,
         from_position: Position,
         to_position: Position,
-    ) -> Result<(), IncompatibleCheckpointDelta> {
+    ) -> Result<(), PartitionDeltaError> {
+        // `from_position == to_position` means delta is empty.
+        if from_position >= to_position {
+            return Err(PartitionDeltaError::EmptyOrNegativeDelta {
+                partition_id,
+                from_position,
+                to_position,
+            });
+        }
         let entry = self.per_partition.entry(partition_id);
         match entry {
             Entry::Occupied(mut occupied_entry) => {
                 if occupied_entry.get().to == from_position {
                     occupied_entry.get_mut().to = to_position;
                 } else {
-                    return Err(IncompatibleCheckpointDelta {
+                    return Err(PartitionDeltaError::from(IncompatibleCheckpointDelta {
                         partition_id: occupied_entry.key().clone(),
                         current_position: occupied_entry.get().to.clone(),
                         delta_position_from: from_position,
-                    });
+                    }));
                 }
             }
             Entry::Vacant(vacant_entry) => {
-                assert!(from_position <= to_position);
                 let partition_delta = PartitionDelta {
                     from: from_position,
                     to: to_position,
@@ -510,10 +543,7 @@ impl SourceCheckpointDelta {
     /// Extends the current checkpoint delta in-place with the provided checkpoint delta.
     ///
     /// Contrary to checkpoint update, the two deltas here need to chain perfectly.
-    pub fn extend(
-        &mut self,
-        delta: SourceCheckpointDelta,
-    ) -> Result<(), IncompatibleCheckpointDelta> {
+    pub fn extend(&mut self, delta: SourceCheckpointDelta) -> Result<(), PartitionDeltaError> {
         for (partition_id, partition_delta) in delta.per_partition {
             self.record_partition_delta(partition_id, partition_delta.from, partition_delta.to)?;
         }
@@ -542,12 +572,12 @@ mod tests {
 
     #[test]
     fn test_delta_from_range() {
-        let checkpoint_delta = SourceCheckpointDelta::from(0..3);
+        let checkpoint_delta = SourceCheckpointDelta::from_range(0..3);
         assert_eq!(
             format!("{checkpoint_delta:?}"),
             "∆(:(..00000000000000000002])"
         );
-        let checkpoint_delta = SourceCheckpointDelta::from(1..4);
+        let checkpoint_delta = SourceCheckpointDelta::from_range(1..4);
         assert_eq!(
             format!("{checkpoint_delta:?}"),
             "∆(:(00000000000000000000..00000000000000000003])"
@@ -564,7 +594,8 @@ mod tests {
                 PartitionId::from("a"),
                 Position::from(123u64),
                 Position::from(128u64),
-            );
+            )
+            .unwrap();
             delta
                 .record_partition_delta(
                     PartitionId::from("b"),
@@ -595,7 +626,8 @@ mod tests {
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
-            );
+            )
+            .unwrap();
             delta.record_partition_delta(
                 PartitionId::from("b"),
                 Position::from("60002"),
@@ -608,8 +640,9 @@ mod tests {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00128"),
-                Position::from("00128"),
-            );
+                Position::from("00129"),
+            )
+            .unwrap();
             delta.record_partition_delta(
                 PartitionId::from("b"),
                 Position::from("50099"),
@@ -634,7 +667,8 @@ mod tests {
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
-            );
+            )
+            .unwrap();
             delta.record_partition_delta(
                 PartitionId::from("b"),
                 Position::from("60002"),
@@ -648,7 +682,8 @@ mod tests {
                 PartitionId::from("b"),
                 Position::from("60187"),
                 Position::from("60190"),
-            );
+            )
+            .unwrap();
             delta.record_partition_delta(
                 PartitionId::from("c"),
                 Position::from("20001"),
@@ -662,18 +697,21 @@ mod tests {
     }
 
     #[test]
-    fn test_extend_checkpoint_delta() -> anyhow::Result<()> {
+    fn test_extend_checkpoint_delta() {
         let mut delta1 = {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
-            );
-            delta.record_partition_delta(
-                PartitionId::from("b"),
-                Position::from("60002"),
-                Position::from("60187"),
-            )?;
+            )
+            .unwrap();
+            delta
+                .record_partition_delta(
+                    PartitionId::from("b"),
+                    Position::from("60002"),
+                    Position::from("60187"),
+                )
+                .unwrap();
             delta
         };
         let delta2 = {
@@ -681,12 +719,15 @@ mod tests {
                 PartitionId::from("b"),
                 Position::from("60187"),
                 Position::from("60348"),
-            );
-            delta.record_partition_delta(
-                PartitionId::from("c"),
-                Position::from("20001"),
-                Position::from("20008"),
-            )?;
+            )
+            .unwrap();
+            delta
+                .record_partition_delta(
+                    PartitionId::from("c"),
+                    Position::from("20001"),
+                    Position::from("20008"),
+                )
+                .unwrap();
             delta
         };
         let delta3 = {
@@ -694,43 +735,78 @@ mod tests {
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
-            );
-            delta.record_partition_delta(
-                PartitionId::from("b"),
-                Position::from("60002"),
-                Position::from("60348"),
-            )?;
-            delta.record_partition_delta(
-                PartitionId::from("c"),
-                Position::from("20001"),
-                Position::from("20008"),
-            )?;
+            )
+            .unwrap();
+            delta
+                .record_partition_delta(
+                    PartitionId::from("b"),
+                    Position::from("60002"),
+                    Position::from("60348"),
+                )
+                .unwrap();
+            delta
+                .record_partition_delta(
+                    PartitionId::from("c"),
+                    Position::from("20001"),
+                    Position::from("20008"),
+                )
+                .unwrap();
             delta
         };
-        delta1.extend(delta2)?;
+        delta1.extend(delta2).unwrap();
         assert_eq!(delta1, delta3);
 
         let delta4 = SourceCheckpointDelta::from_partition_delta(
             PartitionId::from("a"),
             Position::from("00130"),
             Position::from("00142"),
-        );
+        )
+        .unwrap();
         let result = delta1.extend(delta4);
         assert_eq!(
             result,
-            Err(IncompatibleCheckpointDelta {
+            Err(PartitionDeltaError::from(IncompatibleCheckpointDelta {
                 partition_id: PartitionId::from("a"),
                 current_position: Position::from("00128"),
                 delta_position_from: Position::from("00130")
-            })
+            }))
         );
-        Ok(())
     }
 
     #[test]
     fn test_position_u64() {
         let pos = Position::from(4u64);
         assert_eq!(pos.as_str(), "00000000000000000004");
+    }
+
+    #[test]
+    fn test_record_negative_partition_delta_is_failing() {
+        {
+            let delta_error = SourceCheckpointDelta::from_partition_delta(
+                PartitionId::from("a"),
+                Position::from("20"),
+                Position::from("20"),
+            )
+            .unwrap_err();
+            matches!(
+                delta_error,
+                PartitionDeltaError::EmptyOrNegativeDelta { .. }
+            );
+        }
+        {
+            let mut delta = SourceCheckpointDelta::from_range(10..20);
+            let delta_error = delta
+                .record_partition_delta(
+                    PartitionId::from("a"),
+                    Position::from("20"),
+                    Position::from("10"),
+                )
+                .unwrap_err();
+            matches!(
+                delta_error,
+                PartitionDeltaError::EmptyOrNegativeDelta { .. }
+            );
+        }
     }
 
     #[test]
@@ -763,7 +839,8 @@ mod tests {
             partition.clone(),
             Position::from(42u64),
             Position::from(43u64),
-        );
+        )
+        .unwrap();
         let checkpoint: SourceCheckpoint = delta.get_source_checkpoint();
         assert_eq!(
             checkpoint.position_for_partition(&partition).unwrap(),
