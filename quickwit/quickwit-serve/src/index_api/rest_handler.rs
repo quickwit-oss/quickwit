@@ -41,18 +41,21 @@ use crate::format::{extract_format_from_qs, make_response};
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(
-    create_index,
-    clear_index,
-    delete_index,
-    get_indexes_metadatas,
-    list_splits,
-    mark_splits_for_deletion,
-    create_source,
-    reset_source_checkpoint,
-    toggle_source,
-    delete_source,
-))]
+#[openapi(
+    paths(
+        create_index,
+        clear_index,
+        delete_index,
+        get_indexes_metadatas,
+        list_splits,
+        mark_splits_for_deletion,
+        create_source,
+        reset_source_checkpoint,
+        toggle_source,
+        delete_source,
+    ),
+    components(schemas(ToggleSource, SplitsForDeletion,))
+)]
 pub struct IndexApi;
 
 pub fn index_management_handlers(
@@ -212,7 +215,7 @@ fn list_splits_handler(
         .map(make_response)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 struct SplitsForDeletion {
     pub split_ids: Vec<String>,
