@@ -35,32 +35,45 @@ where T: Buf
 
 /// We can use this byte to track both commands and their version changes
 /// If serialization protocol changes, we can just use the next number
-const INGEST_CODE_V1: u8 = 0;
-const COMMIT_CODE_V1: u8 = 1;
+#[derive(Debug)]
+#[repr(u8)]
+pub enum DocCommandCode {
+    IngestV1 = 0,
+    CommitV1 = 1,
+}
+
+impl From<u8> for DocCommandCode {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => DocCommandCode::IngestV1,
+            1 => DocCommandCode::CommitV1,
+            other => panic!("Encountered unknown command: code {other}"),
+        }
+    }
+}
 
 impl<T> DocCommand<T>
 where T: Buf
 {
-    /// Returns the binary serializetion code of the current version of this command.
-    pub fn code(&self) -> u8 {
+    /// Returns the binary serialization code for the current version of this command.
+    pub fn code(&self) -> DocCommandCode {
         match self {
-            DocCommand::Ingest { payload: _ } => INGEST_CODE_V1,
-            DocCommand::Commit => COMMIT_CODE_V1,
+            DocCommand::Ingest { payload: _ } => DocCommandCode::IngestV1,
+            DocCommand::Commit => DocCommandCode::CommitV1,
         }
     }
 
     /// Builds a command for bytes::Buf
     pub fn read(mut buf: T) -> Self {
-        match buf.get_u8() {
-            INGEST_CODE_V1 => DocCommand::Ingest { payload: buf },
-            COMMIT_CODE_V1 => DocCommand::Commit,
-            other => panic!("Encountered unknown command: code {other}"),
+        match buf.get_u8().into() {
+            DocCommandCode::IngestV1 => DocCommand::Ingest { payload: buf },
+            DocCommandCode::CommitV1 => DocCommand::Commit,
         }
     }
 
     /// Copies the command to the end of bytes::BufMut while returning the number of bytes copied
     pub fn write(self, buf: &mut impl BufMut) -> usize {
-        buf.put_u8(self.code());
+        buf.put_u8(self.code() as u8);
         match self {
             DocCommand::Ingest { payload } => {
                 let len = payload.remaining();
@@ -148,7 +161,9 @@ impl JsonDocBatchBuilder {
     /// Adds an ingest command to the batch for a Serialize struct
     pub fn ingest_doc(&mut self, payload: impl Serialize) -> serde_json::Result<usize> {
         let old_len = self.concat_docs.get_ref().len();
-        self.concat_docs.get_mut().put_u8(INGEST_CODE_V1);
+        self.concat_docs
+            .get_mut()
+            .put_u8(DocCommandCode::IngestV1 as u8);
         let res = serde_json::to_writer(&mut self.concat_docs, &payload);
         let new_len = self.concat_docs.get_ref().len();
         if let Err(err) = res {
