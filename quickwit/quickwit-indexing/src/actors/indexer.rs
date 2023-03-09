@@ -1299,13 +1299,13 @@ mod tests {
         indexer_mailbox
             .send_message(PreparedDocBatch {
                 docs: vec![],
-                checkpoint_delta: SourceCheckpointDelta::from(4..6),
+                checkpoint_delta: SourceCheckpointDelta::from_range(4..6),
             })
             .await?;
         indexer_mailbox
             .send_message(PreparedDocBatch {
                 docs: vec![],
-                checkpoint_delta: SourceCheckpointDelta::from(6..8),
+                checkpoint_delta: SourceCheckpointDelta::from_range(6..8),
             })
             .await?;
         universe

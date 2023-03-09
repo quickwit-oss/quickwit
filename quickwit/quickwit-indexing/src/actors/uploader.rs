@@ -809,7 +809,7 @@ mod tests {
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let checkpoint_delta = IndexCheckpointDelta {
             source_id: "test-source".to_string(),
-            source_delta: SourceCheckpointDelta::from(3..15),
+            source_delta: SourceCheckpointDelta::from_range(3..15),
         };
         uploader_mailbox
             .send_message(EmptySplit {
@@ -848,7 +848,7 @@ mod tests {
         assert_eq!(checkpoint_delta.source_id, "test-source");
         assert_eq!(
             checkpoint_delta.source_delta,
-            SourceCheckpointDelta::from(3..15)
+            SourceCheckpointDelta::from_range(3..15)
         );
         assert!(replaced_split_ids.is_empty());
         let files = ram_storage.list_files().await;

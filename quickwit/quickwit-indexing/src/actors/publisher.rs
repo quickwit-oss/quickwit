@@ -282,7 +282,7 @@ mod tests {
                         && checkpoint_delta.source_id == "source"
                         && split_ids.is_empty()
                         && replaced_split_ids.is_empty()
-                        && checkpoint_delta.source_delta == SourceCheckpointDelta::from(1..3)
+                        && checkpoint_delta.source_delta == SourceCheckpointDelta::from_range(1..3)
                 },
             )
             .times(1)
@@ -306,7 +306,7 @@ mod tests {
                 replaced_split_ids: Vec::new(),
                 checkpoint_delta_opt: Some(IndexCheckpointDelta {
                     source_id: "source".to_string(),
-                    source_delta: SourceCheckpointDelta::from(1..3),
+                    source_delta: SourceCheckpointDelta::from_range(1..3),
                 }),
                 publish_lock: PublishLock::default(),
                 merge_operation: None,
