@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,7 +32,6 @@ use quickwit_config::SourceConfig;
 use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 use quickwit_indexing::indexing_client::IndexingServiceClient;
 use quickwit_metastore::Metastore;
-use quickwit_proto::control_plane_api::NotifyIndexChangeRequest;
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
 use serde::Serialize;
 use time::OffsetDateTime;
@@ -40,6 +40,7 @@ use tracing::{debug, error, info, warn};
 use crate::indexing_plan::{
     build_indexing_plan, build_physical_indexing_plan, IndexSourceId, PhysicalIndexingPlan,
 };
+use crate::{NotifyIndexChangeRequest, NotifyIndexChangeResponse};
 
 const REFRESH_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_secs(3)
@@ -65,12 +66,12 @@ pub struct IndexingSchedulerState {
 /// The scheduling executes the following steps:
 /// 1. Fetches all indexes metadata.
 /// 2. Builds an indexing plan = `[Vec<IndexingTask>]`, from the indexes metadatas.
-///    See [`build_indexing_plan`] for the implemention details.
+///    See [`build_indexing_plan`] for the implementation details.
 /// 3. Builds a [`PhysicalIndexingPlan`] from the list of indexing tasks.
-///    See [`build_physical_indexing_plan`] for the implemention details.
+///    See [`build_physical_indexing_plan`] for the implementation details.
 /// 4. Apply the [`PhysicalIndexingPlan`]: for each indexer, the scheduler send the indexing tasks
 ///    by gRPC. An indexer immediately returns an Ok and apply asynchronously the received plan.
-///    Any errors (network) happening in this step are ignored. The schduler runs a control loop
+///    Any errors (network) happening in this step are ignored. The scheduler runs a control loop
 ///    that regularly checks if indexers are effectively running their plans (more details in the
 ///    next section).
 ///
@@ -78,14 +79,14 @@ pub struct IndexingSchedulerState {
 /// certains conditions. The following events possibly trigger a scheduling:
 /// - [`NotifyIndexChangeRequest`]: this gRPC event is sent by a metastore node and will trigger a
 ///   scheduling on each event. TODO(fmassot): this can be refined by adding some relevant info to
-///   the event, example: the creation of a source of type `void` should not trigger a sheduling.
+///   the event, example: the creation of a source of type `void` should not trigger a scheduling.
 /// - [`RefreshPlanLoop`]: this event is scheduled every [`REFRESH_PLAN_LOOP_INTERVAL`] and triggers
 ///   a scheduling. Due to network issues, a control plane will not always receive the gRPC events
 ///   [`NotifyIndexChangeRequest`] and thus will not be aware of index changes in the metastore.
 ///   TODO(fmassot): to avoid a scheduling on each [`RefreshPlanLoop`], we can store in the
 ///   scheduler state a metastore version number that will be compared to the number stored in the
 ///   metastore itself.
-/// - [`ControlPlanLoop`]: this event is sheduled every [`HEARTBEAT`] and control if the `desired
+/// - [`ControlPlanLoop`]: this event is scheduled every [`HEARTBEAT`] and control if the `desired
 ///   plan`, that is the last applied [`PhysicalIndexingPlan`] by the scheduler, and the `running
 ///   plan`, that is the indexing tasks running on all indexers and retrieved from the chitchat
 ///   state, are the same. If not, the scheduler will trigger a scheduling.
@@ -98,6 +99,19 @@ pub struct IndexingScheduler {
     metastore: Arc<dyn Metastore>,
     indexing_client_pool: ServiceClientPool<IndexingServiceClient>,
     state: IndexingSchedulerState,
+}
+
+impl fmt::Debug for IndexingScheduler {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IndexingScheduler")
+            .field("cluster_id", &self.cluster.cluster_id)
+            .field("metastore_uri", &self.metastore.uri())
+            .field(
+                "last_applied_plan_ts",
+                &self.state.last_applied_plan_timestamp,
+            )
+            .finish()
+    }
 }
 
 #[async_trait]
@@ -186,7 +200,7 @@ impl IndexingScheduler {
             };
 
         // TODO(fmassot): once the actor framekwork can correctly simulate time advance, change
-        // `MIN_DURATION_BETWEEN_SCHEDULING_SECS` value for test and correclty test it. Currently, I
+        // `MIN_DURATION_BETWEEN_SCHEDULING_SECS` value for test and correctly test it. Currently, I
         // put its value 0 to make test simple.
         if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp.as_ref() {
             // If the last applied plan is empty, the node is probably starting and did not find
@@ -246,7 +260,7 @@ impl IndexingScheduler {
                         })
                         .await
                     {
-                        error!(indexer_node_id=%indexer.node_id, err=?error, "Error occured when appling indexing plan to indexer.");
+                        error!(indexer_node_id=%indexer.node_id, err=?error, "Error occurred when appling indexing plan to indexer.");
                     }
                 }
                 None => {
@@ -264,18 +278,18 @@ impl IndexingScheduler {
 
 #[async_trait]
 impl Handler<NotifyIndexChangeRequest> for IndexingScheduler {
-    type Reply = ();
+    type Reply = crate::Result<NotifyIndexChangeResponse>;
 
     async fn handle(
         &mut self,
         _: NotifyIndexChangeRequest,
         _: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        info!("Index change notification: shedule indexing plan.");
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        info!("Index change notification: schedule indexing plan.");
         self.schedule_indexing_plan()
             .await
             .context("Error when scheduling indexing plan")?;
-        Ok(())
+        Ok(Ok(NotifyIndexChangeResponse {}))
     }
 }
 
@@ -408,6 +422,7 @@ fn are_indexing_plans_equal(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::num::NonZeroUsize;
     use std::sync::Arc;
 
     use chitchat::transport::ChannelTransport;
@@ -432,8 +447,9 @@ mod tests {
         let source_config = SourceConfig {
             enabled: true,
             source_id: source_id.to_string(),
-            max_num_pipelines_per_indexer,
-            desired_num_pipelines,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(max_num_pipelines_per_indexer)
+                .unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(desired_num_pipelines).unwrap(),
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "topic".to_string(),
                 client_log_level: None,

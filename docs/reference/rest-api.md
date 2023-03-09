@@ -7,7 +7,12 @@ sidebar_position: 1
 
 All the API endpoints start with the `api/v1/` prefix. `v1` indicates that we are currently using version 1 of the API.
 
-### Parameters
+
+## OpenAPI specification
+
+The OpenAPI specification of the REST API is available at `/openapi.json` and a Swagger UI version is available at `/swagger-ui`.
+
+## Parameters
 
 Parameters passed in the URL must be properly URL-encoded, using the UTF-8 encoding for non-ASCII characters.
 
@@ -15,15 +20,15 @@ Parameters passed in the URL must be properly URL-encoded, using the UTF-8 encod
 GET [..]/search?query=barack%20obama
 ```
 
-### Error handling
+## Error handling
 
 Successful requests return a 2xx HTTP status code.
 
-Failed requests return a 4xx HTTP status code. The response body of failed requests holds a JSON object containing an `error_message` field that describes the error.
+Failed requests return a 4xx HTTP status code. The response body of failed requests holds a JSON object containing an `message` field that describes the error.
 
 ```json
 {
- "error_message": "Failed to parse query"
+ "message": "Failed to parse query"
 }
 ```
 
@@ -49,22 +54,22 @@ POST api/v1/<index id>/search
 
 | Variable      | Description   |
 | ------------- | ------------- |
-| **index id**  | The index id  |
+| `index id`  | The index id  |
 
 #### Parameters
 
 | Variable            | Type       | Description                                                                                                                                            | Default value                                      |
 |---------------------|------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------|
-| **query**           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                                                                |                                                    |
-| **start_timestamp** | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds.                                              |                                                    |
-| **end_timestamp**   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.                                                 |                                                    |
-| **start_offset**    | `Integer`  | Number of documents to skip                                                                                                                            | `0`                                                |
-| **max_hits**        | `Integer`  | Maximum number of hits to return (by default 20)                                                                                                       | `20`                                               |
-| **search_field**    | `[String]` | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2"                                             | index_config.search_settings.default_search_fields |
-| **snippet_fields**  | `[String]` | Fields to extract snippet on. Comma-separated list, e.g. "field1,field2"                                                                               |                                                    |
-| **sort_by_field**   | `String`   | Field to sort query results by. You can sort by a field (must be a fast field) and by BM25 `_score`. By default, hits are sorted by their document ID. |                                                    |
-| **format**          | `Enum`     | The output format. Allowed values are "json" or "pretty_json"                                                                                           | `pretty_json`                                       |
-| **aggs**            | `JSON`     | The aggregations request. See the [aggregations doc](aggregation.md) for supported aggregations.                                                       |                                                    |
+| `query`           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                                                                |                                                    |
+| `start_timestamp` | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds.                                              |                                                    |
+| `end_timestamp`   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.                                                 |                                                    |
+| `start_offset`    | `Integer`  | Number of documents to skip                                                                                                                            | `0`                                                |
+| `max_hits`        | `Integer`  | Maximum number of hits to return (by default 20)                                                                                                       | `20`                                               |
+| `search_field`    | `[String]` | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2"                                             | index_config.search_settings.default_search_fields |
+| `snippet_fields`  | `[String]` | Fields to extract snippet on. Comma-separated list, e.g. "field1,field2"                                                                               |                                                    |
+| `sort_by_field`   | `String`   | Field to sort query results by. You can sort by a field (must have fieldnorms and fast field) and by BM25 `_score`. By default, hits are sorted by their document ID. |                                                    |
+| `format`          | `Enum`     | The output format. Allowed values are "json" or "pretty_json"                                                                                           | `pretty_json`                                       |
+| `aggs`            | `JSON`     | The aggregations request. See the [aggregations doc](aggregation.md) for supported aggregations.                                                       |                                                    |
 
 :::info
 The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision.
@@ -76,9 +81,9 @@ The response is a JSON object, and the content type is `application/json; charse
 
 | Field                   | Description                    | Type       |
 | --------------------    | ------------------------------ | :--------: |
-| **hits**                | Results of the query           | `[hit]`    |
-| **num_hits**            | Total number of matches        | `number`   |
-| **elapsed_time_micros** | Processing time of the query   | `number`   |
+| `hits`                | Results of the query           | `[hit]`    |
+| `num_hits`            | Total number of matches        | `number`   |
+| `elapsed_time_micros` | Processing time of the query   | `number`   |
 
 ### Search stream in an index
 
@@ -107,20 +112,20 @@ The endpoint will return 10 million values if 10 million documents match the que
 
 | Variable      | Description   |
 | ------------- | ------------- |
-| **index id**  | The index id  |
+| `index id`  | The index id  |
 
 #### Get parameters
 
 | Variable            | Type       | Description                                                                                                      | Default value                                      |
 |---------------------|------------|------------------------------------------------------------------------------------------------------------------|----------------------------------------------------|
-| **query**           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                          |                                                    |
-| **fast_field**      | `String`   | Name of a field to retrieve from documents. This field must be a fast field of type `i64` or `u64`. (mandatory) |                                                    |
-| **search_field**    | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2"                                                  | index_config.search_settings.default_search_fields |
-| **start_timestamp** | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds.        |                                                    |
-| **end_timestamp**   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.           |                                                    |
-| **partition_by_field**   | `String`      | If set, the endpoint returns chunks of data for each partition field value. This field must be a fast field of type `i64` or `u64`.           |                                                    |
+| `query`           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                          |                                                    |
+| `fast_field`      | `String`   | Name of a field to retrieve from documents. This field must be a fast field of type `i64` or `u64`. (mandatory) |                                                    |
+| `search_field`    | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2"                                                  | index_config.search_settings.default_search_fields |
+| `start_timestamp` | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds.        |                                                    |
+| `end_timestamp`   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.           |                                                    |
+| `partition_by_field`   | `String`      | If set, the endpoint returns chunks of data for each partition field value. This field must be a fast field of type `i64` or `u64`.           |                                                    |
 
-| **output_format**   | `String`   | Response output format. `csv` or `clickHouseRowBinary`                                                           | `csv`                                              |
+| `output_format`   | `String`   | Response output format. `csv` or `clickHouseRowBinary`                                                           | `csv`                                              |
 
 :::info
 The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision.
@@ -155,7 +160,7 @@ The payload size is limited to 10MB as this endpoint is intended to receive docu
 
 | Variable      | Description   |
 | ------------- | ------------- |
-| **index id**  | The index id  |
+| `index id`  | The index id  |
 
 #### Response
 
@@ -163,7 +168,7 @@ The response is a JSON object, and the content type is `application/json; charse
 
 | Field                       | Description                                                                                                                                                              |   Type   |
 |-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------:|
-| **num_docs_for_processing** | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
+| `num_docs_for_processing` | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
 
 ### Ingest data with Elasticsearch compatible API
 
@@ -195,10 +200,10 @@ The response is a JSON object, and the content type is `application/json; charse
 
 | Field                       | Description                                                                                                                                                              |   Type   |
 |-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------:|
-| **num_docs_for_processing** | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
+| `num_docs_for_processing` | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
 
 
-## Index management API
+## Index API
 
 ### Create an index
 
@@ -206,19 +211,19 @@ The response is a JSON object, and the content type is `application/json; charse
 POST api/v1/indexes
 ```
 
-Create an index by posting an `IndexConfig` JSON payload.
+Create an index by posting an `IndexConfig` payload. The API accepts JSON wiht `content-type: application/json`) and YAML `content-type: application/yaml`.
 
 #### POST payload
 
 | Variable              | Type               | Description                                                                                                           | Default value                         |
 |-----------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------|---------------------------------------|
-| **version**           | `String`           | Config format version, use the same as your Quickwit version. (mandatory)                                             |                                       |
-| **index_id**          | `String`           | Index ID, see its [validation rules](../configuration/index-config.md#index-id) on identifiers. (mandatory)           |                                       |
-| **index_uri**         | `String`           | Defines where the index files are stored. This parameter expects a [storage URI](../reference/storage-uri).           | `{default_index_root_uri}/{index_id}` |
-| **doc_mapping**       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping) (mandatory)  |                                       |
-| **indexing_settings** | `IndexingSettings` | Indexing settings object as specified in the [index config docs](../configuration/index-config.md#indexing-settings). |                                       |
-| **search_settings**   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).     |                                       |
-| **retention**         | `Retention`        | Retention policy object as specified in the [index config docs](../configuration/index-config.md#retention-policy).   |                                       |
+| `version`          | `String`           | Config format version, use the same as your Quickwit version. (mandatory)                                             |                                       |
+| `index_id`          | `String`           | Index ID, see its [validation rules](../configuration/index-config.md#index-id) on identifiers. (mandatory)           |                                       |
+| `index_uri`         | `String`           | Defines where the index files are stored. This parameter expects a [storage URI](../reference/storage-uri).           | `{default_index_root_uri}/{index_id}` |
+| `doc_mapping`       | `DocMapping`       | Doc mapping object as specified in the [index config docs](../configuration/index-config.md#doc-mapping) (mandatory)  |                                       |
+| `indexing_settings` | `IndexingSettings` | Indexing settings object as specified in the [index config docs](../configuration/index-config.md#indexing-settings). |                                       |
+| `search_settings`   | `SearchSettings`   | Search settings object as specified in the [index config docs](../configuration/index-config.md#search-settings).     |                                       |
+| `retention`         | `Retention`        | Retention policy object as specified in the [index config docs](../configuration/index-config.md#retention-policy).   |                                       |
 
 
 **Payload Example**
@@ -286,10 +291,10 @@ The response is the index metadata of the created index, and the content type is
 
 | Field                | Description                               |         Type          |
 |----------------------|-------------------------------------------|:---------------------:|
-| **index_config**     | The posted index config.                  |     `IndexConfig`     |
-| **checkpoint**       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
-| **create_timestamp** | Index creation timestamp                  |       `number`        |
-| **sources**          | List of the index sources configurations. | `Array<SourceConfig>` |
+| `index_config`     | The posted index config.                  |     `IndexConfig`     |
+| `checkpoint`       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
+| `create_timestamp` | Index creation timestamp                  |       `number`        |
+| `sources`          | List of the index sources configurations. | `Array<SourceConfig>` |
 
 
 ### Get an index metadata
@@ -306,10 +311,21 @@ The response is the index metadata of the requested index, and the content type 
 
 | Field                | Description                               |         Type          |
 |----------------------|-------------------------------------------|:---------------------:|
-| **index_config**     | The posted index config.                  |     `IndexConfig`     |
-| **checkpoint**       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
-| **create_timestamp** | Index creation timestamp.                 |       `number`        |
-| **sources**          | List of the index sources configurations. | `Array<SourceConfig>` |
+| `index_config`     | The posted index config.                  |     `IndexConfig`     |
+| `checkpoint`       | Map of checkpoints by source.             |   `IndexCheckpoint`   |
+| `create_timestamp` | Index creation timestamp.                 |       `number`        |
+| `sources`          | List of the index sources configurations. | `Array<SourceConfig>` |
+
+
+### Clears an index
+
+```
+PUT api/v1/indexes/<index id>/clear
+```
+
+Clears index of ID `index id`: all splits will be deleted (metastore + storage) and all source checkpoints will be reset.
+
+It returns an empty body.
 
 
 ### Delete an index
@@ -358,11 +374,11 @@ Create source by posting a source config JSON payload.
 
 | Variable          | Type     | Description                                                                                          | Default value |
 |-------------------|----------|------------------------------------------------------------------------------------------------------|---------------|
-| **version**       | `String` | Config format version, put your current Quickwit version. (mandatory)                                |               |
-| **source_id**     | `String` | Source ID. See ID [validation rules](../configuration/source-config.md)(mandatory)                   |               |
-| **source_type**   | `String` | Source type: `kafka`, `kinesis`, `file`. (mandatory)                                                 |               |
-| **num_pipelines** | `usize`  | Number of running indexing pipelines per node for this source.                                       | 1             |
-| **params**        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). (mandatory) |               |
+| `version**       | `String` | Config format version, put your current Quickwit version. (mandatory)                                |               |
+| `source_id`     | `String` | Source ID. See ID [validation rules](../configuration/source-config.md)(mandatory)                   |               |
+| `source_type`   | `String` | Source type: `kafka`, `kinesis`, `file`. (mandatory)                                                 |               |
+| `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                                       | 1             |
+| `params`        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). (mandatory) |               |
 
 
 **Payload Example**
@@ -387,6 +403,31 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes/my-index/sources --data @source_c
 
 The response is the created source config, and the content type is `application/json; charset=UTF-8.`
 
+### Toggle source
+
+```
+PUT api/v1/indexes/<index id>/sources/<source id>/toggle
+```
+
+Toggle (enable/disable) source `source id` of index ID `index id`.
+
+It returns an empty body.
+
+#### PUT payload
+
+| Variable          | Type     | Description                                                                                          |
+|-------------------|----------|------------------------------------------------------------------------------------------------------|
+| `enable`       | `bool` | If `true` enable the source, else disable it.                                |
+
+### Reset source checkpoint
+
+```
+PUT api/v1/indexes/<index id>/sources/<source id>/reset-checkpoint
+```
+
+Resets checkpoints of source `source id` of index ID `index id`.
+
+It returns an empty body.
 
 ### Delete a source
 
@@ -409,7 +450,7 @@ GET api/v1/cluster?format=pretty_json
 
 Name | Type | Description | Default value
 --- | --- | --- | ---
-**format** | `String` | The output format requested for the response: `json` or `pretty_json` | `pretty_json`
+`format` | `String` | The output format requested for the response: `json` or `pretty_json` | `pretty_json`
 
 
 ## Delete API
@@ -429,7 +470,7 @@ The endpoint simply appends your delete task to the delete task queue in the met
 
 | Variable      | Description   |
 | ------------- | ------------- |
-| **index id**  | The index id  |
+| `index id`  | The index id  |
 
 
 #### POST payload `DeleteQuery`
@@ -437,10 +478,10 @@ The endpoint simply appends your delete task to the delete task queue in the met
 
 | Variable            | Type       | Description                                                                                               | Default value                                      |
 |---------------------|------------|-----------------------------------------------------------------------------------------------------------|----------------------------------------------------|
-| **query**           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                   |                                                    |
-| **search_field**    | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2"                                           | index_config.search_settings.default_search_fields |
-| **start_timestamp** | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds. |                                                    |
-| **end_timestamp**   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.    |                                                    |
+| `query`           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                   |                                                    |
+| `search_field`    | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2"                                           | index_config.search_settings.default_search_fields |
+| `start_timestamp` | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds. |                                                    |
+| `end_timestamp`   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.    |                                                    |
 
 
 **Example**
@@ -459,9 +500,9 @@ The response is the created delete task represented in JSON, `DeleteTask`, the c
 
 | Field                | Description                                            |     Type      |
 |----------------------|--------------------------------------------------------|:-------------:|
-| **create_timestamp** | Create timestamp of the delete query in seconds        |     `i64`     |
-| **opstamp**          | Unique operation stamp associated with the delete task |     `u64`     |
-| **delete_query**     | The posted delete query                                | `DeleteQuery` |
+| `create_timestamp` | Create timestamp of the delete query in seconds        |     `i64`     |
+| `opstamp`          | Unique operation stamp associated with the delete task |     `u64`     |
+| `delete_query`     | The posted delete query                                | `DeleteQuery` |
 
 
 ### GET a delete query

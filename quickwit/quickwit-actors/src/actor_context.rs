@@ -226,7 +226,7 @@ impl<A: Actor> ActorContext<A> {
     /// more indicated.
     ///
     /// Droppping the receiver channel will not cancel the
-    /// processing of the messsage. It is a very common usage.
+    /// processing of the message. It is a very common usage.
     /// In fact most actors are expected to send message in a
     /// fire-and-forget fashion.
     ///

@@ -17,13 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub(crate) fn mean(values: &[usize]) -> f32 {
+pub(crate) fn mean(values: &[u64]) -> f32 {
     assert!(!values.is_empty());
-    let sum: usize = values.iter().sum();
+    let sum: u64 = values.iter().sum();
     sum as f32 / values.len() as f32
 }
 
-pub(crate) fn std_deviation(values: &[usize]) -> f32 {
+pub(crate) fn std_deviation(values: &[u64]) -> f32 {
     assert!(!values.is_empty());
     let mean = mean(values);
     let variance = values
@@ -38,7 +38,7 @@ pub(crate) fn std_deviation(values: &[usize]) -> f32 {
 }
 
 /// Return percentile of sorted values using linear interpolation.
-pub(crate) fn percentile(sorted_values: &[usize], percent: usize) -> f32 {
+pub(crate) fn percentile(sorted_values: &[u64], percent: usize) -> f32 {
     assert!(!sorted_values.is_empty());
     assert!(percent <= 100);
     if sorted_values.len() == 1 {

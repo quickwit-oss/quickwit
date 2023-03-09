@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-// This file is an integration test that assumes that the environement
+// This file is an integration test that assumes that the environment
 // makes it possible to connect to Amazon S3's quickwit-integration-test bucket.
 
 use std::path::Path;

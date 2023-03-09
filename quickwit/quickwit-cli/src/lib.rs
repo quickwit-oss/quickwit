@@ -76,6 +76,7 @@ fn config_cli_arg<'a>() -> Arg<'a> {
 fn cluster_endpoint_arg<'a>() -> Arg<'a> {
     arg!(--"endpoint" <QW_CLUSTER_ENDPOINT> "Quickwit cluster endpoint.")
         .default_value("http://127.0.0.1:7280")
+        .env("QW_CLUSTER_ENDPOINT")
         .required(false)
         .display_order(1)
         .global(true)
@@ -125,7 +126,7 @@ async fn load_quickwit_config(config_uri: &Uri) -> anyhow::Result<QuickwitConfig
 }
 
 /// Runs connectivity checks for a given `metastore_uri` and `index_id`.
-/// Optionaly, it takes a `SourceConfig` that will be checked instead
+/// Optionally, it takes a `SourceConfig` that will be checked instead
 /// of the index's sources.
 pub async fn run_index_checklist(
     metastore_uri: &Uri,

@@ -19,7 +19,7 @@
 
 //! This crate contains all of the building pieces that make quickwit's IO possible.
 //!
-//! - The `StorageDirectory` justs wraps a `Storage` trait to make it compatible with tantivy's
+//! - The `StorageDirectory` just wraps a `Storage` trait to make it compatible with tantivy's
 //!   Directory API.
 //! - The `BundleDirectory` bundles multiple files into a single file.
 //! - The `HotDirectory` wraps another directory with a static cache.

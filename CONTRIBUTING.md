@@ -44,6 +44,7 @@ You will be notified by email from the CI system if any issues are discovered, b
 * `make -k test-all docker-compose-down` - the same as above, but tears down the Docker services after running all the tests.
 * `make fmt` - runs formatter, this command requires the nightly toolchain to be installed by running `rustup toolchain install nightly`.
 * `make fix` - runs formatter and clippy checks.
+* `make typos` - runs the spellcheck tool over the codebase. (Install by running `cargo install typos`)
 * `make build-docs` - builds docs.
 * `make docker-compose-up` - starts Docker services.
 * `make docker-compose-down` - stops Docker services.

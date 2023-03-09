@@ -28,7 +28,7 @@ pub struct MultiPartPolicy {
     pub target_part_num_bytes: usize,
     /// Maximum number of parts allowed.
     pub max_num_parts: usize,
-    /// Threshold above which multipart is trigged.
+    /// Threshold above which multipart is triggered.
     pub multipart_threshold_num_bytes: u64,
     /// Maximum size allowed for an object.
     pub max_object_num_bytes: u64,
@@ -45,7 +45,7 @@ impl MultiPartPolicy {
     pub fn part_num_bytes(&self, len: u64) -> u64 {
         assert!(
             len < self.max_object_num_bytes,
-            "This objet storage does not support object of that size {}",
+            "This object storage does not support object of that size {}",
             self.max_object_num_bytes
         );
         assert!(

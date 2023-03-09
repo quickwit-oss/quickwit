@@ -376,7 +376,7 @@ mod tests {
         let garbage_collect_actor =
             GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
         let universe = Universe::with_accelerated_time();
-        let (_maibox, handler) = universe.spawn_builder().spawn(garbage_collect_actor);
+        let (_mailbox, handler) = universe.spawn_builder().spawn(garbage_collect_actor);
 
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);
@@ -437,7 +437,7 @@ mod tests {
         let garbage_collect_actor =
             GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
         let universe = Universe::with_accelerated_time();
-        let (_maibox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
+        let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_passes, 1);
@@ -488,7 +488,7 @@ mod tests {
         let garbage_collect_actor =
             GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
         let universe = Universe::with_accelerated_time();
-        let (_maibox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
+        let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_passes, 1);
@@ -520,7 +520,7 @@ mod tests {
         let garbage_collect_actor =
             GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
         let universe = Universe::with_accelerated_time();
-        let (_maibox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
+        let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_passes, 1);
@@ -589,7 +589,7 @@ mod tests {
         let garbage_collect_actor =
             GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
         let universe = Universe::with_accelerated_time();
-        let (_maibox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
+        let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_passes, 1);
@@ -661,7 +661,7 @@ mod tests {
         let garbage_collect_actor =
             GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
         let universe = Universe::with_accelerated_time();
-        let (_maibox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
+        let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_passes, 1);

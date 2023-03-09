@@ -53,9 +53,8 @@ pub fn cluster_handler(
         (status = 200, description = "Successfully fetched cluster information.", body = ClusterSnapshot)
     )
 )]
-/// Get Cluster
-///
-/// Get cluster information based on a provided filter.
+
+/// Get cluster information.
 async fn get_cluster(cluster: Arc<Cluster>) -> Result<ClusterSnapshot, Infallible> {
     let snapshot = cluster.snapshot().await;
     Ok(snapshot)

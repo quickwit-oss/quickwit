@@ -244,7 +244,7 @@ impl Actor for Uploader {
         // a queue capacity.
         //
         // Having a large queue is costly too, because each message is a handle over
-        // a split directory. We DO need agressive backpressure here.
+        // a split directory. We DO need aggressive backpressure here.
         QueueCapacity::Bounded(0)
     }
 
@@ -275,7 +275,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         // This is not a valid usage of protected zone here.
         //
         // Protected zone are supposed to be used when the cause for blocking is
-        // outside of the responsability of the current actor.
+        // outside of the responsibility of the current actor.
         // For instance, when sending a message on a downstream actor with a saturated
         // mailbox.
         // This is meant to be fixed with ParallelActors.
@@ -502,7 +502,7 @@ mod tests {
         let split_scratch_directory = ScratchDirectory::for_test();
         let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
             source_id: "test-source".to_string(),
-            source_delta: SourceCheckpointDelta::from(3..15),
+            source_delta: SourceCheckpointDelta::from_range(3..15),
         });
         uploader_mailbox
             .send_message(PackagedSplitBatch::new(
@@ -562,7 +562,7 @@ mod tests {
         assert_eq!(checkpoint_delta.source_id, "test-source");
         assert_eq!(
             checkpoint_delta.source_delta,
-            SourceCheckpointDelta::from(3..15)
+            SourceCheckpointDelta::from_range(3..15)
         );
         assert!(replaced_split_ids.is_empty());
         let mut files = ram_storage.list_files().await;
@@ -744,7 +744,7 @@ mod tests {
         let split_scratch_directory = ScratchDirectory::for_test();
         let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
             source_id: "test-source".to_string(),
-            source_delta: SourceCheckpointDelta::from(3..15),
+            source_delta: SourceCheckpointDelta::from_range(3..15),
         });
         uploader_mailbox
             .send_message(PackagedSplitBatch::new(

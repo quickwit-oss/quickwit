@@ -106,7 +106,7 @@ See our [Scaleway Setup Guide](../guides/storage-setup/scaleway-setup.md) for th
 
 ### Garage
 
-[Garage](https://garagehq.deuxfleurs.fr/) is an Open-Souce lightweight and efficient object storage.
+[Garage](https://garagehq.deuxfleurs.fr/) is an Open-Source lightweight and efficient object storage.
 
 To use it with Quickwit, you will need to setup the region, as mentioned in [Garage documentation](https://garagehq.deuxfleurs.fr/documentation/connect/), it's often set just to `garage`.
 

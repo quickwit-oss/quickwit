@@ -232,7 +232,7 @@ pub fn elastic_bulk_handler(
     post,
     tag = "Ingest",
     path = "/_bulk",
-    request_body(content = String, description = "Elasticsearch compatible bulk resquest body limited to 10MB", content_type = "application/json"),
+    request_body(content = String, description = "Elasticsearch compatible bulk request body limited to 10MB", content_type = "application/json"),
     responses(
         (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
     ),

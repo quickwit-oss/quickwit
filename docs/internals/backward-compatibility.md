@@ -15,7 +15,7 @@ Stored in metastore only:
 - FileBackedIndex
 - SplitMetadata.
 
-Quickwit currently manages backward compatibiltiy of all of these resources but QuickwitConfig.
+Quickwit currently manages backward compatibility of all of these resources but QuickwitConfig.
 This document describes how to handle a change, and how to make test such a change,
 and spot eventual regression.
 

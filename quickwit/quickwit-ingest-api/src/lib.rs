@@ -38,6 +38,7 @@ pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::IngestApiConfig;
 use tokio::sync::Mutex;
+#[path = "codegen/ingest_service.rs"]
 mod ingest_service;
 pub use ingest_service::*;
 

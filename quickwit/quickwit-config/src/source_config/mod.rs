@@ -19,6 +19,7 @@
 
 pub(crate) mod serialize;
 
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -28,13 +29,14 @@ use quickwit_common::{is_false, no_color};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
+pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
 use tracing::warn;
 use vrl::diagnostic::Formatter;
 use vrl::{CompilationResult, Program, TimeZone};
 
-use crate::{ConfigFormat, TestableForRegression};
+use crate::TestableForRegression;
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_INGEST_SOURCE_ID: &str = "_ingest-cli-source";
@@ -48,26 +50,25 @@ pub const INGEST_API_SOURCE_ID: &str = "_ingest-api-source";
 pub struct SourceConfig {
     pub source_id: String,
 
-    #[doc(hidden)]
     /// Maximum number of indexing pipelines spawned for the source on a given indexer.
     /// The maximum is reached only if there is enough `desired_num_pipelines` to run.
-    /// The value is only used by sources that Quickwit knows how to distribute accross
+    /// The value is only used by sources that Quickwit knows how to distribute across
     /// pipelines/nodes, that is for Kafka sources only.
     /// Example:
     /// - `max_num_pipelines_per_indexer=2`
     /// - `desired_num_pipelines=1`
     /// => Only one pipeline will run on one indexer.
-    pub max_num_pipelines_per_indexer: usize,
+    pub max_num_pipelines_per_indexer: NonZeroUsize,
     /// Number of desired indexing pipelines to run on a cluster for the source.
     /// This number could not be reach if there is not enough indexers.
-    /// The value is only used by sources that Quickwit knows how to distribute accross
+    /// The value is only used by sources that Quickwit knows how to distribute across
     /// pipelines/nodes, that is for Kafka sources only.
     /// Example:
     /// - `max_num_pipelines_per_indexer=1`
     /// - `desired_num_pipelines=2`
     /// - 1 indexer
     /// => Only one pipeline will start on the sole indexer.
-    pub desired_num_pipelines: usize,
+    pub desired_num_pipelines: NonZeroUsize,
 
     // Denotes if this source is enabled.
     pub enabled: bool,
@@ -80,30 +81,6 @@ pub struct SourceConfig {
 }
 
 impl SourceConfig {
-    /// Parses and validates a [`SourceConfig`] from a given URI and config content.
-    pub fn load(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
-        let config_format = ConfigFormat::sniff_from_uri(uri)?;
-        let source_config: SourceConfig = config_format.parse(file_content)?;
-        source_config.validate()?;
-        Ok(source_config)
-    }
-
-    fn validate(&self) -> anyhow::Result<()> {
-        if self.source_type() != "kafka" && (self.desired_num_pipelines > 1) {
-            warn!("Quickwit currently supports multiple pipelines only for Kafka sources. Open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types.");
-        }
-        if self.desired_num_pipelines == 0 {
-            bail!("Source config is not valid: `desired_num_pipelines` must be strictly positive.");
-        }
-        if self.max_num_pipelines_per_indexer == 0 {
-            bail!(
-                "Source config is not valid: `max_num_pipelines_per_indexer` must be strictly \
-                 positive."
-            );
-        }
-        Ok(())
-    }
-
     pub fn source_type(&self) -> &str {
         match self.source_params {
             SourceParams::File(_) => "file",
@@ -132,28 +109,12 @@ impl SourceConfig {
         .unwrap()
     }
 
-    /// Returns `desired_num_pipelines` if it's a Kafka source, else 1.
-    pub fn desired_num_pipelines(&self) -> usize {
-        match &self.source_params {
-            SourceParams::Kafka(_) => self.desired_num_pipelines,
-            _ => 1,
-        }
-    }
-
-    /// Returns `max_num_pipelines_per_indexer` if it's a Kafka source, else 1.
-    pub fn max_num_pipelines_per_indexer(&self) -> usize {
-        match &self.source_params {
-            SourceParams::Kafka(_) => self.max_num_pipelines_per_indexer,
-            _ => 1,
-        }
-    }
-
     /// Creates the default ingest-api source config.
-    pub fn ingest_api_default() -> SourceConfig {
-        SourceConfig {
+    pub fn ingest_api_default() -> Self {
+        Self {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,
@@ -161,13 +122,25 @@ impl SourceConfig {
     }
 
     /// Creates the default cli-ingest source config.
-    pub fn cli_ingest_source() -> SourceConfig {
-        SourceConfig {
+    pub fn cli_ingest_source() -> Self {
+        Self {
             source_id: CLI_INGEST_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::IngestCli,
+            transform_config: None,
+        }
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(source_id: &str, source_params: SourceParams) -> Self {
+        Self {
+            source_id: source_id.to_string(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            enabled: true,
+            source_params,
             transform_config: None,
         }
     }
@@ -177,8 +150,8 @@ impl TestableForRegression for SourceConfig {
     fn sample_for_regression() -> Self {
         SourceConfig {
             source_id: "kafka-source".to_string(),
-            max_num_pipelines_per_indexer: 2,
-            desired_num_pipelines: 2,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "kafka-topic".to_string(),
@@ -337,7 +310,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VecSourceParams {
     pub docs: Vec<String>,
@@ -346,7 +319,7 @@ pub struct VecSourceParams {
     pub partition: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
 
@@ -361,6 +334,11 @@ pub struct PulsarSourceParams {
     #[serde(default = "default_consumer_name")]
     /// The name to register with the pulsar source.
     pub consumer_name: String,
+    // Serde yaml has some specific behaviour when deserializing
+    // enums (see https://github.com/dtolnay/serde-yaml/issues/342)
+    // and requires explicitly stating `default` in order to make the parameter
+    // optional on the yaml config.
+    #[serde(default, with = "serde_yaml::with::singleton_map")]
     /// Authentication for pulsar.
     pub authentication: Option<PulsarSourceAuth>,
 }
@@ -381,7 +359,7 @@ fn default_consumer_name() -> String {
     "quickwit".to_string()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TransformConfig {
     /// [VRL] source code of the transform compiled to a VRL [`Program`].
@@ -475,12 +453,13 @@ mod tests {
         let source_config_filepath = get_source_config_filepath("kafka-source.json");
         let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
         let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
+        let config_format = ConfigFormat::sniff_from_uri(&source_config_uri).unwrap();
         let source_config =
-            SourceConfig::load(&source_config_uri, file_content.as_bytes()).unwrap();
+            load_source_config_from_user_config(config_format, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kafka-source".to_string(),
-            max_num_pipelines_per_indexer: 2,
-            desired_num_pipelines: 2,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "cloudera-cluster-logs".to_string(),
@@ -494,7 +473,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines(), 2);
+        assert_eq!(source_config.desired_num_pipelines.get(), 2);
     }
 
     #[test]
@@ -570,12 +549,13 @@ mod tests {
         let source_config_filepath = get_source_config_filepath("kinesis-source.yaml");
         let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
         let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
+        let config_format = ConfigFormat::sniff_from_uri(&source_config_uri).unwrap();
         let source_config =
-            SourceConfig::load(&source_config_uri, file_content.as_bytes()).unwrap();
+            load_source_config_from_user_config(config_format, file_content.as_bytes()).unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kinesis-source".to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Kinesis(KinesisSourceParams {
                 stream_name: "emr-cluster-logs".to_string(),
@@ -588,19 +568,118 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines(), 1);
+        assert_eq!(source_config.desired_num_pipelines.get(), 1);
     }
 
     #[tokio::test]
     async fn test_load_invalid_source_config() {
-        let source_config_filepath = get_source_config_filepath("invalid-void-source.json");
-        let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
-        let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
-        let source_config =
-            SourceConfig::load(&source_config_uri, file_content.as_bytes()).unwrap_err();
-        assert!(source_config
-            .to_string()
-            .contains("`desired_num_pipelines` must be"));
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-void-source",
+                "desired_num_pipelines": 0,
+                "max_num_pipelines_per_indexer": 1,
+                "source_type": "void",
+                "params": {}
+            }
+            "#;
+            let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                .unwrap_err();
+            assert!(error
+                .to_string()
+                .contains("`desired_num_pipelines` must be"));
+        }
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-void-source",
+                "desired_num_pipelines": 1,
+                "max_num_pipelines_per_indexer": 0,
+                "source_type": "void",
+                "params": {}
+            }
+            "#;
+            let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                .unwrap_err();
+            assert!(error
+                .to_string()
+                .contains("`max_num_pipelines_per_indexer` must be"));
+        }
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-void-source",
+                "desired_num_pipelines": 1,
+                "max_num_pipelines_per_indexer": 2,
+                "source_type": "void",
+                "params": {}
+            }
+            "#;
+            let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                .unwrap_err();
+            assert!(error.to_string().contains("supports multiple pipelines"));
+        }
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-void-source",
+                "desired_num_pipelines": 2,
+                "max_num_pipelines_per_indexer": 1,
+                "source_type": "void",
+                "params": {}
+            }
+            "#;
+            let error = load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                .unwrap_err();
+            assert!(error.to_string().contains("supports multiple pipelines"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_load_valid_distributed_source_config() {
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-kafka-source",
+                "desired_num_pipelines": 3,
+                "max_num_pipelines_per_indexer": 3,
+                "source_type": "kafka",
+                "params": {
+                    "topic": "my-topic"
+                }
+            }
+            "#;
+            let source_config =
+                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                    .unwrap();
+            assert_eq!(source_config.desired_num_pipelines.get(), 3);
+            assert_eq!(source_config.max_num_pipelines_per_indexer.get(), 3);
+        }
+        {
+            let content = r#"
+            {
+                "version": "0.4",
+                "source_id": "hdfs-logs-pulsar-source",
+                "desired_num_pipelines": 3,
+                "max_num_pipelines_per_indexer": 3,
+                "source_type": "pulsar",
+                "params": {
+                    "topics": ["my-topic"],
+                    "address": "http://localhost:6650"
+                }
+            }
+            "#;
+            load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                .unwrap_err();
+            // TODO: uncomment asserts once distributed indexing is activated for pulsar.
+            // assert_eq!(source_config.desired_num_pipelines(), 3);
+            // assert_eq!(source_config.max_num_pipelines_per_indexer(), 3);
+        }
     }
 
     #[test]
@@ -706,6 +785,129 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_pulsar_source_params_deserialization() {
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://localhost:6560
+                    consumer_name: my-pulsar-consumer
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: "my-pulsar-consumer".to_string(),
+                    authentication: None,
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://localhost:6560
+                    consumer_name: my-pulsar-consumer
+                    authentication:
+                        token: my-token
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: "my-pulsar-consumer".to_string(),
+                    authentication: Some(PulsarSourceAuth::Token("my-token".to_string())),
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://localhost:6560
+                    consumer_name: my-pulsar-consumer
+                    authentication:
+                        oauth2:
+                            issuer_url: https://my-issuer:9000/path
+                            credentials_url: https://my-credentials.com/path
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: "my-pulsar-consumer".to_string(),
+                    authentication: Some(PulsarSourceAuth::Oauth2 {
+                        issuer_url: "https://my-issuer:9000/path".to_string(),
+                        credentials_url: "https://my-credentials.com/path".to_string(),
+                        audience: None,
+                        scope: None,
+                    }),
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://localhost:6560
+                    consumer_name: my-pulsar-consumer
+                    authentication:
+                        oauth2:
+                            issuer_url: https://my-issuer:9000/path
+                            credentials_url: https://my-credentials.com/path
+                            audience: my-audience
+                            scope: "read+write"
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: "my-pulsar-consumer".to_string(),
+                    authentication: Some(PulsarSourceAuth::Oauth2 {
+                        issuer_url: "https://my-issuer:9000/path".to_string(),
+                        credentials_url: "https://my-credentials.com/path".to_string(),
+                        audience: Some("my-audience".to_string()),
+                        scope: Some("read+write".to_string()),
+                    }),
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                "#;
+            serde_yaml::from_str::<PulsarSourceParams>(yaml)
+                .expect_err("Parameters should error on missing address");
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://localhost:6560
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: default_consumer_name(),
+                    authentication: None,
+                }
+            );
+        }
+    }
+
     #[tokio::test]
     async fn test_load_ingest_api_source_config() {
         let source_config_filepath = get_source_config_filepath("ingest-api-source.json");
@@ -713,8 +915,8 @@ mod tests {
         let source_config: SourceConfig = ConfigFormat::Json.parse(&file_content).unwrap();
         let expected_source_config = SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
-            max_num_pipelines_per_indexer: 1,
-            desired_num_pipelines: 1,
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: Some(TransformConfig {
@@ -723,7 +925,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
-        assert_eq!(source_config.desired_num_pipelines(), 1);
+        assert_eq!(source_config.desired_num_pipelines.get(), 1);
     }
 
     #[test]

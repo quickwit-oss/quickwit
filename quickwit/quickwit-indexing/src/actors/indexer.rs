@@ -642,7 +642,7 @@ mod tests {
                         num_bytes: 30,
                     },
                 ],
-                checkpoint_delta: SourceCheckpointDelta::from(4..6),
+                checkpoint_delta: SourceCheckpointDelta::from_range(4..6),
             })
             .await?;
         indexer_mailbox
@@ -667,7 +667,7 @@ mod tests {
                         num_bytes: 30,
                     },
                 ],
-                checkpoint_delta: SourceCheckpointDelta::from(6..8),
+                checkpoint_delta: SourceCheckpointDelta::from_range(6..8),
             })
             .await?;
         indexer_mailbox
@@ -681,7 +681,7 @@ mod tests {
                     partition: 1,
                     num_bytes: 30,
                 }],
-                checkpoint_delta: SourceCheckpointDelta::from(8..9),
+                checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
             })
             .await?;
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
@@ -706,7 +706,7 @@ mod tests {
         assert_eq!(index_checkpoint.source_id, "test-source");
         assert_eq!(
             index_checkpoint.source_delta,
-            SourceCheckpointDelta::from(4..8)
+            SourceCheckpointDelta::from_range(4..8)
         );
         let first_split = batch.splits.into_iter().next().unwrap().finalize()?;
         assert!(first_split.index.settings().sort_by_field.is_none());
@@ -767,7 +767,7 @@ mod tests {
             indexer_mailbox
                 .send_message(PreparedDocBatch {
                     docs: vec![make_doc(i)],
-                    checkpoint_delta: SourceCheckpointDelta::from(i..i + 1),
+                    checkpoint_delta: SourceCheckpointDelta::from_range(i..i + 1),
                 })
                 .await?;
             let output_messages: Vec<IndexedSplitBatchBuilder> =
@@ -834,7 +834,7 @@ mod tests {
                     partition: 1,
                     num_bytes: 30,
                 }],
-                checkpoint_delta: SourceCheckpointDelta::from(8..9),
+                checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
             })
             .await
             .unwrap();
@@ -920,7 +920,7 @@ mod tests {
                     partition: 1,
                     num_bytes: 30,
                 }],
-                checkpoint_delta: SourceCheckpointDelta::from(8..9),
+                checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
             })
             .await
             .unwrap();
@@ -1012,7 +1012,7 @@ mod tests {
                         num_bytes: 30,
                     },
                 ],
-                checkpoint_delta: SourceCheckpointDelta::from(8..9),
+                checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
             })
             .await?;
 
@@ -1092,7 +1092,7 @@ mod tests {
                         partition,
                         num_bytes: 30,
                     }],
-                    checkpoint_delta: SourceCheckpointDelta::from(partition..partition + 1),
+                    checkpoint_delta: SourceCheckpointDelta::from_range(partition..partition + 1),
                 })
                 .await
                 .unwrap();
@@ -1171,7 +1171,7 @@ mod tests {
                         partition: 0,
                         num_bytes: 30,
                     }],
-                    checkpoint_delta: SourceCheckpointDelta::from(0..1),
+                    checkpoint_delta: SourceCheckpointDelta::from_range(0..1),
                 })
                 .await
                 .unwrap();
@@ -1243,7 +1243,7 @@ mod tests {
                     partition: 0,
                     num_bytes: 30,
                 }],
-                checkpoint_delta: SourceCheckpointDelta::from(0..1),
+                checkpoint_delta: SourceCheckpointDelta::from_range(0..1),
             })
             .await
             .unwrap();

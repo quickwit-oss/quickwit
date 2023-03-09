@@ -9,7 +9,7 @@ Quickwit lets you place the cursor on how strict you would like your schema to b
 
 :::note
 
-To execute the CLI commands thoughout this guide, [install](/docs/get-started/installation.md) Quickwit and start a server in a terminal with the following command:
+To execute the CLI commands throughout this guide, [install](/docs/get-started/installation.md) Quickwit and start a server in a terminal with the following command:
 
 ```bash
 ./quickwit run

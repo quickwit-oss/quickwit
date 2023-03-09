@@ -138,11 +138,11 @@ pub struct NamedField {
 
 clone_trait_object!(DocMapper);
 
-/// Informations about what a DocMapper think should be warmed up before
+/// Information about what a DocMapper think should be warmed up before
 /// running the query.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct WarmupInfo {
-    /// Name of fields from the term dictionnary which needs to be entirely
+    /// Name of fields from the term dictionary which needs to be entirely
     /// loaded
     pub term_dict_field_names: HashSet<String>,
     /// Name of fields from the posting lists which needs to be entirely

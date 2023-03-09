@@ -31,6 +31,7 @@ dialoguer = { workspace = true }
 futures = { workspace = true }
 humansize = { workspace = true }
 humantime = { workspace = true }
+indicatif = { workspace = true }
 itertools = { workspace = true }
 once_cell = { workspace = true }
 opentelemetry = { workspace = true }
@@ -75,6 +76,7 @@ predicates = { workspace = true }
 reqwest = { workspace = true }
 serial_test = { workspace = true }
 
+quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
@@ -89,14 +91,17 @@ release-feature-set = [
   "quickwit-metastore/azure",
   "quickwit-indexing/kafka",
   "quickwit-indexing/kinesis",
+  "quickwit-indexing/pulsar",
   "openssl-support",
   "jemalloc",
 ]
+
 release-feature-vendored-set = [
   "quickwit-metastore/postgres",
   "quickwit-metastore/azure",
   "quickwit-indexing/vendored-kafka",
   "quickwit-indexing/kinesis",
+  "quickwit-indexing/pulsar",
   "openssl-support",
   "jemalloc",
 ]
@@ -106,6 +111,7 @@ release-macos-feature-vendored-set = [
   "quickwit-metastore/azure",
   "quickwit-indexing/vendored-kafka-macos",
   "quickwit-indexing/kinesis",
+  "quickwit-indexing/pulsar",
   "openssl-support",
   "jemalloc",
 ]

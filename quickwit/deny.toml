@@ -66,7 +66,7 @@ ignore = [
 [licenses]
 # The lint level for crates which do not have a detectable license
 unlicensed = "deny"
-# List of explictly allowed licenses
+# List of explicitly allowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
 # [possible values: any SPDX 3.11 short identifier (+ optional exception)].
 allow = [
@@ -85,7 +85,7 @@ allow = [
     "Zlib",
     "zlib-acknowledgement",
 ]
-# List of explictly disallowed licenses
+# List of explicitly disallowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
 # [possible values: any SPDX 3.11 short identifier (+ optional exception)].
 deny = [

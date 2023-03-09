@@ -31,8 +31,8 @@ use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
-    Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint, SpanKind as QwSpanKind,
-    SpanStatus as QwSpanStatus, OTEL_TRACE_INDEX_ID,
+    B64TraceId, Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint,
+    SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId, OTEL_TRACE_INDEX_ID,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -45,9 +45,10 @@ use quickwit_proto::jaeger::storage::v1::{
     SpansResponseChunk, TraceQueryParameters,
 };
 use quickwit_proto::{ListTermsRequest, SearchRequest};
-use quickwit_search::SearchService;
+use quickwit_search::{FindTraceIdsCollector, SearchService};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
+use tantivy::collector::Collector;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
@@ -62,9 +63,6 @@ mod metrics;
 
 // OpenTelemetry to Jaeger Transformation
 // <https://opentelemetry.io/docs/reference/specification/trace/sdk_exporters/jaeger/>
-
-/// A base64-encoded 16-byte array.
-type TraceId = String;
 
 type TimeIntervalSecs = RangeInclusive<i64>;
 
@@ -171,13 +169,12 @@ impl JaegerService {
             .query
             .ok_or_else(|| Status::invalid_argument("Query is empty."))?;
 
-        let (trace_ids_b64, _) = self.find_trace_ids(trace_query).await?;
-        debug!(trace_ids=?trace_ids_b64, "`find_trace_ids` response");
-
-        let trace_ids = trace_ids_b64
+        let (trace_ids, _) = self.find_trace_ids(trace_query).await?;
+        let trace_ids = trace_ids
             .into_iter()
-            .map(|trace_id_b64| base64_decode(trace_id_b64.as_bytes(), "trace ID"))
-            .collect::<Result<_, _>>()?;
+            .map(|trace_id| trace_id.b64_decode().to_vec())
+            .collect();
+        debug!(trace_ids=?trace_ids, "`find_trace_ids` response");
         let response = FindTraceIDsResponse { trace_ids };
         Ok(response)
     }
@@ -212,7 +209,10 @@ impl JaegerService {
         request_start: Instant,
     ) -> JaegerResult<SpanStream> {
         debug!(request=?request, "`get_trace` request");
-        let trace_id = BASE64_STANDARD.encode(request.trace_id);
+        debug_assert_eq!(request.trace_id.len(), 16);
+        let trace_id = TraceId::try_from(request.trace_id)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?
+            .b64_encode();
         let end = OffsetDateTime::now_utc().unix_timestamp();
         let start = end - self.lookback_period_secs;
         let search_window = start..=end;
@@ -226,7 +226,7 @@ impl JaegerService {
     async fn find_trace_ids(
         &self,
         trace_query: TraceQueryParameters,
-    ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
+    ) -> Result<(Vec<B64TraceId>, TimeIntervalSecs), Status> {
         let index_id = OTEL_TRACE_INDEX_ID.to_string();
         let span_kind_opt = None;
         let min_span_start_timestamp_secs_opt = trace_query.start_time_min.map(|ts| ts.seconds);
@@ -269,15 +269,14 @@ impl JaegerService {
             return Ok((Vec::new(), 0..=0));
         };
         let trace_ids = collect_trace_ids(&agg_result_json)?;
-        debug!(trace_ids=?trace_ids.0, "The query matched {} traces.", trace_ids.0.len());
-
+        debug!("The query matched {} traces.", trace_ids.0.len());
         Ok(trace_ids)
     }
 
     #[instrument("stream_spans", skip_all, fields(num_traces=%trace_ids.len(), num_spans=Empty, num_bytes=Empty))]
     async fn stream_spans(
         &self,
-        trace_ids: &[TraceId],
+        trace_ids: &[B64TraceId],
         search_window: TimeIntervalSecs,
         operation_name: &'static str,
         request_start: Instant,
@@ -294,8 +293,10 @@ impl JaegerService {
                 query.push_str(" OR ");
             }
             query.push_str("trace_id:");
-            query.push_str(trace_id);
+            query.push_str(trace_id.as_str())
         }
+        debug!(query=%query, "Fetch spans query");
+
         let search_request = SearchRequest {
             index_id: OTEL_TRACE_INDEX_ID.to_string(),
             query,
@@ -650,28 +651,12 @@ fn build_search_query(
 }
 
 fn build_aggregations_query(num_traces: usize) -> String {
-    // DANGER: The fast field is truncated to seconds but the aggregation returns timestamps in
-    // microseconds by appending a bunch of zeros.
-    let query = format!(
-        r#"{{
-        "trace_ids": {{
-            "terms": {{
-                "field": "trace_id",
-                "size": {num_traces},
-                "order": {{
-                    "max_span_start_timestamp_micros": "desc"
-                }}
-            }},
-            "aggs": {{
-                "max_span_start_timestamp_micros": {{
-                    "max": {{
-                        "field": "span_start_timestamp_secs"
-                    }}
-                }}
-            }}
-        }}
-    }}"#,
-    );
+    let query = serde_json::to_string(&FindTraceIdsCollector {
+        num_traces,
+        trace_id_field_name: "trace_id".to_string(),
+        span_timestamp_field_name: "span_start_timestamp_secs".to_string(),
+    })
+    .expect("The collector should be JSON serializable.");
     debug!(query=%query, "Aggregations query");
     query
 }
@@ -953,44 +938,21 @@ fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
     Ok(log)
 }
 
-#[derive(Deserialize)]
-struct TraceIdsAggResult {
-    trace_ids: TraceIdBuckets,
-}
-
-#[derive(Deserialize)]
-struct TraceIdBuckets {
-    #[serde(default)]
-    buckets: Vec<TraceIdBucket>,
-}
-
-#[derive(Deserialize)]
-struct TraceIdBucket {
-    key: String,
-    max_span_start_timestamp_micros: MetricValue,
-}
-
-#[derive(Deserialize)]
-struct MetricValue {
-    value: f64,
-}
-
-fn collect_trace_ids(agg_result_json: &str) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
-    let agg_result: TraceIdsAggResult = json_deserialize(agg_result_json, "trace IDs aggregation")?;
-    if agg_result.trace_ids.buckets.is_empty() {
+fn collect_trace_ids(trace_ids_json: &str) -> Result<(Vec<B64TraceId>, TimeIntervalSecs), Status> {
+    let collector_fruit: <FindTraceIdsCollector as Collector>::Fruit =
+        json_deserialize(trace_ids_json, "trace IDs aggregation")?;
+    if collector_fruit.is_empty() {
         return Ok((Vec::new(), 0..=0));
     }
-    let mut trace_ids = Vec::with_capacity(agg_result.trace_ids.buckets.len());
+    let mut trace_ids = Vec::with_capacity(collector_fruit.len());
     let mut start = i64::MAX;
     let mut end = i64::MIN;
 
-    for bucket in agg_result.trace_ids.buckets {
-        trace_ids.push(bucket.key);
-        start = start.min(bucket.max_span_start_timestamp_micros.value as i64);
-        end = end.max(bucket.max_span_start_timestamp_micros.value as i64);
+    for trace_id in collector_fruit {
+        trace_ids.push(trace_id.trace_id);
+        start = start.min(trace_id.span_timestamp.into_timestamp_secs());
+        end = end.max(trace_id.span_timestamp.into_timestamp_secs());
     }
-    let start = start / 1_000_000;
-    let end = end / 1_000_000;
     Ok((trace_ids, start..=end))
 }
 
@@ -1011,7 +973,7 @@ where T: Deserialize<'a> {
     match serde_json::from_str(json) {
         Ok(deserialized) => Ok(deserialized),
         Err(error) => {
-            error!("Failed to deserialize {label}: {error:?}",);
+            error!("Failed to deserialize {label}: {error:?}");
             Err(Status::internal(format!("Failed to deserialize {json}.")))
         }
     }
@@ -1020,11 +982,8 @@ where T: Deserialize<'a> {
 #[cfg(test)]
 mod tests {
     use quickwit_proto::jaeger::api_v2::ValueType;
-    use quickwit_search::{encode_term_for_test, MockSearchService};
+    use quickwit_search::{encode_term_for_test, MockSearchService, QuickwitAggregations};
     use serde_json::json;
-    use tantivy::aggregation::agg_req::{
-        Aggregation, Aggregations, BucketAggregationType, MetricAggregation,
-    };
 
     use super::*;
 
@@ -1478,21 +1437,16 @@ mod tests {
     #[test]
     fn test_build_aggregations_query() {
         let aggregations_query = build_aggregations_query(77);
-        let aggregations: Aggregations = serde_json::from_str(&aggregations_query).unwrap();
-        let aggregation = aggregations.get("trace_ids").unwrap();
-        let Aggregation::Bucket(ref bucket_aggregation) = aggregation else {
-            panic!("Expected a bucket aggregation!");
+        let aggregations: QuickwitAggregations = serde_json::from_str(&aggregations_query).unwrap();
+        let QuickwitAggregations::FindTraceIdsAggregation(collector) = aggregations else {
+            panic!("Expected find trace IDs aggregation!");
         };
-        let BucketAggregationType::Terms(ref terms_aggregation) = bucket_aggregation.bucket_agg else {
-            panic!("Expected a terms aggregation!");
-        };
-        assert_eq!(terms_aggregation.field, "trace_id");
-        assert_eq!(terms_aggregation.size.unwrap(), 77);
-
-        let Aggregation::Metric(MetricAggregation::Max(max_aggregation)) = bucket_aggregation.sub_aggregation.get("max_span_start_timestamp_micros").unwrap() else {
-            panic!("Expected a max metric aggregation!");
-        };
-        assert_eq!(max_aggregation.field, "span_start_timestamp_secs");
+        assert_eq!(collector.num_traces, 77);
+        assert_eq!(collector.trace_id_field_name, "trace_id");
+        assert_eq!(
+            collector.span_timestamp_field_name,
+            "span_start_timestamp_secs"
+        );
     }
 
     #[test]
@@ -1738,31 +1692,35 @@ mod tests {
     #[test]
     fn test_collect_trace_ids() {
         {
-            let agg_result_json = r#"{"trace_ids": {}}"#;
+            let agg_result_json = r#"[]"#;
             let (trace_ids, _span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
             assert!(trace_ids.is_empty());
         }
         {
-            let agg_result_json = r#"{
-                "trace_ids": {
-                    "buckets": [
-                        {"key": "jIr1E97+2DJBcBnOb/wjQg==", "doc_count": 3, "max_span_start_timestamp_micros": {"value": 1674611393000000.0 }}]}}"#;
+            let agg_result_json = r#"[
+                {
+                    "trace_id": "AQEBAQEBAQEBAQEBAQEBAQ==",
+                    "span_timestamp": 1736522020000000
+                }
+            ]"#;
             let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
-            assert_eq!(trace_ids, &["jIr1E97+2DJBcBnOb/wjQg=="]);
-            assert_eq!(span_timestamps_range, 1674611393..=1674611393);
+            assert_eq!(trace_ids.len(), 1);
+            assert_eq!(span_timestamps_range, 1736522020..=1736522020);
         }
         {
-            let agg_result_json = r#"{
-                "trace_ids": {
-                    "buckets": [
-                        {"key": "FKvicG794620BNsewGCknA==", "doc_count": 7, "max_span_start_timestamp_micros": { "value": 1674611388000000.0 }},
-                        {"key": "jIr1E97+2DJBcBnOb/wjQg==", "doc_count": 3, "max_span_start_timestamp_micros": { "value": 1674611393000000.0 }}]}}"#;
+            let agg_result_json = r#"[
+                {
+                    "trace_id": "AQIDBAUGBwgJCgsMDQ4PEA==",
+                    "span_timestamp": 1736522020000000
+                },
+                {
+                    "trace_id": "AgICAgICAgICAgICAgICAg==",
+                    "span_timestamp": 1704899620000000
+                }
+            ]"#;
             let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
-            assert_eq!(
-                trace_ids,
-                &["FKvicG794620BNsewGCknA==", "jIr1E97+2DJBcBnOb/wjQg=="]
-            );
-            assert_eq!(span_timestamps_range, 1674611388..=1674611393);
+            assert_eq!(trace_ids.len(), 2);
+            assert_eq!(span_timestamps_range, 1704899620..=1736522020);
         }
     }
 

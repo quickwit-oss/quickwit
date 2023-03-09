@@ -179,7 +179,7 @@ impl Queues {
             if first_key_opt.is_none() {
                 first_key_opt = Some(pos);
             }
-            num_bytes += add_doc(record, &mut doc_batch);
+            num_bytes += add_doc(&record, &mut doc_batch);
             if num_bytes > size_limit {
                 break;
             }
@@ -207,10 +207,10 @@ impl Queues {
         })
     }
 
-    /// Get ressource used by the queue.
+    /// Get resource used by the queue.
     ///
     /// Returns the in-memory size, and the on disk size of the queue.
-    pub fn ressource_usage(&self) -> (usize, usize) {
+    pub fn resource_usage(&self) -> (usize, usize) {
         (
             self.record_log.in_memory_size(),
             self.record_log.on_disk_size(),
@@ -495,6 +495,6 @@ mod tests {
         println!("{elapsed:?}");
         println!("{num_bytes}");
         let throughput = num_bytes as f64 / (elapsed.as_micros() as f64);
-        println!("Throughput: {}", throughput);
+        println!("Throughput: {throughput}");
     }
 }

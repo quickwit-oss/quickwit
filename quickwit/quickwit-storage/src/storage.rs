@@ -142,7 +142,7 @@ pub trait Storage: Send + Sync + 'static {
 #[must_use]
 #[derive(Debug, Default, thiserror::Error)]
 pub struct BulkDeleteError {
-    /// Error that ocurred for a whole batch and caused the entire deletion operation to be
+    /// Error that occurred for a whole batch and caused the entire deletion operation to be
     /// aborted.
     pub error: Option<StorageError>,
     /// List of files that were successfully deleted, including non-existing files.

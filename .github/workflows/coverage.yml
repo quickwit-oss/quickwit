@@ -135,7 +135,7 @@ jobs:
         with:
           tool: cargo-llvm-cov,protoc
 
-      - uses: Swatinem/rust-cache@v1
+      - uses: Swatinem/rust-cache@v2
 
       - name: Generate code coverage
         run: |

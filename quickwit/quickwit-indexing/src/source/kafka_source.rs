@@ -602,7 +602,7 @@ fn spawn_consumer_poll_loop(
                 // consumer might not call `poll()` for a duration that exceeds
                 // `max.poll.interval.ms`. When that happens the consumer is kicked out of the group
                 // and the source fails. This should not happen in practice with a
-                // sufficiently large value for `max.poll.interval.ms`. The defaut value is 5
+                // sufficiently large value for `max.poll.interval.ms`. The default value is 5
                 // minutes.
                 if events_tx.blocking_send(event).is_err() {
                     break;
@@ -761,6 +761,7 @@ fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
 
 #[cfg(all(test, feature = "kafka-broker-tests"))]
 mod kafka_broker_tests {
+    use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
     use quickwit_actors::{ActorContext, Universe};
@@ -868,8 +869,8 @@ mod kafka_broker_tests {
         let source_id = append_random_suffix("test-kafka-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
-            desired_num_pipelines: 1,
-            max_num_pipelines_per_indexer: 1,
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: topic.to_string(),
@@ -1191,7 +1192,7 @@ mod kafka_broker_tests {
         create_topic(&admin_client, &topic, 1).await.unwrap();
 
         let metastore = metastore_for_test();
-        let index_id = append_random_suffix("test-kafka-source--process-partiton-eof--index");
+        let index_id = append_random_suffix("test-kafka-source--process-partition-eof--index");
         let (_source_id, source_config) = get_source_config(&topic);
         let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
             params

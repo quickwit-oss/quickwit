@@ -23,6 +23,7 @@ use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
+use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::{LeafListTermsResponse, SearchRequest, SortOrder};
 use serde_json::{json, Value as JsonValue};
 use tantivy::schema::Value as TantivyValue;
@@ -30,7 +31,7 @@ use tantivy::time::OffsetDateTime;
 use tantivy::Term;
 
 use super::*;
-use crate::jaeger_collector::TraceIdSpanTimestamp;
+use crate::find_trace_ids_collector::Span;
 use crate::single_node_search;
 
 #[tokio::test]
@@ -1457,23 +1458,29 @@ async fn test_single_node_find_trace_ids_collector() -> anyhow::Result<()> {
                 fast: true
                 precision: seconds
         "#;
+    let foo_trace_id = TraceId::new([1u8; 16]).b64_encode();
+    let bar_trace_id = TraceId::new([2u8; 16]).b64_encode();
+    let qux_trace_id = TraceId::new([3u8; 16]).b64_encode();
+    let baz_trace_id = TraceId::new([4u8; 16]).b64_encode();
+
     let docs = vec![
-        json!({"trace_id": "foo", "span_timestamp_secs": "2023-01-10T15:13:35Z"}),
-        json!({"trace_id": "foo", "span_timestamp_secs": "2023-01-10T15:13:36Z"}),
-        json!({"trace_id": "foo", "span_timestamp_secs": "2023-01-10T15:13:37Z"}),
-        json!({"trace_id": "foo", "span_timestamp_secs": "2023-01-10T15:13:38Z"}),
-        json!({"trace_id": "foo", "span_timestamp_secs": "2023-01-10T15:13:39Z"}),
-        json!({"trace_id": "foo", "span_timestamp_secs": "2023-01-10T15:13:40Z"}),
-        json!({"trace_id": "bar", "span_timestamp_secs": "2024-01-10T15:13:35Z"}),
-        json!({"trace_id": "bar", "span_timestamp_secs": "2024-01-10T15:13:40Z"}),
-        json!({"trace_id": "qux", "span_timestamp_secs": "2025-01-10T15:13:40Z"}),
-        json!({"trace_id": "qux", "span_timestamp_secs": "2025-01-10T15:13:35Z"}),
+        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:35Z"}),
+        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:36Z"}),
+        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:37Z"}),
+        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:38Z"}),
+        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:39Z"}),
+        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:40Z"}),
+        json!({"trace_id": bar_trace_id.to_string(), "span_timestamp_secs": "2024-01-10T15:13:35Z"}),
+        json!({"trace_id": bar_trace_id.to_string(), "span_timestamp_secs": "2024-01-10T15:13:40Z"}),
+        json!({"trace_id": qux_trace_id.to_string(), "span_timestamp_secs": "2025-01-10T15:13:40Z"}),
+        json!({"trace_id": qux_trace_id.to_string(), "span_timestamp_secs": "2025-01-10T15:13:35Z"}),
+        json!({"trace_id": baz_trace_id.to_string(), "span_timestamp_secs": "2022-01-10T15:13:35Z"}),
     ];
     let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[]).await?;
     test_sandbox.add_documents(docs).await?;
     {
         let aggregations = r#"{
-            "num_traces": 5,
+            "num_traces": 3,
             "trace_id_field_name": "trace_id",
             "span_timestamp_field_name": "span_timestamp_secs"
         }"#
@@ -1497,14 +1504,24 @@ async fn test_single_node_find_trace_ids_collector() -> anyhow::Result<()> {
         )
         .await?;
         let aggregation = single_node_result.aggregation.unwrap();
-        let trace_ids: Vec<TraceIdSpanTimestamp> = serde_json::from_str(&aggregation).unwrap();
+        let trace_ids: Vec<Span> = serde_json::from_str(&aggregation).unwrap();
         assert_eq!(trace_ids.len(), 3);
-        assert_eq!(trace_ids[0].trace_id, "foo".as_bytes().to_vec());
-        assert_eq!(trace_ids[0].span_timestamp, 1673363620000000);
-        assert_eq!(trace_ids[1].trace_id, "bar".as_bytes().to_vec());
-        assert_eq!(trace_ids[1].span_timestamp, 1704899620000000);
-        assert_eq!(trace_ids[2].trace_id, "qux".as_bytes().to_vec());
-        assert_eq!(trace_ids[2].span_timestamp, 1736522020000000);
+
+        assert_eq!(trace_ids[0].trace_id, qux_trace_id);
+        assert_eq!(
+            trace_ids[0].span_timestamp.into_timestamp_secs(),
+            1736522020
+        );
+        assert_eq!(trace_ids[1].trace_id, bar_trace_id);
+        assert_eq!(
+            trace_ids[1].span_timestamp.into_timestamp_secs(),
+            1704899620
+        );
+        assert_eq!(trace_ids[2].trace_id, foo_trace_id);
+        assert_eq!(
+            trace_ids[2].span_timestamp.into_timestamp_secs(),
+            1673363620
+        );
     }
     test_sandbox.assert_quit().await;
     Ok(())

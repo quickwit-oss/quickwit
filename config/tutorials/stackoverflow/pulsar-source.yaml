@@ -1,0 +1,8 @@
+version: 0.4
+source_id: pulsar-source
+source_type: pulsar
+params:
+  topics:
+    - quickwit/pulsar/stackoverflow
+  address: pulsar://localhost:6650
+

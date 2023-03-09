@@ -119,7 +119,7 @@ pub async fn wait_port_ready(port: u16) -> anyhow::Result<()> {
     }
 }
 
-/// A struct to hold few info about the test environement.
+/// A struct to hold few info about the test environment.
 pub struct TestEnv {
     /// The temporary directory of the test.
     _tempdir: TempDir,
@@ -182,7 +182,7 @@ pub enum TestStorageType {
     LocalFileSystem,
 }
 
-/// Creates all necessary artifacts in a test environement.
+/// Creates all necessary artifacts in a test environment.
 pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
     let tempdir = tempdir()?;
     let data_dir_path = tempdir.path().join("data");

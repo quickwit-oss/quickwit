@@ -843,7 +843,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_i64_mappping_singlevalued() -> anyhow::Result<()> {
+    fn test_deserialize_i64_mapping_singlevalued() -> anyhow::Result<()> {
         let result = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {

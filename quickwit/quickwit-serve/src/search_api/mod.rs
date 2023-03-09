@@ -50,10 +50,10 @@ mod tests {
         address: SocketAddr,
         search_service: Arc<dyn SearchService>,
     ) -> anyhow::Result<()> {
-        let search_grpc_adpater = GrpcSearchAdapter::from(search_service);
+        let search_grpc_adapter = GrpcSearchAdapter::from(search_service);
         tokio::spawn(async move {
             Server::builder()
-                .add_service(SearchServiceServer::new(search_grpc_adpater))
+                .add_service(SearchServiceServer::new(search_grpc_adapter))
                 .serve(address)
                 .await?;
             Result::<_, anyhow::Error>::Ok(())

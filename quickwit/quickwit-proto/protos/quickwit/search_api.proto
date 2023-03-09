@@ -121,7 +121,7 @@ message SearchResponse {
   // server-side and expressed in microseconds.
   uint64 elapsed_time_micros = 3;
 
-  // The searcherrors that occured formatted as string.
+  // The searcherrors that occurred formatted as string.
   repeated string errors = 4;
 
   // Serialized aggregation response
@@ -130,7 +130,7 @@ message SearchResponse {
 }
 
 message SplitSearchError {
-  // The searcherror that occured formatted as string.
+  // The searcherror that occurred formatted as string.
   string error = 1;
 
   // Split id that failed.
@@ -164,7 +164,7 @@ message SplitIdAndFooterOffsets {
   string split_id = 1;
   // The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
   uint64 split_footer_start = 2;
-  // The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
+  // The offset of the end of the footer in split bundle. The footer contains the file bundle metadata and the hotcache.
   uint64 split_footer_end = 3;
 
 }
@@ -302,7 +302,7 @@ message ListTermsResponse {
   // server-side and expressed in microseconds.
   uint64 elapsed_time_micros = 3;
 
-  // The searcherrors that occured formatted as string.
+  // The searcherrors that occurred formatted as string.
   repeated string errors = 4;
 }
 

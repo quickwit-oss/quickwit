@@ -85,7 +85,7 @@ command = '''
 # Start a Quickwit server.
 quickwit run --config=./config/quickwit.yaml
 # Open a new terminal and run:
-quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "camp" --sort-by-score
+quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "obama" --sort-by-score
 '''
 
 [[index.search.examples]]
@@ -105,9 +105,9 @@ command = '''
 # Start a Quickwit server.
 quickwit run --config=./config/quickwit.yaml
 # Open a new terminal and run:
-quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "search" --search-fields title
+quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "obama" --search-fields body
 # If you have jq installed.
-quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "search" --search-fields title | jq '.hits[].title'
+quickwit index search --endpoint=http://127.0.0.1:7280 --index wikipedia --query "obama" --search-fields body | jq '.hits[].title'
 '''
 
 [[index.list.examples]]
@@ -171,9 +171,10 @@ quickwit index delete --index wikipedia --endpoint=http://127.0.0.1:7280
 
 [run]
 long_about = """
+
 ### Indexer service
 
-The indexer service runs indexing pipelines assigned by the Control Plane.
+The indexer service runs indexing pipelines assigned by the control plane.
 
 ### Searcher service 
 Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
@@ -190,10 +191,9 @@ The metastore service exposes Quickwit metastore over the network. This is a cor
 The control plane service schedules indexing tasks to indexers. It listens to metastore events such as
 an source create, delete, toggle, or index delete and reacts accordingly to update the indexing plan.
 
-
 ### Janitor service
 
-The Janitor service runs maintenance indexes tasks: garbage collection, documents delete, and retention policy tasks.
+The Janitor service runs maintenance tasks on indexes: garbage collection, documents delete, and retention policy tasks.
 
 :::note
 Quickwit needs to open the following port for cluster formation and workload distribution:
@@ -209,10 +209,6 @@ If ports are already taken, the serve command will fail.
 [[run.examples]]
 name = "Starts an indexer and a metastore services"
 command = "quickwit run --service indexer --service metastore --endpoint=http://127.0.0.1:7280"
-
-[[run.examples]]
-name = "Start a searcher and a metastore services"
-command = "quickwit run --service searcher --config=./config/quickwit.yaml"
 
 [[run.examples]]
 name = "Start a control plane, metastore and janitor services"
