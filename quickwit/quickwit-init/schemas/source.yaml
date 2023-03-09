@@ -1,0 +1,178 @@
+
+fields:
+  source_id:
+    type: string
+    display_name: "Source ID"
+    description: |
+      The source ID is a string that uniquely identifies the source within an index.\n
+      It may only contain uppercase or lowercase ASCII letters, digits, hyphens (-), and underscores (_).\n
+      Finally, it must start with a letter and contain at least 3 characters but no more than 255.\n
+      Find out more: https://quickwit.io/docs/configuration/source-config
+    max_length: 255
+    min_length: 3
+    regex: "^[a-zA-Z][a-zA-Z0-9-_]{2,254}$"
+  source_type:
+    type: select
+    display_name: "Source Type"
+    description: |
+      The source type designates the kind of source being configured.
+      As of version 0.3, available source types are `file`, `kafka`, `pulsar` and `kinesis`.
+    items:
+      - file
+      - kafka
+      - kinesis
+      - pulsar
+    then:
+      insert_at_root: true
+      if:
+        - picked: file
+          fields:
+            params:
+              type: object
+              display_name: "File Parameters"
+              description: |
+                Please follow the steps for creating a file source.
+                
+                Read more: https://quickwit.io/docs/configuration/source-config#file-source
+              fields:
+                filepath:
+                  display_name: "File Path"
+                  prompt: "Path"
+                  description: |
+                    Path to a local file consisting of JSON objects separated by a newline.	
+                    This is relative to the indexer itself running the source rather than your
+                    local machine.
+                  type: string
+                  # TODO: add regex validation
+        - picked: kafka
+          fields:
+            params:
+              type: object
+              display_name: "Kafka Parameters"
+              description: |
+                Please follow the steps for creating a Kafka source.
+                
+                Read more: https://quickwit.io/docs/configuration/source-config#kafka-source
+              fields:
+                topic:
+                  type: string
+                  prompt: "Topic Name"
+                  description: Name of the topic to consume.
+                client_log_level:
+                  type: select
+                  prompt: "Client Log Level (leave blank to skip)"
+                  description: |
+                    librdkafka client log level.
+                  items:
+                    - info
+                    - warn
+                    - debug
+                    - error
+                enable_backfill_mode:
+                  type: bool
+                  prompt: "Enable Backfill Mode (y/n)"
+                  description: |
+                    Backfill mode stops the source after reaching the end of the topic.
+        - picked: kinesis
+          fields:
+            params:
+              type: object
+              display_name: "Kinesis Parameters"
+              description: |
+                Please follow the steps for creating a Kinesis source.
+                
+                Read more: https://quickwit.io/docs/configuration/source-config#kinesis-source
+              fields:
+                stream_name:
+                  type: string
+                  prompt: "Stream Name"
+                  description: Name of the Kinesis stream to consume.
+                region:
+                  type: string
+                  prompt: "Region (leave blank to skip)"
+                  description: |
+                    The AWS region of the stream. Mutually exclusive with endpoint.
+                    Defaults to `us-east-1`.
+                  can_skip: true
+                endpoint:
+                  type: string
+                  prompt: "Endpoint (leave blank to skip)"
+                  description: |
+                    Custom endpoint for use with AWS-compatible Kinesis service. 
+                    Mutually exclusive with `region`.
+                  can_skip: true
+        - picked: pulsar
+          fields:
+            params:
+              type: object
+              display_name: "Pulsar Parameters"
+              description: |
+                Please follow the steps for creating a Pulsar source.
+                
+                Read more: https://quickwit.io/docs/configuration/source-config#pulsar-source
+              fields:
+                topics:
+                  type: string[]
+                  prompt: "Topic"
+                  description: |
+                    You can create a Pulsar source consuming from several
+                    topics at once, you need to provide at least 1 topic by default.
+                    Learn more: https://pulsar.apache.org/docs/2.11.x/concepts-messaging/#topics
+                  min_items: 1
+                address:
+                  type: string
+                  description: |
+                    The address used for connecting to the Pulsar broker.
+                    This address must start with `pulsar://`.
+                  regex: "^pulsar:\/\/.+$"  # TODO: Better validator may be useful
+                consumer_name:
+                  type: string
+                  prompt: "Consumer Name (leave blank to skip)"
+                  description: |
+                    You can customise the consumer name used when Quickwit connects to Pulsar,
+                    by default this is `quickwit`.
+                  can_skip: true
+                authentication:
+                  type: select
+                  prompt: "Authentication (press `q` or ESC to skip)"
+                  can_skip: true
+                  description: |
+                    You can provide optional authentication, both token and Oauth2 
+                    authentication is supported.
+                    Read more about Pulsar authentication: https://pulsar.apache.org/docs/2.11.x/security-overview/
+                  items:
+                    - token
+                    - oauth2
+                  then:
+                    if:
+                      - picked: token
+                        fields:
+                          token:
+                            type: string
+                            display_name: "JWT Token"
+                            prompt: "Token"
+                            description: |
+                              The Pulsar JWT token.
+                              For more information see: https://pulsar.apache.org/docs/2.11.x/security-jwt/
+                      - picked: oauth2
+                        fields:
+                          oauth2:
+                            type: object
+                            fields:
+                              issuer_url:
+                                type: string
+                                display_name: "Issuer URL"
+                              credentials_url:
+                                type: string
+                                display_name: "Credentials URL"
+                              audience:
+                                type: string
+                                can_skip: true
+                                display_name: "Audience"
+                                prompt: "Audience (leave blank to skip)"
+                              scope:
+                                type: string
+                                can_skip: true
+                                display_name: "Scope"
+                                prompt: "Scope (leave blank to skip)"
+

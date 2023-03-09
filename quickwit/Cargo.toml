@@ -16,6 +16,7 @@ members = [
   "quickwit-grpc-clients",
   "quickwit-indexing",
   "quickwit-ingest-api",
+  "quickwit-init",
   "quickwit-jaeger",
   "quickwit-janitor",
   "quickwit-metastore",
@@ -105,6 +106,7 @@ predicates = "2"
 prettyplease = "0.1.23"
 proc-macro2 = "1.0.50"
 prometheus = { version = "0.13", features = ["process"] }
+promptea = { git = "https://github.com/quickwit-oss/promptea.git", rev = "29a6310" }
 proptest = "1"
 prost = { version = "0.11.6", default-features = false, features = [
   "prost-derive",
@@ -207,6 +209,7 @@ quickwit_elastic_api_generation = { git = "https://github.com/quickwit-oss/elast
 quickwit-grpc-clients = { version = "0.4.0", path = "./quickwit-grpc-clients" }
 quickwit-indexing = { version = "0.4.0", path = "./quickwit-indexing" }
 quickwit-ingest-api = { version = "0.4.0", path = "./quickwit-ingest-api" }
+quickwit-init = { version = "0.4.0", path = "./quickwit-init" }
 quickwit-jaeger = { version = "0.4.0", path = "./quickwit-jaeger" }
 quickwit-janitor = { version = "0.4.0", path = "./quickwit-janitor" }
 quickwit-metastore = { version = "0.4.0", path = "./quickwit-metastore" }

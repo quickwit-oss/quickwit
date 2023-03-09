@@ -22,6 +22,7 @@ use clap::{arg, Arg, ArgMatches, Command};
 use tracing::Level;
 
 use crate::index::{build_index_command, IndexCliCommand};
+use crate::init::{build_init_command, InitCliCommand};
 use crate::service::{build_run_command, RunCliCommand};
 use crate::source::{build_source_command, SourceCliCommand};
 use crate::split::{build_split_command, SplitCliCommand};
@@ -45,10 +46,11 @@ pub fn build_cli<'a>() -> Command<'a> {
             .required(false)
         )
         .subcommand(build_run_command().display_order(1))
-        .subcommand(build_index_command().display_order(2))
-        .subcommand(build_source_command().display_order(3))
-        .subcommand(build_split_command().display_order(4))
-        .subcommand(build_tool_command().display_order(5))
+        .subcommand(build_init_command().display_order(2))
+        .subcommand(build_index_command().display_order(3))
+        .subcommand(build_source_command().display_order(4))
+        .subcommand(build_split_command().display_order(5))
+        .subcommand(build_tool_command().display_order(6))
         .arg_required_else_help(true)
         .disable_help_subcommand(true)
         .subcommand_required(true)
@@ -56,6 +58,7 @@ pub fn build_cli<'a>() -> Command<'a> {
 
 #[derive(Debug, PartialEq)]
 pub enum CliCommand {
+    Init(InitCliCommand),
     Run(RunCliCommand),
     Index(IndexCliCommand),
     Split(SplitCliCommand),
@@ -66,6 +69,7 @@ pub enum CliCommand {
 impl CliCommand {
     pub fn default_log_level(&self) -> Level {
         match self {
+            CliCommand::Init(_) => Level::ERROR,
             CliCommand::Run(_) => Level::INFO,
             CliCommand::Index(subcommand) => subcommand.default_log_level(),
             CliCommand::Source(_) => Level::ERROR,
@@ -79,6 +83,7 @@ impl CliCommand {
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse command arguments."))?;
         match subcommand {
+            "init" => InitCliCommand::parse_cli_args(submatches).map(CliCommand::Init),
             "index" => IndexCliCommand::parse_cli_args(submatches).map(CliCommand::Index),
             "run" => RunCliCommand::parse_cli_args(submatches).map(CliCommand::Run),
             "source" => SourceCliCommand::parse_cli_args(submatches).map(CliCommand::Source),
@@ -90,6 +95,7 @@ impl CliCommand {
 
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
+            CliCommand::Init(subcommand) => subcommand.execute(),
             CliCommand::Index(subcommand) => subcommand.execute().await,
             CliCommand::Run(subcommand) => subcommand.execute().await,
             CliCommand::Source(subcommand) => subcommand.execute().await,

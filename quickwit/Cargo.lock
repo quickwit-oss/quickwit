@@ -4141,6 +4141,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "promptea"
+version = "0.1.0"
+source = "git+https://github.com/quickwit-oss/promptea.git?rev=29a6310#29a631086e49f196e69dd7220c1cf197b180d9e4"
+dependencies = [
+ "Inflector",
+ "console",
+ "dialoguer",
+ "indexmap",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "proptest"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4392,6 +4406,7 @@ dependencies = [
  "quickwit-directories",
  "quickwit-doc-mapper",
  "quickwit-indexing",
+ "quickwit-init",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-rest-client",
@@ -4769,6 +4784,15 @@ dependencies = [
  "tracing",
  "ulid",
  "utoipa",
+]
+
+[[package]]
+name = "quickwit-init"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "promptea",
+ "serde_yaml 0.9.19",
 ]
 
 [[package]]
