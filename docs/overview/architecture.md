@@ -13,8 +13,8 @@ Quickwit distributed search engine relies on 4 major services and one maintenanc
 
 Moreover, Quickwit leverages existing infrastructure by relying on battled-tested technologies for index storage, metadata storage, and ingestion:
 
-- Cloud storage like AWS S3, GCS, ABS, etc. for index storage.
-- Postgresql-like for metadata storage.
+- Cloud storage like AWS S3, Google Cloud Storage, Azure Blob Storage or other S3 compatible storage for index storage.
+- Postgresql for metadata storage.
 - Distributed queues like Kafka and Pulsar for ingestion.
 
 ## Architecture diagram
@@ -50,7 +50,7 @@ Index metadata needs to be accessible by every instance of the cluster. This is 
 
 ### Index storage
 
-Quickwit stores the indexes data (splits files) on cloud storage (AWS S3, GCS, AZB, MinIO, etc..) and also on local disk for single-server deployment.
+Quickwit stores the indexes data (splits files) on cloud storage (AWS S3, Google Cloud Storage, Azure Blob Storage or other S3 compatible storage) and also on local disk for single-server deployment.
 
 ## Metastore
 
