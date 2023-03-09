@@ -33,7 +33,7 @@ When querying, Quickwit needs to make multiple GET requests:
 ```
 
 The above formula assumes that the hotcache is cached, which will be loaded after the first query for every split.
-`#num splits` can be reduced with [pruning](../concepts/querying.md).
+`#num splits` can be reduced with [pruning](../overview/concepts/querying.md).
 
 When positions are not enabled, only 2 GET requests will be executed per term.
 

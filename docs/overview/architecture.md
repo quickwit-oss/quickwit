@@ -1,44 +1,27 @@
 ---
 title: Architecture
-sidebar_position: 1
+sidebar_position: 2
 ---
 
-Quickwit has been designed from the ground up for cost-efficiency and scalability. 
-
-Quickwit core relies on two processes:
+Quickwit distributed search engine relies on 4 major services and one maintenance service:
 
 - The Searchers for executing search queries from the REST API.
 - The Indexers that index data from data sources.
+- The Metastore that stores the index metadata in a PostgreSQL-like database or in a cloud storage file.
+- The Control plane that schedules indexing tasks to the indexers.
+- The Janitor that executes periodic maintenance tasks.
 
 Moreover, Quickwit leverages existing infrastructure by relying on battled-tested technologies for index storage, metadata storage, and ingestion:
 
-### Index storage
-
-Quickwit stores its indexes's file on Amazon S3. In a single-server deployment, this can also be your local disk. We plan to support other cloud storage, as well as HDFS.
-
-### Metastore
-
-Quickwit gathers index metadata into a metastore to make them available across the cluster. Indexers push index data on the index storage and publish metadata to the metastore.
-
-In a clustered deployment, the metastore is typically a traditional RDBMS like PostgreSQL which we only support today. In a single-server deployment, it’s also possible to rely on a local file or on Amazon S3.
-
-### Source
-
-Quickwit supports multiple sources to ingest data from.
-A source can be a simple file or a complex system like a message queue.
-Additionally the indexing service will provide a zero-configuration ingest API.
-
-A file is ideal for a one-time ingestion like an initial load, a message queue is ideal to continuously feed data into the system. 
-
-Quickwit indexers connect directly to external message queues like Kafka and guarantee the exactly-once semantics. If you need support for other distributed queues, please vote for yours [here](https://github.com/quickwit-oss/quickwit/issues/1000).
+- Cloud storage like AWS S3, Google Cloud Storage, Azure Blob Storage or other S3 compatible storage for index storage.
+- Postgresql for metadata storage.
+- Distributed queues like Kafka and Pulsar for ingestion.
 
 ## Architecture diagram
 
-The following diagram shows a Quickwit cluster with searchers and indexers that receives queries by the API and messages from a Kafka topic.
+The following diagram shows a Quickwit cluster with its four major components and the janitor whose role is to execute periodic maintenance tasks, see the [Janitor section](#janitor) for more details.
 
-![Quickwit Architecture](../assets/images/quickwit-architecture.svg)
-
-# Key concepts
+![Quickwit Architecture](../assets/images/quickwit-architecture-light.svg#gh-light-mode-only)![Quickwit Log Management](../assets/images/quickwit-architecture-dark.svg#gh-dark-mode-only)
 
 ## Index & splits
 
@@ -65,13 +48,21 @@ This timestamp metadata can be handy at query time. If the user specifies a time
 
 Index metadata needs to be accessible by every instance of the cluster. This is made possible thanks to the `metastore`.
 
-### Metastore
+### Index storage
 
-Quickwit gathers index metadata into a metastore to make them available across the cluster.
+Quickwit stores the indexes data (splits files) on cloud storage (AWS S3, Google Cloud Storage, Azure Blob Storage or other S3 compatible storage) and also on local disk for single-server deployment.
 
-For a given query on a given index, a search node will ask the metastore for the index metadata and then use it to do the query planning and finally execute the plan.
+## Metastore
 
-Currently, Quickwit supports metastore backed by Postgresql and AWS S3 bucket. For a test/local deployment, you can also use a file backed metastore. 
+Quickwit gathers index metadata into a metastore to make them available across the cluster. 
+
+On the write path, indexers push index data on the index storage and publish metadata to the metastore.
+
+On the read path, for a given query on a given index, a search node will ask the metastore for the index metadata and then use it to do the query planning and finally execute the plan.
+
+In a clustered deployment, the metastore is typically a traditional RDBMS like PostgreSQL which we only support today. In a single-server deployment, it’s also possible to rely on a local file or on Amazon S3.
+
+## Quickwit cluster and services
 
 ### Cluster formation
 
@@ -79,7 +70,11 @@ Quickwit uses [chitchat](https://github.com/quickwit-oss/chitchat), a cluster me
 
 [Learn more on chitchat](https://github.com/quickwit-oss/chitchat).
 
-### Distributed search
+### Indexers
+
+See [dedicated indexing doc page](./concepts/indexing.md).
+
+### Searchers
 
 Quickwit's search cluster has the following characteristics:
 
@@ -107,6 +102,25 @@ Thanks to the hotcache, opening a split on Amazon S3 only takes 60ms. It makes i
 
 The root node uses [Rendezvous hashing](https://en.wikipedia.org/wiki/Rendezvous_hashing) to distribute the workload among leaf nodes. Rendez-vous hashing makes it possible to define a node/split affinity function with excellent stability properties when a node joins or leaves the cluster. This trick unlocks efficient caching.
 
-### Indexing
+Learn more about query internals on the [querying doc page](./concepts/querying.md).
 
-See [dedicated indexing doc page](indexing.md).
+
+### Control plane
+
+The control plane service schedules indexing tasks to indexers. The scheduling is executed when the scheduler receives external or internal events and on certains conditions:
+
+- The scehduler listens to metastore events source create, delete, toggle, or index delete. On each of these events, it will schedule a new plan, named the `desired plan` and send indexing tasks to indexers.
+- Every `HEARTBEAT` (3 seconds), the scheduler controls if the `desired plan` and the indexing tasks running on indexers are in sync. If not, it will reapply the desired plan to indexers.
+- Every minute, the scheduler rebuilds a plan with the latest metastore state, and if it differs from the last applied plan, it will apply the new one. This is necessary as the scheduler may have not received all metastore events due to network issues.
+
+### Janitor
+
+The Janitor service runs maintenance tasks on indexes: garbage collection, delete query tasks, and retention policy tasks.
+
+## Data sources
+
+Quickwit supports [multiple sources](../ingest-data/) to ingest data from.
+
+A file is ideal for a one-time ingestion like an initial load, the ingest API or a message queue are ideal to continuously feed data into the system. 
+
+Quickwit indexers connect directly to external message queues like Kafka, Pulsar or Kinesis and guarantee the exactly-once semantics. If you need support for other distributed queues, please vote for yours [here](https://github.com/quickwit-oss/quickwit/issues/1000).
