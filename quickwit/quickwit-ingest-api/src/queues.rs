@@ -19,33 +19,28 @@
 
 use std::ops::Bound;
 use std::path::Path;
-use std::sync::Arc;
 
 use mrecordlog::error::CreateQueueError;
 use mrecordlog::MultiRecordLog;
-use tokio::sync::RwLock;
 
 use crate::{add_doc, DocBatch, FetchResponse, IngestServiceError, ListQueuesResponse};
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
 
 /// Wraps a [`MultiRecordLog`] with an async [`RwLock`] and provides a concurrent API.
-#[derive(Clone)]
-pub struct ConcurrentMultiRecordLog {
-    record_log: Arc<RwLock<MultiRecordLog>>,
+pub struct Queues {
+    record_log: MultiRecordLog,
 }
 
-impl ConcurrentMultiRecordLog {
+impl Queues {
     pub(crate) async fn open(queues_dir_path: &Path) -> crate::Result<Self> {
         tokio::fs::create_dir_all(queues_dir_path).await?;
-        let record_log = Arc::new(RwLock::new(MultiRecordLog::open(queues_dir_path).await?));
+        let record_log = MultiRecordLog::open(queues_dir_path).await?;
         Ok(Self { record_log })
     }
 
-    pub(crate) async fn create_queue(&self, queue_id: &str) -> crate::Result<()> {
+    pub(crate) async fn create_queue(&mut self, queue_id: &str) -> crate::Result<()> {
         self.record_log
-            .write()
-            .await
             .create_queue(queue_id)
             .await
             .map_err(|error| match error {
@@ -57,8 +52,8 @@ impl ConcurrentMultiRecordLog {
         Ok(())
     }
 
-    pub(crate) async fn create_queue_if_not_exists(&self, queue_id: &str) -> crate::Result<()> {
-        match self.record_log.write().await.create_queue(queue_id).await {
+    pub(crate) async fn create_queue_if_not_exists(&mut self, queue_id: &str) -> crate::Result<()> {
+        match self.record_log.create_queue(queue_id).await {
             Ok(_) => Ok(()),
             Err(CreateQueueError::AlreadyExists) => Ok(()),
             Err(_error) => Err(IngestServiceError::IndexAlreadyExists {
@@ -68,22 +63,20 @@ impl ConcurrentMultiRecordLog {
     }
 
     pub(crate) async fn queue_exists(&self, queue_id: &str) -> bool {
-        self.record_log.read().await.queue_exists(queue_id)
+        self.record_log.queue_exists(queue_id)
     }
 
     pub(crate) async fn list_queues(&self) -> crate::Result<ListQueuesResponse> {
         let queues = self
             .record_log
-            .read()
-            .await
             .list_queues()
             .map(|queue| queue.to_string())
             .collect();
         Ok(ListQueuesResponse { queues })
     }
 
-    pub(crate) async fn drop_queue(&self, queue_id: &str) -> crate::Result<()> {
-        self.record_log.write().await.delete_queue(queue_id).await?;
+    pub(crate) async fn drop_queue(&mut self, queue_id: &str) -> crate::Result<()> {
+        self.record_log.delete_queue(queue_id).await?;
         Ok(())
     }
 
@@ -101,21 +94,20 @@ impl ConcurrentMultiRecordLog {
     /// earlier than this position can yield undefined result:
     /// the truncated records may or may not be returned.
     pub(crate) async fn suggest_truncate(
-        &self,
+        &mut self,
         queue_id: &str,
-        up_to_offset_included: u64,
+        position: Bound<u64>,
     ) -> crate::Result<()> {
-        self.record_log
-            .write()
-            .await
-            .truncate(queue_id, up_to_offset_included)
-            .await?;
+        let Bound::Included(position) = position else {
+            return Err(IngestServiceError::InvalidPosition("Position is not included".to_string()));
+        };
+        self.record_log.truncate(queue_id, position).await?;
         Ok(())
     }
 
     // Append a single record to a target queue.
     #[cfg(test)]
-    pub(crate) async fn append(&self, queue_id: &str, record: &[u8]) -> crate::Result<()> {
+    pub(crate) async fn append(&mut self, queue_id: &str, record: &[u8]) -> crate::Result<()> {
         self.append_batch(queue_id, std::iter::once(record)).await
     }
 
@@ -123,13 +115,11 @@ impl ConcurrentMultiRecordLog {
     //
     // This operation is atomic: the batch of records is either entirely added or not.
     pub(crate) async fn append_batch<'a>(
-        &self,
+        &mut self,
         queue_id: &str,
         records: impl Iterator<Item = &'a [u8]>,
     ) -> crate::Result<()> {
         self.record_log
-            .write()
-            .await
             .append_records(queue_id, None, records)
             .await?;
         Ok(())
@@ -145,11 +135,11 @@ impl ConcurrentMultiRecordLog {
         num_bytes_limit: Option<usize>,
     ) -> crate::Result<FetchResponse> {
         let starting_bound = match start_after {
-            Some(pos) => Bound::Excluded(pos),
+            Some(position) => Bound::Excluded(position),
             None => Bound::Unbounded,
         };
-        let guard = self.record_log.read().await;
-        let records = guard
+        let records = self
+            .record_log
             .range(queue_id, (starting_bound, Bound::Unbounded))
             .ok_or_else(|| crate::IngestServiceError::IndexNotFound {
                 index_id: queue_id.to_string(),
@@ -187,8 +177,10 @@ impl ConcurrentMultiRecordLog {
     ///
     /// Returns the in-memory size, and the on disk size of the queue.
     pub(crate) async fn resource_usage(&self) -> (usize, usize) {
-        let guard = self.record_log.read().await;
-        (guard.in_memory_size(), guard.on_disk_size())
+        (
+            self.record_log.in_memory_size(),
+            self.record_log.on_disk_size(),
+        )
     }
 }
 
@@ -197,7 +189,7 @@ mod tests {
     use std::collections::HashSet;
     use std::ops::{Deref, DerefMut};
 
-    use super::ConcurrentMultiRecordLog;
+    use super::Queues;
     use crate::errors::IngestServiceError;
     use crate::iter_doc_payloads;
 
@@ -205,7 +197,7 @@ mod tests {
     const TEST_QUEUE_ID2: &str = "my-queue2";
 
     struct LogForTest {
-        queues: Option<ConcurrentMultiRecordLog>,
+        queues: Option<Queues>,
         tempdir: tempfile::TempDir,
     }
 
@@ -224,11 +216,7 @@ mod tests {
     impl LogForTest {
         async fn reload(&mut self) {
             std::mem::drop(self.queues.take());
-            self.queues = Some(
-                ConcurrentMultiRecordLog::open(self.tempdir.path())
-                    .await
-                    .unwrap(),
-            );
+            self.queues = Some(Queues::open(self.tempdir.path()).await.unwrap());
         }
 
         async fn fetch_test(
@@ -247,7 +235,7 @@ mod tests {
     }
 
     impl Deref for LogForTest {
-        type Target = ConcurrentMultiRecordLog;
+        type Target = Queues;
 
         fn deref(&self) -> &Self::Target {
             self.queues.as_ref().unwrap()
@@ -444,7 +432,7 @@ mod tests {
             .collect();
 
         let tmpdir = tempfile::tempdir_in(".").unwrap();
-        let queues = ConcurrentMultiRecordLog::open(tmpdir.path()).await.unwrap();
+        let queues = Queues::open(tmpdir.path()).await.unwrap();
         for queue_id in 0..NUM_QUEUES {
             queues.create_queue(&queue_id.to_string()).await.unwrap();
         }

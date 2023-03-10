@@ -18,23 +18,26 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::ops::Bound;
 use std::path::Path;
 
 use async_trait::async_trait;
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, QueueCapacity};
+use quickwit_common::runtimes::RuntimeType;
 use tracing::info;
 use ulid::Ulid;
 
 use crate::metrics::INGEST_METRICS;
 use crate::{
-    iter_doc_payloads, ConcurrentMultiRecordLog, CreateQueueIfNotExistsRequest, CreateQueueRequest,
-    DropQueueRequest, FetchRequest, FetchResponse, IngestRequest, IngestResponse, IngestService,
-    IngestServiceError, ListQueuesRequest, ListQueuesResponse, SuggestTruncateRequest, TailRequest,
+    iter_doc_payloads, CreateQueueIfNotExistsRequest, CreateQueueRequest, DocBatch,
+    DropQueueRequest, FetchRequest, FetchResponse, IngestRequest, IngestResponse,
+    IngestServiceError, ListQueuesRequest, ListQueuesResponse, Queues, SuggestTruncateRequest,
+    TailRequest,
 };
 
-#[derive(Clone)]
 pub struct IngestApiService {
     partition_id: String,
-    queues: ConcurrentMultiRecordLog,
+    queues: Queues,
     memory_limit: usize,
     disk_limit: usize,
 }
@@ -80,7 +83,7 @@ impl IngestApiService {
         memory_limit: usize,
         disk_limit: usize,
     ) -> crate::Result<Self> {
-        let queues = ConcurrentMultiRecordLog::open(queues_dir_path).await?;
+        let queues = Queues::open(queues_dir_path).await?;
         let partition_id = get_or_initialize_partition_id(queues_dir_path).await?;
         info!(ingest_partition_id=%partition_id, "Ingest API partition id");
         Ok(IngestApiService {
@@ -91,40 +94,28 @@ impl IngestApiService {
         })
     }
 
-    pub fn partition_id(&self) -> &str {
-        &self.partition_id
-    }
-
-    pub async fn create_queue(&self, request: CreateQueueRequest) -> crate::Result<()> {
-        self.queues.create_queue(&request.queue_id).await?;
+    pub async fn create_queue(&mut self, queue_id: &str) -> crate::Result<()> {
+        self.queues.create_queue(queue_id).await?;
         Ok(())
     }
 
-    pub async fn create_queue_if_not_exists(
-        &self,
-        request: CreateQueueIfNotExistsRequest,
-    ) -> crate::Result<()> {
-        self.queues
-            .create_queue_if_not_exists(&request.queue_id)
-            .await?;
+    pub async fn create_queue_if_not_exists(&mut self, queue_id: &str) -> crate::Result<()> {
+        self.queues.create_queue_if_not_exists(queue_id).await?;
         Ok(())
     }
 
-    pub async fn list_queues(
-        &self,
-        _request: ListQueuesRequest,
-    ) -> crate::Result<ListQueuesResponse> {
+    pub async fn list_queues(&self) -> crate::Result<ListQueuesResponse> {
         self.queues.list_queues().await
     }
 
-    pub async fn drop_queue(&self, request: DropQueueRequest) -> crate::Result<()> {
-        self.queues.drop_queue(&request.queue_id).await?;
+    pub async fn drop_queue(&mut self, queue_id: &str) -> crate::Result<()> {
+        self.queues.drop_queue(queue_id).await?;
         Ok(())
     }
 
-    async fn ingest_inner(&self, request: IngestRequest) -> crate::Result<IngestResponse> {
+    async fn ingest(&mut self, doc_batches: Vec<DocBatch>) -> crate::Result<IngestResponse> {
         // Check all indexes exist assuming existing queues always have a corresponding index.
-        for doc_batch in &request.doc_batches {
+        for doc_batch in &doc_batches {
             if !self.queues.queue_exists(&doc_batch.index_id).await {
                 return Err(IngestServiceError::IndexNotFound {
                     index_id: doc_batch.index_id.clone(),
@@ -142,7 +133,7 @@ impl IngestApiService {
             return Err(IngestServiceError::RateLimited);
         }
         let mut num_docs = 0usize;
-        for doc_batch in &request.doc_batches {
+        for doc_batch in &doc_batches {
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
             let records_it = iter_doc_payloads(doc_batch);
@@ -161,30 +152,170 @@ impl IngestApiService {
         })
     }
 
-    pub async fn suggest_truncate(&self, request: SuggestTruncateRequest) -> crate::Result<()> {
+    async fn fetch(
+        &mut self,
+        queue_id: &str,
+        start_after: Option<u64>,
+        num_bytes_limit: Option<usize>,
+    ) -> crate::Result<FetchResponse> {
         self.queues
-            .suggest_truncate(&request.index_id, request.up_to_position_included)
-            .await?;
+            .fetch(queue_id, start_after, num_bytes_limit)
+            .await
+    }
+
+    async fn tail(&mut self, queue_id: &str) -> crate::Result<FetchResponse> {
+        self.queues.tail(&queue_id).await
+    }
+
+    pub async fn suggest_truncate(
+        &mut self,
+        queue_id: &str,
+        position: Bound<u64>,
+    ) -> crate::Result<()> {
+        self.queues.suggest_truncate(queue_id, position).await?;
         Ok(())
     }
 }
 
 #[async_trait]
-impl IngestService for IngestApiService {
-    async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
-        self.ingest_inner(request).await
+impl Actor for IngestApiService {
+    type ObservableState = ();
+
+    fn observable_state(&self) -> Self::ObservableState {}
+
+    fn runtime_handle(&self) -> tokio::runtime::Handle {
+        RuntimeType::NonBlocking.get_runtime_handle()
     }
 
-    async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse> {
-        let num_bytes_limit_opt: Option<usize> = request
-            .num_bytes_limit
-            .map(|num_bytes_limit| num_bytes_limit as usize);
-        self.queues
-            .fetch(&request.index_id, request.start_after, num_bytes_limit_opt)
-            .await
+    fn queue_capacity(&self) -> QueueCapacity {
+        QueueCapacity::Bounded(5)
     }
+}
 
-    async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse> {
-        self.queues.tail(&request.index_id).await
+#[derive(Debug)]
+pub struct GetPartitionId;
+
+#[async_trait]
+impl Handler<GetPartitionId> for IngestApiService {
+    type Reply = String;
+
+    async fn handle(
+        &mut self,
+        _: GetPartitionId,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.partition_id.clone())
+    }
+}
+
+#[async_trait]
+impl Handler<CreateQueueRequest> for IngestApiService {
+    type Reply = crate::Result<()>;
+
+    async fn handle(
+        &mut self,
+        request: CreateQueueRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.create_queue(&request.queue_id).await)
+    }
+}
+
+#[async_trait]
+impl Handler<CreateQueueIfNotExistsRequest> for IngestApiService {
+    type Reply = crate::Result<()>;
+
+    async fn handle(
+        &mut self,
+        request: CreateQueueIfNotExistsRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.create_queue_if_not_exists(&request.queue_id).await)
+    }
+}
+
+#[async_trait]
+impl Handler<ListQueuesRequest> for IngestApiService {
+    type Reply = crate::Result<ListQueuesResponse>;
+
+    async fn handle(
+        &mut self,
+        _request: ListQueuesRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.list_queues().await)
+    }
+}
+
+#[async_trait]
+impl Handler<DropQueueRequest> for IngestApiService {
+    type Reply = crate::Result<()>;
+
+    async fn handle(
+        &mut self,
+        request: DropQueueRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.drop_queue(&request.queue_id).await)
+    }
+}
+
+#[async_trait]
+impl Handler<IngestRequest> for IngestApiService {
+    type Reply = crate::Result<IngestResponse>;
+
+    async fn handle(
+        &mut self,
+        request: IngestRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.ingest(request.doc_batches).await)
+    }
+}
+
+#[async_trait]
+impl Handler<FetchRequest> for IngestApiService {
+    type Reply = crate::Result<FetchResponse>;
+
+    async fn handle(
+        &mut self,
+        request: FetchRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let num_bytes_limit = request.num_bytes_limit.map(|num_bytes| num_bytes as usize);
+        Ok(self
+            .fetch(&request.index_id, request.start_after, num_bytes_limit)
+            .await)
+    }
+}
+
+#[async_trait]
+impl Handler<TailRequest> for IngestApiService {
+    type Reply = crate::Result<FetchResponse>;
+
+    async fn handle(
+        &mut self,
+        request: TailRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.tail(&request.index_id).await)
+    }
+}
+
+#[async_trait]
+impl Handler<SuggestTruncateRequest> for IngestApiService {
+    type Reply = crate::Result<()>;
+
+    async fn handle(
+        &mut self,
+        request: SuggestTruncateRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self
+            .suggest_truncate(
+                &request.index_id,
+                Bound::Included(request.up_to_position_included),
+            )
+            .await)
     }
 }

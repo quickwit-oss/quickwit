@@ -132,7 +132,7 @@ pub struct IndexingService {
     data_dir_path: PathBuf,
     cluster: Arc<Cluster>,
     metastore: Arc<dyn Metastore>,
-    ingest_api_service_opt: Option<IngestApiService>,
+    ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     counters: IndexingServiceCounters,
@@ -149,7 +149,7 @@ impl IndexingService {
         indexer_config: IndexerConfig,
         cluster: Arc<Cluster>,
         metastore: Arc<dyn Metastore>,
-        ingest_api_service_opt: Option<IngestApiService>,
+        ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
         storage_resolver: StorageUriResolver,
     ) -> anyhow::Result<IndexingService> {
         let split_store_space_quota = SplitStoreQuota::new(
@@ -590,7 +590,7 @@ impl IndexingService {
             return Ok(());
         };
         let queues: HashSet<String> = ingest_api_service
-            .list_queues(ListQueuesRequest {})
+            .ask_for_res(ListQueuesRequest {})
             .await
             .context("Failed to list queues.")?
             .queues
@@ -612,7 +612,7 @@ impl IndexingService {
 
         for queue_id in queue_ids_to_delete {
             let delete_queue_res = ingest_api_service
-                .drop_queue(DropQueueRequest {
+                .ask_for_res(DropQueueRequest {
                     queue_id: queue_id.to_string(),
                 })
                 .await;
@@ -786,9 +786,10 @@ mod tests {
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        let ingest_api_service = init_ingest_api(&queues_dir_path, &IngestApiConfig::default())
-            .await
-            .unwrap();
+        let ingest_api_service =
+            init_ingest_api(universe, &queues_dir_path, &IngestApiConfig::default())
+                .await
+                .unwrap();
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
@@ -1159,9 +1160,10 @@ mod tests {
         let storage_resolver = StorageUriResolver::for_test();
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        let ingest_api_service = init_ingest_api(&queues_dir_path, &IngestApiConfig::default())
-            .await
-            .unwrap();
+        let ingest_api_service =
+            init_ingest_api(universe, &queues_dir_path, &IngestApiConfig::default())
+                .await
+                .unwrap();
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
@@ -1330,14 +1332,15 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
-        let ingest_api_service = init_ingest_api(&queues_dir_path, &IngestApiConfig::default())
-            .await
-            .unwrap();
+        let ingest_api_service =
+            init_ingest_api(universe, &queues_dir_path, &IngestApiConfig::default())
+                .await
+                .unwrap();
         let create_queue_req = CreateQueueIfNotExistsRequest {
             queue_id: index_id.clone(),
         };
         ingest_api_service
-            .create_queue_if_not_exists(create_queue_req)
+            .ask_for_res(create_queue_req)
             .await
             .unwrap();
 
