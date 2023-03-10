@@ -1311,7 +1311,6 @@ mod tests {
                 .await;
             assert_eq!(resp.status(), 400);
             let body = from_utf8_lossy(resp.body());
-            println!("{}", body);
             assert!(body
                 .contains("Quickwit currently supports multiple pipelines only for Kafka sources"));
         }
