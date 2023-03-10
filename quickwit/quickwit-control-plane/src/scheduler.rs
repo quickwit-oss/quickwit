@@ -21,7 +21,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -35,7 +35,6 @@ use quickwit_indexing::indexing_client::IndexingServiceClient;
 use quickwit_metastore::Metastore;
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
 use serde::Serialize;
-use time::OffsetDateTime;
 use tracing::{debug, error, info, warn};
 
 use crate::indexing_plan::{
@@ -49,10 +48,10 @@ const REFRESH_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsu
     Duration::from_secs(60 * 5)
 };
 
-const MIN_DURATION_BETWEEN_SCHEDULING_SECS: u64 = if cfg!(any(test, feature = "testsuite")) {
-    0
+const MIN_DURATION_BETWEEN_SCHEDULING: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(50)
 } else {
-    30
+    Duration::from_secs(30)
 };
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -60,7 +59,8 @@ pub struct IndexingSchedulerState {
     pub num_applied_physical_indexing_plan: usize,
     pub num_schedule_indexing_plan: usize,
     pub last_applied_physical_plan: Option<PhysicalIndexingPlan>,
-    pub last_applied_plan_timestamp: Option<i64>,
+    #[serde(skip)]
+    pub last_applied_plan_timestamp: Option<Instant>,
 }
 
 /// The [`IndexingScheduler`] is responsible for scheduling indexing tasks to indexers.
@@ -215,9 +215,9 @@ impl IndexingScheduler {
                 return Ok(());
             };
 
-        if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp.as_ref() {
-            if (OffsetDateTime::now_utc().unix_timestamp() - last_applied_plan_timestamp)
-                < MIN_DURATION_BETWEEN_SCHEDULING_SECS as i64
+        if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp {
+            if Instant::now().duration_since(last_applied_plan_timestamp)
+                < MIN_DURATION_BETWEEN_SCHEDULING
             {
                 return Ok(());
             }
@@ -289,7 +289,7 @@ impl IndexingScheduler {
             }
         }
         self.state.num_applied_physical_indexing_plan += 1;
-        self.state.last_applied_plan_timestamp = Some(OffsetDateTime::now_utc().unix_timestamp());
+        self.state.last_applied_plan_timestamp = Some(Instant::now());
         self.state.last_applied_physical_plan = Some(new_physical_plan);
     }
 }
@@ -531,7 +531,9 @@ mod tests {
     use serde_json::json;
 
     use super::IndexingScheduler;
-    use crate::scheduler::{get_indexing_plans_diff, REFRESH_PLAN_LOOP_INTERVAL};
+    use crate::scheduler::{
+        get_indexing_plans_diff, MIN_DURATION_BETWEEN_SCHEDULING, REFRESH_PLAN_LOOP_INTERVAL,
+    };
 
     fn index_metadata_for_test(
         index_id: &str,
@@ -620,7 +622,14 @@ mod tests {
         // indexer. As chitchat state of the indexer is not updated (we did not
         // instantiate a indexing service for that), the control loop will apply again the
         // same plan.
-        universe.sleep(HEARTBEAT).await;
+        // Check first the plan is not updated before `MIN_DURATION_BETWEEN_SCHEDULING`.
+        tokio::time::sleep(MIN_DURATION_BETWEEN_SCHEDULING.mul_f32(0.5)).await;
+        let scheduler_state = scheduler_handler.process_pending_and_observe().await;
+        assert_eq!(scheduler_state.num_schedule_indexing_plan, 1);
+        assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 1);
+
+        // After `MIN_DURATION_BETWEEN_SCHEDULING`, we should see a plan update.
+        tokio::time::sleep(MIN_DURATION_BETWEEN_SCHEDULING.mul_f32(0.7)).await;
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
         let indexing_service_inbox_messages =
             indexing_service_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
@@ -651,7 +660,7 @@ mod tests {
             .update_self_node_indexing_tasks(&[indexing_tasks[0].clone()])
             .await
             .unwrap();
-        universe.sleep(HEARTBEAT).await;
+        tokio::time::sleep(MIN_DURATION_BETWEEN_SCHEDULING.mul_f32(1.2)).await;
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
         assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 3);
         let indexing_service_inbox_messages =
@@ -794,7 +803,7 @@ mod tests {
                         && scheduler_state.num_applied_physical_indexing_plan < 4
                 }
             },
-            HEARTBEAT * 8,
+            HEARTBEAT * 10,
             Duration::from_millis(100),
         )
         .await
