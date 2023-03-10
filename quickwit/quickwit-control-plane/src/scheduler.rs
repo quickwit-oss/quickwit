@@ -95,7 +95,7 @@ pub struct IndexingSchedulerState {
 ///   - if indexing tasks are different, the scheduler will apply again the last applied plan.
 ///
 /// Finally, in order to give the time for each indexer to run their indexing tasks, the control
-/// phase will wait at least [`MIN_DURATION_BETWEEN_SCHEDULING_SECS`] before comparing the desired
+/// phase will wait at least [`MIN_DURATION_BETWEEN_SCHEDULING`] before comparing the desired
 /// plan with the running plan.
 pub struct IndexingScheduler {
     cluster: Arc<Cluster>,
