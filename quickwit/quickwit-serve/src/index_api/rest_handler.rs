@@ -57,7 +57,7 @@ use crate::with_arg;
         toggle_source,
         delete_source,
     ),
-    components(schemas(ToggleSource, SplitsForDeletion))
+    components(schemas(ToggleSource, SplitsForDeletion, IndexStats))
 )]
 pub struct IndexApi;
 
@@ -146,8 +146,7 @@ fn get_indexes_metadatas_handler(
 }
 
 // This structure represents describe Index
-// #[derive(Debug, Clone, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema, Default)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 struct IndexStats {
     pub index_id: String,
     pub index_uri: Uri,
