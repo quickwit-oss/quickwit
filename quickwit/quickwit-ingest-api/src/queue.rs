@@ -20,12 +20,13 @@
 use std::ops::Bound;
 use std::path::Path;
 
+use bytes::Buf;
 use mrecordlog::error::CreateQueueError;
 use mrecordlog::MultiRecordLog;
 use quickwit_actors::ActorContext;
 
 use crate::{
-    add_doc, DocBatch, FetchResponse, IngestApiService, IngestServiceError, ListQueuesResponse,
+    DocBatchBuilder, FetchResponse, IngestApiService, IngestServiceError, ListQueuesResponse,
 };
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
@@ -130,7 +131,7 @@ impl Queues {
     pub async fn append_batch<'a>(
         &mut self,
         queue_id: &str,
-        records_it: impl Iterator<Item = &'a [u8]>,
+        records_it: impl Iterator<Item = impl Buf>,
         ctx: &ActorContext<IngestApiService>,
     ) -> crate::Result<()> {
         let real_queue_id = format!("{QUICKWIT_CF_PREFIX}{queue_id}");
@@ -168,10 +169,7 @@ impl Queues {
             })?;
 
         let size_limit = num_bytes_limit.unwrap_or(FETCH_PAYLOAD_LIMIT);
-        let mut doc_batch = DocBatch {
-            index_id: queue_id.to_string(),
-            ..Default::default()
-        };
+        let mut doc_batch = DocBatchBuilder::new(queue_id.to_string());
         let mut num_bytes = 0;
         let mut first_key_opt = None;
 
@@ -179,7 +177,7 @@ impl Queues {
             if first_key_opt.is_none() {
                 first_key_opt = Some(pos);
             }
-            num_bytes += add_doc(&record, &mut doc_batch);
+            num_bytes += doc_batch.command_from_buf(record.as_ref());
             if num_bytes > size_limit {
                 break;
             }
@@ -187,7 +185,7 @@ impl Queues {
 
         Ok(FetchResponse {
             first_position: first_key_opt,
-            doc_batch: Some(doc_batch),
+            doc_batch: Some(doc_batch.build()),
         })
     }
 
@@ -223,12 +221,13 @@ mod tests {
     use std::collections::HashSet;
     use std::ops::{Deref, DerefMut};
 
+    use bytes::Bytes;
     use quickwit_actors::{ActorContext, Universe};
     use tokio::sync::watch;
 
     use super::Queues;
     use crate::errors::IngestServiceError;
-    use crate::{iter_doc_payloads, IngestApiService};
+    use crate::IngestApiService;
 
     const TEST_QUEUE_ID: &str = "my-queue";
     const TEST_QUEUE_ID2: &str = "my-queue2";
@@ -272,7 +271,7 @@ mod tests {
             let fetch_resp = self.fetch(queue_id, start_after, None).unwrap();
             assert_eq!(fetch_resp.first_position, expected_first_pos_opt);
             let doc_batch = fetch_resp.doc_batch.unwrap();
-            let records: Vec<&[u8]> = iter_doc_payloads(&doc_batch).collect();
+            let records: Vec<Bytes> = doc_batch.iter_raw().collect();
             assert_eq!(&records, expected);
         }
     }

@@ -22,7 +22,9 @@ use std::collections::{BTreeSet, HashMap};
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
-use quickwit_ingest_api::{DocBatch, IngestRequest, IngestService, IngestServiceClient};
+use quickwit_ingest_api::{
+    DocBatch, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
+};
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsService;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
     ExportLogsPartialSuccess, ExportLogsServiceRequest, ExportLogsServiceResponse,
@@ -237,10 +239,6 @@ impl OtlpGrpcLogsService {
         request: ExportLogsServiceRequest,
         parent_span: RuntimeSpan,
     ) -> Result<ParsedLogRecords, Status> {
-        let mut doc_batch = DocBatch {
-            index_id: OTEL_LOGS_INDEX_ID.to_string(),
-            ..Default::default()
-        };
         let mut log_records = BTreeSet::new();
         let mut num_log_records = 0;
         let mut num_parse_errors = 0;
@@ -343,21 +341,18 @@ impl OtlpGrpcLogsService {
                 }
             }
         }
+        let mut doc_batch = DocBatchBuilder::new(OTEL_LOGS_INDEX_ID.to_string()).json_writer();
         for log_record in log_records {
-            let current_doc_batch_len = doc_batch.concat_docs.len();
-            if let Err(error) = serde_json::to_writer(&mut doc_batch.concat_docs, &log_record.0) {
-                error!(error=?error, "Failed to JSON serialize log record.");
-                error_message = format!("Failed to JSON serialize log record: {error:?}");
+            if let Err(error) = doc_batch.ingest_doc(&log_record.0) {
+                error!(error=?error, "Failed to JSON serialize span.");
+                error_message = format!("Failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
-                continue;
             }
-            let new_doc_batch_len = doc_batch.concat_docs.len();
-            let span_json_len = new_doc_batch_len - current_doc_batch_len;
-            doc_batch.doc_lens.push(span_json_len as u64);
         }
+        let doc_batch = doc_batch.build();
         let current_span = RuntimeSpan::current();
         current_span.record("num_log_records", num_log_records);
-        current_span.record("num_bytes", doc_batch.concat_docs.len());
+        current_span.record("num_bytes", doc_batch.num_bytes());
         current_span.record("num_parse_errors", num_parse_errors);
 
         let parsed_spans = ParsedLogRecords {

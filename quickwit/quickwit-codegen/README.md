@@ -11,6 +11,7 @@
 ```toml
 [dependencies]
 async-trait = { workspace = true }
+bytes = { workspace = true }
 dyn-clone = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
@@ -40,10 +41,13 @@ fn main() {
         "src/",
         "crate::HelloResult",
         "crate::HelloError"
+        &[],
     ).unwrap();
 }
 ```
 
-5. Import and implement the generated service trait and use the various generated adapters to instantiate a gRPC server, or use a local or remote gRPC implementation with the same client interface.
+5. If any parts of the protocol should be serialized as `bytes::Bytes` instead of `Vec[u8]` list paths to these elements in the last argument.
+
+6. Import and implement the generated service trait and use the various generated adapters to instantiate a gRPC server, or use a local or remote gRPC implementation with the same client interface.
 
 Checkout the complete working example in the `quickwit-codegen-example` crate.

@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use quickwit_ingest_api::{
-    add_doc, DocBatch, FetchResponse, IngestRequest, IngestResponse, IngestService,
+    DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestService,
     IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -156,15 +156,12 @@ async fn ingest(
     payload: String,
     mut ingest_service: IngestServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
-    let mut doc_batch = DocBatch {
-        index_id,
-        ..Default::default()
-    };
+    let mut doc_batch = DocBatchBuilder::new(index_id);
     for doc_payload in lines(&payload) {
-        add_doc(doc_payload.as_bytes(), &mut doc_batch);
+        doc_batch.ingest_doc(doc_payload.as_bytes());
     }
     let ingest_req = IngestRequest {
-        doc_batches: vec![doc_batch],
+        doc_batches: vec![doc_batch.build()],
     };
     let ingest_response = ingest_service.ingest(ingest_req).await?;
     Ok(ingest_response)
@@ -259,16 +256,18 @@ async fn elastic_ingest(
             })?;
 
         let index_id = action.into_index();
-        let doc_batch = batches.entry(index_id.clone()).or_insert(DocBatch {
-            index_id,
-            ..Default::default()
-        });
+        let doc_batch = batches
+            .entry(index_id.clone())
+            .or_insert(DocBatchBuilder::new(index_id));
 
-        add_doc(source.to_string().as_bytes(), doc_batch);
+        doc_batch.ingest_doc(source.to_string().as_bytes());
     }
 
     let ingest_request = IngestRequest {
-        doc_batches: batches.into_values().collect(),
+        doc_batches: batches
+            .into_values()
+            .map(|builder| builder.build())
+            .collect(),
     };
     let ingest_response = ingest_service.ingest(ingest_request).await?;
     Ok(ingest_response)

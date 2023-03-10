@@ -30,6 +30,7 @@ impl Codegen {
         out_dir: &str,
         result_type_path: &str,
         error_type_path: &str,
+        bytes: &[&str],
     ) -> anyhow::Result<()> {
         println!("cargo:rerun-if-changed={proto}");
 
@@ -40,6 +41,7 @@ impl Codegen {
                 ".",
                 "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]",
             )
+            .bytes(bytes)
             .out_dir(out_dir);
 
         let service_generator = Box::new(QuickwitServiceGenerator::new(
