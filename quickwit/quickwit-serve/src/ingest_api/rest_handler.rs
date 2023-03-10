@@ -477,7 +477,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_api_return_429_if_above_limits() {
         let config = IngestApiConfig {
-            max_queue_memory_usage: Byte::from_bytes(0),
+            max_queue_memory_usage: Byte::from_bytes(1),
             ..Default::default()
         };
         let (universe, _temp_dir, ingest_service) =

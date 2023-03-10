@@ -205,14 +205,12 @@ impl Queues {
         })
     }
 
-    /// Get resource used by the queue.
-    ///
-    /// Returns the in-memory size, and the on disk size of the queue.
-    pub fn resource_usage(&self) -> (usize, usize) {
-        (
-            self.record_log.in_memory_size(),
-            self.record_log.on_disk_size(),
-        )
+    pub(crate) fn disk_usage(&self) -> usize {
+        self.record_log.on_disk_size()
+    }
+
+    pub(crate) fn memory_usage(&self) -> usize {
+        self.record_log.in_memory_size()
     }
 }
 

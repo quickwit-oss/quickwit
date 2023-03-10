@@ -21,6 +21,9 @@
 
 mod errors;
 mod ingest_api_service;
+#[path = "codegen/ingest_service.rs"]
+mod ingest_service;
+mod memory_capacity;
 mod metrics;
 mod position;
 mod queue;
@@ -31,15 +34,14 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 pub use errors::IngestServiceError;
 pub use ingest_api_service::{GetPartitionId, IngestApiService};
+pub use ingest_service::*;
+pub use memory_capacity::MemoryCapacity;
 use once_cell::sync::OnceCell;
 pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::IngestApiConfig;
 use tokio::sync::Mutex;
-#[path = "codegen/ingest_service.rs"]
-mod ingest_service;
-pub use ingest_service::*;
 
 mod doc_batch;
 pub use doc_batch::*;
@@ -205,7 +207,7 @@ mod tests {
             &universe,
             &queues_dir_path,
             &IngestApiConfig {
-                max_queue_memory_usage: Byte::from_bytes(1024),
+                max_queue_memory_usage: Byte::from_bytes(1200),
                 max_queue_disk_usage: Byte::from_bytes(1024 * 1024 * 256),
             },
         )
