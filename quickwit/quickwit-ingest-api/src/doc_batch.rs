@@ -175,21 +175,6 @@ impl JsonDocBatchBuilder {
         }
     }
 
-    /// Returns the total number of bytes in the batch
-    pub fn len(&self) -> usize {
-        self.concat_docs.get_ref().len()
-    }
-
-    /// Returns true if the batch is empty
-    pub fn is_empty(&self) -> bool {
-        self.doc_lens.is_empty()
-    }
-
-    /// Returns the number of document in the batch
-    pub fn count(&self) -> usize {
-        self.doc_lens.len()
-    }
-
     /// Returns the underlying batch builder
     pub fn into_inner(self) -> DocBatchBuilder {
         DocBatchBuilder {
@@ -222,6 +207,21 @@ impl DocBatch {
                 *current_offset = end;
                 Some(self.concat_docs.slice(start..end))
             })
+    }
+
+    /// Returns the total number of bytes in the batch
+    pub fn num_bytes(&self) -> usize {
+        self.concat_docs.len()
+    }
+
+    /// Returns true if the batch is empty
+    pub fn is_empty(&self) -> bool {
+        self.doc_lens.is_empty()
+    }
+
+    /// Returns the number of document in the batch
+    pub fn num_docs(&self) -> usize {
+        self.doc_lens.len()
     }
 }
 
@@ -322,8 +322,8 @@ mod tests {
 
         let batch = batch.build();
         assert_eq!(batch.index_id, "test");
-        assert_eq!(batch.doc_lens.len(), 4);
-        assert_eq!(batch.concat_docs.len(), 5 + 1 + 5 + 4);
+        assert_eq!(batch.num_docs(), 4);
+        assert_eq!(batch.num_bytes(), 5 + 1 + 5 + 4);
 
         let mut iter = batch.iter();
         assert!(commands_eq(
@@ -362,20 +362,16 @@ mod tests {
     #[test]
     fn test_json_batch_builder() {
         let mut batch = DocBatchBuilder::new("test".to_string()).json_writer();
-        assert!(batch.is_empty());
         batch.ingest_doc(json!({"test":"a"})).unwrap();
         batch.ingest_doc(json!({"test":"b"})).unwrap();
-        assert_eq!(batch.count(), 2);
-        assert_eq!(batch.len(), 12 + 12 + batch.count());
-        assert!(!batch.is_empty());
 
         let mut batch = batch.into_inner();
         batch.commit();
 
         let batch = batch.build();
         assert_eq!(batch.index_id, "test");
-        assert_eq!(batch.doc_lens.len(), 3);
-        assert_eq!(batch.concat_docs.len(), 12 + 12 + 3);
+        assert_eq!(batch.num_docs(), 3);
+        assert_eq!(batch.num_bytes(), 12 + 12 + 3);
 
         let mut iter = batch.iter();
         assert!(commands_eq(

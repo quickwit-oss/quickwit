@@ -609,13 +609,14 @@ impl OtlpGrpcTraceService {
                 num_parse_errors += 1;
             }
         }
+        let doc_batch = doc_batch.build();
         let current_span = RuntimeSpan::current();
         current_span.record("num_spans", num_spans);
-        current_span.record("num_bytes", doc_batch.len());
+        current_span.record("num_bytes", doc_batch.num_bytes());
         current_span.record("num_parse_errors", num_parse_errors);
 
         let parsed_spans = ParsedSpans {
-            doc_batch: doc_batch.build(),
+            doc_batch,
             num_spans,
             num_parse_errors,
             error_message,

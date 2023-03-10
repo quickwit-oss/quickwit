@@ -128,8 +128,8 @@ impl IngestApiService {
             self.queues
                 .append_batch(&doc_batch.index_id, records_it, ctx)
                 .await?;
-            let batch_num_docs = doc_batch.doc_lens.len();
-            let batch_num_bytes = doc_batch.concat_docs.len();
+            let batch_num_docs = doc_batch.num_docs();
+            let batch_num_bytes = doc_batch.num_bytes();
             num_docs += batch_num_docs;
             INGEST_METRICS
                 .ingested_num_bytes
