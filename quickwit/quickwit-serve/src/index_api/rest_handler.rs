@@ -187,27 +187,27 @@ async fn describe_index(
         .filter(|split| split.split_state == SplitState::Published)
         .collect();
 
-    let total_num_docs = published_splits
-        .iter()
-        .map(|split| split.split_metadata.num_docs as u64)
-        .sum::<u64>();
+    let mut total_num_docs = 0;
+    let mut total_bytes = 0;
+    let mut time_min: Option<i64> = None;
+    let mut time_max: Option<i64> = None;
 
-    let total_bytes = published_splits
-        .iter()
-        .map(|split| split.split_metadata.footer_offsets.end)
-        .sum::<u64>();
+    for split in &published_splits {
+        total_num_docs += split.split_metadata.num_docs as u64;
+        total_bytes += split.split_metadata.footer_offsets.end;
 
-    let time_min = published_splits
-        .iter()
-        .flat_map(|split| split.split_metadata.time_range.clone())
-        .map(|time_range| *time_range.start())
-        .min();
+        for time_range in &split.split_metadata.time_range {
+            let start_time = *time_range.start();
+            if time_min.is_none() || start_time < time_min.unwrap() {
+                time_min = Some(start_time);
+            }
 
-    let time_max = published_splits
-        .iter()
-        .flat_map(|split| split.split_metadata.time_range.clone())
-        .map(|time_range| *time_range.end())
-        .max();
+            let end_time = *time_range.end();
+            if time_max.is_none() || end_time > time_max.unwrap() {
+                time_max = Some(end_time);
+            }
+        }
+    }
 
     let index_config = index_metadata.into_index_config();
 
