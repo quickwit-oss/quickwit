@@ -513,8 +513,8 @@ fn get_indexing_tasks_diff<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroUsize;
     use std::collections::{HashMap, HashSet};
+    use std::num::NonZeroUsize;
     use std::sync::Arc;
     use std::time::Duration;
 
