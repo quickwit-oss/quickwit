@@ -815,6 +815,12 @@ mod tests {
     #[test]
     fn test_indexing_plans_diff() {
         {
+            let running_plan = HashMap::new();
+            let desired_plan = HashMap::new();
+            let indexing_plans_diff = get_indexing_plans_diff(&running_plan, &desired_plan);
+            assert!(indexing_plans_diff.is_empty());
+        }
+        {
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
@@ -864,13 +870,18 @@ mod tests {
             );
         }
         {
+            // Task assigned to indexer-1 in desired plan but another one running.
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
                 index_id: "index-1".to_string(),
                 source_id: "source-1".to_string(),
             };
-            running_plan.insert("indexer-2".to_string(), vec![]);
+            let task_2 = IndexingTask {
+                index_id: "index-2".to_string(),
+                source_id: "source-2".to_string(),
+            };
+            running_plan.insert("indexer-2".to_string(), vec![task_2.clone()]);
             desired_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
 
             let indexing_plans_diff = get_indexing_plans_diff(&running_plan, &desired_plan);
@@ -889,8 +900,13 @@ mod tests {
                 indexing_plans_diff.missing_tasks_by_node_id,
                 HashMap::from_iter([("indexer-1", vec![&task_1]), ("indexer-2", Vec::new())])
             );
+            assert_eq!(
+                indexing_plans_diff.unplanned_tasks_by_node_id,
+                HashMap::from_iter([("indexer-2", vec![&task_2]), ("indexer-1", Vec::new())])
+            );
         }
         {
+            // Diff with 3 same tasks running but only one on the desired plan.
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
@@ -909,6 +925,29 @@ mod tests {
             assert!(!indexing_plans_diff.has_same_tasks());
             assert_eq!(
                 indexing_plans_diff.missing_tasks_by_node_id,
+                HashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
+            );
+        }
+        {
+            // Diff with 3 same tasks on desired plan but only one running.
+            let mut running_plan = HashMap::new();
+            let mut desired_plan = HashMap::new();
+            let task_1 = IndexingTask {
+                index_id: "index-1".to_string(),
+                source_id: "source-1".to_string(),
+            };
+            running_plan.insert(
+                "indexer-1".to_string(),
+                vec![task_1.clone(), task_1.clone(), task_1.clone()],
+            );
+            desired_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
+
+            let indexing_plans_diff = get_indexing_plans_diff(&running_plan, &desired_plan);
+            assert!(!indexing_plans_diff.is_empty());
+            assert!(indexing_plans_diff.has_same_nodes());
+            assert!(!indexing_plans_diff.has_same_tasks());
+            assert_eq!(
+                indexing_plans_diff.unplanned_tasks_by_node_id,
                 HashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
             );
         }
