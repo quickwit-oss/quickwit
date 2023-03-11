@@ -191,16 +191,9 @@ async fn describe_index(
         total_num_docs += split.split_metadata.num_docs as u64;
         total_bytes += split.split_metadata.footer_offsets.end;
 
-        for time_range in &split.split_metadata.time_range {
-            let start_time = *time_range.start();
-            if min_timestamp.is_none() || start_time < min_timestamp.unwrap() {
-                min_timestamp = Some(start_time);
-            }
-
-            let end_time = *time_range.end();
-            if max_timestamp.is_none() || end_time > max_timestamp.unwrap() {
-                max_timestamp = Some(end_time);
-            }
+        if let Some(time_range) = &split.split_metadata.time_range {
+            min_timestamp = min_timestamp.min(Some(*time_range.start())).or(Some(*time_range.start()));
+            max_timestamp = max_timestamp.max(Some(*time_range.end())).or(Some(*time_range.end()));
         }
     }
 
@@ -215,7 +208,7 @@ async fn describe_index(
         min_timestamp,
         max_timestamp,
     };
-
+    
     Ok(index_stats)
 }
 
@@ -890,8 +883,8 @@ mod tests {
             "num_published_docs": 20,
             "size_published_docs": 1600,
             "timestamp_field_name": "timestamp",
-            "min_timestamp": null,
-            "max_timestamp": null,
+            "min_timestamp": 121000,
+            "max_timestamp": 130198,
         });
 
         assert_eq!(actual_response_json, expected_response_json);
