@@ -24,8 +24,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_ingest_api::{
-    get_ingest_api_service, iter_doc_payloads, CreateQueueIfNotExistsRequest, FetchRequest,
-    FetchResponse, GetPartitionId, IngestApiService, SuggestTruncateRequest,
+    get_ingest_api_service, CreateQueueIfNotExistsRequest, DocCommand, FetchRequest, FetchResponse,
+    GetPartitionId, IngestApiService, SuggestTruncateRequest,
 };
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use serde::Serialize;
@@ -147,7 +147,14 @@ impl Source for IngestApiSource {
         // TODO use a timestamp (in the raw doc batch) given by at ingest time to be more accurate.
         let mut raw_doc_batch = RawDocBatch::default();
         raw_doc_batch.docs.extend(
-            iter_doc_payloads(&doc_batch).map(|buff| String::from_utf8_lossy(buff).to_string()),
+            doc_batch
+                .iter()
+                .map(|command| match command {
+                    DocCommand::Ingest { payload } => payload,
+                    // TODO: We will add a commit logic in a follow-up PR, for now - just panic
+                    _ => panic!("Unknown command {command:?}"),
+                })
+                .map(|buff| String::from_utf8_lossy(buff.as_ref()).to_string()),
         );
         let current_offset = first_position + raw_doc_batch.docs.len() as u64 - 1;
         let partition_id = self.partition_id.clone();
@@ -222,7 +229,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, INGEST_API_SOURCE_ID};
-    use quickwit_ingest_api::{add_doc, init_ingest_api, DocBatch, IngestRequest};
+    use quickwit_ingest_api::{init_ingest_api, DocBatchBuilder, IngestRequest};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
 
@@ -233,19 +240,15 @@ mod tests {
         let mut doc_batches = vec![];
         let mut doc_id = 0usize;
         for _ in 0..num_batch {
-            let mut doc_batch = DocBatch {
-                index_id: index_id.clone(),
-                ..Default::default()
-            };
-            while doc_batch.doc_lens.len() < batch_size {
-                add_doc(
+            let mut doc_batch_builder = DocBatchBuilder::new(index_id.clone());
+            for _ in 0..batch_size {
+                doc_batch_builder.ingest_doc(
                     format!("{doc_id:0>6} - The quick brown fox jumps over the lazy dog")
                         .as_bytes(),
-                    &mut doc_batch,
                 );
                 doc_id += 1;
             }
-            doc_batches.push(doc_batch);
+            doc_batches.push(doc_batch_builder.build());
         }
         IngestRequest { doc_batches }
     }
@@ -307,7 +310,7 @@ mod tests {
         );
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 2);
-        assert!(doc_batches[1].docs[0].starts_with("038462"));
+        assert!(doc_batches[1].docs[0].starts_with("037736"));
         // TODO: Source deadlocks and test hangs occasionally if we don't quit source first.
         ingest_api_source_handle.quit().await;
         universe.assert_quit().await;

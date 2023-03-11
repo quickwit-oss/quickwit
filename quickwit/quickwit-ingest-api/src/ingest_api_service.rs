@@ -23,22 +23,32 @@ use std::path::Path;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
+use quickwit_common::tower::Cost;
 use tracing::info;
 use ulid::Ulid;
 
 use crate::metrics::INGEST_METRICS;
 use crate::{
-    iter_doc_payloads, CreateQueueIfNotExistsRequest, CreateQueueRequest, DropQueueRequest,
-    FetchRequest, FetchResponse, IngestRequest, IngestResponse, IngestServiceError,
-    ListQueuesRequest, ListQueuesResponse, QueueExistsRequest, Queues, SuggestTruncateRequest,
-    TailRequest,
+    CreateQueueIfNotExistsRequest, CreateQueueRequest, DropQueueRequest, FetchRequest,
+    FetchResponse, IngestRequest, IngestResponse, IngestServiceError, ListQueuesRequest,
+    ListQueuesResponse, MemoryCapacity, Queues, SuggestTruncateRequest, TailRequest,
 };
+
+impl Cost for IngestRequest {
+    fn cost(&self) -> u64 {
+        self.doc_batches
+            .iter()
+            .map(|doc_batch| doc_batch.concat_docs.len())
+            .sum::<usize>() as u64
+    }
+}
 
 pub struct IngestApiService {
     partition_id: String,
     queues: Queues,
     memory_limit: usize,
     disk_limit: usize,
+    memory_capacity: MemoryCapacity,
 }
 
 impl fmt::Debug for IngestApiService {
@@ -84,12 +94,14 @@ impl IngestApiService {
     ) -> crate::Result<Self> {
         let queues = Queues::open(queues_dir_path).await?;
         let partition_id = get_or_initialize_partition_id(queues_dir_path).await?;
+        let memory_capacity = MemoryCapacity::new(memory_limit);
         info!(ingest_partition_id=%partition_id, "Ingest API partition id");
-        Ok(IngestApiService {
+        Ok(Self {
             partition_id,
             queues,
             memory_limit,
             disk_limit,
+            memory_capacity,
         })
     }
 
@@ -110,27 +122,35 @@ impl IngestApiService {
                 index_id: index_id.to_string(),
             });
         }
+        let disk_usage = self.queues.disk_usage();
 
-        let (memory, disk) = self.queues.resource_usage();
-        if memory > self.memory_limit {
-            info!("Ingestion rejected due to memory limits");
-            return Err(IngestServiceError::RateLimited);
-        }
-        if disk > self.disk_limit {
-            info!("Ingestion rejected due to disk limits");
+        if disk_usage > self.disk_limit {
+            info!("Ingestion rejected due to disk limit");
             return Err(IngestServiceError::RateLimited);
         }
 
+        if self
+            .memory_capacity
+            .reserve_capacity(request.cost() as usize)
+            .is_err()
+        {
+            info!("Ingest request rejected due to memory limit.");
+            return Err(IngestServiceError::RateLimited);
+        }
         let mut num_docs = 0usize;
         for doc_batch in &request.doc_batches {
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
-            let records_it = iter_doc_payloads(doc_batch);
+            let records_it = doc_batch.iter_raw();
             self.queues
                 .append_batch(&doc_batch.index_id, records_it, ctx)
                 .await?;
-            let batch_num_docs = doc_batch.doc_lens.len();
+            let batch_num_docs = doc_batch.num_docs();
+            let batch_num_bytes = doc_batch.num_bytes();
             num_docs += batch_num_docs;
+            INGEST_METRICS
+                .ingested_num_bytes
+                .inc_by(batch_num_bytes as u64);
             INGEST_METRICS
                 .ingested_num_docs
                 .inc_by(batch_num_docs as u64);
@@ -160,6 +180,11 @@ impl IngestApiService {
         self.queues
             .suggest_truncate(&request.index_id, request.up_to_position_included, ctx)
             .await?;
+
+        let memory_usage = self.queues.memory_usage();
+        let new_capacity = self.memory_limit - memory_usage;
+        self.memory_capacity.reset_capacity(new_capacity);
+
         Ok(())
     }
 }
@@ -180,30 +205,35 @@ impl Actor for IngestApiService {
     }
 }
 
-#[async_trait]
-impl Handler<QueueExistsRequest> for IngestApiService {
-    type Reply = crate::Result<bool>;
-    async fn handle(
-        &mut self,
-        queue_exists_req: QueueExistsRequest,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(Ok(self.queues.queue_exists(&queue_exists_req.queue_id)))
-    }
-}
-
 #[derive(Debug)]
 pub struct GetPartitionId;
 
 #[async_trait]
 impl Handler<GetPartitionId> for IngestApiService {
     type Reply = String;
+
     async fn handle(
         &mut self,
-        _: GetPartitionId,
+        _request: GetPartitionId,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.partition_id.clone())
+    }
+}
+
+#[derive(Debug)]
+pub struct GetMemoryCapacity;
+
+#[async_trait]
+impl Handler<GetMemoryCapacity> for IngestApiService {
+    type Reply = MemoryCapacity;
+
+    async fn handle(
+        &mut self,
+        _request: GetMemoryCapacity,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.memory_capacity.clone())
     }
 }
 
@@ -309,5 +339,32 @@ impl Handler<ListQueuesRequest> for IngestApiService {
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.queues.list_queues())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use super::*;
+    use crate::DocBatch;
+
+    #[test]
+    fn test_ingest_request_cost() {
+        let ingest_request = IngestRequest {
+            doc_batches: vec![
+                DocBatch {
+                    index_id: "index-1".to_string(),
+                    concat_docs: Bytes::from_static(&[0, 1, 2]),
+                    doc_lens: vec![1, 2],
+                },
+                DocBatch {
+                    index_id: "index-2".to_string(),
+                    concat_docs: Bytes::from_static(&[3, 4, 5, 6, 7, 8]),
+                    doc_lens: vec![1, 3, 2],
+                },
+            ],
+        };
+        assert_eq!(ingest_request.cost(), 9);
     }
 }

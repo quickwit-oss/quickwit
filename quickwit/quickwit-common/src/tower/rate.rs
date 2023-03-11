@@ -22,8 +22,10 @@ use std::time::Duration;
 use byte_unit::Byte;
 
 pub trait Rate: Clone {
+    /// Returns the amount of work per time period.
     fn work(&self) -> u64;
 
+    /// Returns the duration of a time period.
     fn period(&self) -> Duration;
 }
 
@@ -39,7 +41,7 @@ impl ConstantRate {
     ///
     /// # Panics
     ///
-    /// This function panics if `work` or `period` is 0.
+    /// This function panics if `work` is equal to zero or `period` is < 1ms.
     pub fn new(work: u64, period: Duration) -> Self {
         assert!(work > 0);
         assert!(period.as_millis() > 0);

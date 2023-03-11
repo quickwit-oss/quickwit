@@ -25,6 +25,7 @@ fn main() {
         "src/codegen/",
         "crate::Result",
         "crate::IngestServiceError",
+        &["DocBatch.concat_docs"],
     )
     .unwrap();
 }

@@ -448,7 +448,7 @@ pub async fn create_cluster_for_test_with_id(
 /// Creates a failure detector config for tests.
 fn create_failure_detector_config_for_test() -> FailureDetectorConfig {
     FailureDetectorConfig {
-        phi_threshold: 6.0,
+        phi_threshold: 3.0,
         initial_interval: GOSSIP_INTERVAL,
         ..Default::default()
     }
@@ -626,7 +626,7 @@ mod tests {
             .unwrap(),
         );
         let mut random_generator = rand::thread_rng();
-        let indexing_tasks = (0..10_000)
+        let indexing_tasks = (0..1_000)
             .map(|_| {
                 let index_id = random_generator.gen_range(0..=10_000);
                 let source_id = random_generator.gen_range(0..=100);
@@ -705,12 +705,14 @@ mod tests {
         cluster: Arc<Cluster>,
         gossip_public_address: SocketAddr,
         indexing_tasks: Vec<IndexingTask>,
-    ) -> anyhow::Result<bool> {
+    ) -> bool {
         let members = cluster.ready_members_from_chitchat_state().await;
-        let node = members
+        let node_opt = members
             .iter()
-            .find(|member| member.gossip_advertise_addr == gossip_public_address)
-            .ok_or_else(|| anyhow!("no cluster member"))?;
+            .find(|member| member.gossip_advertise_addr == gossip_public_address);
+        let Some(node) = node_opt else {
+            return false;
+        };
         let node_grouped_tasks: HashMap<IndexingTask, usize> = node
             .indexing_tasks
             .iter()
@@ -724,7 +726,7 @@ mod tests {
             .into_iter()
             .map(|(key, group)| (key, group.count()))
             .collect();
-        Ok(node_grouped_tasks == grouped_tasks)
+        node_grouped_tasks == grouped_tasks
     }
 
     #[tokio::test]

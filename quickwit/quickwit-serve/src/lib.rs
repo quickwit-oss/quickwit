@@ -44,16 +44,21 @@ mod ui_handler;
 
 use std::collections::HashSet;
 use std::convert::Infallible;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::anyhow;
+use byte_unit::n_mib_bytes;
 use format::BodyFormat;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::pubsub::EventBroker;
+use quickwit_common::tower::{
+    BufferLayer, ConstantRate, EstimateRateLayer, Rate, RateLimitLayer, SmaRateEstimator,
+};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, QuickwitConfig};
 use quickwit_control_plane::{start_control_plane_service, ControlPlaneServiceClient};
@@ -62,7 +67,9 @@ use quickwit_grpc_clients::create_balance_channel_from_watched_members;
 use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
-use quickwit_ingest_api::{start_ingest_api_service, IngestServiceClient};
+use quickwit_ingest_api::{
+    start_ingest_api_service, GetMemoryCapacity, IngestRequest, IngestServiceClient, MemoryCapacity,
+};
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, Metastore, MetastoreError, MetastoreEvent,
@@ -72,6 +79,7 @@ use quickwit_opentelemetry::otlp::{OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONF
 use quickwit_search::{start_searcher_service, SearchJobPlacer, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
+use tower::ServiceBuilder;
 use tracing::{error, warn};
 use warp::{Filter, Rejection};
 
@@ -214,7 +222,26 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
             storage_resolver.clone(),
         )
         .await?;
-        let ingest_service = IngestServiceClient::from_mailbox(ingest_api_service);
+        let num_buckets = NonZeroUsize::new(60).unwrap();
+        let initial_rate = ConstantRate::new(n_mib_bytes!(50), Duration::from_secs(1));
+        let rate_estimator = SmaRateEstimator::new(
+            num_buckets,
+            Duration::from_secs(10),
+            Duration::from_millis(100),
+        )
+        .with_initial_rate(initial_rate);
+        let memory_capacity = ingest_api_service.ask(GetMemoryCapacity).await?;
+        let min_rate = ConstantRate::new(n_mib_bytes!(1), Duration::from_millis(100));
+        let rate_modulator = RateModulator::new(rate_estimator.clone(), memory_capacity, min_rate);
+        let ingest_service = IngestServiceClient::tower()
+            .ingest_layer(
+                ServiceBuilder::new()
+                    .layer(EstimateRateLayer::<IngestRequest, _>::new(rate_estimator))
+                    .layer(BufferLayer::new(100))
+                    .layer(RateLimitLayer::new(rate_modulator))
+                    .into(),
+            )
+            .service(IngestServiceClient::from_mailbox(ingest_api_service));
         (ingest_service, Some(indexing_service))
     } else {
         let (channel, _) = create_balance_channel_from_watched_members(
@@ -277,6 +304,67 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
 
     tokio::try_join!(grpc_server, rest_server)?;
     Ok(())
+}
+
+#[derive(Clone)]
+struct RateModulator<R> {
+    rate_estimator: R,
+    memory_capacity: MemoryCapacity,
+    min_rate: ConstantRate,
+}
+
+impl<R> RateModulator<R>
+where R: Rate
+{
+    /// Creates a new `RateModulator` instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `rate_estimator` and `min_rate` have different periods.
+    pub fn new(rate_estimator: R, memory_capacity: MemoryCapacity, min_rate: ConstantRate) -> Self {
+        assert_eq!(
+            rate_estimator.period(),
+            min_rate.period(),
+            "Rate estimator and min rate periods must be equal."
+        );
+
+        Self {
+            rate_estimator,
+            memory_capacity,
+            min_rate,
+        }
+    }
+}
+
+impl<R> Rate for RateModulator<R>
+where R: Rate
+{
+    fn work(&self) -> u64 {
+        let memory_usage_ratio = self.memory_capacity.usage_ratio();
+        let work = self.rate_estimator.work().max(self.min_rate.work());
+
+        if memory_usage_ratio < 0.25 {
+            work * 2
+        } else if memory_usage_ratio > 0.99 {
+            work / 32
+        } else if memory_usage_ratio > 0.98 {
+            work / 16
+        } else if memory_usage_ratio > 0.95 {
+            work / 8
+        } else if memory_usage_ratio > 0.90 {
+            work / 4
+        } else if memory_usage_ratio > 0.80 {
+            work / 2
+        } else if memory_usage_ratio > 0.70 {
+            work * 2 / 3
+        } else {
+            work
+        }
+    }
+
+    fn period(&self) -> Duration {
+        self.rate_estimator.period()
+    }
 }
 
 fn require<T: Clone + Send>(
