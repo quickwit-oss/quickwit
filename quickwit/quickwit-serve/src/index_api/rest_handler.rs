@@ -192,8 +192,12 @@ async fn describe_index(
         total_bytes += split.split_metadata.footer_offsets.end;
 
         if let Some(time_range) = &split.split_metadata.time_range {
-            min_timestamp = min_timestamp.min(Some(*time_range.start())).or(Some(*time_range.start()));
-            max_timestamp = max_timestamp.max(Some(*time_range.end())).or(Some(*time_range.end()));
+            min_timestamp = min_timestamp
+                .min(Some(*time_range.start()))
+                .or(Some(*time_range.start()));
+            max_timestamp = max_timestamp
+                .max(Some(*time_range.end()))
+                .or(Some(*time_range.end()));
         }
     }
 
@@ -208,7 +212,7 @@ async fn describe_index(
         min_timestamp,
         max_timestamp,
     };
-    
+
     Ok(index_stats)
 }
 
