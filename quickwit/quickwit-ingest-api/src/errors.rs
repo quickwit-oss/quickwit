@@ -21,6 +21,7 @@ use std::io;
 
 use mrecordlog::error::*;
 use quickwit_actors::AskError;
+use quickwit_common::tower::BufferError;
 use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
 use serde::Serialize;
 
@@ -50,6 +51,15 @@ impl From<AskError<IngestServiceError>> for IngestServiceError {
             AskError::ErrorReply(error) => error,
             AskError::MessageNotDelivered => IngestServiceError::Unavailable,
             AskError::ProcessMessageError => IngestServiceError::Internal(error.to_string()),
+        }
+    }
+}
+
+impl From<BufferError> for IngestServiceError {
+    fn from(error: BufferError) -> Self {
+        match error {
+            BufferError::Closed => IngestServiceError::Unavailable,
+            BufferError::Unknown => IngestServiceError::Internal(error.to_string()),
         }
     }
 }
