@@ -145,7 +145,7 @@ fn get_indexes_metadatas_handler(
         .map(make_response)
 }
 
-// This structure represents describe Index
+/// Describes an index with its main information and statistics.
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 struct IndexStats {
     pub index_id: String,
@@ -166,31 +166,26 @@ struct IndexStats {
         (status = 200, description = "Successfully fetched stats about Index.", body = IndexStats)
     ),
     params(
-        ("index_id" = String, Path, description = "The index ID to retrieve index metadata and split data."),
+        ("index_id" = String, Path, description = "The index ID to describe."),
     )
 )]
 
-// Get describe index
+/// Describes an index.
 async fn describe_index(
     index_id: String,
     metastore: Arc<dyn Metastore>,
 ) -> Result<IndexStats, MetastoreError> {
-    // get index_metadata struct
     let index_metadata = metastore.index_metadata(&index_id).await?;
-
-    // get splits_metadata struct
     let query = ListSplitsQuery::for_index(&index_id);
     let splits = metastore.list_splits(query).await?;
-
     let published_splits: Vec<Split> = splits
         .into_iter()
         .filter(|split| split.split_state == SplitState::Published)
         .collect();
-
     let mut total_num_docs = 0;
     let mut total_bytes = 0;
-    let mut time_min: Option<i64> = None;
-    let mut time_max: Option<i64> = None;
+    let mut min_timestamp: Option<i64> = None;
+    let mut max_timestamp: Option<i64> = None;
 
     for split in &published_splits {
         total_num_docs += split.split_metadata.num_docs as u64;
@@ -198,20 +193,18 @@ async fn describe_index(
 
         for time_range in &split.split_metadata.time_range {
             let start_time = *time_range.start();
-            if time_min.is_none() || start_time < time_min.unwrap() {
-                time_min = Some(start_time);
+            if min_timestamp.is_none() || start_time < min_timestamp.unwrap() {
+                min_timestamp = Some(start_time);
             }
 
             let end_time = *time_range.end();
-            if time_max.is_none() || end_time > time_max.unwrap() {
-                time_max = Some(end_time);
+            if max_timestamp.is_none() || end_time > max_timestamp.unwrap() {
+                max_timestamp = Some(end_time);
             }
         }
     }
 
     let index_config = index_metadata.into_index_config();
-
-    // initialize object index_stats
     let index_stats = IndexStats {
         index_id,
         index_uri: index_config.index_uri.clone(),
@@ -219,8 +212,8 @@ async fn describe_index(
         num_published_docs: total_num_docs,
         size_published_docs: Byte::from(total_bytes),
         timestamp_field_name: index_config.doc_mapping.timestamp_field,
-        min_timestamp: time_min,
-        max_timestamp: time_max,
+        min_timestamp,
+        max_timestamp,
     };
 
     Ok(index_stats)
@@ -855,7 +848,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_describe_index() -> anyhow::Result<()>{
+    async fn test_describe_index() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::new();
         metastore
             .expect_index_metadata()
@@ -868,7 +861,7 @@ mod tests {
         metastore
             .expect_list_splits()
             .return_once(|list_split_query: ListSplitsQuery| {
-                if list_split_query.index_id == "test-index"{
+                if list_split_query.index_id == "test-index" {
                     return Ok(vec![mock_split("split_1"), mock_split("split_2")]);
                 }
                 Err(MetastoreError::InternalError {
@@ -896,12 +889,12 @@ mod tests {
             "num_published_splits": 2,
             "num_published_docs": 20,
             "size_published_docs": 1600,
-            "timestamp_field_name": "timestamp", 
+            "timestamp_field_name": "timestamp",
             "min_timestamp": null,
             "max_timestamp": null,
         });
 
-        assert_eq!(actual_response_json,expected_response_json);
+        assert_eq!(actual_response_json, expected_response_json);
         Ok(())
     }
 
