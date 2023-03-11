@@ -855,6 +855,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_describe_index() -> anyhow::Result<()>{
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .return_once(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-index",
+                    "ram:///indexes/test-index",
+                ))
+            });
+        metastore
+            .expect_list_splits()
+            .return_once(|list_split_query: ListSplitsQuery| {
+                if list_split_query.index_id == "test-index"{
+                    return Ok(vec![mock_split("split_1"), mock_split("split_2")]);
+                }
+                Err(MetastoreError::InternalError {
+                    message: "".to_string(),
+                    cause: "".to_string(),
+                })
+            });
+
+        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_management_handler = super::index_management_handlers(
+            Arc::new(index_service),
+            Arc::new(QuickwitConfig::for_test()),
+        )
+        .recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes/test-index/describe")
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+
+        let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
+        let expected_response_json = serde_json::json!({
+            "index_id": "test-index",
+            "index_uri": "ram:///indexes/test-index",
+            "num_published_splits": 2,
+            "num_published_docs": 20,
+            "size_published_docs": 1600,
+            "timestamp_field_name": "timestamp", 
+            "min_timestamp": null,
+            "max_timestamp": null,
+        });
+
+        assert_eq!(actual_response_json,expected_response_json);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_get_all_splits() {
         let mut metastore = MockMetastore::new();
         metastore
