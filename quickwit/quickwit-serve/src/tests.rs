@@ -55,29 +55,10 @@ async fn test_check_cluster_configuration() {
 }
 
 #[tokio::test]
-async fn test_standalone_server_no_indexer() {
+async fn test_standalone_server() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
-
-    let mut search_client = sandbox.get_random_search_client();
-    search_client
-        .root_search(SearchRequest {
-            index_id: sandbox.index_id_for_test.clone(),
-            query: "*".to_string(),
-            search_fields: Vec::new(),
-            snippet_fields: Vec::new(),
-            start_timestamp: None,
-            end_timestamp: None,
-            aggregation_request: None,
-            max_hits: 10,
-            sort_by_field: None,
-            sort_order: None,
-            start_offset: 0,
-        })
-        .await
-        .unwrap();
     sandbox.rest_client.cluster_snapshot().await.unwrap();
-
     assert!(sandbox.rest_client.is_ready().await.unwrap());
 
     {
@@ -96,12 +77,56 @@ async fn test_standalone_server_no_indexer() {
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
     {
-        // The indexing service is not running.
-        sandbox
+        // The indexing service should bd running.
+        let counters = sandbox
             .rest_client
             .indexing_service_counters()
             .await
-            .unwrap_err();
+            .unwrap();
+        assert_eq!(counters.num_running_pipelines, 0);
+    }
+    {
+        // Create an dynamic index.
+        sandbox
+            .rest_client
+            .create_index(
+                r#"
+                version: 0.4
+                index_id: my-new-index
+                doc_mapping:
+                  field_mappings:
+                  - name: body
+                    type: text
+                "#,
+            )
+            .await
+            .unwrap();
+
+        // Index should be searchable
+        let mut search_client = sandbox.get_random_search_client();
+        search_client
+            .root_search(SearchRequest {
+                index_id: "my-new-index".to_string(),
+                query: "body:test".to_string(),
+                search_fields: Vec::new(),
+                snippet_fields: Vec::new(),
+                start_timestamp: None,
+                end_timestamp: None,
+                aggregation_request: None,
+                max_hits: 10,
+                sort_by_field: None,
+                sort_order: None,
+                start_offset: 0,
+            })
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let counters = sandbox
+            .rest_client
+            .indexing_service_counters()
+            .await
+            .unwrap();
+        assert_eq!(counters.num_running_pipelines, 1);
     }
 }
 
@@ -113,15 +138,44 @@ async fn test_multi_nodes_cluster() {
         HashSet::from_iter([QuickwitService::Metastore]),
         HashSet::from_iter([QuickwitService::Indexer]),
         HashSet::from_iter([QuickwitService::ControlPlane]),
+        HashSet::from_iter([QuickwitService::Janitor]),
     ];
     let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
         .await
         .unwrap();
-    sandbox.wait_for_cluster_num_ready_nodes(3).await.unwrap();
+    sandbox.wait_for_cluster_num_ready_nodes(4).await.unwrap();
+
+    {
+        // Wait for indexer to fully start.
+        // The starting time is a bit long for a cluster.
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let indexing_service_counters = sandbox
+            .rest_client
+            .indexing_service_counters()
+            .await
+            .unwrap();
+        assert_eq!(indexing_service_counters.num_running_pipelines, 0);
+    }
+
+    // Create index
+    sandbox
+        .rest_client
+        .create_index(
+            r#"
+            version: 0.4
+            index_id: my-new-multi-node-index
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            "#,
+        )
+        .await
+        .unwrap();
     let mut search_client = sandbox.get_random_search_client();
     search_client
         .root_search(SearchRequest {
-            index_id: sandbox.index_id_for_test.clone(),
+            index_id: "my-new-multi-node-index".to_string(),
             query: "*".to_string(),
             search_fields: Vec::new(),
             start_timestamp: None,
@@ -139,8 +193,7 @@ async fn test_multi_nodes_cluster() {
     assert!(sandbox.rest_client.is_live().await.unwrap());
 
     // Wait until indexing pipelines are started.
-    // TODO(fmassot): try to reduce the duration or use a wait until condition.
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
     let indexing_service_counters = sandbox
         .rest_client
         .indexing_service_counters()
