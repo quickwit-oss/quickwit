@@ -25,6 +25,7 @@ use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use tracing::info;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
@@ -186,6 +187,7 @@ impl Metastore for MetastoreEventPublisher {
             index_id: index_id.to_string(),
             source_config: source.clone(),
         };
+        info!("add source {index_id}, {source:?}");
         self.underlying.add_source(index_id, source).await?;
         self.event_broker.publish(event);
         Ok(())

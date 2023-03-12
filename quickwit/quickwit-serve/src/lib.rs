@@ -55,7 +55,7 @@ use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
-use quickwit_common::pubsub::EventBroker;
+use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::tower::{
     BufferLayer, ConstantRate, EstimateRateLayer, Rate, RateLimitLayer, SmaRateEstimator,
 };
@@ -102,6 +102,10 @@ struct QuickwitServices {
     pub cluster: Arc<Cluster>,
     pub metastore: Arc<dyn Metastore>,
     pub control_plane_client: Option<ControlPlaneServiceClient>,
+    /// The control plane listens to metastore events.
+    /// We need to keep the subscription handle to keep listening. If not, subscription is dropped.
+    #[allow(dead_code)]
+    pub control_plane_subscription_handle: Option<EventSubscriptionHandle<MetastoreEvent>>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
@@ -185,11 +189,16 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         let control_plane_mailbox =
             start_control_plane_service(&universe, cluster.clone(), metastore.clone()).await?;
         let control_plane_service = ControlPlaneServiceClient::from_mailbox(control_plane_mailbox);
-        event_broker.subscribe::<MetastoreEvent>(control_plane_service.clone());
         Some(control_plane_service)
     } else {
         None
     };
+    let control_plane_subscription_handle =
+        indexing_scheduler_service
+            .as_ref()
+            .map(|scheduler_service| {
+                event_broker.subscribe::<MetastoreEvent>(scheduler_service.clone())
+            });
 
     let (ingest_service, indexing_service) = if config
         .enabled_services
@@ -288,6 +297,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         cluster: cluster.clone(),
         metastore: metastore.clone(),
         control_plane_client: indexing_scheduler_service,
+        control_plane_subscription_handle,
         search_service,
         indexing_service,
         janitor_service,
