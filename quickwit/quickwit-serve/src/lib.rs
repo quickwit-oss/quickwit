@@ -180,16 +180,28 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         storage_resolver.clone(),
     ));
 
-    // Instantiate the control plane first so that we can listen to events and take the appropriate
-    // actions when the other components start.
+    // Instantiate the control plane service if enabled.
+    // If not and metastore service is enabled, we need to instantiate the control plane client
+    // so the metastore can notify the control plane.
     let indexing_scheduler_service: Option<ControlPlaneServiceClient> = if config
         .enabled_services
         .contains(&QuickwitService::ControlPlane)
     {
         let control_plane_mailbox =
             start_control_plane_service(&universe, cluster.clone(), metastore.clone()).await?;
-        let control_plane_service = ControlPlaneServiceClient::from_mailbox(control_plane_mailbox);
-        Some(control_plane_service)
+        Some(ControlPlaneServiceClient::from_mailbox(
+            control_plane_mailbox,
+        ))
+    } else if config
+        .enabled_services
+        .contains(&QuickwitService::Metastore)
+    {
+        let (channel, _) = create_balance_channel_from_watched_members(
+            cluster.ready_member_change_watcher(),
+            QuickwitService::ControlPlane,
+        )
+        .await?;
+        Some(ControlPlaneServiceClient::from_channel(channel))
     } else {
         None
     };
