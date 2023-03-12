@@ -18,8 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 
+use futures::Future;
 use hyper::header::CONTENT_TYPE;
 use hyper::{http, Response, StatusCode, Uri};
 use quickwit_common::metrics;
@@ -131,23 +133,23 @@ pub(crate) async fn start_rest_server(
         .with(request_counter)
         .recover(recover_fn);
 
-    let warp_service = warp::service(rest_routes);
-    let compression_predicate =
-        DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
+    // let warp_service = warp::service(rest_routes);
+    // let compression_predicate =
+    //     DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
 
-    let service = ServiceBuilder::new()
-        .layer(
-            CompressionLayer::new()
-                .gzip(true)
-                .compress_when(compression_predicate),
-        )
-        .service(warp_service);
+    // let service = ServiceBuilder::new()
+    //     .layer(
+    //         CompressionLayer::new()
+    //             .gzip(true)
+    //             .compress_when(compression_predicate),
+    //     )
+    //     .service(warp_service);
 
     info!("Searcher ready to accept requests at http://{rest_listen_addr}/");
 
-    hyper::Server::bind(&rest_listen_addr)
-        .serve(Shared::new(service))
-        .await?;
+    let rest_server: Pin<Box<dyn Future<Output = ()> + Send>> =
+        Box::pin(warp::serve(rest_routes).run(rest_listen_addr));
+    rest_server.await;
     Ok(())
 }
 
