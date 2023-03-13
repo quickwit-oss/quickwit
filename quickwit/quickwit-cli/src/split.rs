@@ -242,7 +242,6 @@ impl SplitCliCommand {
         let split_ids = matches
             .values_of("splits")
             .expect("`splits` is a required arg.")
-            .into_iter()
             .map(String::from)
             .collect();
         let assume_yes = matches.is_present("yes");

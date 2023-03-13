@@ -47,7 +47,7 @@ impl QuickwitService {
     }
 
     pub fn supported_services() -> HashSet<QuickwitService> {
-        all::<QuickwitService>().into_iter().collect()
+        all::<QuickwitService>().collect()
     }
 }
 

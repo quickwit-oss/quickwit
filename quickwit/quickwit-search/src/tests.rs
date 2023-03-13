@@ -505,7 +505,8 @@ async fn single_node_search_sort_by_field(
         sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
-    let single_node_response = match single_node_search(
+
+    match single_node_search(
         &search_request,
         &*test_sandbox.metastore(),
         test_sandbox.storage_uri_resolver(),
@@ -528,8 +529,7 @@ async fn single_node_search_sort_by_field(
             test_sandbox.assert_quit().await;
             Err(err).map_err(anyhow::Error::from)
         }
-    };
-    single_node_response
+    }
 }
 
 #[tokio::test]

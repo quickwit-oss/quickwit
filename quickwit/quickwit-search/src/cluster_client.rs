@@ -151,9 +151,8 @@ impl ClusterClient {
         request: LeafListTermsRequest,
         mut client: SearchServiceClient,
     ) -> crate::Result<LeafListTermsResponse> {
-        let response_res = client.leaf_list_terms(request.clone()).await;
         // TODO: implement retry
-        response_res
+        client.leaf_list_terms(request.clone()).await
     }
 }
 
