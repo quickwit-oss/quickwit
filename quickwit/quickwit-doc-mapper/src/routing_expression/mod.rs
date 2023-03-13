@@ -169,7 +169,7 @@ impl InnerRoutingExpr {
 
 // We don't rely on Derive here to make it easier to keep the
 // implementation stable.
-#[allow(clippy::derive_hash_xor_eq)]
+#[allow(clippy::derived_hash_with_manual_eq)]
 impl Hash for InnerRoutingExpr {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
         match self {

@@ -41,8 +41,9 @@ use crate::{
 };
 
 /// Defines how an unmapped field should be handled.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub(crate) enum Mode {
+    #[default]
     Lenient,
     Strict,
     Dynamic(QuickwitJsonOptions),
@@ -55,12 +56,6 @@ impl Mode {
             Mode::Strict => ModeType::Strict,
             Mode::Dynamic(_) => ModeType::Dynamic,
         }
-    }
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Lenient
     }
 }
 

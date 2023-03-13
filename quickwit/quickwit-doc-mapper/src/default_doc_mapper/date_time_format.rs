@@ -119,19 +119,14 @@ fn is_strftime_formatting(format_str: &str) -> bool {
 }
 
 /// Specifies the datetime and unix timestamp formats to use when parsing date strings.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default)]
 pub enum DateTimeInputFormat {
     Iso8601,
     Rfc2822,
+    #[default]
     Rfc3339,
     Strptime(StrptimeParser),
     Timestamp,
-}
-
-impl Default for DateTimeInputFormat {
-    fn default() -> Self {
-        DateTimeInputFormat::Rfc3339
-    }
 }
 
 impl DateTimeInputFormat {
@@ -192,21 +187,16 @@ impl<'de> Deserialize<'de> for DateTimeInputFormat {
 }
 
 /// Specifies the datetime format to use when displaying datetime values.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default)]
 pub enum DateTimeOutputFormat {
     Iso8601,
     Rfc2822,
+    #[default]
     Rfc3339,
     Strptime(StrptimeParser),
     TimestampSecs,
     TimestampMillis,
     TimestampMicros,
-}
-
-impl Default for DateTimeOutputFormat {
-    fn default() -> Self {
-        DateTimeOutputFormat::Rfc3339
-    }
 }
 
 impl DateTimeOutputFormat {
