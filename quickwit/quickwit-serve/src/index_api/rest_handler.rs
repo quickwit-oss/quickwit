@@ -705,7 +705,7 @@ async fn delete_source(
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Bound;
+    use std::ops::{Bound, RangeInclusive};
 
     use assert_json_diff::assert_json_include;
     use quickwit_common::uri::{Protocol, Uri};
@@ -855,11 +855,18 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
+        let split_1 = mock_split("split_1");
+        let split_1_time_range = split_1.split_metadata.time_range.clone().unwrap();
+        let mut split_2 = mock_split("split_2");
+        split_2.split_metadata.time_range = Some(RangeInclusive::new(
+            split_1_time_range.start() - 10,
+            split_1_time_range.end() + 10,
+        ));
         metastore
             .expect_list_splits()
             .return_once(|list_split_query: ListSplitsQuery| {
                 if list_split_query.index_id == "test-index" {
-                    return Ok(vec![mock_split("split_1"), mock_split("split_2")]);
+                    return Ok(vec![split_1, split_2]);
                 }
                 Err(MetastoreError::InternalError {
                     message: "".to_string(),
@@ -887,8 +894,8 @@ mod tests {
             "num_published_docs": 20,
             "size_published_docs": 1600,
             "timestamp_field_name": "timestamp",
-            "min_timestamp": 121000,
-            "max_timestamp": 130198,
+            "min_timestamp": split_1_time_range.start() - 10,
+            "max_timestamp": split_1_time_range.end() + 10,
         });
 
         assert_eq!(actual_response_json, expected_response_json);
