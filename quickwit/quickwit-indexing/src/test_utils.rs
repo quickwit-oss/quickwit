@@ -237,7 +237,7 @@ pub fn mock_split_meta(split_id: &str) -> SplitMetadata {
         partition_id: 13u64,
         num_docs: 10,
         uncompressed_docs_size_in_bytes: 256,
-        time_range: None,
+        time_range: Some(121000..=130198),
         create_timestamp: 0,
         footer_offsets: 700..800,
         ..Default::default()

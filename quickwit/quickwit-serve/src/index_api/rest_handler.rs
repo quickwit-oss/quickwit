@@ -19,9 +19,11 @@
 
 use std::sync::Arc;
 
+use byte_unit::Byte;
 use bytes::Bytes;
 use hyper::header::CONTENT_TYPE;
 use quickwit_common::simple_list::{from_simple_list, to_simple_list};
+use quickwit_common::uri::Uri;
 use quickwit_common::FileEntry;
 use quickwit_config::{
     load_source_config_from_user_config, ConfigFormat, QuickwitConfig, SourceConfig, SourceParams,
@@ -48,13 +50,14 @@ use crate::with_arg;
         delete_index,
         get_indexes_metadatas,
         list_splits,
+        describe_index,
         mark_splits_for_deletion,
         create_source,
         reset_source_checkpoint,
         toggle_source,
         delete_source,
     ),
-    components(schemas(ToggleSource, SplitsForDeletion,))
+    components(schemas(ToggleSource, SplitsForDeletion, IndexStats))
 )]
 pub struct IndexApi;
 
@@ -70,6 +73,7 @@ pub fn index_management_handlers(
         .or(delete_index_handler(index_service.clone()))
         // Splits handlers
         .or(list_splits_handler(index_service.metastore()))
+        .or(describe_index_handler(index_service.metastore()))
         .or(mark_splits_for_deletion_handler(index_service.metastore()))
         // Sources handlers.
         .or(reset_source_checkpoint_handler(index_service.metastore()))
@@ -141,6 +145,88 @@ fn get_indexes_metadatas_handler(
         .map(make_response)
 }
 
+/// Describes an index with its main information and statistics.
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+struct IndexStats {
+    pub index_id: String,
+    pub index_uri: Uri,
+    pub num_published_splits: usize,
+    pub num_published_docs: u64,
+    pub size_published_docs: Byte,
+    pub timestamp_field_name: Option<String>,
+    pub min_timestamp: Option<i64>,
+    pub max_timestamp: Option<i64>,
+}
+
+#[utoipa::path(
+    get,
+    tag = "Indexes",
+    path = "/indexes/{index_id}/describe",
+    responses(
+        (status = 200, description = "Successfully fetched stats about Index.", body = IndexStats)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to describe."),
+    )
+)]
+
+/// Describes an index.
+async fn describe_index(
+    index_id: String,
+    metastore: Arc<dyn Metastore>,
+) -> Result<IndexStats, MetastoreError> {
+    let index_metadata = metastore.index_metadata(&index_id).await?;
+    let query = ListSplitsQuery::for_index(&index_id);
+    let splits = metastore.list_splits(query).await?;
+    let published_splits: Vec<Split> = splits
+        .into_iter()
+        .filter(|split| split.split_state == SplitState::Published)
+        .collect();
+    let mut total_num_docs = 0;
+    let mut total_bytes = 0;
+    let mut min_timestamp: Option<i64> = None;
+    let mut max_timestamp: Option<i64> = None;
+
+    for split in &published_splits {
+        total_num_docs += split.split_metadata.num_docs as u64;
+        total_bytes += split.split_metadata.footer_offsets.end;
+
+        if let Some(time_range) = &split.split_metadata.time_range {
+            min_timestamp = min_timestamp
+                .min(Some(*time_range.start()))
+                .or(Some(*time_range.start()));
+            max_timestamp = max_timestamp
+                .max(Some(*time_range.end()))
+                .or(Some(*time_range.end()));
+        }
+    }
+
+    let index_config = index_metadata.into_index_config();
+    let index_stats = IndexStats {
+        index_id,
+        index_uri: index_config.index_uri.clone(),
+        num_published_splits: published_splits.len(),
+        num_published_docs: total_num_docs,
+        size_published_docs: Byte::from(total_bytes),
+        timestamp_field_name: index_config.doc_mapping.timestamp_field,
+        min_timestamp,
+        max_timestamp,
+    };
+
+    Ok(index_stats)
+}
+
+fn describe_index_handler(
+    metastore: Arc<dyn Metastore>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("indexes" / String / "describe")
+        .and(warp::get())
+        .and(with_arg(metastore))
+        .then(describe_index)
+        .and(extract_format_from_qs())
+        .map(make_response)
+}
+
 /// This struct represents the QueryString passed to
 /// the rest API to filter splits.
 #[derive(Debug, Clone, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema, Default)]
@@ -180,6 +266,7 @@ pub struct ListSplitsQueryParams {
         ("index_id" = String, Path, description = "The index ID to retrieve delete tasks for."),
     )
 )]
+
 /// Get splits.
 async fn list_splits(
     index_id: String,
@@ -755,6 +842,57 @@ mod tests {
                 .await;
             assert_eq!(resp.status(), 500);
         }
+    }
+
+    #[tokio::test]
+    async fn test_describe_index() -> anyhow::Result<()> {
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .return_once(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-index",
+                    "ram:///indexes/test-index",
+                ))
+            });
+        metastore
+            .expect_list_splits()
+            .return_once(|list_split_query: ListSplitsQuery| {
+                if list_split_query.index_id == "test-index" {
+                    return Ok(vec![mock_split("split_1"), mock_split("split_2")]);
+                }
+                Err(MetastoreError::InternalError {
+                    message: "".to_string(),
+                    cause: "".to_string(),
+                })
+            });
+
+        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_management_handler = super::index_management_handlers(
+            Arc::new(index_service),
+            Arc::new(QuickwitConfig::for_test()),
+        )
+        .recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes/test-index/describe")
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+
+        let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
+        let expected_response_json = serde_json::json!({
+            "index_id": "test-index",
+            "index_uri": "ram:///indexes/test-index",
+            "num_published_splits": 2,
+            "num_published_docs": 20,
+            "size_published_docs": 1600,
+            "timestamp_field_name": "timestamp",
+            "min_timestamp": 121000,
+            "max_timestamp": 130198,
+        });
+
+        assert_eq!(actual_response_json, expected_response_json);
+        Ok(())
     }
 
     #[tokio::test]
