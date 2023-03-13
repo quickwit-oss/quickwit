@@ -312,7 +312,7 @@ mod tests {
             .layer(RateLimitLayer::new(rate))
             .service(meter.clone());
 
-        let futures = (0..5).into_iter().map(|_| {
+        let futures = (0..5).map(|_| {
             let mut service = service.clone();
             tokio::time::timeout(Duration::from_millis(deadline), async move {
                 loop {
