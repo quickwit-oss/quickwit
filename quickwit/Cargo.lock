@@ -4324,7 +4324,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-actors"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4343,7 +4343,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-aws"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4363,7 +4363,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cli"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4421,7 +4421,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cluster"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4443,7 +4443,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-codegen"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4466,7 +4466,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-codegen-example"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "dyn-clone",
@@ -4485,7 +4485,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-common"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-speed-limit",
@@ -4518,7 +4518,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-config"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "byte-unit",
@@ -4546,7 +4546,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-control-plane"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4581,7 +4581,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4613,7 +4613,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-directories"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4634,7 +4634,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-doc-mapper"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "base64 0.21.0",
@@ -4666,7 +4666,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-grpc-clients"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4684,7 +4684,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-indexing"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -4741,7 +4741,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-ingest-api"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4775,7 +4775,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-jaeger"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4801,7 +4801,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-janitor"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4836,7 +4836,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-metastore"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4887,7 +4887,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-opentelemetry"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4908,7 +4908,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-proto"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "glob",
  "opentelemetry",
@@ -4925,7 +4925,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-rest-client"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4947,7 +4947,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-search"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -4992,7 +4992,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-serve"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -5052,7 +5052,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-storage"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5089,7 +5089,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-telemetry"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "encoding_rs",
