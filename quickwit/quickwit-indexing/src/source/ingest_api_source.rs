@@ -168,7 +168,6 @@ impl Source for IngestApiSource {
             )
             .map_err(anyhow::Error::from)?;
 
-        let current_offset = first_position + doc_batch.num_docs() as u64 - 1;
         self.update_counters(current_offset, raw_doc_batch.docs.len() as u64);
         ctx.send_message(batch_sink, raw_doc_batch).await?;
         Ok(Duration::default())
