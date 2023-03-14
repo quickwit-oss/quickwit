@@ -193,6 +193,22 @@ pub trait Actor: Send + Sync + Sized + 'static {
     }
 }
 
+/// Message handler that allows actor to defer the reply
+#[async_trait::async_trait]
+pub trait DeferableReplyHandler<M>: Actor {
+    type Reply: Send + 'static;
+
+    async fn handle_message(
+        &mut self,
+        message: M,
+        reply: impl FnOnce(Self::Reply) + Send + Sync + 'static,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus>
+    where
+        M: Send + Sync + 'static;
+}
+
+/// Message handler that requires actor to provide immediate response
 #[async_trait::async_trait]
 pub trait Handler<M>: Actor {
     type Reply: Send + 'static;
@@ -207,4 +223,23 @@ pub trait Handler<M>: Actor {
         message: M,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus>;
+}
+
+#[async_trait::async_trait]
+impl<H, M> DeferableReplyHandler<M> for H
+where H: Handler<M>
+{
+    type Reply = H::Reply;
+
+    async fn handle_message(
+        &mut self,
+        message: M,
+        reply: impl FnOnce(Self::Reply) + Send + 'static,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus>
+    where
+        M: Send + 'static + Send + Sync,
+    {
+        self.handle(message, ctx).await.map(reply)
+    }
 }

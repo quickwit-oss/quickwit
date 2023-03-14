@@ -311,6 +311,7 @@ impl Source for KinesisSource {
             let batch = RawDocBatch {
                 docs,
                 checkpoint_delta,
+                force_commit: false,
             };
             ctx.send_message(indexer_mailbox, batch).await?;
         }

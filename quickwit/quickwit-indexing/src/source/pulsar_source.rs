@@ -328,6 +328,7 @@ impl BatchBuilder {
         RawDocBatch {
             docs: self.docs,
             checkpoint_delta: self.checkpoint_delta,
+            force_commit: false,
         }
     }
 

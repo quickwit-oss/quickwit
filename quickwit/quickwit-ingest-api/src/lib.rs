@@ -25,6 +25,7 @@ mod ingest_api_service;
 mod ingest_service;
 mod memory_capacity;
 mod metrics;
+mod notifications;
 mod position;
 mod queue;
 
@@ -41,6 +42,7 @@ pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::IngestApiConfig;
+use serde::Deserialize;
 use tokio::sync::Mutex;
 
 mod doc_batch;
@@ -110,6 +112,28 @@ pub async fn start_ingest_api_service(
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
     let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
     init_ingest_api(universe, &queues_dir_path, config).await
+}
+
+#[repr(u32)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all(deserialize = "snake_case"))]
+#[derive(Default)]
+pub enum CommitType {
+    #[default]
+    Auto = 0,
+    WaitFor = 1,
+    Force = 2,
+}
+
+impl From<u32> for CommitType {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => CommitType::Auto,
+            1 => CommitType::WaitFor,
+            2 => CommitType::Force,
+            _ => panic!("Unknown commit type {value}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -184,6 +208,7 @@ mod tests {
                     doc_lens: vec![2],
                 },
             ],
+            commit: CommitType::Auto as u32,
         };
         let ingest_result = ingest_api_service.ask_for_res(ingest_request).await;
         assert!(ingest_result.is_err());
@@ -228,6 +253,7 @@ mod tests {
                 concat_docs: vec![1; 600].into(),
                 doc_lens: vec![30; 20],
             }],
+            commit: CommitType::Auto as u32,
         };
 
         ingest_api_service

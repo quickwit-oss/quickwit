@@ -23,8 +23,9 @@ use std::fmt;
 use async_trait::async_trait;
 use tokio::sync::oneshot;
 
+use crate::actor::DeferableReplyHandler;
 use crate::scheduler::NoAdvanceTimeGuard;
-use crate::{Actor, ActorContext, ActorExitStatus, Handler};
+use crate::{Actor, ActorContext, ActorExitStatus};
 
 /// An `Envelope` is just a way to capture the handler
 /// of a message and hide its type.
@@ -93,7 +94,7 @@ trait EnvelopeT<A: Actor>: Send + Sync {
 #[async_trait]
 impl<A, M> EnvelopeT<A> for Option<(oneshot::Sender<A::Reply>, M)>
 where
-    A: Handler<M>,
+    A: DeferableReplyHandler<M>,
     M: 'static + Send + Sync + fmt::Debug,
 {
     fn debug_msg(&self) -> String {
@@ -121,10 +122,17 @@ where
         let (response_tx, msg) = self
             .take()
             .expect("handle_message should never be called twice.");
-        let response = actor.handle(msg, ctx).await?;
-        // A SendError is fine here. The caller just did not wait
-        // for our response and dropped its Receiver channel.
-        let _ = response_tx.send(response);
+        actor
+            .handle_message(
+                msg,
+                |response| {
+                    // A SendError is fine here. The caller just did not wait
+                    // for our response and dropped its Receiver channel.
+                    let _ = response_tx.send(response);
+                },
+                ctx,
+            )
+            .await?;
         Ok(())
     }
 }
@@ -134,7 +142,7 @@ pub(crate) fn wrap_in_envelope<A, M>(
     no_advance_time_guard: Option<NoAdvanceTimeGuard>,
 ) -> (Envelope<A>, oneshot::Receiver<A::Reply>)
 where
-    A: Handler<M>,
+    A: DeferableReplyHandler<M>,
     M: 'static + Send + Sync + fmt::Debug,
 {
     let (response_tx, response_rx) = oneshot::channel();

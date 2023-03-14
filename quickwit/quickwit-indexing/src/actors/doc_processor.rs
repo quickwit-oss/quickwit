@@ -343,6 +343,7 @@ impl Handler<RawDocBatch> for DocProcessor {
         let prepared_doc_batch = PreparedDocBatch {
             docs: prepared_docs,
             checkpoint_delta: raw_doc_batch.checkpoint_delta,
+            force_commit: raw_doc_batch.force_commit,
         };
         ctx.send_message(&self.indexer_mailbox, prepared_doc_batch)
             .await?;
@@ -451,6 +452,7 @@ mod tests {
                         "{".to_string(),                    // invalid json
                     ],
                 checkpoint_delta: checkpoint_delta.clone(),
+                force_commit: false,
             })
             .await?;
         let doc_processor_counters = doc_processor_handle
@@ -540,6 +542,7 @@ mod tests {
                     r#"{"tenant": "tenant_2", "body": "second doc for tenant 2"}"#.to_string(),
                 ],
                 checkpoint_delta: SourceCheckpointDelta::from_range(0..2),
+                force_commit: false,
             })
             .await?;
         universe
@@ -621,6 +624,7 @@ mod tests {
                         r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(),
                     ],
                 checkpoint_delta: SourceCheckpointDelta::from_range(0..1),
+                force_commit: false,
             })
             .await.unwrap();
         universe
@@ -662,6 +666,7 @@ mod tests {
                         "{".to_string(),                    // invalid json
                     ],
                 checkpoint_delta: checkpoint_delta.clone(),
+                force_commit: false,
             })
             .await?;
         let doc_processor_counters = doc_processor_handle

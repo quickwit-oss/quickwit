@@ -17,21 +17,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::fmt;
 use std::path::Path;
+use std::{fmt, iter};
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, QueueCapacity};
+use bytes::Bytes;
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, DeferableReplyHandler, Handler, QueueCapacity,
+};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::tower::Cost;
 use tracing::info;
 use ulid::Ulid;
 
 use crate::metrics::INGEST_METRICS;
+use crate::notifications::Notifications;
 use crate::{
-    CreateQueueIfNotExistsRequest, CreateQueueRequest, DropQueueRequest, FetchRequest,
-    FetchResponse, IngestRequest, IngestResponse, IngestServiceError, ListQueuesRequest,
-    ListQueuesResponse, MemoryCapacity, Queues, SuggestTruncateRequest, TailRequest,
+    CommitType, CreateQueueIfNotExistsRequest, CreateQueueRequest, DocCommand, DropQueueRequest,
+    FetchRequest, FetchResponse, IngestRequest, IngestResponse, IngestServiceError,
+    ListQueuesRequest, ListQueuesResponse, MemoryCapacity, Queues, SuggestTruncateRequest,
+    TailRequest,
 };
 
 impl Cost for IngestRequest {
@@ -49,6 +54,7 @@ pub struct IngestApiService {
     memory_limit: usize,
     disk_limit: usize,
     memory_capacity: MemoryCapacity,
+    notifications: Notifications,
 }
 
 impl fmt::Debug for IngestApiService {
@@ -95,6 +101,7 @@ impl IngestApiService {
         let queues = Queues::open(queues_dir_path).await?;
         let partition_id = get_or_initialize_partition_id(queues_dir_path).await?;
         let memory_capacity = MemoryCapacity::new(memory_limit);
+        let notifications = Notifications::new();
         info!(ingest_partition_id=%partition_id, "Ingest API partition id");
         Ok(Self {
             partition_id,
@@ -102,14 +109,42 @@ impl IngestApiService {
             memory_limit,
             disk_limit,
             memory_capacity,
+            notifications,
         })
     }
 
     async fn ingest(
         &mut self,
         request: IngestRequest,
+        reply: impl FnOnce(crate::Result<IngestResponse>) + Send + Sync + 'static,
         ctx: &ActorContext<Self>,
-    ) -> crate::Result<IngestResponse> {
+    ) -> Result<(), ActorExitStatus> {
+        let notification = self.ingest_inner(request, ctx).await;
+        match notification {
+            Ok((response, index_positions)) => {
+                if index_positions.is_empty() {
+                    reply(Ok(response));
+                } else {
+                    self.notifications
+                        .register(index_positions, move || {
+                            reply(Ok(response));
+                        })
+                        .await;
+                }
+                Ok(())
+            }
+            Err(err) => {
+                reply(Err(err));
+                Ok(())
+            }
+        }
+    }
+
+    async fn ingest_inner(
+        &mut self,
+        request: IngestRequest,
+        ctx: &ActorContext<Self>,
+    ) -> crate::Result<(IngestResponse, Vec<(String, u64)>)> {
         // Check all indexes exist assuming existing queues always have a corresponding index.
         let first_non_existing_queue_opt = request
             .doc_batches
@@ -138,13 +173,31 @@ impl IngestApiService {
             return Err(IngestServiceError::RateLimited);
         }
         let mut num_docs = 0usize;
+        let mut notifications = Vec::new();
         for doc_batch in &request.doc_batches {
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
             let records_it = doc_batch.iter_raw();
-            self.queues
+            let max_position = self
+                .queues
                 .append_batch(&doc_batch.index_id, records_it, ctx)
                 .await?;
+            let commit = CommitType::from(request.commit);
+            if let Some(max_position) = max_position {
+                if commit != CommitType::Auto {
+                    if commit == CommitType::Force {
+                        self.queues
+                            .append_batch(
+                                &doc_batch.index_id,
+                                iter::once(DocCommand::Commit::<Bytes>.into_buf()),
+                                ctx,
+                            )
+                            .await?;
+                    }
+                    notifications.push((doc_batch.index_id.clone(), max_position));
+                }
+            }
+
             let batch_num_docs = doc_batch.num_docs();
             let batch_num_bytes = doc_batch.num_bytes();
             num_docs += batch_num_docs;
@@ -156,9 +209,12 @@ impl IngestApiService {
                 .inc_by(batch_num_docs as u64);
         }
         // TODO we could fsync here and disable autosync to have better i/o perfs.
-        Ok(IngestResponse {
-            num_docs_for_processing: num_docs as u64,
-        })
+        Ok((
+            IngestResponse {
+                num_docs_for_processing: num_docs as u64,
+            },
+            notifications,
+        ))
     }
 
     fn fetch(&mut self, fetch_req: FetchRequest) -> crate::Result<FetchResponse> {
@@ -177,6 +233,9 @@ impl IngestApiService {
         request: SuggestTruncateRequest,
         ctx: &ActorContext<Self>,
     ) -> crate::Result<()> {
+        self.notifications
+            .notify(&request.index_id, request.up_to_position_included)
+            .await;
         self.queues
             .suggest_truncate(&request.index_id, request.up_to_position_included, ctx)
             .await?;
@@ -283,14 +342,16 @@ impl Handler<DropQueueRequest> for IngestApiService {
 }
 
 #[async_trait]
-impl Handler<IngestRequest> for IngestApiService {
+impl DeferableReplyHandler<IngestRequest> for IngestApiService {
     type Reply = crate::Result<IngestResponse>;
-    async fn handle(
+    async fn handle_message(
         &mut self,
         ingest_req: IngestRequest,
+        reply: impl FnOnce(Self::Reply) + Send + Sync + 'static,
         ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.ingest(ingest_req, ctx).await)
+    ) -> Result<(), ActorExitStatus> {
+        self.ingest(ingest_req, reply, ctx).await?;
+        Ok(())
     }
 }
 
@@ -344,10 +405,14 @@ impl Handler<ListQueuesRequest> for IngestApiService {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use bytes::Bytes;
+    use quickwit_actors::Universe;
+    use quickwit_config::IngestApiConfig;
 
     use super::*;
-    use crate::DocBatch;
+    use crate::{init_ingest_api, DocBatch, DocBatchBuilder};
 
     #[test]
     fn test_ingest_request_cost() {
@@ -364,7 +429,122 @@ mod tests {
                     doc_lens: vec![1, 3, 2],
                 },
             ],
+            commit: CommitType::Auto as u32,
         };
         assert_eq!(ingest_request.cost(), 9);
+    }
+
+    #[tokio::test]
+    async fn test_ingest_api_service_with_commit() -> anyhow::Result<()> {
+        let universe = Universe::with_accelerated_time();
+        let temp_dir = tempfile::tempdir()?;
+        let queues_dir_path = temp_dir.path();
+
+        let ingest_api_service =
+            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+
+        // Ensure a queue for this index exists.
+        let create_queue_req = CreateQueueIfNotExistsRequest {
+            queue_id: "index-1".to_string(),
+        };
+
+        ingest_api_service.ask_for_res(create_queue_req).await?;
+
+        let mut batch = DocBatchBuilder::new("index-1".to_string());
+        batch.ingest_doc(Bytes::from_static(b"Test1"));
+        batch.ingest_doc(Bytes::from_static(b"Test2"));
+        batch.ingest_doc(Bytes::from_static(b"Test3"));
+        batch.ingest_doc(Bytes::from_static(b"Test4"));
+
+        let ingest_request = IngestRequest {
+            doc_batches: vec![batch.build()],
+            commit: CommitType::Force as u32,
+        };
+        let ingest_response = ingest_api_service
+            .send_message(ingest_request)
+            .await
+            .unwrap();
+        universe.sleep(Duration::from_secs(2)).await;
+        let fetch_request = FetchRequest {
+            index_id: "index-1".to_string(),
+            start_after: None,
+            num_bytes_limit: None,
+        };
+        let fetch_response = ingest_api_service.ask_for_res(fetch_request).await.unwrap();
+        let doc_batch = fetch_response.doc_batch.unwrap();
+        let position = doc_batch.num_docs() as u64;
+        assert_eq!(doc_batch.num_docs(), 5);
+        assert!(matches!(
+            doc_batch.iter().nth(4),
+            Some(DocCommand::Commit::<Bytes>)
+        ));
+        ingest_api_service
+            .send_message(SuggestTruncateRequest {
+                index_id: "index-1".to_string(),
+                up_to_position_included: position,
+            })
+            .await
+            .unwrap();
+
+        let ingest_response = ingest_response.await.unwrap().unwrap();
+        assert_eq!(ingest_response.num_docs_for_processing, 4);
+
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ingest_api_service_with_wait() -> anyhow::Result<()> {
+        let universe = Universe::with_accelerated_time();
+        let temp_dir = tempfile::tempdir()?;
+        let queues_dir_path = temp_dir.path();
+
+        let ingest_api_service =
+            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+
+        // Ensure a queue for this index exists.
+        let create_queue_req = CreateQueueIfNotExistsRequest {
+            queue_id: "index-1".to_string(),
+        };
+
+        ingest_api_service.ask_for_res(create_queue_req).await?;
+
+        let mut batch = DocBatchBuilder::new("index-1".to_string());
+        batch.ingest_doc(Bytes::from_static(b"Test1"));
+        batch.ingest_doc(Bytes::from_static(b"Test2"));
+        batch.ingest_doc(Bytes::from_static(b"Test3"));
+        batch.ingest_doc(Bytes::from_static(b"Test4"));
+
+        let ingest_request = IngestRequest {
+            doc_batches: vec![batch.build()],
+            commit: CommitType::WaitFor as u32,
+        };
+        let ingest_response = ingest_api_service
+            .send_message(ingest_request)
+            .await
+            .unwrap();
+        universe.sleep(Duration::from_secs(2)).await;
+        let fetch_request = FetchRequest {
+            index_id: "index-1".to_string(),
+            start_after: None,
+            num_bytes_limit: None,
+        };
+        let fetch_response = ingest_api_service.ask_for_res(fetch_request).await.unwrap();
+        let doc_batch = fetch_response.doc_batch.unwrap();
+        let position = doc_batch.num_docs() as u64;
+        assert_eq!(doc_batch.num_docs(), 4);
+        ingest_api_service
+            .send_message(SuggestTruncateRequest {
+                index_id: "index-1".to_string(),
+                up_to_position_included: position,
+            })
+            .await
+            .unwrap();
+
+        let ingest_response = ingest_response.await.unwrap().unwrap();
+        assert_eq!(ingest_response.num_docs_for_processing, 4);
+
+        universe.assert_quit().await;
+        Ok(())
     }
 }

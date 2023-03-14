@@ -120,7 +120,7 @@ impl Queues {
         queue_id: &str,
         record: &[u8],
         ctx: &ActorContext<IngestApiService>,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<Option<u64>> {
         self.append_batch(queue_id, std::iter::once(record), ctx)
             .await
     }
@@ -133,17 +133,18 @@ impl Queues {
         queue_id: &str,
         records_it: impl Iterator<Item = impl Buf>,
         ctx: &ActorContext<IngestApiService>,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<Option<u64>> {
         let real_queue_id = format!("{QUICKWIT_CF_PREFIX}{queue_id}");
 
         // TODO None means we don't have itempotent inserts
-        ctx.protect_future(
-            self.record_log
-                .append_records(&real_queue_id, None, records_it),
-        )
-        .await?;
+        let max_position = ctx
+            .protect_future(
+                self.record_log
+                    .append_records(&real_queue_id, None, records_it),
+            )
+            .await?;
 
-        Ok(())
+        Ok(max_position)
     }
 
     // Streams messages from in `]after_position, +∞[`.

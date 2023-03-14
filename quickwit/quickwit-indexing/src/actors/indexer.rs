@@ -457,6 +457,7 @@ impl Indexer {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("indexer:batch:before");
+        let force_commit = batch.force_commit;
         self.indexer_state
             .index_batch(
                 batch,
@@ -473,6 +474,10 @@ impl Indexer {
             >= self.indexer_state.indexing_settings.split_num_docs_target as u64
         {
             self.send_to_serializer(CommitTrigger::NumDocsLimit, ctx)
+                .await?;
+        }
+        if force_commit {
+            self.send_to_serializer(CommitTrigger::ForceCommit, ctx)
                 .await?;
         }
         fail_point!("indexer:batch:after");
@@ -656,6 +661,7 @@ mod tests {
                     },
                 ],
                 checkpoint_delta: SourceCheckpointDelta::from_range(4..6),
+                force_commit: false,
             })
             .await?;
         indexer_mailbox
@@ -681,6 +687,7 @@ mod tests {
                     },
                 ],
                 checkpoint_delta: SourceCheckpointDelta::from_range(6..8),
+                force_commit: false,
             })
             .await?;
         indexer_mailbox
@@ -695,6 +702,7 @@ mod tests {
                     num_bytes: 30,
                 }],
                 checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
+                force_commit: false,
             })
             .await?;
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
@@ -781,6 +789,7 @@ mod tests {
                 .send_message(PreparedDocBatch {
                     docs: vec![make_doc(i)],
                     checkpoint_delta: SourceCheckpointDelta::from_range(i..i + 1),
+                    force_commit: false,
                 })
                 .await?;
             let output_messages: Vec<IndexedSplitBatchBuilder> =
@@ -848,6 +857,7 @@ mod tests {
                     num_bytes: 30,
                 }],
                 checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
+                force_commit: false,
             })
             .await
             .unwrap();
@@ -934,6 +944,7 @@ mod tests {
                     num_bytes: 30,
                 }],
                 checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
+                force_commit: false,
             })
             .await
             .unwrap();
@@ -1026,6 +1037,7 @@ mod tests {
                     },
                 ],
                 checkpoint_delta: SourceCheckpointDelta::from_range(8..9),
+                force_commit: false,
             })
             .await?;
 
@@ -1106,6 +1118,7 @@ mod tests {
                         num_bytes: 30,
                     }],
                     checkpoint_delta: SourceCheckpointDelta::from_range(partition..partition + 1),
+                    force_commit: false,
                 })
                 .await
                 .unwrap();
@@ -1185,6 +1198,7 @@ mod tests {
                         num_bytes: 30,
                     }],
                     checkpoint_delta: SourceCheckpointDelta::from_range(0..1),
+                    force_commit: false,
                 })
                 .await
                 .unwrap();
@@ -1257,6 +1271,7 @@ mod tests {
                     num_bytes: 30,
                 }],
                 checkpoint_delta: SourceCheckpointDelta::from_range(0..1),
+                force_commit: false,
             })
             .await
             .unwrap();
@@ -1269,6 +1284,70 @@ mod tests {
 
         let index_serializer_messages = index_serializer_inbox.drain_for_test();
         assert!(index_serializer_messages.is_empty());
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_indexer_honors_batch_commit_request() {
+        let universe = Universe::with_accelerated_time();
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let doc_mapper: Arc<dyn DocMapper> =
+            Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
+        let body_field = doc_mapper.schema().get_field("body").unwrap();
+        let indexing_directory = ScratchDirectory::for_test();
+        let indexing_settings = IndexingSettings::for_test();
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_last_delete_opstamp()
+            .times(1)
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(10)
+            });
+        metastore.expect_publish_splits().never();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            Arc::new(metastore),
+            indexing_directory,
+            indexing_settings,
+            index_serializer_mailbox,
+        );
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+        indexer_mailbox
+            .send_message(PreparedDocBatch {
+                docs: vec![PreparedDoc {
+                    doc: doc!(body_field=>"doc 1"),
+                    timestamp_opt: None,
+                    partition: 0,
+                    num_bytes: 30,
+                }],
+                checkpoint_delta: SourceCheckpointDelta::from_range(0..1),
+                force_commit: true,
+            })
+            .await
+            .unwrap();
+        universe
+            .send_exit_with_success(&indexer_mailbox)
+            .await
+            .unwrap();
+        let (exit_status, _indexer_counters) = indexer_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+        let output_messages: Vec<IndexedSplitBatchBuilder> =
+            index_serializer_inbox.drain_for_test_typed();
+
+        assert_eq!(output_messages.len(), 1);
+        assert_eq!(
+            output_messages[0].commit_trigger,
+            CommitTrigger::ForceCommit
+        );
+        assert_eq!(output_messages[0].splits[0].split_attrs.num_docs, 1);
         universe.assert_quit().await;
     }
 }

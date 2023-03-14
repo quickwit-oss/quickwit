@@ -53,7 +53,7 @@ impl From<u8> for DocCommandCode {
 }
 
 impl<T> DocCommand<T>
-where T: Buf
+where T: Buf + Default
 {
     /// Returns the binary serialization code for the current version of this command.
     pub fn code(&self) -> DocCommandCode {
@@ -73,14 +73,23 @@ where T: Buf
 
     /// Copies the command to the end of bytes::BufMut while returning the number of bytes copied
     pub fn write(self, buf: &mut impl BufMut) -> usize {
-        buf.put_u8(self.code() as u8);
+        let self_buf = self.into_buf();
+        let len = self_buf.remaining();
+        buf.put(self_buf);
+        len
+    }
+
+    pub fn into_buf(self) -> impl Buf {
+        self.code_chunk().chain(match self {
+            DocCommand::Ingest { payload } => payload,
+            DocCommand::Commit => T::default(),
+        })
+    }
+
+    fn code_chunk(&self) -> &'static [u8; 1] {
         match self {
-            DocCommand::Ingest { payload } => {
-                let len = payload.remaining();
-                buf.put(payload);
-                len + 1
-            }
-            DocCommand::Commit => 1,
+            DocCommand::Ingest { payload: _ } => &[DocCommandCode::IngestV1 as u8],
+            DocCommand::Commit => &[DocCommandCode::CommitV1 as u8],
         }
     }
 }
@@ -103,7 +112,7 @@ impl DocBatchBuilder {
     }
 
     /// Adds an ingest command to the batch
-    pub fn ingest_doc(&mut self, payload: impl Buf) -> usize {
+    pub fn ingest_doc(&mut self, payload: impl Buf + Default) -> usize {
         let command = DocCommand::Ingest { payload };
         self.command(command)
     }
@@ -116,7 +125,7 @@ impl DocBatchBuilder {
 
     /// Adds a parsed command to the batch
     pub fn command<T>(&mut self, command: DocCommand<T>) -> usize
-    where T: Buf {
+    where T: Buf + Default {
         let len = command.write(&mut self.concat_docs);
         self.doc_lens.push(len as u64);
         len
@@ -302,9 +311,6 @@ mod tests {
         });
         test_command_roundtrip!(DocCommand::Ingest {
             payload: Bytes::from("hello")
-        });
-        test_command_roundtrip!(DocCommand::Ingest {
-            payload: Bytes::from("hello").chain(&b" "[..]).chain(&b"world"[..])
         });
         test_command_roundtrip!(DocCommand::Commit::<Bytes>);
         test_command_roundtrip!(DocCommand::Commit::<&[u8]>);
