@@ -328,6 +328,7 @@ pub struct VoidSourceParams;
 pub struct PulsarSourceParams {
     /// List of the topics that the source consumes.
     pub topics: Vec<String>,
+    #[serde(deserialize_with = "pulsar_uri")]
     /// The connection URI for pulsar.
     pub address: String,
     #[schema(default = "quickwit")]
@@ -353,6 +354,18 @@ pub enum PulsarSourceAuth {
         audience: Option<String>,
         scope: Option<String>,
     },
+}
+
+// Deserializing a string into an pulsar uri.
+fn pulsar_uri<'de, D>(deserializer: D) -> Result<String, D::Error>
+where D: Deserializer<'de> {
+    let uri: String = Deserialize::deserialize(deserializer)?;
+
+    if !uri.starts_with("pulsar://") {
+        return Err(Error::custom("Pulsar uri must start with `pulsar://`."))
+    }
+
+    Ok(uri)
 }
 
 fn default_consumer_name() -> String {
