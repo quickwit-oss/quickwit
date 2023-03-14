@@ -48,9 +48,6 @@ impl Notifications {
             let positions = guard
                 .entry(index_position.0.clone())
                 .or_insert_with(VecDeque::new);
-            if let Some(top_position) = positions.back() {
-                assert!(top_position.position <= index_position.1);
-            }
             positions.push_back(Position {
                 position: index_position.1,
                 notification: notification.clone(),
@@ -64,10 +61,10 @@ impl Notifications {
         if let Some(positions) = map.get_mut(index) {
             while let Some(position) = positions.front() {
                 if position.position <= max_position {
-                    // Errors are allowed here, it simply means theare are still some positions that
-                    // were not notified
-                    let _ = Arc::try_unwrap(positions.pop_front().unwrap().notification)
-                        .map(|notification| notification.notify());
+                    positions
+                        .pop_front()
+                        .unwrap()
+                        .decrement_count_and_notify_if_last();
                 } else {
                     break;
                 }
@@ -90,6 +87,15 @@ impl Notification {
 struct Position {
     position: u64,
     notification: Arc<Notification>,
+}
+
+impl Position {
+    /// Reduces the notification's Arc count and notifies when if self has the only pointer.
+    fn decrement_count_and_notify_if_last(self) {
+        // Errors are allowed here, it simply means theare are still some positions that
+        // were not notified
+        let _ = Arc::try_unwrap(self.notification).map(|notification| notification.notify());
+    }
 }
 
 struct Notification {
