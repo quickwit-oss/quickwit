@@ -149,9 +149,11 @@ fn get_indexes_metadatas_handler(
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 struct IndexStats {
     pub index_id: String,
+    #[schema(value_type = String)]
     pub index_uri: Uri,
     pub num_published_splits: usize,
     pub num_published_docs: u64,
+    #[schema(value_type = u64)]
     pub size_published_docs: Byte,
     pub timestamp_field_name: Option<String>,
     pub min_timestamp: Option<i64>,
