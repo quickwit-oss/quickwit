@@ -556,6 +556,7 @@ mod tests {
             })
             .await
             .unwrap();
+        handle.await.unwrap();
         universe.assert_quit().await;
     }
 
@@ -599,6 +600,7 @@ mod tests {
             })
             .await
             .unwrap();
+        handle.await.unwrap();
         universe.assert_quit().await;
     }
 }
