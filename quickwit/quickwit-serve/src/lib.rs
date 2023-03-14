@@ -101,7 +101,7 @@ struct QuickwitServices {
     pub build_info: &'static QuickwitBuildInfo,
     pub cluster: Arc<Cluster>,
     pub metastore: Arc<dyn Metastore>,
-    pub control_plane_client: Option<ControlPlaneServiceClient>,
+    pub control_plane_service: Option<ControlPlaneServiceClient>,
     /// The control plane listens to metastore events.
     /// We need to keep the subscription handle to keep listening. If not, subscription is dropped.
     #[allow(dead_code)]
@@ -183,7 +183,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     // Instantiate the control plane service if enabled.
     // If not and metastore service is enabled, we need to instantiate the control plane client
     // so the metastore can notify the control plane.
-    let indexing_scheduler_service: Option<ControlPlaneServiceClient> = if config
+    let control_plane_service: Option<ControlPlaneServiceClient> = if config
         .enabled_services
         .contains(&QuickwitService::ControlPlane)
     {
@@ -206,11 +206,9 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         None
     };
     let control_plane_subscription_handle =
-        indexing_scheduler_service
-            .as_ref()
-            .map(|scheduler_service| {
-                event_broker.subscribe::<MetastoreEvent>(scheduler_service.clone())
-            });
+        control_plane_service.as_ref().map(|scheduler_service| {
+            event_broker.subscribe::<MetastoreEvent>(scheduler_service.clone())
+        });
 
     let (ingest_service, indexing_service) = if config
         .enabled_services
@@ -308,7 +306,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         build_info: quickwit_build_info(),
         cluster: cluster.clone(),
         metastore: metastore.clone(),
-        control_plane_client: indexing_scheduler_service,
+        control_plane_service,
         control_plane_subscription_handle,
         search_service,
         indexing_service,
