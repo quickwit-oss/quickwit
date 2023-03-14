@@ -311,7 +311,7 @@ struct SplitsForDeletion {
 #[utoipa::path(
     put,
     tag = "Splits",
-    path = "indexes/{index_id}/splits/mark-for-deletion",
+    path = "/indexes/{index_id}/splits/mark-for-deletion",
     request_body = SplitsForDeletion,
     responses(
         (status = 200, description = "Successfully marked splits for deletion.")
@@ -477,7 +477,7 @@ fn delete_index_handler(
 #[utoipa::path(
     delete,
     tag = "Indexes",
-    path = "indexes/{index_id}",
+    path = "/indexes/{index_id}",
     responses(
         // We return `VersionedIndexMetadata` as it's the serialized model view.
         (status = 200, description = "Successfully deleted index.", body = [FileEntry])
@@ -516,7 +516,7 @@ fn create_source_handler(
 #[utoipa::path(
     post,
     tag = "Sources",
-    path = "indexes/{index_id}/sources",
+    path = "/indexes/{index_id}/sources",
     request_body = VersionedSourceConfig,
     responses(
         // We return `VersionedSourceConfig` as it's the serialized model view.
@@ -590,7 +590,7 @@ fn reset_source_checkpoint_handler(
 #[utoipa::path(
     put,
     tag = "Sources",
-    path = "indexes/{index_id}/sources/{source_id}/reset-checkpoint",
+    path = "/indexes/{index_id}/sources/{source_id}/reset-checkpoint",
     responses(
         (status = 200, description = "Successfully reset source checkpoint.")
     ),
@@ -632,7 +632,7 @@ struct ToggleSource {
 #[utoipa::path(
     put,
     tag = "Sources",
-    path = "indexes/{index_id}/sources/{source_id}/toggle",
+    path = "/indexes/{index_id}/sources/{source_id}/toggle",
     request_body = ToggleSource,
     responses(
         (status = 200, description = "Successfully toggled source.")
@@ -677,7 +677,7 @@ fn delete_source_handler(
 #[utoipa::path(
     delete,
     tag = "Sources",
-    path = "indexes/{index_id}/sources/{source_id}",
+    path = "/indexes/{index_id}/sources/{source_id}",
     responses(
         (status = 200, description = "Successfully deleted source.")
     ),
