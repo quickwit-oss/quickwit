@@ -361,14 +361,12 @@ fn pulsar_uri<'de, D>(deserializer: D) -> Result<String, D::Error>
 where D: Deserializer<'de> {
     let uri: String = Deserialize::deserialize(deserializer)?;
 
-    let err_msg = format!(
-        "Invalid Pulsar uri provided, must be in the format of `pulsar://host:port/path`. Got: \
-         `{uri}`"
-    );
-
-    let _remaining = uri
-        .strip_prefix("pulsar://")
-        .ok_or_else(|| Error::custom(err_msg))?;
+    if uri.strip_prefix("pulsar://").is_none() {
+        return Err(Error::custom(format!(
+            "Invalid Pulsar uri provided, must be in the format of `pulsar://host:port/path`. \
+             Got: `{uri}`"
+        )));
+    }
 
     Ok(uri)
 }
