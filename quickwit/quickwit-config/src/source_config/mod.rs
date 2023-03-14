@@ -361,9 +361,25 @@ fn pulsar_uri<'de, D>(deserializer: D) -> Result<String, D::Error>
 where D: Deserializer<'de> {
     let uri: String = Deserialize::deserialize(deserializer)?;
 
-    if !uri.starts_with("pulsar://") {
-        return Err(Error::custom("Pulsar uri must start with `pulsar://`."))
-    }
+    let remaining = uri
+        .strip_prefix("pulsar://")
+        .ok_or_else(|| Error::custom("Pulsar uri must start with `pulsar://`."))?;
+
+    let err_msg = format!(
+        "Invalid Pulsar uri provided, must be in the format of `pulsar://host:port/path`. Got: \
+         `{uri}`"
+    );
+    let (_host, port_and_path) = remaining
+        .split_once(':')
+        .ok_or_else(|| Error::custom(&err_msg))?;
+    let port = port_and_path
+        .split_once('/')
+        .map(|(port, _)| port)
+        .unwrap_or(port_and_path);
+
+    let _port = port
+        .parse::<u16>()
+        .map_err(|_| Error::custom("Invalid port provided for Pulsar address. Got: `{port}`"))?;
 
     Ok(uri)
 }
@@ -914,6 +930,53 @@ mod tests {
                 PulsarSourceParams {
                     topics: vec!["my-topic".to_string()],
                     address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: default_consumer_name(),
+                    authentication: None,
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: invalid-address
+                "#;
+            serde_yaml::from_str::<PulsarSourceParams>(yaml)
+                .expect_err("Pulsar config should reject invalid address");
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://invalid-address
+                "#;
+            serde_yaml::from_str::<PulsarSourceParams>(yaml)
+                .expect_err("Pulsar config should reject invalid address");
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://some-host:invalid-port/
+                "#;
+            serde_yaml::from_str::<PulsarSourceParams>(yaml)
+                .expect_err("Pulsar config should reject invalid address");
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://some-host:80/valid-path
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://some-host:80/valid-path".to_string(),
                     consumer_name: default_consumer_name(),
                     authentication: None,
                 }
