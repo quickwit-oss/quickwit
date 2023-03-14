@@ -65,7 +65,13 @@ pub(crate) async fn start_rest_server(
         .map(|| warp::reply::json(&crate::openapi::build_docs()));
 
     // Swagger-ui
-    let swagger_config = Arc::new(utoipa_swagger_ui::Config::from("/openapi.json").use_base_layout());
+    let swagger_config =
+        Arc::new(utoipa_swagger_ui::Config::from("/openapi.json")
+            // Removes the schema section at the bottom.
+            .default_models_expand_depth(-1)
+            // Removes the top bar.
+            .use_base_layout()
+        );
     let swagger_ui = warp::path("swagger-ui")
         .and(warp::get())
         .and(warp::path::full())
