@@ -19,7 +19,6 @@
 
 use std::sync::Arc;
 
-use byte_unit::Byte;
 use bytes::Bytes;
 use hyper::header::CONTENT_TYPE;
 use quickwit_common::simple_list::{from_simple_list, to_simple_list};
@@ -153,8 +152,7 @@ struct IndexStats {
     pub index_uri: Uri,
     pub num_published_splits: usize,
     pub num_published_docs: u64,
-    #[schema(value_type = u64)]
-    pub size_published_docs: Byte,
+    pub size_published_docs: u64,
     pub timestamp_field_name: Option<String>,
     pub min_timestamp: Option<i64>,
     pub max_timestamp: Option<i64>,
@@ -209,7 +207,7 @@ async fn describe_index(
         index_uri: index_config.index_uri.clone(),
         num_published_splits: published_splits.len(),
         num_published_docs: total_num_docs,
-        size_published_docs: Byte::from(total_bytes),
+        size_published_docs: total_bytes,
         timestamp_field_name: index_config.doc_mapping.timestamp_field,
         min_timestamp,
         max_timestamp,
