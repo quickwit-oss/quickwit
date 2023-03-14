@@ -21,7 +21,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use hyper::client::HttpConnector;
-use hyper::{Body, Response, StatusCode};
+use hyper::{Body, Request, Response, StatusCode};
 use quickwit_cluster::ClusterSnapshot;
 use quickwit_indexing::actors::IndexingServiceCounters;
 use serde::de::DeserializeOwned;
@@ -40,6 +40,25 @@ impl QuickwitRestClient {
             .build_http();
         let root_url = format!("http://{addr}");
         Self { root_url, client }
+    }
+
+    pub async fn create_index(&self, index_config_yaml: &str) -> anyhow::Result<()> {
+        let uri = format!("{}/api/v1/indexes", self.root_url)
+            .parse::<hyper::Uri>()
+            .unwrap();
+        let request = Request::builder()
+            .uri(uri)
+            .method("POST")
+            .header("content-type", "application/yaml")
+            .body(Body::from(index_config_yaml.to_string()))
+            .unwrap();
+        let response = self.client.request(request).await.unwrap();
+        if response.status() == StatusCode::OK {
+            return Ok(());
+        }
+        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body_string = String::from_utf8(body_bytes.to_vec()).unwrap();
+        Err(anyhow::anyhow!("error when creating index: {body_string}"))
     }
 
     pub async fn cluster_snapshot(&self) -> anyhow::Result<ClusterSnapshot> {

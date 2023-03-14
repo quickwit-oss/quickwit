@@ -328,6 +328,7 @@ pub struct VoidSourceParams;
 pub struct PulsarSourceParams {
     /// List of the topics that the source consumes.
     pub topics: Vec<String>,
+    #[serde(deserialize_with = "pulsar_uri")]
     /// The connection URI for pulsar.
     pub address: String,
     #[schema(default = "quickwit")]
@@ -353,6 +354,21 @@ pub enum PulsarSourceAuth {
         audience: Option<String>,
         scope: Option<String>,
     },
+}
+
+// Deserializing a string into an pulsar uri.
+fn pulsar_uri<'de, D>(deserializer: D) -> Result<String, D::Error>
+where D: Deserializer<'de> {
+    let uri: String = Deserialize::deserialize(deserializer)?;
+
+    if uri.strip_prefix("pulsar://").is_none() {
+        return Err(Error::custom(format!(
+            "Invalid Pulsar uri provided, must be in the format of `pulsar://host:port/path`. \
+             Got: `{uri}`"
+        )));
+    }
+
+    Ok(uri)
 }
 
 fn default_consumer_name() -> String {
@@ -901,6 +917,51 @@ mod tests {
                 PulsarSourceParams {
                     topics: vec!["my-topic".to_string()],
                     address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: default_consumer_name(),
+                    authentication: None,
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: invalid-address
+                "#;
+            serde_yaml::from_str::<PulsarSourceParams>(yaml)
+                .expect_err("Pulsar config should reject invalid address");
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://some-host:80/valid-path
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://some-host:80/valid-path".to_string(),
+                    consumer_name: default_consumer_name(),
+                    authentication: None,
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://2345:0425:2CA1:0000:0000:0567:5673:23b5:80/valid-path
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://2345:0425:2CA1:0000:0000:0567:5673:23b5:80/valid-path"
+                        .to_string(),
                     consumer_name: default_consumer_name(),
                     authentication: None,
                 }

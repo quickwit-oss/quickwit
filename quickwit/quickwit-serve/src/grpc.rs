@@ -72,7 +72,7 @@ pub(crate) async fn start_grpc_server(
     };
     // Mount gRPC control plane service if `QuickwitService::ControlPlane` is enabled on node.
     let control_plane_grpc_service = if services.services.contains(&QuickwitService::ControlPlane) {
-        if let Some(control_plane_client) = &services.control_plane_client {
+        if let Some(control_plane_client) = &services.control_plane_service {
             enabled_grpc_services.insert("control-plane");
             let adapter = ControlPlaneServiceGrpcServerAdapter::new(control_plane_client.clone());
             Some(ControlPlaneServiceGrpcServer::new(adapter))
