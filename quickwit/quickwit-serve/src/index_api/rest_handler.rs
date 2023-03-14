@@ -437,7 +437,7 @@ fn clear_index_handler(
 #[utoipa::path(
     put,
     tag = "Indexes",
-    path = "indexes/{index_id}/clear",
+    path = "/indexes/{index_id}/clear",
     responses(
         (status = 200, description = "Successfully cleared index.")
     ),
@@ -445,7 +445,8 @@ fn clear_index_handler(
         ("index_id" = String, Path, description = "The index ID to clear."),
     )
 )]
-/// Clears index.
+/// Removes all of the data (splits, queued document) associated with the index, but keeps the index
+/// configuration. (See also, `delete-index`).
 async fn clear_index(
     index_id: String,
     index_service: Arc<IndexService>,
