@@ -85,7 +85,7 @@
         "message"
       ]
     },
-    "version": "0.4"
+    "version": "0.5"
   },
   "sources": [
     {
@@ -101,8 +101,8 @@
       "transform": {
         "script": ".message = downcase(string!(.message))"
       },
-      "version": "0.4"
+      "version": "0.5"
     }
   ],
-  "version": "0.4"
+  "version": "0.5"
 }

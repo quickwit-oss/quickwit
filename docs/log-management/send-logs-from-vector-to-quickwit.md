@@ -50,7 +50,7 @@ Let's embrace the OpenTelemetry standard and create an index compatible with its
 # Link: https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md
 #
 
-version: 0.4
+version: 0.5
 
 index_id: vector-otel-logs
 
