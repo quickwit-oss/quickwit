@@ -28,20 +28,22 @@ use crate::{
     INGEST_API_SOURCE_ID,
 };
 
-type SourceConfigForSerialization = SourceConfigV0_4;
+type SourceConfigForSerialization = SourceConfigV0_5;
 
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 #[serde(tag = "version")]
 pub enum VersionedSourceConfig {
-    #[serde(rename = "0.4")]
-    V0_4(SourceConfigV0_4),
+    #[serde(rename = "0.5")]
+    // Retro compatibilty with 0.4.
+    #[serde(alias = "0.4")]
+    V0_5(SourceConfigV0_5),
 }
 
 impl From<VersionedSourceConfig> for SourceConfigForSerialization {
     fn from(versioned_source_config: VersionedSourceConfig) -> Self {
         match versioned_source_config {
-            VersionedSourceConfig::V0_4(v0_4) => v0_4,
+            VersionedSourceConfig::V0_5(v0_5) => v0_5,
         }
     }
 }
@@ -118,9 +120,9 @@ impl SourceConfigForSerialization {
     }
 }
 
-impl From<SourceConfig> for SourceConfigV0_4 {
+impl From<SourceConfig> for SourceConfigV0_5 {
     fn from(source_config: SourceConfig) -> Self {
-        SourceConfigV0_4 {
+        SourceConfigV0_5 {
             source_id: source_config.source_id,
             max_num_pipelines_per_indexer: source_config.max_num_pipelines_per_indexer.get(),
             desired_num_pipelines: source_config.desired_num_pipelines.get(),
@@ -133,7 +135,7 @@ impl From<SourceConfig> for SourceConfigV0_4 {
 
 impl From<SourceConfig> for VersionedSourceConfig {
     fn from(source_config: SourceConfig) -> Self {
-        VersionedSourceConfig::V0_4(source_config.into())
+        VersionedSourceConfig::V0_5(source_config.into())
     }
 }
 
@@ -141,7 +143,7 @@ impl TryFrom<VersionedSourceConfig> for SourceConfig {
     type Error = anyhow::Error;
 
     fn try_from(versioned_source_config: VersionedSourceConfig) -> anyhow::Result<Self> {
-        let v1: SourceConfigV0_4 = versioned_source_config.into();
+        let v1: SourceConfigV0_5 = versioned_source_config.into();
         v1.validate_and_build()
     }
 }
@@ -159,7 +161,7 @@ fn default_source_enabled() -> bool {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct SourceConfigV0_4 {
+pub struct SourceConfigV0_5 {
     pub source_id: String,
 
     #[serde(

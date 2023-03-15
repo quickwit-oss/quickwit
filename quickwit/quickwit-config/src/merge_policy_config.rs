@@ -71,6 +71,7 @@ pub struct StableLogMergePolicyConfig {
     /// becomes mature.
     /// If `now() >= split.created_timestamp + maturation_period` then
     /// the split is mature.
+    #[schema(value_type = String)]
     #[serde(default = "default_maturation_period")]
     #[serde(deserialize_with = "parse_human_duration")]
     #[serde(serialize_with = "serialize_duration")]

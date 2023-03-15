@@ -22,7 +22,7 @@ First, let's create a schemaless index.
 ```bash
 # Create the index config file.
 cat << EOF > stackoverflow-schemaless-config.yaml
-version: 0.4
+version: 0.5
 index_id: stackoverflow-schemaless
 doc_mapping:
   mode: dynamic

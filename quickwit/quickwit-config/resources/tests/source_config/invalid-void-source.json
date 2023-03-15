@@ -1,5 +1,5 @@
 {
-    "version": "0.4",
+    "version": "0.5",
     "source_id": "hdfs-logs-void-source",
     "desired_num_pipelines": 0,
     "max_num_pipelines_per_indexer": 1,

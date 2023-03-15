@@ -108,7 +108,7 @@ export QW_LISTEN_ADDRESS=0.0.0.0
 
 ```yaml
 # config.yaml
-version: 0.4
+version: 0.5
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: ${QW_LISTEN_ADDRESS}
@@ -118,7 +118,7 @@ rest_listen_port: ${QW_LISTEN_PORT:-1111}
 Will be interpreted by Quickwit as:
 
 ```yaml
-version: 0.4
+version: 0.5
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: 0.0.0.0
