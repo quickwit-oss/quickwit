@@ -9,7 +9,7 @@
 <br/>
 <br/>
 <p align="center">
-  <img src="docs/assets/images/logo_horizontal.png#gh-light-mode-only" alt="Quickwit Cloud-Native Search Engine" height="40">
+  <img src="docs/assets/images/logo_horizontal.svg#gh-light-mode-only" alt="Quickwit Cloud-Native Search Engine" height="40">
   <img src="docs/assets/images/quickwit-dark-theme-logo.png#gh-dark-mode-only" alt="Quickwit Cloud-Native Search Engine" height="40">
 </p>
 
@@ -28,12 +28,15 @@ Sub-second search & analytics engine on cloud storage
 
 <b> Quickwit 0.5 is coming... and brings great features: OTEL - Jaeger - Pulsar integrations, RESTful API. Stay tuned.</b>
 
-Quickwit is the **fastest** search engine on cloud storage.
-With its decoupled compute and storage architecture, Quickwit is a great fit for log management, distributed tracing, and generally immutable data such as conversational data (emails, texts, messaging platforms) and event-based analytics.
+![Quickwit Distributed Tracing](./docs/assets/images/quickwit-overview-light.svg#gh-light-mode-only)![Quickwit Distributed Tracing](./docs/assets/images/quickwit-overview-dark.svg#gh-dark-mode-only)
 
-Here is a quick overview of Quickwit's architecture:
+Quickwit is the fastest search engine on cloud storage. It is a great fit for:
 
-![Quickwit Distributed Tracing](./docs/assets/images/quickwit-overview-light.png#gh-light-mode-only)![Quickwit Distributed Tracing](./docs/assets/images/quickwit-overview-dark.png#gh-dark-mode-only)
+- [Log management](https://quickwit.io/docs/main-branch/log-management/)
+- [Distributed traces](https://quickwit.io/docs/main-branch/distributed-tracing/)
+- Any immutable data: conversational data (emails, texts, messaging platforms) & event-based analytics
+
+… and more!
 
 # 💡 Features
 
@@ -54,12 +57,17 @@ Here is a quick overview of Quickwit's architecture:
 - Delete tasks (for GRPR use cases)
 - Distributed and highly available* engine that scales out in seconds (HA indexing only with Kafka)
 
-# ⚡ Documentation
+# 🚀 Quickstart
 
-- [Quickstart](https://quickwit.io/docs/get-started/quickstart)
-- [Log management](https://quickwit.io/docs/main-branch/log-management/)
-- [Distributed tracing](https://quickwit.io/docs/main-branch/distributed-tracing/)
-- [REST API](https://quickwit.io/docs/main-branch/reference/rest-api/)
+For a quick guide on how to install Quickwit, start a server, add documents to index, and search them - check out our [Quick Start](https://quickwit.io/docs/get-started/quickstart) guide.
+
+# 📕 Documentation
+
+- [Installation](https://quickwit.io/docs/get-started/installation)
+- [Log management with Quickwit](https://quickwit.io/docs/main-branch/log-management/)
+- [Distributed Tracing with Quickwit](https://quickwit.io/docs/distributed-tracing/)
+- [Ingest data](https://quickwit.io/docs/ingest-data/)
+- [REST API](https://quickwit.io/docs/reference/rest-api)
 
 # 📚 Resources
 
