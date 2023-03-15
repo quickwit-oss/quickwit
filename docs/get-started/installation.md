@@ -8,7 +8,7 @@ import TabItem from '@theme/TabItem';
 
 Quickwit compiles to a single binary and we provide different methods to install it:
 
-- Linux/MacOS binaries that you can[download manually](#download) or with the [isntall script](#install-script)
+- Linux/MacOS binaries that you can[download manually](#download) or with the [install script](#install-script)
 - [Docker image](#use-the-docker-image)
 - [Helm chart](/docs/deployment/kubernetes.md)
 
@@ -21,8 +21,7 @@ Support of aarch64 is currently experimental.
 
 ## Download
 
-<<<<<<< HEAD
-version: 0.5.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.4.0)
+version: 0.5.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.5.0)
 License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
 - [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.5.0/quickwit-v0.5.0-aarch64-unknown-linux-gnu.tar.gz)

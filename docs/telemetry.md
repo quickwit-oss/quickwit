@@ -13,11 +13,12 @@ Data collection are opt-out. To disable them, just set the environment variable 
 export QW_DISABLE_TELEMETRY=1
 ```
 
-Look at `c` command output to check whether telemetry is enabled or not:
+Look at `--help` command output to check whether telemetry is enabled or not:
 ```bash
 quickwit --help
 Quickwit 0.5.0
-Index and search your data on object storage at any scale
+Sub-second search & analytics engine on cloud storage.
+  Find more information at https://quickwit.io/docs
 
 Telemetry enabled
 ```
