@@ -85,7 +85,7 @@
         "message"
       ]
     },
-    "version": "0.4"
+    "version": "0.5"
   },
   "sources": [
     {
@@ -98,8 +98,8 @@
       },
       "source_id": "kafka-source",
       "source_type": "kafka",
-      "version": "0.4"
+      "version": "0.5"
     }
   ],
-  "version": "0.4"
+  "version": "0.5"
 }

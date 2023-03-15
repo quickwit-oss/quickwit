@@ -49,7 +49,7 @@ Below is the doc mapping of the `otel-trace-v0` index:
 
 ```yaml
 
-version: 0.4
+version: 0.5
 
 index_id: otel-trace-v0
 

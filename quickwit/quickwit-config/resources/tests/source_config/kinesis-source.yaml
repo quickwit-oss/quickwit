@@ -1,4 +1,4 @@
-version: 0.4
+version: 0.5
 source_id: hdfs-logs-kinesis-source
 source_type: kinesis
 params:
