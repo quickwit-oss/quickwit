@@ -162,7 +162,7 @@ async fn main() -> anyhow::Result<()> {
 /// Return the about text with telemetry info.
 fn about_text() -> String {
     let mut about_text = String::from(
-        "Index your dataset on object storage & make it searchable from the command line.\n  Find more information at https://quickwit.io/docs\n\n",
+        "Sub-second search & analytics engine on cloud storage.\n  Find more information at https://quickwit.io/docs\n\n",
     );
     if quickwit_telemetry::is_telemetry_enabled() {
         about_text += "Telemetry: enabled";
