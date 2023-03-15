@@ -24,19 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - gRPC OpenTelemetry Protocol support for traces
 - gRPC OpenTelemetry Protocol support for logs
 - Control plane (indexing tasks scheduling)
-- (Ingest API rate limiter)
+- Ingest API rate limiter
 - Pulsar source
 - VRL transform for data sources
-- Phrase query with slope (was present already in 0.4? @François Massot )
 - REST API enhanced to fully manage indexes, sources, and splits
-- OpenAPI specification for all REST available endpoints
+- OpenAPI specification and swagger UI for all REST available endpoints
 - Large responses from REST API can be compressed
 - Add bulk stage splits method to metastore
 - MacOS M1 binary
 - Doc mapping field names starting with `_` are now valid
 
 ### Fixed
-- Fix UI completion bug
+- Fix UI index completion on search page
 - Fix CLI index describe command to show stats on published splits
 - Fix REST API to always return on error a body formatted as `{"message": "error message"}`
 - Fixed REST status code when deleting unexisting index, source and when fetching splits on unexisting index
