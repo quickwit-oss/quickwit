@@ -29,15 +29,11 @@ const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 /// Output format for the search results.
 #[derive(Deserialize, Clone, Debug, Eq, PartialEq, Copy, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum BodyFormat {
     Json,
+    #[default]
     PrettyJson,
-}
-
-impl Default for BodyFormat {
-    fn default() -> Self {
-        BodyFormat::PrettyJson
-    }
 }
 
 impl ToString for BodyFormat {

@@ -110,7 +110,7 @@ async fn update_channel_endpoints(
     quickwit_service: &QuickwitService,
 ) -> anyhow::Result<()> {
     if new_grpc_address_pool.is_empty() {
-        error!("No metastore servers available in the cluster.");
+        info!("No node with service `{quickwit_service}` available in the cluster.");
     }
     let leaving_grpc_addresses = current_grpc_address_pool.sub(new_grpc_address_pool);
     if !leaving_grpc_addresses.is_empty() {

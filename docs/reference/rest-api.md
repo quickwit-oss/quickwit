@@ -232,7 +232,7 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes --data @index_config.json -H "Con
 
 ```json title="index_config.json
 {
-    "version": "0.4",
+    "version": "0.5",
     "index_id": "hdfs-logs",
     "doc_mapping": {
         "field_mappings": [
@@ -317,6 +317,28 @@ The response is the index metadata of the requested index, and the content type 
 | `sources`          | List of the index sources configurations. | `Array<SourceConfig>` |
 
 
+### Describe an index 
+
+```
+GET api/v1/indexes/<index id>/describe
+```
+Describes an index of ID `index id`.
+
+#### Response
+
+The response is the stats about the requested index, and the content type is `application/json; charset=UTF-8.`
+
+| Field                  | Description                               |         Type          |
+|------------------------|-------------------------------------------|:---------------------:|
+| `index_id`             | Index ID of index.                        |       `String`        |
+| `index_uri`            | Uri of index                              |       `String`        |
+| `num_published_splits` | Number of published splits.               |       `number`        |
+| `num_published_docs`   | Number of published documents.            |       `number`        |
+| `size_published_docs`  | Size of the published documents in bytes. |       `number`        |
+| `timestamp_field_name` | Type of timestamp.                        |       `String`        |
+| `min_timestamp`        | Starting time of timestamp.               |       `number`        |
+| `max_timestamp`        | Ending time of timestamp.                 |       `number`        |
+
 ### Clears an index
 
 ```
@@ -387,7 +409,7 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes/my-index/sources --data @source_c
 
 ```json title="source_config.json
 {
-    "version": "0.4",
+    "version": "0.5",
     "source_id": "kafka-source",
     "source_type": "kafka",
     "params": {

@@ -62,7 +62,7 @@ impl ApiResponse {
 
     pub async fn deserialize<T: DeserializeOwned>(self) -> Result<T, Error> {
         if self.inner.status().is_client_error() || self.inner.status().is_server_error() {
-            return Err(self.api_error().await);
+            Err(self.api_error().await)
         } else {
             let object = self.inner.json::<T>().await?;
             Ok(object)

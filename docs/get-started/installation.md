@@ -17,7 +17,7 @@ Support of aarch64 is currently experimental.
 
 ## Download
 
-Version: 0.4.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.4.0)
+version: 0.5.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.4.0)
 License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
 - [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.4.0/quickwit-v0.4.0-aarch64-unknown-linux-gnu.tar.gz)
@@ -142,7 +142,7 @@ and gets you right in the shell of the running container ready to execute Quickw
 Note that we are also mounting the working directory as volume. This is useful when you already have your dataset ready on your machine and want to work with Quickwit Docker image.
 
 ```bash
-docker run -it -v "$(pwd)":"/quickwit/files" --entrypoint ash quickwit/quickwit
+docker run -it -v "$(pwd)":"/quickwit/files" --entrypoint bash quickwit/quickwit
 quickwit --version
 ```
 

@@ -1,5 +1,5 @@
 {
-    "version": "0.4",
+    "version": "0.5",
     "source_id": "hdfs-logs-kafka-source",
     "desired_num_pipelines": 2,
     "max_num_pipelines_per_indexer": 2,

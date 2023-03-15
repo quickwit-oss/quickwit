@@ -53,7 +53,7 @@ used by Quickwit for [splits pruning](/docs/concepts/architecture) at query time
 Check out the [index config docs](/docs/configuration/index-config) for more details.
 
 ```yaml title="hdfs_logs_index_config.yaml"
-version: 0.4
+version: 0.5
 
 index_id: hdfs-logs
 
@@ -100,7 +100,7 @@ For more info check out [our AWS setup guide](https://quickwit.io/docs/guides/aw
 
 ```bash
 # Create Quickwit config file.
-echo "version: 0.4
+echo "version: 0.5
 metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
 " > config.yaml
@@ -109,7 +109,7 @@ default_index_root_uri: ${S3_PATH}
 > You can also pass environment variables directly:
 > ```yaml
 > # config.yaml
-> version: 0.4
+> version: 0.5
 > metastore_uri: ${S3_PATH}
 > default_index_root_uri: ${S3_PATH}
 > ```
@@ -181,7 +181,7 @@ export IP_NODE_3={third-ec2-instance-public-ip}
 
 ```bash
 # configuration for our first node
-echo "version: 0.4
+echo "version: 0.5
 node_id: searcher-1
 listen_address: 0.0.0.0
 metastore_uri: ${S3_PATH}
@@ -206,7 +206,7 @@ Let's launch the second and third searcher nodes instance by repeating the same 
 
 ```bash
 # configuration for our second node
-echo "version: 0.4
+echo "version: 0.5
 node_id: searcher-2
 metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
@@ -218,7 +218,7 @@ peer_seeds:
 
 ```bash
 # configuration for our third node
-echo "version: 0.4
+echo "version: 0.5
 node_id: searcher-3
 listen_address: 0.0.0.0
 peer_seeds:
