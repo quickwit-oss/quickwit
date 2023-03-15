@@ -1,4 +1,4 @@
-version: 0.4
+version: 0.5
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 enabled_services:

@@ -592,7 +592,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 0,
                 "max_num_pipelines_per_indexer": 1,
@@ -609,7 +609,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 1,
                 "max_num_pipelines_per_indexer": 0,
@@ -626,7 +626,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 1,
                 "max_num_pipelines_per_indexer": 2,
@@ -641,7 +641,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 2,
                 "max_num_pipelines_per_indexer": 1,
@@ -660,7 +660,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-kafka-source",
                 "desired_num_pipelines": 3,
                 "max_num_pipelines_per_indexer": 3,
@@ -679,7 +679,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-pulsar-source",
                 "desired_num_pipelines": 3,
                 "max_num_pipelines_per_indexer": 3,

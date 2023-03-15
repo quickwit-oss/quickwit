@@ -85,7 +85,7 @@ The doc mapping of this index described below is derived from the [OpenTelemetry
 
 ```yaml
 
-version: 0.4
+version: 0.5
 
 index_id: otel-logs-v0
 

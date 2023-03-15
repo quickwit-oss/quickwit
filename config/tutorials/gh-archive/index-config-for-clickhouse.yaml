@@ -1,7 +1,7 @@
 #
 # Index config file for gh-archive dataset.
 #
-version: 0.4
+version: 0.5
 
 index_id: gh-archive
 
