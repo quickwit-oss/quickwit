@@ -19,7 +19,6 @@
 
 use std::sync::Arc;
 
-use byte_unit::Byte;
 use bytes::Bytes;
 use hyper::header::CONTENT_TYPE;
 use quickwit_common::simple_list::{from_simple_list, to_simple_list};
@@ -149,10 +148,11 @@ fn get_indexes_metadatas_handler(
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 struct IndexStats {
     pub index_id: String,
+    #[schema(value_type = String)]
     pub index_uri: Uri,
     pub num_published_splits: usize,
     pub num_published_docs: u64,
-    pub size_published_docs: Byte,
+    pub size_published_docs: u64,
     pub timestamp_field_name: Option<String>,
     pub min_timestamp: Option<i64>,
     pub max_timestamp: Option<i64>,
@@ -207,7 +207,7 @@ async fn describe_index(
         index_uri: index_config.index_uri.clone(),
         num_published_splits: published_splits.len(),
         num_published_docs: total_num_docs,
-        size_published_docs: Byte::from(total_bytes),
+        size_published_docs: total_bytes,
         timestamp_field_name: index_config.doc_mapping.timestamp_field,
         min_timestamp,
         max_timestamp,
@@ -311,7 +311,7 @@ struct SplitsForDeletion {
 #[utoipa::path(
     put,
     tag = "Splits",
-    path = "indexes/{index_id}/splits/mark-for-deletion",
+    path = "/indexes/{index_id}/splits/mark-for-deletion",
     request_body = SplitsForDeletion,
     responses(
         (status = 200, description = "Successfully marked splits for deletion.")
@@ -437,7 +437,7 @@ fn clear_index_handler(
 #[utoipa::path(
     put,
     tag = "Indexes",
-    path = "indexes/{index_id}/clear",
+    path = "/indexes/{index_id}/clear",
     responses(
         (status = 200, description = "Successfully cleared index.")
     ),
@@ -445,7 +445,8 @@ fn clear_index_handler(
         ("index_id" = String, Path, description = "The index ID to clear."),
     )
 )]
-/// Clears index.
+/// Removes all of the data (splits, queued document) associated with the index, but keeps the index
+/// configuration. (See also, `delete-index`).
 async fn clear_index(
     index_id: String,
     index_service: Arc<IndexService>,
@@ -476,7 +477,7 @@ fn delete_index_handler(
 #[utoipa::path(
     delete,
     tag = "Indexes",
-    path = "indexes/{index_id}",
+    path = "/indexes/{index_id}",
     responses(
         // We return `VersionedIndexMetadata` as it's the serialized model view.
         (status = 200, description = "Successfully deleted index.", body = [FileEntry])
@@ -515,7 +516,7 @@ fn create_source_handler(
 #[utoipa::path(
     post,
     tag = "Sources",
-    path = "indexes/{index_id}/sources",
+    path = "/indexes/{index_id}/sources",
     request_body = VersionedSourceConfig,
     responses(
         // We return `VersionedSourceConfig` as it's the serialized model view.
@@ -589,7 +590,7 @@ fn reset_source_checkpoint_handler(
 #[utoipa::path(
     put,
     tag = "Sources",
-    path = "indexes/{index_id}/sources/{source_id}/reset-checkpoint",
+    path = "/indexes/{index_id}/sources/{source_id}/reset-checkpoint",
     responses(
         (status = 200, description = "Successfully reset source checkpoint.")
     ),
@@ -631,7 +632,7 @@ struct ToggleSource {
 #[utoipa::path(
     put,
     tag = "Sources",
-    path = "indexes/{index_id}/sources/{source_id}/toggle",
+    path = "/indexes/{index_id}/sources/{source_id}/toggle",
     request_body = ToggleSource,
     responses(
         (status = 200, description = "Successfully toggled source.")
@@ -676,7 +677,7 @@ fn delete_source_handler(
 #[utoipa::path(
     delete,
     tag = "Sources",
-    path = "indexes/{index_id}/sources/{source_id}",
+    path = "/indexes/{index_id}/sources/{source_id}",
     responses(
         (status = 200, description = "Successfully deleted source.")
     ),

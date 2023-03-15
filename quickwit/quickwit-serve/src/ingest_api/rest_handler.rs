@@ -151,7 +151,7 @@ fn lines(body: &str) -> impl Iterator<Item = &str> {
 #[utoipa::path(
     post,
     tag = "Ingest",
-    path = "{index_id}/ingest",
+    path = "/{index_id}/ingest",
     request_body(content = String, description = "Documents to ingest in NDJSON format and limited to 10MB", content_type = "application/json"),
     responses(
         (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
@@ -195,10 +195,9 @@ fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone 
 }
 
 #[utoipa::path(
-    post,
+    get,
     tag = "Ingest",
-    path = "{index_id}/tail",
-    request_body = String,
+    path = "/{index_id}/tail",
     responses(
         (status = 200, description = "Successfully fetched documents.", body = FetchResponse)
     ),
@@ -206,7 +205,7 @@ fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone 
         ("index_id" = String, Path, description = "The index ID to tail."),
     )
 )]
-/// Tail
+/// Returns the last few ingested documents.
 async fn tail_endpoint(
     index_id: String,
     mut ingest_service: IngestServiceClient,
@@ -247,7 +246,7 @@ pub fn elastic_bulk_handler(
         (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
     ),
 )]
-/// Elasticsearch Bulk Ingest
+/// Elasticsearch-compatible Bulk Ingest
 async fn elastic_ingest(
     payload: String,
     mut ingest_service: IngestServiceClient,

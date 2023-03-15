@@ -142,7 +142,7 @@ and gets you right in the shell of the running container ready to execute Quickw
 Note that we are also mounting the working directory as volume. This is useful when you already have your dataset ready on your machine and want to work with Quickwit Docker image.
 
 ```bash
-docker run -it -v "$(pwd)":"/quickwit/files" --entrypoint ash quickwit/quickwit
+docker run -it -v "$(pwd)":"/quickwit/files" --entrypoint bash quickwit/quickwit
 quickwit --version
 ```
 
