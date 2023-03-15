@@ -45,7 +45,7 @@ We don't need to index all fields described above as `title` and `body` are the 
 The `id` will be helpful for making the JOINs in ClickHouse, `created_at` and `event_type` may also be beneficial for timestamp pruning and filtering.
 
 ```yaml title="gh-archive-index-config.yaml"
-version: 0.4
+version: 0.5
 index_id: gh-archive
 # By default, the index will be stored in your data directory,
 # but you can store it on s3 or on a custom path as follows:

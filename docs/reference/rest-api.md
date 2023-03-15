@@ -232,7 +232,7 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes --data @index_config.json -H "Con
 
 ```json title="index_config.json
 {
-    "version": "0.4",
+    "version": "0.5",
     "index_id": "hdfs-logs",
     "doc_mapping": {
         "field_mappings": [
@@ -409,7 +409,7 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes/my-index/sources --data @source_c
 
 ```json title="source_config.json
 {
-    "version": "0.4",
+    "version": "0.5",
     "source_id": "kafka-source",
     "source_type": "kafka",
     "params": {
