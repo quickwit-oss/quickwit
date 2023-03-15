@@ -1,9 +1,9 @@
 ---
-title: Use Jaeger with Quickwit
-description: A simple tutorial to analyze Quickwit traces in Jaeger.
+title: Plug Quickwit to Jaeger
+description: A simple tutorial to use Jaeger with Quickwit backend.
 icon_url: /img/tutorials/quickwit-logo.png
 tags: [traces, ingestion]
-sidebar_position: 1
+sidebar_position: 2
 ---
 
 In this tutorial, we will show you how Quickwit can eat its own dog food: we will send Quickwit traces into Jaeger and analyze them, which will generate new traces to analyze :)

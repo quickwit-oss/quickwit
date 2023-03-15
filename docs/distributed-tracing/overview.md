@@ -1,5 +1,6 @@
 ---
 title: Distributed Tracing with Quickwit
+sidebar_label: Overview
 sidebar_position: 1
 ---
 
