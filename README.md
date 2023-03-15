@@ -55,18 +55,18 @@ Quickwit is the fastest search engine on cloud storage. It is a great fit for:
 - Multi-tenancy: indexing with many indexes and partitioning
 - Retention policies
 - Delete tasks (for GRPR use cases)
-- Distributed and highly available* engine that scales out in seconds (HA indexing only with Kafka)
+- Distributed and highly available* engine that scales out in seconds (*HA indexing only with Kafka)
 
 # 🚀 Quickstart
 
-For a quick guide on how to install Quickwit, start a server, add documents to index, and search them - check out our [Quick Start](https://quickwit.io/docs/get-started/quickstart) guide.
+For a quick guide on how to install Quickwit, start a server, add documents to index, and search them - check out our [Quickstart](https://quickwit.io/docs/get-started/quickstart) guide.
 
 # 📕 Documentation
 
 - [Installation](https://quickwit.io/docs/get-started/installation)
 - [Log management with Quickwit](https://quickwit.io/docs/main-branch/log-management/)
-- [Distributed Tracing with Quickwit](https://quickwit.io/docs/distributed-tracing/)
-- [Ingest data](https://quickwit.io/docs/ingest-data/)
+- [Distributed Tracing with Quickwit](https://quickwit.io/docs/main-branch/distributed-tracing/)
+- [Ingest data](https://quickwit.io/docs/main-branch/ingest-data/)
 - [REST API](https://quickwit.io/docs/reference/rest-api)
 
 # 📚 Resources
@@ -119,7 +119,7 @@ Our business model relies on our commercial license. There is no plan to become 
 
 # 🤝 Contribute and spread the word
 
-We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on [discord](https://discord.quickwit.io)! Here is how you can help us build the future of log management:
+We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on [Discord](https://discord.quickwit.io)! Here is how you can help us build the future of log management:
 
 - Have a look through GitHub issues labeled "Good first issue".
 - Read our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md).
