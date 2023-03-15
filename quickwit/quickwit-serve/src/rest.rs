@@ -29,7 +29,6 @@ use tower::ServiceBuilder;
 use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove};
 use tower_http::compression::CompressionLayer;
 use tracing::{error, info};
-use utoipa_swagger_ui::Config;
 use warp::path::{FullPath, Tail};
 use warp::{redirect, Filter, Rejection, Reply};
 
@@ -66,7 +65,13 @@ pub(crate) async fn start_rest_server(
         .map(|| warp::reply::json(&crate::openapi::build_docs()));
 
     // Swagger-ui
-    let swagger_config = Arc::new(Config::from("/openapi.json"));
+    let swagger_config = Arc::new(
+        utoipa_swagger_ui::Config::from("/openapi.json")
+            // Removes the schema section at the bottom.
+            .default_models_expand_depth(-1)
+            // Removes the top bar.
+            .use_base_layout(),
+    );
     let swagger_ui = warp::path("swagger-ui")
         .and(warp::get())
         .and(warp::path::full())
@@ -154,7 +159,7 @@ pub(crate) async fn start_rest_server(
 async fn swagger_ui_handler(
     full_path: FullPath,
     tail: Tail,
-    config: Arc<Config<'static>>,
+    config: Arc<utoipa_swagger_ui::Config<'static>>,
 ) -> Result<Box<dyn Reply>, Rejection> {
     if full_path.as_str() == "/swagger-ui" {
         return Ok(Box::new(warp::redirect::found(Uri::from_static(
