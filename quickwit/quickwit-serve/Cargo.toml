@@ -40,7 +40,6 @@ tower = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 utoipa = { workspace = true }
-utoipa-swagger-ui = { workspace = true }
 opentelemetry = { workspace = true }
 warp = { workspace = true }
 
