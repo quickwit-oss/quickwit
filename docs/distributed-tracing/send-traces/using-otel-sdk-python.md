@@ -1,5 +1,5 @@
 ---
-title: Instrument your Python app
+title: Using OTEL SDK - Python
 description: A simple tutorial to send traces to Quickwit from a Python Flask app.
 icon_url: /img/tutorials/python-logo.png
 tags: [python, traces, ingestion]
@@ -49,7 +49,7 @@ to the docker bridge (`172.17.0.1`). There are different ways to solve this prob
 The easiest is probably to use host network mode.
 
 ```bash
-docker run --rm --name jaeger-qw  --network=host \
+docker run --rm --name jaeger-qw --network=host \
     -e SPAN_STORAGE_TYPE=grpc-plugin \
     -e GRPC_STORAGE_SERVER=127.0.0.1:7281 \
     -p 16686:16686 \
@@ -213,7 +213,7 @@ opentelemetry-instrument python my_instrumented_app.py
 If you hit again [http://localhost:5000/process-ip](http://localhost:5000/process-ip), you should see new spans with name `fetch`, `parse`, and `display` and with the corresponding custom attributes!
 
 
-## Time to send traces to Quickwit
+## Sending traces to Quickwit
 
 To send traces to Quickwit, we need to use the OTLP exporter. This is a simple as this:
 
@@ -236,9 +236,22 @@ curl -XPOST http://localhost:7280/api/v1/otel-trace-v0/search -H 'Content-Type: 
 
 And then open the Jaeger UI [localhost:16686](http://localhost:16686/) and play with it, you have now a Jaeger UI powered by a Quickwit storage backend!
 
-![Flask trace analysis in Jaeger UI](../assets/images/jaeger-ui-python-app-trace-analysis.png)
+![Flask trace analysis in Jaeger UI](../../assets/images/jaeger-ui-python-app-trace-analysis.png)
 
-![Flask traces in Jaeger UI](../assets/images/jaeger-ui-python-app-traces.png)
+![Flask traces in Jaeger UI](../../assets/images/jaeger-ui-python-app-traces.png)
+
+## Sending traces to your OpenTelemetry collector
+
+Start a collector as described in the [OpenTelemetry collector tutorial](using-otel-collector.md) and execute the following command:
+
+```bash
+OTEL_METRICS_EXPORTER=none \ # We don't need metrics
+OTEL_SERVICE_NAME=flask \
+opentelemetry-instrument python instrumented_app.py
+```
+
+Traces will be sent to your collector, and then to Quickwit.
+
 
 ## Wrap up
 

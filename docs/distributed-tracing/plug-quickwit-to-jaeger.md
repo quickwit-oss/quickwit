@@ -1,14 +1,14 @@
 ---
-title: Use Jaeger with Quickwit
-description: A simple tutorial to analyze Quickwit traces in Jaeger.
+title: Plug Quickwit to Jaeger
+description: A simple tutorial to use Jaeger with Quickwit backend.
 icon_url: /img/tutorials/quickwit-logo.png
 tags: [traces, ingestion]
-sidebar_position: 1
+sidebar_position: 2
 ---
 
 In this tutorial, we will show you how Quickwit can eat its own dog food: we will send Quickwit traces into Jaeger and analyze them, which will generate new traces to analyze :)
 
-## Start Quickwit (OTLP service enabled)
+## Start Quickwit
 
 First, start a [Quickwit instance](../get-started/installation.md) with the OTLP service enabled:
 
@@ -72,7 +72,5 @@ Open the Jaeger UI at [http://localhost:16686](http://localhost:16686) and searc
 ## Next steps
 
 You are now ready for the next step: instrumenting your application and sending its traces to Quickwit. You can do it:
-- In [python](instrument-python-and-send-traces-to-quickwit.md).
-- In [nodeJS](instrument-nodejs-and-send-traces-to-quickwit.md) coming soon.
+- In [python](send-traces/using-otel-sdk-python.md).
 - And in any other language that OpenTelemetry supports.
-

@@ -1,29 +1,7 @@
 ---
-title: Distributed Tracing with Quickwit
-sidebar_position: 1
+title: OTEL service
+sidebar_position: 5
 ---
-
-import DocCardList from '@theme/DocCardList';
-
-Distributed Tracing is a process that tracks your application requests flowing through your different services: frontend, backend, databases and more. It's a powerful tool to understand how your application works and to debug performance issues.
-
-Quickwit is a cloud-native engine to index and search unstructured data which makes it a perfect fit for a traces backend.
-
-Moreover, Quickwit supports natively the [OpenTelemetry protocol](https://opentelemetry.io/docs/reference/specification/protocol/otlp/) and the [Jaeger UI](https://www.jaegertracing.io/). **This means that you can use Quickwit to store your traces and to query them with Jaeger UI**.
-
-![Quickwit Distributed Tracing](../assets/images/distributed-tracing-overview-light.png#gh-light-mode-only)![Quickwit Distributed Tracing](../assets/images/distributed-tracing-overview-dark.png#gh-dark-mode-only)
-
-## Tracing tutorials
-
-<DocCardList />
-
-## Jaeger with Quickwit backend
-
-Quickwit implements a gRPC service compatible with Jaeger UI. All you need is to configure Jaeger with a (span) storage type `grpc-plugin` and you will be able to visualize your traces in Jaeger that are stored in Quickwit.
-
-We made a tutorial on [how to analyze Quickwit traces in Jaeger UI](use-jaeger-to-analyze-quickwit-traces.md) that will guide you through the process.
-
-## OpenTelemetry service
 
 Quickwit natively supports the [OpenTelemetry Protocol (OTLP)](https://opentelemetry.io/docs/reference/specification/protocol/otlp/) and provides a gRPC endpoint to receive spans from an OpenTelemetry collector, or from your application directly, via an exporter. This endpoint is enabled by default.
 
@@ -145,11 +123,8 @@ doc_mapping:
 
   timestamp_field: span_start_timestamp_secs
 
-  partition_key: hash_mod(service_name, 100)
-  tag_fields: [service_name]
-
 indexing_settings:
-  commit_timeout_secs: 30
+  commit_timeout_secs: 5
 
 search_settings:
   default_search_fields: []
