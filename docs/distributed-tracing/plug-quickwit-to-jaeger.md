@@ -24,7 +24,7 @@ We also set `QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER` and `OTEL_EXPORTER_OTLP_ENDP
 
 Let's start a Jaeger UI instance with docker. Here we need to inform jaeger that it should use quickwit as its backend.
 
-Due to some idiosyncracy associated with networking with containers, we will have to use a different approach on MacOS & Windows on one side, and Linux on the other side.
+Due to some idiosyncrasy associated with networking with containers, we will have to use a different approach on MacOS & Windows on one side, and Linux on the other side.
 
 ### MacOS & Windows
 

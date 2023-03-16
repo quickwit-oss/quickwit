@@ -211,7 +211,7 @@ The response is a JSON object, and the content type is `application/json; charse
 POST api/v1/indexes
 ```
 
-Create an index by posting an `IndexConfig` payload. The API accepts JSON wiht `content-type: application/json`) and YAML `content-type: application/yaml`.
+Create an index by posting an `IndexConfig` payload. The API accepts JSON with `content-type: application/json`) and YAML `content-type: application/yaml`.
 
 #### POST payload
 

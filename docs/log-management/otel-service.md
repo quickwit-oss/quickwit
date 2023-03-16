@@ -109,7 +109,7 @@ You can also send traces to Quickwit that you can visualize in Jaeger UI, as exp
 
 There are a few limitations on the log management setup in Quickwit 0.5:
 - Aggregations are not available on sparse fields and JSON field, this will be fixed in 0.6. This means that only the timestamp field can support aggregations.
-- The ingest API does not provide High-Availibility and High-Durability, this will be fixed in Q2/Q3.
+- The ingest API does not provide High-Availability and High-Durability, this will be fixed in Q2/Q3.
 - Grafana and Elasticsearch query API support are planned for Q2 2023.
 - OTLP gRPC service index documents only in the `otel-logs-v0` index.
 - OTLP HTTP is not available but it should be easy to add.
