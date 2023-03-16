@@ -1,6 +1,5 @@
 ---
-title: OpenTelemetry service
-sidebar_label: OpenTelemetry service
+title: OTEL service
 sidebar_position: 5
 ---
 

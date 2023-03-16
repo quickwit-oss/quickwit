@@ -8,7 +8,7 @@ sidebar_position: 2
 
 In this tutorial, we will show you how Quickwit can eat its own dog food: we will send Quickwit traces into Jaeger and analyze them, which will generate new traces to analyze :)
 
-## Start Quickwit (OTLP service enabled)
+## Start Quickwit
 
 First, start a [Quickwit instance](../get-started/installation.md) with the OTLP service enabled:
 
