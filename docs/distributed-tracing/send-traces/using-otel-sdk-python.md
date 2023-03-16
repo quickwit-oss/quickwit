@@ -236,9 +236,9 @@ curl -XPOST http://localhost:7280/api/v1/otel-trace-v0/search -H 'Content-Type: 
 
 And then open the Jaeger UI [localhost:16686](http://localhost:16686/) and play with it, you have now a Jaeger UI powered by a Quickwit storage backend!
 
-![Flask trace analysis in Jaeger UI](../assets/images/jaeger-ui-python-app-trace-analysis.png)
+![Flask trace analysis in Jaeger UI](../../assets/images/jaeger-ui-python-app-trace-analysis.png)
 
-![Flask traces in Jaeger UI](../assets/images/jaeger-ui-python-app-traces.png)
+![Flask traces in Jaeger UI](../../assets/images/jaeger-ui-python-app-traces.png)
 
 ## Wrap up
 

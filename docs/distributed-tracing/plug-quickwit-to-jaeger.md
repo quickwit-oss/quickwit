@@ -72,7 +72,5 @@ Open the Jaeger UI at [http://localhost:16686](http://localhost:16686) and searc
 ## Next steps
 
 You are now ready for the next step: instrumenting your application and sending its traces to Quickwit. You can do it:
-- In [python](instrument-python-and-send-traces-to-quickwit.md).
-- In [nodeJS](instrument-nodejs-and-send-traces-to-quickwit.md) coming soon.
+- In [python](send-traces/using-otel-sdk-python.md).
 - And in any other language that OpenTelemetry supports.
-
