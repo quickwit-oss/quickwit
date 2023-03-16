@@ -22,14 +22,36 @@ We also set `QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER` and `OTEL_EXPORTER_OTLP_ENDP
 
 ## Start Jaeger UI
 
-Let's use docker to quickstart the Jaeger UI:
+Let's start a Jaeger UI instance with docker. Here we want to connect inform jaeger that it should use quickwit as its backend.
+Due to some idiosyncracy associated with networking with containers, you will need a different approach on MacOS & Windows on one side,
+and Linux on the other side.
+
+### MacOS & Windows
+
+We can rely on `host.docker.internal` to get the docker bridge ip address, pointing to our quickwit server.
 
 ```bash
+
 docker run --rm --name jaeger-qw \
     -e SPAN_STORAGE_TYPE=grpc-plugin \
     -e GRPC_STORAGE_SERVER=host.docker.internal:7281 \
     -p 16686:16686 \
     jaegertracing/jaeger-query:latest
+```
+
+### Linux
+
+By default, quickwit is listening to `127.0.0.1`, and will not respond to request directed
+to the docker bridge (`172.17.0.1`). There are different ways to solve this problem.
+The easiest is probably to use host network mode.
+
+```bash
+docker run --rm --name jaeger-qw  --network=host \
+    -e SPAN_STORAGE_TYPE=grpc-plugin \
+    -e GRPC_STORAGE_SERVER=127.0.0.1:7281 \
+    -p 16686:16686 \
+    jaegertracing/jaeger-query:latest
+
 ```
 
 ## Search traces in Jaeger UI
