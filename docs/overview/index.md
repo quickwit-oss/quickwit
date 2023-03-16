@@ -19,8 +19,8 @@ to='/docs/main-branch/get-started/quickstart'>
 
 ## Use cases
 
-- [Log management](../log-management/index.md)
-- [Distributed Tracing](../distributed-tracing/index.md)
+- [Log management](../log-management/overview.md)
+- [Distributed Tracing](../distributed-tracing/overview.md)
 
 ## Key concepts
 

@@ -1,18 +1,13 @@
 ---
-title: Send K8s logs with OTEL
+title: Send K8s logs using OTEL collector
+sidebar_label: Using OTEL with Helm
 description: Send K8s logs with OTEL collectors and Helm to Quickwit in a few minutes.
 tags: [k8s, helm]
 icon_url: /img/tutorials/helm-otel-k8s-tutorial-illustation.jpg
-sidebar_position: 3
+sidebar_position: 2
 ---
 
 This guide will help you to unlock log search on your k8s cluster logs. We will first deploy Quickwit and OTEL collectors with [Helm](https://helm.sh/) and then see how to index and search them.
-
-:::warning
-
-This tutorial uses Quickwit [Ingest API](/docs/reference/rest-api#ingest-data-into-an-index) which is not yet production ready and the OTEL logs index that is currently experimental.
-
-:::
 
 ## Prerequisites
 
@@ -193,7 +188,7 @@ Example of queries:
 - [resource_attributes.k8s.container.restart_count:1](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.restart_count%3A1&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs)
 
  
-![UI screenshot](../assets/screenshot-ui-otel-logs.png)
+![UI screenshot](../../assets/screenshot-ui-otel-logs.png)
 
 And that's all folks!
 

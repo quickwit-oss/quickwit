@@ -1,14 +1,15 @@
 ---
-title: Using OTEL Collector
+title: Send logs from OTEL Collector
+sidebar_label: Using OTEL collector
 description: Using OTEL Collector
-tags: [otel, collector, traces]
+tags: [otel, collector, log]
 sidebar_position: 1
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-If you already have your own OpenTelemetry Collector and want to export your traces to Quickwit, you need a new OLTP gRPC exporter in your config.yaml:
+If you already have your own OpenTelemetry Collector and want to export your logs to Quickwit, you need a new OLTP gRPC exporter in your config.yaml:
 
 <Tabs>
 
@@ -32,7 +33,7 @@ exporters:
 
 service:
   pipelines:
-    traces:
+    logs:
       receivers: [otlp]
       processors: [batch]
       exporters: [otlp/quickwit]
@@ -60,7 +61,7 @@ exporters:
 
 service:
   pipelines:
-    traces:
+    logs:
       receivers: [otlp]
       processors: [batch]
       exporters: [otlp/quickwit]
@@ -101,41 +102,34 @@ docker run -v ${PWD}/otel-collector-config.yaml:/etc/otelcol/config.yaml --netwo
 
 </Tabs>
 
-3. Send a trace to your collector with cURL:
+3. Send a log to your collector with cURL:
 
 ```bash
-curl -XPOST "http://localhost:4318/v1/traces" -H "Content-Type: application/json" \
+curl -XPOST "http://localhost:4318/v1/logs" -H "Content-Type: application/json" \
 --data-binary @- << EOF
 {
- "resource_spans": [
+ "resource_logs": [
    {
      "resource": {
        "attributes": [
          {
            "key": "service.name",
            "value": {
-             "string_value": "test-with-curl"
+             "stringValue": "test-with-curl"
            }
          }
        ]
      },
-     "scope_spans": [
+     "scope_logs": [
        {
          "scope": {
            "name": "manual-test"
          },
-         "spans": [
+         "log_records": [
            {
              "time_unix_nano": "1678974011000000000",
-             "start_time_unix_nano": "1678974011000000000",
-             "end_time_unix_nano": "1678974021000000000",
-             "trace_id": "3c191d03fa8be0653c191d03fa8be065",
-             "span_id": "3c191d03fa8be065",
-             "kind": 2,
-             "events": [],
-             "status": {
-               "code": 1
-             }
+             "name": "test",
+             "severity_text": "INFO"
            }
          ]
        }
@@ -152,8 +146,4 @@ You should see a log on the Quickwit server similar to the following:
 2023-03-16T13:44:09.369Z  INFO quickwit_indexing::actors::indexer: new-split split_id="01GVNAKT5TQW0T2QGA245XCMTJ" partition_id=6444214793425557444
 ```
 
-This means that Quickwit has received the trace and created a new split. Wait for the split to be published before searching for traces.
-
-## Next step
-
-Follow our tutorial on [how to send traces from your python app](using-otel-sdk-python.md).
+This means that Quickwit has received the log and created a new split. Wait for the split to be published before searching for logs.

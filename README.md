@@ -32,8 +32,8 @@ Sub-second search & analytics engine on cloud storage
 
 Quickwit is the fastest search engine on cloud storage. It is a great fit for:
 
-- [Log management](https://quickwit.io/docs/main-branch/log-management/)
-- [Distributed traces](https://quickwit.io/docs/main-branch/distributed-tracing/)
+- [Log management](https://quickwit.io/docs/main-branch/log-management/overview)
+- [Distributed traces](https://quickwit.io/docs/main-branch/distributed-tracing/overview)
 - Any immutable data: conversational data (emails, texts, messaging platforms) & event-based analytics
 
 … and more!
@@ -45,8 +45,8 @@ Quickwit is the fastest search engine on cloud storage. It is a great fit for:
 - Decoupled compute and storage, stateless indexers & searchers
 - [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing
 - Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/main-branch/deployment/kubernetes)
-- OTEL-native for [logs](https://quickwit.io/docs/main-branch/log-management/) and [traces](https://quickwit.io/docs/main-branch/distributed-tracing/)
-- [Jaeger-native](https://quickwit.io/docs/main-branch/distributed-tracing/use-jaeger-to-analyze-quickwit-traces)
+- OTEL-native for [logs](https://quickwit.io/docs/main-branch/log-management/overview) and [traces](https://quickwit.io/docs/main-branch/distributed-tracing/overview)
+- [Jaeger-native](https://quickwit.io/docs/main-branch/distributed-tracing/plug-quickwit-to-jaeger)
 - RESTful API
 
 ## Enterprise ready
@@ -64,8 +64,8 @@ For a quick guide on how to install Quickwit, start a server, add documents to i
 # 📕 Documentation
 
 - [Installation](https://quickwit.io/docs/get-started/installation)
-- [Log management with Quickwit](https://quickwit.io/docs/main-branch/log-management/)
-- [Distributed Tracing with Quickwit](https://quickwit.io/docs/main-branch/distributed-tracing/)
+- [Log management with Quickwit](https://quickwit.io/docs/main-branch/log-management/overview)
+- [Distributed Tracing with Quickwit](https://quickwit.io/docs/main-branch/distributed-tracing/overview)
 - [Ingest data](https://quickwit.io/docs/main-branch/ingest-data/)
 - [REST API](https://quickwit.io/docs/reference/rest-api)
 
