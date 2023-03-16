@@ -4,8 +4,6 @@ sidebar_label: Overview
 sidebar_position: 1
 ---
 
-import DocCardList from '@theme/DocCardList';
-
 Distributed Tracing is a process that tracks your application requests flowing through your different services: frontend, backend, databases and more. It's a powerful tool to understand how your application works and to debug performance issues.
 
 Quickwit is a cloud-native engine to index and search unstructured data which makes it a perfect fit for a traces backend.

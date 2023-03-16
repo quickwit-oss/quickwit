@@ -1,9 +1,10 @@
 ---
-title: Send logs from Fluentbit
+title: Send logs using Fluentbit
+sidebar_label: Using Fluentbit
 description: A simple tutorial to send logs from Fluentbit to Quickwit in a few minutes.
 icon_url: /img/tutorials/fluentbit-logo.png
 tags: [logs, ingestion]
-sidebar_position: 2
+sidebar_position: 4
 ---
 
 import Tabs from '@theme/Tabs';
@@ -16,7 +17,7 @@ In this guide, we will show you how to connect it to Quickwit.
 ## Prerequisites
 
 - [Install Quickwit](/docs/get-started/installation.md)
-- Start a Quickwit instance: `./quickwit run`
+- Start a Quickwit instance with `./quickwit run`
 - [Install Fluentbit](https://docs.fluentbit.io/manual/installation/getting-started-with-fluent-bit)
 
 
