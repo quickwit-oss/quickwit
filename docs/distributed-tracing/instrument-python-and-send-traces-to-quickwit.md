@@ -21,7 +21,7 @@ In this tutorial, we will show you how to instrument a Python [Flask](https://fl
 [Install Quickwit](/docs/get-started/installation.md) and start a Quickwit instance with OTLP service enabled:
 
 ```bash
-QW_ENABLE_OTLP_ENDPOINT=true ./quickwit run
+./quickwit run
 ```
 
 ## Start Jaeger UI

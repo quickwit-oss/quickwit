@@ -143,7 +143,7 @@ doc_mapping:
   tag_fields: [service_name]
 
 indexing_settings:
-  commit_timeout_secs: 30
+  commit_timeout_secs: 5
 
 search_settings:
   default_search_fields: []

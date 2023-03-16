@@ -13,7 +13,6 @@ In this tutorial, we will show you how Quickwit can eat its own dog food: we wil
 First, start a [Quickwit instance](../get-started/installation.md) with the OTLP service enabled:
 
 ```bash
-QW_ENABLE_OTLP_ENDPOINT=true \
 QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER=true \
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:7281 \
 quickwit run
@@ -35,7 +34,7 @@ docker run --rm --name jaeger-qw \
 
 ## Search traces in Jaeger UI
 
-As Quickwit is indexing its own traces, you should be able to see them in Jaeger UI after 30 seconds (the time it takes for Quickwit to do its first commit). 
+As Quickwit is indexing its own traces, you should be able to see them in Jaeger UI after 30 seconds (the time it takes for Quickwit to do its first commit).
 
 Open the Jaeger UI at [http://localhost:16686](http://localhost:16686) and search for traces! By executing search queries, you will then see Quickwit's own traces:
 
