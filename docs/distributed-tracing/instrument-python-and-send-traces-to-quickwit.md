@@ -18,7 +18,7 @@ In this tutorial, we will show you how to instrument a Python [Flask](https://fl
 
 ## Start a Quickwit instance
 
-[Install Quickwit](/docs/get-started/installation.md) and start a Quickwit instance with OTLP service enabled:
+[Install Quickwit](/docs/get-started/installation.md) and start a Quickwit instance:
 
 ```bash
 ./quickwit run
@@ -26,9 +26,9 @@ In this tutorial, we will show you how to instrument a Python [Flask](https://fl
 
 ## Start Jaeger UI
 
-Let's start a Jaeger UI instance with docker. Here we want to connect inform jaeger that it should use quickwit as its backend.
-Due to some idiosyncracy associated with networking with containers, you will need a different approach on MacOS & Windows on one side,
-and Linux on the other side.
+Let's start a Jaeger UI instance with docker. Here we need to inform jaeger that it should use quickwit as its backend.
+
+Due to some idiosyncracy associated with networking with containers, we will have to use a different approach on MacOS & Windows on one side, and Linux on the other side.
 
 ### MacOS & Windows
 

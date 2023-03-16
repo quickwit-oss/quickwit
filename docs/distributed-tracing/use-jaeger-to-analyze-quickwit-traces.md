@@ -15,23 +15,22 @@ First, start a [Quickwit instance](../get-started/installation.md) with the OTLP
 ```bash
 QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER=true \
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:7281 \
-quickwit run
+./quickwit run
 ```
 
 We also set `QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER` and `OTEL_EXPORTER_OTLP_ENDPOINT` environment variables so that Quickwit will send its own traces to itself.
 
 ## Start Jaeger UI
 
-Let's start a Jaeger UI instance with docker. Here we want to connect inform jaeger that it should use quickwit as its backend.
-Due to some idiosyncracy associated with networking with containers, you will need a different approach on MacOS & Windows on one side,
-and Linux on the other side.
+Let's start a Jaeger UI instance with docker. Here we need to inform jaeger that it should use quickwit as its backend.
+
+Due to some idiosyncracy associated with networking with containers, we will have to use a different approach on MacOS & Windows on one side, and Linux on the other side.
 
 ### MacOS & Windows
 
 We can rely on `host.docker.internal` to get the docker bridge ip address, pointing to our quickwit server.
 
 ```bash
-
 docker run --rm --name jaeger-qw \
     -e SPAN_STORAGE_TYPE=grpc-plugin \
     -e GRPC_STORAGE_SERVER=host.docker.internal:7281 \
@@ -56,7 +55,7 @@ docker run --rm --name jaeger-qw  --network=host \
 
 ## Search traces in Jaeger UI
 
-As Quickwit is indexing its own traces, you should be able to see them in Jaeger UI after 30 seconds (the time it takes for Quickwit to do its first commit).
+As Quickwit is indexing its own traces, you should be able to see them in Jaeger UI after 5 seconds (the time it takes for Quickwit to do its first commit).
 
 Open the Jaeger UI at [http://localhost:16686](http://localhost:16686) and search for traces! By executing search queries, you will then see Quickwit's own traces:
 

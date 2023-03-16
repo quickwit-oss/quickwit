@@ -139,8 +139,8 @@ doc_mapping:
 
   timestamp_field: span_start_timestamp_secs
 
-  partition_key: hash_mod(service_name, 100)
-  tag_fields: [service_name]
+  # partition_key: hash_mod(service_name, 100)
+  # tag_fields: [service_name]
 
 indexing_settings:
   commit_timeout_secs: 5
