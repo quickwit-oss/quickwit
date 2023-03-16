@@ -18,15 +18,21 @@ In this tutorial, we will show you how to instrument a Python [Flask](https://fl
 
 ## Start a Quickwit instance
 
-[Install Quickwit](/docs/get-started/installation.md) and start a Quickwit instance with OTLP service enabled:
+[Install Quickwit](/docs/get-started/installation.md) and start a Quickwit instance:
 
 ```bash
-QW_ENABLE_OTLP_ENDPOINT=true ./quickwit run
+./quickwit run
 ```
 
 ## Start Jaeger UI
 
-Let's start a Jaeger UI instance with docker
+Let's start a Jaeger UI instance with docker. Here we need to inform jaeger that it should use quickwit as its backend.
+
+Due to some idiosyncracy associated with networking with containers, we will have to use a different approach on MacOS & Windows on one side, and Linux on the other side.
+
+### MacOS & Windows
+
+We can rely on `host.docker.internal` to get the docker bridge ip address, pointing to our quickwit server.
 
 ```bash
 docker run --rm --name jaeger-qw \
@@ -34,6 +40,21 @@ docker run --rm --name jaeger-qw \
     -e GRPC_STORAGE_SERVER=host.docker.internal:7281 \
     -p 16686:16686 \
     jaegertracing/jaeger-query:latest
+```
+
+### Linux
+
+By default, quickwit is listening to `127.0.0.1`, and will not respond to request directed
+to the docker bridge (`172.17.0.1`). There are different ways to solve this problem.
+The easiest is probably to use host network mode.
+
+```bash
+docker run --rm --name jaeger-qw  --network=host \
+    -e SPAN_STORAGE_TYPE=grpc-plugin \
+    -e GRPC_STORAGE_SERVER=127.0.0.1:7281 \
+    -p 16686:16686 \
+    jaegertracing/jaeger-query:latest
+
 ```
 
 ## Run a simple Flask app

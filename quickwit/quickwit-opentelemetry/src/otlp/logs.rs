@@ -108,11 +108,11 @@ doc_mapping:
 
   timestamp_field: timestamp_secs
 
-  partition_key: hash_mod(service_name, 100)
-  tag_fields: [service_name]
+  # partition_key: hash_mod(service_name, 100)
+  # tag_fields: [service_name]
 
 indexing_settings:
-  commit_timeout_secs: 30
+  commit_timeout_secs: 5
 
 search_settings:
   default_search_fields: []
