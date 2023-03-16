@@ -115,7 +115,8 @@ pub(crate) async fn start_rest_server(
         .or(health_check_routes)
         .or(metrics_routes)
         .with(request_counter)
-        .recover(recover_fn);
+        .recover(recover_fn)
+        .boxed();
 
     let warp_service = warp::service(rest_routes);
     let compression_predicate =
