@@ -56,7 +56,8 @@ pub struct NodeConfig {
 pub struct ClusterSandbox {
     pub node_configs: Vec<NodeConfig>,
     pub grpc_search_clients: HashMap<SocketAddr, SearchServiceClient>,
-    pub rest_client: QuickwitRestClient,
+    pub searcher_rest_client: QuickwitRestClient,
+    pub indexer_rest_client: QuickwitRestClient,
     _temp_dir: TempDir,
 }
 
@@ -84,7 +85,12 @@ impl ClusterSandbox {
         Ok(Self {
             node_configs,
             grpc_search_clients,
-            rest_client: QuickwitRestClient::new(node_config.quickwit_config.rest_listen_addr),
+            indexer_rest_client: QuickwitRestClient::new(
+                node_config.quickwit_config.rest_listen_addr,
+            ),
+            searcher_rest_client: QuickwitRestClient::new(
+                node_config.quickwit_config.rest_listen_addr,
+            ),
             _temp_dir: temp_dir,
         })
     }
@@ -103,6 +109,11 @@ impl ClusterSandbox {
                 Result::<_, anyhow::Error>::Ok(())
             });
         }
+        let searcher_config = node_configs
+            .iter()
+            .find(|node_config| node_config.services.contains(&QuickwitService::Searcher))
+            .cloned()
+            .unwrap();
         let indexer_config = node_configs
             .iter()
             .find(|node_config| node_config.services.contains(&QuickwitService::Indexer))
@@ -123,7 +134,12 @@ impl ClusterSandbox {
         Ok(Self {
             node_configs,
             grpc_search_clients,
-            rest_client: QuickwitRestClient::new(indexer_config.quickwit_config.rest_listen_addr),
+            searcher_rest_client: QuickwitRestClient::new(
+                searcher_config.quickwit_config.rest_listen_addr,
+            ),
+            indexer_rest_client: QuickwitRestClient::new(
+                indexer_config.quickwit_config.rest_listen_addr,
+            ),
             _temp_dir: temp_dir,
         })
     }
@@ -136,7 +152,7 @@ impl ClusterSandbox {
         let max_num_attempts = 3;
         while num_attempts < max_num_attempts {
             tokio::time::sleep(Duration::from_millis(100 * (num_attempts + 1))).await;
-            let cluster_snapshot = self.rest_client.cluster_snapshot().await?;
+            let cluster_snapshot = self.indexer_rest_client.cluster_snapshot().await?;
             if cluster_snapshot.ready_nodes.len() == expected_num_alive_nodes {
                 return Ok(());
             }

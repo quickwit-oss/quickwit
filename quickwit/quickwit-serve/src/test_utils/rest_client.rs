@@ -20,6 +20,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use anyhow::{bail, Context};
 use hyper::client::HttpConnector;
 use hyper::{Body, Request, Response, StatusCode};
 use quickwit_cluster::ClusterSnapshot;
@@ -40,6 +41,29 @@ impl QuickwitRestClient {
             .build_http();
         let root_url = format!("http://{addr}");
         Self { root_url, client }
+    }
+
+    pub async fn ingest_data(&self, index_id: &str, ndjson_doc: &str) -> anyhow::Result<()> {
+        let uri = format!("{}/api/v1/{index_id}/ingest", self.root_url)
+            .parse::<hyper::Uri>()
+            .unwrap();
+        let request = Request::builder()
+            .uri(uri)
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(Body::from(ndjson_doc.to_string()))
+            .unwrap();
+        let response = self
+            .client
+            .request(request)
+            .await
+            .context("Failed to emit request")?;
+        if response.status() != StatusCode::OK {
+            let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+            let body_str = String::from_utf8_lossy(&body_bytes);
+            bail!("error when creating index: {body_str}");
+        }
+        Ok(())
     }
 
     pub async fn create_index(&self, index_config_yaml: &str) -> anyhow::Result<()> {
