@@ -72,7 +72,7 @@ For a quick guide on how to install Quickwit, start a server, add documents to i
 # 📚 Resources
 
 - [Blog posts](https://quickwit.io/blog/)
-- [Youtube channel](https://www.youtube.com/channel/UCZ2X2Z8Z9Z8Z9Z8Z9Z8Z9Z8)
+- [Youtube channel](https://www.youtube.com/@quickwit8103)
 - [Discord](https://discord.quickwit.io)
 
 # 🔮 Roadmap
