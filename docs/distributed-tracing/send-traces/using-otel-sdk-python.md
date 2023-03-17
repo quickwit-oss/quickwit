@@ -1,5 +1,5 @@
 ---
-title: Instrument your Python app
+title: Using OTEL SDK - Python
 description: A simple tutorial to send traces to Quickwit from a Python Flask app.
 icon_url: /img/tutorials/python-logo.png
 tags: [python, traces, ingestion]
@@ -18,15 +18,21 @@ In this tutorial, we will show you how to instrument a Python [Flask](https://fl
 
 ## Start a Quickwit instance
 
-[Install Quickwit](/docs/get-started/installation.md) and start a Quickwit instance with OTLP service enabled:
+[Install Quickwit](/docs/get-started/installation.md) and start a Quickwit instance:
 
 ```bash
-QW_ENABLE_OTLP_ENDPOINT=true ./quickwit run
+./quickwit run
 ```
 
 ## Start Jaeger UI
 
-Let's start a Jaeger UI instance with docker
+Let's start a Jaeger UI instance with docker. Here we need to inform jaeger that it should use quickwit as its backend.
+
+Due to some idiosyncrasy associated with networking with containers, we will have to use a different approach on MacOS & Windows on one side, and Linux on the other side.
+
+### MacOS & Windows
+
+We can rely on `host.docker.internal` to get the docker bridge ip address, pointing to our quickwit server.
 
 ```bash
 docker run --rm --name jaeger-qw \
@@ -34,6 +40,21 @@ docker run --rm --name jaeger-qw \
     -e GRPC_STORAGE_SERVER=host.docker.internal:7281 \
     -p 16686:16686 \
     jaegertracing/jaeger-query:latest
+```
+
+### Linux
+
+By default, quickwit is listening to `127.0.0.1`, and will not respond to request directed
+to the docker bridge (`172.17.0.1`). There are different ways to solve this problem.
+The easiest is probably to use host network mode.
+
+```bash
+docker run --rm --name jaeger-qw --network=host \
+    -e SPAN_STORAGE_TYPE=grpc-plugin \
+    -e GRPC_STORAGE_SERVER=127.0.0.1:7281 \
+    -p 16686:16686 \
+    jaegertracing/jaeger-query:latest
+
 ```
 
 ## Run a simple Flask app
@@ -45,7 +66,7 @@ We will start a flask application that is doing three things on each HTTP call `
 - Displaying it with a random sleep.
 
 
-Let's first intall the dependencies:
+Let's first install the dependencies:
 
 ```bash
 pip install flask
@@ -192,7 +213,7 @@ opentelemetry-instrument python my_instrumented_app.py
 If you hit again [http://localhost:5000/process-ip](http://localhost:5000/process-ip), you should see new spans with name `fetch`, `parse`, and `display` and with the corresponding custom attributes!
 
 
-## Time to send traces to Quickwit
+## Sending traces to Quickwit
 
 To send traces to Quickwit, we need to use the OTLP exporter. This is a simple as this:
 
@@ -215,9 +236,22 @@ curl -XPOST http://localhost:7280/api/v1/otel-trace-v0/search -H 'Content-Type: 
 
 And then open the Jaeger UI [localhost:16686](http://localhost:16686/) and play with it, you have now a Jaeger UI powered by a Quickwit storage backend!
 
-![Flask trace analysis in Jaeger UI](../assets/images/jaeger-ui-python-app-trace-analysis.png)
+![Flask trace analysis in Jaeger UI](../../assets/images/jaeger-ui-python-app-trace-analysis.png)
 
-![Flask traces in Jaeger UI](../assets/images/jaeger-ui-python-app-traces.png)
+![Flask traces in Jaeger UI](../../assets/images/jaeger-ui-python-app-traces.png)
+
+## Sending traces to your OpenTelemetry collector
+
+Start a collector as described in the [OpenTelemetry collector tutorial](using-otel-collector.md) and execute the following command:
+
+```bash
+OTEL_METRICS_EXPORTER=none \ # We don't need metrics
+OTEL_SERVICE_NAME=flask \
+opentelemetry-instrument python instrumented_app.py
+```
+
+Traces will be sent to your collector, and then to Quickwit.
+
 
 ## Wrap up
 

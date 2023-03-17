@@ -2,7 +2,7 @@
 # Index config file for hdfs-logs dataset with partitioning configured.
 #
 
-version: 0.4
+version: 0.5
 
 index_id: hdfs-logs-partitioned
 

@@ -57,11 +57,11 @@ curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-o
 The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one JSON field
 for the nested values `resource.service`, we could use an object field here and maintain a fixed schema, but for convenience we're going to use a JSON field.
 It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`.
-The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](/docs/concepts/architecture) at query time to boost search speed. 
-Check out the [index config docs](/docs/configuration/index-config) for more details.
+The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](../../overview/architecture) at query time to boost search speed. 
+Check out the [index config docs](../../configuration/index-config) for more details.
 
 ```yaml title="hdfs-logs-index.yaml"
-version: 0.4
+version: 0.5
 
 index_id: hdfs-logs
 
@@ -194,14 +194,14 @@ docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index search --in
 
 :::note
 
-The `ingest` subcommand generates [splits](/docs/concepts/architecture) of 5 million documents. Each split is a small piece of index represented by a file in which index files and metadata files are saved.
+The `ingest` subcommand generates [splits](../../overview/architecture) of 5 million documents. Each split is a small piece of index represented by a file in which index files and metadata files are saved.
 
 :::
 
 
 ## Start your server
 
-The command `run --service searcher --service metastore` starts a http server which provides a [REST API](/docs/reference/rest-api) 
+The command `run --service searcher --service metastore` starts a http server which provides a [REST API](../../reference/rest-api) 
 and runs the metastore service which is required by the searcher service.
 
 <Tabs>
@@ -252,7 +252,7 @@ which returns the json
 ```
 
 The index config shows that we can use the timestamp field parameters `start_timestamp` and `end_timestamp` and benefit from time pruning. 
-Behind the scenes, Quickwit will only query [splits](/docs/concepts/architecture) that have logs in this time range.
+Behind the scenes, Quickwit will only query [splits](../../overview/architecture) that have logs in this time range.
 
 Let's use these parameters with the following query:
 

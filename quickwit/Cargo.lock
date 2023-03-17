@@ -5046,7 +5046,6 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "utoipa",
- "utoipa-swagger-ui",
  "warp",
 ]
 
@@ -5590,7 +5589,6 @@ dependencies = [
  "proc-macro2",
  "quote 1.0.25",
  "rust-embed-utils",
- "shellexpand",
  "syn 1.0.109",
  "walkdir",
 ]
@@ -6233,15 +6231,6 @@ name = "shell-words"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "24188a676b6ae68c3b2cb3a01be17fbf7240ce009799bb56d5b1409051e78fde"
-
-[[package]]
-name = "shellexpand"
-version = "2.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ccc8076840c4da029af4f87e4e8daeb0fca6b87bbb02e10cb60b791450e11e4"
-dependencies = [
- "dirs",
-]
 
 [[package]]
 name = "shlex"
@@ -7700,21 +7689,6 @@ dependencies = [
  "proc-macro2",
  "quote 1.0.25",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "utoipa-swagger-ui"
-version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c745a5ecb9f3b1b30780e45cc4ad77b3bdd76501319570046e4db7318e3c4381"
-dependencies = [
- "mime_guess",
- "regex",
- "rust-embed",
- "serde",
- "serde_json",
- "utoipa",
- "zip",
 ]
 
 [[package]]

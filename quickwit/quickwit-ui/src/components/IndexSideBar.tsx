@@ -29,8 +29,10 @@ const IndexBarWrapper = styled('div')({
   display: 'flex',
   height: '100%',
   flex: '0 0 260px',
+  maxWidth: '260px',
   flexDirection: 'column',
   borderRight: '1px solid rgba(0, 0, 0, 0.12)',
+  overflow: 'auto',
 });
 
 function IndexAutocomplete(props: IndexMetadataProps) {
@@ -143,7 +145,7 @@ export function IndexSideBar(props: IndexMetadataProps) {
         </Typography>
         <IndexAutocomplete { ...props }/>
       </Box>
-      <Box sx={{ paddingLeft: "10px"}}>
+      <Box sx={{ paddingLeft: "10px", height: '100%'}}>
         <IconButton
             aria-label="expand row"
             size="small"
@@ -152,7 +154,7 @@ export function IndexSideBar(props: IndexMetadataProps) {
             {open ? <KeyboardArrowDown /> : <ChevronRight />}
         </IconButton>
         Fields
-        { open && <List dense={true} sx={{paddingTop: '0'}}>
+        { open && <List dense={true} sx={{paddingTop: '0', overflowWrap: 'break-word'}}>
           { fields.map(function(field) {
             return <ListItem
               key={ field.json_path }

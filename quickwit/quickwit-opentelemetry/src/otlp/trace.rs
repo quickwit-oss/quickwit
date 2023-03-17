@@ -43,7 +43,7 @@ use crate::otlp::{extract_attributes, B64TraceId, TraceId};
 pub const OTEL_TRACE_INDEX_ID: &str = "otel-trace-v0";
 
 pub const OTEL_TRACE_INDEX_CONFIG: &str = r#"
-version: 0.4
+version: 0.5
 
 index_id: otel-trace-v0
 
@@ -139,11 +139,11 @@ doc_mapping:
 
   timestamp_field: span_start_timestamp_secs
 
-  partition_key: hash_mod(service_name, 100)
-  tag_fields: [service_name]
+  # partition_key: hash_mod(service_name, 100)
+  # tag_fields: [service_name]
 
 indexing_settings:
-  commit_timeout_secs: 30
+  commit_timeout_secs: 5
 
 search_settings:
   default_search_fields: []

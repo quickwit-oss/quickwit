@@ -18,7 +18,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-## [0.4.0] - 2022-06-02
+## [0.5.0] - 2023-03-16
+
+### Added
+- gRPC OpenTelemetry Protocol support for traces
+- gRPC OpenTelemetry Protocol support for logs
+- Control plane (indexing tasks scheduling)
+- Ingest API rate limiter
+- Pulsar source
+- VRL transform for data sources
+- REST API enhanced to fully manage indexes, sources, and splits
+- OpenAPI specification and swagger UI for all REST available endpoints
+- Large responses from REST API can be compressed
+- Add bulk stage splits method to metastore
+- MacOS M1 binary
+- Doc mapping field names starting with `_` are now valid
+
+### Fixed
+- Fix UI index completion on search page
+- Fix CLI index describe command to show stats on published splits
+- Fix REST API to always return on error a body formatted as `{"message": "error message"}`
+- Fixed REST status code when deleting unexisting index, source and when fetching splits on unexisting index
+
+### Changed
+- Source config schema (breaking or not? use serde rename to be not breaking?)
+- RocksDB replaced by [mrecordlog](https://github.com/quickwit-oss/mrecordlog) to store ingest API queues records
+- (Breaking) Indexing partition key new DSL
+- (Breaking) Helm chart updated with the new CLI
+- (Breaking) CLI indexes, sources, and splits commands use the REST API
+- (Breaking) Index new format: you need to reindex all your data
+
+## [0.4.0] - 2022-12-03
 
 ### Added
 - Boolean, datetime, and IP address fields

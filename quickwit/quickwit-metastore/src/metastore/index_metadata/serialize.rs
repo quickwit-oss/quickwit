@@ -29,13 +29,15 @@ use crate::IndexMetadata;
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexMetadata {
-    #[serde(rename = "0.4")]
-    V0_4(IndexMetadataV0_4),
+    #[serde(rename = "0.5")]
+    // Retro compatibilty with 0.4.
+    #[serde(alias = "0.4")]
+    V0_5(IndexMetadataV0_5),
 }
 
 impl From<IndexMetadata> for VersionedIndexMetadata {
     fn from(index_metadata: IndexMetadata) -> Self {
-        VersionedIndexMetadata::V0_4(index_metadata.into())
+        VersionedIndexMetadata::V0_5(index_metadata.into())
     }
 }
 
@@ -46,12 +48,12 @@ impl TryFrom<VersionedIndexMetadata> for IndexMetadata {
         match index_metadata {
             // When we have more than one version, you should chain version conversion.
             // ie. Implement conversion from V_k -> V_{k+1}
-            VersionedIndexMetadata::V0_4(v3) => v3.try_into(),
+            VersionedIndexMetadata::V0_5(v3) => v3.try_into(),
         }
     }
 }
 
-impl From<IndexMetadata> for IndexMetadataV0_4 {
+impl From<IndexMetadata> for IndexMetadataV0_5 {
     fn from(index_metadata: IndexMetadata) -> Self {
         let sources: Vec<SourceConfig> = index_metadata.sources.values().cloned().collect();
         Self {
@@ -64,7 +66,7 @@ impl From<IndexMetadata> for IndexMetadataV0_4 {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
-pub(crate) struct IndexMetadataV0_4 {
+pub(crate) struct IndexMetadataV0_5 {
     #[schema(value_type = VersionedIndexConfig)]
     pub index_config: IndexConfig,
     #[schema(value_type = Object)]
@@ -75,21 +77,21 @@ pub(crate) struct IndexMetadataV0_4 {
     pub sources: Vec<SourceConfig>,
 }
 
-impl TryFrom<IndexMetadataV0_4> for IndexMetadata {
+impl TryFrom<IndexMetadataV0_5> for IndexMetadata {
     type Error = anyhow::Error;
 
-    fn try_from(v0_4: IndexMetadataV0_4) -> anyhow::Result<Self> {
+    fn try_from(v0_5: IndexMetadataV0_5) -> anyhow::Result<Self> {
         let mut sources: HashMap<String, SourceConfig> = Default::default();
-        for source in v0_4.sources {
+        for source in v0_5.sources {
             if sources.contains_key(&source.source_id) {
                 anyhow::bail!("Source `{}` is defined more than once", source.source_id);
             }
             sources.insert(source.source_id.clone(), source);
         }
         Ok(Self {
-            index_config: v0_4.index_config,
-            checkpoint: v0_4.checkpoint,
-            create_timestamp: v0_4.create_timestamp,
+            index_config: v0_5.index_config,
+            checkpoint: v0_5.checkpoint,
+            create_timestamp: v0_5.create_timestamp,
             sources,
         })
     }

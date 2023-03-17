@@ -49,11 +49,11 @@ curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-o
 The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one JSON field
 for the nested values `resource.service`, we could use an object field here and maintain a fixed schema, but for convenience we're going to use a JSON field.
 It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`. The `timestamp_field` and `tag_fields` are
-used by Quickwit for [splits pruning](/docs/concepts/architecture) at query time to boost search speed. 
-Check out the [index config docs](/docs/configuration/index-config) for more details.
+used by Quickwit for [splits pruning](../../overview/architecture) at query time to boost search speed. 
+Check out the [index config docs](../../configuration/index-config) for more details.
 
 ```yaml title="hdfs_logs_index_config.yaml"
-version: 0.4
+version: 0.5
 
 index_id: hdfs-logs
 
@@ -100,7 +100,7 @@ For more info check out [our AWS setup guide](https://quickwit.io/docs/guides/aw
 
 ```bash
 # Create Quickwit config file.
-echo "version: 0.4
+echo "version: 0.5
 metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
 " > config.yaml
@@ -109,7 +109,7 @@ default_index_root_uri: ${S3_PATH}
 > You can also pass environment variables directly:
 > ```yaml
 > # config.yaml
-> version: 0.4
+> version: 0.5
 > metastore_uri: ${S3_PATH}
 > default_index_root_uri: ${S3_PATH}
 > ```
@@ -140,7 +140,7 @@ curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.js
 4GB of RAM is enough to index this dataset; an instance like `t4g.medium` with 4GB and 2 vCPU indexed this dataset in 20 minutes.
 
 This step can also be done on your local machine. 
-The `ingest` subcommand generates locally [splits](/docs/concepts/architecture) of 10 million documents and will upload 
+The `ingest` subcommand generates locally [splits](../../overview/architecture) of 10 million documents and will upload 
 them on your bucket. Concretely, each split is a bundle of index files and metadata files.
 
 :::
@@ -181,7 +181,7 @@ export IP_NODE_3={third-ec2-instance-public-ip}
 
 ```bash
 # configuration for our first node
-echo "version: 0.4
+echo "version: 0.5
 node_id: searcher-1
 listen_address: 0.0.0.0
 metastore_uri: ${S3_PATH}
@@ -206,7 +206,7 @@ Let's launch the second and third searcher nodes instance by repeating the same 
 
 ```bash
 # configuration for our second node
-echo "version: 0.4
+echo "version: 0.5
 node_id: searcher-2
 metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
@@ -218,7 +218,7 @@ peer_seeds:
 
 ```bash
 # configuration for our third node
-echo "version: 0.4
+echo "version: 0.5
 node_id: searcher-3
 listen_address: 0.0.0.0
 peer_seeds:
@@ -279,7 +279,7 @@ which returns the json
 You can see that this query has 10 000 hits and that the server responds in 2.5 milliseconds.
 
 The index config shows that we can use the timestamp field parameters `start_timestamp` and `end_timestamp` and benefit from time pruning. 
-Behind the scenes, Quickwit will only query [splits](/docs/concepts/architecture) that have logs in this time range. This can have a significant impact on speed.
+Behind the scenes, Quickwit will only query [splits](../../overview/architecture) that have logs in this time range. This can have a significant impact on speed.
 
 
 ```bash

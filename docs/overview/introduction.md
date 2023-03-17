@@ -25,8 +25,8 @@ Quickwit is a great fit for log management, distributed tracing, and generally i
 
 Check out our guides to see how you can use Quickwit:
 
-- [Log management](../log-management/index.md)
-- [Distributed Tracing](../distributed-tracing/index.md)
+- [Log management](../log-management/overview.md)
+- [Distributed Tracing](../distributed-tracing/overview.md)
 - Adding full-text search capabilities to [OLAP databases such as ClickHouse](../get-started/tutorials/add-full-text-search-to-your-olap-db).
 
 
@@ -37,13 +37,13 @@ Check out our guides to see how you can use Quickwit:
 - Decoupled compute and storage, stateless indexers & searchers
 - [Schemaless](../guides/schemaless) or strict schema indexing
 - Kubernetes ready - See our [helm-chart](../deployment/kubernetes)
-- OTEL-native for [logs](../log-management/) and [traces](../distributed-tracing/)
-- [Jaeger-native](../distributed-tracing/use-jaeger-to-analyze-quickwit-traces)
+- OTEL-native for [logs](../log-management/overview.md) and [traces](../distributed-tracing/overview.md)
+- [Jaeger-native](../distributed-tracing/plug-quickwit-to-jaeger.md)
 - [RESTful API](../reference/rest-api.md)
 
 ### Enterprise-grade features
 
-- Multiple [data sources](../ingest-data/) Kafka / Kinesis / Pulsar native
+- Multiple [data sources](../ingest-data/index.md) Kafka / Kinesis / Pulsar native
 - Multi-tenancy: indexing with many indexes and partitioning
 - Retention policies
 - Delete tasks (for GRPR use cases)
