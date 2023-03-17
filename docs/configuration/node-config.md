@@ -65,7 +65,7 @@ This section contains the configuration options for a Searcher.
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `fast_field_cache_capacity` | Fast field cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or if you use the search stream API, or even for tracing, it might worth increasing this parameter. The [metrics](/metrics) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. | `1G` |
+| `fast_field_cache_capacity` | Fast field cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or if you use the search stream API, or even for tracing, it might worth increasing this parameter. The [metrics](../reference/metrics.md) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. | `1G` |
 | `split_footer_cache_capacity` | Split footer cache (it is essentially the hotcache) capacity on a Searcher.| `500M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `max_num_concurrent_split_streams` | Maximum number of concurrent split stream requests running on a Searcher. | `100` |
