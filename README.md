@@ -26,14 +26,14 @@ Sub-second search & analytics engine on cloud storage
 </h4>
 <br/>
 
-<b> Quickwit 0.5 is coming... and brings great features: OTEL - Jaeger - Pulsar integrations, RESTful API. Stay tuned.</b>
+<b> Quickwit 0.5 is now released. Check out our [blog post](https://quickwit.io/blog/quickwit-0.5/) to discover the new features.</b>
 
 ![Quickwit Distributed Tracing](./docs/assets/images/quickwit-overview-light.svg#gh-light-mode-only)![Quickwit Distributed Tracing](./docs/assets/images/quickwit-overview-dark.svg#gh-dark-mode-only)
 
 Quickwit is the fastest search engine on cloud storage. It is a great fit for:
 
-- [Log management](https://quickwit.io/docs/main-branch/log-management/overview)
-- [Distributed traces](https://quickwit.io/docs/main-branch/distributed-tracing/overview)
+- [Log management](https://quickwit.io/docs/log-management/overview)
+- [Distributed traces](https://quickwit.io/docs/distributed-tracing/overview)
 - Any immutable data: conversational data (emails, texts, messaging platforms) & event-based analytics
 
 … and more!
@@ -44,14 +44,14 @@ Quickwit is the fastest search engine on cloud storage. It is a great fit for:
 - Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, …)
 - Decoupled compute and storage, stateless indexers & searchers
 - [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing
-- Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/main-branch/deployment/kubernetes)
-- OTEL-native for [logs](https://quickwit.io/docs/main-branch/log-management/overview) and [traces](https://quickwit.io/docs/main-branch/distributed-tracing/overview)
-- [Jaeger-native](https://quickwit.io/docs/main-branch/distributed-tracing/plug-quickwit-to-jaeger)
+- Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/deployment/kubernetes)
+- OTEL-native for [logs](https://quickwit.io/docs/log-management/overview) and [traces](https://quickwit.io/docs/distributed-tracing/overview)
+- [Jaeger-native](https://quickwit.io/docs/distributed-tracing/plug-quickwit-to-jaeger)
 - RESTful API
 
 ## Enterprise ready
 
-- Multiple [data sources](https://quickwit.io/docs/main-branch/ingest-data/) Kafka / Kinesis / Pulsar native
+- Multiple [data sources](https://quickwit.io/docs/ingest-data/) Kafka / Kinesis / Pulsar native
 - Multi-tenancy: indexing with many indexes and partitioning
 - Retention policies
 - Delete tasks (for GRPR use cases)
@@ -64,15 +64,15 @@ For a quick guide on how to install Quickwit, start a server, add documents to i
 # 📕 Documentation
 
 - [Installation](https://quickwit.io/docs/get-started/installation)
-- [Log management with Quickwit](https://quickwit.io/docs/main-branch/log-management/overview)
-- [Distributed Tracing with Quickwit](https://quickwit.io/docs/main-branch/distributed-tracing/overview)
-- [Ingest data](https://quickwit.io/docs/main-branch/ingest-data/)
+- [Log management with Quickwit](https://quickwit.io/docs/log-management/overview)
+- [Distributed Tracing with Quickwit](https://quickwit.io/docs/distributed-tracing/overview)
+- [Ingest data](https://quickwit.io/docs/ingest-data/)
 - [REST API](https://quickwit.io/docs/reference/rest-api)
 
 # 📚 Resources
 
 - [Blog posts](https://quickwit.io/blog/)
-- [Youtube channel](https://www.youtube.com/channel/UCZ2X2Z8Z9Z8Z9Z8Z9Z8Z9Z8)
+- [Youtube channel](https://www.youtube.com/@quickwit8103)
 - [Discord](https://discord.quickwit.io)
 
 # 🔮 Roadmap
