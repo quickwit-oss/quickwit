@@ -18,7 +18,7 @@ A commented example is accessible here: [quickwit.yaml](https://github.com/quick
 | `version` | Config file version. 0.4 is the only available value. |  |  |
 | `cluster_id` | Unique Id for the cluster this node will be joining. Should be set to a unique name to ensure clusters do not accidentally merge together. | `QW_CLUSTER_ID` | `quickwit-default-cluster` |
 | `node_id` | Node ID of the instance (searcher or indexer). It must be unique in your cluster. If not set, a random ID is generated at each boot. | `QW_NODE_ID` |  |
-| `enabled_services` | Enabled services (indexer, janitor, metastore, searcher) | `QW_ENABLED_SERVICES` | all services enabled | 
+| `enabled_services` | Enabled services (indexer, janitor, metastore, searcher) | `QW_ENABLED_SERVICES` | all services enabled |
 | `listen_address` | The IP address or hostname that Quickwit service binds to for starting REST and GRPC server and connecting this node to other nodes. By default, Quickwit binds itself to 127.0.0.1 (localhost). This default is not valid when trying to form a cluster. | `QW_LISTEN_ADDRESS` | `127.0.0.1` |
 | `advertise_address` | IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs. | `QW_ADVERTISE_ADDRESS` | `listen_address` |
 | `rest_listen_port` | The port which to listen for HTTP REST API. | `QW_REST_LISTEN_PORT` | `7280` |
@@ -65,11 +65,10 @@ This section contains the configuration options for a Searcher.
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `fast_field_cache_capacity` | Fast field cache capacity on a Searcher. | `1G` |
-| `split_footer_cache_capacity` | Split footer cache (it is essentially the hotcache) capacity on a Searcher. | `500M` |
+| `fast_field_cache_capacity` | Fast field cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or if you use the search stream API, or even for tracing, it might worth increasing this parameter. The [metrics](/metrics) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. | `1G` |
+| `split_footer_cache_capacity` | Split footer cache (it is essentially the hotcache) capacity on a Searcher.| `500M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `max_num_concurrent_split_streams` | Maximum number of concurrent split stream requests running on a Searcher. | `100` |
-
 
 ## Jaeger configuration
 
