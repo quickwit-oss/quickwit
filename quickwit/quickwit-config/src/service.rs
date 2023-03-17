@@ -36,6 +36,7 @@ pub enum QuickwitService {
     Metastore,
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<&'static str> for QuickwitService {
     fn into(self) -> &'static str {
         self.as_str()
