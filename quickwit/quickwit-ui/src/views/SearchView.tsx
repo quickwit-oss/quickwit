@@ -42,6 +42,9 @@ function updateSearchRequestWithIndex(index: Index | null, searchRequest: Search
     searchRequest.startTimestamp = null;
     searchRequest.endTimestamp = null;
   }
+  if (index?.metadata.index_config.index_id) {
+    searchRequest.indexId = index?.metadata.index_config.index_id;
+  }
 }
 
 function SearchView() {
@@ -66,8 +69,8 @@ function SearchView() {
     setSearchRequest(updatedSearchRequest);
     setQueryRunning(true);
     setSearchError(null);
+    navigate('/search?' + toUrlSearchRequestParams(updatedSearchRequest).toString());
     quickwitClient.search(updatedSearchRequest).then((response) => {
-      navigate('/search?' + toUrlSearchRequestParams(updatedSearchRequest).toString());
       updateLastSearchRequest(updatedSearchRequest);
       setSearchResponse(response);
       setQueryRunning(false);
@@ -80,7 +83,6 @@ function SearchView() {
   const onIndexMetadataUpdate = (indexMetadata: IndexMetadata | null) => {
     setSearchRequest(previousRequest => {
       updateSearchRequestWithIndex(index, previousRequest);
-      setSearchRequest(previousRequest);
       return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_config.index_id};
     });
   }
