@@ -27,12 +27,19 @@ use itertools::Itertools;
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Sequence)]
+#[serde(into = "&'static str")]
 pub enum QuickwitService {
     ControlPlane,
     Indexer,
     Searcher,
     Janitor,
     Metastore,
+}
+
+impl Into<&'static str> for QuickwitService {
+    fn into(self) -> &'static str {
+        self.as_str()
+    }
 }
 
 impl QuickwitService {
