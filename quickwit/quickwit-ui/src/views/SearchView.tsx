@@ -80,6 +80,7 @@ function SearchView() {
   const onIndexMetadataUpdate = (indexMetadata: IndexMetadata | null) => {
     setSearchRequest(previousRequest => {
       updateSearchRequestWithIndex(index, previousRequest);
+      setSearchRequest(previousRequest);
       return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_config.index_id};
     });
   }
