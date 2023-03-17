@@ -198,8 +198,9 @@ impl<A: quickwit_actors::Actor> Clone for ControlPlaneServiceMailbox<A> {
 use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for ControlPlaneServiceMailbox<A>
 where
-    A: quickwit_actors::Actor + quickwit_actors::Handler<M, Reply = Result<T, E>> + Send
-        + Sync + 'static,
+    A: quickwit_actors::Actor
+        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync
+        + 'static,
     M: std::fmt::Debug + Send + Sync + 'static,
     T: Send + Sync + 'static,
     E: std::fmt::Debug + Send + Sync + 'static,

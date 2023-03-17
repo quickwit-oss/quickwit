@@ -34,6 +34,7 @@ macro_rules! bench_func {
                         .send_message(RawDocBatch {
                             docs,
                             checkpoint_delta: checkpoint_delta.clone(),
+                            force_commit: false,
                         })
                         .await
                         .unwrap();

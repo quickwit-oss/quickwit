@@ -608,7 +608,7 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
 
         impl<A, M, T, E> tower::Service<M> for #mailbox_name<A>
         where
-            A: quickwit_actors::Actor + quickwit_actors::Handler<M, Reply = Result<T, E>> + Send + Sync + 'static,
+            A: quickwit_actors::Actor + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync + 'static,
             M: std::fmt::Debug + Send + Sync + 'static,
             T: Send + Sync + 'static,
             E: std::fmt::Debug + Send + Sync + 'static,

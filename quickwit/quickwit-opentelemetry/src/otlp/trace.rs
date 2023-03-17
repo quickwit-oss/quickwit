@@ -24,7 +24,7 @@ use std::str::FromStr;
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use quickwit_ingest_api::{
-    DocBatch, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
+    CommitType, DocBatch, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
 };
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
@@ -628,6 +628,7 @@ impl OtlpGrpcTraceService {
     async fn store_spans(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],
+            commit: CommitType::Auto as u32,
         };
         self.ingest_service.ingest(ingest_request).await?;
         Ok(())

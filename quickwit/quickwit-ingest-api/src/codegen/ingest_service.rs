@@ -32,6 +32,8 @@ pub struct DropQueueRequest {
 pub struct IngestRequest {
     #[prost(message, repeated, tag = "1")]
     pub doc_batches: ::prost::alloc::vec::Vec<DocBatch>,
+    #[prost(uint32, tag = "2")]
+    pub commit: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -402,8 +404,9 @@ impl<A: quickwit_actors::Actor> Clone for IngestServiceMailbox<A> {
 use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for IngestServiceMailbox<A>
 where
-    A: quickwit_actors::Actor + quickwit_actors::Handler<M, Reply = Result<T, E>> + Send
-        + Sync + 'static,
+    A: quickwit_actors::Actor
+        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync
+        + 'static,
     M: std::fmt::Debug + Send + Sync + 'static,
     T: Send + Sync + 'static,
     E: std::fmt::Debug + Send + Sync + 'static,

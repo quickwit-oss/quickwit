@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use quickwit_ingest_api::{
-    DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestService,
+    CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestService,
     IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -98,6 +98,12 @@ struct BulkActionMeta {
     id: Option<String>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+struct IngestOptions {
+    #[serde(default)]
+    commit: CommitType,
+}
+
 pub(crate) fn ingest_api_handlers(
     ingest_service: IngestServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -106,7 +112,8 @@ pub(crate) fn ingest_api_handlers(
         .or(elastic_bulk_handler(ingest_service))
 }
 
-fn ingest_filter() -> impl Filter<Extract = (String, String), Error = Rejection> + Clone {
+fn ingest_filter(
+) -> impl Filter<Extract = (String, String, IngestOptions), Error = Rejection> + Clone {
     warp::path!(String / "ingest")
         .and(warp::post())
         .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
@@ -117,6 +124,9 @@ fn ingest_filter() -> impl Filter<Extract = (String, String), Error = Rejection>
                 Err(reject::custom(InvalidUtf8))
             }
         }))
+        .and(serde_qs::warp::query::<IngestOptions>(
+            serde_qs::Config::default(),
+        ))
 }
 
 fn ingest_handler(
@@ -148,12 +158,14 @@ fn lines(body: &str) -> impl Iterator<Item = &str> {
     ),
     params(
         ("index_id" = String, Path, description = "The index ID to add docs to."),
+        ("commit" = Option<CommitType>, Query, description = "Force or wait for commit at the end of the indexing operation."),
     )
 )]
 /// Ingest documents
 async fn ingest(
     index_id: String,
     payload: String,
+    ingest_options: IngestOptions,
     mut ingest_service: IngestServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
     let mut doc_batch = DocBatchBuilder::new(index_id);
@@ -162,6 +174,7 @@ async fn ingest(
     }
     let ingest_req = IngestRequest {
         doc_batches: vec![doc_batch.build()],
+        commit: ingest_options.commit as u32,
     };
     let ingest_response = ingest_service.ingest(ingest_req).await?;
     Ok(ingest_response)
@@ -267,6 +280,7 @@ async fn elastic_ingest(
             .into_values()
             .map(|builder| builder.build())
             .collect(),
+        commit: CommitType::Auto as u32,
     };
     let ingest_response = ingest_service.ingest(ingest_request).await?;
     Ok(ingest_response)
@@ -274,12 +288,15 @@ async fn elastic_ingest(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use byte_unit::Byte;
-    use quickwit_actors::Universe;
+    use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
     use quickwit_ingest_api::{
-        init_ingest_api, CreateQueueIfNotExistsRequest, FetchResponse, IngestResponse,
-        IngestServiceClient, QUEUES_DIR_NAME,
+        init_ingest_api, CreateQueueIfNotExistsRequest, FetchRequest, FetchResponse,
+        IngestApiService, IngestResponse, IngestServiceClient, SuggestTruncateRequest,
+        QUEUES_DIR_NAME,
     };
 
     use super::{ingest_api_handlers, BulkAction, BulkActionMeta};
@@ -331,7 +348,12 @@ mod tests {
     async fn setup_ingest_service(
         queues: &[&str],
         config: &IngestApiConfig,
-    ) -> (Universe, tempfile::TempDir, IngestServiceClient) {
+    ) -> (
+        Universe,
+        tempfile::TempDir,
+        IngestServiceClient,
+        Mailbox<IngestApiService>,
+    ) {
         let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
@@ -347,13 +369,13 @@ mod tests {
                 .await
                 .unwrap();
         }
-        let ingest_service = IngestServiceClient::from_mailbox(ingest_service_mailbox);
-        (universe, temp_dir, ingest_service)
+        let ingest_service = IngestServiceClient::from_mailbox(ingest_service_mailbox.clone());
+        (universe, temp_dir, ingest_service, ingest_service_mailbox)
     }
 
     #[tokio::test]
     async fn test_ingest_api_returns_200_when_ingest_json_and_fetch() {
-        let (universe, _temp_dir, ingest_service) =
+        let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let resp = warp::test::request()
@@ -387,7 +409,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_returns_200_when_ingest_ndjson_and_fetch() {
-        let (universe, _temp_dir, ingest_service) =
+        let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let payload = r#"
@@ -410,7 +432,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_bulk_request_returns_404_if_index_id_does_not_exist() {
-        let (universe, _temp_dir, ingest_service) =
+        let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let payload = r#"
@@ -431,7 +453,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_bulk_request_returns_400_if_malformed_source() {
-        let (universe, _temp_dir, ingest_service) =
+        let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let payload = r#"
@@ -450,7 +472,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_bulk_returns_200() {
-        let (universe, _temp_dir, ingest_service) =
+        let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let payload = r#"
@@ -479,7 +501,7 @@ mod tests {
             max_queue_memory_usage: Byte::from_bytes(1),
             ..Default::default()
         };
-        let (universe, _temp_dir, ingest_service) =
+        let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &config).await;
         let ingest_api_handlers = ingest_api_handlers(ingest_service);
         let resp = warp::test::request()
@@ -490,6 +512,94 @@ mod tests {
             .reply(&ingest_api_handlers)
             .await;
         assert_eq!(resp.status(), 429);
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_ingest_api_blocks_when_wait_is_specified() {
+        let (universe, _temp_dir, ingest_service_client, ingest_service_mailbox) =
+            setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
+        let ingest_api_handlers = ingest_api_handlers(ingest_service_client);
+        let handle = tokio::spawn(async move {
+            let resp = warp::test::request()
+                .path("/my-index/ingest?commit=wait_for")
+                .method("POST")
+                .json(&true)
+                .body(r#"{"id": 1, "message": "push"}"#)
+                .reply(&ingest_api_handlers)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(ingest_response.num_docs_for_processing, 1);
+        });
+        universe.sleep(Duration::from_secs(10)).await;
+        assert!(!handle.is_finished());
+        assert_eq!(
+            ingest_service_mailbox
+                .ask_for_res(FetchRequest {
+                    index_id: "my-index".to_string(),
+                    start_after: None,
+                    num_bytes_limit: None,
+                })
+                .await
+                .unwrap()
+                .doc_batch
+                .unwrap()
+                .num_docs(),
+            1
+        );
+        ingest_service_mailbox
+            .ask_for_res(SuggestTruncateRequest {
+                index_id: "my-index".to_string(),
+                up_to_position_included: 0,
+            })
+            .await
+            .unwrap();
+        handle.await.unwrap();
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_ingest_api_blocks_when_force_is_specified() {
+        let (universe, _temp_dir, ingest_service_client, ingest_service_mailbox) =
+            setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
+        let ingest_api_handlers = ingest_api_handlers(ingest_service_client);
+        let handle = tokio::spawn(async move {
+            let resp = warp::test::request()
+                .path("/my-index/ingest?commit=force")
+                .method("POST")
+                .json(&true)
+                .body(r#"{"id": 1, "message": "push"}"#)
+                .reply(&ingest_api_handlers)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(ingest_response.num_docs_for_processing, 1);
+        });
+        universe.sleep(Duration::from_secs(10)).await;
+        assert!(!handle.is_finished());
+        assert_eq!(
+            ingest_service_mailbox
+                .ask_for_res(FetchRequest {
+                    index_id: "my-index".to_string(),
+                    start_after: None,
+                    num_bytes_limit: None,
+                })
+                .await
+                .unwrap()
+                .doc_batch
+                .unwrap()
+                .num_docs(),
+            2
+        );
+        ingest_service_mailbox
+            .ask_for_res(SuggestTruncateRequest {
+                index_id: "my-index".to_string(),
+                up_to_position_included: 0,
+            })
+            .await
+            .unwrap();
+        handle.await.unwrap();
         universe.assert_quit().await;
     }
 }

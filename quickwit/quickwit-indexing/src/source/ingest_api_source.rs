@@ -146,17 +146,15 @@ impl Source for IngestApiSource {
 
         // TODO use a timestamp (in the raw doc batch) given by at ingest time to be more accurate.
         let mut raw_doc_batch = RawDocBatch::default();
-        raw_doc_batch.docs.extend(
-            doc_batch
-                .iter()
-                .map(|command| match command {
-                    DocCommand::Ingest { payload } => payload,
-                    // TODO: We will add a commit logic in a follow-up PR, for now - just panic
-                    _ => panic!("Unknown command {command:?}"),
-                })
-                .map(|buff| String::from_utf8_lossy(buff.as_ref()).to_string()),
-        );
-        let current_offset = first_position + raw_doc_batch.docs.len() as u64 - 1;
+        for doc in doc_batch.iter() {
+            match doc {
+                DocCommand::Ingest { payload } => raw_doc_batch
+                    .docs
+                    .push(String::from_utf8_lossy(payload.as_ref()).to_string()),
+                DocCommand::Commit => raw_doc_batch.force_commit = true,
+            }
+        }
+        let current_offset = first_position + doc_batch.num_docs() as u64 - 1;
         let partition_id = self.partition_id.clone();
         raw_doc_batch
             .checkpoint_delta
@@ -229,14 +227,19 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, INGEST_API_SOURCE_ID};
-    use quickwit_ingest_api::{init_ingest_api, DocBatchBuilder, IngestRequest};
+    use quickwit_ingest_api::{init_ingest_api, CommitType, DocBatchBuilder, IngestRequest};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
 
     use super::*;
     use crate::source::SourceActor;
 
-    fn make_ingest_request(index_id: String, num_batch: u64, batch_size: usize) -> IngestRequest {
+    fn make_ingest_request(
+        index_id: String,
+        num_batch: u64,
+        batch_size: usize,
+        commit_type: CommitType,
+    ) -> IngestRequest {
         let mut doc_batches = vec![];
         let mut doc_id = 0usize;
         for _ in 0..num_batch {
@@ -250,7 +253,10 @@ mod tests {
             }
             doc_batches.push(doc_batch_builder.build());
         }
-        IngestRequest { doc_batches }
+        IngestRequest {
+            doc_batches,
+            commit: commit_type as u32,
+        }
     }
 
     fn make_source_config() -> SourceConfig {
@@ -290,7 +296,7 @@ mod tests {
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
-        let ingest_req = make_ingest_request(index_id.clone(), 2, 20_000);
+        let ingest_req = make_ingest_request(index_id.clone(), 2, 20_000, CommitType::Auto);
         ingest_api_service
             .ask_for_res(ingest_req)
             .await
@@ -388,7 +394,7 @@ mod tests {
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
-        let ingest_req = make_ingest_request(index_id.clone(), 4, 1000);
+        let ingest_req = make_ingest_request(index_id.clone(), 4, 1000, CommitType::Auto);
         ingest_api_service
             .ask_for_res(ingest_req)
             .await
@@ -447,7 +453,7 @@ mod tests {
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
-        let ingest_req = make_ingest_request(index_id.clone(), 1, 1);
+        let ingest_req = make_ingest_request(index_id.clone(), 1, 1, CommitType::Auto);
         ingest_api_service
             .ask_for_res(ingest_req)
             .await
@@ -469,6 +475,134 @@ mod tests {
         assert_eq!(doc_batches.len(), 1);
         assert!(doc_batches[0].docs[0].starts_with("000000"));
         // TODO: Source deadlocks and test hangs occasionally if we don't quit source first.
+        ingest_api_source_handle.quit().await;
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ingest_api_source_with_force_commit() -> anyhow::Result<()> {
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let index_id = append_random_suffix("test-ingest-api-source");
+        let temp_dir = tempfile::tempdir()?;
+        let queues_dir_path = temp_dir.path();
+
+        let ingest_api_service =
+            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let source_config = make_source_config();
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            &index_id,
+            queues_dir_path.to_path_buf(),
+            source_config,
+        );
+        let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
+        let ingest_api_source_actor = SourceActor {
+            source: Box::new(ingest_api_source),
+            doc_processor_mailbox,
+        };
+        let (_ingest_api_source_mailbox, ingest_api_source_handle) =
+            universe.spawn_builder().spawn(ingest_api_source_actor);
+
+        let ingest_req = make_ingest_request(index_id.clone(), 2, 20_000, CommitType::Force);
+        let ingest_res = ingest_api_service
+            .send_message(ingest_req)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        universe.sleep(Duration::from_secs(2)).await;
+        let counters = ingest_api_source_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+        assert_eq!(
+            counters,
+            serde_json::json!({
+                "previous_offset": 40001u64,
+                "current_offset": 40001u64,
+                "num_docs_processed": 40000u64
+            })
+        );
+        let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
+        assert_eq!(doc_batches.len(), 2);
+        assert!(doc_batches[1].docs[0].starts_with("037736"));
+        assert!(doc_batches[0].force_commit);
+        assert!(doc_batches[1].force_commit);
+        ingest_api_service
+            .ask_for_res(SuggestTruncateRequest {
+                index_id: index_id.clone(),
+                up_to_position_included: 40001,
+            })
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let res = ingest_res
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        assert_eq!(res.num_docs_for_processing, 40_000);
+        ingest_api_source_handle.quit().await;
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ingest_api_source_with_wait() -> anyhow::Result<()> {
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let index_id = append_random_suffix("test-ingest-api-source");
+        let temp_dir = tempfile::tempdir()?;
+        let queues_dir_path = temp_dir.path();
+
+        let ingest_api_service =
+            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let source_config = make_source_config();
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            &index_id,
+            queues_dir_path.to_path_buf(),
+            source_config,
+        );
+        let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
+        let ingest_api_source_actor = SourceActor {
+            source: Box::new(ingest_api_source),
+            doc_processor_mailbox,
+        };
+        let (_ingest_api_source_mailbox, ingest_api_source_handle) =
+            universe.spawn_builder().spawn(ingest_api_source_actor);
+        let ingest_req = make_ingest_request(index_id.clone(), 2, 20_000, CommitType::WaitFor);
+        let ingest_res = ingest_api_service
+            .send_message(ingest_req)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        universe.sleep(Duration::from_secs(2)).await;
+        let counters = ingest_api_source_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+        assert_eq!(
+            counters,
+            serde_json::json!({
+                "previous_offset": 39999u64,
+                "current_offset": 39999u64,
+                "num_docs_processed": 40000u64
+            })
+        );
+        let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
+        assert_eq!(doc_batches.len(), 2);
+        assert!(doc_batches[1].docs[0].starts_with("037736"));
+        assert!(!doc_batches[0].force_commit);
+        assert!(!doc_batches[1].force_commit);
+        ingest_api_service
+            .ask_for_res(SuggestTruncateRequest {
+                index_id: index_id.clone(),
+                up_to_position_included: 39999,
+            })
+            .await
+            .unwrap();
+        let res = ingest_res.await.unwrap().unwrap();
+        assert_eq!(res.num_docs_for_processing, 40_000);
         ingest_api_source_handle.quit().await;
         universe.assert_quit().await;
         Ok(())
