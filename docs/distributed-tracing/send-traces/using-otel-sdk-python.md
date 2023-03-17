@@ -28,7 +28,7 @@ In this tutorial, we will show you how to instrument a Python [Flask](https://fl
 
 Let's start a Jaeger UI instance with docker. Here we need to inform jaeger that it should use quickwit as its backend.
 
-Due to some idiosyncracy associated with networking with containers, we will have to use a different approach on MacOS & Windows on one side, and Linux on the other side.
+Due to some idiosyncrasy associated with networking with containers, we will have to use a different approach on MacOS & Windows on one side, and Linux on the other side.
 
 ### MacOS & Windows
 
@@ -66,7 +66,7 @@ We will start a flask application that is doing three things on each HTTP call `
 - Displaying it with a random sleep.
 
 
-Let's first intall the dependencies:
+Let's first install the dependencies:
 
 ```bash
 pip install flask
