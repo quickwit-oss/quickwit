@@ -20,7 +20,6 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
-
 use quickwit_ingest_api::{
     CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestService,
     IngestServiceClient, IngestServiceError, TailRequest,
