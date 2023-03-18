@@ -115,7 +115,7 @@ pub async fn start_ingest_api_service(
 }
 
 #[repr(u32)]
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all(deserialize = "snake_case"))]
 #[derive(Default)]
 pub enum CommitType {
@@ -132,6 +132,16 @@ impl From<u32> for CommitType {
             1 => CommitType::WaitFor,
             2 => CommitType::Force,
             _ => panic!("Unknown commit type {value}"),
+        }
+    }
+}
+
+impl CommitType {
+    pub fn to_query_parameter(&self) -> Option<&'static str> {
+        match self {
+            CommitType::Auto => None,
+            CommitType::WaitFor => Some("commit=wait_for"),
+            CommitType::Force => Some("commit=force"),
         }
     }
 }
