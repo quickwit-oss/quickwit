@@ -214,7 +214,44 @@ async fn tail_endpoint(
     Ok(fetch_response)
 }
 
-fn elastic_bulk_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
+/// ?refresh parameter for elasticsearch bulk request
+///
+/// The syntax for this parameter is a bit confusing for backward compatibility reasons.
+/// - Absence of ?refresh parameter or ?refresh=false means no refresh
+/// - Presence of ?refresh parameter without any values or ?refresh=true means force refresh
+/// - ?refresh=wait_for means wait for refresh
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all(deserialize = "snake_case"))]
+#[derive(Default)]
+pub enum ElasticRefresh {
+    // if the refresh parameter is not present it is false
+    #[default]
+    False,
+    // but if it is present without a value like this: ?refresh, it should be the same as
+    // ?refresh=true
+    #[serde(alias = "")]
+    True,
+    WaitFor,
+}
+
+impl From<ElasticRefresh> for CommitType {
+    fn from(val: ElasticRefresh) -> Self {
+        match val {
+            ElasticRefresh::False => CommitType::Auto,
+            ElasticRefresh::True => CommitType::Force,
+            ElasticRefresh::WaitFor => CommitType::WaitFor,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+struct ElasticIngestOptions {
+    #[serde(default)]
+    refresh: ElasticRefresh,
+}
+
+fn elastic_bulk_filter(
+) -> impl Filter<Extract = (String, ElasticIngestOptions), Error = Rejection> + Clone {
     warp::path!("_bulk")
         .and(warp::post())
         .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
@@ -225,6 +262,9 @@ fn elastic_bulk_filter() -> impl Filter<Extract = (String,), Error = Rejection> 
                 Err(reject::custom(InvalidUtf8))
             }
         }))
+        .and(serde_qs::warp::query::<ElasticIngestOptions>(
+            serde_qs::Config::default(),
+        ))
 }
 
 pub fn elastic_bulk_handler(
@@ -245,10 +285,14 @@ pub fn elastic_bulk_handler(
     responses(
         (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
     ),
+    params(
+        ("refresh" = Option<ElasticRefresh>, Query, description = "Force or wait for commit at the end of the indexing operation."),
+    )
 )]
 /// Elasticsearch-compatible Bulk Ingest
 async fn elastic_ingest(
     payload: String,
+    ingest_options: ElasticIngestOptions,
     mut ingest_service: IngestServiceClient,
 ) -> Result<IngestResponse, IngestRestApiError> {
     let mut batches = HashMap::new();
@@ -280,7 +324,7 @@ async fn elastic_ingest(
             .into_values()
             .map(|builder| builder.build())
             .collect(),
-        commit: CommitType::Auto as u32,
+        commit: Into::<CommitType>::into(ingest_options.refresh) as u32,
     };
     let ingest_response = ingest_service.ingest(ingest_request).await?;
     Ok(ingest_response)
@@ -300,6 +344,7 @@ mod tests {
     };
 
     use super::{ingest_api_handlers, BulkAction, BulkActionMeta};
+    use crate::ingest_api::rest_handler::{ElasticIngestOptions, ElasticRefresh};
 
     #[test]
     fn test_bulk_action_serde() {
@@ -595,6 +640,191 @@ mod tests {
         ingest_service_mailbox
             .ask_for_res(SuggestTruncateRequest {
                 index_id: "my-index".to_string(),
+                up_to_position_included: 0,
+            })
+            .await
+            .unwrap();
+        handle.await.unwrap();
+        universe.assert_quit().await;
+    }
+
+    #[test]
+    fn test_elastic_refresh_parsing() {
+        assert_eq!(
+            serde_qs::from_str::<ElasticIngestOptions>("")
+                .unwrap()
+                .refresh,
+            ElasticRefresh::False
+        );
+        assert_eq!(
+            serde_qs::from_str::<ElasticIngestOptions>("refresh=true")
+                .unwrap()
+                .refresh,
+            ElasticRefresh::True
+        );
+        assert_eq!(
+            serde_qs::from_str::<ElasticIngestOptions>("refresh=false")
+                .unwrap()
+                .refresh,
+            ElasticRefresh::False
+        );
+        assert_eq!(
+            serde_qs::from_str::<ElasticIngestOptions>("refresh=wait_for")
+                .unwrap()
+                .refresh,
+            ElasticRefresh::WaitFor
+        );
+        assert_eq!(
+            serde_qs::from_str::<ElasticIngestOptions>("refresh")
+                .unwrap()
+                .refresh,
+            ElasticRefresh::True
+        );
+    }
+
+    #[tokio::test]
+    async fn test_bulk_api_blocks_when_refresh_wait_for_is_specified() {
+        let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
+            setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
+        let ingest_api_handlers = ingest_api_handlers(ingest_service);
+        let payload = r#"
+            { "create" : { "_index" : "my-index-1", "_id" : "1"} }
+            {"id": 1, "message": "push"}
+            { "create" : { "_index" : "my-index-2", "_id" : "1"} }
+            {"id": 1, "message": "push"}
+            { "create" : { "_index" : "my-index-1" } }
+            {"id": 2, "message": "push"}
+        "#;
+        let handle = tokio::spawn(async move {
+            let resp = warp::test::request()
+                .path("/_bulk?refresh=wait_for")
+                .method("POST")
+                .body(payload)
+                .reply(&ingest_api_handlers)
+                .await;
+
+            assert_eq!(resp.status(), 200);
+            let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(ingest_response.num_docs_for_processing, 3);
+        });
+        universe.sleep(Duration::from_secs(10)).await;
+        assert!(!handle.is_finished());
+        assert_eq!(
+            ingest_service_mailbox
+                .ask_for_res(FetchRequest {
+                    index_id: "my-index-1".to_string(),
+                    start_after: None,
+                    num_bytes_limit: None,
+                })
+                .await
+                .unwrap()
+                .doc_batch
+                .unwrap()
+                .num_docs(),
+            2
+        );
+        assert!(!handle.is_finished());
+        assert_eq!(
+            ingest_service_mailbox
+                .ask_for_res(FetchRequest {
+                    index_id: "my-index-2".to_string(),
+                    start_after: None,
+                    num_bytes_limit: None,
+                })
+                .await
+                .unwrap()
+                .doc_batch
+                .unwrap()
+                .num_docs(),
+            1
+        );
+        ingest_service_mailbox
+            .ask_for_res(SuggestTruncateRequest {
+                index_id: "my-index-1".to_string(),
+                up_to_position_included: 1,
+            })
+            .await
+            .unwrap();
+        universe.sleep(Duration::from_secs(10)).await;
+        assert!(!handle.is_finished());
+        ingest_service_mailbox
+            .ask_for_res(SuggestTruncateRequest {
+                index_id: "my-index-2".to_string(),
+                up_to_position_included: 0,
+            })
+            .await
+            .unwrap();
+        handle.await.unwrap();
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_bulk_api_blocks_when_refresh_true_is_specified() {
+        let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
+            setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
+        let ingest_api_handlers = ingest_api_handlers(ingest_service);
+        let payload = r#"
+            { "create" : { "_index" : "my-index-1", "_id" : "1"} }
+            {"id": 1, "message": "push"}
+            { "create" : { "_index" : "my-index-2", "_id" : "1"} }
+            {"id": 1, "message": "push"}
+            { "create" : { "_index" : "my-index-1" } }
+            {"id": 2, "message": "push"}
+        "#;
+        let handle = tokio::spawn(async move {
+            let resp = warp::test::request()
+                .path("/_bulk?refresh")
+                .method("POST")
+                .body(payload)
+                .reply(&ingest_api_handlers)
+                .await;
+
+            assert_eq!(resp.status(), 200);
+            let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
+            assert_eq!(ingest_response.num_docs_for_processing, 3);
+        });
+        universe.sleep(Duration::from_secs(10)).await;
+        assert!(!handle.is_finished());
+        assert_eq!(
+            ingest_service_mailbox
+                .ask_for_res(FetchRequest {
+                    index_id: "my-index-1".to_string(),
+                    start_after: None,
+                    num_bytes_limit: None,
+                })
+                .await
+                .unwrap()
+                .doc_batch
+                .unwrap()
+                .num_docs(),
+            3
+        );
+        assert_eq!(
+            ingest_service_mailbox
+                .ask_for_res(FetchRequest {
+                    index_id: "my-index-2".to_string(),
+                    start_after: None,
+                    num_bytes_limit: None,
+                })
+                .await
+                .unwrap()
+                .doc_batch
+                .unwrap()
+                .num_docs(),
+            2
+        );
+        ingest_service_mailbox
+            .ask_for_res(SuggestTruncateRequest {
+                index_id: "my-index-1".to_string(),
+                up_to_position_included: 1,
+            })
+            .await
+            .unwrap();
+        universe.sleep(Duration::from_secs(10)).await;
+        assert!(!handle.is_finished());
+        ingest_service_mailbox
+            .ask_for_res(SuggestTruncateRequest {
+                index_id: "my-index-2".to_string(),
                 up_to_position_included: 0,
             })
             .await
