@@ -9,7 +9,7 @@ sidebar_position: 10
 
 This guide will help you add full-text search to a well-known OLAP database, ClickHouse, using the Quickwit search streaming feature. Indeed Quickwit exposes a REST endpoint that streams ids or whatever attributes matching a search query **extremely fast** (up to 50 million in 1 second), and ClickHouse can easily use them with joins queries.
 
-We will take the [GitHub archive dataset](https://www.gharchive.org/), which gathers more than 3 billion GitHub events: `WatchEvent`, `PullRequestEvent`, `IssuesEvent`... You can dive into this [great analysis](https://ghe.clickhouse.tech/) made by ClickHouse to have a good understanding of the dataset. We also took strong inspiration from this work, and we are very grateful to them for sharing this.
+We will take the [GitHub archive dataset](https://www.gharchive.org/), which gathers more than 3 billion GitHub events: `PullRequestEvent`, `IssuesEvent`... You can dive into this [great analysis](https://ghe.clickhouse.tech/) made by ClickHouse to have a good understanding of the dataset. We also took strong inspiration from this work, and we are very grateful to them for sharing this.
 
 ## Install
 
@@ -18,9 +18,15 @@ curl -L https://install.quickwit.io | sh
 cd quickwit-v*/
 ```
 
+## Start a Quickwit server
+
+```bash
+./quickwit run
+```
+
 ## Create a Quickwit index
 
-After [installing quickwit], let's create an index configured to receive these events.  Let's first look at the data to ingest. Here is an event example:
+After [starting Quickwit], we need to create an index configured to receive these events.  Let's first look at the data to ingest. Here is an event example:
 
 ```JSON
 {
@@ -102,13 +108,8 @@ You can check it's working by using the `search` command and looking for `tantiv
 ```
 
 
-## Start a searcher
+## Streaming IDs
 
-```bash
-./quickwit run --service searcher --service metastore
-```
-
-This command will start an HTTP server with a [REST API](/docs/reference/rest-api) and run the required metastore service which is used by searcher services.
 We are now ready to fetch some ids with the search stream endpoint. Let's start by streaming them on a simple
 query and with a `csv` output format.
 
@@ -121,11 +122,11 @@ We will use the `click_house` binary output format in the following sections to 
 
 ## ClickHouse
 
-Let's leave Quickwit for now and [install a ClickHouse server](https://clickhouse.com/docs/en/getting-started/install/).
+Let's leave Quickwit for now and [install ClickHouse](https://clickhouse.com/docs/en/install). Start a ClickHouse server.
 
 ### Create database and table
 
-Once installed, just [start a client](https://clickhouse.com/docs/en/getting-started/install/) and execute the following sql statements:
+Once installed, just start a client and execute the following sql statements:
 ```SQL
 CREATE DATABASE "gh-archive";
 USE "gh-archive";
@@ -173,17 +174,16 @@ Let's check it's working:
 # Top repositories by stars
 SELECT repo_name, count() AS stars
 FROM github_events
-WHERE event_type = 'WatchEvent'
 GROUP BY repo_name
 ORDER BY stars DESC LIMIT 5
 
-┌─repo_name────────────┬─stars─┐
-│ TencentARC/GFPGAN    │  5659 │
-│ Eugeny/tabby         │  4027 │
-│ prabhatsharma/zinc   │  3936 │
-│ AppFlowy-IO/appflowy │  3382 │
-│ vercel/turborepo     │  3314 │
-└──────────────────────┴───────┘
+┌─repo_name─────────────────────────────────┬─stars─┐
+│ test-organization-kkjeer/app-test-2       │ 16697 │
+│ test-organization-kkjeer/bot-validation-2 │ 15326 │
+│ microsoft/winget-pkgs                     │ 14099 │
+│ conda-forge/releases                      │ 13332 │
+│ NixOS/nixpkgs                             │ 12860 │
+└───────────────────────────────────────────┴───────┘
 ```
 
 ### Use Quickwit search inside ClickHouse
@@ -195,13 +195,13 @@ This is precisely what we need: by creating a table pointing to Quickwit search 
 SELECT count(*) FROM url('http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j+OR+log4shell&fast_field=id&output_format=click_house_row_binary', RowBinary, 'id UInt64')
 
 ┌─count()─┐
-│   99584 │
+│  217469 │
 └─────────┘
 
-1 rows in set. Elapsed: 0.012 sec. Processed 99.13 thousand rows, 793.00 KB (7.96 million rows/s., 63.66 MB/s.)
+1 row in set. Elapsed: 0.068 sec. Processed 217.47 thousand rows, 1.74 MB (3.19 million rows/s., 25.55 MB/s.)
 ```
 
-We are fetching 100 000 u64 ids in 0.012 seconds. That's 8 million rows per second, not bad. And it's possible to increase the throughput with more extensive queries.
+We are fetching 217 469 u64 ids in 0.068 seconds. That's 3.19 million rows per second, not bad. And it's possible to increase the throughput if fast field are already cached.
 
 
 Let's do another example with a more exciting query that will match `log4j` or `log4shell` and count events per day:
@@ -220,26 +220,27 @@ GROUP BY date
 Query id: 10cb0d5a-7817-424e-8248-820fa2c425b8
 
 ┌─count()─┬───────date─┐
-│      93 │ 2021-12-01 │
-│      69 │ 2021-12-02 │
-│      68 │ 2021-12-03 │
-│      57 │ 2021-12-04 │
-│      74 │ 2021-12-05 │
-│     158 │ 2021-12-06 │
-│     143 │ 2021-12-07 │
-│     102 │ 2021-12-08 │
-│     158 │ 2021-12-09 │
-│   87777 │ 2021-12-10 │
-│    3225 │ 2021-12-11 │
-│    1530 │ 2021-12-12 │
-│    5762 │ 2021-12-13 │
+│      96 │ 2021-12-01 │
+│      66 │ 2021-12-02 │
+│      70 │ 2021-12-03 │
+│      62 │ 2021-12-04 │
+│      67 │ 2021-12-05 │
+│     167 │ 2021-12-06 │
+│     140 │ 2021-12-07 │
+│     104 │ 2021-12-08 │
+│     157 │ 2021-12-09 │
+│   88110 │ 2021-12-10 │
+│    2937 │ 2021-12-11 │
+│    1533 │ 2021-12-12 │
+│    5935 │ 2021-12-13 │
+│  118025 │ 2021-12-14 │
 └─────────┴────────────┘
 
-14 rows in set. Elapsed: 0.180 sec. Processed 45.53 million rows, 396.64 MB (253.59 million rows/s., 2.21 GB/s.)
+14 rows in set. Elapsed: 0.124 sec. Processed 8.35 million rows, 123.10 MB (67.42 million rows/s., 993.55 MB/s.)
 
 ```
 
-We can see the spike on the 2021-12-10.
+We can see two spikes on the 2021-12-10 and 2021-12-14.
 
 ## Wrapping up
 
