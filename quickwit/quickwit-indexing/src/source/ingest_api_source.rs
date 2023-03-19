@@ -128,9 +128,8 @@ impl Source for IngestApiSource {
         let FetchResponse {
             first_position: first_position_opt,
             doc_batch: doc_batch_opt,
-        } = self
-            .ingest_api_service
-            .ask_for_res(fetch_req)
+        } = ctx
+            .ask_for_res(&self.ingest_api_service, fetch_req)
             .await
             .map_err(anyhow::Error::from)?;
 
