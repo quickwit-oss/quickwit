@@ -69,8 +69,9 @@ install_from_archive() {
 
     local _binary_arch=""
     case "$_arch" in
-        # Add `| aarch64-apple-darwin` when M1 is fully supported.
-        # Note that M1 binary can still be built from source.
+        aarch64-apple-darwin)
+            _binary_arch=$_arch
+            ;;
         x86_64-apple-darwin)
             _binary_arch=$_arch
             ;;
