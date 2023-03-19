@@ -1,6 +1,6 @@
 ---
 title: Index a logging dataset locally
-description: Index log entries and start a three-node cluster on a local machine.
+description: Index log entries on a local machine.
 tags: [self-hosted, setup]
 icon_url: /img/quickwit-icon.svg
 sidebar_position: 1
@@ -9,8 +9,7 @@ sidebar_position: 1
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-In this guide, we will index about 40 million log entries (13 GB decompressed) and start a three-node cluster on a local machine. If you want to start a server with indexes on AWS S3, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md).
-
+In this guide, we will index about 40 million log entries (13 GB decompressed) on a local machine. If you want to start a server with indexes on AWS S3 with several search nodes, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md).
 
 Here is an example of a log entry:
 ```json
@@ -43,6 +42,30 @@ Or pull and run the Quickwit binary in an isolated Docker container.
 ```bash
 docker run quickwit/quickwit --version
 ```
+
+## Start a Quickwit server
+
+<Tabs>
+
+<TabItem value="cli" label="CLI">
+
+```bash
+./quickwit run
+```
+
+</TabItem>
+
+<TabItem value="docker" label="Docker">
+
+```bash
+docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit run
+```
+
+You may need to specify the platform if you are using Apple silicon based macOS system with the `--platform linux/amd64` flag. You can also safely ignore jemalloc warnings.
+
+</TabItem>
+
+</Tabs>
 
 
 ## Create your index
@@ -105,18 +128,15 @@ Now let's create the index with the `create` subcommand (assuming you are inside
 
 </TabItem>
 
-<TabItem value="docker" label="Docker">
+<TabItem value="curl" label="cURL">
 
 ```bash
-# Create first the data directory.
-mkdir qwdata
-docker run -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/hdfs_logs_index_config.yaml:/quickwit/hdfs_logs_index_config.yaml quickwit/quickwit index create --index-config hdfs_logs_index_config.yaml
+curl -XPOST http://localhost:7280/api/v1/indexes -H "content-type: application/yaml" --data-binary @hdfs_logs_index_config.yaml
 ```
 
 </TabItem>
 
 </Tabs>
-
 
 
 You're now ready to fill the index.
@@ -131,7 +151,7 @@ This can take up to 10 minutes on a modern machine, the perfect time for a coffe
 <TabItem value="cli" label="CLI">
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit index ingest --index hdfs-logs
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit tool local-ingest --index hdfs-logs
 ```
 
 </TabItem>
@@ -139,7 +159,7 @@ curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.js
 <TabItem value="docker" label="Docker">
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | docker run -v $(pwd)/qwdata:/quickwit/qwdata -i quickwit/quickwit index ingest --index hdfs-logs
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | docker run -v $(pwd)/qwdata:/quickwit/qwdata -i quickwit/quickwit tool local-ingest --index hdfs-logs
 ```
 
 </TabItem>
@@ -155,22 +175,39 @@ If you are in a hurry, use the sample dataset that contains 10 000 documents, we
 <TabItem value="cli" label="CLI">
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | ./quickwit index ingest --index hdfs-logs
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | ./quickwit tool local-ingest --index hdfs-logs
 ```
 
 </TabItem>
 
 <TabItem value="docker" label="Docker">
 
+On macOS or Windows:
+
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | docker run -v $(pwd)/qwdata:/quickwit/qwdata -i quickwit/quickwit index ingest --index hdfs-logs
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | docker run -v $(pwd)/qwdata:/quickwit/qwdata -i quickwit/quickwit index ingest --index hdfs-logs --endpoint http://host.docker.internal:7280
+```
+
+On linux:
+
+```bash
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | docker run --network=host -v $(pwd)/qwdata:/quickwit/qwdata -i quickwit/quickwit index ingest --index hdfs-logs --endpoint http://127.0.0.1:7280
 ```
 
 </TabItem>
 
+<TabItem value="curl" label="cURL">
+
+```bash
+wget https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json
+curl -XPOST http://localhost:7280/api/v1/hdfs-logs/ingest -H "content-type: application/json" --data-binary @hdfs-logs-multitenants-10000.json
+```
+
+</Tab>
+
 </Tabs>
 
-You can check it's working by using `search` subcommand and look for `INFO` in `severity_text` field:
+You can check it's working by searchign for `INFO` in `severity_text` field:
 
 <Tabs>
 
@@ -184,8 +221,16 @@ You can check it's working by using `search` subcommand and look for `INFO` in `
 
 <TabItem value="docker" label="Docker">
 
+On macOS or Windows:
+
 ```bash
-docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index search --index hdfs-logs  --query "severity_text:INFO"
+docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index search --index hdfs-logs  --query "severity_text:INFO" --endpoint http://host.docker.internal:7280
+```
+
+On linux:
+
+```bash
+docker run --network=host -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index search --index hdfs-logs  --query "severity_text:INFO" --endpoint http://127.0.0.1:7280
 ```
 
 </TabItem>
@@ -199,38 +244,7 @@ The `ingest` subcommand generates [splits](../../overview/architecture) of 5 mil
 :::
 
 
-## Start your server
-
-The command `run --service searcher --service metastore` starts a http server which provides a [REST API](../../reference/rest-api) 
-and runs the metastore service which is required by the searcher service.
-
-<Tabs>
-
-<TabItem value="cli" label="CLI">
-
-```bash
-./quickwit run --service searcher --service metastore
-```
-
-</TabItem>
-
-<TabItem value="docker" label="Docker">
-
-```bash
-docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit run --service searcher --service metastore
-```
-
-</TabItem>
-
-</Tabs>
-
-Let's execute the same query on field `severity_text` but with `cURL`:
-
-```bash
-curl "http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:INFO"
-```
-
-which returns the json
+The query which returns the json:
 
 ```json
 {
@@ -260,7 +274,6 @@ Let's use these parameters with the following query:
 curl 'http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:INFO&start_timestamp=1440670490&end_timestamp=1450670490'
 ```
 
-
 ## Clean
 
 Let's do some cleanup by deleting the index:
@@ -275,10 +288,10 @@ Let's do some cleanup by deleting the index:
 
 </TabItem>
 
-<TabItem value="docker" label="Docker">
+<TabItem value="cli" label="CLI">
 
 ```bash
-docker run -v $(pwd)/qwdata:/quickwit/qwdata quickwit/quickwit index delete --index hdfs-logs
+curl -XDELETE http://127.0.0.1:7280/api/v1/indexes/hdfs-logs
 ```
 
 </TabItem>
@@ -289,4 +302,3 @@ Congratz! You finished this tutorial!
 
 
 To continue your Quickwit journey, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md) or dig into the [search REST API](/docs/reference/rest-api) or [query language](/docs/reference/query-language).
-
