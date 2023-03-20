@@ -4455,7 +4455,7 @@ dependencies = [
  "prost-build",
  "quote 1.0.26",
  "serde",
- "syn 1.0.109",
+ "syn 2.0.3",
  "thiserror",
  "tokio",
  "tonic",
