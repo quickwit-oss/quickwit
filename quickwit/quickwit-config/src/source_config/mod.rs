@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
+use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_common::{is_false, no_color};
 use serde::de::Error;
@@ -313,7 +314,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VecSourceParams {
-    pub docs: Vec<String>,
+    pub docs: Vec<Bytes>,
     pub batch_num_docs: usize,
     #[serde(default)]
     pub partition: String,

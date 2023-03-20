@@ -18,26 +18,55 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::ops::Range;
 
+use bytes::Bytes;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct RawDocBatch {
-    pub docs: Vec<String>,
+    pub docs: Vec<Bytes>,
     pub checkpoint_delta: SourceCheckpointDelta,
     pub force_commit: bool,
 }
 
 impl RawDocBatch {
     pub fn new(
-        docs: Vec<String>,
+        docs: Vec<Bytes>,
         checkpoint_delta: SourceCheckpointDelta,
         force_commit: bool,
     ) -> Self {
-        RawDocBatch {
+        Self {
             docs,
             checkpoint_delta,
             force_commit,
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            docs: Vec::with_capacity(capacity),
+            checkpoint_delta: SourceCheckpointDelta::default(),
+            force_commit: false,
+        }
+    }
+
+    pub fn num_docs(&self) -> usize {
+        self.docs.len()
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(docs: &[&str], range: Range<u64>) -> Self {
+        let docs = docs
+            .iter()
+            .map(|doc| Bytes::from(doc.to_string()))
+            .collect();
+        let checkpoint_delta = SourceCheckpointDelta::from_range(range);
+
+        Self {
+            docs,
+            checkpoint_delta,
+            force_commit: false,
         }
     }
 }
@@ -46,7 +75,7 @@ impl fmt::Debug for RawDocBatch {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("RawDocBatch")
-            .field("docs_len", &self.docs.len())
+            .field("num_docs", &self.num_docs())
             .field("checkpoint_delta", &self.checkpoint_delta)
             .field("force_commit", &self.force_commit)
             .finish()

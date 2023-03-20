@@ -24,7 +24,7 @@ use serde::Serialize;
 use crate::DocBatch;
 
 #[derive(Debug)]
-/// Represents a command that can be stored in doc batch.
+/// Represents a command that can be stored in a [`DocBatch`].
 pub enum DocCommand<T>
 where T: Buf
 {
@@ -218,17 +218,17 @@ impl DocBatch {
             })
     }
 
-    /// Returns the total number of bytes in the batch
-    pub fn num_bytes(&self) -> usize {
-        self.concat_docs.len()
-    }
-
-    /// Returns true if the batch is empty
+    /// Returns true if the batch is empty.
     pub fn is_empty(&self) -> bool {
         self.doc_lens.is_empty()
     }
 
-    /// Returns the number of document in the batch
+    /// Returns the total number of bytes in the batch.
+    pub fn num_bytes(&self) -> usize {
+        self.concat_docs.len()
+    }
+
+    /// Returns the number of documents in the batch.
     pub fn num_docs(&self) -> usize {
         self.doc_lens.len()
     }
