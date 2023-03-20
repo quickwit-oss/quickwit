@@ -128,9 +128,8 @@ impl Source for IngestApiSource {
         let FetchResponse {
             first_position: first_position_opt,
             doc_batch: doc_batch_opt,
-        } = self
-            .ingest_api_service
-            .ask_for_res(fetch_req)
+        } = ctx
+            .ask_for_res(&self.ingest_api_service, fetch_req)
             .await
             .map_err(anyhow::Error::from)?;
 
@@ -174,7 +173,7 @@ impl Source for IngestApiSource {
     async fn suggest_truncate(
         &self,
         checkpoint: SourceCheckpoint,
-        _ctx: &ActorContext<SourceActor>,
+        ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
         if let Some(Position::Offset(offset_str)) =
             checkpoint.position_for_partition(&self.partition_id)
@@ -184,8 +183,7 @@ impl Source for IngestApiSource {
                 index_id: self.ctx.index_id.clone(),
                 up_to_position_included,
             };
-            self.ingest_api_service
-                .ask_for_res(suggest_truncate_req)
+            ctx.ask_for_res(&self.ingest_api_service, suggest_truncate_req)
                 .await
                 .map_err(anyhow::Error::from)?;
         }
