@@ -145,12 +145,10 @@ impl Source for IngestApiSource {
         };
 
         // TODO use a timestamp (in the raw doc batch) given by at ingest time to be more accurate.
-        let mut raw_doc_batch = RawDocBatch::default();
+        let mut raw_doc_batch = RawDocBatch::with_capacity(doc_batch.num_docs());
         for doc in doc_batch.iter() {
             match doc {
-                DocCommand::Ingest { payload } => raw_doc_batch
-                    .docs
-                    .push(String::from_utf8_lossy(payload.as_ref()).to_string()),
+                DocCommand::Ingest { payload } => raw_doc_batch.docs.push(payload),
                 DocCommand::Commit => raw_doc_batch.force_commit = true,
             }
         }
@@ -316,7 +314,7 @@ mod tests {
         );
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 2);
-        assert!(doc_batches[1].docs[0].starts_with("037736"));
+        assert!(&doc_batches[1].docs[0].starts_with(b"037736"));
         // TODO: Source deadlocks and test hangs occasionally if we don't quit source first.
         ingest_api_source_handle.quit().await;
         universe.assert_quit().await;
@@ -414,7 +412,7 @@ mod tests {
         );
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 1);
-        assert!(doc_batches[0].docs[0].starts_with("001201"));
+        assert!(&doc_batches[0].docs[0].starts_with(b"001201"));
         assert_eq!(doc_batches[0].checkpoint_delta.num_partitions(), 1);
         assert_eq!(
             doc_batches[0].checkpoint_delta.partitions().next().unwrap(),
@@ -473,7 +471,7 @@ mod tests {
         );
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 1);
-        assert!(doc_batches[0].docs[0].starts_with("000000"));
+        assert!(&doc_batches[0].docs[0].starts_with(b"000000"));
         // TODO: Source deadlocks and test hangs occasionally if we don't quit source first.
         ingest_api_source_handle.quit().await;
         universe.assert_quit().await;
@@ -526,7 +524,7 @@ mod tests {
         );
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 2);
-        assert!(doc_batches[1].docs[0].starts_with("037736"));
+        assert!(doc_batches[1].docs[0].starts_with(b"037736"));
         assert!(doc_batches[0].force_commit);
         assert!(doc_batches[1].force_commit);
         ingest_api_service
@@ -591,7 +589,7 @@ mod tests {
         );
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 2);
-        assert!(doc_batches[1].docs[0].starts_with("037736"));
+        assert!(doc_batches[1].docs[0].starts_with(b"037736"));
         assert!(!doc_batches[0].force_commit);
         assert!(!doc_batches[1].force_commit);
         ingest_api_service

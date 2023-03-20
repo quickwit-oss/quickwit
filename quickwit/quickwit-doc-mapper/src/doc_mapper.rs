@@ -45,17 +45,31 @@ use crate::{DocParsingError, QueryParserError};
 /// - a way to build a tantivy [`Schema`] from a
 #[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
-    /// Builds a tantivy [`Document`] from a JSON object.
+    /// Transforms a JSON object ([`JsonObject`]) into a tantivy [`Document`] according to the rules
+    /// defined for the `DocMapper`.
     fn doc_from_json_obj(
         &self,
         json_obj: JsonObject,
     ) -> Result<(Partition, Document), DocParsingError>;
 
-    /// Parses a JSON string and returns a tantivy [`Document`].
+    /// Parses a JSON byte slice into a tantivy [`Document`].
+    fn doc_from_json_bytes(
+        &self,
+        json_doc: &[u8],
+    ) -> Result<(Partition, Document), DocParsingError> {
+        let json_obj: JsonObject = serde_json::from_slice(json_doc).map_err(|_| {
+            let json_doc_sample: String = std::str::from_utf8(json_doc)
+                .map(|doc_str| doc_str.chars().take(20).chain("...".chars()).collect())
+                .unwrap_or_else(|_| "Doc contains some invalid UTF-8 characters.".to_string());
+            DocParsingError::NotJsonObject(json_doc_sample)
+        })?;
+        self.doc_from_json_obj(json_obj)
+    }
+
+    /// Parses a JSON string into a tantivy [`Document`].
     fn doc_from_json_str(&self, json_doc: &str) -> Result<(Partition, Document), DocParsingError> {
         let json_obj: JsonObject = serde_json::from_str(json_doc).map_err(|_| {
-            let mut json_doc_sample: String = json_doc.chars().take(20).collect();
-            json_doc_sample.push_str("...");
+            let json_doc_sample: String = json_doc.chars().take(20).chain("...".chars()).collect();
             DocParsingError::NotJsonObject(json_doc_sample)
         })?;
         self.doc_from_json_obj(json_obj)
@@ -186,7 +200,8 @@ mod tests {
 
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions};
     use crate::{
-        DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, WarmupInfo, DYNAMIC_FIELD_NAME,
+        DefaultDocMapperBuilder, DocMapper, DocParsingError, FieldMappingEntry, WarmupInfo,
+        DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -196,6 +211,30 @@ mod tests {
             "tag_fields": [],
             "field_mappings": []
         }"#;
+
+    #[test]
+    fn test_doc_from_json_bytes() {
+        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
+        let json_doc = br#"{"title": "hello", "body": "world"}"#;
+        doc_mapper.doc_from_json_bytes(json_doc).unwrap();
+
+        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper.doc_from_json_bytes(br#"Not a JSON object"#).unwrap_err() else {
+            panic!("Expected `DocParsingError::NotJsonObject` error");
+        };
+        assert_eq!(json_doc_sample, "Not a JSON object...");
+    }
+
+    #[test]
+    fn test_doc_from_json_str() {
+        let doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
+        let json_doc = r#"{"title": "hello", "body": "world"}"#;
+        doc_mapper.doc_from_json_str(json_doc).unwrap();
+
+        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper.doc_from_json_str(r#"Not a JSON object"#).unwrap_err() else {
+            panic!("Expected `DocParsingError::NotJsonObject` error");
+        };
+        assert_eq!(json_doc_sample, "Not a JSON object...");
+    }
 
     #[test]
     fn test_deserialize_doc_mapper() -> anyhow::Result<()> {

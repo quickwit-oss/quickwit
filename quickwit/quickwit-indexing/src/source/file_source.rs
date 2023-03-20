@@ -17,13 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
 use std::io::SeekFrom;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{fmt, io};
 
 use anyhow::Context;
 use async_trait::async_trait;
+use bytes::Bytes;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::FileSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
@@ -77,12 +78,12 @@ impl Source for FileSource {
             let num_bytes = ctx
                 .protect_future(self.reader.read_line(&mut doc_line))
                 .await
-                .map_err(|io_err: io::Error| anyhow::anyhow!(io_err))?;
+                .map_err(anyhow::Error::from)?;
             if num_bytes == 0 {
                 reached_eof = true;
                 break;
             }
-            doc_batch.docs.push(doc_line);
+            doc_batch.docs.push(Bytes::from(doc_line));
             self.counters.current_offset += num_bytes as u64;
             self.counters.num_lines_processed += 1;
         }
@@ -378,6 +379,6 @@ mod tests {
             })
         );
         let indexer_messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
-        assert!(indexer_messages[0].docs[0].starts_with("2\n"));
+        assert!(&indexer_messages[0].docs[0].starts_with(b"2\n"));
     }
 }

@@ -228,29 +228,20 @@ impl Source for KinesisSource {
                             let num_records = records.len();
 
                             for (i, record) in records.into_iter().enumerate() {
-                                match String::from_utf8(record.data.to_vec()) {
-                                    Ok(doc) if !doc.is_empty() => docs.push(doc),
-                                    Ok(_) => {
-                                        warn!(
-                                            stream_name = %self.stream_name,
-                                            shard_id = %shard_id,
-                                            sequence_number = %record.sequence_number,
-                                            "Record is empty."
-                                        );
-                                        self.state.num_invalid_records += 1;
-                                    }
-                                    Err(error) => {
-                                        warn!(
-                                            stream_name = %self.stream_name,
-                                            shard_id = %shard_id,
-                                            sequence_number = %record.sequence_number,
-                                            error = ?error, "Record contains invalid UTF-8 characters."
-                                        );
-                                        self.state.num_invalid_records += 1;
-                                    }
-                                };
-                                batch_num_bytes += record.data.len() as u64;
-                                self.state.num_bytes_processed += record.data.len() as u64;
+                                if record.data.is_empty() {
+                                    warn!(
+                                        stream_name=%self.stream_name,
+                                        shard_id=%shard_id,
+                                        sequence_number=%record.sequence_number,
+                                        "Record is empty."
+                                    );
+                                    self.state.num_invalid_records += 1;
+                                    continue;
+                                }
+                                let doc_num_bytes = record.data.len() as u64;
+                                docs.push(record.data);
+                                batch_num_bytes += doc_num_bytes;
+                                self.state.num_bytes_processed += doc_num_bytes;
                                 self.state.num_records_processed += 1;
 
                                 if i == num_records - 1 {

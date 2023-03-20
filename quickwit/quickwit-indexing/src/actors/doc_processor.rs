@@ -225,7 +225,7 @@ impl DocProcessor {
 
     fn prepare_document(
         &mut self,
-        json_doc: &str,
+        json_doc: &[u8],
         ctx: &ActorContext<Self>,
     ) -> Result<PreparedDoc, PrepareDocumentError> {
         let _protect_guard = ctx.protect_zone();
@@ -239,7 +239,7 @@ impl DocProcessor {
             };
             self.doc_mapper.doc_from_json_obj(json_obj)
         } else {
-            self.doc_mapper.doc_from_json_str(json_doc)
+            self.doc_mapper.doc_from_json_bytes(json_doc)
         };
         let (partition, doc) = doc_parsing_result.map_err(|doc_parsing_error| {
             warn!(err=?doc_parsing_error);
@@ -323,6 +323,7 @@ impl Handler<RawDocBatch> for DocProcessor {
         let mut prepared_docs: Vec<PreparedDoc> = Vec::with_capacity(raw_doc_batch.docs.len());
         for json_doc in raw_doc_batch.docs {
             let json_doc_num_bytes = json_doc.len() as u64;
+
             match self.prepare_document(&json_doc, ctx) {
                 Ok(document) => {
                     self.counters.record_valid(json_doc_num_bytes);
@@ -374,8 +375,8 @@ struct VrlProgram {
 }
 
 impl VrlProgram {
-    fn transform_doc(&mut self, json_doc: &str) -> Result<VrlValue, PrepareDocumentError> {
-        let mut value = match serde_json::from_str::<VrlValue>(json_doc) {
+    fn transform_doc(&mut self, json_doc: &[u8]) -> Result<VrlValue, PrepareDocumentError> {
+        let mut value = match serde_json::from_slice::<VrlValue>(json_doc) {
             Ok(value) if value.is_object() => value,
             _ => return Err(PrepareDocumentError::ParsingError),
         };
@@ -416,6 +417,7 @@ impl VrlProgram {
 mod tests {
     use std::sync::Arc;
 
+    use bytes::Bytes;
     use quickwit_actors::Universe;
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
@@ -444,16 +446,15 @@ mod tests {
             universe.spawn_builder().spawn(doc_processor);
         let checkpoint_delta = SourceCheckpointDelta::from_range(0..4);
         doc_processor_mailbox
-            .send_message(RawDocBatch {
-                docs: vec![
-                        r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string(), // missing timestamp
-                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(), // ok
-                        r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#.to_string(), // ok
-                        "{".to_string(),                    // invalid json
-                    ],
-                checkpoint_delta: checkpoint_delta.clone(),
-                force_commit: false,
-            })
+            .send_message(RawDocBatch::for_test(
+                &[
+                    r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#, // missing timestamp
+                    r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#, // ok
+                    r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#, // ok
+                    "{", // invalid json
+                ],
+                0..4,
+            ))
             .await?;
         let doc_processor_counters = doc_processor_handle
             .process_pending_and_observe()
@@ -536,10 +537,18 @@ mod tests {
         doc_processor_mailbox
             .send_message(RawDocBatch {
                 docs: vec![
-                    r#"{"tenant": "tenant_1", "body": "first doc for tenant 1"}"#.to_string(),
-                    r#"{"tenant": "tenant_2", "body": "first doc for tenant 2"}"#.to_string(),
-                    r#"{"tenant": "tenant_1", "body": "second doc for tenant 1"}"#.to_string(),
-                    r#"{"tenant": "tenant_2", "body": "second doc for tenant 2"}"#.to_string(),
+                    Bytes::from_static(
+                        br#"{"tenant": "tenant_1", "body": "first doc for tenant 1"}"#,
+                    ),
+                    Bytes::from_static(
+                        br#"{"tenant": "tenant_2", "body": "first doc for tenant 2"}"#,
+                    ),
+                    Bytes::from_static(
+                        br#"{"tenant": "tenant_1", "body": "second doc for tenant 1"}"#,
+                    ),
+                    Bytes::from_static(
+                        br#"{"tenant": "tenant_2", "body": "second doc for tenant 2"}"#,
+                    ),
                 ],
                 checkpoint_delta: SourceCheckpointDelta::from_range(0..2),
                 force_commit: false,
@@ -619,13 +628,12 @@ mod tests {
         doc_processor_handle.process_pending_and_observe().await;
         publish_lock.kill().await;
         doc_processor_mailbox
-            .send_message(RawDocBatch {
-                docs: vec![
-                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(),
-                    ],
-                checkpoint_delta: SourceCheckpointDelta::from_range(0..1),
-                force_commit: false,
-            })
+            .send_message(RawDocBatch::for_test(
+                &[
+                    r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#,
+                ],
+                0..1,
+            ))
             .await.unwrap();
         universe
             .send_exit_with_success(&doc_processor_mailbox)
@@ -656,18 +664,16 @@ mod tests {
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
-        let checkpoint_delta = SourceCheckpointDelta::from_range(0..4);
         doc_processor_mailbox
-            .send_message(RawDocBatch {
-                docs: vec![
-                        r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string(), // missing timestamp
-                        r#"{"body": "happy using VRL", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(), // ok
-                        r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#.to_string(), // ok
-                        "{".to_string(),                    // invalid json
-                    ],
-                checkpoint_delta: checkpoint_delta.clone(),
-                force_commit: false,
-            })
+            .send_message(RawDocBatch::for_test(
+                &[
+                    r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#, // missing timestamp
+                    r#"{"body": "happy using VRL", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#, // ok
+                    r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#, // ok
+                    "{", // invalid json
+                ],
+                0..4,
+            ))
             .await?;
         let doc_processor_counters = doc_processor_handle
             .process_pending_and_observe()
@@ -694,7 +700,10 @@ mod tests {
             .downcast::<PreparedDocBatch>()
             .unwrap());
         assert_eq!(batch.docs.len(), 2);
-        assert_eq!(batch.checkpoint_delta, checkpoint_delta);
+        assert_eq!(
+            batch.checkpoint_delta,
+            SourceCheckpointDelta::from_range(0..4)
+        );
 
         let schema = doc_mapper.schema();
         let NamedFieldDocument(named_field_doc_map) = schema.to_named_doc(&batch.docs[0].doc);

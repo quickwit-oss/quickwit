@@ -87,6 +87,7 @@ impl Source for VecSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut doc_batch = RawDocBatch::default();
+
         doc_batch.docs.extend(
             self.params.docs[self.next_item_idx..]
                 .iter()
@@ -127,6 +128,7 @@ mod tests {
     use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
+    use bytes::Bytes;
     use quickwit_actors::{Actor, Command, Universe};
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::metastore_for_test;
@@ -139,7 +141,7 @@ mod tests {
     async fn test_vec_source() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        let docs = std::iter::repeat_with(|| "{}".to_string())
+        let docs = std::iter::repeat_with(|| Bytes::from_static(b"{}"))
             .take(100)
             .collect();
         let params = VecSourceParams {
@@ -197,7 +199,7 @@ mod tests {
     async fn test_vec_source_from_checkpoint() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        let docs = (0..10).map(|i| format!("{i}")).collect();
+        let docs = (0..10).map(|i| Bytes::from(format!("{i}"))).collect();
         let params = VecSourceParams {
             docs,
             batch_num_docs: 3,
