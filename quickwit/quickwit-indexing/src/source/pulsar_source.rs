@@ -23,6 +23,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
+use bytes::Bytes;
 use futures::StreamExt;
 use pulsar::authentication::oauth2::{OAuth2Authentication, OAuth2Params};
 use pulsar::consumer::Message;
@@ -157,16 +158,7 @@ impl PulsarSource {
         batch: &mut BatchBuilder,
     ) -> anyhow::Result<()> {
         let current_position = msg_id_to_position(message.message_id());
-
-        let doc = match message.deserialize() {
-            Err(e) => {
-                warn!(error = ?e, "Failed to parse message from queue.");
-                self.state.num_invalid_messages += 1;
-                return Ok(());
-            }
-            Ok(doc) => doc,
-        };
-
+        let doc = message.deserialize();
         self.add_doc_to_batch(&message.topic, current_position, doc, batch)
     }
 
@@ -174,7 +166,7 @@ impl PulsarSource {
         &mut self,
         topic: &str,
         msg_position: Position,
-        doc: String,
+        doc: Bytes,
         batch: &mut BatchBuilder,
     ) -> anyhow::Result<()> {
         if doc.is_empty() {
@@ -184,7 +176,7 @@ impl PulsarSource {
         }
 
         let partition = PartitionId::from(topic);
-        let num_bytes = doc.as_bytes().len();
+        let num_bytes = doc.len();
 
         if let Some(current_position) = self.current_positions.get(&partition) {
             // We skip messages older or equal to the current recorded position.
@@ -309,16 +301,16 @@ impl Source for PulsarSource {
 struct PulsarMessage;
 
 impl DeserializeMessage for PulsarMessage {
-    type Output = anyhow::Result<String>;
+    type Output = Bytes;
 
     fn deserialize_message(payload: &Payload) -> Self::Output {
-        String::from_utf8(payload.data.clone()).map_err(anyhow::Error::from)
+        Bytes::from(payload.data.clone())
     }
 }
 
 #[derive(Debug, Default)]
 struct BatchBuilder {
-    docs: Vec<String>,
+    docs: Vec<Bytes>,
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
 }
@@ -332,7 +324,7 @@ impl BatchBuilder {
         }
     }
 
-    fn push(&mut self, doc: String, num_bytes: u64) {
+    fn push(&mut self, doc: Bytes, num_bytes: u64) {
         self.docs.push(doc);
         self.num_bytes += num_bytes;
     }
@@ -749,11 +741,11 @@ mod pulsar_broker_tests {
     fn count_unique_messages_in_batches(batches: &[RawDocBatch]) -> usize {
         let message_ids_topic: HashSet<String> = batches
             .iter()
-            .flat_map(|batch| batch.docs.iter())
-            .map(|doc_string| {
-                let doc_json = serde_json::from_str::<serde_json::Value>(doc_string).unwrap();
-                let id: &str = doc_json.get("id").unwrap().as_str().unwrap();
-                let topic: &str = doc_json.get("topic").unwrap().as_str().unwrap();
+            .flat_map(|batch| &batch.docs)
+            .map(|doc| {
+                let json_doc = serde_json::from_slice::<serde_json::Value>(doc).unwrap();
+                let id: &str = json_doc.get("id").unwrap().as_str().unwrap();
+                let topic: &str = json_doc.get("topic").unwrap().as_str().unwrap();
                 format!("{id}-{topic}")
             })
             .collect();
@@ -854,7 +846,7 @@ mod pulsar_broker_tests {
         let position = Position::Beginning;
         let mut batch = BatchBuilder::default();
         pulsar_source
-            .add_doc_to_batch(&topic, position, "".to_string(), &mut batch)
+            .add_doc_to_batch(&topic, position, Bytes::from_static(b""), &mut batch)
             .expect("Add batch should not error on empty doc.");
         assert_eq!(pulsar_source.state.num_invalid_messages, 1);
         assert_eq!(pulsar_source.state.num_messages_processed, 0);
@@ -865,7 +857,7 @@ mod pulsar_broker_tests {
 
         let position = Position::from(1u64); // Used for testing simplicity.
         let mut batch = BatchBuilder::default();
-        let doc = "some-demo-data".to_string();
+        let doc = Bytes::from_static(b"some-demo-data");
         pulsar_source
             .add_doc_to_batch(&topic, position, doc, &mut batch)
             .expect("Add batch should not error on empty doc.");
@@ -882,7 +874,7 @@ mod pulsar_broker_tests {
 
         let position = Position::from(4u64); // Used for testing simplicity.
         let mut batch = BatchBuilder::default();
-        let doc = "some-demo-data-2".to_string();
+        let doc = Bytes::from_static(b"some-demo-data-2");
         pulsar_source
             .add_doc_to_batch(&topic, position, doc, &mut batch)
             .expect("Add batch should not error on empty doc.");

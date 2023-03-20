@@ -203,7 +203,7 @@ wget https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10
 curl -XPOST http://localhost:7280/api/v1/hdfs-logs/ingest -H "content-type: application/json" --data-binary @hdfs-logs-multitenants-10000.json
 ```
 
-</Tab>
+</TabItem>
 
 </Tabs>
 
@@ -288,7 +288,7 @@ Let's do some cleanup by deleting the index:
 
 </TabItem>
 
-<TabItem value="cli" label="CLI">
+<TabItem value="curl" label="cURL">
 
 ```bash
 curl -XDELETE http://127.0.0.1:7280/api/v1/indexes/hdfs-logs

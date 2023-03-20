@@ -12,6 +12,7 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = { workspace = true }
 byte-unit = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
 cron = { workspace = true }
 enum-iterator = { workspace = true }

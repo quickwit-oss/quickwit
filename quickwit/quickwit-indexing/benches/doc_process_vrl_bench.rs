@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use quickwit_actors::{ActorHandle, Mailbox, Universe};
 use quickwit_config::TransformConfig;
@@ -25,7 +26,7 @@ macro_rules! bench_func {
                 || {
                     lines
                         .iter()
-                        .map(|line| line.to_string())
+                        .map(|line| Bytes::from(*line))
                         .collect::<Vec<_>>()
                 },
                 |docs| async {

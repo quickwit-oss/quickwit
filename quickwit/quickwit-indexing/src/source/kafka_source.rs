@@ -24,6 +24,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
+use bytes::Bytes;
 use itertools::Itertools;
 use oneshot;
 use quickwit_actors::{ActorExitStatus, Mailbox};
@@ -95,7 +96,7 @@ enum KafkaEvent {
 
 #[derive(Debug)]
 struct KafkaMessage {
-    doc_opt: Option<String>,
+    doc_opt: Option<Bytes>,
     payload_len: u64,
     partition: i32,
     offset: i64,
@@ -104,7 +105,7 @@ struct KafkaMessage {
 impl From<BorrowedMessage<'_>> for KafkaMessage {
     fn from(message: BorrowedMessage<'_>) -> Self {
         Self {
-            doc_opt: parse_message_payload(&message),
+            doc_opt: message_payload_to_doc(&message),
             payload_len: message.payload_len() as u64,
             partition: message.partition(),
             offset: message.offset(),
@@ -442,7 +443,7 @@ impl KafkaSource {
 
 #[derive(Debug, Default)]
 struct BatchBuilder {
-    docs: Vec<String>,
+    docs: Vec<Bytes>,
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
 }
@@ -462,7 +463,7 @@ impl BatchBuilder {
         self.checkpoint_delta = SourceCheckpointDelta::default();
     }
 
-    fn push(&mut self, doc: String, num_bytes: u64) {
+    fn push(&mut self, doc: Bytes, num_bytes: u64) {
         self.docs.push(doc);
         self.num_bytes += num_bytes;
     }
@@ -726,34 +727,25 @@ fn parse_client_params(client_params: JsonValue) -> anyhow::Result<ClientConfig>
     Ok(client_config)
 }
 
-/// Converts the raw bytes of the message payload to a `String` skipping corrupted or empty
-/// messages.
-fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
-    match message.payload_view::<str>() {
-        Some(Ok(payload)) if !payload.is_empty() => {
-            let doc = payload.to_string();
+/// Returns the message payload as a `Bytes` object if it exists and is not empty.
+fn message_payload_to_doc(message: &BorrowedMessage) -> Option<Bytes> {
+    match message.payload() {
+        Some(payload) if !payload.is_empty() => {
+            let doc = Bytes::from(payload.to_vec());
             return Some(doc);
         }
-        Some(Ok(_)) => debug!(
-            topic = ?message.topic(),
-            partition = ?message.partition(),
-            offset = ?message.offset(),
-            timestamp = ?message.timestamp(),
+        Some(_) => debug!(
+            topic=%message.topic(),
+            partition=%message.partition(),
+            offset=%message.offset(),
+            timestamp=?message.timestamp(),
             "Document is empty."
         ),
-        Some(Err(error)) => warn!(
-            topic = ?message.topic(),
-            partition = ?message.partition(),
-            offset = ?message.offset(),
-            timestamp = ?message.timestamp(),
-            error = ?error,
-            "Failed to deserialize message payload."
-        ),
         None => debug!(
-            topic = ?message.topic(),
-            partition = ?message.partition(),
-            offset = ?message.offset(),
-            timestamp = ?message.timestamp(),
+            topic=%message.topic(),
+            partition=%message.partition(),
+            offset=%message.offset(),
+            timestamp=?message.timestamp(),
             "Message payload is empty."
         ),
     }
@@ -1002,7 +994,7 @@ mod kafka_broker_tests {
         assert_eq!(kafka_source.state.num_invalid_messages, 1);
 
         let message = KafkaMessage {
-            doc_opt: Some("test-doc".to_string()),
+            doc_opt: Some(Bytes::from_static(b"test-doc")),
             payload_len: 8,
             partition: 1,
             offset: 1,
@@ -1024,7 +1016,7 @@ mod kafka_broker_tests {
         assert_eq!(kafka_source.state.num_invalid_messages, 1);
 
         let message = KafkaMessage {
-            doc_opt: Some("test-doc".to_string()),
+            doc_opt: Some(Bytes::from_static(b"test-doc")),
             payload_len: 8,
             partition: 2,
             offset: 42,
@@ -1056,7 +1048,7 @@ mod kafka_broker_tests {
 
         // Message from unassigned partition
         let message = KafkaMessage {
-            doc_opt: Some("test-doc".to_string()),
+            doc_opt: Some(Bytes::from_static(b"test-doc")),
             payload_len: 8,
             partition: 3,
             offset: 42,
@@ -1164,7 +1156,7 @@ mod kafka_broker_tests {
         let (ack_tx, ack_rx) = oneshot::channel();
 
         let mut batch = BatchBuilder::default();
-        batch.push("test-doc".to_string(), 8);
+        batch.push(Bytes::from_static(b"test-doc"), 8);
 
         let publish_lock = kafka_source.publish_lock.clone();
         assert!(publish_lock.is_alive());
