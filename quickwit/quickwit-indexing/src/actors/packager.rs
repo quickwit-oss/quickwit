@@ -170,7 +170,7 @@ impl Handler<EmptySplit> for Packager {
     type Reply = ();
 
     #[instrument(
-        name="packager_empty_batch"
+        name="package_empty_batch"
         parent=empty_split.batch_parent_span.id(),
         skip_all,
     )]
