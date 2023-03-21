@@ -32,9 +32,6 @@ jobs:
           - "4571:4571"
           - "8080:8080"
         env:
-          # `kinesalite` provides a more accurate implementation than
-          # the default Kinesis provider (`kinesis-mock`).
-          KINESIS_PROVIDER: kinesalite
           SERVICES: kinesis,s3
         options: >-
           --health-cmd "curl -k https://localhost:4566"
@@ -131,18 +128,18 @@ jobs:
           override: true
           components: clippy, llvm-tools-preview, rustfmt
 
-      - uses: taiki-e/install-action@v1
+      - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov,protoc
+          tool: cargo-llvm-cov,nextest,protoc
 
       - uses: Swatinem/rust-cache@v2
 
       - name: Generate code coverage
         run: |
           cargo llvm-cov clean --workspace
-          cargo llvm-cov --test failpoints --no-report --features fail/failpoints
-          cargo llvm-cov --no-report --all-features
-          cargo llvm-cov --no-run --lcov --output-path lcov.info
+          cargo llvm-cov nextest --no-report --test failpoints --features fail/failpoints --retries 2
+          cargo llvm-cov nextest --no-report --all-features --retries 2
+          cargo llvm-cov report --lcov --output-path lcov.info
         working-directory: ./quickwit
 
       - name: Upload coverage to Codecov

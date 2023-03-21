@@ -37,9 +37,6 @@ services:
       - all
       - localstack
     environment:
-      # `kinesalite` provides a more accurate implementation than
-      # the default Kinesis provider (`kinesis-mock`).
-      KINESIS_PROVIDER: kinesalite
       SERVICES: kinesis,s3
       PERSISTENCE: 1
     volumes:
@@ -53,7 +50,7 @@ services:
 
   postgres:
     # The oldest supported version. EOL November 9, 2023
-    image: postgres:${POSTGRES_VERSION:-11.19-alpine} 
+    image: postgres:${POSTGRES_VERSION:-11.19-alpine}
     container_name: postgres
     ports:
       - "${MAP_HOST_POSTGRESS:-127.0.0.1}:5432:5432"
@@ -88,8 +85,8 @@ services:
       - pulsar
 
   kafka-broker:
-    # The oldest supported version with arm64 docker images. EOL October 27, 2023 
-    image: confluentinc/cp-kafka:${CP_VERSION:-7.0.9} 
+    # The oldest supported version with arm64 docker images. EOL October 27, 2023
+    image: confluentinc/cp-kafka:${CP_VERSION:-7.0.9}
     container_name: kafka-broker
     depends_on:
       - zookeeper
@@ -118,7 +115,7 @@ services:
       retries: 100
 
   zookeeper:
-    # The oldest supported version with arm64 images. EOL October 27, 2023 
+    # The oldest supported version with arm64 images. EOL October 27, 2023
     image: confluentinc/cp-zookeeper:${CP_VERSION:-7.0.9}
     container_name: zookeeper
     ports:
@@ -211,6 +208,6 @@ services:
       - "host.docker.internal:host-gateway"
 
 volumes:
+  azurite_data:
   localstack_data:
   postgres_data:
-  azurite_data:
