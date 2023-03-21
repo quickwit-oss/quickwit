@@ -1379,12 +1379,14 @@ mod tests {
             .send_message(PreparedDocBatch {
                 docs: vec![],
                 checkpoint_delta: SourceCheckpointDelta::from_range(4..6),
+                force_commit: false,
             })
             .await?;
         indexer_mailbox
             .send_message(PreparedDocBatch {
                 docs: vec![],
                 checkpoint_delta: SourceCheckpointDelta::from_range(6..8),
+                force_commit: false,
             })
             .await?;
         universe
