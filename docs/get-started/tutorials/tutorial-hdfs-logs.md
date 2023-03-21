@@ -207,7 +207,7 @@ curl -XPOST http://localhost:7280/api/v1/hdfs-logs/ingest -H "content-type: appl
 
 </Tabs>
 
-You can check it's working by searchign for `INFO` in `severity_text` field:
+You can check it's working by searching for `INFO` in `severity_text` field:
 
 <Tabs>
 

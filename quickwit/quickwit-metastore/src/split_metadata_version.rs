@@ -146,7 +146,7 @@ impl From<SplitMetadata> for SplitMetadataV0_5 {
 #[serde(tag = "version")]
 pub(crate) enum VersionedSplitMetadata {
     #[serde(rename = "0.5")]
-    // Retro compatibilty with 0.4.
+    // Retro compatibility with 0.4.
     #[serde(alias = "0.4")]
     V0_5(SplitMetadataV0_5),
 }

@@ -303,7 +303,7 @@ impl Handler<NotifyIndexChangeRequest> for IndexingScheduler {
         _: NotifyIndexChangeRequest,
         _: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        debug!("Index change notification: shedule indexing plan.");
+        debug!("Index change notification: schedule indexing plan.");
         self.schedule_indexing_plan_if_needed()
             .await
             .context("Error when scheduling indexing plan")?;
