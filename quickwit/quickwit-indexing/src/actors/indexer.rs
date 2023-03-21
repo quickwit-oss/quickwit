@@ -1377,14 +1377,14 @@ mod tests {
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
             .send_message(PreparedDocBatch {
-                docs: vec![],
+                docs: Vec::new(),
                 checkpoint_delta: SourceCheckpointDelta::from_range(4..6),
                 force_commit: false,
             })
             .await?;
         indexer_mailbox
             .send_message(PreparedDocBatch {
-                docs: vec![],
+                docs: Vec::new(),
                 checkpoint_delta: SourceCheckpointDelta::from_range(6..8),
                 force_commit: false,
             })
