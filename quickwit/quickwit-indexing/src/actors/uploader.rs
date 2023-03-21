@@ -369,7 +369,7 @@ impl Handler<EmptySplit> for Uploader {
     type Reply = ();
 
     #[instrument(
-        name="uploader_empty_split",
+        name="upload_empty_split",
         parent=empty_split.batch_parent_span.id(),
         skip_all,
     )]
