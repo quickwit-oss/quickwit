@@ -45,7 +45,8 @@ const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")
 
 use crate::actors::Uploader;
 use crate::models::{
-    IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch, ScratchDirectory,
+    EmptySplit, IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch,
+    ScratchDirectory,
 };
 
 /// The role of the packager is to get an index writer and
@@ -160,6 +161,26 @@ impl Handler<IndexedSplitBatch> for Packager {
         )
         .await?;
         fail_point!("packager:after");
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<EmptySplit> for Packager {
+    type Reply = ();
+
+    #[instrument(
+        name="package_empty_batch"
+        parent=empty_split.batch_parent_span.id(),
+        skip_all,
+    )]
+    async fn handle(
+        &mut self,
+        empty_split: EmptySplit,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        ctx.send_message(&self.uploader_mailbox, empty_split)
+            .await?;
         Ok(())
     }
 }

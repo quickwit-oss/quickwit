@@ -178,3 +178,12 @@ pub struct IndexedSplitBatchBuilder {
     pub publish_lock: PublishLock,
     pub commit_trigger: CommitTrigger,
 }
+
+/// Sends notifications to the Publisher that the last batch of splits was emtpy.
+#[derive(Debug)]
+pub struct EmptySplit {
+    pub index_id: String,
+    pub batch_parent_span: Span,
+    pub checkpoint_delta: IndexCheckpointDelta,
+    pub publish_lock: PublishLock,
+}

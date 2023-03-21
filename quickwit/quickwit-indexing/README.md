@@ -2,6 +2,7 @@
 flowchart LR
     subgraph Indexing pipeline
         direction LR
+        publisher --inf--> source
         source[Source] --10--> doc_processor
         doc_processor[DocProcessor] --10--> indexer
         indexer[Indexer] --1--> serializer

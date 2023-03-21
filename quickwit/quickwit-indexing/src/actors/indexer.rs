@@ -45,7 +45,7 @@ use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
 use crate::models::{
-    CommitTrigger, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingPipelineId,
+    CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingPipelineId,
     NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, ScratchDirectory,
 };
 
@@ -300,7 +300,6 @@ pub struct Indexer {
     indexer_state: IndexerState,
     index_serializer_mailbox: Mailbox<IndexSerializer>,
     indexing_workbench_opt: Option<IndexingWorkbench>,
-    metastore: Arc<dyn Metastore>,
     counters: IndexerCounters,
 }
 
@@ -438,7 +437,6 @@ impl Indexer {
             },
             index_serializer_mailbox,
             indexing_workbench_opt: None,
-            metastore,
             counters: IndexerCounters::default(),
         }
     }
@@ -508,31 +506,20 @@ impl Indexer {
             splits.push(other_split)
         }
 
-        // Avoid producing empty split, but still update the checkpoint to avoid
+        // Avoid producing empty split, but still update the checkpoint if it is not empty to avoid
         // reprocessing the same faulty documents.
         if splits.is_empty() {
-            if let Some(_guard) = publish_lock.acquire().await {
-                ctx.protect_future(self.metastore.publish_splits(
-                    &self.indexer_state.pipeline_id.index_id,
-                    &[],
-                    &[],
-                    Some(checkpoint_delta),
-                ))
-                .await
-                .with_context(|| {
-                    format!(
-                        "Failed to update the checkpoint for {}, {} after a split containing only \
-                         errors.",
-                        &self.indexer_state.pipeline_id.index_id,
-                        &self.indexer_state.pipeline_id.source_id
-                    )
-                })?;
-            } else {
-                info!(
-                    split_ids=?splits.iter().map(|split| split.split_id()).join(", "),
-                    "Splits' publish lock is dead."
-                );
-                // TODO: Remove the junk right away?
+            if !checkpoint_delta.is_empty() {
+                ctx.send_message(
+                    &self.index_serializer_mailbox,
+                    EmptySplit {
+                        index_id: self.indexer_state.pipeline_id.index_id.clone(),
+                        batch_parent_span,
+                        checkpoint_delta,
+                        publish_lock,
+                    },
+                )
+                .await?;
             }
             return Ok(());
         }
@@ -1349,5 +1336,83 @@ mod tests {
         );
         assert_eq!(output_messages[0].splits[0].split_attrs.num_docs, 1);
         universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_indexer_checkpoint_on_all_failed_docs() -> anyhow::Result<()> {
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let last_delete_opstamp = 10;
+        let indexing_directory = ScratchDirectory::for_test();
+        let indexing_settings = IndexingSettings::for_test();
+        let commit_timeout = indexing_settings.commit_timeout();
+        let universe = Universe::with_accelerated_time();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_publish_splits()
+            .returning(move |_, splits, _, _| {
+                assert!(splits.is_empty());
+                Ok(())
+            });
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(last_delete_opstamp)
+            });
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            Arc::new(metastore),
+            indexing_directory,
+            indexing_settings,
+            index_serializer_mailbox,
+        );
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+        indexer_mailbox
+            .send_message(PreparedDocBatch {
+                docs: Vec::new(),
+                checkpoint_delta: SourceCheckpointDelta::from_range(4..6),
+                force_commit: false,
+            })
+            .await?;
+        indexer_mailbox
+            .send_message(PreparedDocBatch {
+                docs: Vec::new(),
+                checkpoint_delta: SourceCheckpointDelta::from_range(6..8),
+                force_commit: false,
+            })
+            .await?;
+        universe
+            .sleep(commit_timeout + Duration::from_secs(2))
+            .await;
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(
+            indexer_counters,
+            IndexerCounters {
+                num_splits_emitted: 0,
+                num_split_batches_emitted: 0,
+                num_docs_in_workbench: 0, //< the num docs in split counter has been reset.
+            }
+        );
+
+        let index_serializer_messages: Vec<EmptySplit> =
+            index_serializer_inbox.drain_for_test_typed();
+        assert_eq!(index_serializer_messages.len(), 1);
+        let update = index_serializer_messages.into_iter().next().unwrap();
+        assert_eq!(update.index_id, "test-index");
+        assert_eq!(
+            update.checkpoint_delta,
+            IndexCheckpointDelta::for_test("test-source", 4..8)
+        );
+
+        universe.assert_quit().await;
+        Ok(())
     }
 }
