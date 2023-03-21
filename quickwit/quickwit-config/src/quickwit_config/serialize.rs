@@ -132,7 +132,7 @@ pub async fn load_quickwit_config_with_env(
 #[serde(tag = "version")]
 enum VersionedQuickwitConfig {
     #[serde(rename = "0.5")]
-    // Retro compatibilty with 0.4.
+    // Retro compatibility with 0.4.
     #[serde(alias = "0.4")]
     V0_5(QuickwitConfigBuilder),
 }
@@ -488,7 +488,7 @@ mod tests {
         .await
         .unwrap_err();
         assert!(format!("{parsing_error:?}")
-            .contains("unknown field `max_num_concurrent_split_searchs_with_typo`"));
+            .contains("unknown field `max_num_concurrent_split_searches_with_typo`"));
     }
 
     #[tokio::test]

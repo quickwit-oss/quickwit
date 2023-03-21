@@ -30,7 +30,7 @@ use crate::IndexMetadata;
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexMetadata {
     #[serde(rename = "0.5")]
-    // Retro compatibilty with 0.4.
+    // Retro compatibility with 0.4.
     #[serde(alias = "0.4")]
     V0_5(IndexMetadataV0_5),
 }

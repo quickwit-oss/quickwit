@@ -216,7 +216,7 @@ async fn test_multi_nodes_cluster() {
         .ingest_data("my-new-multi-node-index", "{\"body\": \"test\"}")
         .await
         .unwrap();
-    // Wait until split is commited and search.
+    // Wait until split is committed and search.
     tokio::time::sleep(Duration::from_secs(4)).await;
     let mut search_client = sandbox.get_random_search_client();
     let search_response_one_hit = search_client
