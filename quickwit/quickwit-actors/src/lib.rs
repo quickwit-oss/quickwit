@@ -52,7 +52,7 @@ pub use scheduler::{start_scheduler, SchedulerClient};
 pub(crate) mod tests;
 mod universe;
 
-pub use actor::{Actor, ActorExitStatus, Handler};
+pub use actor::{Actor, ActorExitStatus, DeferableReplyHandler, Handler};
 pub use actor_handle::{ActorHandle, Health, Healthz, Supervisable};
 pub use command::Command;
 pub use observation::{Observation, ObservationType};

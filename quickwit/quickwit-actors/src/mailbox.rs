@@ -32,7 +32,8 @@ use crate::channel_with_priority::{Receiver, Sender, TrySendError};
 use crate::envelope::{wrap_in_envelope, Envelope};
 use crate::scheduler::SchedulerClient;
 use crate::{
-    Actor, ActorContext, ActorExitStatus, AskError, Handler, QueueCapacity, RecvError, SendError,
+    Actor, ActorContext, ActorExitStatus, AskError, DeferableReplyHandler, Handler, QueueCapacity,
+    RecvError, SendError,
 };
 
 /// A mailbox is the object that makes it possible to send a message
@@ -172,7 +173,7 @@ impl<A: Actor> Mailbox<A> {
         message: M,
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
-        A: Handler<M>,
+        A: DeferableReplyHandler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         self.send_message_with_backpressure_counter(message, None)
@@ -187,7 +188,7 @@ impl<A: Actor> Mailbox<A> {
         message: M,
     ) -> Result<oneshot::Receiver<A::Reply>, TrySendError<M>>
     where
-        A: Handler<M>,
+        A: DeferableReplyHandler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let (envelope, response_rx) = self.wrap_in_envelope(message);
@@ -209,7 +210,7 @@ impl<A: Actor> Mailbox<A> {
 
     fn wrap_in_envelope<M>(&self, message: M) -> (Envelope<A>, oneshot::Receiver<A::Reply>)
     where
-        A: Handler<M>,
+        A: DeferableReplyHandler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let guard = self
@@ -231,7 +232,7 @@ impl<A: Actor> Mailbox<A> {
         backpressure_micros_counter_opt: Option<&IntCounter>,
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
-        A: Handler<M>,
+        A: DeferableReplyHandler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let (envelope, response_rx) = self.wrap_in_envelope(message);
@@ -257,7 +258,7 @@ impl<A: Actor> Mailbox<A> {
         message: M,
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
-        A: Handler<M>,
+        A: DeferableReplyHandler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let (envelope, response_rx) = self.wrap_in_envelope(message);
@@ -271,7 +272,7 @@ impl<A: Actor> Mailbox<A> {
         priority: Priority,
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
-        A: Handler<M>,
+        A: DeferableReplyHandler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let (envelope, response_rx) = self.wrap_in_envelope(message);
@@ -290,7 +291,7 @@ impl<A: Actor> Mailbox<A> {
     /// From an actor context, use the `ActorContext::ask` method instead.
     pub async fn ask<M, T>(&self, message: M) -> Result<T, AskError<Infallible>>
     where
-        A: Handler<M, Reply = T>,
+        A: DeferableReplyHandler<M, Reply = T>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         self.ask_with_backpressure_counter(message, None).await
@@ -313,7 +314,7 @@ impl<A: Actor> Mailbox<A> {
         backpressure_micros_counter_opt: Option<&IntCounter>,
     ) -> Result<T, AskError<Infallible>>
     where
-        A: Handler<M, Reply = T>,
+        A: DeferableReplyHandler<M, Reply = T>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let resp = self
@@ -330,7 +331,7 @@ impl<A: Actor> Mailbox<A> {
     /// From an actor context, use the `ActorContext::ask` method instead.
     pub async fn ask_for_res<M, T, E>(&self, message: M) -> Result<T, AskError<E>>
     where
-        A: Handler<M, Reply = Result<T, E>>,
+        A: DeferableReplyHandler<M, Reply = Result<T, E>>,
         M: fmt::Debug + Send + Sync + 'static,
         E: fmt::Debug,
     {

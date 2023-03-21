@@ -27,10 +27,10 @@ mod rate_limit;
 
 pub use box_layer::BoxLayer;
 pub use box_service::BoxService;
-pub use buffer::{Buffer, BufferLayer};
+pub use buffer::{Buffer, BufferError, BufferLayer};
 pub use estimate_rate::{EstimateRate, EstimateRateLayer};
 pub use rate::{ConstantRate, Rate};
-pub use rate_estimator::RateEstimator;
+pub use rate_estimator::{RateEstimator, SmaRateEstimator};
 pub use rate_limit::{RateLimit, RateLimitLayer};
 
 pub trait Cost {

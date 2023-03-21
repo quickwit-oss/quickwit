@@ -21,7 +21,11 @@
 
 mod errors;
 mod ingest_api_service;
+#[path = "codegen/ingest_service.rs"]
+mod ingest_service;
+mod memory_capacity;
 mod metrics;
+mod notifications;
 mod position;
 mod queue;
 
@@ -30,17 +34,19 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
 pub use errors::IngestServiceError;
-pub use ingest_api_service::{GetPartitionId, IngestApiService};
-use metrics::INGEST_METRICS;
+pub use ingest_api_service::{GetMemoryCapacity, GetPartitionId, IngestApiService};
+pub use ingest_service::*;
+pub use memory_capacity::MemoryCapacity;
 use once_cell::sync::OnceCell;
 pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::IngestApiConfig;
+use serde::Deserialize;
 use tokio::sync::Mutex;
-#[path = "codegen/ingest_service.rs"]
-mod ingest_service;
-pub use ingest_service::*;
+
+mod doc_batch;
+pub use doc_batch::*;
 
 pub const QUEUES_DIR_NAME: &str = "queues";
 
@@ -108,28 +114,26 @@ pub async fn start_ingest_api_service(
     init_ingest_api(universe, &queues_dir_path, config).await
 }
 
-/// Adds a document raw bytes to a [`DocBatch`]
-pub fn add_doc(payload: &[u8], fetch_resp: &mut DocBatch) -> usize {
-    fetch_resp.concat_docs.extend_from_slice(payload);
-    fetch_resp.doc_lens.push(payload.len() as u64);
-    INGEST_METRICS
-        .ingested_num_bytes
-        .inc_by(payload.len() as u64);
-    payload.len()
+#[repr(u32)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all(deserialize = "snake_case"))]
+#[derive(Default)]
+pub enum CommitType {
+    #[default]
+    Auto = 0,
+    WaitFor = 1,
+    Force = 2,
 }
 
-/// Returns an iterator over the document payloads within a doc_batch.
-pub fn iter_doc_payloads(doc_batch: &DocBatch) -> impl Iterator<Item = &[u8]> {
-    doc_batch
-        .doc_lens
-        .iter()
-        .cloned()
-        .scan(0, |current_offset, doc_num_bytes| {
-            let start = *current_offset;
-            let end = start + doc_num_bytes as usize;
-            *current_offset = end;
-            Some(&doc_batch.concat_docs[start..end])
-        })
+impl From<u32> for CommitType {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => CommitType::Auto,
+            1 => CommitType::WaitFor,
+            2 => CommitType::Force,
+            _ => panic!("Unknown commit type {value}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -195,15 +199,16 @@ mod tests {
             doc_batches: vec![
                 DocBatch {
                     index_id: "index-1".to_string(),
-                    concat_docs: vec![10, 11, 12],
+                    concat_docs: vec![10, 11, 12].into(),
                     doc_lens: vec![2],
                 },
                 DocBatch {
                     index_id: "index-2".to_string(),
-                    concat_docs: vec![10, 11, 12],
+                    concat_docs: vec![10, 11, 12].into(),
                     doc_lens: vec![2],
                 },
             ],
+            commit: CommitType::Auto as u32,
         };
         let ingest_result = ingest_api_service.ask_for_res(ingest_request).await;
         assert!(ingest_result.is_err());
@@ -227,7 +232,7 @@ mod tests {
             &universe,
             &queues_dir_path,
             &IngestApiConfig {
-                max_queue_memory_usage: Byte::from_bytes(1024),
+                max_queue_memory_usage: Byte::from_bytes(1200),
                 max_queue_disk_usage: Byte::from_bytes(1024 * 1024 * 256),
             },
         )
@@ -245,9 +250,10 @@ mod tests {
         let ingest_request = IngestRequest {
             doc_batches: vec![DocBatch {
                 index_id: "test-queue".to_string(),
-                concat_docs: vec![1; 600],
+                concat_docs: vec![1; 600].into(),
                 doc_lens: vec![30; 20],
             }],
+            commit: CommitType::Auto as u32,
         };
 
         ingest_api_service

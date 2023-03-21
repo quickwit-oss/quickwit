@@ -1,9 +1,10 @@
 ---
 title: Send logs from Vector
+sidebar_label: Using Vector
 description: A simple tutorial to send logs from Vector to Quickwit in a few minutes.
 icon_url: /img/tutorials/vector-logo.png
 tags: [logs, ingestion]
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 import Tabs from '@theme/Tabs';
@@ -50,7 +51,7 @@ Let's embrace the OpenTelemetry standard and create an index compatible with its
 # Link: https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md
 #
 
-version: 0.4
+version: 0.5
 
 index_id: vector-otel-logs
 

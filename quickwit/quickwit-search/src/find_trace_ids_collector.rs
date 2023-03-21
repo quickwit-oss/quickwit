@@ -137,7 +137,7 @@ impl FindTraceIdsCollector {
         ])
     }
 
-    /// The field names of the term dictionnaries accessed by this collector.
+    /// The field names of the term dictionaries accessed by this collector.
     pub fn term_dict_field_names(&self) -> HashSet<String> {
         HashSet::from_iter([self.trace_id_field_name.clone()])
     }

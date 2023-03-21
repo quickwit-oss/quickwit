@@ -29,6 +29,7 @@ import { FullBoxContainer } from '../components/LayoutUtils';
 import { LocalStorageProvider } from '../providers/LocalStorageProvider';
 import ClusterView from './ClusterView';
 import NodeInfoView from './NodeInfoView';
+import ApiView from './ApiView';
 
 function App() {
   return (
@@ -45,6 +46,7 @@ function App() {
             <Route path="indexes/:indexId" element={<IndexView />} />
             <Route path="cluster" element={<ClusterView />} />
             <Route path="node-info" element={<NodeInfoView />} />
+            <Route path="api-playground" element={<ApiView />} />
           </Routes>
         </FullBoxContainer>
       </LocalStorageProvider>

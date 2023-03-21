@@ -34,7 +34,7 @@ One Quickwit node running on a decent instance can ingest data at speeds up to 4
 
 ## Multiple indexers, multiple searchers
 
-Indexing a single [data source](../configuration/source-config.md) on several indexers is currenlty only possible with a [Kafka source](../configuration/source-config.md#kafka-source).
+Indexing a single [data source](../configuration/source-config.md) on several indexers is currently only possible with a [Kafka source](../configuration/source-config.md#kafka-source).
 Support distributed indexing for Pulsar and the Ingest API sources is planned for Q2, stay tuned!
 
 ## File-backed metastore limitations

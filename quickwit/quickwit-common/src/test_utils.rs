@@ -31,11 +31,11 @@ pub async fn wait_until_predicate<Fut>(
     retry_interval: Duration,
 ) -> Result<(), Elapsed>
 where
-    Fut: Future<Output = Result<bool, anyhow::Error>>,
+    Fut: Future<Output = bool>,
 {
     tokio::time::timeout(timeout, async move {
         loop {
-            if predicate().await.is_ok() {
+            if predicate().await {
                 break;
             }
             tokio::time::sleep(retry_interval).await

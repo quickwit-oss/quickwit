@@ -42,6 +42,7 @@ impl fmt::Debug for PreparedDoc {
 pub struct PreparedDocBatch {
     pub docs: Vec<PreparedDoc>,
     pub checkpoint_delta: SourceCheckpointDelta,
+    pub force_commit: bool,
 }
 
 impl fmt::Debug for PreparedDocBatch {
@@ -49,6 +50,7 @@ impl fmt::Debug for PreparedDocBatch {
         f.debug_struct("PreparedDocBatch")
             .field("num_docs", &self.docs.len())
             .field("checkpoint_delta", &self.checkpoint_delta)
+            .field("force_commit", &self.force_commit)
             .finish()
     }
 }

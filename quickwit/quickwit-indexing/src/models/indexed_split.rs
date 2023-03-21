@@ -167,6 +167,7 @@ pub enum CommitTrigger {
     NoMoreDocs,
     NumDocsLimit,
     MemoryLimit,
+    ForceCommit,
 }
 
 #[derive(Debug)]

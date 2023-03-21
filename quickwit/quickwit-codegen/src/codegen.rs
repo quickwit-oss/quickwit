@@ -30,6 +30,7 @@ impl Codegen {
         out_dir: &str,
         result_type_path: &str,
         error_type_path: &str,
+        bytes: &[&str],
     ) -> anyhow::Result<()> {
         println!("cargo:rerun-if-changed={proto}");
 
@@ -40,6 +41,11 @@ impl Codegen {
                 ".",
                 "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]",
             )
+            .field_attribute(
+                "DocBatch.concat_docs",
+                "#[schema(value_type = String, format = Binary)]",
+            )
+            .bytes(bytes)
             .out_dir(out_dir);
 
         let service_generator = Box::new(QuickwitServiceGenerator::new(
@@ -602,7 +608,7 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
 
         impl<A, M, T, E> tower::Service<M> for #mailbox_name<A>
         where
-            A: quickwit_actors::Actor + quickwit_actors::Handler<M, Reply = Result<T, E>> + Send + Sync + 'static,
+            A: quickwit_actors::Actor + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync + 'static,
             M: std::fmt::Debug + Send + Sync + 'static,
             T: Send + Sync + 'static,
             E: std::fmt::Debug + Send + Sync + 'static,

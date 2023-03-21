@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
+use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_common::{is_false, no_color};
 use serde::de::Error;
@@ -313,7 +314,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VecSourceParams {
-    pub docs: Vec<String>,
+    pub docs: Vec<Bytes>,
     pub batch_num_docs: usize,
     #[serde(default)]
     pub partition: String,
@@ -328,6 +329,7 @@ pub struct VoidSourceParams;
 pub struct PulsarSourceParams {
     /// List of the topics that the source consumes.
     pub topics: Vec<String>,
+    #[serde(deserialize_with = "pulsar_uri")]
     /// The connection URI for pulsar.
     pub address: String,
     #[schema(default = "quickwit")]
@@ -353,6 +355,21 @@ pub enum PulsarSourceAuth {
         audience: Option<String>,
         scope: Option<String>,
     },
+}
+
+// Deserializing a string into an pulsar uri.
+fn pulsar_uri<'de, D>(deserializer: D) -> Result<String, D::Error>
+where D: Deserializer<'de> {
+    let uri: String = Deserialize::deserialize(deserializer)?;
+
+    if uri.strip_prefix("pulsar://").is_none() {
+        return Err(Error::custom(format!(
+            "Invalid Pulsar uri provided, must be in the format of `pulsar://host:port/path`. \
+             Got: `{uri}`"
+        )));
+    }
+
+    Ok(uri)
 }
 
 fn default_consumer_name() -> String {
@@ -576,7 +593,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 0,
                 "max_num_pipelines_per_indexer": 1,
@@ -593,7 +610,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 1,
                 "max_num_pipelines_per_indexer": 0,
@@ -610,7 +627,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 1,
                 "max_num_pipelines_per_indexer": 2,
@@ -625,7 +642,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 2,
                 "max_num_pipelines_per_indexer": 1,
@@ -644,7 +661,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-kafka-source",
                 "desired_num_pipelines": 3,
                 "max_num_pipelines_per_indexer": 3,
@@ -663,7 +680,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.4",
+                "version": "0.5",
                 "source_id": "hdfs-logs-pulsar-source",
                 "desired_num_pipelines": 3,
                 "max_num_pipelines_per_indexer": 3,
@@ -901,6 +918,51 @@ mod tests {
                 PulsarSourceParams {
                     topics: vec!["my-topic".to_string()],
                     address: "pulsar://localhost:6560".to_string(),
+                    consumer_name: default_consumer_name(),
+                    authentication: None,
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: invalid-address
+                "#;
+            serde_yaml::from_str::<PulsarSourceParams>(yaml)
+                .expect_err("Pulsar config should reject invalid address");
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://some-host:80/valid-path
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://some-host:80/valid-path".to_string(),
+                    consumer_name: default_consumer_name(),
+                    authentication: None,
+                }
+            );
+        }
+
+        {
+            let yaml = r#"
+                    topics:
+                        - my-topic
+                    address: pulsar://2345:0425:2CA1:0000:0000:0567:5673:23b5:80/valid-path
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<PulsarSourceParams>(yaml).unwrap(),
+                PulsarSourceParams {
+                    topics: vec!["my-topic".to_string()],
+                    address: "pulsar://2345:0425:2CA1:0000:0000:0567:5673:23b5:80/valid-path"
+                        .to_string(),
                     consumer_name: default_consumer_name(),
                     authentication: None,
                 }

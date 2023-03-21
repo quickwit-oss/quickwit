@@ -24,6 +24,8 @@ use quickwit_config::service::QuickwitService;
 use quickwit_control_plane::control_plane_service_grpc_server::ControlPlaneServiceGrpcServer;
 use quickwit_control_plane::ControlPlaneServiceGrpcServerAdapter;
 use quickwit_indexing::grpc_adapter::GrpcIndexingAdapter;
+use quickwit_ingest_api::ingest_service_grpc_server::IngestServiceGrpcServer;
+use quickwit_ingest_api::IngestServiceGrpcServerAdapter;
 use quickwit_jaeger::JaegerService;
 use quickwit_metastore::GrpcMetastoreAdapter;
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTraceService};
@@ -70,9 +72,18 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
+    // Mount gRPC ingest service if `QuickwitService::Indexer` is enabled on node.
+    let ingest_api_grpc_service = if services.services.contains(&QuickwitService::Indexer) {
+        enabled_grpc_services.insert("ingest_api");
+        let ingest_service_adapter =
+            IngestServiceGrpcServerAdapter::new(services.ingest_service.clone());
+        Some(IngestServiceGrpcServer::new(ingest_service_adapter))
+    } else {
+        None
+    };
     // Mount gRPC control plane service if `QuickwitService::ControlPlane` is enabled on node.
     let control_plane_grpc_service = if services.services.contains(&QuickwitService::ControlPlane) {
-        if let Some(control_plane_client) = &services.control_plane_client {
+        if let Some(control_plane_client) = &services.control_plane_service {
             enabled_grpc_services.insert("control-plane");
             let adapter = ControlPlaneServiceGrpcServerAdapter::new(control_plane_client.clone());
             Some(ControlPlaneServiceGrpcServer::new(adapter))
@@ -132,6 +143,7 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(control_plane_grpc_service)
         .add_optional_service(indexing_grpc_service)
+        .add_optional_service(ingest_api_grpc_service)
         .add_optional_service(otlp_log_grpc_service)
         .add_optional_service(otlp_trace_service)
         .add_optional_service(search_grpc_service)

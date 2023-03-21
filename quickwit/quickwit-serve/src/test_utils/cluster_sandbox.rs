@@ -25,12 +25,10 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use quickwit_common::new_coolid;
-use quickwit_common::rand::append_random_suffix;
 use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{IndexConfig, QuickwitConfig, SourceConfig};
-use quickwit_metastore::quickwit_metastore_uri_resolver;
+use quickwit_config::QuickwitConfig;
 use quickwit_search::{create_search_service_client, SearchServiceClient};
 use rand::seq::IteratorRandom;
 use tempfile::TempDir;
@@ -58,8 +56,8 @@ pub struct NodeConfig {
 pub struct ClusterSandbox {
     pub node_configs: Vec<NodeConfig>,
     pub grpc_search_clients: HashMap<SocketAddr, SearchServiceClient>,
-    pub rest_client: QuickwitRestClient,
-    pub index_id_for_test: String,
+    pub searcher_rest_client: QuickwitRestClient,
+    pub indexer_rest_client: QuickwitRestClient,
     _temp_dir: TempDir,
 }
 
@@ -67,15 +65,13 @@ impl ClusterSandbox {
     // Starts one node that runs all the services.
     pub async fn start_standalone_node() -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let services = HashSet::from_iter([QuickwitService::Searcher, QuickwitService::Metastore]);
+        let services = QuickwitService::supported_services();
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
         // There is exactly one node.
         let node_config = node_configs[0].clone();
         let node_config_clone = node_config.clone();
         // Creates an index before starting nodes as currently Quickwit does not support
         // dynamic creation/deletion of indexes/sources.
-        let index_for_test = append_random_suffix("test-standalone-node-index");
-        create_index_for_test(&index_for_test, &node_config.quickwit_config).await?;
         tokio::spawn(async move {
             let result = serve_quickwit(node_config_clone.quickwit_config).await;
             println!("Quickwit server terminated: {result:?}");
@@ -89,8 +85,12 @@ impl ClusterSandbox {
         Ok(Self {
             node_configs,
             grpc_search_clients,
-            rest_client: QuickwitRestClient::new(node_config.quickwit_config.rest_listen_addr),
-            index_id_for_test: index_for_test,
+            indexer_rest_client: QuickwitRestClient::new(
+                node_config.quickwit_config.rest_listen_addr,
+            ),
+            searcher_rest_client: QuickwitRestClient::new(
+                node_config.quickwit_config.rest_listen_addr,
+            ),
             _temp_dir: temp_dir,
         })
     }
@@ -101,10 +101,6 @@ impl ClusterSandbox {
     ) -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
-        let index_for_test = append_random_suffix("test-multi-nodes-cluster-index");
-        // Creates an index before starting nodes as currently Quickwit does not support
-        // dynamic creation/deletion of indexes/sources.
-        create_index_for_test(&index_for_test, &node_configs[0].quickwit_config).await?;
         for node_config in node_configs.iter() {
             let node_config_clone = node_config.clone();
             tokio::spawn(async move {
@@ -113,6 +109,11 @@ impl ClusterSandbox {
                 Result::<_, anyhow::Error>::Ok(())
             });
         }
+        let searcher_config = node_configs
+            .iter()
+            .find(|node_config| node_config.services.contains(&QuickwitService::Searcher))
+            .cloned()
+            .unwrap();
         let indexer_config = node_configs
             .iter()
             .find(|node_config| node_config.services.contains(&QuickwitService::Indexer))
@@ -133,8 +134,12 @@ impl ClusterSandbox {
         Ok(Self {
             node_configs,
             grpc_search_clients,
-            rest_client: QuickwitRestClient::new(indexer_config.quickwit_config.rest_listen_addr),
-            index_id_for_test: index_for_test,
+            searcher_rest_client: QuickwitRestClient::new(
+                searcher_config.quickwit_config.rest_listen_addr,
+            ),
+            indexer_rest_client: QuickwitRestClient::new(
+                indexer_config.quickwit_config.rest_listen_addr,
+            ),
             _temp_dir: temp_dir,
         })
     }
@@ -147,7 +152,7 @@ impl ClusterSandbox {
         let max_num_attempts = 3;
         while num_attempts < max_num_attempts {
             tokio::time::sleep(Duration::from_millis(100 * (num_attempts + 1))).await;
-            let cluster_snapshot = self.rest_client.cluster_snapshot().await?;
+            let cluster_snapshot = self.indexer_rest_client.cluster_snapshot().await?;
             if cluster_snapshot.ready_nodes.len() == expected_num_alive_nodes {
                 return Ok(());
             }
@@ -164,27 +169,6 @@ impl ClusterSandbox {
         let selected_addr = self.grpc_search_clients.keys().choose(&mut rng).unwrap();
         self.grpc_search_clients.get(selected_addr).unwrap().clone()
     }
-}
-
-// Creates a `test-index` with default test metadata.
-async fn create_index_for_test(
-    index_id_for_test: &str,
-    quickwit_config: &QuickwitConfig,
-) -> anyhow::Result<()> {
-    let index_uri = quickwit_config
-        .default_index_root_uri
-        .join(index_id_for_test)
-        .unwrap();
-    let index_config = IndexConfig::for_test(index_id_for_test, index_uri.as_str());
-    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri)
-        .await?;
-    metastore.create_index(index_config.clone()).await?;
-    metastore
-        .add_source(index_id_for_test, SourceConfig::ingest_api_default())
-        .await?;
-    Ok(())
 }
 
 /// Builds a list of [`NodeConfig`] given a list of Quickwit services.

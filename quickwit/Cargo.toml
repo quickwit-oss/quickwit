@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+rust-version = "1.68"
 members = [
   "quickwit-actors",
   "quickwit-aws",
@@ -88,7 +89,7 @@ matches = "0.1.9"
 md5 = "0.7"
 mime_guess = "2.0.4"
 mockall = "0.11"
-mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev="38307b3a89809c4d3c37afa0d978a0b0a1c0f7cb" }
+mrecordlog = "0.2"
 new_string_template = "1.4.0"
 num_cpus = "1"
 nom = "7.1.3"
@@ -147,7 +148,7 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 serde_cbor = "0.11"
 serde_json = "1.0"
 serde_qs = { version = "0.10", features = ["warp"] }
-serde_with = "2.2.0"
+serde_with = "2.3.0"
 serde_yaml = "0.9"
 serial_test = "0.9.0"
 siphasher = "0.3"
@@ -184,8 +185,7 @@ tracing-subscriber = { version = "0.3.16", features = [
 typetag = "0.2"
 ulid = "1.0"
 username = "0.2"
-utoipa = "3.0.1"
-utoipa-swagger-ui = "3.0.2"
+utoipa = "3.1.0"
 uuid = { version = "1.3", features = ["v4", "serde"] }
 value = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" } # vrl-value
 vrl = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" }
@@ -193,40 +193,40 @@ vrl-stdlib = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" }
 warp = "0.3"
 wiremock = "0.5"
 
-quickwit-actors = { version = "0.4.0", path = "./quickwit-actors" }
-quickwit-aws = { version = "0.4.0", path = "./quickwit-aws" }
-quickwit-cluster = { version = "0.4.0", path = "./quickwit-cluster" }
-quickwit-codegen = { version = "0.4.0", path = "./quickwit-codegen" }
-quickwit-codegen-example = { version = "0.4.0", path = "./quickwit-codegen-example" }
-quickwit-common = { version = "0.4.0", path = "./quickwit-common" }
-quickwit-config = { version = "0.4.0", path = "./quickwit-config" }
-quickwit-control-plane = { version = "0.4.0", path = "./quickwit-control-plane" }
-quickwit-core = { version = "0.4.0", path = "./quickwit-core" }
-quickwit-directories = { version = "0.4.0", path = "./quickwit-directories" }
-quickwit-doc-mapper = { version = "0.4.0", path = "./quickwit-doc-mapper" }
+quickwit-actors = { version = "0.5.0", path = "./quickwit-actors" }
+quickwit-aws = { version = "0.5.0", path = "./quickwit-aws" }
+quickwit-cluster = { version = "0.5.0", path = "./quickwit-cluster" }
+quickwit-codegen = { version = "0.5.0", path = "./quickwit-codegen" }
+quickwit-codegen-example = { version = "0.5.0", path = "./quickwit-codegen-example" }
+quickwit-common = { version = "0.5.0", path = "./quickwit-common" }
+quickwit-config = { version = "0.5.0", path = "./quickwit-config" }
+quickwit-control-plane = { version = "0.5.0", path = "./quickwit-control-plane" }
+quickwit-core = { version = "0.5.0", path = "./quickwit-core" }
+quickwit-directories = { version = "0.5.0", path = "./quickwit-directories" }
+quickwit-doc-mapper = { version = "0.5.0", path = "./quickwit-doc-mapper" }
 quickwit_elastic_api_generation = { git = "https://github.com/quickwit-oss/elasticsearch-rs", rev = "dca3aba" }
-quickwit-grpc-clients = { version = "0.4.0", path = "./quickwit-grpc-clients" }
-quickwit-indexing = { version = "0.4.0", path = "./quickwit-indexing" }
-quickwit-ingest-api = { version = "0.4.0", path = "./quickwit-ingest-api" }
-quickwit-jaeger = { version = "0.4.0", path = "./quickwit-jaeger" }
-quickwit-janitor = { version = "0.4.0", path = "./quickwit-janitor" }
-quickwit-metastore = { version = "0.4.0", path = "./quickwit-metastore" }
-quickwit-opentelemetry = { version = "0.4.0", path = "./quickwit-opentelemetry" }
-quickwit-proto = { version = "0.4.0", path = "./quickwit-proto" }
-quickwit-rest-client = { version = "0.4.0", path = "./quickwit-rest-client" }
-quickwit-search = { version = "0.4.0", path = "./quickwit-search" }
-quickwit-serve = { version = "0.4.0", path = "./quickwit-serve" }
-quickwit-storage = { version = "0.4.0", path = "./quickwit-storage" }
-quickwit-telemetry = { version = "0.4.0", path = "./quickwit-telemetry" }
+quickwit-grpc-clients = { version = "0.5.0", path = "./quickwit-grpc-clients" }
+quickwit-indexing = { version = "0.5.0", path = "./quickwit-indexing" }
+quickwit-ingest-api = { version = "0.5.0", path = "./quickwit-ingest-api" }
+quickwit-jaeger = { version = "0.5.0", path = "./quickwit-jaeger" }
+quickwit-janitor = { version = "0.5.0", path = "./quickwit-janitor" }
+quickwit-metastore = { version = "0.5.0", path = "./quickwit-metastore" }
+quickwit-opentelemetry = { version = "0.5.0", path = "./quickwit-opentelemetry" }
+quickwit-proto = { version = "0.5.0", path = "./quickwit-proto" }
+quickwit-rest-client = { version = "0.5.0", path = "./quickwit-rest-client" }
+quickwit-search = { version = "0.5.0", path = "./quickwit-search" }
+quickwit-serve = { version = "0.5.0", path = "./quickwit-serve" }
+quickwit-storage = { version = "0.5.0", path = "./quickwit-storage" }
+quickwit-telemetry = { version = "0.5.0", path = "./quickwit-telemetry" }
 
-fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "116c6d3" }
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "116c6d3", default-features = false, features = [
+fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", tag = "quickwit-0.5-rev" }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", tag = "quickwit-0.5-rev", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
   "quickwit",
 ] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "116c6d3" }
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", tag = "quickwit-0.5-rev" }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.

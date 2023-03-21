@@ -6,7 +6,11 @@ sidebar_position: 2
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Quickwit compiles to a single binary, we provide different methods to install it.
+Quickwit compiles to a single binary and we provide different methods to install it:
+
+- Linux/MacOS binaries that you can[download manually](#download) or with the [install script](#install-script)
+- [Docker image](#use-the-docker-image)
+- [Helm chart](/docs/deployment/kubernetes.md)
 
 ## Prerequisites
 
@@ -17,12 +21,13 @@ Support of aarch64 is currently experimental.
 
 ## Download
 
-Version: 0.4.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.4.0)
+version: 0.5.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.5.0)
 License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
-- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.4.0/quickwit-v0.4.0-aarch64-unknown-linux-gnu.tar.gz)
-- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.4.0/quickwit-v0.4.0-x86_64-unknown-linux-gnu.tar.gz)
-- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.4.0/quickwit-v0.4.0-x86_64-apple-darwin.tar.gz)
+- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.5.0/quickwit-v0.5.0-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.5.0/quickwit-v0.5.0-x86_64-unknown-linux-gnu.tar.gz)
+- [macOS aarch64](https://github.com/quickwit-oss/quickwit/releases/download/v0.5.0/quickwit-v0.5.0-aarch64-apple-darwin.tar.gz)
+- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.5.0/quickwit-v0.5.0-x86_64-apple-darwin.tar.gz)
 
 
 Check out the available builds in greater detail on [GitHub](https://github.com/quickwit-oss/quickwit/releases)
@@ -104,8 +109,6 @@ pacman -S clang protobuf openssl pkg-config cmake make
 
 </Tabs>
 
-
-
 ## Install script
 
 To easily install Quickwit on your machine, just run the command below from your preferred shell.
@@ -138,38 +141,14 @@ quickwit-{version}
 
 If you use Docker, this might be one of the quickest way to get going.
 The following command will pull the image from [Docker Hub](https://hub.docker.com/r/quickwit/quickwit)
-and gets you right in the shell of the running container ready to execute Quickwit commands.
-Note that we are also mounting the working directory as volume. This is useful when you already have your dataset ready on your machine and want to work with Quickwit Docker image.
+and start a container ready to execute Quickwit commands.
 
 ```bash
-docker run -it -v "$(pwd)":"/quickwit/files" --entrypoint ash quickwit/quickwit
-quickwit --version
+docker run --rm quickwit/quickwit --version
+
+# If you are using Apple silicon based macOS system you might need to specify the platform.
+# You can also safely ignore jemalloc warnings.
+docker run --rm --platform linux/amd64 quickwit/quickwit --version
 ```
 
-To get the full gist of this, let's run a minified version of the - [Quickstart guide](./quickstart.md).
-
-```bash
-# let's create a `data` directory
-mkdir data && cd data
-
-# download wikipedia dataset files
-curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/wikipedia/index-config.yaml
-curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
-
-# create, index and search using the container
-docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index create --index-config ./qwdata/wikipedia_index_config.yaml
-
-docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index ingest --index wikipedia --input-path ./qwdata/wiki-articles-10000.json
-
-docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index search --index wikipedia --query "barack obama"
-
-docker run -v "$(pwd)":"/quickwit/qwdata" --expose 7280 -p 7280:7280 quickwit/quickwit run --service searcher
-```
-
-Now you can make HTTP requests to the searcher service API.
-
-```bash
-curl http://127.0.0.1:7280/api/v1/wikipedia/search?query=obama
-```
-
-Alternatively, you can run a container shell session with your `data` folder mounted and execute the commands from within that session.
+To get the full gist of this, follow the [Quickstart guide](./quickstart.md).

@@ -23,7 +23,9 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
-use quickwit_ingest_api::{DocBatch, IngestRequest, IngestService, IngestServiceClient};
+use quickwit_ingest_api::{
+    CommitType, DocBatch, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
+};
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
     ExportTracePartialSuccess, ExportTraceServiceRequest, ExportTraceServiceResponse,
@@ -41,7 +43,7 @@ use crate::otlp::{extract_attributes, B64TraceId, TraceId};
 pub const OTEL_TRACE_INDEX_ID: &str = "otel-trace-v0";
 
 pub const OTEL_TRACE_INDEX_CONFIG: &str = r#"
-version: 0.4
+version: 0.5
 
 index_id: otel-trace-v0
 
@@ -137,11 +139,11 @@ doc_mapping:
 
   timestamp_field: span_start_timestamp_secs
 
-  partition_key: hash_mod(service_name, 100)
-  tag_fields: [service_name]
+  # partition_key: hash_mod(service_name, 100)
+  # tag_fields: [service_name]
 
 indexing_settings:
-  commit_timeout_secs: 30
+  commit_timeout_secs: 5
 
 search_settings:
   default_search_fields: []
@@ -464,10 +466,6 @@ impl OtlpGrpcTraceService {
         request: ExportTraceServiceRequest,
         parent_span: RuntimeSpan,
     ) -> Result<ParsedSpans, Status> {
-        let mut doc_batch = DocBatch {
-            index_id: OTEL_TRACE_INDEX_ID.to_string(),
-            ..Default::default()
-        };
         let mut spans = BTreeSet::new();
         let mut num_spans = 0;
         let mut num_parse_errors = 0;
@@ -603,21 +601,18 @@ impl OtlpGrpcTraceService {
                 }
             }
         }
+        let mut doc_batch = DocBatchBuilder::new(OTEL_TRACE_INDEX_ID.to_string()).json_writer();
         for span in spans {
-            let current_doc_batch_len = doc_batch.concat_docs.len();
-            if let Err(error) = serde_json::to_writer(&mut doc_batch.concat_docs, &span.0) {
+            if let Err(error) = doc_batch.ingest_doc(&span.0) {
                 error!(error=?error, "Failed to JSON serialize span.");
                 error_message = format!("Failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
-                continue;
             }
-            let new_doc_batch_len = doc_batch.concat_docs.len();
-            let span_json_len = new_doc_batch_len - current_doc_batch_len;
-            doc_batch.doc_lens.push(span_json_len as u64);
         }
+        let doc_batch = doc_batch.build();
         let current_span = RuntimeSpan::current();
         current_span.record("num_spans", num_spans);
-        current_span.record("num_bytes", doc_batch.concat_docs.len());
+        current_span.record("num_bytes", doc_batch.num_bytes());
         current_span.record("num_parse_errors", num_parse_errors);
 
         let parsed_spans = ParsedSpans {
@@ -633,6 +628,7 @@ impl OtlpGrpcTraceService {
     async fn store_spans(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],
+            commit: CommitType::Auto as u32,
         };
         self.ingest_service.ingest(ingest_request).await?;
         Ok(())

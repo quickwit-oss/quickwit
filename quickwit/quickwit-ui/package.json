@@ -1,6 +1,6 @@
 {
   "name": "quickwit-ui",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "license": "AGPL-3.0",
   "private": true,
   "proxy": "http://127.0.0.1:7280",
@@ -13,6 +13,7 @@
     "@mui/material": "^5.11.2",
     "@mui/system": "^5.11.2",
     "@mui/x-date-pickers": "^5.0.12",
+    "@types/swagger-ui-react": "^4.11.0",
     "dayjs": "^1.11.7",
     "monaco-editor": "^0.34.1",
     "prettier": "2.8.1",
@@ -22,7 +23,8 @@
     "react-number-format": "^4.9.3",
     "react-router-dom": "6",
     "styled-components": "^5.3.6",
-    "styled-icons": "^10.47.0"
+    "styled-icons": "^10.47.0",
+    "swagger-ui-react": "^4.18.1"
   },
   "resolutions": {
     "@types/react": "17.0.20",
@@ -77,7 +79,8 @@
   },
   "jest": {
     "moduleNameMapper": {
-      "monaco-editor": "<rootDir>/monacoMock.js"
+      "monaco-editor": "<rootDir>/monacoMock.js",
+      "swagger-ui-react": "<rootDir>/swaggerUIMock.js"
     }
   }
 }

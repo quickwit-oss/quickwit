@@ -21,6 +21,7 @@ use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use bytes::Bytes;
 use chitchat::transport::ChannelTransport;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::create_cluster_for_test;
@@ -136,14 +137,14 @@ impl TestSandbox {
     ///
     /// The documents are expected to be `JsonValue`.
     /// They can be created using the `serde_json::json!` macro.
-    pub async fn add_documents<I>(&self, split_docs: I) -> anyhow::Result<IndexingStatistics>
+    pub async fn add_documents<I>(&self, json_docs: I) -> anyhow::Result<IndexingStatistics>
     where
         I: IntoIterator<Item = JsonValue> + 'static,
         I::IntoIter: Send,
     {
-        let docs: Vec<String> = split_docs
+        let docs: Vec<Bytes> = json_docs
             .into_iter()
-            .map(|doc_json| doc_json.to_string())
+            .map(|json_doc| Bytes::from(json_doc.to_string()))
             .collect();
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source_config = SourceConfig {
@@ -237,7 +238,7 @@ pub fn mock_split_meta(split_id: &str) -> SplitMetadata {
         partition_id: 13u64,
         num_docs: 10,
         uncompressed_docs_size_in_bytes: 256,
-        time_range: None,
+        time_range: Some(121000..=130198),
         create_timestamp: 0,
         footer_offsets: 700..800,
         ..Default::default()

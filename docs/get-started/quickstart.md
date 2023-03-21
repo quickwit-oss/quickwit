@@ -87,7 +87,7 @@ And here is the complete config:
 #
 # Index config file for stackoverflow dataset.
 #
-version: 0.4
+version: 0.5
 
 index_id: stackoverflow
 
@@ -187,7 +187,7 @@ curl -O https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.tr
 
 ```bash
 # Index our 10k documents.
-curl -XPOST http://127.0.0.1:7280/api/v1/stackoverflow/ingest --data-binary stackoverflow.posts.transformed-10000.json
+curl -XPOST http://127.0.0.1:7280/api/v1/stackoverflow/ingest --data-binary @stackoverflow.posts.transformed-10000.json
 ```
 
 </TabItem>

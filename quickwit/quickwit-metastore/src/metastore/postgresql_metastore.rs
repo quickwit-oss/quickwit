@@ -254,8 +254,6 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
 fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
     match &sqlx_err {
         sqlx::Error::Database(boxed_db_err) => {
-            error!(pg_db_err=?boxed_db_err, "postgresql-error");
-
             let pg_db_error = boxed_db_err.downcast_ref::<PgDatabaseError>();
             let pg_error_code = pg_db_error.code();
             let pg_error_table = pg_db_error.table();
@@ -269,13 +267,19 @@ fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
                         index_id: index_id.to_string(),
                     }
                 }
-                (pg_error_code::UNIQUE_VIOLATION, _) => MetastoreError::InternalError {
-                    message: "Unique key violation.".to_string(),
-                    cause: format!("DB error {boxed_db_err:?}"),
-                },
-                _ => MetastoreError::DbError {
-                    message: boxed_db_err.to_string(),
-                },
+                (pg_error_code::UNIQUE_VIOLATION, _) => {
+                    error!(pg_db_err=?boxed_db_err, "postgresql-error");
+                    MetastoreError::InternalError {
+                        message: "Unique key violation.".to_string(),
+                        cause: format!("DB error {boxed_db_err:?}"),
+                    }
+                }
+                _ => {
+                    error!(pg_db_err=?boxed_db_err, "postgresql-error");
+                    MetastoreError::DbError {
+                        message: boxed_db_err.to_string(),
+                    }
+                }
             }
         }
         _ => {
