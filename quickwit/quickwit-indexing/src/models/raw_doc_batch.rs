@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
-use std::ops::Range;
 
 use bytes::Bytes;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
@@ -56,7 +55,7 @@ impl RawDocBatch {
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test(docs: &[&str], range: Range<u64>) -> Self {
+    pub fn for_test(docs: &[&str], range: std::ops::Range<u64>) -> Self {
         let docs = docs
             .iter()
             .map(|doc| Bytes::from(doc.to_string()))
