@@ -71,13 +71,14 @@ Let's first install the dependencies:
 ```bash
 pip install flask
 pip install opentelemetry-distro
+pip install opentelemetry-exporter-otlp
 ```
 
 The opentelemetry-distro package installs the API, SDK, and the opentelemetry-bootstrap and opentelemetry-instrument tools that you’ll use.
 
 Here is the code of our app:
 
-```python title=app.py
+```python title=my_app.py
 import random
 import time
 import requests
@@ -130,9 +131,9 @@ And that's it, we are now ready to run the app:
 ```bash
 # We don't need metrics.
 OTEL_METRICS_EXPORTER=none \
-OTEL_TRACE_EXPORTER=console \
+OTEL_TRACES_EXPORTER=console \
 OTEL_SERVICE_NAME=my_app \
-python app.py
+python my_app.py
 ```
 
 By hitting [http://localhost:5000/process-ip](http://localhost:5000/process-ip) you should see the corresponding trace in the console.
@@ -205,7 +206,7 @@ We can now start the new instrumented app:
 
 ```bash
 OTEL_METRICS_EXPORTER=none \
-OTEL_TRACE_EXPORTER=console \
+OTEL_TRACES_EXPORTER=console \
 OTEL_SERVICE_NAME=my_app \
 opentelemetry-instrument python my_instrumented_app.py
 ```
@@ -219,9 +220,9 @@ To send traces to Quickwit, we need to use the OTLP exporter. This is a simple a
 
 ```bash
 OTEL_METRICS_EXPORTER=none \ # We don't need metrics
-OTEL_SERVICE_NAME=flask \
+OTEL_SERVICE_NAME=my_app \
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:7281 \
-opentelemetry-instrument python instrumented_app.py
+opentelemetry-instrument python my_instrumented_app.py
 ```
 
 Now, if you hit [http://localhost:5000/process-ip](http://localhost:5000/process-ip), traces will be send to Quickwit, you just need to wait around 30 seconds before they are indexed. It's time for a coffee break!
@@ -246,7 +247,7 @@ Start a collector as described in the [OpenTelemetry collector tutorial](using-o
 
 ```bash
 OTEL_METRICS_EXPORTER=none \ # We don't need metrics
-OTEL_SERVICE_NAME=flask \
+OTEL_SERVICE_NAME=my_app \
 opentelemetry-instrument python instrumented_app.py
 ```
 
