@@ -103,7 +103,7 @@ opentelemetry-otlp = "0.11.0"
 pin-project-lite = "0.2.9"
 pnet = { version = "0.31.0", features = ["std"] }
 predicates = "2"
-prettyplease = "0.1.23"
+prettyplease = "0.2.0"
 proc-macro2 = "1.0.50"
 prometheus = { version = "0.13", features = ["process"] }
 proptest = "1"
@@ -158,7 +158,7 @@ sqlx = { version = "0.6", features = [
   "migrate",
   "time",
 ] }
-syn = "1.0.107"
+syn = "2.0.8"
 tabled = { version = "0.8", features = ["color"] }
 tempfile = "3"
 termcolor = "1"
