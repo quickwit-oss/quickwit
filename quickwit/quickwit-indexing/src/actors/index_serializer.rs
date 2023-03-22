@@ -25,7 +25,7 @@ use tokio::runtime::Handle;
 use tracing::instrument;
 
 use crate::actors::Packager;
-use crate::models::{IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder};
+use crate::models::{EmptySplit, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder};
 
 /// The index serializer takes a non-serialized split,
 /// and serializes it before passing it to the packager.
@@ -101,6 +101,26 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
             merge_operation: None,
         };
         ctx.send_message(&self.packager_mailbox, indexed_split_batch)
+            .await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<EmptySplit> for IndexSerializer {
+    type Reply = ();
+
+    #[instrument(
+        name="serialize_empty_split"
+        parent=empty_split.batch_parent_span.id(),
+        skip_all,
+    )]
+    async fn handle(
+        &mut self,
+        empty_split: EmptySplit,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        ctx.send_message(&self.packager_mailbox, empty_split)
             .await?;
         Ok(())
     }

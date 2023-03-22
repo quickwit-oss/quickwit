@@ -43,7 +43,7 @@ use crate::actors::Publisher;
 use crate::merge_policy::MergeOperation;
 use crate::metrics::INDEXER_METRICS;
 use crate::models::{
-    create_split_metadata, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
+    create_split_metadata, EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
 };
 use crate::split_store::IndexingSplitStore;
 
@@ -360,6 +360,39 @@ impl Handler<PackagedSplitBatch> for Uploader {
             .instrument(Span::current()),
         );
         fail_point!("uploader:intask:after");
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<EmptySplit> for Uploader {
+    type Reply = ();
+
+    #[instrument(
+        name="upload_empty_split",
+        parent=empty_split.batch_parent_span.id(),
+        skip_all,
+    )]
+    async fn handle(
+        &mut self,
+        empty_split: EmptySplit,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        let split_update_sender = self
+            .split_update_mailbox
+            .get_split_update_sender(ctx)
+            .await?;
+        let splits_update = SplitsUpdate {
+            index_id: empty_split.index_id,
+            new_splits: vec![],
+            replaced_split_ids: vec![],
+            checkpoint_delta_opt: Some(empty_split.checkpoint_delta),
+            publish_lock: empty_split.publish_lock,
+            merge_operation: None,
+            parent_span: empty_split.batch_parent_span,
+        };
+
+        split_update_sender.send(splits_update, ctx).await?;
         Ok(())
     }
 }
@@ -752,6 +785,74 @@ mod tests {
         assert_eq!(index_id, "test-index-no-sequencer");
         assert_eq!(new_splits.len(), 1);
         assert!(replaced_split_ids.is_empty());
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_uploader_with_empty_splits() -> anyhow::Result<()> {
+        let universe = Universe::new();
+        let (sequencer_mailbox, sequencer_inbox) =
+            universe.create_test_mailbox::<Sequencer<Publisher>>();
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore.expect_stage_splits().never();
+        let ram_storage = RamStorage::default();
+        let split_store =
+            IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
+        let uploader = Uploader::new(
+            UploaderType::IndexUploader,
+            Arc::new(mock_metastore),
+            split_store,
+            SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
+            4,
+        );
+        let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
+        let checkpoint_delta = IndexCheckpointDelta {
+            source_id: "test-source".to_string(),
+            source_delta: SourceCheckpointDelta::from_range(3..15),
+        };
+        uploader_mailbox
+            .send_message(EmptySplit {
+                index_id: "test-index".to_string(),
+                batch_parent_span: Span::none(),
+                checkpoint_delta,
+                publish_lock: PublishLock::default(),
+            })
+            .await?;
+        assert_eq!(
+            uploader_handle.process_pending_and_observe().await.obs_type,
+            ObservationType::Alive
+        );
+        let mut publish_futures: Vec<oneshot::Receiver<SequencerCommand<SplitsUpdate>>> =
+            sequencer_inbox.drain_for_test_typed();
+        assert_eq!(publish_futures.len(), 1);
+
+        let publisher_message = match publish_futures.pop().unwrap().await? {
+            SequencerCommand::Discard => panic!(
+                "Expected `SequencerCommand::Proceed(SplitUpdate)`, got \
+                 `SequencerCommand::Discard`."
+            ),
+            SequencerCommand::Proceed(publisher_message) => publisher_message,
+        };
+        let SplitsUpdate {
+            index_id,
+            new_splits,
+            checkpoint_delta_opt,
+            replaced_split_ids,
+            ..
+        } = publisher_message;
+
+        assert_eq!(index_id, "test-index");
+        assert_eq!(new_splits.len(), 0);
+        let checkpoint_delta = checkpoint_delta_opt.unwrap();
+        assert_eq!(checkpoint_delta.source_id, "test-source");
+        assert_eq!(
+            checkpoint_delta.source_delta,
+            SourceCheckpointDelta::from_range(3..15)
+        );
+        assert!(replaced_split_ids.is_empty());
+        let files = ram_storage.list_files().await;
+        assert!(files.is_empty());
         universe.assert_quit().await;
         Ok(())
     }

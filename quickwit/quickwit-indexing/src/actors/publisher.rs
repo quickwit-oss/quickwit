@@ -35,6 +35,7 @@ use crate::source::{SourceActor, SuggestTruncate};
 pub struct PublisherCounters {
     pub num_published_splits: u64,
     pub num_replace_operations: u64,
+    pub num_empty_splits: u64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -160,20 +161,24 @@ impl Handler<SplitsUpdate> for Publisher {
             }
         }
 
-        // The merge planner is not necessarily awake and this is not an error.
-        // For instance, when a source reaches its end, and the last "new" split
-        // has been packaged, the packager finalizer sends a message to the merge
-        // planner in order to stop it.
-        if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
-            let _ = ctx
-                .send_message(merge_planner_mailbox, NewSplits { new_splits })
-                .await;
-        }
+        if !new_splits.is_empty() {
+            // The merge planner is not necessarily awake and this is not an error.
+            // For instance, when a source reaches its end, and the last "new" split
+            // has been packaged, the packager finalizer sends a message to the merge
+            // planner in order to stop it.
+            if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
+                let _ = ctx
+                    .send_message(merge_planner_mailbox, NewSplits { new_splits })
+                    .await;
+            }
 
-        if replaced_split_ids.is_empty() {
-            self.counters.num_published_splits += 1;
+            if replaced_split_ids.is_empty() {
+                self.counters.num_published_splits += 1;
+            } else {
+                self.counters.num_replace_operations += 1;
+            }
         } else {
-            self.counters.num_replace_operations += 1;
+            self.counters.num_empty_splits += 1;
         }
         fail_point!("publisher:after");
         Ok(())
@@ -261,6 +266,76 @@ mod tests {
         let merger_msgs: Vec<NewSplits> = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
         assert_eq!(merger_msgs.len(), 1);
         assert_eq!(merger_msgs[0].new_splits.len(), 1);
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_publisher_publish_operation_with_empty_splits() {
+        let universe = Universe::with_accelerated_time();
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_publish_splits()
+            .withf(
+                |index_id, split_ids, replaced_split_ids, checkpoint_delta_opt| {
+                    let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
+                    index_id == "index"
+                        && checkpoint_delta.source_id == "source"
+                        && split_ids.is_empty()
+                        && replaced_split_ids.is_empty()
+                        && checkpoint_delta.source_delta == SourceCheckpointDelta::from_range(1..3)
+                },
+            )
+            .times(1)
+            .returning(|_, _, _, _| Ok(()));
+        let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
+
+        let (source_mailbox, source_inbox) = universe.create_test_mailbox();
+
+        let publisher = Publisher::new(
+            PublisherType::MainPublisher,
+            Arc::new(mock_metastore),
+            Some(merge_planner_mailbox),
+            Some(source_mailbox),
+        );
+        let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
+
+        assert!(publisher_mailbox
+            .send_message(SplitsUpdate {
+                index_id: "index".to_string(),
+                new_splits: Vec::new(),
+                replaced_split_ids: Vec::new(),
+                checkpoint_delta_opt: Some(IndexCheckpointDelta {
+                    source_id: "source".to_string(),
+                    source_delta: SourceCheckpointDelta::from_range(1..3),
+                }),
+                publish_lock: PublishLock::default(),
+                merge_operation: None,
+                parent_span: tracing::Span::none(),
+            })
+            .await
+            .is_ok());
+
+        let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
+        assert_eq!(publisher_observation.num_published_splits, 0);
+        assert_eq!(publisher_observation.num_replace_operations, 0);
+        assert_eq!(publisher_observation.num_empty_splits, 1);
+
+        let suggest_truncate_checkpoints: Vec<SourceCheckpoint> = source_inbox
+            .drain_for_test_typed::<SuggestTruncate>()
+            .into_iter()
+            .map(|msg| msg.0)
+            .collect();
+
+        assert_eq!(suggest_truncate_checkpoints.len(), 1);
+        assert_eq!(
+            suggest_truncate_checkpoints[0]
+                .position_for_partition(&PartitionId::default())
+                .unwrap(),
+            &Position::from(2u64)
+        );
+
+        let merger_msgs: Vec<NewSplits> = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
+        assert_eq!(merger_msgs.len(), 0);
         universe.assert_quit().await;
     }
 
