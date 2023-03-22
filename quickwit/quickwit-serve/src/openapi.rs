@@ -63,12 +63,12 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
         Tag::new("Indexes"),
         Tag::new("Ingest"),
         Tag::new("Delete Tasks"),
+        Tag::new("Node Health"),
         Tag::new("Sources"),
         Tag::new("Get Metrics"),
         Tag::new("Cluster Info"),
         Tag::new("Indexing"),
         Tag::new("Splits"),
-        Tag::new("Node Health"),
     ];
     docs_base.tags = Some(tags);
 
