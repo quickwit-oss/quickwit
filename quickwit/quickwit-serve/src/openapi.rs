@@ -23,7 +23,7 @@ use quickwit_doc_mapper::DocMapperApiSchemas;
 use quickwit_indexing::IndexingApiSchemas;
 use quickwit_janitor::JanitorApiSchemas;
 use quickwit_metastore::MetastoreApiSchemas;
-use utoipa::openapi::Server;
+use utoipa::openapi::{Server, Tag};
 use utoipa::OpenApi;
 
 use crate::cluster_api::ClusterApi;
@@ -56,6 +56,21 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
         .paths(utoipa::openapi::Paths::new())
         .components(Some(utoipa::openapi::Components::new()))
         .build();
+
+    // Tags use for grouping and sorting routes.
+    let tags = vec![
+        Tag::new("Search"),
+        Tag::new("Indexes"),
+        Tag::new("Ingest"),
+        Tag::new("Delete Tasks"),
+        Tag::new("Node Health"),
+        Tag::new("Sources"),
+        Tag::new("Get Metrics"),
+        Tag::new("Cluster Info"),
+        Tag::new("Indexing"),
+        Tag::new("Splits"),
+    ];
+    docs_base.tags = Some(tags);
 
     // Routing
     docs_base.merge_components_and_paths(HealthCheckApi::openapi().with_path_prefix("/health"));
