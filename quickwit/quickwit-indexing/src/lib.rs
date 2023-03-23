@@ -24,7 +24,7 @@ use std::sync::Arc;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::Cluster;
 use quickwit_config::QuickwitConfig;
-use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
+use quickwit_ingest::IngestApiService;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
@@ -69,11 +69,10 @@ pub async fn start_indexing_service(
     config: &QuickwitConfig,
     cluster: Arc<Cluster>,
     metastore: Arc<dyn Metastore>,
+    ingest_api_service: Mailbox<IngestApiService>,
     storage_resolver: StorageUriResolver,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("Starting indexer service.");
-    let queues_dir_path = config.data_dir_path.join(QUEUES_DIR_NAME);
-    let ingest_api_service = get_ingest_api_service(&queues_dir_path).await?;
 
     // Spawn indexing service.
     let indexing_service = IndexingService::new(

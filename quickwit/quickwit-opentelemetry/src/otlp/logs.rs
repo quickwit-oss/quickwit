@@ -22,7 +22,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
-use quickwit_ingest_api::{
+use quickwit_ingest::{
     CommitType, DocBatch, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
 };
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsService;
