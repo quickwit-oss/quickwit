@@ -34,7 +34,7 @@ use quickwit_common::fs::get_cache_directory_path;
 use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
-use quickwit_ingest_api::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUEUES_DIR_NAME};
+use quickwit_ingest::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -770,7 +770,7 @@ mod tests {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
     use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, VecSourceParams};
-    use quickwit_ingest_api::{init_ingest_api, CreateQueueIfNotExistsRequest};
+    use quickwit_ingest::{init_ingest_api, CreateQueueIfNotExistsRequest};
     use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore};
     use quickwit_proto::indexing_api::IndexingTask;
 

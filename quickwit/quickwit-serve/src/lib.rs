@@ -67,7 +67,7 @@ use quickwit_grpc_clients::create_balance_channel_from_watched_members;
 use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
-use quickwit_ingest_api::{
+use quickwit_ingest::{
     start_ingest_api_service, GetMemoryCapacity, IngestRequest, IngestServiceClient, MemoryCapacity,
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
@@ -238,6 +238,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
             &config,
             cluster.clone(),
             metastore.clone(),
+            ingest_api_service.clone(),
             storage_resolver.clone(),
         )
         .await?;
@@ -336,7 +337,7 @@ struct RateModulator<R> {
 impl<R> RateModulator<R>
 where R: Rate
 {
-    /// Creates a new `RateModulator` instance.
+    /// Creates a new [`RateModulator`] instance.
     ///
     /// # Panics
     ///

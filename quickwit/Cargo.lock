@@ -4715,7 +4715,7 @@ dependencies = [
  "quickwit-directories",
  "quickwit-doc-mapper",
  "quickwit-grpc-clients",
- "quickwit-ingest-api",
+ "quickwit-ingest",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-storage",
@@ -4741,7 +4741,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-ingest-api"
+name = "quickwit-ingest"
 version = "0.5.0"
 dependencies = [
  "anyhow",
@@ -4897,7 +4897,7 @@ dependencies = [
  "prost",
  "quickwit-actors",
  "quickwit-common",
- "quickwit-ingest-api",
+ "quickwit-ingest",
  "quickwit-proto",
  "serde",
  "serde_json",
@@ -5020,7 +5020,7 @@ dependencies = [
  "quickwit-doc-mapper",
  "quickwit-grpc-clients",
  "quickwit-indexing",
- "quickwit-ingest-api",
+ "quickwit-ingest",
  "quickwit-jaeger",
  "quickwit-janitor",
  "quickwit-metastore",
