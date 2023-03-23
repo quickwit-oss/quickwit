@@ -112,7 +112,9 @@ pub(crate) async fn start_rest_server(
     // For now we can allow all origins since Quickwit needs to be
     // behind a reverse proxy to be publicly exposed currently
     // but in future we may want to change this.
-    let cors = warp::cors().allow_any_origin();
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_methods(["GET", "POST", "PUT", "DELETE"]);
 
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
