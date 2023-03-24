@@ -19,13 +19,15 @@
 
 use std::net::SocketAddr;
 
-use hyper::http;
+use hyper::http::HeaderValue;
+use hyper::{http, Method};
 use quickwit_common::metrics;
 use quickwit_proto::ServiceErrorCode;
 use tower::make::Shared;
 use tower::ServiceBuilder;
 use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove};
 use tower_http::compression::CompressionLayer;
+use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
@@ -107,19 +109,22 @@ pub(crate) async fn start_rest_server(
         .and(warp::get())
         .map(|| redirect(http::Uri::from_static("/ui/search")));
 
+    let mut cors =
+        CorsLayer::new().allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE]);
     let cors_origins = &quickwit_services.config.rest_config.cors_allow_origins;
-    let mut cors = warp::cors().allow_methods(["GET", "POST", "PUT", "DELETE"]);
     if !cors_origins.is_empty() {
         let allow_any = cors_origins.iter().any(|origin| origin.as_str() == "*");
 
         if allow_any {
             info!("CORS is enabled, all origins will be allowed");
-            cors = cors.allow_any_origin();
+            cors = cors.allow_origin(tower_http::cors::Any);
         } else {
             info!(origins = ?cors_origins, "CORS is enabled, the following origins will be allowed");
-            for origin in cors_origins {
-                cors = cors.allow_origin(origin.as_str());
-            }
+            let origins = cors_origins
+                .iter()
+                .map(|origin| origin.parse::<HeaderValue>().unwrap())
+                .collect::<Vec<_>>();
+            cors = cors.allow_origin(origins);
         };
     }
 
@@ -131,7 +136,6 @@ pub(crate) async fn start_rest_server(
         .or(health_check_routes)
         .or(metrics_routes)
         .with(request_counter)
-        .with(cors)
         .recover(recover_fn)
         .boxed();
 
@@ -145,6 +149,7 @@ pub(crate) async fn start_rest_server(
                 .gzip(true)
                 .compress_when(compression_predicate),
         )
+        .layer(cors)
         .service(warp_service);
 
     info!("Searcher ready to accept requests at http://{rest_listen_addr}/");
