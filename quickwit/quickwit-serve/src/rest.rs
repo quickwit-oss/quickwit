@@ -107,14 +107,21 @@ pub(crate) async fn start_rest_server(
         .and(warp::get())
         .map(|| redirect(http::Uri::from_static("/ui/search")));
 
-    // Some users run dashboards, etc... On different ports
-    // to the one Quickwit uses, this causes an error with the browsers
-    // For now we can allow all origins since Quickwit needs to be
-    // behind a reverse proxy to be publicly exposed currently
-    // but in future we may want to change this.
-    let cors = warp::cors()
-        .allow_any_origin()
-        .allow_methods(["GET", "POST", "PUT", "DELETE"]);
+    let cors_origins = &quickwit_services.config.rest_config.cors_allow_origins;
+    let mut cors = warp::cors().allow_methods(["GET", "POST", "PUT", "DELETE"]);
+    if !cors_origins.is_empty() {
+        let allow_any = cors_origins.iter().any(|origin| origin.as_str() == "*");
+
+        if allow_any {
+            info!("CORS is enabled, all origins will be allowed");
+            cors = cors.allow_any_origin();
+        } else {
+            info!(origins = ?cors_origins, "CORS is enabled, the following origins will be allowed");
+            for origin in cors_origins {
+                cors = cors.allow_origin(origin.as_str());
+            }
+        };
+    }
 
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
