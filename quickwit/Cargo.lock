@@ -4031,12 +4031,22 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.1.25"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c8646e95016a7a6c4adea95bafa8a16baab64b583356217f2c85db4a39d9a86"
+checksum = "f28f53e8b192565862cf99343194579a022eb9c7dd3a8d03134734803c7b3125"
 dependencies = [
  "proc-macro2",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "prettyplease"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4508c0eff4d1e708551034de4bddd61bf8bda8c7b5ae72bd844cf68ea21117ac"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.8",
 ]
 
 [[package]]
@@ -4185,7 +4195,7 @@ dependencies = [
  "log",
  "multimap",
  "petgraph",
- "prettyplease",
+ "prettyplease 0.1.11",
  "prost",
  "prost-types",
  "regex",
@@ -4449,13 +4459,13 @@ dependencies = [
  "async-trait",
  "dyn-clone",
  "mockall",
- "prettyplease",
+ "prettyplease 0.2.0",
  "proc-macro2",
  "prost",
  "prost-build",
  "quote 1.0.26",
  "serde",
- "syn 1.0.109",
+ "syn 2.0.8",
  "thiserror",
  "tokio",
  "tonic",
@@ -7276,7 +7286,7 @@ version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5bf5e9b9c0f7e0a7c027dcfaba7b2c60816c7049171f679d99ee2ff65d0de8c4"
 dependencies = [
- "prettyplease",
+ "prettyplease 0.1.11",
  "proc-macro2",
  "prost-build",
  "quote 1.0.26",
