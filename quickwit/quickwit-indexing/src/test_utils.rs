@@ -32,7 +32,7 @@ use quickwit_config::{
     SourceParams, VecSourceParams,
 };
 use quickwit_doc_mapper::DocMapper;
-use quickwit_ingest_api::{init_ingest_api, QUEUES_DIR_NAME};
+use quickwit_ingest::{init_ingest_api, QUEUES_DIR_NAME};
 use quickwit_metastore::file_backed_metastore::FileBackedMetastoreFactory;
 use quickwit_metastore::{Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState};
 use quickwit_storage::{Storage, StorageUriResolver};

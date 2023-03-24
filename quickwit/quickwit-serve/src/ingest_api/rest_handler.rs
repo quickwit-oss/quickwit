@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
-use quickwit_ingest_api::{
+use quickwit_ingest::{
     CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestService,
     IngestServiceClient, IngestServiceError, TailRequest,
 };
@@ -39,9 +39,9 @@ pub struct IngestApi;
 
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(
-    quickwit_ingest_api::DocBatch,
-    quickwit_ingest_api::FetchResponse,
-    quickwit_ingest_api::IngestResponse,
+    quickwit_ingest::DocBatch,
+    quickwit_ingest::FetchResponse,
+    quickwit_ingest::IngestResponse,
 )))]
 pub struct IngestApiSchemas;
 
@@ -337,7 +337,7 @@ mod tests {
     use byte_unit::Byte;
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
-    use quickwit_ingest_api::{
+    use quickwit_ingest::{
         init_ingest_api, CreateQueueIfNotExistsRequest, FetchRequest, FetchResponse,
         IngestApiService, IngestResponse, IngestServiceClient, SuggestTruncateRequest,
         QUEUES_DIR_NAME,

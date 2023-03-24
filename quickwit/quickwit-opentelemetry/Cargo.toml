@@ -24,7 +24,7 @@ tracing = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
-quickwit-ingest-api = { workspace = true }
+quickwit-ingest = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
