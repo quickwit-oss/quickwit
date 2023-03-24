@@ -181,7 +181,7 @@ struct QuickwitConfigBuilder {
     #[serde(rename = "jaeger")]
     #[serde(default)]
     jaeger_config: JaegerConfig,
-    #[serde(rename = "rest")]
+    #[serde(rename = "rest_api")]
     #[serde(default)]
     rest_config: RestConfig,
 }
