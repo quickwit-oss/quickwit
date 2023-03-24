@@ -81,10 +81,10 @@ This section contains the configuration options for a Searcher.
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `cors_allow_origins` | Configure the CORS origins which are allowed to access the API. | disabled |
+| `cors_allow_origins` | Configure the CORS origins which are allowed to access the API. |  |
 
 ### CORS (Cross-origin resource sharing)
-CORS (Cross-origin resource sharing) describes what addresses/origins can access the REST API from the browser, 
+CORS (Cross-origin resource sharing) describes what address/origins can access the REST API from the browser, 
 by default no origins are allowed.
 
 A wildcard, single origin or multiple origins can be specified as part of the `cors_allow_origins` parameter:
