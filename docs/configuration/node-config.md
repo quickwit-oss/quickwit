@@ -8,6 +8,7 @@ This page documents the Quickwit configuration properties. It is divided into th
 - Common properties.
 - Indexer properties: defined in `[indexer]` section of the configuration file.
 - Searcher properties: defined in `[searcher]` section of the configuration file.
+- Rest API properties: defined in `[rest_api]` section of the configuration file.
 
 A commented example is accessible here: [quickwit.yaml](https://github.com/quickwit-oss/quickwit/blob/main/config/quickwit.yaml).
 
@@ -76,6 +77,29 @@ This section contains the configuration options for a Searcher.
 | --- | --- | --- |
 | `enable_endpoint` | If true, enables the gRPC endpoint that allows the Jaeger Query Service to connect and retrieve traces. | `false` |
 
+## Rest API configuration
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| `cors_allow_origins` | Configure the CORS origins which are allowed to access the API. | disabled |
+
+### CORS (Cross-origin resource sharing)
+CORS (Cross-origin resource sharing) describes what addresses/origins can access the REST API from the browser, 
+by default no origins are allowed.
+
+A wildcard, single origin or multiple origins can be specified as part of the `cors_allow_origins` parameter:
+
+```yaml
+version: 0.5
+index_id: hdfs
+
+rest_api:
+  cors_allow_origins: '*'                                 # Allow all origins
+  # cors_allow_origins: https://my-hdfs-logs.domain.com   # Optionally we can specify one domain
+  # cors_allow_origins:                                   # Or allow multiple origins
+  #   - https://my-hdfs-logs.domain.com
+  #   - https://my-hdfs.other-domain.com
+```
 
 ## Using environment variables in the configuration
 

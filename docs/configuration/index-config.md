@@ -5,13 +5,12 @@ sidebar_position: 2
 
 This page describes how to configure an index.
 
-In addition to the `index_id`, the index configuration lets you define six items:
+In addition to the `index_id`, the index configuration lets you define five items:
 
 - The **index-uri**: it defines where the index files should be stored.
 - The **doc mapping**: it defines how a document and the fields it contains are stored and indexed for a given index.
 - The **indexing settings**: it defines the timestamp field used for sharding, and some more advanced parameters like the merge policy.
 - The **search settings**: it defines the default search fields `default_search_fields`, a list of fields that Quickwit will search into if the user query does not explicitly target a field.
-- The **REST API settings**: it defines how the REST API should handle CORS (Cross-origin resource sharing.) 
 
 Configuration is set at index creation and cannot be modified with the current version of Quickwit.
 
@@ -593,23 +592,3 @@ retention:
   - `weeks`, `week`, `w`
   - `months`, `month`, `M` -- a month is defined as `30.44 days`
   - `years`, `year`, `y` -- a year is defined as `365.25 days`
-
-## Rest API settings
-
-### CORS (Cross-origin resource sharing)
-Currently, only CORS (Cross-origin resource sharing) can be configured for the REST api, this describes what addresses/origins can access
-the REST API from the browser, by default no origins are allowed.
-
-A wildcard, single origin or multiple origins can be specified as part of the `cors_allow_origins` parameter:
-
-```yaml
-version: 0.5
-index_id: hdfs
-
-rest_api:
-  cors_allow_origins: '*'                                 # Allow all origins
-  # cors_allow_origins: https://my-hdfs-logs.domain.com   # Optionally we can specify one domain
-  # cors_allow_origins:                                   # Or allow multiple origins
-  #   - https://my-hdfs-logs.domain.com
-  #   - https://my-hdfs.other-domain.com
-```
