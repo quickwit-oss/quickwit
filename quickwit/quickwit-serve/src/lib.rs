@@ -80,7 +80,7 @@ use quickwit_search::{start_searcher_service, SearchJobPlacer, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
 use tower::ServiceBuilder;
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 use warp::{Filter, Rejection};
 
 pub use crate::args::ServeArgs;
@@ -412,7 +412,16 @@ async fn node_readiness_reporting_task(cluster: Arc<Cluster>, metastore: Arc<dyn
     let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
     loop {
         interval.tick().await;
-        let node_ready = metastore.check_connectivity().await.is_ok();
+        let node_ready = match metastore.check_connectivity().await {
+            Ok(()) => {
+                debug!(metastore_uri=?metastore.uri(), "Metastore is available.");
+                true
+            }
+            Err(err) => {
+                warn!(metastore_uri=?metastore.uri(), err=?err, "Metastore is not available.");
+                false
+            }
+        };
         cluster.set_self_node_ready(node_ready).await;
     }
 }
