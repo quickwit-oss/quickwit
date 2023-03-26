@@ -42,8 +42,8 @@ use self::file_backed_index::FileBackedIndex;
 pub use self::file_backed_metastore_factory::FileBackedMetastoreFactory;
 use self::lazy_file_backed_index::LazyFileBackedIndex;
 use self::store_operations::{
-    delete_index, fetch_and_build_indexes_states, fetch_index, index_exists, put_index,
-    put_indexes_states,
+    check_indexes_states_exist, delete_index, fetch_and_build_indexes_states, fetch_index,
+    index_exists, put_index, put_indexes_states,
 };
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
@@ -549,8 +549,7 @@ impl Metastore for FileBackedMetastore {
     }
 
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        self.storage.check_connectivity().await?;
-        Ok(())
+        check_indexes_states_exist(self.storage.clone()).await
     }
 
     /// -------------------------------------------------------------------------------
@@ -663,6 +662,29 @@ mod tests {
     use crate::{
         IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
     };
+
+    #[tokio::test]
+    async fn test_file_backed_metastore_connectivity_fails_if_states_file_does_not_exist() {
+        let mut mock_storage = MockStorage::default();
+        let ram_storage = RamStorage::default();
+        let ram_storage_clone = ram_storage.clone();
+        mock_storage // remove this if we end up changing the semantics of create.
+            .expect_exists()
+            .times(2)
+            .returning(|_| Ok(false));
+        mock_storage
+            .expect_put()
+            .times(1)
+            .returning(move |path, put_payload| {
+                assert!(path == Path::new("indexes_states.json"));
+                block_on(ram_storage_clone.put(path, put_payload))
+            });
+        let metastore = FileBackedMetastore::try_new(Arc::new(mock_storage), None)
+            .await
+            .unwrap();
+
+        metastore.check_connectivity().await.unwrap();
+    }
 
     #[tokio::test]
     async fn test_file_backed_metastore_index_exists() {

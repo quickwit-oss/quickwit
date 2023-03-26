@@ -73,6 +73,13 @@ fn convert_error(index_id: &str, storage_err: StorageError) -> MetastoreError {
     }
 }
 
+/// Check if `INDEXES_STATES_FILENAME` file exists.
+pub(crate) async fn check_indexes_states_exist(storage: Arc<dyn Storage>) -> anyhow::Result<()> {
+    let indexes_list_path = Path::new(INDEXES_STATES_FILENAME);
+    storage.exists(indexes_list_path).await?;
+    Ok(())
+}
+
 /// Fetch `INDEXES_STATES_FILENAME` file and build the map (index, state).
 /// If the file does not exist, return an empty map.
 pub(crate) async fn fetch_and_build_indexes_states(
@@ -85,6 +92,8 @@ pub(crate) async fn fetch_and_build_indexes_states(
         .await
         .map_err(|storage_err| convert_error("indexes", storage_err))?;
     if !exists {
+        let indexes_states = HashMap::default();
+        put_indexes_states(&*storage, &indexes_states).await?;
         return Ok(HashMap::default());
     }
     let content = storage
