@@ -242,8 +242,8 @@ async fn warm_up_fastfield(
     Ok(())
 }
 
-/// Populate the short-lived cache with the data for
-/// all of the fast field passed in argument.
+/// Populates the short-lived cache with the data for
+/// all of the fast fields passed as argument.
 async fn warm_up_fastfields(
     searcher: &Searcher,
     fast_field_names: &HashSet<String>,
