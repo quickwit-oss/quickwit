@@ -175,14 +175,17 @@ fn validate_timestamp_field_if_any(builder: &DefaultDocMapperBuilder) -> anyhow:
     {
         if cardinality != &Cardinality::SingleValue {
             bail!(
-                "Multiple values are forbidden for  the timestamp field (`{timestamp_field_name}`)."
+                "Multiple values are forbidden for  the timestamp field \
+                 (`{timestamp_field_name}`)."
             );
         }
         if !date_time_option.fast {
             bail!("The timestamp field `{timestamp_field_name}`is required to be a fast field.");
         }
     } else {
-        bail!("The timestamp field `{timestamp_field_name}` is required to have the datetime type.");
+        bail!(
+            "The timestamp field `{timestamp_field_name}` is required to have the datetime type."
+        );
     }
     Ok(())
 }

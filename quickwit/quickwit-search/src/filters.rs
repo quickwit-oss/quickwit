@@ -19,6 +19,7 @@
 
 use std::ops::{Bound, RangeBounds, RangeInclusive};
 
+use tantivy::columnar::Cardinality;
 use tantivy::fastfield::Column;
 use tantivy::{DateTime, DocId, SegmentReader};
 
@@ -87,7 +88,7 @@ impl TimestampFilterBuilder {
         }
     }
 
-    /// None means that all
+    /// None means that all documents are matching the timestamp range.
     pub fn build(
         &self,
         segment_reader: &SegmentReader,
@@ -96,14 +97,18 @@ impl TimestampFilterBuilder {
             segment_reader
                 .fast_fields()
                 .column_opt::<DateTime>(&self.timestamp_field_name)?;
-        let Some(timestamp_column) = timestamp_column_opt else {
-            return Ok(None);
-        };
-        let segment_range: RangeInclusive<DateTime> =
-            timestamp_column.min_value()..=timestamp_column.max_value();
+        let timestamp_column = timestamp_column_opt
+            .unwrap_or_else(|| Column::build_empty_column(segment_reader.max_doc()));
         let time_range = (self.start_timestamp, self.end_timestamp);
-        if is_segment_always_within_timestamp_range(segment_range, time_range) {
+        if time_range == (Bound::Unbounded, Bound::Unbounded) {
             return Ok(None);
+        }
+        if timestamp_column.index.get_cardinality() == Cardinality::Full {
+            let segment_range: RangeInclusive<DateTime> =
+                timestamp_column.min_value()..=timestamp_column.max_value();
+            if is_segment_always_within_timestamp_range(segment_range, time_range) {
+                return Ok(None);
+            }
         }
         Ok(Some(TimestampFilter {
             time_range,
