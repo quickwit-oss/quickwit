@@ -3,7 +3,11 @@ title: Data directory
 sidebar_position: 2
 ---
 
-Quickwit operates on a local directory to store temporary files. By default, this working directory is named `qwdata` and placed right next to the Quickwit binary. When operating Quickwit, you will end up with the following tree:
+Quickwit operates on a local directory to store temporary files. By default, this working directory is named `qwdata` and placed right next to the Quickwit binary.
+
+## QWData directory
+
+When operating Quickwit, you will end up with the following tree:
 
 ```bash
 qwdata
@@ -24,54 +28,81 @@ qwdata
     └── wal-00000000000000000029
 ```
 
-- `/queues`: This directory contains write ahead log files of the ingest API. When data is sent to Quickwit via the ingest API, the data is stored in these queues to guard against data lost. The indexing pipelines then consume those queues at their own pace. Whenever an indexing pipeline commits based on `commit_timeout_secs`, the queue is truncated to free up the unnecessarily occupied storage. This directory is created only if the ingest API service is running on your node.
+### `/queues` directory
 
-- `indexing`: This directory hold the local indexing directory of each index managed by Quickwit. The local indexing directories are further separated by indexing source. In the above tree, you can see there is an indexing folder corresponding to `_ingest-api-source` source for `wikipedia` index. This directory gets created only on nodes running the indexing service.
+This directory contains write ahead log files of the ingest API. When data is sent to Quickwit via the ingest API, the data is stored in these queues to guard against data lost. The indexing pipelines then consume those queues at their own pace. Whenever an indexing pipeline commits based on `commit_timeout_secs`, the queue is truncated to free up the unnecessarily occupied storage.
+You can configure `max_queue_memory_usage` and `max_queue_disk_usage` in the [node config file](../configuration/node-config.md#ingest-api-configuration) to control the max disk usage of the queues.
 
-- `delete_task_service`: This directory is used by the Janitor service to apply deletes on indexes. During this process, splits are downloaded, a new split is created while applying deletes and uploaded to the target storage. This directory gets created only on nodes running the Janitor service.
+This directory is created only if the ingest API service is running on your node.
 
-- `cache`: This directory is used for caching splits created on this node. This avoids downloading young splits that will go through merges. This cache can be [configured](https://quickwit.io/docs/main-branch/configuration/node-config#indexer-configuration) to limit on the number of splits it can hold (`split_store_max_num_splits`) and the overall size in bytes of splits it can hold (`split_store_max_num_bytes`). In this cache, splits are evicted based on age from oldest when space is needed. Also, splits older than two days and matured splits are evicted from the cache.
+### `indexing` directory
 
-## Keeping disk space in check
+This directory hold the local indexing directory of each index managed by Quickwit. The local indexing directories are further separated by indexing source. In the above tree, you can see there is an indexing folder corresponding to `_ingest-api-source` source for `wikipedia` index. This directory gets created only on nodes running the indexing service.
 
- Merge operation in Quickwit happens on multiple splits. When the targeted splits for merge are not locally available, they need to be downloaded from the storage which can take a while. To save on bandwidth and IO operations, Quickwit tries to cache newly created splits and keeps them till they are mature if possible (old splits are evicated if `split_store_max_num_bytes` or `split_store_max_num_splits` limits are reached).
- 
- Quickwit also maintains data ingestion queues that get filled and truncated as data get ingested via the Ingest API. This means one has to take into account how much data (queues data files, new split files) can be kept on disk at a time without running out of space. Some good rules of thumb to follow are:
+### `delete_task_service` directory
 
- ### Splits cache with partitioning
+This directory is used by the Janitor service to apply deletes on indexes. During this process, splits are downloaded, a new split is created while applying deletes and uploaded to the target storage. This directory gets created only on nodes running the Janitor service.
 
-When using [partitions](../overview/concepts/querying.md#partitioning), Quickwit will create one split per partitition and the number of splits can add up very quickly.
+### `cache` directory
+
+This directory is used for caching splits that will undergo a merge operation. This saves disk IOPS.
+You can [limit](../configuration/node-config#indexer-configuration) the number of splits the cache can hold with `split_store_max_num_splits` and limit the overall size in bytes of splits with `split_store_max_num_bytes`.
+Splits are evicted if they are older than two days. If the cache limits are reached, oldest splits are evicted.
+
+## Setting the right cache limits
+
+Caching splits saves disk IOPS when Quickwit needs to merge splits.
+
+Setting the right limits will depend on your [merge policy](../configuration/index-config.md#merge-policies) and the number of partitions you are using.
+
+### Splits cache with the default configuration
+
+For a given index, Quickwit commits one split every minute and use the "Stable log" merge policy. With its default values, this merge policy merges splits by group of 10, 11, or 12 until splits have more than 10 millions of documents. A split will typically undergo 3 or 4 merges. After, the split is considered as mature and will be evicted from the cache.
+
+The following table shows how many splits will be created after a given amount of time assuming a 20MB/s ingestion rate with a compression ratio of 0.5:
+
+| Time (minutes) | Number of splits                       | Splits size |
+| -------------- | -------------------------------------- | ----------- |
+| 1              | 1                                      | 0.6 GB      |
+| 2              | 2                                      | 1.2 GB      |
+| 10             | 10                                     | 6 GB        |
+| 11             | 1 + 1 (merged once)                    | 6.6 GB      |
+| 21             | 1 + 2 (merged once)                    | 12.6 GB     |
+| 91             | 1 + 9 (merged once)                    | 54.6 GB     |
+| 101            | 1 + 1 (merged twice)                   | 60.6 GB     |
+| 111            | 2 + 1 (merged once) + 1 (merged twice) | 66.6 GB     |
+| 201            | 1 + 0 (merged once) + 2 (merged twice) | 120.6 GB    |
+| ..             | ...                                    |             |
+
+In this case, the default cache limits of 1000 splits and 100GB is enough to avoid downloading splits from the storage for the first two merges. This is perfectly fine for a production use case. You may want to increase the split cache size limit to avoid any download.
+
+### Splits cache with partitioning
+
+When using [partitions](../overview/concepts/querying.md#partitioning), Quickwit will create one split per partition and the number of splits can add up very quickly.
 
 Let's take a concrete example with the following assumptions:
 - A commit timeout of 1 minute (Quickwit will commit splits every minute)
-- A partitioning strategy that creates 100 partitions per minute. Quickwit will then create 100 splits per minute.
-- A merge policy that merges splits of same partition as soons as there is 10 splits.
+- A partitioning that creates 100 partitions per minute. Quickwit will then create 100 splits per minute.
+- A merge policy that merges splits of same partition as soon as there is 10 splits.
 
-Quickwit will create 100 splits per minute and will merge them every 10 minutes. In order to avoid downloading splits from the storage, it's important to keep the splits cache big enough to hold all the splits that are not yet merged. The following table shows how many splits will be created after a given amount of time:
+The following table shows how many splits will be created after a given amount of time:
 
 | Time (minutes) | Number of splits |
 | ------------ | ---------------- |
 | 1            | 100              |
-| 2            | 200              |
-| 3            | 300              |
-| 4            | 400              |
 | 5            | 500              |
-| 6            | 600              |
-| 7            | 700              |
-| 8            | 800              |
 | 9            | 900              |
 | 10           | 1000             |
-| 11           | 100 + 100 (merged) |
-| 11           | 200 + 100 (merged) |
-| 12           | 300 + 100 (merged) |
-| ...          | ... + ... (merged) |
+| 11           | 100 + 100 (merged once) |
+| 11           | 200 + 100 (merged once) |
+| 21           | 100 + 200 (merged once) |
+| 101          | 100 + 100 (merged twice) |
+| 111          | 100 + 100 (merged once) + 100 (merged twice) |
+| 201          | 100 + 0 (merged once) + 200 (merged twice) |
 
-With these assumptions, you have to set `split_store_max_num_splits` to at least 1000 to avoid downloading splits from the storage. And as merging can take a bit of time, you should set `split_store_max_num_splits` to a value that can hold all the splits that are not yet merged plus the incoming splits, a value of 1200 splits should be enough. Don't forget to setup `split_store_max_num_bytes` accordingly.
-
-Keeping the splits of first generation (underwent no merge) in cache is very important to avoid write amplification.
-
-You may also want to keep splits in cache for next generations to reduce write amplification and reduce bandwitdh if you have enough disk space.
+With these assumptions, you have to set `split_store_max_num_splits` to at least 1000 to avoid downloading splits from the storage. And as merging can take a bit of time, you should set `split_store_max_num_splits` to a value that can hold all the splits that are not yet merged plus the incoming splits, a value of 1500 splits should be enough.
 
 ## Troubleshooting with a huge number of local splits
 
-When starting, Quickwit is scanning all the splits in the cache directory to know which split is present locally, this can take a few minutes if you have tens/hundreds of thousands splits. This can be an issue on Kubernetes as your pod can be restarted if it takes too long to start. You may want to clean up the data directory or increase the liveliness probe timeout. And don't hesitate to report such a behavior on [GitHub](https://github.com/quickwit-oss/quickwit).
+When starting, Quickwit is scanning all the splits in the cache directory to know which split is present locally, this can take a few minutes if you have tens of thousands splits. This can be an issue on Kubernetes as your pod can be restarted if it takes too long to start. You may want to clean up the data directory or increase the liveliness probe timeout. Also please report such a behavior on [GitHub](https://github.com/quickwit-oss/quickwit) as we can certainly optimize this start phase.
+
