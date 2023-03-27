@@ -37,7 +37,7 @@ use async_speed_limit::clock::StandardClock;
 use async_speed_limit::limiter::Consume;
 use async_speed_limit::Limiter;
 use once_cell::sync::Lazy;
-use pin_project_lite::pin_project;
+use pin_project::pin_project;
 use prometheus::IntCounter;
 use tokio::io::AsyncWrite;
 
@@ -163,13 +163,12 @@ impl IoControls {
     }
 }
 
-pin_project! {
-    pub struct ControlledWrite<A: IoControlsAccess, W> {
-        #[pin]
-        underlying_wrt: W,
-        waiter: Option<Consume<StandardClock, ()>>,
-        io_controls_access: A,
-    }
+#[pin_project]
+pub struct ControlledWrite<A: IoControlsAccess, W> {
+    #[pin]
+    underlying_wrt: W,
+    waiter: Option<Consume<StandardClock, ()>>,
+    io_controls_access: A,
 }
 
 impl<A: IoControlsAccess, W: AsyncWrite> ControlledWrite<A, W> {
