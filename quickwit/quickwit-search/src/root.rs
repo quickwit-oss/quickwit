@@ -31,6 +31,7 @@ use quickwit_proto::{
 };
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
+use tantivy::aggregation::AggregationLimits;
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
 use tokio::task::spawn_blocking;
@@ -305,7 +306,7 @@ pub async fn root_search(
                 let res: IntermediateAggregationResults =
                     serde_json::from_str(&intermediate_aggregation_result)?;
                 let res: AggregationResults =
-                    res.into_final_bucket_result(aggregations, &doc_mapper.schema())?;
+                    res.into_final_bucket_result(aggregations, &AggregationLimits::default())?;
                 Some(serde_json::to_string(&res)?)
             }
         }

@@ -19,17 +19,14 @@
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
-use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_doc_mapper::{DocMapper, WarmupInfo};
 use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest, SortOrder};
 use serde::Deserialize;
-use tantivy::aggregation::agg_req::{
-    get_fast_field_names, get_term_dict_field_names, Aggregations,
-};
+use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
-use tantivy::aggregation::AggregationSegmentCollector;
+use tantivy::aggregation::{AggregationLimits, AggregationSegmentCollector};
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::Column;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
@@ -56,7 +53,7 @@ enum SortingFieldComputer {
     /// If undefined, we simply sort by DocIds.
     DocId,
     FastField {
-        fast_field_reader: Arc<dyn Column<u64>>,
+        sort_column: Column<u64>,
         order: SortOrder,
     },
     Score {
@@ -69,19 +66,22 @@ impl SortingFieldComputer {
     fn compute_sorting_field(&self, doc_id: DocId, score: Score) -> u64 {
         match self {
             SortingFieldComputer::FastField {
-                fast_field_reader,
+                sort_column: fast_field_reader,
                 order,
             } => {
-                let field_val = fast_field_reader.get_val(doc_id);
-                match order {
-                    // Descending is our most common case.
-                    SortOrder::Desc => field_val,
-                    // We get Ascending order by using a decreasing mapping over u64 as the
-                    // sorting_field.
-                    SortOrder::Asc => u64::MAX - field_val,
+                if let Some(field_val) = fast_field_reader.first(doc_id) {
+                    match order {
+                        // Descending is our most common case.
+                        SortOrder::Desc => field_val,
+                        // We get Ascending order by using a decreasing mapping over u64 as the
+                        // sorting_field.
+                        SortOrder::Asc => u64::MAX - field_val,
+                    }
+                } else {
+                    0u64
                 }
             }
-            SortingFieldComputer::DocId => 0u64,
+            SortingFieldComputer::DocId => doc_id as u64,
             SortingFieldComputer::Score { order } => {
                 let u64_score = f32_to_u64(score);
                 match order {
@@ -111,9 +111,15 @@ fn resolve_sort_by(
     match sort_by {
         SortBy::DocId => Ok(SortingFieldComputer::DocId),
         SortBy::FastField { field_name, order } => {
-            let fast_field_reader = segment_reader.fast_fields().u64_lenient(field_name)?;
+            let sort_column_opt: Option<Column<u64>> =
+                segment_reader.fast_fields().u64_lenient(field_name)?;
+            let sort_column = if let Some(sort_column) = sort_column_opt {
+                sort_column
+            } else {
+                Column::build_empty_column(segment_reader.max_doc())
+            };
             Ok(SortingFieldComputer::FastField {
-                fast_field_reader,
+                sort_column,
                 order: *order,
             })
         }
@@ -163,7 +169,7 @@ impl PartialEq for PartialHitHeapItem {
 impl Eq for PartialHitHeapItem {}
 
 enum AggregationSegmentCollectors {
-    FindTraceIdsSegmentCollector(FindTraceIdsSegmentCollector),
+    FindTraceIdsSegmentCollector(Box<FindTraceIdsSegmentCollector>),
     TantivyAggregationSegmentCollector(AggregationSegmentCollector),
 }
 
@@ -298,17 +304,6 @@ impl QuickwitAggregations {
             }
         }
     }
-
-    fn term_dict_field_names(&self) -> HashSet<String> {
-        match self {
-            QuickwitAggregations::FindTraceIdsAggregation(collector) => {
-                collector.term_dict_field_names()
-            }
-            QuickwitAggregations::TantivyAggregations(aggregations) => {
-                get_term_dict_field_names(aggregations)
-            }
-        }
-    }
 }
 
 /// The quickwit collector is the tantivy Collector used in Quickwit.
@@ -343,25 +338,15 @@ impl QuickwitCollector {
         fast_field_names
     }
 
-    pub fn term_dict_field_names(&self) -> HashSet<String> {
-        let mut term_dict_field_names = HashSet::default();
-        if let Some(aggregations) = &self.aggregation {
-            term_dict_field_names.extend(aggregations.term_dict_field_names());
-        }
-        term_dict_field_names
-    }
-
     pub fn warmup_info(&self) -> WarmupInfo {
         WarmupInfo {
-            term_dict_field_names: self.term_dict_field_names(),
+            term_dict_field_names: Default::default(),
             fast_field_names: self.fast_field_names(),
             field_norms: self.requires_scoring(),
             ..WarmupInfo::default()
         }
     }
 }
-
-const AGGREGATION_BUCKET_LIMIT: u32 = 1_000_000;
 
 impl Collector for QuickwitCollector {
     type Child = QuickwitSegmentCollector;
@@ -384,7 +369,7 @@ impl Collector for QuickwitCollector {
         let aggregation = match &self.aggregation {
             Some(QuickwitAggregations::FindTraceIdsAggregation(collector)) => {
                 Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(
-                    collector.for_segment(0, segment_reader)?,
+                    Box::new(collector.for_segment(0, segment_reader)?),
                 ))
             }
             Some(QuickwitAggregations::TantivyAggregations(aggs)) => Some(
@@ -392,7 +377,7 @@ impl Collector for QuickwitCollector {
                     AggregationSegmentCollector::from_agg_req_and_reader(
                         aggs,
                         segment_reader,
-                        AGGREGATION_BUCKET_LIMIT,
+                        &AggregationLimits::default(),
                     )?,
                 ),
             ),
