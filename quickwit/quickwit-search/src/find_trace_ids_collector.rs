@@ -242,7 +242,7 @@ impl SegmentCollector for FindTraceIdsSegmentCollector {
                 let found_term = self
                     .trace_id_column
                     .ord_to_str(trace_id_term_ord.term_ord, &mut buffer)
-                    .expect("Failed to lookup in the trace id column term dictionary");
+                    .expect("Failed to lookup trace ID in the column term dictionary");
                 debug_assert!(found_term);
                 debug_assert_eq!(buffer.len(), 24);
                 let trace_id = buffer[..]
