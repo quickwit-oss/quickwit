@@ -219,7 +219,7 @@ quickwit-serve = { version = "0.5.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.5.0", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.5.0", path = "./quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "059fc767e", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "057211c3", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
