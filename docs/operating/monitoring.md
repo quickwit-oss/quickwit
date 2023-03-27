@@ -1,6 +1,6 @@
 ---
 title: Monitoring with Grafana
-sidebar_position: 1
+sidebar_position: 2
 ---
 
 You can monitor your Quickwit cluster with Grafana.
