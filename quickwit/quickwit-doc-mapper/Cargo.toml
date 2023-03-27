@@ -16,6 +16,7 @@ dyn-clone = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
+lindera-tantivy = { workspace = true }
 mockall = { workspace = true, optional = true }
 nom = { workspace = true }
 once_cell = { workspace = true }
@@ -24,6 +25,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 siphasher = { workspace = true }
 tantivy = { workspace = true }
+tantivy-jieba = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 time-fmt = "0.3.8"

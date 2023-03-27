@@ -31,6 +31,7 @@ mod error;
 mod query_builder;
 mod routing_expression;
 mod tokenizers;
+mod multilanguage_tokenizer;
 
 /// Pruning tags manipulation.
 pub mod tag_pruning;

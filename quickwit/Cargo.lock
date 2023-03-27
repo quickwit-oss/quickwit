@@ -423,6 +423,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4a4ddaa51a5bc52a6948f74c06d20aaaddb71924eab79b8c97a8c556e942d6a"
 
 [[package]]
+name = "bincode"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -605,6 +614,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "50d30906286121d95be3d479533b458f87493b30a4b5f79a607db8f5d11aa91f"
 dependencies = [
  "jobserver",
+]
+
+[[package]]
+name = "cedarwood"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d910bedd62c24733263d0bed247460853c9d22e8956bd4cd964302095e04e90"
+dependencies = [
+ "smallvec",
 ]
 
 [[package]]
@@ -1570,13 +1588,86 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
-name = "encoding_rs"
-version = "0.8.29"
+name = "encoding"
+version = "0.2.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a74ea89a0a1b98f6332de42c95baff457ada66d1cb4030f9ff151b2041a1c746"
+checksum = "6b0d943856b990d12d3b55b359144ff341533e516d94098b1d3fc1ac666d36ec"
+dependencies = [
+ "encoding-index-japanese",
+ "encoding-index-korean",
+ "encoding-index-simpchinese",
+ "encoding-index-singlebyte",
+ "encoding-index-tradchinese",
+]
+
+[[package]]
+name = "encoding-index-japanese"
+version = "1.20141219.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04e8b2ff42e9a05335dbf8b5c6f7567e5591d0d916ccef4e0b1710d32a0d0c91"
+dependencies = [
+ "encoding_index_tests",
+]
+
+[[package]]
+name = "encoding-index-korean"
+version = "1.20141219.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4dc33fb8e6bcba213fe2f14275f0963fd16f0a02c878e3095ecfdf5bee529d81"
+dependencies = [
+ "encoding_index_tests",
+]
+
+[[package]]
+name = "encoding-index-simpchinese"
+version = "1.20141219.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d87a7194909b9118fc707194baa434a4e3b0fb6a5a757c73c3adb07aa25031f7"
+dependencies = [
+ "encoding_index_tests",
+]
+
+[[package]]
+name = "encoding-index-singlebyte"
+version = "1.20141219.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3351d5acffb224af9ca265f435b859c7c01537c0849754d3db3fdf2bfe2ae84a"
+dependencies = [
+ "encoding_index_tests",
+]
+
+[[package]]
+name = "encoding-index-tradchinese"
+version = "1.20141219.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd0e20d5688ce3cab59eb3ef3a2083a5c77bf496cb798dc6fcdb75f323890c18"
+dependencies = [
+ "encoding_index_tests",
+]
+
+[[package]]
+name = "encoding_index_tests"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a246d82be1c9d791c5dfde9a2bd045fc3cbba3fa2b11ad558f27d01712f00569"
+
+[[package]]
+name = "encoding_rs"
+version = "0.8.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "071a31f4ee85403370b58aca746f01041ede6f0da2730960ad001edc2b71b394"
 dependencies = [
  "cfg-if",
  "serde",
+]
+
+[[package]]
+name = "encoding_rs_io"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cc3c5651fb62ab8aa3103998dade57efdd028544bd300516baa31840c252a83"
+dependencies = [
+ "encoding_rs",
 ]
 
 [[package]]
@@ -1617,6 +1708,19 @@ checksum = "a12e6657c4c97ebab115a42dcee77225f7f482cdd841cf7088c657a42e9e00e7"
 dependencies = [
  "atty",
  "humantime",
+ "log",
+ "regex",
+ "termcolor",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
+dependencies = [
+ "humantime",
+ "is-terminal",
  "log",
  "regex",
  "termcolor",
@@ -1687,12 +1791,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 
 [[package]]
+name = "fastfield_codecs"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "374a3a53c1bd5fb31b10084229290eafb0a05f260ec90f1f726afffda4877a8a"
+dependencies = [
+ "fastdivide",
+ "itertools",
+ "log",
+ "ownedbytes 0.4.0",
+ "tantivy-bitpacker 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tantivy-common 0.4.0",
+]
+
+[[package]]
 name = "fastrand"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e51093e27b0797c359783294ca4f0a911c270184cb10f85783b118614a1501be"
 dependencies = [
  "instant",
+]
+
+[[package]]
+name = "filetime"
+version = "0.2.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a3de6e8d11b22ff9edc6d916f890800597d60f8b2da1caf2955c274638d6412"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "redox_syscall 0.2.16",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -1768,6 +1898,16 @@ name = "fragile"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c2141d6d6c8512188a7891b4b01590a45f6dac67afb4f255c4124dbb86d4eaa"
+
+[[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi 0.3.9",
+]
 
 [[package]]
 name = "fs4"
@@ -1899,6 +2039,15 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "fxhash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]
@@ -2489,6 +2638,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "453ad9f582a441959e5f0d088b02ce04cfe8d51a8eaf077f12ac6d3e94164ca6"
 
 [[package]]
+name = "jieba-rs"
+version = "0.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37228e06c75842d1097432d94d02f37fe3ebfca9791c2e8fef6e9db17ed128c1"
+dependencies = [
+ "cedarwood",
+ "fxhash",
+ "hashbrown 0.12.3",
+ "lazy_static",
+ "phf",
+ "phf_codegen",
+ "regex",
+]
+
+[[package]]
 name = "jobserver"
 version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2517,6 +2681,15 @@ name = "json_comments"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41ee439ee368ba4a77ac70d04f14015415af8600d6c894dc1f11bd79758c57d5"
+
+[[package]]
+name = "kanaria"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0f9d9652540055ac4fded998a73aca97d965899077ab1212587437da44196ff"
+dependencies = [
+ "bitflags",
+]
 
 [[package]]
 name = "keccak"
@@ -2605,6 +2778,200 @@ dependencies = [
 ]
 
 [[package]]
+name = "lindera"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be82e99729d90bea5561da15c346fefa4e838ae2a4f71c539c9caf8a6dfd8c5c"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "encoding",
+ "kanaria",
+ "lindera-cc-cedict-builder",
+ "lindera-core",
+ "lindera-dictionary",
+ "lindera-filter",
+ "lindera-ipadic-builder",
+ "lindera-ko-dic-builder",
+ "lindera-unidic-builder",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "unicode-blocks",
+ "unicode-normalization",
+ "yada",
+]
+
+[[package]]
+name = "lindera-cc-cedict-builder"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10fbafd37adab44ccc2668a40fba2dbc4e665cb3c36018c15dfe2e2b830e28ce"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "csv",
+ "encoding",
+ "env_logger 0.10.0",
+ "glob",
+ "lindera-core",
+ "lindera-decompress",
+ "log",
+ "yada",
+]
+
+[[package]]
+name = "lindera-core"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5f0baa9932f682e9c5b388897330f155d3c40de80016e60125897fde5e0e246"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "encoding_rs",
+ "log",
+ "once_cell",
+ "serde",
+ "thiserror",
+ "yada",
+]
+
+[[package]]
+name = "lindera-decompress"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6e63fa6ef0bc3ce2c26d372aa6185b7a316194494a84f81678f5da2893bf4a2"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "serde",
+]
+
+[[package]]
+name = "lindera-dictionary"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd765c36166016de87a1f447ea971573e4c63e334836c46ad0020f0408c88bfc"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "lindera-core",
+ "lindera-ipadic",
+ "serde",
+]
+
+[[package]]
+name = "lindera-filter"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55201d662db55b8092183151c9734a43557a0b20f6adffc8320481a8727371da"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "kanaria",
+ "lindera-core",
+ "lindera-dictionary",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "unicode-blocks",
+ "unicode-normalization",
+ "yada",
+]
+
+[[package]]
+name = "lindera-ipadic"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60eeb356295f784e7db4cfd2c6772f2bd059e565a7744e246642a07bc333a88a"
+dependencies = [
+ "bincode",
+ "byteorder",
+ "encoding",
+ "flate2",
+ "lindera-core",
+ "lindera-ipadic-builder",
+ "once_cell",
+ "tar",
+]
+
+[[package]]
+name = "lindera-ipadic-builder"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a16a2a88db9d956f5086bc976deb9951ca2dbbfef41a002df0a7bfb2c845aab"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "csv",
+ "encoding_rs",
+ "encoding_rs_io",
+ "env_logger 0.10.0",
+ "glob",
+ "lindera-core",
+ "lindera-decompress",
+ "log",
+ "serde",
+ "yada",
+]
+
+[[package]]
+name = "lindera-ko-dic-builder"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b9b58213552560717c48e7833444a20d2d7fe26a6e565f7ce0cbbf85784c7cf"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "csv",
+ "encoding",
+ "env_logger 0.10.0",
+ "glob",
+ "lindera-core",
+ "lindera-decompress",
+ "log",
+ "yada",
+]
+
+[[package]]
+name = "lindera-tantivy"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ddf85c5a80286dd47ec9a053047b5afd6f609412bd5709eb274743bcdc120ee"
+dependencies = [
+ "lindera",
+ "tantivy 0.19.2",
+]
+
+[[package]]
+name = "lindera-unidic-builder"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6858147cdaf4a7b564c08a247449d3aca38e9b4812499651af08afbf85324596"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "csv",
+ "encoding",
+ "env_logger 0.10.0",
+ "glob",
+ "lindera-core",
+ "lindera-decompress",
+ "log",
+ "yada",
+]
+
+[[package]]
 name = "link-cplusplus"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2688,6 +3055,15 @@ dependencies = [
 
 [[package]]
 name = "lru"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e999beba7b6e8345721bd280141ed958096a2e4abdf74f67ff4ce49b4b54e47a"
+dependencies = [
+ "hashbrown 0.12.3",
+]
+
+[[package]]
+name = "lru"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03f1160296536f10c833a82dca22267d5486734230d47bf00bf435885814ba1e"
@@ -2714,6 +3090,12 @@ dependencies = [
  "cc",
  "libc",
 ]
+
+[[package]]
+name = "lz4_flex"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a8cbbb2831780bc3b9c15a41f5b49222ef756b6730a95f3decfdd15903eb5a3"
 
 [[package]]
 name = "lz4_flex"
@@ -2933,6 +3315,15 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "try-lock",
+]
+
+[[package]]
+name = "murmurhash32"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d736ff882f0e85fe9689fb23db229616c4c00aee2b3ac282f666d8f20eb25d4a"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]
@@ -3448,6 +3839,15 @@ name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
+
+[[package]]
+name = "ownedbytes"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e957eaa64a299f39755416e5b3128c505e9d63a91d0453771ad2ccd3907f8db"
+dependencies = [
+ "stable_deref_trait",
+]
 
 [[package]]
 name = "ownedbytes"
@@ -4444,7 +4844,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml 0.9.21",
- "tantivy",
+ "tantivy 0.19.0",
  "tempfile",
  "thiserror",
  "tokio",
@@ -4466,7 +4866,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
- "tantivy",
+ "tantivy 0.19.0",
  "tempfile",
  "thiserror",
  "time 0.3.20",
@@ -4485,6 +4885,7 @@ dependencies = [
  "fnv",
  "indexmap",
  "itertools",
+ "lindera-tantivy",
  "matches",
  "mockall",
  "nom",
@@ -4496,7 +4897,8 @@ dependencies = [
  "serde",
  "serde_json",
  "siphasher",
- "tantivy",
+ "tantivy 0.19.0",
+ "tantivy-jieba",
  "thiserror",
  "time 0.3.20",
  "time-fmt",
@@ -4566,7 +4968,7 @@ dependencies = [
  "rusoto_kinesis",
  "serde",
  "serde_json",
- "tantivy",
+ "tantivy 0.19.0",
  "tempfile",
  "thiserror",
  "time 0.3.20",
@@ -4632,7 +5034,7 @@ dependencies = [
  "quickwit-search",
  "serde",
  "serde_json",
- "tantivy",
+ "tantivy 0.19.0",
  "time 0.3.20",
  "tokio",
  "tokio-stream",
@@ -4665,7 +5067,7 @@ dependencies = [
  "quickwit-storage",
  "serde",
  "serde_json",
- "tantivy",
+ "tantivy 0.19.0",
  "tempfile",
  "thiserror",
  "time 0.3.20",
@@ -4820,7 +5222,7 @@ dependencies = [
  "http",
  "hyper",
  "itertools",
- "lru",
+ "lru 0.10.0",
  "mockall",
  "once_cell",
  "opentelemetry",
@@ -4840,7 +5242,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with 2.3.2",
- "tantivy",
+ "tantivy 0.19.0",
  "tempfile",
  "thiserror",
  "tokio",
@@ -4923,7 +5325,7 @@ dependencies = [
  "bytes",
  "fnv",
  "futures",
- "lru",
+ "lru 0.10.0",
  "md5",
  "mockall",
  "once_cell",
@@ -4938,7 +5340,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with 2.3.2",
- "tantivy",
+ "tantivy 0.19.0",
  "tempfile",
  "thiserror",
  "tokio",
@@ -6528,11 +6930,11 @@ dependencies = [
  "itertools",
  "levenshtein_automata",
  "log",
- "lru",
- "lz4_flex",
+ "lru 0.10.0",
+ "lz4_flex 0.10.0",
  "measure_time",
  "memmap2",
- "murmurhash32",
+ "murmurhash32 0.3.0",
  "num_cpus",
  "once_cell",
  "oneshot",
@@ -6544,11 +6946,11 @@ dependencies = [
  "serde_json",
  "sketches-ddsketch",
  "smallvec",
- "tantivy-bitpacker",
+ "tantivy-bitpacker 0.3.0 (git+https://github.com/quickwit-oss/tantivy/?rev=0ed13ee)",
  "tantivy-columnar",
- "tantivy-common",
+ "tantivy-common 0.5.0",
  "tantivy-fst",
- "tantivy-query-grammar",
+ "tantivy-query-grammar 0.19.0 (git+https://github.com/quickwit-oss/tantivy/?rev=0ed13ee)",
  "tantivy-sstable",
  "tantivy-stacker",
  "tantivy-tokenizer-api",
@@ -6559,6 +6961,64 @@ dependencies = [
  "winapi 0.3.9",
  "zstd 0.12.3+zstd.1.5.2",
 ]
+
+[[package]]
+name = "tantivy"
+version = "0.19.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5bb26a6b22c84d8be41d99a14016d6f04d30d8d31a2ea411a8ab553af5cc490d"
+dependencies = [
+ "aho-corasick",
+ "arc-swap",
+ "async-trait",
+ "base64 0.13.1",
+ "bitpacking",
+ "byteorder",
+ "census",
+ "crc32fast",
+ "crossbeam-channel",
+ "downcast-rs",
+ "fail",
+ "fastdivide",
+ "fastfield_codecs",
+ "fs2",
+ "htmlescape",
+ "itertools",
+ "levenshtein_automata",
+ "log",
+ "lru 0.7.8",
+ "lz4_flex 0.9.5",
+ "measure_time",
+ "memmap2",
+ "murmurhash32 0.2.0",
+ "num_cpus",
+ "once_cell",
+ "oneshot",
+ "ownedbytes 0.4.0",
+ "rayon",
+ "regex",
+ "rust-stemmers",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "stable_deref_trait",
+ "tantivy-bitpacker 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tantivy-common 0.4.0",
+ "tantivy-fst",
+ "tantivy-query-grammar 0.19.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tempfile",
+ "thiserror",
+ "time 0.3.20",
+ "uuid",
+ "winapi 0.3.9",
+]
+
+[[package]]
+name = "tantivy-bitpacker"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e71a0c95b82d4292b097a09b989a6380d28c3a86800c841a2d03bae1fc8b9fa6"
 
 [[package]]
 name = "tantivy-bitpacker"
@@ -6578,10 +7038,20 @@ dependencies = [
  "itertools",
  "log",
  "serde",
- "tantivy-bitpacker",
- "tantivy-common",
+ "tantivy-bitpacker 0.3.0 (git+https://github.com/quickwit-oss/tantivy/?rev=0ed13ee)",
+ "tantivy-common 0.5.0",
  "tantivy-sstable",
  "tantivy-stacker",
+]
+
+[[package]]
+name = "tantivy-common"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14fef4182bb60df9a4b92cd8ecab39ba2e50a05542934af17eef1f49660705cb"
+dependencies = [
+ "byteorder",
+ "ownedbytes 0.4.0",
 ]
 
 [[package]]
@@ -6591,7 +7061,7 @@ source = "git+https://github.com/quickwit-oss/tantivy/?rev=0ed13ee#0ed13eeea8d12
 dependencies = [
  "async-trait",
  "byteorder",
- "ownedbytes",
+ "ownedbytes 0.5.0",
  "serde",
  "time 0.3.20",
 ]
@@ -6605,6 +7075,28 @@ dependencies = [
  "byteorder",
  "regex-syntax",
  "utf8-ranges",
+]
+
+[[package]]
+name = "tantivy-jieba"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f247ef740e71b625cedccf4c0260093323d3d9a398742f1fb1f6015dc477c2ea"
+dependencies = [
+ "jieba-rs",
+ "lazy_static",
+ "tantivy 0.19.2",
+]
+
+[[package]]
+name = "tantivy-query-grammar"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "343e3ada4c1c480953f6960f8a21ce9c76611480ffdd4f4e230fdddce0fc5331"
+dependencies = [
+ "combine",
+ "once_cell",
+ "regex",
 ]
 
 [[package]]
@@ -6622,7 +7114,7 @@ name = "tantivy-sstable"
 version = "0.1.0"
 source = "git+https://github.com/quickwit-oss/tantivy/?rev=0ed13ee#0ed13eeea8d124ed1d10f89b079509cd80f526c0"
 dependencies = [
- "tantivy-common",
+ "tantivy-common 0.5.0",
  "tantivy-fst",
 ]
 
@@ -6632,8 +7124,8 @@ version = "0.1.0"
 source = "git+https://github.com/quickwit-oss/tantivy/?rev=0ed13ee#0ed13eeea8d124ed1d10f89b079509cd80f526c0"
 dependencies = [
  "byteorder",
- "murmurhash32",
- "tantivy-common",
+ "murmurhash32 0.3.0",
+ "tantivy-common 0.5.0",
 ]
 
 [[package]]
@@ -6642,6 +7134,17 @@ version = "0.1.0"
 source = "git+https://github.com/quickwit-oss/tantivy/?rev=0ed13ee#0ed13eeea8d124ed1d10f89b079509cd80f526c0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "tar"
+version = "0.4.38"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b55807c0344e1e6c04d7c965f5289c39a8d94ae23ed5c0b57aabac549f871c6"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
 ]
 
 [[package]]
@@ -7364,6 +7867,12 @@ name = "unicode-bidi"
 version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92888ba5573ff080736b3648696b70cafad7d250551175acbaa4e0385b3e1460"
+
+[[package]]
+name = "unicode-blocks"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9de2be6bad6f56ce8373d377e611cbb2265de3a656138065609ce82e217aad70"
 
 [[package]]
 name = "unicode-ident"
@@ -8278,6 +8787,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "xattr"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d1526bbe5aaeb5eb06885f4d987bcdfa5e23187055de9b83fe00156a821fabc"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "xml-rs"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8288,6 +8806,12 @@ name = "xmlparser"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d25c75bf9ea12c4040a97f829154768bbbce366287e2dc044af160cd79a13fd"
+
+[[package]]
+name = "yada"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6d12cb7a57bbf2ab670ed9545bae3648048547f9039279a89ce000208e585c1"
 
 [[package]]
 name = "yaml-rust"
