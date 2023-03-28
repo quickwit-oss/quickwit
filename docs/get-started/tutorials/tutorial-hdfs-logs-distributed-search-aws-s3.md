@@ -25,11 +25,11 @@ Example of a log entry:
 
 :::caution
 
-Before using Quickwit with an object storage, check out our [advice](/docs/guides/aws-costs) for deploying on AWS S3 to avoid some bad surprises at the end of the month.
+Before using Quickwit with an object storage, check out our [advice](../../operating/aws-costs) for deploying on AWS S3 to avoid some bad surprises at the end of the month.
 
 :::
 
-First of all, let's create an EC2 instance, install a Quickwit binary, and [configure it](/docs/guides/aws-setup) to let Quickwit access your S3 buckets. This instance will be used for indexing our dataset (note that you can also index your dataset from your local machine if it has the rights to read/write on AWS S3).
+First of all, let's create an EC2 instance, install a Quickwit binary, and [configure it](../../guides/aws-setup) to let Quickwit access your S3 buckets. This instance will be used for indexing our dataset (note that you can also index your dataset from your local machine if it has the rights to read/write on AWS S3).
 
 ## Install
 
@@ -172,12 +172,12 @@ Now that we have indexed the logs and can search from one instance, It's time to
 Quickwit needs a port `rest_listen_port` for serving the HTTP rest API via TCP as well as maintaining the cluster formation via UDP. 
 Also, it needs `{rest_listen_port} + 1` for gRPC communication between instances.
 
-In AWS, you can create a security group to group these inbound rules. Check out the [network section](/docs/guides/aws-setup) of our AWS setup guide.
+In AWS, you can create a security group to group these inbound rules. Check out the [network section](../../guides/aws-setup) of our AWS setup guide.
 
 To make things easier, let's create a security group that opens the TCP/UDP port range [7200-7300]. 
 Next, create three EC2 instances using the previously created security group. Take note of each instance's public IP address.
 
-Now ssh into the first EC2 instance, install Quickwit, and [configure the environment](/docs/guides/aws-setup) to let Quickwit access the index S3 buckets.
+Now ssh into the first EC2 instance, install Quickwit, and [configure the environment](../../guides/aws-setup) to let Quickwit access the index S3 buckets.
 
 Let's install Quickwit on the second and third EC2 instances.
 
