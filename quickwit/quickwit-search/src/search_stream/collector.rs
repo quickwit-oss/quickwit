@@ -20,29 +20,29 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::sync::Arc;
 
 use tantivy::collector::{Collector, SegmentCollector};
-use tantivy::fastfield::{Column, FastValue};
+use tantivy::columnar::{DynamicColumn, HasAssociatedColumnType};
+use tantivy::fastfield::Column;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 
 use crate::filters::{TimestampFilter, TimestampFilterBuilder};
 
 #[derive(Clone)]
-pub struct FastFieldSegmentCollector<Item: FastValue> {
+pub struct FastFieldSegmentCollector<Item: HasAssociatedColumnType> {
     fast_field_values: Vec<Item>,
-    fast_field_reader: Arc<dyn Column<Item>>,
+    column_opt: Option<Column<Item>>,
     timestamp_filter_opt: Option<TimestampFilter>,
 }
 
-impl<Item: FastValue> FastFieldSegmentCollector<Item> {
+impl<Item: HasAssociatedColumnType> FastFieldSegmentCollector<Item> {
     pub fn new(
-        fast_field_reader: Arc<dyn Column<Item>>,
+        column_opt: Option<Column<Item>>,
         timestamp_filter_opt: Option<TimestampFilter>,
     ) -> Self {
         Self {
-            fast_field_values: vec![],
-            fast_field_reader,
+            fast_field_values: Vec::new(),
+            column_opt,
             timestamp_filter_opt,
         }
     }
@@ -55,15 +55,17 @@ impl<Item: FastValue> FastFieldSegmentCollector<Item> {
     }
 }
 
-impl<Item: FastValue> SegmentCollector for FastFieldSegmentCollector<Item> {
+impl<Item: HasAssociatedColumnType> SegmentCollector for FastFieldSegmentCollector<Item> {
     type Fruit = Vec<Item>;
 
     fn collect(&mut self, doc_id: DocId, _score: Score) {
+        let Some(column) = self.column_opt.as_ref() else {
+            return;
+        };
         if !self.accept_document(doc_id) {
             return;
         }
-        let fast_field_value = self.fast_field_reader.get_val(doc_id);
-        self.fast_field_values.push(fast_field_value);
+        self.fast_field_values.extend(column.values_for_doc(doc_id));
     }
 
     fn harvest(self) -> Vec<Item> {
@@ -72,13 +74,15 @@ impl<Item: FastValue> SegmentCollector for FastFieldSegmentCollector<Item> {
 }
 
 #[derive(Clone)]
-pub struct FastFieldCollector<Item: FastValue> {
+pub struct FastFieldCollector<Item: HasAssociatedColumnType> {
     pub fast_field_to_collect: String,
     pub timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     pub _marker: PhantomData<Item>,
 }
 
-impl<Item: FastValue> Collector for FastFieldCollector<Item> {
+impl<Item: HasAssociatedColumnType> Collector for FastFieldCollector<Item>
+where DynamicColumn: Into<Option<Column<Item>>>
+{
     type Child = FastFieldSegmentCollector<Item>;
     type Fruit = Vec<Item>;
 
@@ -94,11 +98,12 @@ impl<Item: FastValue> Collector for FastFieldCollector<Item> {
                 None
             };
 
-        let fast_field_reader =
-            helpers::make_fast_field_reader::<Item>(segment_reader, &self.fast_field_to_collect)?;
+        let column_opt: Option<Column<Item>> = segment_reader
+            .fast_fields()
+            .column_opt::<Item>(&self.fast_field_to_collect)?;
 
         Ok(FastFieldSegmentCollector::new(
-            fast_field_reader,
+            column_opt,
             timestamp_filter_opt,
         ))
     }
@@ -114,7 +119,7 @@ impl<Item: FastValue> Collector for FastFieldCollector<Item> {
 }
 
 #[derive(Clone)]
-pub struct PartionnedFastFieldCollector<Item: FastValue, PartitionItem: FastValue> {
+pub struct PartionnedFastFieldCollector<Item, PartitionItem> {
     pub fast_field_to_collect: String,
     pub partition_by_fast_field: String,
     pub timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
@@ -122,13 +127,16 @@ pub struct PartionnedFastFieldCollector<Item: FastValue, PartitionItem: FastValu
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct PartitionValues<Item: FastValue, PartitionItem: FastValue> {
+pub struct PartitionValues<Item, PartitionItem> {
     pub partition_value: PartitionItem,
     pub fast_field_values: Vec<Item>,
 }
 
-impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash> Collector
+impl<Item: HasAssociatedColumnType, PartitionItem: HasAssociatedColumnType + Eq + Hash> Collector
     for PartionnedFastFieldCollector<Item, PartitionItem>
+where
+    DynamicColumn: Into<Option<Column<Item>>>,
+    DynamicColumn: Into<Option<Column<PartitionItem>>>,
 {
     type Child = PartitionedFastFieldSegmentCollector<Item, PartitionItem>;
     type Fruit = Vec<PartitionValues<Item, PartitionItem>>;
@@ -144,17 +152,17 @@ impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash> Collector
             } else {
                 None
             };
-        let fast_field_reader =
-            helpers::make_fast_field_reader::<Item>(segment_reader, &self.fast_field_to_collect)?;
+        let column_opt: Option<Column<Item>> = segment_reader
+            .fast_fields()
+            .column_opt(&self.fast_field_to_collect)?;
 
-        let partition_by_fast_field_reader = helpers::make_fast_field_reader::<PartitionItem>(
-            segment_reader,
-            &self.partition_by_fast_field,
-        )?;
+        let partition_column_opt = segment_reader
+            .fast_fields()
+            .column_opt(self.partition_by_fast_field.as_str())?;
 
         Ok(PartitionedFastFieldSegmentCollector::new(
-            fast_field_reader,
-            partition_by_fast_field_reader,
+            column_opt,
+            partition_column_opt,
             timestamp_filter_opt,
         ))
     }
@@ -166,7 +174,7 @@ impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash> Collector
 
     fn merge_fruits(
         &self,
-        segment_fruits: Vec<std::collections::HashMap<PartitionItem, Vec<Item>>>,
+        segment_fruits: Vec<HashMap<PartitionItem, Vec<Item>>>,
     ) -> tantivy::Result<Self::Fruit> {
         Ok(segment_fruits
             .into_iter()
@@ -180,26 +188,21 @@ impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash> Collector
 }
 
 #[derive(Clone)]
-pub struct PartitionedFastFieldSegmentCollector<
-    Item: FastValue,
-    PartitionItem: FastValue + Eq + Hash,
-> {
-    fast_field_values: std::collections::HashMap<PartitionItem, Vec<Item>>,
-    fast_field_reader: Arc<dyn Column<Item>>,
-    partition_by_fast_field_reader: Arc<dyn Column<PartitionItem>>,
+pub struct PartitionedFastFieldSegmentCollector<Item, PartitionItem> {
+    fast_field_values: HashMap<PartitionItem, Vec<Item>>,
+    fast_field_reader: Option<Column<Item>>,
+    partition_by_fast_field_reader: Option<Column<PartitionItem>>,
     timestamp_filter_opt: Option<TimestampFilter>,
 }
 
-impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash>
-    PartitionedFastFieldSegmentCollector<Item, PartitionItem>
-{
+impl<Item, PartitionItem> PartitionedFastFieldSegmentCollector<Item, PartitionItem> {
     pub fn new(
-        fast_field_reader: Arc<dyn Column<Item>>,
-        partition_by_fast_field_reader: Arc<dyn Column<PartitionItem>>,
+        fast_field_reader: Option<Column<Item>>,
+        partition_by_fast_field_reader: Option<Column<PartitionItem>>,
         timestamp_filter_opt: Option<TimestampFilter>,
     ) -> Self {
         Self {
-            fast_field_values: std::collections::HashMap::default(),
+            fast_field_values: HashMap::default(),
             fast_field_reader,
             partition_by_fast_field_reader,
             timestamp_filter_opt,
@@ -214,43 +217,26 @@ impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash>
     }
 }
 
-impl<Item: FastValue, PartitionItem: FastValue + Hash + Eq> SegmentCollector
-    for PartitionedFastFieldSegmentCollector<Item, PartitionItem>
+impl<Item: HasAssociatedColumnType, PartitionItem: HasAssociatedColumnType + Hash + Eq>
+    SegmentCollector for PartitionedFastFieldSegmentCollector<Item, PartitionItem>
 {
     type Fruit = HashMap<PartitionItem, Vec<Item>>;
 
     fn collect(&mut self, doc_id: DocId, _score: Score) {
+        let Some(column) = self.fast_field_reader.as_ref() else { return };
+        let Some(partition_column) = self.partition_by_fast_field_reader.as_ref() else { return };
         if !self.accept_document(doc_id) {
             return;
         }
-        let fast_field_value = self.fast_field_reader.get_val(doc_id);
-        let fast_field_partition = &self.partition_by_fast_field_reader.get_val(doc_id);
-        if let Some(values) = self.fast_field_values.get_mut(fast_field_partition) {
-            values.push(fast_field_value);
-        } else {
+        if let Some(partition) = partition_column.first(doc_id) {
             self.fast_field_values
-                .insert(*fast_field_partition, vec![fast_field_value]);
+                .entry(partition)
+                .or_default()
+                .extend(column.values_for_doc(doc_id));
         }
     }
 
     fn harvest(self) -> Self::Fruit {
         self.fast_field_values
-    }
-}
-
-mod helpers {
-    use std::sync::Arc;
-
-    use super::*;
-
-    pub fn make_fast_field_reader<T: FastValue>(
-        segment_reader: &SegmentReader,
-        fast_field_to_collect: &str,
-    ) -> tantivy::Result<Arc<dyn Column<T>>> {
-        let field = segment_reader.schema().get_field(fast_field_to_collect)?;
-        let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
-        let bytes = fast_field_slice.read_bytes()?;
-        let column = fastfield_codecs::open(bytes)?;
-        Ok(column)
     }
 }

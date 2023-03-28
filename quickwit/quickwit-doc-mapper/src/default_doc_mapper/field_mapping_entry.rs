@@ -22,14 +22,13 @@ use std::convert::TryFrom;
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use tantivy::schema::{
-    Cardinality, IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
-};
+use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type};
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::{default_as_true, FieldMappingType};
 use crate::default_doc_mapper::field_mapping_type::QuickwitFieldType;
 use crate::default_doc_mapper::validate_field_mapping_name;
+use crate::Cardinality;
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 pub struct QuickwitObjectOptions {
@@ -47,7 +46,7 @@ pub struct FieldMappingEntry {
     /// Field name in the index schema.
     pub name: String,
     /// Property parameters which defines the type and the way the value must be indexed.
-    pub mapping_type: FieldMappingType,
+    pub(crate) mapping_type: FieldMappingType,
 }
 
 // Struct used for serialization and deserialization
@@ -266,6 +265,9 @@ pub struct QuickwitJsonOptions {
     /// If true, the '.' in json keys will be expanded.
     #[serde(default = "default_as_true")]
     pub expand_dots: bool,
+    /// If true, the json object will be stored in columnar format.
+    #[serde(default)]
+    pub fast: bool,
 }
 
 impl Default for QuickwitJsonOptions {
@@ -277,6 +279,7 @@ impl Default for QuickwitJsonOptions {
             record: None,
             stored: true,
             expand_dots: true,
+            fast: false,
         }
     }
 }
@@ -301,6 +304,9 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
         }
         if quickwit_json_options.expand_dots {
             json_options = json_options.set_expand_dots_enabled();
+        }
+        if quickwit_json_options.fast {
+            json_options = json_options.set_fast();
         }
         json_options
     }
@@ -457,13 +463,20 @@ mod tests {
     use anyhow::bail;
     use matches::matches;
     use serde_json::json;
-    use tantivy::schema::{Cardinality, IndexRecordOption, JsonObjectOptions, TextOptions};
+    use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextOptions};
 
     use super::FieldMappingEntry;
     use crate::default_doc_mapper::field_mapping_entry::{
         QuickwitJsonOptions, QuickwitTextOptions, QuickwitTextTokenizer,
     };
     use crate::default_doc_mapper::FieldMappingType;
+    use crate::Cardinality;
+
+    #[test]
+    fn test_quickwit_json_options_default() {
+        let serde_default_json_options: QuickwitJsonOptions = serde_json::from_str("{}").unwrap();
+        assert_eq!(serde_default_json_options, QuickwitJsonOptions::default())
+    }
 
     #[test]
     fn test_tantivy_text_options_from_quickwit_text_options() {
@@ -1240,6 +1253,7 @@ mod tests {
             tokenizer: None,
             record: None,
             stored: true,
+            fast: false,
             expand_dots: true,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field");
@@ -1269,7 +1283,8 @@ mod tests {
                 "type": "array<json>",
                 "name": "my_json_field_multi",
                 "tokenizer": "raw",
-                "stored": false
+                "stored": false,
+                "fast": false
             }
             "#,
         )
@@ -1281,6 +1296,7 @@ mod tests {
             record: None,
             stored: false,
             expand_dots: true,
+            fast: false,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field_multi");
         assert!(
@@ -1347,7 +1363,7 @@ mod tests {
             r#"
             {
                 "name": "my_field_name",
-                "description": "If you see this description, your test is failed",
+                "description": "If you see this description, your test failed",
                 "type": "json"
             }"#,
         )
@@ -1358,10 +1374,11 @@ mod tests {
             entry_str,
             serde_json::json!({
                 "name": "my_field_name",
-                "description": "If you see this description, your test is failed",
+                "description": "If you see this description, your test failed",
                 "type": "json",
                 "stored": true,
                 "indexed": true,
+                "fast": false,
                 "expand_dots": true,
             })
         );

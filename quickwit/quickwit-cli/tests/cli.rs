@@ -68,7 +68,6 @@ async fn local_ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Res
         clear_cache: true,
         vrl_script: None,
     };
-
     local_ingest_docs_cli(args).await
 }
 
