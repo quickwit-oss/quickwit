@@ -385,7 +385,7 @@ mod tests {
 
         // Specific multiple-origin cors enabled
         {
-            let cors = build_cors(&["https://quickwit.io".to_string(), "http://localhost:3000"]);
+            let cors = build_cors(&["https://quickwit.io".to_string(), "http://localhost:3000".to_string()]);
 
             let mut layer = ServiceBuilder::new().layer(cors).service(HelloWorld);
 
