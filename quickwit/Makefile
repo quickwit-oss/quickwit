@@ -15,7 +15,7 @@ fix: fmt
 # `make test-all` starts the Docker services and runs all the tests.
 # `make -k test-all docker-compose-down`, tears down the Docker services after running all the tests.
 test-all:
-	QW_S3_ENDPOINT=http://localhost:4566 AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features
+	QW_S3_ENDPOINT=http://localhost:4566 AWS_REGION=us-east-1 AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features
 	cargo test --test failpoints --features fail/failpoints
 
 test-failpoints:

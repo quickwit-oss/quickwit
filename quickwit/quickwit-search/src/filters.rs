@@ -18,9 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::ops::{Bound, RangeBounds, RangeInclusive};
-use std::sync::Arc;
 
-use fastfield_codecs::Column;
+use tantivy::columnar::Cardinality;
+use tantivy::fastfield::Column;
 use tantivy::{DateTime, DocId, SegmentReader};
 
 /// A filter that only retains docs within a time range.
@@ -29,14 +29,16 @@ pub struct TimestampFilter {
     /// The time range represented as (lower_bound, upper_bound).
     // TODO replace this with a RangeInclusive<DateTime> if it improves perf?
     time_range: (Bound<DateTime>, Bound<DateTime>),
-    /// The timestamp fast field reader.
-    time_column: Arc<dyn Column<DateTime>>,
+    timestamp_column: Column<DateTime>,
 }
 
 impl TimestampFilter {
     pub fn is_within_range(&self, doc_id: DocId) -> bool {
-        let timestamp_value: DateTime = self.time_column.get_val(doc_id);
-        self.time_range.contains(&timestamp_value)
+        if let Some(ts) = self.timestamp_column.first(doc_id) {
+            self.time_range.contains(&ts)
+        } else {
+            false
+        }
     }
 }
 
@@ -86,22 +88,31 @@ impl TimestampFilterBuilder {
         }
     }
 
+    /// None means that all documents are matching the timestamp range.
     pub fn build(
         &self,
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Option<TimestampFilter>> {
-        let timestamp_field_reader = segment_reader
-            .fast_fields()
-            .date(&self.timestamp_field_name)?;
-        let segment_range: RangeInclusive<DateTime> =
-            timestamp_field_reader.min_value()..=timestamp_field_reader.max_value();
+        let timestamp_column_opt: Option<Column<DateTime>> =
+            segment_reader
+                .fast_fields()
+                .column_opt::<DateTime>(&self.timestamp_field_name)?;
+        let timestamp_column = timestamp_column_opt
+            .unwrap_or_else(|| Column::build_empty_column(segment_reader.max_doc()));
         let time_range = (self.start_timestamp, self.end_timestamp);
-        if is_segment_always_within_timestamp_range(segment_range, time_range) {
+        if time_range == (Bound::Unbounded, Bound::Unbounded) {
             return Ok(None);
+        }
+        if timestamp_column.index.get_cardinality() == Cardinality::Full {
+            let segment_range: RangeInclusive<DateTime> =
+                timestamp_column.min_value()..=timestamp_column.max_value();
+            if is_segment_always_within_timestamp_range(segment_range, time_range) {
+                return Ok(None);
+            }
         }
         Ok(Some(TimestampFilter {
             time_range,
-            time_column: timestamp_field_reader,
+            timestamp_column,
         }))
     }
 }

@@ -29,7 +29,7 @@ pub use collector::FastFieldCollector;
 pub use leaf::leaf_search_stream;
 use quickwit_proto::OutputFormat;
 pub use root::root_search_stream;
-use tantivy::fastfield::FastValue;
+use tantivy::columnar::MonotonicallyMappableToU64;
 
 use self::collector::PartitionValues;
 
@@ -69,7 +69,10 @@ pub fn serialize<T: ToLittleEndian + Display>(
     }
 }
 
-pub fn serialize_partitions<TFastValue: FastValue + Display, TPartitionFastValue: FastValue>(
+pub fn serialize_partitions<
+    TFastValue: MonotonicallyMappableToU64,
+    TPartitionFastValue: MonotonicallyMappableToU64,
+>(
     p_values: &[PartitionValues<TFastValue, TPartitionFastValue>],
     buffer: &mut Vec<u8>,
 ) -> io::Result<()> {
@@ -77,8 +80,7 @@ pub fn serialize_partitions<TFastValue: FastValue + Display, TPartitionFastValue
     buffer.clear();
     buffer.reserve_exact(buf_size);
     for partition in p_values {
-        let values_byte_size =
-            std::mem::size_of::<TFastValue>() * partition.fast_field_values.len();
+        let values_byte_size = std::mem::size_of::<u64>() * partition.fast_field_values.len();
 
         buffer.extend(partition.partition_value.to_u64().to_le_bytes());
         buffer.extend(values_byte_size.to_le_bytes());
@@ -111,17 +113,10 @@ fn serialize_click_house_row_binary<T: ToLittleEndian>(
 }
 
 mod helpers {
-    use std::fmt::Display;
-
-    use tantivy::fastfield::FastValue;
-
     use super::collector::PartitionValues;
 
     #[inline(always)]
-    pub fn partitions_size_in_bytes<
-        TFastValue: FastValue + Display,
-        TPartitionFastValue: FastValue,
-    >(
+    pub fn partitions_size_in_bytes<TFastValue, TPartitionFastValue>(
         partitions: &[PartitionValues<TFastValue, TPartitionFastValue>],
     ) -> usize {
         let mut size = 0;
@@ -132,7 +127,7 @@ mod helpers {
     }
 
     #[inline(always)]
-    fn partition_size_in_bytes<TFastValue: FastValue + Display, TPartitionFastValue: FastValue>(
+    fn partition_size_in_bytes<TFastValue, TPartitionFastValue>(
         partition: &PartitionValues<TFastValue, TPartitionFastValue>,
     ) -> usize {
         std::mem::size_of::<TFastValue>() * partition.fast_field_values.len()

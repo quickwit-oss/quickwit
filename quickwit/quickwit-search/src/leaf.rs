@@ -18,15 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
-use std::io;
 use std::ops::Bound;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::Context;
 use futures::future::try_join_all;
-use futures::Future;
 use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, WarmupInfo, QUICKWIT_TOKENIZER_MANAGER};
@@ -39,7 +36,8 @@ use quickwit_storage::{
 };
 use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
-use tantivy::schema::{Cardinality, Field, FieldType};
+use tantivy::fastfield::FastFieldReaders;
+use tantivy::schema::{Field, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 use tracing::*;
@@ -181,7 +179,10 @@ async fn warm_up_term_dict_fields(
             .schema()
             .get_field(term_dict_field_name)
             .with_context(|| {
-                format!("Couldn't get field named {term_dict_field_name:?} from schema.")
+                format!(
+                    "Couldn't get field named `{term_dict_field_name}` from schema to warm up \
+                     term dicts."
+                )
             })?;
 
         term_dict_fields.push(term_dict_field);
@@ -207,10 +208,9 @@ async fn warm_up_postings(
 ) -> anyhow::Result<()> {
     let mut fields = Vec::new();
     for field_name in field_names.iter() {
-        let field = searcher
-            .schema()
-            .get_field(field_name)
-            .with_context(|| format!("Couldn't get field named {field_name:?} from schema."))?;
+        let field = searcher.schema().get_field(field_name).with_context(|| {
+            format!("Couldn't get field named `{field_name}` from schema to warm up postings.")
+        })?;
 
         fields.push(field);
     }
@@ -226,85 +226,37 @@ async fn warm_up_postings(
     Ok(())
 }
 
-// The field cardinality is not the same as the fast field cardinality.
-//
-// E.g. a single valued bytes field has a multivalued fast field cardinality.
-fn get_fastfield_cardinality(field_type: &FieldType) -> Option<Cardinality> {
-    match field_type {
-        FieldType::U64(options)
-        | FieldType::I64(options)
-        | FieldType::F64(options)
-        | FieldType::Bool(options) => options.get_fastfield_cardinality(),
-        FieldType::Date(options) => options.get_fastfield_cardinality(),
-        FieldType::Facet(_) => Some(Cardinality::MultiValues),
-        FieldType::Bytes(options) => {
-            if options.is_fast() {
-                Some(Cardinality::MultiValues)
-            } else {
-                None
-            }
-        }
-        FieldType::Str(options) => {
-            if options.is_fast() {
-                Some(Cardinality::MultiValues)
-            } else {
-                None
-            }
-        }
-        FieldType::IpAddr(options) => options.get_fastfield_cardinality(),
-        FieldType::JsonObject(_options) => None,
-    }
+async fn warm_up_fastfield(
+    fast_field_reader: &FastFieldReaders,
+    fast_field_name: &str,
+) -> anyhow::Result<()> {
+    let columns = fast_field_reader
+        .list_dynamic_column_handles(fast_field_name)
+        .await?;
+    futures::future::try_join_all(
+        columns
+            .into_iter()
+            .map(|col| async move { col.file_slice().read_bytes_async().await }),
+    )
+    .await?;
+    Ok(())
 }
 
-fn fast_field_idxs(fast_field_cardinality: Cardinality) -> &'static [usize] {
-    match fast_field_cardinality {
-        Cardinality::SingleValue => &[0],
-        Cardinality::MultiValues => &[0, 1],
-    }
-}
-
+/// Populates the short-lived cache with the data for
+/// all of the fast fields passed as argument.
 async fn warm_up_fastfields(
     searcher: &Searcher,
     fast_field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
-    let mut fast_fields = Vec::new();
-    for fast_field_name in fast_field_names.iter() {
-        let fast_field = searcher
-            .schema()
-            .get_field(fast_field_name)
-            .with_context(|| {
-                format!("Couldn't get field named {fast_field_name:?} from schema.")
-            })?;
-
-        let field_entry = searcher.schema().get_field_entry(fast_field);
-        if !field_entry.is_fast() {
-            anyhow::bail!("Field {:?} is not a fast field.", fast_field_name);
-        }
-        let cardinality =
-            get_fastfield_cardinality(field_entry.field_type()).with_context(|| {
-                format!(
-                    "Couldn't get field cardinality {fast_field_name:?} from type {field_entry:?}."
-                )
-            })?;
-
-        fast_fields.push((fast_field, cardinality));
-    }
-
-    type SendableFuture = dyn Future<Output = io::Result<OwnedBytes>> + Send;
-    let mut warm_up_futures: Vec<Pin<Box<SendableFuture>>> = Vec::new();
-    for (field, cardinality) in fast_fields {
-        for segment_reader in searcher.segment_readers() {
-            for &fast_field_idx in fast_field_idxs(cardinality) {
-                let fast_field_slice = segment_reader
-                    .fast_fields()
-                    .fast_field_data(field, fast_field_idx)?;
-                warm_up_futures.push(Box::pin(async move {
-                    fast_field_slice.read_bytes_async().await
-                }));
-            }
+    let mut warm_up_futures = Vec::new();
+    for segment_reader in searcher.segment_readers() {
+        let fast_field_reader = segment_reader.fast_fields();
+        for fast_field_name in fast_field_names {
+            let warm_up_fut = warm_up_fastfield(fast_field_reader, fast_field_name);
+            warm_up_futures.push(Box::pin(warm_up_fut));
         }
     }
-    try_join_all(warm_up_futures).await?;
+    futures::future::try_join_all(warm_up_futures).await?;
     Ok(())
 }
 
@@ -478,7 +430,7 @@ async fn leaf_list_terms_single_split(
         .get_field(&search_request.field)
         .with_context(|| {
             format!(
-                "Couldn't get field named {:?} from schema.",
+                "Couldn't get field named {:?} from schema to list terms.",
                 search_request.field
             )
         })?;

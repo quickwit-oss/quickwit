@@ -25,19 +25,20 @@ use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
-use tantivy::schema::{Cardinality, Field, FieldType, Schema, Value as TantivyValue, STORED};
+use tantivy::schema::{Field, FieldType, Schema, Value as TantivyValue, STORED};
 use tantivy::Document;
 
 use super::field_mapping_entry::QuickwitTextTokenizer;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{build_mapping_tree, MappingNode, MappingTree};
+use crate::default_doc_mapper::FieldMappingType;
 pub use crate::default_doc_mapper::QuickwitJsonOptions;
 use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
-    DocMapper, DocParsingError, ModeType, QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME,
-    SOURCE_FIELD_NAME,
+    Cardinality, DocMapper, DocParsingError, ModeType, QueryParserError, WarmupInfo,
+    DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
 };
 
 /// Defines how an unmapped field should be handled.
@@ -160,41 +161,31 @@ fn list_required_fields(field_mappings: &MappingTree) -> Vec<Field> {
     }
 }
 
-fn resolve_timestamp_field(
-    timestamp_field_name_opt: Option<&String>,
-    schema: &Schema,
-) -> anyhow::Result<()> {
-    if let Some(ref timestamp_field_name) = timestamp_field_name_opt {
-        let timestamp_field = schema
-            .get_field(timestamp_field_name)
-            .with_context(|| format!("Unknown timestamp field: `{timestamp_field_name}`"))?;
-
-        let timestamp_field_entry = schema.get_field_entry(timestamp_field);
-        if !timestamp_field_entry.is_fast() {
+fn validate_timestamp_field_if_any(builder: &DefaultDocMapperBuilder) -> anyhow::Result<()> {
+    let Some(timestamp_field_name) = builder.timestamp_field.as_ref() else {
+        return Ok(());
+    };
+    let Some(timestamp_field_entry) = builder.field_mappings.iter().find(|mapping| {
+                &mapping.name == timestamp_field_name
+            }) else {
+                bail!("Missing timestamp field in field mappings: `{}`", timestamp_field_name);
+            };
+    if let FieldMappingType::DateTime(date_time_option, cardinality) =
+        &timestamp_field_entry.mapping_type
+    {
+        if cardinality != &Cardinality::SingleValue {
             bail!(
-                "Timestamp field must be a fast field, please add the fast property to your field \
-                 `{}`.",
-                timestamp_field_name
-            )
+                "Multiple values are forbidden for  the timestamp field \
+                 (`{timestamp_field_name}`)."
+            );
         }
-        match timestamp_field_entry.field_type() {
-            FieldType::Date(options) => {
-                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
-                    bail!(
-                        "Timestamp field cannot be an array, please change your field `{}` from \
-                         an array to a single value.",
-                        timestamp_field_name
-                    )
-                }
-            }
-            _ => {
-                bail!(
-                    "Timestamp field must be of type datetime, please change your field type `{}` \
-                     to datetime.",
-                    timestamp_field_name
-                )
-            }
+        if !date_time_option.fast {
+            bail!("The timestamp field `{timestamp_field_name}`is required to be a fast field.");
         }
+    } else {
+        bail!(
+            "The timestamp field `{timestamp_field_name}` is required to have the datetime type."
+        );
     }
     Ok(())
 }
@@ -211,6 +202,8 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         } else {
             None
         };
+
+        validate_timestamp_field_if_any(&builder)?;
 
         let dynamic_field = if let Mode::Dynamic(json_options) = &mode {
             Some(schema_builder.add_json_field(DYNAMIC_FIELD_NAME, json_options.clone()))
@@ -234,8 +227,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
                 .with_context(|| format!("Unknown default search field: `{field_name}`"))?;
             default_search_field_names.push(field_name.clone());
         }
-
-        resolve_timestamp_field(builder.timestamp_field.as_ref(), &schema)?;
 
         // Resolve tag fields
         let mut tag_field_names: BTreeSet<String> = Default::default();
@@ -271,7 +262,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
     fn from(default_doc_mapper: DefaultDocMapper) -> Self {
         let mode = default_doc_mapper.mode.mode_type();
-        let dynamic_mapping = match &default_doc_mapper.mode {
+        let dynamic_mapping: Option<QuickwitJsonOptions> = match &default_doc_mapper.mode {
             Mode::Dynamic(mapping_options) => Some(mapping_options.clone()),
             _ => None,
         };
@@ -596,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fail_to_build_doc_mapper_with_non_fast_timestamp_field() -> anyhow::Result<()> {
+    fn test_fail_to_build_doc_mapper_with_non_datetime_timestamp_field() {
         let doc_mapper = r#"{
             "default_search_fields": [],
             "timestamp_field": "timestamp",
@@ -608,16 +599,32 @@ mod tests {
                 }
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
-        let expected_msg = "Timestamp field must be a fast field, please add the fast property to \
-                            your field `timestamp`."
-            .to_string();
-        assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
-        Ok(())
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let expected_msg = "The timestamp field `timestamp` is required to have the datetime type.";
+        assert_eq!(&builder.try_build().unwrap_err().to_string(), &expected_msg);
     }
 
     #[test]
-    fn test_fail_to_build_doc_mapper_with_duplicate_fields() -> anyhow::Result<()> {
+    fn test_fail_to_build_doc_mapper_with_non_fast_timestamp_field() {
+        let doc_mapper = r#"{
+            "default_search_fields": [],
+            "timestamp_field": "timestamp",
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "datetime",
+                    "fast": false
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let expected_msg = "The timestamp field `timestamp`is required to be a fast field.";
+        assert_eq!(&builder.try_build().unwrap_err().to_string(), &expected_msg);
+    }
+
+    #[test]
+    fn test_fail_to_build_doc_mapper_with_duplicate_fields() {
         {
             let doc_mapper = r#"{
                 "field_mappings": [
@@ -625,9 +632,9 @@ mod tests {
                     {"name": "body","type": "bytes"}
                 ]
             }"#;
-            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
-            let expected_msg = "Duplicated field definition `body`.".to_string();
-            assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
+            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+            let expected_msg = "Duplicated field definition `body`.";
+            assert_eq!(&builder.try_build().unwrap_err().to_string(), expected_msg);
         }
 
         {
@@ -644,16 +651,14 @@ mod tests {
                     {"type": "text", "name": "body"}
                 ]
             }"#;
-            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
-            let expected_msg = "Duplicated field definition `username`.".to_string();
-            assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
+            let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+            let expected_msg = "Duplicated field definition `username`.";
+            assert_eq!(&builder.try_build().unwrap_err().to_string(), expected_msg);
         }
-        Ok(())
     }
 
     #[test]
-    fn test_should_build_doc_mapper_with_duplicate_fields_at_different_level() -> anyhow::Result<()>
-    {
+    fn test_should_build_doc_mapper_with_duplicate_fields_at_different_level() {
         let doc_mapper = r#"{
             "field_mappings": [
                 {
@@ -667,13 +672,12 @@ mod tests {
                 {"type": "text", "name": "body"}
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
         assert!(builder.try_build().is_ok());
-        Ok(())
     }
 
     #[test]
-    fn test_fail_to_build_doc_mapper_with_multivalued_timestamp_field() -> anyhow::Result<()> {
+    fn test_fail_to_build_doc_mapper_with_multivalued_timestamp_field() {
         let doc_mapper = r#"{
             "default_search_fields": [],
             "timestamp_field": "timestamp",
@@ -687,12 +691,9 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
-        let expected_msg = "Timestamp field cannot be an array, please change your field \
-                            `timestamp` from an array to a single value."
-            .to_string();
-        assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
-        Ok(())
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let expected_msg = "Multiple values are forbidden for  the timestamp field (`timestamp`).";
+        assert_eq!(&builder.try_build().unwrap_err().to_string(), expected_msg);
     }
 
     #[test]
