@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::mem;
 use quickwit_common::metrics::MetricsApi;
 use quickwit_config::ConfigApiSchemas;
 use quickwit_doc_mapper::DocMapperApiSchemas;
@@ -122,9 +123,10 @@ impl OpenApiMerger for utoipa::openapi::OpenApi {
         }
     }
 
-    fn with_path_prefix(mut self, path: &str) -> Self {
-        for details in self.paths.paths.values_mut() {
-            details.servers = Some(vec![Server::new(path)]);
+    fn with_path_prefix(mut self, prefix: &str) -> Self {
+        let paths = mem::take(&mut self.paths.paths);
+        for (path, detail) in paths {
+            self.paths.paths.insert(format!("{prefix}{path}"), detail);
         }
 
         self
