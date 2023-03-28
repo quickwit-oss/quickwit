@@ -130,6 +130,11 @@ impl OpenApiMerger for utoipa::openapi::OpenApi {
     fn with_path_prefix(mut self, prefix: &str) -> Self {
         let paths = mem::take(&mut self.paths.paths);
         for (path, detail) in paths {
+            if !path.starts_with('/') {
+                // We can panic here as I will be raised during unit tests.
+                panic!("Path {path:?} does not start with `/`.");
+            }
+
             let adjusted_path = if path != "/" {
                 format!("{prefix}{path}")
             } else {
@@ -143,7 +148,7 @@ impl OpenApiMerger for utoipa::openapi::OpenApi {
 }
 
 #[cfg(test)]
-mod openapi_schema_resolver_tests {
+mod openapi_schema_tests {
     use std::collections::{BTreeSet, VecDeque};
 
     use itertools::Itertools;
