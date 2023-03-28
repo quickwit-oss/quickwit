@@ -18,13 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::mem;
+
 use quickwit_common::metrics::MetricsApi;
 use quickwit_config::ConfigApiSchemas;
 use quickwit_doc_mapper::DocMapperApiSchemas;
 use quickwit_indexing::IndexingApiSchemas;
 use quickwit_janitor::JanitorApiSchemas;
 use quickwit_metastore::MetastoreApiSchemas;
-use utoipa::openapi::{Server, Tag};
+use utoipa::openapi::Tag;
 use utoipa::OpenApi;
 
 use crate::cluster_api::ClusterApi;
@@ -95,8 +96,11 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
 }
 
 pub trait OpenApiMerger {
+    /// Merges a given [OpenApi] schema into another schema.
     fn merge_components_and_paths(&mut self, schema: utoipa::openapi::OpenApi);
 
+    /// Modifies all of the paths for a given OpenAPI instance
+    /// and appends the provided prefix to the paths.
     fn with_path_prefix(self, path: &str) -> Self;
 }
 
@@ -126,9 +130,269 @@ impl OpenApiMerger for utoipa::openapi::OpenApi {
     fn with_path_prefix(mut self, prefix: &str) -> Self {
         let paths = mem::take(&mut self.paths.paths);
         for (path, detail) in paths {
-            self.paths.paths.insert(format!("{prefix}{path}"), detail);
+            let adjusted_path = if path != "/" {
+                format!("{prefix}{path}")
+            } else {
+                prefix.to_owned()
+            };
+            self.paths.paths.insert(adjusted_path, detail);
         }
 
         self
+    }
+}
+
+#[cfg(test)]
+mod openapi_schema_resolver_tests {
+    use std::collections::{BTreeSet, VecDeque};
+
+    use itertools::Itertools;
+    use utoipa::openapi::schema::AdditionalProperties;
+    use utoipa::openapi::{RefOr, Schema};
+
+    use super::*;
+
+    #[test]
+    fn ensure_schemas_resolve() {
+        let docs = build_docs();
+        resolve_openapi_schemas(&docs).expect("All schemas should be resolved");
+    }
+
+    fn resolve_openapi_schemas(openapi: &utoipa::openapi::OpenApi) -> anyhow::Result<()> {
+        let schemas_lookup = if let Some(ref components) = openapi.components {
+            resolve_component_schemas(components)?
+        } else {
+            BTreeSet::new()
+        };
+
+        let mut errors = Vec::new();
+        for (path, detail) in openapi.paths.paths.iter() {
+            for (method, operation) in detail.operations.iter() {
+                let method = serde_json::to_string(method).unwrap();
+                let contents = operation
+                    .request_body
+                    .as_ref()
+                    .map(|v| &v.content)
+                    .cloned()
+                    .unwrap_or_default();
+                for (key, content) in contents {
+                    let location = match content.schema {
+                        RefOr::Ref(r) => r.ref_location,
+                        RefOr::T(_) => continue,
+                    };
+
+                    if !schemas_lookup.contains(&location) {
+                        let info = format!("key:{key:?}");
+                        errors.push((location, method.clone(), path, info));
+                    }
+                }
+
+                for (status, resp) in operation.responses.responses.iter() {
+                    let location = match resp {
+                        RefOr::Ref(r) => &r.ref_location,
+                        RefOr::T(_) => continue,
+                    };
+
+                    if !schemas_lookup.contains(location) {
+                        let info = format!("status:{status}");
+                        errors.push((location.clone(), method.clone(), path, info));
+                    }
+                }
+            }
+        }
+
+        if !errors.is_empty() {
+            let errors = errors
+                .into_iter()
+                .map(|(location, method, path, info)| {
+                    let (location, type_name) = location.rsplit_once('/').unwrap();
+                    format!("{method} {path:?} {info} - Location: {location:?} Type: {type_name:?}")
+                })
+                .join("\n");
+
+            anyhow::bail!(
+                "Failed to resolve schemas, do these types implement `ToSchema`?:\n\n{errors}"
+            )
+        }
+
+        Ok(())
+    }
+
+    /// Builds a lookup set of all of the schemas that can be referenced.
+    fn resolve_component_schemas(
+        components: &utoipa::openapi::Components,
+    ) -> anyhow::Result<BTreeSet<String>> {
+        // Loads the core schemas which is used by most references
+        // This can have references in and of itself however, so we
+        // need to track those to resolve later.
+        let mut schema_lookup = BTreeSet::new();
+        let mut pending_resolved = VecDeque::new();
+        let mut resolve_once = Vec::new();
+
+        for (schema_item, maybe_ref) in &components.schemas {
+            let path = format!("#/components/schemas/{schema_item}");
+            match maybe_ref {
+                RefOr::Ref(r) => {
+                    pending_resolved.push_back((path, r.ref_location.clone()));
+                }
+                RefOr::T(schema) => {
+                    resolve_schema(&mut resolve_once, schema_item, schema);
+                    schema_lookup.insert(path);
+                }
+            };
+        }
+
+        for schema_item in components.security_schemes.keys() {
+            let path = format!("#/components/securitySchemes/{schema_item}");
+            schema_lookup.insert(path);
+        }
+
+        // Although responses aren't technically a schema, they can be referenced and contain
+        // references, so it's easier to merge them into one.
+        for (schema_item, maybe_ref) in &components.responses {
+            let path = format!("#/components/responses/{schema_item}");
+            match maybe_ref {
+                RefOr::Ref(r) => {
+                    pending_resolved.push_back((path, r.ref_location.clone()));
+                }
+                RefOr::T(schema) => {
+                    for (_, content) in &schema.content {
+                        if let RefOr::Ref(r) = &content.schema {
+                            if !schema_lookup.contains(&r.ref_location) {
+                                resolve_once.push(CheckResolve::new(
+                                    r.ref_location.clone(),
+                                    schema_item.clone(),
+                                ));
+                            }
+                        }
+                    }
+                    schema_lookup.insert(path);
+                }
+            };
+        }
+
+        let mut end_position = pending_resolved.len();
+        let mut cursor = 0;
+        let mut has_resolved = false; // Used to track if we should consider re-resolving references.
+        while !pending_resolved.is_empty() {
+            cursor += 1;
+
+            let (path, location) = pending_resolved.pop_front().unwrap();
+
+            if schema_lookup.contains(&location) {
+                schema_lookup.insert(path);
+                has_resolved = true;
+            } else {
+                pending_resolved.push_back((path, location));
+            }
+
+            if cursor == end_position && !has_resolved {
+                break;
+            } else if cursor == end_position {
+                end_position = pending_resolved.len();
+                cursor = 0;
+                has_resolved = false;
+            }
+        }
+
+        let mut failed_to_resolve = Vec::new();
+        for resolve in resolve_once {
+            if !schema_lookup.contains(&resolve.location) {
+                failed_to_resolve.push(resolve);
+            }
+        }
+
+        if !pending_resolved.is_empty() || !failed_to_resolve.is_empty() {
+            let errors_pending = pending_resolved
+                .into_iter()
+                .map(|(path, _)| format!("{path:?}"))
+                .join("\n");
+            let errors_resolve_once = failed_to_resolve
+                .into_iter()
+                .map(|resolve| format!("Struct: {:?} - {:?}", resolve.parent, resolve.location,))
+                .join("\n");
+            anyhow::bail!(
+                "Failed to resolve schemas for OpenAPI \
+                 spec:\n{errors_pending}\n{errors_resolve_once}"
+            );
+        }
+
+        Ok(schema_lookup)
+    }
+
+    fn resolve_schema(
+        resolve_once: &mut Vec<CheckResolve>,
+        parent_location: &str,
+        schema: &Schema,
+    ) {
+        match schema {
+            Schema::Array(array) => {
+                let parent = format!("{parent_location}.Vec");
+                match &*array.items {
+                    RefOr::Ref(r) => {
+                        resolve_once.push(CheckResolve::new(r.ref_location.clone(), parent))
+                    }
+                    RefOr::T(schema) => resolve_schema(resolve_once, &parent, schema),
+                }
+            }
+            Schema::Object(object) => {
+                for (key, r) in object.properties.iter() {
+                    let parent = format!("{parent_location}.{key}");
+                    match r {
+                        RefOr::Ref(r) => {
+                            resolve_once.push(CheckResolve::new(r.ref_location.clone(), parent))
+                        }
+                        RefOr::T(schema) => resolve_schema(resolve_once, &parent, schema),
+                    }
+                }
+
+                if let Some(ref props) = object.additional_properties {
+                    if let AdditionalProperties::RefOr(ref r) = **props {
+                        match r {
+                            RefOr::Ref(r) => resolve_once.push(CheckResolve::new(
+                                r.ref_location.clone(),
+                                parent_location.to_owned(),
+                            )),
+                            RefOr::T(schema) => {
+                                resolve_schema(resolve_once, parent_location, schema)
+                            }
+                        }
+                    }
+                }
+            }
+            Schema::OneOf(one_of) => {
+                let parent = format!("{parent_location}.Enum");
+                for r in &one_of.items {
+                    match r {
+                        RefOr::Ref(r) => resolve_once
+                            .push(CheckResolve::new(r.ref_location.clone(), parent.clone())),
+                        RefOr::T(schema) => resolve_schema(resolve_once, &parent, schema),
+                    }
+                }
+            }
+            Schema::AllOf(all_of) => {
+                for r in &all_of.items {
+                    match r {
+                        RefOr::Ref(r) => resolve_once.push(CheckResolve::new(
+                            r.ref_location.clone(),
+                            parent_location.to_owned(),
+                        )),
+                        RefOr::T(schema) => resolve_schema(resolve_once, parent_location, schema),
+                    }
+                }
+            }
+            _ => unimplemented!("Unknown schema variant"),
+        }
+    }
+
+    struct CheckResolve {
+        location: String,
+        parent: String,
+    }
+
+    impl CheckResolve {
+        fn new(location: String, parent: String) -> Self {
+            Self { location, parent }
+        }
     }
 }
