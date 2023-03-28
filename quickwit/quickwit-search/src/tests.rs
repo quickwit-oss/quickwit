@@ -1461,23 +1461,23 @@ async fn test_single_node_find_trace_ids_collector() {
                 fast: true
                 precision: seconds
         "#;
-    let foo_trace_id = TraceId::new([1u8; 16]).b64_encode();
-    let bar_trace_id = TraceId::new([2u8; 16]).b64_encode();
-    let qux_trace_id = TraceId::new([3u8; 16]).b64_encode();
-    let baz_trace_id = TraceId::new([4u8; 16]).b64_encode();
+    let foo_trace_id = TraceId::new([1u8; 16]);
+    let bar_trace_id = TraceId::new([2u8; 16]);
+    let qux_trace_id = TraceId::new([3u8; 16]);
+    let baz_trace_id = TraceId::new([4u8; 16]);
 
     let docs = vec![
-        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:35Z"}),
-        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:36Z"}),
-        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:37Z"}),
-        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:38Z"}),
-        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:39Z"}),
-        json!({"trace_id": foo_trace_id.to_string(), "span_timestamp_secs": "2023-01-10T15:13:40Z"}),
-        json!({"trace_id": bar_trace_id.to_string(), "span_timestamp_secs": "2024-01-10T15:13:35Z"}),
-        json!({"trace_id": bar_trace_id.to_string(), "span_timestamp_secs": "2024-01-10T15:13:40Z"}),
-        json!({"trace_id": qux_trace_id.to_string(), "span_timestamp_secs": "2025-01-10T15:13:40Z"}),
-        json!({"trace_id": qux_trace_id.to_string(), "span_timestamp_secs": "2025-01-10T15:13:35Z"}),
-        json!({"trace_id": baz_trace_id.to_string(), "span_timestamp_secs": "2022-01-10T15:13:35Z"}),
+        json!({"trace_id": foo_trace_id, "span_timestamp_secs": "2023-01-10T15:13:35Z"}),
+        json!({"trace_id": foo_trace_id, "span_timestamp_secs": "2023-01-10T15:13:36Z"}),
+        json!({"trace_id": foo_trace_id, "span_timestamp_secs": "2023-01-10T15:13:37Z"}),
+        json!({"trace_id": foo_trace_id, "span_timestamp_secs": "2023-01-10T15:13:38Z"}),
+        json!({"trace_id": foo_trace_id, "span_timestamp_secs": "2023-01-10T15:13:39Z"}),
+        json!({"trace_id": foo_trace_id, "span_timestamp_secs": "2023-01-10T15:13:40Z"}),
+        json!({"trace_id": bar_trace_id, "span_timestamp_secs": "2024-01-10T15:13:35Z"}),
+        json!({"trace_id": bar_trace_id, "span_timestamp_secs": "2024-01-10T15:13:40Z"}),
+        json!({"trace_id": qux_trace_id, "span_timestamp_secs": "2025-01-10T15:13:40Z"}),
+        json!({"trace_id": qux_trace_id, "span_timestamp_secs": "2025-01-10T15:13:35Z"}),
+        json!({"trace_id": baz_trace_id, "span_timestamp_secs": "2022-01-10T15:13:35Z"}),
     ];
     let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[])
         .await

@@ -38,7 +38,7 @@ use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
-use crate::otlp::{extract_attributes, B64TraceId, TraceId};
+use crate::otlp::{extract_attributes, TraceId};
 
 pub const OTEL_TRACE_INDEX_ID: &str = "otel-trace-v0";
 
@@ -153,7 +153,7 @@ pub type B64SpanId = String; // A base64-encoded 8-byte array.
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Span {
-    pub trace_id: B64TraceId,
+    pub trace_id: TraceId,
     pub trace_state: Option<String>,
     pub service_name: String,
     pub resource_attributes: HashMap<String, JsonValue>,
@@ -392,7 +392,7 @@ pub struct Event {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Link {
-    pub link_trace_id: B64TraceId,
+    pub link_trace_id: TraceId,
     pub link_trace_state: String,
     pub link_span_id: B64SpanId,
     pub link_attributes: HashMap<String, JsonValue>,
@@ -516,8 +516,7 @@ impl OtlpGrpcTraceService {
                     num_spans += 1;
 
                     let trace_id = TraceId::try_from(span.trace_id)
-                        .map_err(|error| Status::invalid_argument(error.to_string()))?
-                        .b64_encode();
+                        .map_err(|error| Status::invalid_argument(error.to_string()))?;
                     let span_id = BASE64_STANDARD.encode(span.span_id);
                     let parent_span_id = if !span.parent_span_id.is_empty() {
                         Some(BASE64_STANDARD.encode(span.parent_span_id))
@@ -554,8 +553,8 @@ impl OtlpGrpcTraceService {
                         .links
                         .into_iter()
                         .map(|link| {
-                            TraceId::try_from(link.trace_id).map(|trace_id| Link {
-                                link_trace_id: trace_id.b64_encode(),
+                            TraceId::try_from(link.trace_id).map(|link_trace_id| Link {
+                                link_trace_id,
                                 link_trace_state: link.trace_state,
                                 link_span_id: BASE64_STANDARD.encode(link.span_id),
                                 link_attributes: extract_attributes(link.attributes),
