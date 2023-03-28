@@ -276,27 +276,26 @@ mod openapi_schema_tests {
             };
         }
 
-        let mut end_position = pending_resolved.len();
-        let mut cursor = 0;
-        let mut has_resolved = false; // Used to track if we should consider re-resolving references.
-        while !pending_resolved.is_empty() {
-            cursor += 1;
+        // Walks through the list of references that need to be resolved.
+        // Technically a reference can lead to a reference, so if one
+        // location is resolved later on, we might then be able to resolve
+        // others, hence the loop.
+        loop {
+            let start_length = pending_resolved.len();
+            for _ in 0..pending_resolved.len() {
+                let (path, location) = pending_resolved.pop_front().unwrap();
 
-            let (path, location) = pending_resolved.pop_front().unwrap();
-
-            if schema_lookup.contains(&location) {
-                schema_lookup.insert(path);
-                has_resolved = true;
-            } else {
-                pending_resolved.push_back((path, location));
+                if schema_lookup.contains(&location) {
+                    schema_lookup.insert(path);
+                } else {
+                    pending_resolved.push_back((path, location));
+                }
             }
 
-            if cursor == end_position && !has_resolved {
+            // We resolved nothing all the items we starrted with are
+            // back in the queue.
+            if start_length == pending_resolved.len() {
                 break;
-            } else if cursor == end_position {
-                end_position = pending_resolved.len();
-                cursor = 0;
-                has_resolved = false;
             }
         }
 
