@@ -109,25 +109,6 @@ pub(crate) async fn start_rest_server(
         .and(warp::get())
         .map(|| redirect(http::Uri::from_static("/ui/search")));
 
-    let mut cors =
-        CorsLayer::new().allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE]);
-    let cors_origins = &quickwit_services.config.rest_config.cors_allow_origins;
-    if !cors_origins.is_empty() {
-        let allow_any = cors_origins.iter().any(|origin| origin.as_str() == "*");
-
-        if allow_any {
-            info!("CORS is enabled, all origins will be allowed");
-            cors = cors.allow_origin(tower_http::cors::Any);
-        } else {
-            info!(origins = ?cors_origins, "CORS is enabled, the following origins will be allowed");
-            let origins = cors_origins
-                .iter()
-                .map(|origin| origin.parse::<HeaderValue>().unwrap())
-                .collect::<Vec<_>>();
-            cors = cors.allow_origin(origins);
-        };
-    }
-
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
         .or(api_doc)
@@ -142,6 +123,7 @@ pub(crate) async fn start_rest_server(
     let warp_service = warp::service(rest_routes);
     let compression_predicate =
         DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
+    let cors = build_cors(&quickwit_services.config.rest_config.cors_allow_origins);
 
     let service = ServiceBuilder::new()
         .layer(
@@ -238,6 +220,254 @@ fn get_status_with_error(rejection: Rejection) -> ApiError {
         ApiError {
             code: ServiceErrorCode::Internal,
             message: "Internal server error.".to_string(),
+        }
+    }
+}
+
+fn build_cors(cors_origins: &[String]) -> CorsLayer {
+    let mut cors = CorsLayer::new().allow_methods([
+        Method::GET,
+        Method::POST,
+        Method::PUT,
+        Method::DELETE,
+        Method::OPTIONS,
+    ]);
+    if !cors_origins.is_empty() {
+        let allow_any = cors_origins.iter().any(|origin| origin.as_str() == "*");
+
+        if allow_any {
+            info!("CORS is enabled, all origins will be allowed");
+            cors = cors.allow_origin(tower_http::cors::Any);
+        } else {
+            info!(origins = ?cors_origins, "CORS is enabled, the following origins will be allowed");
+            let origins = cors_origins
+                .iter()
+                .map(|origin| origin.parse::<HeaderValue>().unwrap())
+                .collect::<Vec<_>>();
+            cors = cors.allow_origin(origins);
+        };
+    }
+
+    cors
+}
+
+#[cfg(test)]
+mod tests {
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use hyper::{Request, Response, StatusCode};
+    use tower::Service;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_cors() {
+        // No cors enabled
+        {
+            let cors = build_cors(&[]);
+
+            let mut layer = ServiceBuilder::new().layer(cors).service(HelloWorld);
+
+            let resp = layer.call(Request::new(())).await.unwrap();
+            let headers = resp.headers();
+            assert_eq!(headers.get("Access-Control-Allow-Origin"), None);
+            assert_eq!(headers.get("Access-Control-Allow-Methods"), None);
+            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
+            assert_eq!(headers.get("Access-Control-Max-Age"), None);
+
+            let resp = layer
+                .call(cors_request("http://localhost:3000"))
+                .await
+                .unwrap();
+            let headers = resp.headers();
+            assert_eq!(headers.get("Access-Control-Allow-Origin"), None);
+            assert_eq!(
+                headers.get("Access-Control-Allow-Methods"),
+                Some(
+                    &"GET,POST,PUT,DELETE,OPTIONS"
+                        .parse::<HeaderValue>()
+                        .unwrap()
+                )
+            );
+            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
+            assert_eq!(headers.get("Access-Control-Max-Age"), None);
+        }
+
+        // Wildcard cors enabled
+        {
+            let cors = build_cors(&["*".to_string()]);
+
+            let mut layer = ServiceBuilder::new().layer(cors).service(HelloWorld);
+
+            let resp = layer.call(Request::new(())).await.unwrap();
+            let headers = resp.headers();
+            assert_eq!(
+                headers.get("Access-Control-Allow-Origin"),
+                Some(&"*".parse::<HeaderValue>().unwrap())
+            );
+            assert_eq!(headers.get("Access-Control-Allow-Methods"), None);
+            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
+            assert_eq!(headers.get("Access-Control-Max-Age"), None);
+
+            let resp = layer
+                .call(cors_request("http://localhost:3000"))
+                .await
+                .unwrap();
+            let headers = resp.headers();
+            assert_eq!(
+                headers.get("Access-Control-Allow-Origin"),
+                Some(&"*".parse::<HeaderValue>().unwrap())
+            );
+            assert_eq!(
+                headers.get("Access-Control-Allow-Methods"),
+                Some(
+                    &"GET,POST,PUT,DELETE,OPTIONS"
+                        .parse::<HeaderValue>()
+                        .unwrap()
+                )
+            );
+            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
+            assert_eq!(headers.get("Access-Control-Max-Age"), None);
+        }
+
+        // Specific origin cors enabled
+        {
+            let cors = build_cors(&["https://quickwit.io".to_string()]);
+
+            let mut layer = ServiceBuilder::new().layer(cors).service(HelloWorld);
+
+            let resp = layer.call(Request::new(())).await.unwrap();
+            let headers = resp.headers();
+            assert_eq!(headers.get("Access-Control-Allow-Origin"), None);
+            assert_eq!(headers.get("Access-Control-Allow-Methods"), None);
+            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
+            assert_eq!(headers.get("Access-Control-Max-Age"), None);
+
+            let resp = layer
+                .call(cors_request("http://localhost:3000"))
+                .await
+                .unwrap();
+            let headers = resp.headers();
+            assert_eq!(headers.get("Access-Control-Allow-Origin"), None);
+            assert_eq!(
+                headers.get("Access-Control-Allow-Methods"),
+                Some(
+                    &"GET,POST,PUT,DELETE,OPTIONS"
+                        .parse::<HeaderValue>()
+                        .unwrap()
+                )
+            );
+            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
+            assert_eq!(headers.get("Access-Control-Max-Age"), None);
+
+            let resp = layer
+                .call(cors_request("https://quickwit.io"))
+                .await
+                .unwrap();
+            let headers = resp.headers();
+            assert_eq!(
+                headers.get("Access-Control-Allow-Origin"),
+                Some(&"https://quickwit.io".parse::<HeaderValue>().unwrap())
+            );
+            assert_eq!(
+                headers.get("Access-Control-Allow-Methods"),
+                Some(
+                    &"GET,POST,PUT,DELETE,OPTIONS"
+                        .parse::<HeaderValue>()
+                        .unwrap()
+                )
+            );
+            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
+            assert_eq!(headers.get("Access-Control-Max-Age"), None);
+        }
+
+        // Specific multiple-origin cors enabled
+        {
+            let cors = build_cors(&["https://quickwit.io".to_string(), "http://localhost:3000"]);
+
+            let mut layer = ServiceBuilder::new().layer(cors).service(HelloWorld);
+
+            let resp = layer.call(Request::new(())).await.unwrap();
+            let headers = resp.headers();
+            assert_eq!(headers.get("Access-Control-Allow-Origin"), None);
+            assert_eq!(headers.get("Access-Control-Allow-Methods"), None);
+            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
+            assert_eq!(headers.get("Access-Control-Max-Age"), None);
+
+            let resp = layer
+                .call(cors_request("http://localhost:3000"))
+                .await
+                .unwrap();
+            let headers = resp.headers();
+            assert_eq!(
+                headers.get("Access-Control-Allow-Origin"),
+                Some(&"http://localhost:3000".parse::<HeaderValue>().unwrap())
+            );
+            assert_eq!(
+                headers.get("Access-Control-Allow-Methods"),
+                Some(
+                    &"GET,POST,PUT,DELETE,OPTIONS"
+                        .parse::<HeaderValue>()
+                        .unwrap()
+                )
+            );
+            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
+            assert_eq!(headers.get("Access-Control-Max-Age"), None);
+
+            let resp = layer
+                .call(cors_request("https://quickwit.io"))
+                .await
+                .unwrap();
+            let headers = resp.headers();
+            assert_eq!(
+                headers.get("Access-Control-Allow-Origin"),
+                Some(&"https://quickwit.io".parse::<HeaderValue>().unwrap())
+            );
+            assert_eq!(
+                headers.get("Access-Control-Allow-Methods"),
+                Some(
+                    &"GET,POST,PUT,DELETE,OPTIONS"
+                        .parse::<HeaderValue>()
+                        .unwrap()
+                )
+            );
+            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
+            assert_eq!(headers.get("Access-Control-Max-Age"), None);
+        }
+    }
+
+    fn cors_request(origin: &'static str) -> Request<()> {
+        let mut request = Request::new(());
+        (*request.method_mut()) = Method::OPTIONS;
+        request
+            .headers_mut()
+            .insert("Origin", HeaderValue::from_static(origin));
+        request
+    }
+
+    struct HelloWorld;
+
+    impl Service<Request<()>> for HelloWorld {
+        type Response = Response<String>;
+        type Error = http::Error;
+        type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, _req: Request<()>) -> Self::Future {
+            let body = "hello, world!\n".to_string();
+            let resp = Response::builder()
+                .status(StatusCode::OK)
+                .body(body)
+                .expect("Unable to create `http::Response`");
+
+            let fut = async { Ok(resp) };
+
+            Box::pin(fut)
         }
     }
 }
