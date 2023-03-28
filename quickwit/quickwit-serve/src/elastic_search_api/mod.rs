@@ -20,25 +20,24 @@
 mod api_specs;
 mod rest_handler;
 
+use std::sync::Arc;
+
+pub(crate) use quickwit_common::simple_list::{from_simple_list, to_simple_list, SimpleList};
+use quickwit_search::SearchService;
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
-use self::rest_handler::{
-    elastic_get_index_search_handler, elastic_get_search_handler,
-    elastic_post_index_search_handler, elastic_post_search_handler,
-};
+use crate::elastic_search_api::rest_handler::{elastic_search_handler, elastic_index_search_handler};
 
 /// Setup Elasticsearch API handlers
 ///
 /// This is where all newly supported Elasticsearch handlers
 /// should be registered.
 pub fn elastic_api_handlers(
+    search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_get_search_handler()
-        .or(elastic_post_search_handler())
-        .or(elastic_get_index_search_handler())
-        .or(elastic_post_index_search_handler())
-    // Register newly created handlers here.
+    elastic_search_handler(search_service.clone())
+        .or(elastic_index_search_handler(search_service.clone()))
 }
 
 /// Helper type needed by the Elasticsearch endpoints.
