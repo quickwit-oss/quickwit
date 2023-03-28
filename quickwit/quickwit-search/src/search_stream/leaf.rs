@@ -29,10 +29,11 @@ use quickwit_proto::{
     SplitIdAndFooterOffsets,
 };
 use quickwit_storage::Storage;
-use tantivy::fastfield::FastValue;
+use tantivy::columnar::{DynamicColumn, HasAssociatedColumnType};
+use tantivy::fastfield::Column;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Type};
-use tantivy::{ReloadPolicy, Searcher};
+use tantivy::{DateTime, ReloadPolicy, Searcher};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::*;
 
@@ -209,19 +210,26 @@ async fn leaf_search_stream_single_split(
                 )?;
             }
             (Type::Date, None) => {
-                let collected_values = collect_values::<i64>(
+                let collected_values = collect_values::<DateTime>(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
                     &searcher,
                     query.as_ref(),
                 )?;
-                super::serialize::<i64>(&collected_values, &mut buffer, output_format).map_err(
-                    |_| {
+                // It may seem overkill and expensive considering DateTime is just a wrapper
+                // over the i64, but the compiler is smarter than it looks and the code
+                // below actually is zero-cost: No allocation and no copy happens.
+                let collected_values_as_micros = collected_values
+                    .into_iter()
+                    .map(|date_time| date_time.into_timestamp_micros())
+                    .collect::<Vec<_>>();
+                // We serialize Date as i64 microseconds.
+                super::serialize::<i64>(&collected_values_as_micros, &mut buffer, output_format)
+                    .map_err(|_| {
                         SearchError::InternalError(
                             "Error when serializing i64 during export".to_owned(),
                         )
-                    },
-                )?;
+                    })?;
             }
             (Type::I64, Some(Type::I64)) => {
                 let collected_values = collect_partitioned_values::<i64, i64>(
@@ -276,13 +284,16 @@ async fn leaf_search_stream_single_split(
     })
 }
 
-fn collect_values<TFastValue: FastValue>(
+fn collect_values<Item: HasAssociatedColumnType>(
     request_fields: &SearchStreamRequestFields,
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     searcher: &Searcher,
     query: &dyn Query,
-) -> crate::Result<Vec<TFastValue>> {
-    let collector = FastFieldCollector::<TFastValue> {
+) -> crate::Result<Vec<Item>>
+where
+    DynamicColumn: Into<Option<Column<Item>>>,
+{
+    let collector = FastFieldCollector::<Item> {
         fast_field_to_collect: request_fields.fast_field_name().to_string(),
         timestamp_filter_builder_opt,
         _marker: PhantomData,
@@ -291,13 +302,19 @@ fn collect_values<TFastValue: FastValue>(
     Ok(result)
 }
 
-fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue + Eq + Hash>(
+fn collect_partitioned_values<
+    Item: HasAssociatedColumnType,
+    TPartitionValue: HasAssociatedColumnType + Eq + Hash,
+>(
     request_fields: &SearchStreamRequestFields,
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     searcher: &Searcher,
     query: &dyn Query,
-) -> crate::Result<Vec<PartitionValues<TFastValue, TPartitionValue>>> {
-    let collector = PartionnedFastFieldCollector::<TFastValue, TPartitionValue> {
+) -> crate::Result<Vec<PartitionValues<Item, TPartitionValue>>>
+where
+    DynamicColumn: Into<Option<Column<Item>>> + Into<Option<Column<TPartitionValue>>>,
+{
+    let collector = PartionnedFastFieldCollector::<Item, TPartitionValue> {
         fast_field_to_collect: request_fields.fast_field_name().to_string(),
         partition_by_fast_field: request_fields
             .partition_by_fast_field_name()

@@ -196,12 +196,12 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use quickwit_proto::SearchRequest;
-    use tantivy::schema::{Cardinality, Field, FieldType, Term};
+    use tantivy::schema::{Field, FieldType, Term};
 
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions};
     use crate::{
-        DefaultDocMapperBuilder, DocMapper, DocParsingError, FieldMappingEntry, WarmupInfo,
-        DYNAMIC_FIELD_NAME,
+        Cardinality, DefaultDocMapperBuilder, DocMapper, DocParsingError, FieldMappingEntry,
+        WarmupInfo, DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"

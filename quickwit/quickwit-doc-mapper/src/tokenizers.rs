@@ -21,16 +21,19 @@ use std::str::CharIndices;
 
 use once_cell::sync::Lazy;
 use tantivy::tokenizer::{
-    BoxTokenStream, LowerCaser, RawTokenizer, RemoveLongFilter, TextAnalyzer, Token, TokenStream,
-    Tokenizer, TokenizerManager,
+    LowerCaser, RawTokenizer, RemoveLongFilter, TextAnalyzer, Token, TokenStream, Tokenizer,
+    TokenizerManager,
 };
 
 fn get_quickwit_tokenizer_manager() -> TokenizerManager {
-    let raw_tokenizer = TextAnalyzer::from(RawTokenizer).filter(RemoveLongFilter::limit(100));
+    let raw_tokenizer = TextAnalyzer::builder(RawTokenizer)
+        .filter(RemoveLongFilter::limit(100))
+        .build();
 
-    let chinese_tokenizer = TextAnalyzer::from(ChineseTokenizer)
+    let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
         .filter(RemoveLongFilter::limit(40))
-        .filter(LowerCaser);
+        .filter(LowerCaser)
+        .build();
 
     let tokenizer_manager = TokenizerManager::default();
 
@@ -44,13 +47,15 @@ fn get_quickwit_tokenizer_manager() -> TokenizerManager {
 struct ChineseTokenizer;
 
 impl Tokenizer for ChineseTokenizer {
-    fn token_stream<'a>(&self, text: &'a str) -> BoxTokenStream<'a> {
-        BoxTokenStream::from(ChineseTokenStream {
+    type TokenStream<'a> = ChineseTokenStream<'a>;
+
+    fn token_stream<'a>(&self, text: &'a str) -> Self::TokenStream<'a> {
+        ChineseTokenStream {
             text,
             last_char: None,
             chars: text.char_indices(),
             token: Token::default(),
-        })
+        }
     }
 }
 
@@ -158,7 +163,7 @@ mod tests {
     fn test_raw_tokenizer() {
         let my_haiku = r#"
         white sandy beach
-        a strong wind is coming 
+        a strong wind is coming
         sand in my face
         "#;
         let my_long_text = "a text, that is just too long, no one will type it, no one will like \

@@ -167,6 +167,9 @@ mod test {
     #[test]
     fn test_region_from_str() {
         assert_eq!(region_from_str("us-east-1").unwrap(), Region::UsEast1);
+        // Coverage sets AWS_REGION to a custom value, we don't want this to impact the current
+        // test.
+        std::env::remove_var("AWS_REGION");
         assert_eq!(
             region_from_str("http://localhost:4566").unwrap(),
             Region::Custom {

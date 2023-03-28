@@ -54,6 +54,12 @@ pub const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 /// Quickwit reserved field names.
 const QW_RESERVED_FIELD_NAMES: &[&str] = &[SOURCE_FIELD_NAME, DYNAMIC_FIELD_NAME];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum Cardinality {
+    SingleValue,
+    MultiValues,
+}
+
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(
     QuickwitJsonOptions,
