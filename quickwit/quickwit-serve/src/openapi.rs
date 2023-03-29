@@ -149,7 +149,7 @@ impl OpenApiMerger for utoipa::openapi::OpenApi {
 
 #[cfg(test)]
 mod openapi_schema_tests {
-    use std::collections::{BTreeSet, VecDeque};
+    use std::collections::BTreeSet;
 
     use itertools::Itertools;
     use utoipa::openapi::schema::AdditionalProperties;
@@ -231,14 +231,14 @@ mod openapi_schema_tests {
         // This can have references in and of itself however, so we
         // need to track those to resolve later.
         let mut schema_lookup = BTreeSet::new();
-        let mut pending_resolved = VecDeque::new();
+        let mut pending_resolved = Vec::new();
         let mut resolve_once = Vec::new();
 
         for (schema_item, maybe_ref) in &components.schemas {
             let path = format!("#/components/schemas/{schema_item}");
             match maybe_ref {
                 RefOr::Ref(r) => {
-                    pending_resolved.push_back((path, r.ref_location.clone()));
+                    pending_resolved.push((path, r.ref_location.clone()));
                 }
                 RefOr::T(schema) => {
                     resolve_schema(&mut resolve_once, schema_item, schema);
@@ -258,7 +258,7 @@ mod openapi_schema_tests {
             let path = format!("#/components/responses/{schema_item}");
             match maybe_ref {
                 RefOr::Ref(r) => {
-                    pending_resolved.push_back((path, r.ref_location.clone()));
+                    pending_resolved.push((path, r.ref_location.clone()));
                 }
                 RefOr::T(schema) => {
                     for (_, content) in &schema.content {
@@ -281,20 +281,15 @@ mod openapi_schema_tests {
         // location is resolved later on, we might then be able to resolve
         // others, hence the loop.
         loop {
-            let start_length = pending_resolved.len();
-            for _ in 0..pending_resolved.len() {
-                let (path, location) = pending_resolved.pop_front().unwrap();
-
+            for (path, location) in mem::take(&mut pending_resolved) {
                 if schema_lookup.contains(&location) {
                     schema_lookup.insert(path);
                 } else {
-                    pending_resolved.push_back((path, location));
+                    pending_resolved.push((path, location));
                 }
             }
 
-            // We resolved nothing all the items we starrted with are
-            // back in the queue.
-            if start_length == pending_resolved.len() {
+            if pending_resolved.is_empty() {
                 break;
             }
         }
