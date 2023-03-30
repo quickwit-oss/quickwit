@@ -19,6 +19,7 @@
 
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use futures::future::try_join_all;
 use itertools::Itertools;
@@ -40,6 +41,7 @@ use tracing::{debug, error, instrument};
 use crate::cluster_client::ClusterClient;
 use crate::collector::{make_merge_collector, QuickwitAggregations};
 use crate::search_job_placer::Job;
+use crate::service::SearcherContext;
 use crate::{
     extract_split_and_footer_offsets, list_relevant_splits, SearchError, SearchJobPlacer,
     SearchServiceClient,
@@ -141,6 +143,7 @@ pub(crate) fn validate_request(search_request: &SearchRequest) -> crate::Result<
 /// 4. Builds the response with docs and returns.
 #[instrument(skip(search_request, cluster_client, search_job_placer, metastore))]
 pub async fn root_search(
+    searcher_context: Arc<SearcherContext>,
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
     cluster_client: &ClusterClient,
@@ -201,7 +204,7 @@ pub async fn root_search(
     .await?;
 
     // Creates a collector which merges responses into one
-    let merge_collector = make_merge_collector(search_request)?;
+    let merge_collector = make_merge_collector(search_request, &searcher_context)?;
     let aggregations = merge_collector.aggregation.clone();
 
     // Merging is a cpu-bound task.
@@ -506,6 +509,7 @@ pub fn jobs_to_leaf_request(
 mod tests {
     use std::sync::Arc;
 
+    use quickwit_config::SearcherConfig;
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
@@ -628,6 +632,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
@@ -694,6 +699,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
@@ -783,6 +789,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
@@ -899,6 +906,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
@@ -1032,6 +1040,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
@@ -1112,6 +1121,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
@@ -1178,6 +1188,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
@@ -1269,6 +1280,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
@@ -1351,6 +1363,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
@@ -1386,6 +1399,7 @@ mod tests {
         let cluster_client = ClusterClient::new(search_job_placer.clone());
 
         assert!(root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &quickwit_proto::SearchRequest {
                 index_id: "test-index".to_string(),
                 query: r#"invalid_field:"test""#.to_string(),
@@ -1404,6 +1418,7 @@ mod tests {
         .is_err());
 
         assert!(root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &quickwit_proto::SearchRequest {
                 index_id: "test-index".to_string(),
                 query: "test".to_string(),
@@ -1476,6 +1491,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
@@ -1523,6 +1539,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
@@ -1546,6 +1563,7 @@ mod tests {
         };
 
         let search_response = root_search(
+            Arc::new(SearcherContext::new(SearcherConfig::default())),
             &search_request,
             &metastore,
             &cluster_client,
