@@ -22,42 +22,93 @@ mod error;
 #[path = "codegen/hello.rs"]
 mod hello;
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::task::{Context, Poll};
+
+use async_trait::async_trait;
 pub use error::HelloError;
 pub use hello::*;
+use tower::{Layer, Service};
+
+use crate::hello::{Hello, HelloRequest, HelloResponse};
 
 pub type HelloResult<T> = Result<T, HelloError>;
+
+#[derive(Debug, Clone)]
+struct Counter<S> {
+    counter: Arc<AtomicUsize>,
+    inner: S,
+}
+
+impl<S, R> Service<R> for Counter<S>
+where S: Service<R>
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: R) -> Self::Future {
+        self.counter.fetch_add(1, Ordering::Relaxed);
+        self.inner.call(req)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct CounterLayer {
+    counter: Arc<AtomicUsize>,
+}
+
+impl<S> Layer<S> for CounterLayer {
+    type Service = Counter<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        Counter {
+            counter: self.counter.clone(),
+            inner,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct HelloImpl;
+
+#[async_trait]
+impl Hello for HelloImpl {
+    async fn hello(&mut self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
+        Ok(HelloResponse {
+            message: format!("Hello, {}!", request.name),
+        })
+    }
+
+    async fn goodbye(&mut self, request: GoodbyeRequest) -> crate::HelloResult<GoodbyeResponse> {
+        Ok(GoodbyeResponse {
+            message: format!("Goodbye, {}!", request.name),
+        })
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
 
-    use async_trait::async_trait;
     use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
     use tonic::transport::{Endpoint, Server};
     use tower::timeout::Timeout;
-    use tower::ServiceBuilder;
 
+    use super::*;
     use crate::hello::hello_grpc_server::HelloGrpcServer;
-    use crate::hello::{
-        Hello, HelloClient, HelloGrpcServerAdapter, HelloRequest, HelloResponse, MockHello,
-    };
-    use crate::HelloError;
+    use crate::hello::MockHello;
+    use crate::{CounterLayer, GoodbyeRequest, GoodbyeResponse, HelloError};
 
     #[tokio::test]
     async fn test_hello_codegen() {
-        #[derive(Debug, Clone)]
-        struct HelloImpl;
-
-        #[async_trait]
-        impl Hello for HelloImpl {
-            async fn hello(&mut self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
-                Ok(HelloResponse {
-                    message: format!("Hello, {}!", request.name),
-                })
-            }
-        }
-
         let mut hello = HelloImpl;
 
         assert_eq!(
@@ -162,10 +213,25 @@ mod tests {
             }
         }
 
+        #[async_trait]
+        impl Handler<GoodbyeRequest> for HelloActor {
+            type Reply = Result<GoodbyeResponse, HelloError>;
+
+            async fn handle(
+                &mut self,
+                message: GoodbyeRequest,
+                _ctx: &ActorContext<Self>,
+            ) -> Result<Self::Reply, ActorExitStatus> {
+                Ok(Ok(GoodbyeResponse {
+                    message: format!("Goodbye, {} actor!", message.name),
+                }))
+            }
+        }
+
         let universe = Universe::new();
         let hello_actor = HelloActor;
         let (actor_mailbox, _actor_handle) = universe.spawn_builder().spawn(hello_actor);
-        let mut actor_client = HelloClient::from_mailbox(actor_mailbox);
+        let mut actor_client = HelloClient::from_mailbox(actor_mailbox.clone());
 
         assert_eq!(
             actor_client
@@ -178,11 +244,8 @@ mod tests {
                 message: "Hello, beautiful actor!".to_string()
             }
         );
-        universe.assert_quit().await;
 
-        let mut hello_tower = HelloClient::tower()
-            .hello_layer(ServiceBuilder::new().concurrency_limit(1).into())
-            .service(hello.clone());
+        let mut hello_tower = HelloClient::tower().build_from_mailbox(actor_mailbox);
 
         assert_eq!(
             hello_tower
@@ -192,8 +255,75 @@ mod tests {
                 .await
                 .unwrap(),
             HelloResponse {
-                message: "Hello, Tower!".to_string()
+                message: "Hello, Tower actor!".to_string()
             }
         );
+
+        assert_eq!(
+            hello_tower
+                .goodbye(GoodbyeRequest {
+                    name: "Tower".to_string()
+                })
+                .await
+                .unwrap(),
+            GoodbyeResponse {
+                message: "Goodbye, Tower actor!".to_string()
+            }
+        );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_hello_codegen_tower_layers() {
+        let hello_layer = CounterLayer::default();
+        let goodbye_layer = CounterLayer::default();
+
+        let mut hello_tower = HelloClient::tower()
+            .hello_layer(hello_layer.clone())
+            .goodbye_layer(goodbye_layer.clone())
+            .build(HelloImpl);
+
+        hello_tower
+            .hello(HelloRequest {
+                name: "Tower".to_string(),
+            })
+            .await
+            .unwrap();
+
+        hello_tower
+            .goodbye(GoodbyeRequest {
+                name: "Tower".to_string(),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(hello_layer.counter.load(Ordering::Relaxed), 1);
+        assert_eq!(goodbye_layer.counter.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn test_hello_codegen_tower_shared_layer() {
+        let layer = CounterLayer::default();
+
+        let mut hello_tower = HelloClient::tower()
+            .shared_layer(layer.clone())
+            .build(HelloImpl);
+
+        hello_tower
+            .hello(HelloRequest {
+                name: "Tower".to_string(),
+            })
+            .await
+            .unwrap();
+
+        hello_tower
+            .goodbye(GoodbyeRequest {
+                name: "Tower".to_string(),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(layer.counter.load(Ordering::Relaxed), 2);
     }
 }

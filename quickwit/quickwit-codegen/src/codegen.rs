@@ -274,7 +274,9 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
 
         impl #client_name {
             pub fn new<T>(instance: T) -> Self
-            where T: #service_name {
+            where
+                T: #service_name
+            {
                 Self {
                     inner: Box::new(instance),
                 }
@@ -496,37 +498,61 @@ fn generate_tower_block_builder_attributes(context: &CodegenContext) -> TokenStr
 fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let client_name = &context.client_name;
+    let mailbox_name = &context.mailbox_name;
     let tower_block_name = &context.tower_block_name;
     let tower_block_builder_name = &context.tower_block_builder_name;
     let error_type = &context.error_type;
 
+    let mut layer_method_bounds = TokenStream::new();
+    let mut layer_method_statements = TokenStream::new();
     let mut layer_methods = TokenStream::new();
     let mut svc_statements = TokenStream::new();
     let mut svc_attribute_idents = Vec::with_capacity(context.methods.len());
 
-    for syn_method in &context.methods {
+    for (i, syn_method) in context.methods.iter().enumerate() {
         let layer_attribute_name = quote::format_ident!("{}_layer", syn_method.method_name);
         let svc_attribute_name = quote::format_ident!("{}_svc", syn_method.method_name);
         let request_type = syn_method.request_type.to_token_stream();
         let response_type = syn_method.response_type.to_token_stream();
 
+        let layer_method_bound = quote! {
+            L::Service: Service<#request_type, Response = #response_type, Error = #error_type> + Clone + Send + Sync + 'static,
+            <L::Service as Service<#request_type>>::Future: Send + 'static,
+        };
+
+        let layer_method_statement = if i == context.methods.len() - 1 {
+            quote! {
+                self.#layer_attribute_name = Some(quickwit_common::tower::BoxLayer::new(layer));
+            }
+        } else {
+            quote! {
+                self.#layer_attribute_name = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
+            }
+        };
+
         let layer_method = quote! {
-            pub fn #layer_attribute_name(
+            pub fn #layer_attribute_name<L>(
                 mut self,
-                layer: quickwit_common::tower::BoxLayer<Box<dyn #service_name>, #request_type, #response_type, #error_type>
-            ) -> Self {
-                self.#layer_attribute_name = Some(layer);
+                layer: L
+            ) -> Self
+            where
+                L: tower::Layer<Box<dyn #service_name>> + Send + Sync + 'static,
+                #layer_method_bound
+            {
+                self.#layer_attribute_name = Some(quickwit_common::tower::BoxLayer::new(layer));
                 self
             }
         };
+        layer_method_bounds.extend(layer_method_bound);
+        layer_method_statements.extend(layer_method_statement);
         layer_methods.extend(layer_method);
 
         let svc_statement = quote! {
-                let #svc_attribute_name = if let Some(layer) = self.#layer_attribute_name {
-                    layer.layer(boxed_instance.clone())
-                } else {
-                    quickwit_common::tower::BoxService::new(boxed_instance.clone())
-                };
+            let #svc_attribute_name = if let Some(layer) = self.#layer_attribute_name {
+                layer.layer(boxed_instance.clone())
+            } else {
+                quickwit_common::tower::BoxService::new(boxed_instance.clone())
+            };
         };
         svc_statements.extend(svc_statement);
 
@@ -535,15 +561,39 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
 
     quote! {
         impl #tower_block_builder_name {
+            pub fn shared_layer<L>(mut self, layer: L) -> Self
+            where
+                L: tower::Layer<Box<dyn #service_name>> + Clone + Send + Sync + 'static,
+                #layer_method_bounds
+            {
+                #layer_method_statements
+                self
+            }
 
             #layer_methods
 
-            pub fn service<T>(self, instance: T) -> #client_name
+            pub fn build<T>(self, instance: T) -> #client_name
             where
-                T: #service_name + Clone,
-           {
-                let boxed_instance: Box<dyn #service_name> = Box::new(instance);
+                T: #service_name
+            {
+                self.build_from_boxed(Box::new(instance))
+            }
 
+            pub fn build_from_channel<T>(self, channel: tower::timeout::Timeout<tonic::transport::Channel>) -> #client_name
+            {
+                self.build_from_boxed(Box::new(#client_name::from_channel(channel)))
+            }
+
+            pub fn build_from_mailbox<A>(self, mailbox: quickwit_actors::Mailbox<A>) -> #client_name
+            where
+                A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+                #mailbox_name<A>: #service_name,
+            {
+                self.build_from_boxed(Box::new(#client_name::from_mailbox(mailbox)))
+            }
+
+            fn build_from_boxed(self, boxed_instance: Box<dyn #service_name>) -> #client_name
+            {
                 #svc_statements
 
                 let tower_block = #tower_block_name {
