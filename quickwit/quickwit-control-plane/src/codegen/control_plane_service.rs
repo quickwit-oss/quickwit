@@ -130,23 +130,64 @@ pub struct ControlPlaneServiceTowerBlockBuilder {
     >,
 }
 impl ControlPlaneServiceTowerBlockBuilder {
-    pub fn notify_index_change_layer(
-        mut self,
-        layer: quickwit_common::tower::BoxLayer<
-            Box<dyn ControlPlaneService>,
-            NotifyIndexChangeRequest,
-            NotifyIndexChangeResponse,
-            crate::ControlPlaneError,
-        >,
-    ) -> Self {
-        self.notify_index_change_layer = Some(layer);
+    pub fn shared_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn ControlPlaneService>> + Clone + Send + Sync + 'static,
+        L::Service: Service<
+                NotifyIndexChangeRequest,
+                Response = NotifyIndexChangeResponse,
+                Error = crate::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
+    {
+        self
+            .notify_index_change_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer),
+        );
         self
     }
-    pub fn service<T>(self, instance: T) -> ControlPlaneServiceClient
+    pub fn notify_index_change_layer<L>(mut self, layer: L) -> Self
     where
-        T: ControlPlaneService + Clone,
+        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
+        L::Service: Service<
+                NotifyIndexChangeRequest,
+                Response = NotifyIndexChangeResponse,
+                Error = crate::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
     {
-        let boxed_instance: Box<dyn ControlPlaneService> = Box::new(instance);
+        self
+            .notify_index_change_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer),
+        );
+        self
+    }
+    pub fn build<T>(self, instance: T) -> ControlPlaneServiceClient
+    where
+        T: ControlPlaneService,
+    {
+        self.build_from_boxed(Box::new(instance))
+    }
+    pub fn build_from_channel<T>(
+        self,
+        channel: tower::timeout::Timeout<tonic::transport::Channel>,
+    ) -> ControlPlaneServiceClient {
+        self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_channel(channel)))
+    }
+    pub fn build_from_mailbox<A>(
+        self,
+        mailbox: quickwit_actors::Mailbox<A>,
+    ) -> ControlPlaneServiceClient
+    where
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        ControlPlaneServiceMailbox<A>: ControlPlaneService,
+    {
+        self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_mailbox(mailbox)))
+    }
+    fn build_from_boxed(
+        self,
+        boxed_instance: Box<dyn ControlPlaneService>,
+    ) -> ControlPlaneServiceClient {
         let notify_index_change_svc = if let Some(layer) = self.notify_index_change_layer
         {
             layer.layer(boxed_instance.clone())
