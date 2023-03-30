@@ -30,6 +30,7 @@ use rusoto_core::credential::{
 };
 use rusoto_core::{HttpClient, HttpConfig};
 use rusoto_sts::WebIdentityProvider;
+use tracing::warn;
 
 pub mod error;
 pub mod region;
@@ -98,11 +99,15 @@ impl ExtendedChainProvider {
 #[async_trait]
 impl ProvideAwsCredentials for ExtendedChainProvider {
     async fn credentials(&self) -> Result<AwsCredentials, CredentialsError> {
-        if let Ok(credentials) = self.web_identity_provider.credentials().await {
-            return Ok(credentials);
+        match self.web_identity_provider.credentials().await {
+            Ok(credentials) => return Ok(credentials),
+            Err(error) => {
+                warn!(err=?error, "Failed to find AWS credentials from `WebIdentityProvider`.")
+            }
         }
-        if let Ok(credentials) = self.chain_provider.credentials().await {
-            return Ok(credentials);
+        match self.chain_provider.credentials().await {
+            Ok(credentials) => return Ok(credentials),
+            Err(error) => warn!(err=?error, "Failed to find AWS credentials from `ChainProvider`."),
         }
         Err(CredentialsError::new(
             "Failed to find AWS credentials in environment, credentials file, or IAM role for \
