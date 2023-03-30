@@ -1,6 +1,6 @@
 ---
 title: AWS Cost Optimization
-sidebar_position: 4
+sidebar_position: 3
 ---
 
 Quickwit has been tested on Amazon S3. This page sums up what we have learned from that experience.
