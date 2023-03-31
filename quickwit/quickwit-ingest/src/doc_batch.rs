@@ -71,7 +71,7 @@ where T: Buf + Default
         }
     }
 
-    /// Copies the command to the end of bytes::BufMut while returning the number of bytes copied
+    /// Copies the command to the end of bytes::BufMut while returning the number of bytes copied.
     pub fn write(self, buf: &mut impl BufMut) -> usize {
         let self_buf = self.into_buf();
         let len = self_buf.remaining();
@@ -88,7 +88,7 @@ where T: Buf + Default
 
     fn code_chunk(&self) -> &'static [u8; 1] {
         match self {
-            DocCommand::Ingest { payload: _ } => &[DocCommandCode::IngestV1 as u8],
+            DocCommand::Ingest { .. } => &[DocCommandCode::IngestV1 as u8],
             DocCommand::Commit => &[DocCommandCode::CommitV1 as u8],
         }
     }

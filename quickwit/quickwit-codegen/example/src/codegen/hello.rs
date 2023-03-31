@@ -195,18 +195,18 @@ impl HelloTowerBlockBuilder {
     pub fn shared_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn Hello>> + Clone + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 HelloRequest,
                 Response = HelloResponse,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<HelloRequest>>::Future: Send + 'static,
-        L::Service: Service<
+        <L::Service as tower::Service<HelloRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
                 GoodbyeRequest,
                 Response = GoodbyeResponse,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<GoodbyeRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<GoodbyeRequest>>::Future: Send + 'static,
     {
         self.hello_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.goodbye_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
@@ -215,12 +215,12 @@ impl HelloTowerBlockBuilder {
     pub fn hello_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn Hello>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 HelloRequest,
                 Response = HelloResponse,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<HelloRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<HelloRequest>>::Future: Send + 'static,
     {
         self.hello_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
@@ -228,12 +228,12 @@ impl HelloTowerBlockBuilder {
     pub fn goodbye_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn Hello>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 GoodbyeRequest,
                 Response = GoodbyeResponse,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<GoodbyeRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<GoodbyeRequest>>::Future: Send + 'static,
     {
         self.goodbye_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self

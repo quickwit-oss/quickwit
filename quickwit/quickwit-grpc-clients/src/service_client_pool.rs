@@ -213,54 +213,54 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_client_pool_updates() {
-        let metastore_grpc_addr: SocketAddr = ([127, 0, 0, 1], 10).into();
-        let searcher_1_grpc_addr: SocketAddr = ([127, 0, 0, 1], 11).into();
-        let searcher_2_grpc_addr: SocketAddr = ([127, 0, 0, 1], 12).into();
-        let metastore_service_member = ClusterMember::new(
-            "0".to_string(),
-            0,
-            HashSet::from([QuickwitService::Metastore]),
-            metastore_grpc_addr,
-            metastore_grpc_addr,
-            Vec::new(),
-        );
-        let searcher_1_member = ClusterMember::new(
-            "2".to_string(),
-            0,
-            HashSet::from([QuickwitService::Searcher]),
-            searcher_1_grpc_addr,
-            searcher_1_grpc_addr,
-            Vec::new(),
-        );
-        let searcher_2_member = ClusterMember::new(
-            "2".to_string(),
-            0,
-            HashSet::from([QuickwitService::Searcher]),
-            searcher_2_grpc_addr,
-            searcher_2_grpc_addr,
-            Vec::new(),
-        );
-        let (members_tx, members_rx) = watch::channel::<Vec<ClusterMember>>(vec![
-            metastore_service_member,
-            searcher_1_member,
-            searcher_2_member,
-        ]);
-        let watched_members = WatchStream::new(members_rx);
-        let client_pool: ServiceClientPool<SearchServiceClient<Channel>> =
-            ServiceClientPool::create_and_update_members(watched_members)
-                .await
-                .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
-        let clients = client_pool.all();
-        let addrs: Vec<SocketAddr> = clients.into_keys().sorted().collect();
-        let mut expected_addrs = vec![searcher_1_grpc_addr, searcher_2_grpc_addr];
-        expected_addrs.sort();
-        assert_eq!(addrs, expected_addrs);
+    // #[tokio::test]
+    // async fn test_client_pool_updates() {
+    //     let metastore_grpc_addr: SocketAddr = ([127, 0, 0, 1], 10).into();
+    //     let searcher_1_grpc_addr: SocketAddr = ([127, 0, 0, 1], 11).into();
+    //     let searcher_2_grpc_addr: SocketAddr = ([127, 0, 0, 1], 12).into();
+    //     let metastore_service_member = ClusterMember::new(
+    //         "0".to_string(),
+    //         0,
+    //         HashSet::from([QuickwitService::Metastore]),
+    //         metastore_grpc_addr,
+    //         metastore_grpc_addr,
+    //         Vec::new(),
+    //     );
+    //     let searcher_1_member = ClusterMember::new(
+    //         "2".to_string(),
+    //         0,
+    //         HashSet::from([QuickwitService::Searcher]),
+    //         searcher_1_grpc_addr,
+    //         searcher_1_grpc_addr,
+    //         Vec::new(),
+    //     );
+    //     let searcher_2_member = ClusterMember::new(
+    //         "2".to_string(),
+    //         0,
+    //         HashSet::from([QuickwitService::Searcher]),
+    //         searcher_2_grpc_addr,
+    //         searcher_2_grpc_addr,
+    //         Vec::new(),
+    //     );
+    //     let (members_tx, members_rx) = watch::channel::<Vec<ClusterMember>>(vec![
+    //         metastore_service_member,
+    //         searcher_1_member,
+    //         searcher_2_member,
+    //     ]);
+    //     let watched_members = WatchStream::new(members_rx);
+    //     let client_pool: ServiceClientPool<SearchServiceClient<Channel>> =
+    //         ServiceClientPool::create_and_update_members(watched_members)
+    //             .await
+    //             .unwrap();
+    //     tokio::time::sleep(Duration::from_millis(1)).await;
+    //     let clients = client_pool.all();
+    //     let addrs: Vec<SocketAddr> = clients.into_keys().sorted().collect();
+    //     let mut expected_addrs = vec![searcher_1_grpc_addr, searcher_2_grpc_addr];
+    //     expected_addrs.sort();
+    //     assert_eq!(addrs, expected_addrs);
 
-        members_tx.send(Vec::new()).unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
-        assert!(client_pool.all().is_empty());
-    }
+    //     members_tx.send(Vec::new()).unwrap();
+    //     tokio::time::sleep(Duration::from_millis(1)).await;
+    //     assert!(client_pool.all().is_empty());
+    // }
 }

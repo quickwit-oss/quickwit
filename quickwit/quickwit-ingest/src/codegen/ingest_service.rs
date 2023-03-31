@@ -45,6 +45,63 @@ pub struct IngestResponse {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IngestRequestV2 {
+    #[prost(message, repeated, tag = "1")]
+    pub doc_batches: ::prost::alloc::vec::Vec<DocBatch>,
+    #[prost(uint32, tag = "2")]
+    pub commit: u32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IngestResponseV2 {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PersistRequest {
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub shard_id: u64,
+    #[prost(string, tag = "4")]
+    pub leader_id: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "5")]
+    pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, repeated, tag = "6")]
+    pub doc_batches: ::prost::alloc::vec::Vec<DocBatch>,
+    #[prost(uint32, tag = "7")]
+    pub commit: u32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PersistResponse {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReplicateRequest {
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub shard_id: u64,
+    #[prost(string, tag = "4")]
+    pub follower_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "5")]
+    pub doc_batches: ::prost::alloc::vec::Vec<DocBatch>,
+    #[prost(uint32, tag = "6")]
+    pub commit: u32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReplicateResponse {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
@@ -119,6 +176,18 @@ pub struct ListQueuesResponse {
 #[async_trait::async_trait]
 pub trait IngestService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse>;
+    async fn ingest_v2(
+        &mut self,
+        request: IngestRequestV2,
+    ) -> crate::Result<IngestResponseV2>;
+    async fn persist(
+        &mut self,
+        request: PersistRequest,
+    ) -> crate::Result<PersistResponse>;
+    async fn replicate(
+        &mut self,
+        request: ReplicateRequest,
+    ) -> crate::Result<ReplicateResponse>;
     async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse>;
     async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse>;
 }
@@ -169,6 +238,24 @@ impl IngestService for IngestServiceClient {
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
         self.inner.ingest(request).await
     }
+    async fn ingest_v2(
+        &mut self,
+        request: IngestRequestV2,
+    ) -> crate::Result<IngestResponseV2> {
+        self.inner.ingest_v2(request).await
+    }
+    async fn persist(
+        &mut self,
+        request: PersistRequest,
+    ) -> crate::Result<PersistResponse> {
+        self.inner.persist(request).await
+    }
+    async fn replicate(
+        &mut self,
+        request: ReplicateRequest,
+    ) -> crate::Result<ReplicateResponse> {
+        self.inner.replicate(request).await
+    }
     async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse> {
         self.inner.fetch(request).await
     }
@@ -198,6 +285,54 @@ impl tower::Service<IngestRequest> for Box<dyn IngestService> {
     fn call(&mut self, request: IngestRequest) -> Self::Future {
         let mut svc = self.clone();
         let fut = async move { svc.ingest(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<IngestRequestV2> for Box<dyn IngestService> {
+    type Response = IngestResponseV2;
+    type Error = crate::IngestServiceError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: IngestRequestV2) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.ingest_v2(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<PersistRequest> for Box<dyn IngestService> {
+    type Response = PersistResponse;
+    type Error = crate::IngestServiceError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: PersistRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.persist(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<ReplicateRequest> for Box<dyn IngestService> {
+    type Response = ReplicateResponse;
+    type Error = crate::IngestServiceError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: ReplicateRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.replicate(request).await };
         Box::pin(fut)
     }
 }
@@ -241,6 +376,21 @@ struct IngestServiceTowerBlock {
         IngestResponse,
         crate::IngestServiceError,
     >,
+    ingest_v2_svc: quickwit_common::tower::BoxService<
+        IngestRequestV2,
+        IngestResponseV2,
+        crate::IngestServiceError,
+    >,
+    persist_svc: quickwit_common::tower::BoxService<
+        PersistRequest,
+        PersistResponse,
+        crate::IngestServiceError,
+    >,
+    replicate_svc: quickwit_common::tower::BoxService<
+        ReplicateRequest,
+        ReplicateResponse,
+        crate::IngestServiceError,
+    >,
     fetch_svc: quickwit_common::tower::BoxService<
         FetchRequest,
         FetchResponse,
@@ -256,6 +406,9 @@ impl Clone for IngestServiceTowerBlock {
     fn clone(&self) -> Self {
         Self {
             ingest_svc: self.ingest_svc.clone(),
+            ingest_v2_svc: self.ingest_v2_svc.clone(),
+            persist_svc: self.persist_svc.clone(),
+            replicate_svc: self.replicate_svc.clone(),
             fetch_svc: self.fetch_svc.clone(),
             tail_svc: self.tail_svc.clone(),
         }
@@ -265,6 +418,24 @@ impl Clone for IngestServiceTowerBlock {
 impl IngestService for IngestServiceTowerBlock {
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
         self.ingest_svc.ready().await?.call(request).await
+    }
+    async fn ingest_v2(
+        &mut self,
+        request: IngestRequestV2,
+    ) -> crate::Result<IngestResponseV2> {
+        self.ingest_v2_svc.ready().await?.call(request).await
+    }
+    async fn persist(
+        &mut self,
+        request: PersistRequest,
+    ) -> crate::Result<PersistResponse> {
+        self.persist_svc.ready().await?.call(request).await
+    }
+    async fn replicate(
+        &mut self,
+        request: ReplicateRequest,
+    ) -> crate::Result<ReplicateResponse> {
+        self.replicate_svc.ready().await?.call(request).await
     }
     async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse> {
         self.fetch_svc.ready().await?.call(request).await
@@ -280,6 +451,30 @@ pub struct IngestServiceTowerBlockBuilder {
             Box<dyn IngestService>,
             IngestRequest,
             IngestResponse,
+            crate::IngestServiceError,
+        >,
+    >,
+    ingest_v2_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn IngestService>,
+            IngestRequestV2,
+            IngestResponseV2,
+            crate::IngestServiceError,
+        >,
+    >,
+    persist_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn IngestService>,
+            PersistRequest,
+            PersistResponse,
+            crate::IngestServiceError,
+        >,
+    >,
+    replicate_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn IngestService>,
+            ReplicateRequest,
+            ReplicateResponse,
             crate::IngestServiceError,
         >,
     >,
@@ -304,26 +499,53 @@ impl IngestServiceTowerBlockBuilder {
     pub fn shared_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Clone + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 IngestRequest,
                 Response = IngestResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<IngestRequest>>::Future: Send + 'static,
-        L::Service: Service<
+        <L::Service as tower::Service<IngestRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
+                IngestRequestV2,
+                Response = IngestResponseV2,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
+        L::Service: tower::Service<
+                PersistRequest,
+                Response = PersistResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<PersistRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
+                ReplicateRequest,
+                Response = ReplicateResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<ReplicateRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
                 FetchRequest,
                 Response = FetchResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<FetchRequest>>::Future: Send + 'static,
-        L::Service: Service<
+        <L::Service as tower::Service<FetchRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
                 TailRequest,
                 Response = FetchResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<TailRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<TailRequest>>::Future: Send + 'static,
     {
         self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self
+            .ingest_v2_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
+        );
+        self.persist_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self
+            .replicate_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
+        );
         self.fetch_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.tail_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
@@ -331,25 +553,64 @@ impl IngestServiceTowerBlockBuilder {
     pub fn ingest_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 IngestRequest,
                 Response = IngestResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<IngestRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<IngestRequest>>::Future: Send + 'static,
     {
         self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn ingest_v2_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                IngestRequestV2,
+                Response = IngestResponseV2,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
+    {
+        self.ingest_v2_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn persist_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                PersistRequest,
+                Response = PersistResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<PersistRequest>>::Future: Send + 'static,
+    {
+        self.persist_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn replicate_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                ReplicateRequest,
+                Response = ReplicateResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<ReplicateRequest>>::Future: Send + 'static,
+    {
+        self.replicate_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn fetch_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 FetchRequest,
                 Response = FetchResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<FetchRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<FetchRequest>>::Future: Send + 'static,
     {
         self.fetch_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
@@ -357,12 +618,12 @@ impl IngestServiceTowerBlockBuilder {
     pub fn tail_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 TailRequest,
                 Response = FetchResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<TailRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<TailRequest>>::Future: Send + 'static,
     {
         self.tail_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
@@ -398,6 +659,21 @@ impl IngestServiceTowerBlockBuilder {
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
+        let ingest_v2_svc = if let Some(layer) = self.ingest_v2_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
+        let persist_svc = if let Some(layer) = self.persist_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
+        let replicate_svc = if let Some(layer) = self.replicate_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
         let fetch_svc = if let Some(layer) = self.fetch_layer {
             layer.layer(boxed_instance.clone())
         } else {
@@ -410,6 +686,9 @@ impl IngestServiceTowerBlockBuilder {
         };
         let tower_block = IngestServiceTowerBlock {
             ingest_svc,
+            ingest_v2_svc,
+            persist_svc,
+            replicate_svc,
             fetch_svc,
             tail_svc,
         };
@@ -496,6 +775,24 @@ where
             Future = BoxFuture<IngestResponse, crate::IngestServiceError>,
         >
         + tower::Service<
+            IngestRequestV2,
+            Response = IngestResponseV2,
+            Error = crate::IngestServiceError,
+            Future = BoxFuture<IngestResponseV2, crate::IngestServiceError>,
+        >
+        + tower::Service<
+            PersistRequest,
+            Response = PersistResponse,
+            Error = crate::IngestServiceError,
+            Future = BoxFuture<PersistResponse, crate::IngestServiceError>,
+        >
+        + tower::Service<
+            ReplicateRequest,
+            Response = ReplicateResponse,
+            Error = crate::IngestServiceError,
+            Future = BoxFuture<ReplicateResponse, crate::IngestServiceError>,
+        >
+        + tower::Service<
             FetchRequest,
             Response = FetchResponse,
             Error = crate::IngestServiceError,
@@ -509,6 +806,24 @@ where
         >,
 {
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
+        self.call(request).await
+    }
+    async fn ingest_v2(
+        &mut self,
+        request: IngestRequestV2,
+    ) -> crate::Result<IngestResponseV2> {
+        self.call(request).await
+    }
+    async fn persist(
+        &mut self,
+        request: PersistRequest,
+    ) -> crate::Result<PersistResponse> {
+        self.call(request).await
+    }
+    async fn replicate(
+        &mut self,
+        request: ReplicateRequest,
+    ) -> crate::Result<ReplicateResponse> {
         self.call(request).await
     }
     async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse> {
@@ -543,6 +858,36 @@ where
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
         self.inner
             .ingest(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn ingest_v2(
+        &mut self,
+        request: IngestRequestV2,
+    ) -> crate::Result<IngestResponseV2> {
+        self.inner
+            .ingest_v2(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn persist(
+        &mut self,
+        request: PersistRequest,
+    ) -> crate::Result<PersistResponse> {
+        self.inner
+            .persist(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn replicate(
+        &mut self,
+        request: ReplicateRequest,
+    ) -> crate::Result<ReplicateResponse> {
+        self.inner
+            .replicate(request)
             .await
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
@@ -583,6 +928,39 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
         self.inner
             .clone()
             .ingest(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(Into::into)
+    }
+    async fn ingest_v2(
+        &self,
+        request: tonic::Request<IngestRequestV2>,
+    ) -> Result<tonic::Response<IngestResponseV2>, tonic::Status> {
+        self.inner
+            .clone()
+            .ingest_v2(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(Into::into)
+    }
+    async fn persist(
+        &self,
+        request: tonic::Request<PersistRequest>,
+    ) -> Result<tonic::Response<PersistResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .persist(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(Into::into)
+    }
+    async fn replicate(
+        &self,
+        request: tonic::Request<ReplicateRequest>,
+    ) -> Result<tonic::Response<ReplicateResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .replicate(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(Into::into)
@@ -679,13 +1057,13 @@ pub mod ingest_service_grpc_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
-        /// / Ingests document in a given queue.
+        /// / Ingests documents in a given queue.
         /// /
         /// / Upon any kind of error, the client should
-        /// / - retry to get at least once delivery.
-        /// / - not retry to get at most once delivery.
+        /// / - retry to get at-least-once delivery.
+        /// / - not retry to get at-most-once delivery.
         /// /
-        /// / Exactly once delivery is not supported yet.
+        /// / Exactly-once delivery is not supported yet.
         pub async fn ingest(
             &mut self,
             request: impl tonic::IntoRequest<super::IngestRequest>,
@@ -702,6 +1080,63 @@ pub mod ingest_service_grpc_client {
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/ingest_service.IngestService/Ingest",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn ingest_v2(
+            &mut self,
+            request: impl tonic::IntoRequest<super::IngestRequestV2>,
+        ) -> Result<tonic::Response<super::IngestResponseV2>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ingest_service.IngestService/IngestV2",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn persist(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PersistRequest>,
+        ) -> Result<tonic::Response<super::PersistResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ingest_service.IngestService/Persist",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn replicate(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ReplicateRequest>,
+        ) -> Result<tonic::Response<super::ReplicateResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ingest_service.IngestService/Replicate",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
@@ -767,17 +1202,29 @@ pub mod ingest_service_grpc_server {
     /// Generated trait containing gRPC methods that should be implemented for use with IngestServiceGrpcServer.
     #[async_trait]
     pub trait IngestServiceGrpc: Send + Sync + 'static {
-        /// / Ingests document in a given queue.
+        /// / Ingests documents in a given queue.
         /// /
         /// / Upon any kind of error, the client should
-        /// / - retry to get at least once delivery.
-        /// / - not retry to get at most once delivery.
+        /// / - retry to get at-least-once delivery.
+        /// / - not retry to get at-most-once delivery.
         /// /
-        /// / Exactly once delivery is not supported yet.
+        /// / Exactly-once delivery is not supported yet.
         async fn ingest(
             &self,
             request: tonic::Request<super::IngestRequest>,
         ) -> Result<tonic::Response<super::IngestResponse>, tonic::Status>;
+        async fn ingest_v2(
+            &self,
+            request: tonic::Request<super::IngestRequestV2>,
+        ) -> Result<tonic::Response<super::IngestResponseV2>, tonic::Status>;
+        async fn persist(
+            &self,
+            request: tonic::Request<super::PersistRequest>,
+        ) -> Result<tonic::Response<super::PersistResponse>, tonic::Status>;
+        async fn replicate(
+            &self,
+            request: tonic::Request<super::ReplicateRequest>,
+        ) -> Result<tonic::Response<super::ReplicateResponse>, tonic::Status>;
         /// / Fetches record from a given queue.
         /// /
         /// / Records are returned in order.
@@ -888,6 +1335,120 @@ pub mod ingest_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = IngestSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ingest_service.IngestService/IngestV2" => {
+                    #[allow(non_camel_case_types)]
+                    struct IngestV2Svc<T: IngestServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: IngestServiceGrpc,
+                    > tonic::server::UnaryService<super::IngestRequestV2>
+                    for IngestV2Svc<T> {
+                        type Response = super::IngestResponseV2;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::IngestRequestV2>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).ingest_v2(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = IngestV2Svc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ingest_service.IngestService/Persist" => {
+                    #[allow(non_camel_case_types)]
+                    struct PersistSvc<T: IngestServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: IngestServiceGrpc,
+                    > tonic::server::UnaryService<super::PersistRequest>
+                    for PersistSvc<T> {
+                        type Response = super::PersistResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PersistRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).persist(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = PersistSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ingest_service.IngestService/Replicate" => {
+                    #[allow(non_camel_case_types)]
+                    struct ReplicateSvc<T: IngestServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: IngestServiceGrpc,
+                    > tonic::server::UnaryService<super::ReplicateRequest>
+                    for ReplicateSvc<T> {
+                        type Response = super::ReplicateResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ReplicateRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).replicate(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ReplicateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

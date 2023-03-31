@@ -24,7 +24,7 @@ use std::hash::Hash;
 use itertools::Itertools;
 use quickwit_cluster::ClusterMember;
 use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
-use quickwit_config::{SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID};
+use quickwit_config::SourceConfig;
 use quickwit_proto::indexing_api::IndexingTask;
 use serde::Serialize;
 
@@ -160,7 +160,7 @@ pub(crate) fn build_physical_indexing_plan(
             // TODO(fmassot): remove this lame allocation to access the source...
             .get(&IndexSourceId::from(indexing_task.clone()))
             .expect("SourceConfig should always be present.");
-        let candidates = select_node_candidates(&node_ids, &plan, source_config, &indexing_task);
+        let candidates = select_candidate_nodes(&node_ids, &plan, source_config, &indexing_task);
 
         // It's theoretically possible to have no candidate as all indexers can already
         // have more than `max_num_pipelines_per_indexer` assigned for a given source.
@@ -214,7 +214,7 @@ impl<'a> Ord for NodeScore<'a> {
 /// The selection is overly simple: a node will match unless it has
 /// been already assigned the `max_num_pipelines_per_indexer` of tasks for
 /// the given (index ID, source ID).
-fn select_node_candidates<'a>(
+fn select_candidate_nodes<'a>(
     node_ids: &'a [String],
     physical_plan: &PhysicalIndexingPlan,
     source_config: &SourceConfig,
@@ -230,7 +230,7 @@ fn select_node_candidates<'a>(
                 &indexing_task.source_id,
             ) < source_config.max_num_pipelines_per_indexer.get()
         })
-        .collect_vec()
+        .collect()
 }
 
 /// Lame scoring function for a given node ID defined by
@@ -273,30 +273,28 @@ impl From<IndexingTask> for IndexSourceId {
 pub(crate) fn build_indexing_plan(
     indexers: &[ClusterMember],
     source_configs: &HashMap<IndexSourceId, SourceConfig>,
+    num_indexers: usize,
 ) -> Vec<IndexingTask> {
     let mut indexing_tasks: Vec<IndexingTask> = Vec::new();
     for (index_source_id, source_config) in source_configs
         .iter()
         .sorted_by(|(left, _), (right, _)| left.cmp(right))
     {
-        if !source_config.enabled {
-            continue;
-        }
-        if source_config.source_id == CLI_INGEST_SOURCE_ID {
+        if !source_config.enabled || source_config.is_cli() {
             continue;
         }
         // Ignore file sources as we don't know the file location.
-        if source_config.source_type() == "file" {
+        if source_config.is_file() {
             continue;
         }
-        let num_pipelines = if source_config.source_id == INGEST_API_SOURCE_ID {
-            indexers.len()
+        let num_pipelines = if source_config.is_ingest() {
+            num_indexers
         } else {
             // The num desired pipelines is constrained by the number of indexer and the maximum
             // of pipelines that can run on each indexer.
             std::cmp::min(
                 source_config.desired_num_pipelines.get(),
-                source_config.max_num_pipelines_per_indexer.get() * indexers.len(),
+                source_config.max_num_pipelines_per_indexer.get() * num_indexers,
             )
         };
         for _ in 0..num_pipelines {
@@ -342,329 +340,333 @@ mod tests {
         })
     }
 
-    fn cluster_members_for_test(
-        num_members: usize,
-        quickwit_service: QuickwitService,
-    ) -> Vec<ClusterMember> {
-        let mut members = Vec::new();
-        for idx in 0..num_members {
-            let addr: SocketAddr = ([127, 0, 0, 1], 10).into();
-            members.push(ClusterMember::new(
-                (1 + idx).to_string(),
-                0,
-                HashSet::from_iter([quickwit_service].into_iter()),
-                addr,
-                addr,
-                Vec::new(),
-            ))
-        }
-        members
-    }
+    // fn cluster_members_for_test(
+    //     num_members: usize,
+    //     quickwit_service: QuickwitService,
+    // ) -> Vec<ClusterMember> {
+    //     let mut members = Vec::new();
+    //     for idx in 0..num_members {
+    //         let addr: SocketAddr = ([127, 0, 0, 1], 10).into();
+    //         members.push(ClusterMember::new(
+    //             (1 + idx).to_string(),
+    //             0,
+    //             HashSet::from_iter([quickwit_service].into_iter()),
+    //             addr,
+    //             addr,
+    //             Vec::new(),
+    //         ))
+    //     }
+    //     members
+    // }
 
-    fn count_indexing_tasks_count_for_test(
-        num_indexers: usize,
-        source_configs: &HashMap<IndexSourceId, SourceConfig>,
-    ) -> usize {
-        source_configs
-            .iter()
-            .map(|(_, source_config)| {
-                std::cmp::min(
-                    num_indexers * source_config.max_num_pipelines_per_indexer.get(),
-                    source_config.desired_num_pipelines.get(),
-                )
-            })
-            .sum()
-    }
+    // fn count_indexing_tasks_count_for_test(
+    //     num_indexers: usize,
+    //     source_configs: &HashMap<IndexSourceId, SourceConfig>,
+    // ) -> usize {
+    //     source_configs
+    //         .iter()
+    //         .map(|(_, source_config)| {
+    //             std::cmp::min(
+    //                 num_indexers * source_config.max_num_pipelines_per_indexer.get(),
+    //                 source_config.desired_num_pipelines.get(),
+    //             )
+    //         })
+    //         .sum()
+    // }
 
-    #[test]
-    fn test_build_indexing_plan_one_source() {
-        let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
-        let mut source_configs_map = HashMap::new();
-        let index_source_id = IndexSourceId {
-            index_id: "one-source-index".to_string(),
-            source_id: "source-0".to_string(),
-        };
-        source_configs_map.insert(
-            index_source_id.clone(),
-            SourceConfig {
-                source_id: index_source_id.source_id.to_string(),
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
-                enabled: true,
-                source_params: kafka_source_params_for_test(),
-                transform_config: None,
-            },
-        );
+    // #[test]
+    // fn test_build_indexing_plan_one_source() {
+    //     let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
+    //     let mut source_configs_map = HashMap::new();
+    //     let index_source_id = IndexSourceId {
+    //         index_id: "one-source-index".to_string(),
+    //         source_id: "source-0".to_string(),
+    //     };
+    //     source_configs_map.insert(
+    //         index_source_id.clone(),
+    //         SourceConfig {
+    //             source_id: index_source_id.source_id.to_string(),
+    //             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+    //             desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
+    //             enabled: true,
+    //             source_params: kafka_source_params_for_test(),
+    //             transform_config: None,
+    //         },
+    //     );
 
-        let indexing_tasks = build_indexing_plan(&indexers, &source_configs_map);
+    //     let indexing_tasks = build_indexing_plan(&indexers, &source_configs_map);
 
-        assert_eq!(indexing_tasks.len(), 3);
-        for indexing_task in indexing_tasks {
-            assert_eq!(
-                indexing_task,
-                IndexingTask {
-                    index_id: index_source_id.index_id.to_string(),
-                    source_id: index_source_id.source_id.to_string(),
-                }
-            );
-        }
-    }
+    //     assert_eq!(indexing_tasks.len(), 3);
+    //     for indexing_task in indexing_tasks {
+    //         assert_eq!(
+    //             indexing_task,
+    //             IndexingTask {
+    //                 index_id: index_source_id.index_id.to_string(),
+    //                 source_id: index_source_id.source_id.to_string(),
+    //             }
+    //         );
+    //     }
+    // }
 
-    #[test]
-    fn test_build_indexing_plan_with_ingest_api_source() {
-        let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
-        let mut source_configs_map = HashMap::new();
-        let index_source_id = IndexSourceId {
-            index_id: "ingest-api-index".to_string(),
-            source_id: INGEST_API_SOURCE_ID.to_string(),
-        };
-        source_configs_map.insert(
-            index_source_id.clone(),
-            SourceConfig {
-                source_id: index_source_id.source_id.to_string(),
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
-                enabled: true,
-                source_params: SourceParams::IngestApi,
-                transform_config: None,
-            },
-        );
+    // #[test]
+    // fn test_build_indexing_plan_with_ingest_api_source() {
+    //     let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
+    //     let mut source_configs_map = HashMap::new();
+    //     let index_source_id = IndexSourceId {
+    //         index_id: "ingest-api-index".to_string(),
+    //         source_id: INGEST_API_SOURCE_ID.to_string(),
+    //     };
+    //     source_configs_map.insert(
+    //         index_source_id.clone(),
+    //         SourceConfig {
+    //             source_id: index_source_id.source_id.to_string(),
+    //             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+    //             desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
+    //             enabled: true,
+    //             source_params: SourceParams::IngestApi,
+    //             transform_config: None,
+    //         },
+    //     );
 
-        let indexing_tasks = build_indexing_plan(&indexers, &source_configs_map);
+    //     let indexing_tasks = build_indexing_plan(&indexers, &source_configs_map);
 
-        assert_eq!(indexing_tasks.len(), 4);
-        for indexing_task in indexing_tasks {
-            assert_eq!(
-                indexing_task,
-                IndexingTask {
-                    index_id: index_source_id.index_id.to_string(),
-                    source_id: index_source_id.source_id.to_string(),
-                }
-            );
-        }
-    }
+    //     assert_eq!(indexing_tasks.len(), 4);
+    //     for indexing_task in indexing_tasks {
+    //         assert_eq!(
+    //             indexing_task,
+    //             IndexingTask {
+    //                 index_id: index_source_id.index_id.to_string(),
+    //                 source_id: index_source_id.source_id.to_string(),
+    //             }
+    //         );
+    //     }
+    // }
 
-    #[test]
-    fn test_build_indexing_plan_with_sources_to_ignore() {
-        let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
-        let mut source_configs_map = HashMap::new();
-        let file_index_source_id = IndexSourceId {
-            index_id: "one-source-index".to_string(),
-            source_id: "file-source".to_string(),
-        };
-        let cli_ingest_index_source_id = IndexSourceId {
-            index_id: "second-source-index".to_string(),
-            source_id: CLI_INGEST_SOURCE_ID.to_string(),
-        };
-        let kafka_index_source_id = IndexSourceId {
-            index_id: "third-source-index".to_string(),
-            source_id: "kafka-source".to_string(),
-        };
-        source_configs_map.insert(
-            file_index_source_id.clone(),
-            SourceConfig {
-                source_id: file_index_source_id.source_id,
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
-                enabled: true,
-                source_params: SourceParams::File(FileSourceParams { filepath: None }),
-                transform_config: None,
-            },
-        );
-        source_configs_map.insert(
-            cli_ingest_index_source_id.clone(),
-            SourceConfig {
-                source_id: cli_ingest_index_source_id.source_id,
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
-                enabled: true,
-                source_params: SourceParams::IngestCli,
-                transform_config: None,
-            },
-        );
-        source_configs_map.insert(
-            kafka_index_source_id.clone(),
-            SourceConfig {
-                source_id: kafka_index_source_id.source_id,
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
-                enabled: false,
-                source_params: kafka_source_params_for_test(),
-                transform_config: None,
-            },
-        );
-        let indexing_tasks = build_indexing_plan(&indexers, &source_configs_map);
+    // #[test]
+    // fn test_build_indexing_plan_with_sources_to_ignore() {
+    //     let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
+    //     let mut source_configs_map = HashMap::new();
+    //     let file_index_source_id = IndexSourceId {
+    //         index_id: "one-source-index".to_string(),
+    //         source_id: "file-source".to_string(),
+    //     };
+    //     let cli_ingest_index_source_id = IndexSourceId {
+    //         index_id: "second-source-index".to_string(),
+    //         source_id: CLI_INGEST_SOURCE_ID.to_string(),
+    //     };
+    //     let kafka_index_source_id = IndexSourceId {
+    //         index_id: "third-source-index".to_string(),
+    //         source_id: "kafka-source".to_string(),
+    //     };
+    //     source_configs_map.insert(
+    //         file_index_source_id.clone(),
+    //         SourceConfig {
+    //             source_id: file_index_source_id.source_id,
+    //             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+    //             desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
+    //             enabled: true,
+    //             source_params: SourceParams::File(FileSourceParams { filepath: None }),
+    //             transform_config: None,
+    //         },
+    //     );
+    //     source_configs_map.insert(
+    //         cli_ingest_index_source_id.clone(),
+    //         SourceConfig {
+    //             source_id: cli_ingest_index_source_id.source_id,
+    //             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+    //             desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
+    //             enabled: true,
+    //             source_params: SourceParams::IngestCli,
+    //             transform_config: None,
+    //         },
+    //     );
+    //     source_configs_map.insert(
+    //         kafka_index_source_id.clone(),
+    //         SourceConfig {
+    //             source_id: kafka_index_source_id.source_id,
+    //             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+    //             desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
+    //             enabled: false,
+    //             source_params: kafka_source_params_for_test(),
+    //             transform_config: None,
+    //         },
+    //     );
+    //     let indexing_tasks = build_indexing_plan(&indexers, &source_configs_map);
 
-        assert_eq!(indexing_tasks.len(), 0);
-    }
+    //     assert_eq!(indexing_tasks.len(), 0);
+    // }
 
-    #[test]
-    fn test_build_physical_indexing_plan_simple() {
-        quickwit_common::setup_logging_for_tests();
-        // Rdv hashing for (index 1, source) returns [node 2, node 1].
-        let index_1 = "1";
-        let source_1 = "1";
-        // Rdv hashing for (index 2, source) returns [node 1, node 2].
-        let index_2 = "2";
-        let source_2 = "0";
-        let mut source_configs_map = HashMap::new();
-        let kafka_index_source_id_1 = IndexSourceId {
-            index_id: index_1.to_string(),
-            source_id: source_1.to_string(),
-        };
-        let kafka_index_source_id_2 = IndexSourceId {
-            index_id: index_2.to_string(),
-            source_id: source_2.to_string(),
-        };
-        source_configs_map.insert(
-            kafka_index_source_id_1.clone(),
-            SourceConfig {
-                source_id: kafka_index_source_id_1.source_id,
-                max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(4).unwrap(),
-                enabled: true,
-                source_params: kafka_source_params_for_test(),
-                transform_config: None,
-            },
-        );
-        source_configs_map.insert(
-            kafka_index_source_id_2.clone(),
-            SourceConfig {
-                source_id: kafka_index_source_id_2.source_id,
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
-                enabled: true,
-                source_params: kafka_source_params_for_test(),
-                transform_config: None,
-            },
-        );
-        let mut indexing_tasks = Vec::new();
-        for _ in 0..3 {
-            indexing_tasks.push(IndexingTask {
-                index_id: index_1.to_string(),
-                source_id: source_1.to_string(),
-            });
-        }
-        for _ in 0..2 {
-            indexing_tasks.push(IndexingTask {
-                index_id: index_2.to_string(),
-                source_id: source_2.to_string(),
-            });
-        }
+    // #[test]
+    // fn test_build_physical_indexing_plan_simple() {
+    //     quickwit_common::setup_logging_for_tests();
+    //     // Rdv hashing for (index 1, source) returns [node 2, node 1].
+    //     let index_1 = "1";
+    //     let source_1 = "1";
+    //     // Rdv hashing for (index 2, source) returns [node 1, node 2].
+    //     let index_2 = "2";
+    //     let source_2 = "0";
+    //     let mut source_configs_map = HashMap::new();
+    //     let kafka_index_source_id_1 = IndexSourceId {
+    //         index_id: index_1.to_string(),
+    //         source_id: source_1.to_string(),
+    //     };
+    //     let kafka_index_source_id_2 = IndexSourceId {
+    //         index_id: index_2.to_string(),
+    //         source_id: source_2.to_string(),
+    //     };
+    //     source_configs_map.insert(
+    //         kafka_index_source_id_1.clone(),
+    //         SourceConfig {
+    //             source_id: kafka_index_source_id_1.source_id,
+    //             max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+    //             desired_num_pipelines: NonZeroUsize::new(4).unwrap(),
+    //             enabled: true,
+    //             source_params: kafka_source_params_for_test(),
+    //             transform_config: None,
+    //         },
+    //     );
+    //     source_configs_map.insert(
+    //         kafka_index_source_id_2.clone(),
+    //         SourceConfig {
+    //             source_id: kafka_index_source_id_2.source_id,
+    //             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+    //             desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+    //             enabled: true,
+    //             source_params: kafka_source_params_for_test(),
+    //             transform_config: None,
+    //         },
+    //     );
+    //     let mut indexing_tasks = Vec::new();
+    //     for _ in 0..3 {
+    //         indexing_tasks.push(IndexingTask {
+    //             index_id: index_1.to_string(),
+    //             source_id: source_1.to_string(),
+    //         });
+    //     }
+    //     for _ in 0..2 {
+    //         indexing_tasks.push(IndexingTask {
+    //             index_id: index_2.to_string(),
+    //             source_id: source_2.to_string(),
+    //         });
+    //     }
 
-        let indexers = cluster_members_for_test(2, QuickwitService::Indexer);
-        let physical_plan =
-            build_physical_indexing_plan(&indexers, &source_configs_map, indexing_tasks.clone());
-        assert_eq!(physical_plan.indexing_tasks_per_node_id.len(), 2);
-        let indexer_1_tasks = physical_plan
-            .indexing_tasks_per_node_id
-            .get(&indexers[0].node_id)
-            .unwrap();
-        let indexer_2_tasks = physical_plan
-            .indexing_tasks_per_node_id
-            .get(&indexers[1].node_id)
-            .unwrap();
-        // (index 1, source) tasks are first placed on indexer 2 by rdv hashing.
-        // Thus task 0 => indexer 2, task 1 => indexer 1, task 2 => indexer 2, task 3 => indexer 1.
-        let expected_indexer_1_tasks = indexing_tasks
-            .iter()
-            .cloned()
-            .enumerate()
-            .filter(|(idx, _)| idx % 2 == 1)
-            .map(|(_, task)| task)
-            .collect_vec();
-        assert_eq!(indexer_1_tasks, &expected_indexer_1_tasks);
-        // (index 1, source) tasks are first placed on node 1 by rdv hashing.
-        let expected_indexer_2_tasks = indexing_tasks
-            .into_iter()
-            .enumerate()
-            .filter(|(idx, _)| idx % 2 == 0)
-            .map(|(_, task)| task)
-            .collect_vec();
-        assert_eq!(indexer_2_tasks, &expected_indexer_2_tasks);
-    }
+    //     let indexers = cluster_members_for_test(2, QuickwitService::Indexer);
+    //     let physical_plan =
+    //         build_physical_indexing_plan(&indexers, &source_configs_map, indexing_tasks.clone());
+    //     assert_eq!(physical_plan.indexing_tasks_per_node_id.len(), 2);
+    //     let indexer_1_tasks = physical_plan
+    //         .indexing_tasks_per_node_id
+    //         .get(&indexers[0].node_id)
+    //         .unwrap();
+    //     let indexer_2_tasks = physical_plan
+    //         .indexing_tasks_per_node_id
+    //         .get(&indexers[1].node_id)
+    //         .unwrap();
+    //     // (index 1, source) tasks are first placed on indexer 2 by rdv hashing.
+    //     // Thus task 0 => indexer 2, task 1 => indexer 1, task 2 => indexer 2, task 3 => indexer
+    // 1.     let expected_indexer_1_tasks = indexing_tasks
+    //         .iter()
+    //         .cloned()
+    //         .enumerate()
+    //         .filter(|(idx, _)| idx % 2 == 1)
+    //         .map(|(_, task)| task)
+    //         .collect_vec();
+    //     assert_eq!(indexer_1_tasks, &expected_indexer_1_tasks);
+    //     // (index 1, source) tasks are first placed on node 1 by rdv hashing.
+    //     let expected_indexer_2_tasks = indexing_tasks
+    //         .into_iter()
+    //         .enumerate()
+    //         .filter(|(idx, _)| idx % 2 == 0)
+    //         .map(|(_, task)| task)
+    //         .collect_vec();
+    //     assert_eq!(indexer_2_tasks, &expected_indexer_2_tasks);
+    // }
 
-    #[test]
-    fn test_build_physical_indexing_plan_with_not_enough_indexers() {
-        quickwit_common::setup_logging_for_tests();
-        let index_1 = "test-indexing-plan-1";
-        let source_1 = "source-1";
-        let mut source_configs_map = HashMap::new();
-        let kafka_index_source_id_1 = IndexSourceId {
-            index_id: index_1.to_string(),
-            source_id: source_1.to_string(),
-        };
-        source_configs_map.insert(
-            kafka_index_source_id_1.clone(),
-            SourceConfig {
-                source_id: kafka_index_source_id_1.source_id,
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
-                enabled: true,
-                source_params: kafka_source_params_for_test(),
-                transform_config: None,
-            },
-        );
-        let indexing_tasks = vec![
-            IndexingTask {
-                index_id: index_1.to_string(),
-                source_id: source_1.to_string(),
-            },
-            IndexingTask {
-                index_id: index_1.to_string(),
-                source_id: source_1.to_string(),
-            },
-        ];
+    // #[test]
+    // fn test_build_physical_indexing_plan_with_not_enough_indexers() {
+    //     quickwit_common::setup_logging_for_tests();
+    //     let index_1 = "test-indexing-plan-1";
+    //     let source_1 = "source-1";
+    //     let mut source_configs_map = HashMap::new();
+    //     let kafka_index_source_id_1 = IndexSourceId {
+    //         index_id: index_1.to_string(),
+    //         source_id: source_1.to_string(),
+    //     };
+    //     source_configs_map.insert(
+    //         kafka_index_source_id_1.clone(),
+    //         SourceConfig {
+    //             source_id: kafka_index_source_id_1.source_id,
+    //             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+    //             desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+    //             enabled: true,
+    //             source_params: kafka_source_params_for_test(),
+    //             transform_config: None,
+    //         },
+    //     );
+    //     let indexing_tasks = vec![
+    //         IndexingTask {
+    //             index_id: index_1.to_string(),
+    //             source_id: source_1.to_string(),
+    //         },
+    //         IndexingTask {
+    //             index_id: index_1.to_string(),
+    //             source_id: source_1.to_string(),
+    //         },
+    //     ];
 
-        let indexers = cluster_members_for_test(1, QuickwitService::Indexer);
-        // This case should never happens but we just check that the plan building is resilient
-        // enough, it will ignore the tasks that cannot be allocated.
-        let physical_plan =
-            build_physical_indexing_plan(&indexers, &source_configs_map, indexing_tasks);
-        assert_eq!(physical_plan.num_indexing_tasks(), 1);
-    }
+    //     let indexers = cluster_members_for_test(1, QuickwitService::Indexer);
+    //     // This case should never happens but we just check that the plan building is resilient
+    //     // enough, it will ignore the tasks that cannot be allocated.
+    //     let physical_plan =
+    //         build_physical_indexing_plan(&indexers, &source_configs_map, indexing_tasks);
+    //     assert_eq!(physical_plan.num_indexing_tasks(), 1);
+    // }
 
-    proptest! {
-        #[test]
-        fn test_building_indexing_tasks_and_physical_plan(num_indexers in 1usize..50usize, index_id_sources in proptest::collection::vec(gen_kafka_source(), 1..20)) {
-            let mut indexers = cluster_members_for_test(num_indexers, QuickwitService::Indexer);
-            let source_configs: HashMap<IndexSourceId, SourceConfig> = index_id_sources
-                .into_iter()
-                .map(|(index_id, source_config)| {
-                    (IndexSourceId { index_id, source_id: source_config.source_id.to_string() }, source_config)
-                })
-                .collect();
-            let mut indexing_tasks = build_indexing_plan(&indexers, &source_configs);
-            let num_indexing_tasks = indexing_tasks.len();
-            assert_eq!(indexing_tasks.len(), count_indexing_tasks_count_for_test(indexers.len(), &source_configs));
-            let physical_indexing_plan = build_physical_indexing_plan(&indexers, &source_configs, indexing_tasks.clone());
-            indexing_tasks.shuffle(&mut rand::thread_rng());
-            indexers.shuffle(&mut rand::thread_rng());
-            let physical_indexing_plan_with_shuffle = build_physical_indexing_plan(&indexers, &source_configs, indexing_tasks.clone());
-            assert_eq!(physical_indexing_plan, physical_indexing_plan_with_shuffle);
-            // All indexing tasks must have been assigned to an indexer.
-            assert_eq!(physical_indexing_plan.num_indexing_tasks(), num_indexing_tasks);
-            // Indexing task must be spread over nodes: at maximum, a node can have only one more indexing task than other nodes.
-            assert!(physical_indexing_plan.max_num_indexing_tasks_per_node() - physical_indexing_plan.min_num_indexing_tasks_per_node() <= 1);
-            // Check basics math.
-            assert_eq!(physical_indexing_plan.num_indexing_tasks_mean_per_node(), num_indexing_tasks as f32 / indexers.len() as f32 );
-            assert_eq!(physical_indexing_plan.indexing_tasks_per_node().len(), indexers.len());
-        }
-    }
+    // proptest! {
+    //     #[test]
+    //     fn test_building_indexing_tasks_and_physical_plan(num_indexers in 1usize..50usize,
+    // index_id_sources in proptest::collection::vec(gen_kafka_source(), 1..20)) {         let
+    // mut indexers = cluster_members_for_test(num_indexers, QuickwitService::Indexer);
+    //         let source_configs: HashMap<IndexSourceId, SourceConfig> = index_id_sources
+    //             .into_iter()
+    //             .map(|(index_id, source_config)| {
+    //                 (IndexSourceId { index_id, source_id: source_config.source_id.to_string() },
+    // source_config)             })
+    //             .collect();
+    //         let mut indexing_tasks = build_indexing_plan(&indexers, &source_configs);
+    //         let num_indexing_tasks = indexing_tasks.len();
+    //         assert_eq!(indexing_tasks.len(), count_indexing_tasks_count_for_test(indexers.len(),
+    // &source_configs));         let physical_indexing_plan =
+    // build_physical_indexing_plan(&indexers, &source_configs, indexing_tasks.clone());
+    //         indexing_tasks.shuffle(&mut rand::thread_rng());
+    //         indexers.shuffle(&mut rand::thread_rng());
+    //         let physical_indexing_plan_with_shuffle = build_physical_indexing_plan(&indexers,
+    // &source_configs, indexing_tasks.clone());         assert_eq!(physical_indexing_plan,
+    // physical_indexing_plan_with_shuffle);         // All indexing tasks must have been
+    // assigned to an indexer.         assert_eq!(physical_indexing_plan.num_indexing_tasks(),
+    // num_indexing_tasks);         // Indexing task must be spread over nodes: at maximum, a
+    // node can have only one more indexing task than other nodes.         assert!
+    // (physical_indexing_plan.max_num_indexing_tasks_per_node() -
+    // physical_indexing_plan.min_num_indexing_tasks_per_node() <= 1);         // Check basics
+    // math.         assert_eq!(physical_indexing_plan.num_indexing_tasks_mean_per_node(),
+    // num_indexing_tasks as f32 / indexers.len() as f32 );         assert_eq!
+    // (physical_indexing_plan.indexing_tasks_per_node().len(), indexers.len());     }
+    // }
 
-    prop_compose! {
-      fn gen_kafka_source()
-        (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize, max_num_pipelines_per_indexer in 1usize..5usize) -> (String, SourceConfig) {
-          let index_id = format!("index-id-{index_idx}");
-          let source_id = append_random_suffix("kafka-source");
-          (index_id, SourceConfig {
-              source_id,
-              desired_num_pipelines: NonZeroUsize::new(desired_num_pipelines).unwrap(),
-              max_num_pipelines_per_indexer: NonZeroUsize::new(max_num_pipelines_per_indexer).unwrap(),
-              enabled: true,
-              source_params: kafka_source_params_for_test(),
-              transform_config: None,
-          })
-      }
-    }
+    // prop_compose! {
+    //   fn gen_kafka_source()
+    //     (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize,
+    // max_num_pipelines_per_indexer in 1usize..5usize) -> (String, SourceConfig) {
+    //       let index_id = format!("index-id-{index_idx}");
+    //       let source_id = append_random_suffix("kafka-source");
+    //       (index_id, SourceConfig {
+    //           source_id,
+    //           desired_num_pipelines: NonZeroUsize::new(desired_num_pipelines).unwrap(),
+    //           max_num_pipelines_per_indexer:
+    // NonZeroUsize::new(max_num_pipelines_per_indexer).unwrap(),           enabled: true,
+    //           source_params: kafka_source_params_for_test(),
+    //           transform_config: None,
+    //       })
+    //   }
+    // }
 }

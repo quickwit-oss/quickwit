@@ -451,18 +451,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_simple() -> anyhow::Result<()> {
+        let pipeline_id = IndexingPipelineId::for_test();
+        let universe = Universe::with_accelerated_time();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_list_splits()
             .times(1)
             .returning(|_| Ok(Vec::new()));
-        let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
         let pipeline_params = MergePipelineParams {

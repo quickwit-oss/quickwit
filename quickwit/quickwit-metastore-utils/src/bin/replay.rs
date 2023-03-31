@@ -88,6 +88,24 @@ async fn replay_grpc_request(
         GrpcRequest::ListStaleSplitsRequest(req) => {
             client.list_stale_splits(req).await?;
         }
+        GrpcRequest::OpenShardRequest(req) => {
+            client.open_shard(req).await?;
+        }
+        GrpcRequest::GetShardRequest(req) => {
+            client.get_shard(req).await?;
+        }
+        GrpcRequest::ApplyShardDeltaRequest(req) => {
+            client.apply_shard_delta(req).await?;
+        }
+        GrpcRequest::CloseShardRequest(req) => {
+            client.close_shard(req).await?;
+        }
+        GrpcRequest::DeleteShardRequest(req) => {
+            client.delete_shard(req).await?;
+        }
+        GrpcRequest::ListShardsRequest(req) => {
+            client.list_shards(req).await?;
+        }
     }
     Ok(())
 }

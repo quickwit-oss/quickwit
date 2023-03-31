@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::file_backed_metastore::file_backed_index::FileBackedIndex;
 use crate::metastore::DeleteTask;
-use crate::{IndexMetadata, Split};
+use crate::{IndexMetadata, Shard, Split};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "version")]
@@ -82,6 +82,11 @@ impl From<FileBackedIndexV0_5> for FileBackedIndex {
                 split.split_metadata.index_id = index.metadata.index_id().to_string();
             }
         }
-        Self::new(index.metadata, index.splits, index.delete_tasks)
+        Self::new(
+            index.metadata,
+            index.splits,
+            // index.shards,
+            index.delete_tasks,
+        )
     }
 }

@@ -24,6 +24,7 @@ use std::str::FromStr;
 
 use quickwit_common::FileEntry;
 use quickwit_config::TestableForRegression;
+use quickwit_types::{NodeId, NodeIdRef};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -82,7 +83,7 @@ pub struct SplitMetadata {
     pub source_id: String,
 
     /// Node ID.
-    pub node_id: String,
+    pub node_id: NodeId,
 
     /// Number of records (or documents) in the split.
     /// TODO make u64
@@ -135,7 +136,7 @@ impl SplitMetadata {
         index_id: String,
         partition_id: u64,
         source_id: String,
-        node_id: String,
+        node_id: NodeId,
     ) -> Self {
         Self {
             split_id,
@@ -178,7 +179,7 @@ impl TestableForRegression for SplitMetadata {
             split_id: "split".to_string(),
             index_id: "my-index".to_string(),
             source_id: "source".to_string(),
-            node_id: "node".to_string(),
+            node_id: "node".into(),
             delete_opstamp: 10,
             partition_id: 7u64,
             num_docs: 12303,

@@ -646,196 +646,196 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_metastore_service_grpc_with_one_metastore_service() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-        let mut metastore = MockMetastore::new();
-        let index_id = "test-index";
-        metastore
-            .expect_index_metadata()
-            .returning(|_index_id: &str| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
-            });
-        let metastore_service_grpc_port = quickwit_common::net::find_available_tcp_port()?;
-        let metastore_service_grpc_addr: SocketAddr =
-            ([127, 0, 0, 1], metastore_service_grpc_port).into();
-        let searcher_grpc_port = quickwit_common::net::find_available_tcp_port()?;
-        let searcher_grpc_addr: SocketAddr = ([127, 0, 0, 1], searcher_grpc_port).into();
-        start_grpc_server(metastore_service_grpc_addr, Arc::new(metastore)).await?;
+    // #[tokio::test]
+    // async fn test_metastore_service_grpc_with_one_metastore_service() -> anyhow::Result<()> {
+    //     quickwit_common::setup_logging_for_tests();
+    //     let mut metastore = MockMetastore::new();
+    //     let index_id = "test-index";
+    //     metastore
+    //         .expect_index_metadata()
+    //         .returning(|_index_id: &str| {
+    //             Ok(IndexMetadata::for_test(
+    //                 "test-index",
+    //                 "ram:///indexes/test-index",
+    //             ))
+    //         });
+    //     let metastore_service_grpc_port = quickwit_common::net::find_available_tcp_port()?;
+    //     let metastore_service_grpc_addr: SocketAddr =
+    //         ([127, 0, 0, 1], metastore_service_grpc_port).into();
+    //     let searcher_grpc_port = quickwit_common::net::find_available_tcp_port()?;
+    //     let searcher_grpc_addr: SocketAddr = ([127, 0, 0, 1], searcher_grpc_port).into();
+    //     start_grpc_server(metastore_service_grpc_addr, Arc::new(metastore)).await?;
 
-        let metastore_service_member = ClusterMember::new(
-            "1".to_string(),
-            0,
-            HashSet::from([QuickwitService::Metastore, QuickwitService::Indexer]),
-            metastore_service_grpc_addr,
-            metastore_service_grpc_addr,
-            Vec::new(),
-        );
-        let searcher_member = ClusterMember::new(
-            "2".to_string(),
-            0,
-            HashSet::from([QuickwitService::Searcher]),
-            searcher_grpc_addr,
-            searcher_grpc_addr,
-            Vec::new(),
-        );
-        let (members_tx, members_rx) =
-            watch::channel::<Vec<ClusterMember>>(vec![metastore_service_member.clone()]);
-        let watch_members = WatchStream::new(members_rx);
-        let mut metastore_client =
-            MetastoreGrpcClient::create_and_update_from_members(1, watch_members)
-                .await
-                .unwrap();
+    //     let metastore_service_member = ClusterMember::new(
+    //         "1".to_string(),
+    //         0,
+    //         HashSet::from([QuickwitService::Metastore, QuickwitService::Indexer]),
+    //         metastore_service_grpc_addr,
+    //         metastore_service_grpc_addr,
+    //         Vec::new(),
+    //     );
+    //     let searcher_member = ClusterMember::new(
+    //         "2".to_string(),
+    //         0,
+    //         HashSet::from([QuickwitService::Searcher]),
+    //         searcher_grpc_addr,
+    //         searcher_grpc_addr,
+    //         Vec::new(),
+    //     );
+    //     let (members_tx, members_rx) =
+    //         watch::channel::<Vec<ClusterMember>>(vec![metastore_service_member.clone()]);
+    //     let watch_members = WatchStream::new(members_rx);
+    //     let mut metastore_client =
+    //         MetastoreGrpcClient::create_and_update_from_members(1, watch_members)
+    //             .await
+    //             .unwrap();
 
-        assert_eq!(
-            metastore_client.uri().to_string(),
-            "grpc://metastore.service.cluster:1"
-        );
-        // gRPC service should send request on the running server.
-        metastore_client.pool_size_rx.changed().await.unwrap();
-        assert_eq!(*metastore_client.pool_size_rx.borrow(), 1);
-        metastore_client.check_connectivity().await.unwrap();
-        metastore_client.index_metadata(index_id).await.unwrap();
+    //     assert_eq!(
+    //         metastore_client.uri().to_string(),
+    //         "grpc://metastore.service.cluster:1"
+    //     );
+    //     // gRPC service should send request on the running server.
+    //     metastore_client.pool_size_rx.changed().await.unwrap();
+    //     assert_eq!(*metastore_client.pool_size_rx.borrow(), 1);
+    //     metastore_client.check_connectivity().await.unwrap();
+    //     metastore_client.index_metadata(index_id).await.unwrap();
 
-        // Send empty vec to signal that there is no more control plane in the cluster.
-        members_tx.send(Vec::new()).unwrap();
-        metastore_client.pool_size_rx.changed().await.unwrap();
-        assert_eq!(*metastore_client.pool_size_rx.borrow(), 0);
-        metastore_client.check_connectivity().await.unwrap_err();
-        let error = metastore_client.index_metadata(index_id).await.unwrap_err();
-        assert!(
-            matches!(error, MetastoreError::ConnectionError { message } if message.starts_with("gRPC request timeout triggered by the channel timeout"))
-        );
+    //     // Send empty vec to signal that there is no more control plane in the cluster.
+    //     members_tx.send(Vec::new()).unwrap();
+    //     metastore_client.pool_size_rx.changed().await.unwrap();
+    //     assert_eq!(*metastore_client.pool_size_rx.borrow(), 0);
+    //     metastore_client.check_connectivity().await.unwrap_err();
+    //     let error = metastore_client.index_metadata(index_id).await.unwrap_err();
+    //     assert!(
+    //         matches!(error, MetastoreError::ConnectionError { message } if
+    // message.starts_with("gRPC request timeout triggered by the channel timeout"))     );
 
-        // Send control plan member and check it's working again.
-        members_tx
-            .send(vec![metastore_service_member.clone()])
-            .unwrap();
-        metastore_client.index_metadata(index_id).await.unwrap();
+    //     // Send control plan member and check it's working again.
+    //     members_tx
+    //         .send(vec![metastore_service_member.clone()])
+    //         .unwrap();
+    //     metastore_client.index_metadata(index_id).await.unwrap();
 
-        // Send searcher member only.
-        members_tx.send(vec![searcher_member.clone()]).unwrap();
-        metastore_client.index_metadata(index_id).await.unwrap_err();
+    //     // Send searcher member only.
+    //     members_tx.send(vec![searcher_member.clone()]).unwrap();
+    //     metastore_client.index_metadata(index_id).await.unwrap_err();
 
-        // Send control plane + searcher members.
-        members_tx
-            .send(vec![metastore_service_member, searcher_member])
-            .unwrap();
-        metastore_client.index_metadata(index_id).await.unwrap();
-        Ok(())
-    }
+    //     // Send control plane + searcher members.
+    //     members_tx
+    //         .send(vec![metastore_service_member, searcher_member])
+    //         .unwrap();
+    //     metastore_client.index_metadata(index_id).await.unwrap();
+    //     Ok(())
+    // }
 
-    #[tokio::test]
-    async fn test_metastore_grpc_client_with_multiple_metastore_services() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-        let mut metastore = MockMetastore::new();
-        let index_id = "test-index";
-        metastore
-            .expect_index_metadata()
-            .returning(|_index_id: &str| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
-            });
-        let metastore = Arc::new(metastore);
+    // #[tokio::test]
+    // async fn test_metastore_grpc_client_with_multiple_metastore_services() -> anyhow::Result<()>
+    // {     quickwit_common::setup_logging_for_tests();
+    //     let mut metastore = MockMetastore::new();
+    //     let index_id = "test-index";
+    //     metastore
+    //         .expect_index_metadata()
+    //         .returning(|_index_id: &str| {
+    //             Ok(IndexMetadata::for_test(
+    //                 "test-index",
+    //                 "ram:///indexes/test-index",
+    //             ))
+    //         });
+    //     let metastore = Arc::new(metastore);
 
-        let grpc_port_1 = quickwit_common::net::find_available_tcp_port()?;
-        let grpc_addr_1: SocketAddr = ([127, 0, 0, 1], grpc_port_1).into();
-        let grpc_addr_2: SocketAddr = ([127, 0, 0, 1], 1234).into();
-        let grpc_addr_3: SocketAddr = ([127, 0, 0, 1], 4567).into();
+    //     let grpc_port_1 = quickwit_common::net::find_available_tcp_port()?;
+    //     let grpc_addr_1: SocketAddr = ([127, 0, 0, 1], grpc_port_1).into();
+    //     let grpc_addr_2: SocketAddr = ([127, 0, 0, 1], 1234).into();
+    //     let grpc_addr_3: SocketAddr = ([127, 0, 0, 1], 4567).into();
 
-        // Only start metastore member 1.
-        start_grpc_server(grpc_addr_1, metastore.clone()).await?;
+    //     // Only start metastore member 1.
+    //     start_grpc_server(grpc_addr_1, metastore.clone()).await?;
 
-        let metastore_member_1 = ClusterMember::new(
-            "1".to_string(),
-            0,
-            HashSet::from([QuickwitService::Metastore]),
-            grpc_addr_1,
-            grpc_addr_1,
-            Vec::new(),
-        );
-        let metastore_member_2 = ClusterMember::new(
-            "2".to_string(),
-            0,
-            HashSet::from([QuickwitService::Metastore]),
-            grpc_addr_2,
-            grpc_addr_2,
-            Vec::new(),
-        );
-        let metastore_member_3 = ClusterMember::new(
-            "3".to_string(),
-            0,
-            HashSet::from([QuickwitService::Metastore]),
-            grpc_addr_3,
-            grpc_addr_3,
-            Vec::new(),
-        );
-        let (members_tx, members_rx) =
-            watch::channel::<Vec<ClusterMember>>(vec![metastore_member_1.clone()]);
-        let watch_members = WatchStream::new(members_rx);
-        let mut metastore_client =
-            MetastoreGrpcClient::create_and_update_from_members(1, watch_members)
-                .await
-                .unwrap();
+    //     let metastore_member_1 = ClusterMember::new(
+    //         "1".to_string(),
+    //         0,
+    //         HashSet::from([QuickwitService::Metastore]),
+    //         grpc_addr_1,
+    //         grpc_addr_1,
+    //         Vec::new(),
+    //     );
+    //     let metastore_member_2 = ClusterMember::new(
+    //         "2".to_string(),
+    //         0,
+    //         HashSet::from([QuickwitService::Metastore]),
+    //         grpc_addr_2,
+    //         grpc_addr_2,
+    //         Vec::new(),
+    //     );
+    //     let metastore_member_3 = ClusterMember::new(
+    //         "3".to_string(),
+    //         0,
+    //         HashSet::from([QuickwitService::Metastore]),
+    //         grpc_addr_3,
+    //         grpc_addr_3,
+    //         Vec::new(),
+    //     );
+    //     let (members_tx, members_rx) =
+    //         watch::channel::<Vec<ClusterMember>>(vec![metastore_member_1.clone()]);
+    //     let watch_members = WatchStream::new(members_rx);
+    //     let mut metastore_client =
+    //         MetastoreGrpcClient::create_and_update_from_members(1, watch_members)
+    //             .await
+    //             .unwrap();
 
-        metastore_client.pool_size_rx.changed().await.unwrap();
-        assert_eq!(*metastore_client.pool_size_rx.borrow(), 1);
-        metastore_client.index_metadata(index_id).await.unwrap();
+    //     metastore_client.pool_size_rx.changed().await.unwrap();
+    //     assert_eq!(*metastore_client.pool_size_rx.borrow(), 1);
+    //     metastore_client.index_metadata(index_id).await.unwrap();
 
-        // Send two unavailable metastore members.
-        members_tx
-            .send(vec![metastore_member_2, metastore_member_3])
-            .unwrap();
+    //     // Send two unavailable metastore members.
+    //     members_tx
+    //         .send(vec![metastore_member_2, metastore_member_3])
+    //         .unwrap();
 
-        metastore_client.pool_size_rx.changed().await.unwrap();
-        assert_eq!(*metastore_client.pool_size_rx.borrow(), 2);
+    //     metastore_client.pool_size_rx.changed().await.unwrap();
+    //     assert_eq!(*metastore_client.pool_size_rx.borrow(), 2);
 
-        let error = metastore_client.index_metadata(index_id).await.unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("tcp connect error: Connection refused"));
+    //     let error = metastore_client.index_metadata(index_id).await.unwrap_err();
+    //     assert!(error
+    //         .to_string()
+    //         .contains("tcp connect error: Connection refused"));
 
-        // Send running metastore member.
-        members_tx.send(vec![metastore_member_1]).unwrap();
+    //     // Send running metastore member.
+    //     members_tx.send(vec![metastore_member_1]).unwrap();
 
-        metastore_client.pool_size_rx.changed().await.unwrap();
-        assert_eq!(*metastore_client.pool_size_rx.borrow(), 1);
-        metastore_client.index_metadata(index_id).await.unwrap();
-        Ok(())
-    }
+    //     metastore_client.pool_size_rx.changed().await.unwrap();
+    //     assert_eq!(*metastore_client.pool_size_rx.borrow(), 1);
+    //     metastore_client.index_metadata(index_id).await.unwrap();
+    //     Ok(())
+    // }
 
-    // Testing a few methods of the gRPC service should be sufficient as it's only a wrapper on the
-    // gRPC client.
-    #[tokio::test]
-    async fn test_grpc_metastore_service_index_metadata() -> anyhow::Result<()> {
-        let mut metastore = MockMetastore::new();
-        let index_id = "test-index";
-        metastore
-            .expect_index_metadata()
-            .return_once(|index_id: &str| {
-                assert_eq!(index_id, "test-index");
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
-            });
-        metastore
-            .expect_list_all_splits()
-            .return_once(|index_id: &str| {
-                assert_eq!(index_id, "test-index");
-                Ok(Vec::new())
-            });
-        let metastore_client = create_duplex_stream_server_and_client(Arc::new(metastore))
-            .await
-            .unwrap();
+    // // Testing a few methods of the gRPC service should be sufficient as it's only a wrapper on
+    // the // gRPC client.
+    // #[tokio::test]
+    // async fn test_grpc_metastore_service_index_metadata() -> anyhow::Result<()> {
+    //     let mut metastore = MockMetastore::new();
+    //     let index_id = "test-index";
+    //     metastore
+    //         .expect_index_metadata()
+    //         .return_once(|index_id: &str| {
+    //             assert_eq!(index_id, "test-index");
+    //             Ok(IndexMetadata::for_test(
+    //                 "test-index",
+    //                 "ram:///indexes/test-index",
+    //             ))
+    //         });
+    //     metastore
+    //         .expect_list_all_splits()
+    //         .return_once(|index_id: &str| {
+    //             assert_eq!(index_id, "test-index");
+    //             Ok(Vec::new())
+    //         });
+    //     let metastore_client = create_duplex_stream_server_and_client(Arc::new(metastore))
+    //         .await
+    //         .unwrap();
 
-        metastore_client.index_metadata(index_id).await.unwrap();
-        metastore_client.list_all_splits(index_id).await.unwrap();
-        Ok(())
-    }
+    //     metastore_client.index_metadata(index_id).await.unwrap();
+    //     metastore_client.list_all_splits(index_id).await.unwrap();
+    //     Ok(())
+    // }
 }

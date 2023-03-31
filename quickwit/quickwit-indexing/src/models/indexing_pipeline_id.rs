@@ -17,10 +17,24 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_types::NodeId;
+
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct IndexingPipelineId {
     pub index_id: String,
     pub source_id: String,
-    pub node_id: String,
+    pub node_id: NodeId,
     pub pipeline_ord: usize,
+}
+
+#[cfg(test)]
+impl IndexingPipelineId {
+    pub fn for_test() -> Self {
+        Self {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: NodeId::from("test-node"),
+            pipeline_ord: 0,
+        }
+    }
 }

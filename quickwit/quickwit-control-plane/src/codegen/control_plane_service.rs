@@ -133,12 +133,12 @@ impl ControlPlaneServiceTowerBlockBuilder {
     pub fn shared_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn ControlPlaneService>> + Clone + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 NotifyIndexChangeRequest,
                 Response = NotifyIndexChangeResponse,
                 Error = crate::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
     {
         self
             .notify_index_change_layer = Some(
@@ -149,12 +149,12 @@ impl ControlPlaneServiceTowerBlockBuilder {
     pub fn notify_index_change_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 NotifyIndexChangeRequest,
                 Response = NotifyIndexChangeResponse,
                 Error = crate::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
     {
         self
             .notify_index_change_layer = Some(

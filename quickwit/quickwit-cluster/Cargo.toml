@@ -17,14 +17,18 @@ itertools = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
+tonic = { workspace = true }
+tower = { workspace = true }
 tracing = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-types = { workspace = true }
 
 [features]
 testsuite = []

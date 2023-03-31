@@ -516,8 +516,8 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
         let response_type = syn_method.response_type.to_token_stream();
 
         let layer_method_bound = quote! {
-            L::Service: Service<#request_type, Response = #response_type, Error = #error_type> + Clone + Send + Sync + 'static,
-            <L::Service as Service<#request_type>>::Future: Send + 'static,
+            L::Service: tower::Service<#request_type, Response = #response_type, Error = #error_type> + Clone + Send + Sync + 'static,
+            <L::Service as tower::Service<#request_type>>::Future: Send + 'static,
         };
 
         let layer_method_statement = if i == context.methods.len() - 1 {

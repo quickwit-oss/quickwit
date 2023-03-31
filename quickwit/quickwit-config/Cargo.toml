@@ -34,6 +34,7 @@ vrl-stdlib = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
+quickwit-types = { workspace = true }
 
 [features]
 testsuite = []

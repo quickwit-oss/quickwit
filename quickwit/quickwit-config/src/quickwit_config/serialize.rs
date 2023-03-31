@@ -25,6 +25,7 @@ use anyhow::{bail, Context};
 use quickwit_common::net::{find_private_ip, Host};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
+use quickwit_types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -248,9 +249,11 @@ impl QuickwitConfigBuilder {
             .resolve_optional(env_vars)?
             .unwrap_or_else(|| default_index_root_uri(&data_dir_uri));
 
+        let node_id: NodeId = self.node_id.resolve(env_vars)?.into();
+
         let quickwit_config = QuickwitConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
-            node_id: self.node_id.resolve(env_vars)?,
+            node_id,
             enabled_services,
             rest_listen_addr,
             gossip_listen_addr,
@@ -275,7 +278,7 @@ impl QuickwitConfigBuilder {
 
 fn validate(quickwit_config: &QuickwitConfig) -> anyhow::Result<()> {
     validate_identifier("Cluster ID", &quickwit_config.cluster_id)?;
-    validate_identifier("Node ID", &quickwit_config.node_id)?;
+    validate_identifier("Node ID", quickwit_config.node_id.as_str())?;
     if quickwit_config.cluster_id == DEFAULT_CLUSTER_ID {
         warn!(
             cluster_id=%DEFAULT_CLUSTER_ID,
@@ -315,6 +318,7 @@ impl Default for QuickwitConfigBuilder {
 
 #[cfg(any(test, feature = "testsuite"))]
 pub fn quickwit_config_for_test() -> QuickwitConfig {
+    let node_id: NodeId = default_node_id().unwrap().into();
     let enabled_services = QuickwitService::supported_services();
 
     let listen_address = Host::default();
@@ -345,7 +349,7 @@ pub fn quickwit_config_for_test() -> QuickwitConfig {
 
     QuickwitConfig {
         cluster_id: default_cluster_id().unwrap(),
-        node_id: default_node_id().unwrap(),
+        node_id,
         enabled_services,
         gossip_advertise_addr: gossip_listen_addr,
         grpc_advertise_addr: grpc_listen_addr,
@@ -511,7 +515,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
-        assert!(config.node_id.starts_with("node-"));
+        assert!(config.node_id.as_str().starts_with("node-"));
         assert_eq!(
             config.enabled_services,
             QuickwitService::supported_services()

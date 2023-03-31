@@ -24,15 +24,17 @@ use itertools::Itertools;
 use quickwit_config::IndexConfig;
 use quickwit_proto::metastore_api::metastore_api_service_server::{self as grpc};
 use quickwit_proto::metastore_api::{
-    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
-    DeleteIndexResponse, DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask,
-    IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
-    LastDeleteOpstampResponse, ListAllSplitsRequest, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexesMetadatasRequest, ListIndexesMetadatasResponse,
-    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, SourceResponse, SplitResponse,
-    StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
-    UpdateSplitsDeleteOpstampResponse,
+    AddSourceRequest, ApplyShardDeltaRequest, ApplyShardDeltaResponse, CloseShardRequest,
+    CloseShardResponse, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
+    DeleteIndexResponse, DeleteQuery, DeleteShardRequest, DeleteShardResponse, DeleteSourceRequest,
+    DeleteSplitsRequest, DeleteTask, GetShardRequest, GetShardResponse, IndexMetadataRequest,
+    IndexMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse,
+    ListAllSplitsRequest, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexesMetadatasRequest, ListIndexesMetadatasResponse, ListShardsRequest,
+    ListShardsResponse, ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest,
+    MarkSplitsForDeletionRequest, OpenShardRequest, OpenShardResponse, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, ShardState, SourceResponse, SplitResponse, StageSplitsRequest,
+    ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::tonic::{Request, Response, Status};
 use quickwit_proto::{set_parent_span_from_request_metadata, tonic};
@@ -433,5 +435,122 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
                 message: error.to_string(),
             })?;
         Ok(tonic::Response::new(reply))
+    }
+
+    #[instrument(skip(self, request))]
+    async fn open_shard(
+        &self,
+        request: tonic::Request<OpenShardRequest>,
+    ) -> tonic::Result<tonic::Response<OpenShardResponse>> {
+        set_parent_span_from_request_metadata(request.metadata());
+        let request = request.into_inner();
+        let shard = request
+            .shard
+            .ok_or_else(|| Status::invalid_argument("The field `shard` is required."))?;
+        self.0.open_shard(shard.try_into()?).await?;
+        let response = OpenShardResponse {};
+        Ok(tonic::Response::new(response))
+    }
+
+    #[instrument(skip(self, request))]
+    async fn get_shard(
+        &self,
+        request: tonic::Request<GetShardRequest>,
+    ) -> tonic::Result<tonic::Response<GetShardResponse>> {
+        set_parent_span_from_request_metadata(request.metadata());
+        let request = request.into_inner();
+        let shard = self
+            .0
+            .get_shard(
+                &request.index_id,
+                &request.source_id,
+                request.shard_id.into(),
+            )
+            .await?;
+        let response = GetShardResponse {
+            shard: Some(shard.into()),
+        };
+        Ok(tonic::Response::new(response))
+    }
+
+    #[instrument(skip(self, request))]
+    async fn apply_shard_delta(
+        &self,
+        request: tonic::Request<ApplyShardDeltaRequest>,
+    ) -> tonic::Result<tonic::Response<ApplyShardDeltaResponse>> {
+        set_parent_span_from_request_metadata(request.metadata());
+        let request = request.into_inner();
+        let shard_delta = request
+            .shard_delta
+            .ok_or_else(|| Status::invalid_argument("The field `shard` is required."))?;
+        let shard = self
+            .0
+            .apply_shard_delta(
+                &request.index_id,
+                &request.source_id,
+                request.shard_id.into(),
+                shard_delta.try_into()?,
+            )
+            .await?;
+        let response = ApplyShardDeltaResponse {};
+        Ok(tonic::Response::new(response))
+    }
+
+    #[instrument(skip(self, request))]
+    async fn close_shard(
+        &self,
+        request: tonic::Request<CloseShardRequest>,
+    ) -> tonic::Result<tonic::Response<CloseShardResponse>> {
+        set_parent_span_from_request_metadata(request.metadata());
+        let request = request.into_inner();
+        let end_position = request
+            .end_position
+            .ok_or_else(|| Status::invalid_argument("The field `end_position` is required."))?;
+        self.0
+            .close_shard(
+                &request.index_id,
+                &request.source_id,
+                request.shard_id.into(),
+                end_position.into(),
+            )
+            .await?;
+        let response = CloseShardResponse {};
+        Ok(tonic::Response::new(response))
+    }
+
+    #[instrument(skip(self, request))]
+    async fn delete_shard(
+        &self,
+        request: tonic::Request<DeleteShardRequest>,
+    ) -> tonic::Result<tonic::Response<DeleteShardResponse>> {
+        set_parent_span_from_request_metadata(request.metadata());
+        let request = request.into_inner();
+        self.0
+            .delete_shard(
+                &request.index_id,
+                &request.source_id,
+                request.shard_id.into(),
+            )
+            .await?;
+        let response = DeleteShardResponse {};
+        Ok(tonic::Response::new(response))
+    }
+
+    #[instrument(skip(self, request))]
+    async fn list_shards(
+        &self,
+        request: tonic::Request<ListShardsRequest>,
+    ) -> tonic::Result<tonic::Response<ListShardsResponse>> {
+        set_parent_span_from_request_metadata(request.metadata());
+        let request = request.into_inner();
+        let shard_state_opt = request
+            .shard_state
+            .and_then(|shard_state| ShardState::from_i32(shard_state));
+        let response = self
+            .0
+            .list_shards(&request.index_id, &request.source_id, shard_state_opt)
+            .await?
+            .into();
+        Ok(tonic::Response::new(response))
     }
 }

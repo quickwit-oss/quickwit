@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::str::FromStr;
 
@@ -26,14 +26,15 @@ use enum_iterator::{all, Sequence};
 use itertools::Itertools;
 use serde::Serialize;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Sequence)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Sequence)]
 #[serde(into = "&'static str")]
 pub enum QuickwitService {
     ControlPlane,
     Indexer,
-    Searcher,
+    Ingester,
     Janitor,
     Metastore,
+    Searcher,
 }
 
 #[allow(clippy::from_over_into)]
@@ -48,13 +49,14 @@ impl QuickwitService {
         match self {
             QuickwitService::ControlPlane => "control_plane",
             QuickwitService::Indexer => "indexer",
-            QuickwitService::Searcher => "searcher",
+            QuickwitService::Ingester => "ingester",
             QuickwitService::Janitor => "janitor",
             QuickwitService::Metastore => "metastore",
+            QuickwitService::Searcher => "searcher",
         }
     }
 
-    pub fn supported_services() -> HashSet<QuickwitService> {
+    pub fn supported_services() -> BTreeSet<QuickwitService> {
         all::<QuickwitService>().collect()
     }
 }
@@ -69,18 +71,34 @@ impl FromStr for QuickwitService {
     type Err = anyhow::Error;
 
     fn from_str(service_str: &str) -> Result<Self, Self::Err> {
-        match service_str {
-            "control_plane" => Ok(QuickwitService::ControlPlane),
-            "indexer" => Ok(QuickwitService::Indexer),
-            "searcher" => Ok(QuickwitService::Searcher),
-            "janitor" => Ok(QuickwitService::Janitor),
-            "metastore" => Ok(QuickwitService::Metastore),
+        let service = match service_str {
+            "control_plane" => QuickwitService::ControlPlane,
+            "indexer" => QuickwitService::Indexer,
+            "ingester" => QuickwitService::Ingester,
+            "janitor" => QuickwitService::Janitor,
+            "metastore" => QuickwitService::Metastore,
+            "searcher" => QuickwitService::Searcher,
             _ => {
                 bail!(
                     "Failed to parse service `{service_str}`. Supported services are: `{}`.",
                     QuickwitService::supported_services().iter().join("`, `")
                 )
             }
+        };
+        Ok(service)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_quickwit_service() {
+        for service in QuickwitService::supported_services() {
+            let service_str = service.as_str();
+            let parsed_service = QuickwitService::from_str(service_str).unwrap();
+            assert_eq!(service, parsed_service);
         }
     }
 }

@@ -35,10 +35,11 @@ pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask, ShardState};
 
-use crate::checkpoint::IndexCheckpointDelta;
-use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
+use crate::checkpoint::{IndexCheckpointDelta, Position};
+use crate::ingest::{ListShardsResponse, ShardDelta};
+use crate::{MetastoreError, MetastoreResult, Shard, ShardId, Split, SplitMetadata, SplitState};
 
 /// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
 ///
@@ -274,12 +275,66 @@ pub trait Metastore: Send + Sync + 'static {
         delete_opstamp: u64,
     ) -> MetastoreResult<()>;
 
-    /// Lists [`DeleteTask`] with `delete_task.opstamp` > `opstamp_start` for a given `index_id`.
+    /// Lists [`DeleteTask`] such that `delete_task.opstamp` > `opstamp_start` for a given
+    /// `index_id`.
     async fn list_delete_tasks(
         &self,
         index_id: &str,
         opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>>;
+
+    /// Shard API
+
+    async fn open_shard(&self, shard: Shard) -> MetastoreResult<Shard> {
+        unimplemented!()
+    }
+
+    async fn get_shard(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        shard_id: ShardId,
+    ) -> MetastoreResult<Shard> {
+        unimplemented!()
+    }
+
+    async fn apply_shard_delta(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        shard_id: ShardId,
+        shard_delta: ShardDelta,
+    ) -> MetastoreResult<()> {
+        unimplemented!()
+    }
+
+    async fn close_shard(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        shard_id: ShardId,
+        position: Position,
+    ) -> MetastoreResult<()> {
+        unimplemented!()
+    }
+
+    async fn delete_shard(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        shard_id: ShardId,
+    ) -> MetastoreResult<()> {
+        unimplemented!()
+    }
+
+    async fn list_shards(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        shard_state_opt: Option<ShardState>,
+    ) -> MetastoreResult<ListShardsResponse> {
+        unimplemented!()
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

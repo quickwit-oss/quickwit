@@ -17,37 +17,44 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::net::SocketAddr;
 
 use anyhow::anyhow;
-use chitchat::{ClusterStateSnapshot, NodeId, NodeState};
-use itertools::Itertools;
+use chitchat::{ChitchatId, ClusterStateSnapshot, NodeState};
 use quickwit_proto::indexing_api::IndexingTask;
+use quickwit_types::NodeId;
+use time::OffsetDateTime;
 use tracing::{error, warn};
 
-use crate::QuickwitService;
+use crate::{GenerationId, QuickwitService};
 
 // Keys used to store member's data in chitchat state.
-pub(crate) const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
 pub(crate) const ENABLED_SERVICES_KEY: &str = "enabled_services";
+pub(crate) const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
+
+// Readiness key and values used to store a node's readiness in the Chitchat state.
+pub(crate) const READINESS_KEY: &'static str = "readiness";
+pub(crate) const READINESS_VALUE_READY: &'static str = "ready";
+pub(crate) const READINESS_VALUE_NOT_READY: &'static str = "not_ready";
+
 // An indexing task key is formatted as
 // `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
 pub(crate) const INDEXING_TASK_PREFIX: &str = "indexing_task";
 pub(crate) const INDEXING_TASK_SEPARATOR: char = ':';
 
 /// Cluster member.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ClusterMember {
     /// A unique node ID across the cluster.
     /// The Chitchat node ID is the concatenation of the node ID and the start timestamp:
-    /// `{node_id}/{start_timestamp}`.
-    pub node_id: String,
+    /// `{node_id}/{generation_id}`.
+    pub node_id: NodeId,
     /// The start timestamp (seconds) of the node.
-    pub start_timestamp: u64,
+    pub generation_id: GenerationId,
     /// Enabled services, i.e. services configured to run on the node. Depending on the node and
     /// service health, each service may or may not be available/running.
-    pub enabled_services: HashSet<QuickwitService>,
+    pub enabled_services: BTreeSet<QuickwitService>,
     /// Gossip advertise address, i.e. the address that other nodes should use to gossip with the
     /// node.
     pub gossip_advertise_addr: SocketAddr,
@@ -62,16 +69,16 @@ pub struct ClusterMember {
 
 impl ClusterMember {
     pub fn new(
-        node_id: String,
-        start_timestamp: u64,
-        enabled_services: HashSet<QuickwitService>,
+        node_id: NodeId,
+        generation_id: GenerationId,
+        enabled_services: BTreeSet<QuickwitService>,
         gossip_advertise_addr: SocketAddr,
         grpc_advertise_addr: SocketAddr,
         indexing_tasks: Vec<IndexingTask>,
     ) -> Self {
         Self {
             node_id,
-            start_timestamp,
+            generation_id,
             enabled_services,
             gossip_advertise_addr,
             grpc_advertise_addr,
@@ -79,47 +86,55 @@ impl ClusterMember {
         }
     }
 
-    pub fn chitchat_id(&self) -> String {
-        format!("{}/{}", self.node_id, self.start_timestamp)
+    pub fn chitchat_id(&self) -> ChitchatId {
+        ChitchatId::new(
+            self.node_id.clone().take(),
+            self.generation_id.as_u64(),
+            self.gossip_advertise_addr,
+        )
     }
 }
 
-impl From<ClusterMember> for NodeId {
+impl From<ClusterMember> for ChitchatId {
     fn from(member: ClusterMember) -> Self {
-        Self::new(member.chitchat_id(), member.gossip_advertise_addr)
+        Self::new(
+            member.node_id.take(),
+            member.generation_id.as_u64(),
+            member.gossip_advertise_addr,
+        )
     }
 }
 
-// Builds cluster members with the given `NodeId`s and `ClusterStateSnapshot`.
-pub(crate) fn build_cluster_members(
-    node_ids: HashSet<NodeId>,
-    cluster_state_snapshot: &ClusterStateSnapshot,
-) -> Vec<ClusterMember> {
-    node_ids
-        .iter()
-        .map(|node_id| {
-            if let Some(node_state) = cluster_state_snapshot.node_states.get(&node_id.id) {
-                build_cluster_member(node_id, node_state)
-            } else {
-                anyhow::bail!("Could not find node id `{}` in ChitChat state.", node_id.id,)
-            }
-        })
-        .filter_map(|member_res| {
-            // Just log an error for members that cannot be built.
-            if let Err(error) = &member_res {
-                error!(
-                    error=?error,
-                    "Failed to build cluster member from cluster state, ignoring member.",
-                );
-            }
-            member_res.ok()
-        })
-        .collect_vec()
-}
+// /// Builds cluster members with the given `NodeId`s and `ClusterStateSnapshot`.
+// pub(crate) fn build_cluster_members(
+//     chitchat_ids: HashSet<ChitchatId>,
+//     node_states: BTreeMap<ChitchatId, NodeState>,
+// ) -> Vec<ClusterMember> {
+//     chitchat_ids
+//         .iter()
+//         .filter_map(|chitchat_id|
+//             match node_states.get(&chitchat_id).and_then(|node_state|
+// build_cluster_member(chitchat_id, node_state)) {                 Some(Ok(member)) =>
+// Some(member),                 Some(Err(error)) => {
+//                         error!(
+//                             node_id=%chitchat_id.node_id,
+//                             error=?error,
+//                             "Failed to build cluster member from node state, ignoring member.",
+//                         );
+//                     None
+//                 },
+//                 None => {
+//                     error!(node_id=%chitchat_id.node_id, "Could not find node ID in Chitchat
+// state.");                     None
+//                 },
+//             }
+//         )
+//         .collect()
+// }
 
-// Builds a cluster member from [`NodeId`] and [`NodeState`].
+/// Builds a cluster member from a [`NodeId`] and a [`NodeState`].
 pub(crate) fn build_cluster_member(
-    chitchat_node: &NodeId,
+    chitchat_id: &ChitchatId,
     node_state: &NodeState,
 ) -> anyhow::Result<ClusterMember> {
     let enabled_services = node_state
@@ -128,11 +143,11 @@ pub(crate) fn build_cluster_member(
             anyhow::anyhow!(
                 "Could not find `{}` key in node `{}` state.",
                 ENABLED_SERVICES_KEY,
-                chitchat_node.id
+                chitchat_id.node_id
             )
         })
         .map(|enabled_services_str| {
-            parse_enabled_services_str(enabled_services_str, &chitchat_node.id)
+            parse_enabled_services_str(enabled_services_str, &chitchat_id.node_id)
         })?;
     let grpc_advertise_addr = node_state
         .get(GRPC_ADVERTISE_ADDR_KEY)
@@ -140,29 +155,22 @@ pub(crate) fn build_cluster_member(
             anyhow::anyhow!(
                 "Could not find `{}` key in node `{}` state.",
                 GRPC_ADVERTISE_ADDR_KEY,
-                chitchat_node.id
+                chitchat_id.node_id
             )
         })
         .map(|addr_str| addr_str.parse::<SocketAddr>())??;
-    let indexing_tasks = parse_indexing_tasks(node_state, &chitchat_node.id);
-    let (node_id, start_timestamp_str) = chitchat_node.id.split_once('/').ok_or_else(|| {
-        anyhow::anyhow!(
-            "Failed to create cluster member instance from NodeId `{}`.",
-            chitchat_node.id
-        )
-    })?;
-    let start_timestamp = start_timestamp_str.parse()?;
+    let indexing_tasks = parse_indexing_tasks(node_state, &chitchat_id.node_id);
     Ok(ClusterMember::new(
-        node_id.to_string(),
-        start_timestamp,
+        chitchat_id.node_id.clone().into(),
+        chitchat_id.generation_id.into(),
         enabled_services,
-        chitchat_node.gossip_public_address,
+        chitchat_id.gossip_advertise_address,
         grpc_advertise_addr,
         indexing_tasks,
     ))
 }
 
-// Parses indexing task key into the pair (index_id, source_id).
+/// Parses an indexing task key into a (`index_id`, `source_id`) pair.
 fn parse_indexing_task_key(key: &str) -> anyhow::Result<(&str, &str)> {
     let (_prefix, key_without_prefix) =
         key.split_once(INDEXING_TASK_SEPARATOR).ok_or_else(|| {
@@ -185,40 +193,40 @@ fn parse_indexing_task_key(key: &str) -> anyhow::Result<(&str, &str)> {
 /// Parses indexing tasks serialized in keys formatted as `INDEXING_TASK_PREFIX:index_id:source_id`.
 /// Malformed keys and values are ignored, just warnings are emitted.
 pub(crate) fn parse_indexing_tasks(node_state: &NodeState, node_id: &str) -> Vec<IndexingTask> {
-    node_state
-        .iter_key_values(|key, _| key.starts_with(INDEXING_TASK_PREFIX))
-        .map(|(key, versioned_value)| {
-            let (index_id, source_id) = parse_indexing_task_key(key)?;
-            let num_tasks: usize = versioned_value.value.parse()?;
-            Ok((0..num_tasks).map(|_| IndexingTask {
-                index_id: index_id.to_string(),
-                source_id: source_id.to_string(),
-            }))
-        })
-        .flatten_ok()
-        .filter_map(
-            |indexing_task_parsing_result: anyhow::Result<IndexingTask>| {
-                match indexing_task_parsing_result {
-                    Ok(indexing_task) => Some(indexing_task),
-                    Err(error) => {
-                        warn!(
-                            node_id=%node_id,
-                            error=%error,
-                            "Malformated indexing task key and value on node."
-                        );
-                        None
-                    }
-                }
-            },
-        )
-        .collect()
+    // node_state
+    //     .iter_key_values(|key, _| key.starts_with(INDEXING_TASK_PREFIX))
+    //     .flat_map(|(key, versioned_value)| {
+    //         let (index_id, source_id) = parse_indexing_task_key(key)?;
+    //         let num_tasks: usize = versioned_value.value.parse()?;
+    //         Ok((0..num_tasks).map(|_| IndexingTask {
+    //             index_id: index_id.to_string(),
+    //             source_id: source_id.to_string(),
+    //         }))
+    //     })
+    //     .filter_map(
+    //         |indexing_task_parsing_result: anyhow::Result<IndexingTask>| {
+    //             match indexing_task_parsing_result {
+    //                 Ok(indexing_task) => Some(indexing_task),
+    //                 Err(error) => {
+    //                     warn!(
+    //                         node_id=%node_id,
+    //                         error=%error,
+    //                         "Malformated indexing task key and value on node."
+    //                     );
+    //                     None
+    //                 }
+    //             }
+    //         },
+    //     )
+    //     .collect()
+    Vec::new()
 }
 
 fn parse_enabled_services_str(
     enabled_services_str: &str,
     node_id: &str,
-) -> HashSet<QuickwitService> {
-    let enabled_services: HashSet<QuickwitService> = enabled_services_str
+) -> BTreeSet<QuickwitService> {
+    let enabled_services: BTreeSet<_> = enabled_services_str
         .split(',')
         .filter(|service_str| !service_str.is_empty())
         .filter_map(|service_str| match service_str.parse() {

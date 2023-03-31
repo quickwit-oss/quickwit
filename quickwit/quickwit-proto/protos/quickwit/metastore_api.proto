@@ -17,10 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-
 syntax = "proto3";
 
 package quickwit_metastore_api;
+
+import "google/protobuf/timestamp.proto";
 
 service MetastoreApiService {
   // Creates an index.
@@ -79,6 +80,26 @@ service MetastoreApiService {
 
   /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
   rpc list_stale_splits(ListStaleSplitsRequest) returns (ListSplitsResponse);
+
+  /// Shard API
+
+  /// Creates a new open shard.
+  rpc OpenShard(OpenShardRequest) returns (OpenShardResponse);
+
+  /// Gets a shard's metadata.
+  rpc GetShard(GetShardRequest) returns (GetShardResponse);
+
+  /// Applies a shard delta. //TODO: bulk apply
+  rpc ApplyShardDelta(ApplyShardDeltaRequest) returns (ApplyShardDeltaResponse);
+
+  /// Closes a shard. // TODO: bulk close
+  rpc CloseShard(CloseShardRequest) returns (CloseShardResponse);
+
+  /// Deletes a shard. // TODO: bulk delete
+  rpc DeleteShard(DeleteShardRequest) returns (DeleteShardResponse);
+
+  /// Lists shards.
+  rpc ListShards(ListShardsRequest) returns (ListShardsResponse);
 }
 
 message CreateIndexRequest {
@@ -222,3 +243,94 @@ message ListDeleteTasksResponse {
   repeated DeleteTask delete_tasks = 1;
 }
 
+/// Shard API
+
+enum ShardState {
+  UNKNOWN = 0;
+  OPEN = 1;
+  CLOSED = 2;
+}
+
+message Position {
+  string offset = 1;
+}
+
+message ShardDelta {
+  uint64 shard_id = 1;
+  Position from_position = 2;
+  Position to_position = 3;
+}
+
+message Shard {
+  string index_id = 1;
+  string source_id = 2;
+  uint64 shard_id = 3;
+  string leader_id = 4;
+  optional string follower_id = 5;
+  ShardState shard_state = 6;
+  Position start_position = 7;
+  optional Position end_position = 8;
+  optional Position publish_position = 9;
+  google.protobuf.Timestamp create_timestamp = 10;
+  optional google.protobuf.Timestamp publish_timestamp = 11;
+  optional google.protobuf.Timestamp close_timestamp = 12;
+}
+
+message OpenShardRequest {
+  Shard shard = 1;
+}
+
+message OpenShardResponse {
+}
+
+message GetShardRequest {
+  string index_id = 1;
+  string source_id = 2;
+  uint64 shard_id = 3;
+}
+
+message GetShardResponse {
+  Shard shard = 1;
+}
+
+message ApplyShardDeltaRequest {
+  string index_id = 1;
+  string source_id = 2;
+  uint64 shard_id = 3;
+  ShardDelta shard_delta = 4;
+}
+
+message ApplyShardDeltaResponse {
+}
+
+message CloseShardRequest {
+  string index_id = 1;
+  string source_id = 2;
+  uint64 shard_id = 3;
+  Position end_position = 4;
+}
+
+message CloseShardResponse {
+}
+
+message DeleteShardRequest {
+  string index_id = 1;
+  string source_id = 2;
+  uint64 shard_id = 3;
+  bool force = 4;
+}
+
+message DeleteShardResponse {
+}
+
+message ListShardsRequest {
+  string index_id = 1;
+  string source_id = 2;
+  uint64 shard_id = 3;
+  optional ShardState shard_state = 6;
+}
+
+message ListShardsResponse {
+  repeated Shard shards = 1;
+  uint64 next_shard_id = 2;
+}

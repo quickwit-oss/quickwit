@@ -17,7 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::{fmt, iter};
 
 use async_trait::async_trait;
@@ -25,8 +27,12 @@ use bytes::Bytes;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, DeferableReplyHandler, Handler, QueueCapacity,
 };
+use quickwit_common::opt_contains;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::tower::Cost;
+use quickwit_metastore::{Metastore, Shard};
+use quickwit_proto::metastore_api::ShardState;
+use quickwit_types::{NodeId, NodeIdRef};
 use tracing::info;
 use ulid::Ulid;
 
@@ -34,9 +40,10 @@ use crate::metrics::INGEST_METRICS;
 use crate::notifications::Notifications;
 use crate::{
     CommitType, CreateQueueIfNotExistsRequest, CreateQueueRequest, DocCommand, DropQueueRequest,
-    FetchRequest, FetchResponse, IngestRequest, IngestResponse, IngestServiceError,
-    ListQueuesRequest, ListQueuesResponse, MemoryCapacity, Queues, SuggestTruncateRequest,
-    TailRequest,
+    FetchRequest, FetchResponse, IngestRequest, IngestRequestV2, IngestResponse, IngestResponseV2,
+    IngestService, IngestServiceClientPool, IngestServiceError, ListQueuesRequest,
+    ListQueuesResponse, MemoryCapacity, PersistRequest, PersistResponse, Queues, ReplicateRequest,
+    ReplicateResponse, SuggestTruncateRequest, TailRequest,
 };
 
 impl Cost for IngestRequest {
@@ -48,9 +55,33 @@ impl Cost for IngestRequest {
     }
 }
 
+impl Cost for PersistRequest {
+    fn cost(&self) -> u64 {
+        self.doc_batches
+            .iter()
+            .map(|doc_batch| doc_batch.concat_docs.len())
+            .sum::<usize>() as u64
+    }
+}
+
+impl Cost for ReplicateRequest {
+    fn cost(&self) -> u64 {
+        self.doc_batches
+            .iter()
+            .map(|doc_batch| doc_batch.concat_docs.len())
+            .sum::<usize>() as u64
+    }
+}
+
+type QueueId = String;
+
 pub struct IngestApiService {
+    node_id: NodeId,
     partition_id: String,
     queues: Queues,
+    metastore: Arc<dyn Metastore>,
+    pool: IngestServiceClientPool,
+    shards: HashMap<QueueId, Shard>,
     memory_limit: usize,
     disk_limit: usize,
     memory_capacity: MemoryCapacity,
@@ -94,17 +125,25 @@ async fn get_or_initialize_partition_id(dir_path: &Path) -> crate::Result<String
 
 impl IngestApiService {
     pub async fn with_queues_dir(
+        node_id: NodeId,
         queues_dir_path: &Path,
+        metastore: Arc<dyn Metastore>,
+        pool: IngestServiceClientPool,
         memory_limit: usize,
         disk_limit: usize,
     ) -> crate::Result<Self> {
         let queues = Queues::open(queues_dir_path).await?;
+        let shards = Default::default();
         let partition_id = get_or_initialize_partition_id(queues_dir_path).await?;
         let memory_capacity = MemoryCapacity::new(memory_limit);
         let notifications = Notifications::new();
         info!(ingest_partition_id=%partition_id, "Ingest API partition id");
         Ok(Self {
+            node_id,
             partition_id,
+            metastore,
+            shards,
+            pool,
             queues,
             memory_limit,
             disk_limit,
@@ -178,13 +217,15 @@ impl IngestApiService {
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
             let records_it = doc_batch.iter_raw();
-            let max_position = self
+            let max_position_opt = self
                 .queues
                 .append_batch(&doc_batch.index_id, records_it, ctx)
                 .await?;
-            let commit = CommitType::from(request.commit);
-            if let Some(max_position) = max_position {
+            if let Some(max_position) = max_position_opt {
+                let commit = CommitType::from(request.commit);
                 if commit != CommitType::Auto {
+                    notifications.push((doc_batch.index_id.clone(), max_position));
+
                     if commit == CommitType::Force {
                         self.queues
                             .append_batch(
@@ -194,7 +235,6 @@ impl IngestApiService {
                             )
                             .await?;
                     }
-                    notifications.push((doc_batch.index_id.clone(), max_position));
                 }
             }
 
@@ -215,6 +255,228 @@ impl IngestApiService {
             },
             notifications,
         ))
+    }
+
+    // This is your fat ingest client.
+    async fn ingest_v2(&mut self, request: IngestRequestV2) -> crate::Result<IngestResponseV2> {
+        let source_id = "_ingest-api-source-v2";
+        // TODO: Open issue for grouping doc batches by leader ID and execute requests in parallel.
+        for doc_batch in request.doc_batches {
+            // TODO: Open issue for caching list of open shards.
+            let list_shards_response = self
+                // .pool
+                // .any_node()
+                // .await?
+                .metastore
+                .list_shards(&doc_batch.index_id, &source_id, Some(ShardState::Open))
+                .await
+                .expect("FIXME");
+            let shard = if list_shards_response.shards.is_empty() {
+                let index_id = doc_batch.index_id.clone();
+                let source_id = source_id.to_string();
+                let shard_id = list_shards_response.next_shard_id;
+                // TODO: Open issue for shard placemement logic.
+                let leader_id = self.node_id.clone();
+                // TODO: Open issue for shard placement logic and picking followers.
+                // TODO: Open issue for disk and memory limits if leader and follower are ....
+                let follower_id = self.pool.find_node(|node_id| node_id != &leader_id).await;
+                let start_position = None;
+                let shard = Shard::new(
+                    index_id,
+                    source_id,
+                    shard_id,
+                    leader_id,
+                    follower_id,
+                    start_position,
+                );
+                self
+                    // .pool
+                    // .get_node(&shard.leader_id)
+                    // .await?
+                    .metastore
+                    .open_shard(shard)
+                    .await
+                    .expect("FIXME")
+            } else {
+                // TODO: balance requests across shards
+                list_shards_response.shards[0].clone()
+            };
+            let mut ingester = self.pool.get_node(&shard.leader_id).await.expect("FIXME");
+
+            let request = PersistRequest {
+                index_id: doc_batch.index_id.clone(),
+                source_id: source_id.to_string(),
+                shard_id: shard.shard_id.into(),
+                leader_id: shard.leader_id.into(),
+                follower_id: shard.follower_id.map(|follower_id| follower_id.into()),
+                doc_batches: vec![doc_batch],
+                commit: request.commit,
+            };
+            ingester.persist(request).await.expect("FIXME");
+        }
+        let response = IngestResponseV2 {};
+        Ok(response)
+    }
+
+    async fn persist(
+        &mut self,
+        request: PersistRequest,
+        ctx: &ActorContext<Self>,
+    ) -> crate::Result<PersistResponse> {
+        if request.leader_id != self.node_id {
+            return Err(IngestServiceError::Internal("Routing error".to_string()));
+        }
+        let log_id = format!(
+            "{}/{}/{}",
+            request.index_id, request.source_id, request.shard_id
+        );
+        let Some(shard) = self.shards.get(&log_id) else {
+            return Err(IngestServiceError::Internal("Shard not found".to_string()));
+        };
+        if shard.leader_id != self.node_id {
+            return Err(IngestServiceError::Internal("Wrong leader".to_string()));
+        };
+        if shard.shard_state != ShardState::Open {
+            return Err(IngestServiceError::Internal("Shard is closed".to_string()));
+        };
+        // TODO: automatically create queue if it doesn't exist
+        if !self.queues.queue_exists(&log_id) {
+            self.queues.create_queue(&log_id, ctx).await?;
+        }
+        let disk_usage = self.queues.disk_usage();
+
+        if disk_usage > self.disk_limit {
+            info!("Ingestion rejected due to disk limit");
+            return Err(IngestServiceError::RateLimited);
+        }
+        if self
+            .memory_capacity
+            .reserve_capacity(request.cost() as usize)
+            .is_err()
+        {
+            info!("Ingest request rejected due to memory limit.");
+            return Err(IngestServiceError::RateLimited);
+        }
+        // TODO: keep track of position
+        let mut current_position = None;
+
+        for doc_batch in &request.doc_batches {
+            let records_it = doc_batch.iter_raw();
+            let batch_position_opt = self
+                .queues
+                .append_batch(&doc_batch.index_id, records_it, ctx)
+                .await?;
+            current_position = current_position.or(batch_position_opt);
+
+            let batch_num_bytes = doc_batch.num_bytes();
+            let batch_num_docs = doc_batch.num_docs();
+            INGEST_METRICS
+                .ingested_num_bytes
+                .inc_by(batch_num_bytes as u64);
+            INGEST_METRICS
+                .ingested_num_docs
+                .inc_by(batch_num_docs as u64);
+        }
+        if let Some(follower_id) = request.follower_id {
+            let mut follower = self
+                .pool
+                .get_node(NodeIdRef::from_str(&follower_id))
+                .await
+                .expect("FIXME");
+            let request = ReplicateRequest {
+                index_id: request.index_id,
+                source_id: request.source_id,
+                shard_id: request.shard_id,
+                follower_id,
+                doc_batches: request.doc_batches,
+                commit: request.commit,
+            };
+            // TODO: handle replication error
+            let replication_response = follower.replicate(request).await.expect("FIXME");
+            // TODO: assert leader.position == follower.position
+        }
+        // TODO: handle commit and commit notification
+        let response = PersistResponse {
+            // index_id,
+            // source_id,
+            // shard_id,
+            // leader_id,
+            // follower_id,
+            // current_position,
+        };
+        Ok(response)
+    }
+
+    async fn replicate(
+        &mut self,
+        request: ReplicateRequest,
+        ctx: &ActorContext<Self>,
+    ) -> crate::Result<ReplicateResponse> {
+        if request.follower_id != self.node_id {
+            return Err(IngestServiceError::Internal("Routing error".to_string()));
+        }
+        let log_id = format!(
+            "{}/{}/{}",
+            request.index_id, request.source_id, request.shard_id
+        );
+        let Some(shard) = self.shards.get(&log_id) else {
+            return Err(IngestServiceError::Internal("Shard not found".to_string()));
+        };
+        if !opt_contains(&shard.follower_id, &self.node_id) {
+            return Err(IngestServiceError::Internal("Wrong follower".to_string()));
+        };
+        if shard.shard_state != ShardState::Open {
+            return Err(IngestServiceError::Internal("Shard is closed".to_string()));
+        };
+        if !self.queues.queue_exists(&log_id) {
+            self.queues.create_queue(&log_id, ctx).await?;
+        }
+        // FIXME: the disk and memory usage of the leader and the follower may not necessarily be in
+        // sync.
+        let disk_usage = self.queues.disk_usage();
+
+        if disk_usage > self.disk_limit {
+            info!("Ingestion rejected due to disk limit");
+            return Err(IngestServiceError::RateLimited);
+        }
+        if self
+            .memory_capacity
+            .reserve_capacity(request.cost() as usize)
+            .is_err()
+        {
+            info!("Ingest request rejected due to memory limit.");
+            return Err(IngestServiceError::RateLimited);
+        }
+        // TODO: keep track of position
+        let mut current_position = None;
+
+        for doc_batch in &request.doc_batches {
+            let records_it = doc_batch.iter_raw();
+            let batch_position_opt = self
+                .queues
+                .append_batch(&doc_batch.index_id, records_it, ctx)
+                .await?;
+            current_position = current_position.or(batch_position_opt);
+
+            let batch_num_bytes = doc_batch.num_bytes();
+            let batch_num_docs = doc_batch.num_docs();
+            INGEST_METRICS
+                .ingested_num_bytes
+                .inc_by(batch_num_bytes as u64);
+            INGEST_METRICS
+                .ingested_num_docs
+                .inc_by(batch_num_docs as u64);
+        }
+        // TODO: handle commit and commit notification
+        let response = ReplicateResponse {
+            // index_id,
+            // source_id,
+            // shard_id,
+            // leader_id,
+            // follower_id,
+            // current_position,
+        };
+        Ok(response)
     }
 
     fn fetch(&mut self, fetch_req: FetchRequest) -> crate::Result<FetchResponse> {
@@ -299,6 +561,7 @@ impl Handler<GetMemoryCapacity> for IngestApiService {
 #[async_trait]
 impl Handler<CreateQueueRequest> for IngestApiService {
     type Reply = crate::Result<()>;
+
     async fn handle(
         &mut self,
         create_queue_req: CreateQueueRequest,
@@ -314,6 +577,7 @@ impl Handler<CreateQueueRequest> for IngestApiService {
 #[async_trait]
 impl Handler<CreateQueueIfNotExistsRequest> for IngestApiService {
     type Reply = crate::Result<()>;
+
     async fn handle(
         &mut self,
         create_queue_inf_req: CreateQueueIfNotExistsRequest,
@@ -332,6 +596,7 @@ impl Handler<CreateQueueIfNotExistsRequest> for IngestApiService {
 #[async_trait]
 impl Handler<DropQueueRequest> for IngestApiService {
     type Reply = crate::Result<()>;
+
     async fn handle(
         &mut self,
         drop_queue_req: DropQueueRequest,
@@ -344,6 +609,7 @@ impl Handler<DropQueueRequest> for IngestApiService {
 #[async_trait]
 impl DeferableReplyHandler<IngestRequest> for IngestApiService {
     type Reply = crate::Result<IngestResponse>;
+
     async fn handle_message(
         &mut self,
         ingest_req: IngestRequest,
@@ -358,6 +624,7 @@ impl DeferableReplyHandler<IngestRequest> for IngestApiService {
 #[async_trait]
 impl Handler<FetchRequest> for IngestApiService {
     type Reply = crate::Result<FetchResponse>;
+
     async fn handle(
         &mut self,
         request: FetchRequest,
@@ -370,6 +637,7 @@ impl Handler<FetchRequest> for IngestApiService {
 #[async_trait]
 impl Handler<TailRequest> for IngestApiService {
     type Reply = crate::Result<FetchResponse>;
+
     async fn handle(
         &mut self,
         request: TailRequest,
@@ -382,6 +650,7 @@ impl Handler<TailRequest> for IngestApiService {
 #[async_trait]
 impl Handler<SuggestTruncateRequest> for IngestApiService {
     type Reply = crate::Result<()>;
+
     async fn handle(
         &mut self,
         request: SuggestTruncateRequest,
@@ -394,12 +663,52 @@ impl Handler<SuggestTruncateRequest> for IngestApiService {
 #[async_trait]
 impl Handler<ListQueuesRequest> for IngestApiService {
     type Reply = crate::Result<ListQueuesResponse>;
+
     async fn handle(
         &mut self,
         _list_queue_req: ListQueuesRequest,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.queues.list_queues())
+    }
+}
+
+#[async_trait]
+impl Handler<IngestRequestV2> for IngestApiService {
+    type Reply = crate::Result<IngestResponseV2>;
+
+    async fn handle(
+        &mut self,
+        request: IngestRequestV2,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.ingest_v2(request).await)
+    }
+}
+
+#[async_trait]
+impl Handler<PersistRequest> for IngestApiService {
+    type Reply = crate::Result<PersistResponse>;
+
+    async fn handle(
+        &mut self,
+        request: PersistRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.persist(request, ctx).await)
+    }
+}
+
+#[async_trait]
+impl Handler<ReplicateRequest> for IngestApiService {
+    type Reply = crate::Result<ReplicateResponse>;
+
+    async fn handle(
+        &mut self,
+        request: ReplicateRequest,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.replicate(request, ctx).await)
     }
 }
 
@@ -410,9 +719,10 @@ mod tests {
     use bytes::Bytes;
     use quickwit_actors::Universe;
     use quickwit_config::IngestApiConfig;
+    use quickwit_metastore::metastore_for_test;
 
     use super::*;
-    use crate::{init_ingest_api, DocBatch, DocBatchBuilder};
+    use crate::{init_ingest_api, DocBatch, DocBatchBuilder, Pool};
 
     #[test]
     fn test_ingest_request_cost() {
@@ -436,12 +746,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_service_with_commit() -> anyhow::Result<()> {
+        let node_id = NodeId::from("test-node");
         let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let pool = Pool::new();
+
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
-        let ingest_api_service =
-            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+        let ingest_api_service = init_ingest_api(
+            node_id,
+            &universe,
+            metastore,
+            pool,
+            queues_dir_path,
+            &IngestApiConfig::default(),
+        )
+        .await?;
 
         // Ensure a queue for this index exists.
         let create_queue_req = CreateQueueIfNotExistsRequest {
@@ -495,12 +816,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_service_with_wait() -> anyhow::Result<()> {
+        let node_id = NodeId::from("test-node");
         let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let pool = Pool::new();
+
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
-        let ingest_api_service =
-            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+        let ingest_api_service = init_ingest_api(
+            node_id,
+            &universe,
+            metastore,
+            pool,
+            queues_dir_path,
+            &IngestApiConfig::default(),
+        )
+        .await?;
 
         // Ensure a queue for this index exists.
         let create_queue_req = CreateQueueIfNotExistsRequest {

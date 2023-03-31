@@ -26,15 +26,18 @@ once_cell = { workspace = true }
 pin-project = { workspace = true }
 pnet = { workspace = true }
 prometheus = { workspace = true }
+prost-types = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
+tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
-warp = { workspace = true }
 utoipa = { workspace = true }
+warp = { workspace = true }
 
 [features]
 testsuite = []
@@ -42,5 +45,6 @@ testsuite = []
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+tokio-stream = { workspace = true }
 
 quickwit-macros = { workspace = true }

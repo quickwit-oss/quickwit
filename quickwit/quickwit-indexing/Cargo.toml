@@ -57,6 +57,7 @@ quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
+quickwit-types = { workspace = true }
 
 [features]
 kafka = ["rdkafka", "backoff"]

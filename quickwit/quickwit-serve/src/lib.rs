@@ -39,7 +39,7 @@ mod search_api;
 mod tests;
 mod ui_handler;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, HashSet, HashSet};
 use std::convert::Infallible;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -55,7 +55,8 @@ use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::tower::{
-    BufferLayer, ConstantRate, EstimateRateLayer, Rate, RateLimitLayer, SmaRateEstimator,
+    BufferLayer, Change, ConstantRate, EstimateRateLayer, Pool, Rate, RateLimitLayer,
+    SmaRateEstimator,
 };
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, QuickwitConfig};
@@ -112,7 +113,7 @@ struct QuickwitServices {
     pub janitor_service: Option<Mailbox<JanitorService>>,
     pub ingest_service: IngestServiceClient,
     pub index_service: Arc<IndexService>,
-    pub services: HashSet<QuickwitService>,
+    pub services: BTreeSet<QuickwitService>,
 }
 
 fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
@@ -130,11 +131,15 @@ pub async fn serve_quickwit<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
+    let node_id = config.node_id.clone();
     let universe = Universe::new();
     let event_broker = EventBroker::default();
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     let cluster =
         quickwit_cluster::start_cluster_service(&config, &config.enabled_services).await?;
+
+    let ingester_change_stream = cluster.ready_change_stream().map();
+    let ingester_pool = Pool::from_change_stream(ingester_change_stream);
 
     // Instantiate either a file-backed or postgresql [`Metastore`] if the node runs a `Metastore`
     // service, else instantiate a [`MetastoreGrpcClient`].
@@ -214,68 +219,73 @@ where
             event_broker.subscribe::<MetastoreEvent>(scheduler_service.clone())
         });
 
-    let (ingest_service, indexing_service) = if config
-        .enabled_services
-        .contains(&QuickwitService::Indexer)
-    {
-        let ingest_api_service =
-            start_ingest_api_service(&universe, &config.data_dir_path, &config.ingest_api_config)
-                .await?;
-        if config.indexer_config.enable_otlp_endpoint {
-            for index_config_content in [OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG] {
-                let index_config = load_index_config_from_user_config(
-                    ConfigFormat::Yaml,
-                    index_config_content.as_bytes(),
-                    &config.default_index_root_uri,
-                )?;
-                match index_service.create_index(index_config, false).await {
-                    Ok(_)
-                    | Err(IndexServiceError::MetastoreError(
-                        MetastoreError::IndexAlreadyExists { .. },
-                    )) => Ok(()),
-                    Err(error) => Err(error),
-                }?;
-            }
-        }
-        let indexing_service = start_indexing_service(
-            &universe,
-            &config,
-            cluster.clone(),
-            metastore.clone(),
-            ingest_api_service.clone(),
-            storage_resolver.clone(),
-        )
-        .await?;
-        let num_buckets = NonZeroUsize::new(60).unwrap();
-        let initial_rate = ConstantRate::new(n_mib_bytes!(50), Duration::from_secs(1));
-        let rate_estimator = SmaRateEstimator::new(
-            num_buckets,
-            Duration::from_secs(10),
-            Duration::from_millis(100),
-        )
-        .with_initial_rate(initial_rate);
-        let memory_capacity = ingest_api_service.ask(GetMemoryCapacity).await?;
-        let min_rate = ConstantRate::new(n_mib_bytes!(1), Duration::from_millis(100));
-        let rate_modulator = RateModulator::new(rate_estimator.clone(), memory_capacity, min_rate);
-        let ingest_service = IngestServiceClient::tower()
-            .ingest_layer(
-                ServiceBuilder::new()
-                    .layer(EstimateRateLayer::<IngestRequest, _>::new(rate_estimator))
-                    .layer(BufferLayer::new(100))
-                    .layer(RateLimitLayer::new(rate_modulator))
-                    .into_inner(),
+    let (ingest_service, indexing_service) =
+        if config.enabled_services.contains(&QuickwitService::Indexer) {
+            let ingest_api_service = start_ingest_api_service(
+                node_id,
+                &universe,
+                &config.data_dir_path,
+                &config.ingest_api_config,
+                metastore.clone(),
+                ingester_pool,
             )
-            .build_from_mailbox(ingest_api_service);
-        (ingest_service, Some(indexing_service))
-    } else {
-        let (channel, _) = create_balance_channel_from_watched_members(
-            cluster.ready_member_change_watcher(),
-            QuickwitService::Indexer,
-        )
-        .await?;
-        let ingest_service = IngestServiceClient::from_channel(channel);
-        (ingest_service, None)
-    };
+            .await?;
+            if config.indexer_config.enable_otlp_endpoint {
+                for index_config_content in [OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG] {
+                    let index_config = load_index_config_from_user_config(
+                        ConfigFormat::Yaml,
+                        index_config_content.as_bytes(),
+                        &config.default_index_root_uri,
+                    )?;
+                    match index_service.create_index(index_config, false).await {
+                        Ok(_)
+                        | Err(IndexServiceError::MetastoreError(
+                            MetastoreError::IndexAlreadyExists { .. },
+                        )) => Ok(()),
+                        Err(error) => Err(error),
+                    }?;
+                }
+            }
+            let indexing_service = start_indexing_service(
+                &universe,
+                &config,
+                cluster.clone(),
+                metastore.clone(),
+                ingest_api_service.clone(),
+                storage_resolver.clone(),
+            )
+            .await?;
+            let num_buckets = NonZeroUsize::new(60).unwrap();
+            let initial_rate = ConstantRate::new(n_mib_bytes!(50), Duration::from_secs(1));
+            let rate_estimator = SmaRateEstimator::new(
+                num_buckets,
+                Duration::from_secs(10),
+                Duration::from_millis(100),
+            )
+            .with_initial_rate(initial_rate);
+            let memory_capacity = ingest_api_service.ask(GetMemoryCapacity).await?;
+            let min_rate = ConstantRate::new(n_mib_bytes!(1), Duration::from_millis(100));
+            let rate_modulator =
+                RateModulator::new(rate_estimator.clone(), memory_capacity, min_rate);
+            let ingest_service = IngestServiceClient::tower()
+                .ingest_layer(
+                    ServiceBuilder::new()
+                        .layer(EstimateRateLayer::<IngestRequest, _>::new(rate_estimator))
+                        .layer(BufferLayer::new(100))
+                        .layer(RateLimitLayer::new(rate_modulator))
+                        .into_inner(),
+                )
+                .build_from_mailbox(ingest_api_service);
+            (ingest_service, Some(indexing_service))
+        } else {
+            let (channel, _) = create_balance_channel_from_watched_members(
+                cluster.ready_member_change_watcher(),
+                QuickwitService::Indexer,
+            )
+            .await?;
+            let ingest_service = IngestServiceClient::from_channel(channel);
+            (ingest_service, None)
+        };
 
     let search_job_placer = SearchJobPlacer::new(
         ServiceClientPool::create_and_update_members(cluster.ready_member_change_watcher()).await?,
@@ -459,7 +469,7 @@ async fn node_readiness_reporting_task(cluster: Arc<Cluster>, metastore: Arc<dyn
 /// Displays some warnings if the cluster runs a file-backed metastore or serves file-backed
 /// indexes.
 async fn check_cluster_configuration(
-    services: &HashSet<QuickwitService>,
+    services: &BTreeSet<QuickwitService>,
     peer_seeds: &[String],
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<()> {

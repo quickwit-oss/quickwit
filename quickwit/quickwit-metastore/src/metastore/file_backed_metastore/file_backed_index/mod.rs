@@ -24,21 +24,25 @@
 mod serialize;
 
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt::{format, Debug};
 
-use itertools::Itertools;
+use prost_types::Timestamp;
+use quickwit_common::timestamp::TimestampExt;
 use quickwit_common::PrettySample;
 use quickwit_config::{SourceConfig, TestableForRegression};
-use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask, ShardState};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
 use time::OffsetDateTime;
 use tracing::{info, warn};
 
+use super::MutationOutcome;
 use crate::checkpoint::IndexCheckpointDelta;
+use crate::ingest::ListShardsResponse;
+use crate::metastore::Position;
 use crate::{
-    split_tag_filter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult, Split,
-    SplitMetadata, SplitState,
+    split_tag_filter, EntityKind, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult,
+    Shard, ShardDelta, ShardId, Split, SplitMetadata, SplitState,
 };
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -50,7 +54,9 @@ pub struct FileBackedIndex {
     /// Metadata specific to the index.
     metadata: IndexMetadata,
     /// List of splits belonging to the index.
-    splits: HashMap<String, Split>,
+    splits: HashMap<SplitId, Split>,
+    /// Shards.
+    shards: HashMap<SourceId, SourceShards>,
     /// Delete tasks.
     delete_tasks: Vec<DeleteTask>,
     /// Stamper.
@@ -79,23 +85,35 @@ impl TestableForRegression for FileBackedIndex {
             publish_timestamp: Some(1789),
         };
         let splits = vec![split];
+
+        // TODO: Once the shard object is stable
+        // let mut shard_1 = Shard::new(index_id, source_id, shard_id, leader_id, follower_id);
+        // shard_1.create_timestamp = Timestamp::from_seconds(seconds);
+        // let mut shard_2 = Shard::new(index_id, source_id, shard_id, leader_id, follower_id);
+        // let shards = vec![shard_1, shard_2];
+        // let shards = Vec::new();
+
         let delete_task = DeleteTask {
             create_timestamp: 0,
             opstamp: 10,
             delete_query: Some(DeleteQuery {
-                index_id: "index".to_string(),
+                index_id: index_metadata.index_id().to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
                 query: "Harry Potter".to_string(),
                 search_fields: Vec::new(),
             }),
         };
-        FileBackedIndex::new(index_metadata, splits, vec![delete_task])
+        let delete_tasks = vec![delete_task];
+
+        FileBackedIndex::new(index_metadata, splits, delete_tasks)
     }
 
     fn test_equality(&self, other: &Self) {
         self.metadata().test_equality(other.metadata());
-        assert_eq!(self.splits(), other.splits());
+        assert_eq!(self.splits, other.splits);
+        // assert_eq!(self.shards, other.shards);
+        assert_eq!(self.splits, other.splits);
     }
 }
 
@@ -105,6 +123,7 @@ impl From<IndexMetadata> for FileBackedIndex {
             metadata: index_metadata,
             splits: Default::default(),
             delete_tasks: Default::default(),
+            shards: Default::default(),
             stamper: Default::default(),
             recently_modified: false,
             discarded: false,
@@ -119,9 +138,125 @@ enum DeleteSplitOutcome {
     Forbidden,
 }
 
+type SplitId = String;
+
+type SourceId = String;
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct Sequence {
+    current_value: u64,
+}
+
+impl Sequence {
+    /// Increments the sequence by 1 and returns the previous value.
+    fn inc(&mut self) -> u64 {
+        let previous_value = self.current_value;
+        self.current_value += 1;
+        previous_value
+    }
+
+    /// Returns the current value of the sequence.
+    fn current(&self) -> u64 {
+        self.current_value
+    }
+}
+
+/// Manages the shards of a source.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct SourceShards {
+    next_shard_id: Sequence,
+    shards: HashMap<ShardId, Shard>,
+}
+
+impl SourceShards {
+    fn get_shard(&self, shard_id: ShardId) -> MetastoreResult<&Shard> {
+        self.shards
+            .get(&shard_id)
+            .ok_or_else(|| MetastoreError::NotFound(EntityKind::Shard, shard_id.to_string()))
+    }
+
+    fn get_shard_mut(&mut self, shard_id: ShardId) -> MetastoreResult<&mut Shard> {
+        self.shards
+            .get_mut(&shard_id)
+            .ok_or_else(|| MetastoreError::NotFound(EntityKind::Shard, shard_id.to_string()))
+    }
+
+    fn open_shard(&mut self, shard: Shard) -> MetastoreResult<MutationOutcome<Shard>> {
+        if let Some(shard) = self.shards.get(&shard.shard_id) {
+            return Ok(MutationOutcome::NoMutation(shard.clone()));
+        }
+        if self.next_shard_id.current() != shard.shard_id {
+            return Err(MetastoreError::InvalidArgument(format!(
+                "Failed to open shard: expected shard ID `{}`, got `{}`.",
+                self.next_shard_id.current(),
+                shard.shard_id
+            )));
+        }
+        self.shards.entry(shard.shard_id).or_insert_with(|| {
+            self.next_shard_id.inc();
+            shard.clone()
+        });
+        Ok(MutationOutcome::MutationOccurred(shard))
+    }
+
+    fn try_apply_delta(
+        &mut self,
+        shard_id: ShardId,
+        shard_delta: ShardDelta,
+    ) -> MetastoreResult<bool> {
+        self.get_shard_mut(shard_id)?
+            .try_apply_delta(shard_delta)
+            .map_err(|error| MetastoreError::InvalidArgument(error.to_string()))
+    }
+
+    fn close_shard(&mut self, shard_id: ShardId, position: Position) -> MetastoreResult<bool> {
+        self.get_shard_mut(shard_id)?
+            .close(position)
+            .map_err(|error| MetastoreError::InvalidArgument(error.to_string()))
+    }
+
+    fn delete_shard(&mut self, shard_id: ShardId) -> MetastoreResult<bool> {
+        let Some(shard) = self.shards.remove(&shard_id) else {
+            return Ok(false);
+        };
+        match shard.delete() {
+            Ok(()) => Ok(true),
+            Err(error) => {
+                self.shards.insert(shard_id, shard);
+                Err(MetastoreError::InvalidArgument(error.to_string()))
+            }
+        }
+    }
+
+    fn list_shards(
+        &self,
+        shard_state_opt: Option<ShardState>,
+    ) -> MetastoreResult<ListShardsResponse> {
+        let shards = if let Some(shard_state) = shard_state_opt {
+            self.shards
+                .values()
+                .filter(|shard| shard.shard_state == shard_state)
+                .cloned()
+                .collect()
+        } else {
+            self.shards.values().cloned().collect()
+        };
+        let next_shard_id = ShardId::from(self.next_shard_id.current());
+        let response = ListShardsResponse {
+            shards,
+            next_shard_id,
+        };
+        Ok(response)
+    }
+}
+
 impl FileBackedIndex {
     /// Constructor.
     pub fn new(metadata: IndexMetadata, splits: Vec<Split>, delete_tasks: Vec<DeleteTask>) -> Self {
+        let splits = splits
+            .into_iter()
+            .map(|split| (split.split_id().to_string(), split))
+            .collect();
         let last_opstamp = delete_tasks
             .iter()
             .map(|delete_task| delete_task.opstamp)
@@ -129,10 +264,8 @@ impl FileBackedIndex {
             .unwrap_or(0) as usize;
         Self {
             metadata,
-            splits: splits
-                .into_iter()
-                .map(|split| (split.split_id().to_string(), split))
-                .collect(),
+            splits,
+            shards: Default::default(),
             delete_tasks,
             stamper: Stamper::new(last_opstamp),
             recently_modified: false,
@@ -208,7 +341,7 @@ impl FileBackedIndex {
         deletable_states: &[SplitState],
         return_error_on_splits_not_found: bool,
     ) -> MetastoreResult<bool> {
-        let mut is_modified = false;
+        let mut mutation_occurred = false;
         let mut split_not_found_ids = Vec::new();
         let mut non_deletable_split_ids = Vec::new();
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
@@ -233,7 +366,7 @@ impl FileBackedIndex {
 
             metadata.split_state = SplitState::MarkedForDeletion;
             metadata.update_timestamp = now_timestamp;
-            is_modified = true;
+            mutation_occurred = true;
         }
         if !split_not_found_ids.is_empty() {
             if return_error_on_splits_not_found {
@@ -254,7 +387,7 @@ impl FileBackedIndex {
                 split_ids: non_deletable_split_ids,
             });
         }
-        Ok(is_modified)
+        Ok(mutation_occurred)
     }
 
     /// Helper to mark a list of splits as published.
@@ -439,8 +572,69 @@ impl FileBackedIndex {
             .iter()
             .filter(|delete_task| delete_task.opstamp > opstamp_start)
             .cloned()
-            .collect_vec();
+            .collect();
         Ok(delete_tasks)
+    }
+
+    fn get_source_shards(&self, source_id: &str) -> MetastoreResult<&SourceShards> {
+        self.shards
+            .get(source_id)
+            .ok_or_else(|| MetastoreError::NotFound(EntityKind::Source, source_id.to_string()))
+    }
+
+    fn get_source_shards_mut(&mut self, source_id: &str) -> MetastoreResult<&mut SourceShards> {
+        self.shards
+            .get_mut(source_id)
+            .ok_or_else(|| MetastoreError::NotFound(EntityKind::Source, source_id.to_string()))
+    }
+
+    pub(crate) fn open_shard(&mut self, shard: Shard) -> MetastoreResult<MutationOutcome<Shard>> {
+        self.get_source_shards_mut(&shard.source_id)?
+            .open_shard(shard)
+    }
+
+    pub(crate) fn get_shard(&self, source_id: &str, shard_id: ShardId) -> MetastoreResult<Shard> {
+        self.get_source_shards(source_id)?
+            .get_shard(shard_id)
+            .cloned()
+    }
+
+    pub(crate) fn try_apply_delta(
+        &mut self,
+        source_id: &str,
+        shard_id: ShardId,
+        shard_delta: ShardDelta,
+    ) -> MetastoreResult<bool> {
+        self.get_source_shards_mut(source_id)?
+            .try_apply_delta(shard_id, shard_delta)
+    }
+
+    pub(crate) fn close_shard(
+        &mut self,
+        source_id: &str,
+        shard_id: ShardId,
+        position: Position,
+    ) -> MetastoreResult<bool> {
+        self.get_source_shards_mut(source_id)?
+            .close_shard(shard_id, position)
+    }
+
+    pub(crate) fn delete_shard(
+        &mut self,
+        source_id: &str,
+        shard_id: ShardId,
+    ) -> MetastoreResult<bool> {
+        self.get_source_shards_mut(source_id)?
+            .delete_shard(shard_id)
+    }
+
+    pub(crate) fn list_shards(
+        &self,
+        source_id: &str,
+        shard_state_opt: Option<ShardState>,
+    ) -> MetastoreResult<ListShardsResponse> {
+        self.get_source_shards(source_id)?
+            .list_shards(shard_state_opt)
     }
 }
 
@@ -451,8 +645,8 @@ struct Stamper(usize);
 
 impl Stamper {
     /// Creates a [`Stamper`].
-    pub fn new(first_opstamp: usize) -> Self {
-        Self(first_opstamp)
+    pub fn new(initial_opstamp: usize) -> Self {
+        Self(initial_opstamp)
     }
 
     /// Increments the stamper by 1 and returns the incremented value.
@@ -464,7 +658,9 @@ impl Stamper {
 
 impl Debug for Stamper {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        fmt.debug_struct("Stamper").field("stamp", &self.0).finish()
+        fmt.debug_struct("Stamper")
+            .field("opstamp", &self.0)
+            .finish()
     }
 }
 

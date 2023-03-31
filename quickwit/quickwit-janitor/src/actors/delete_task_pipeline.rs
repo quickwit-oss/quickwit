@@ -37,6 +37,7 @@ use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::Metastore;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::Storage;
+use quickwit_types::NodeId;
 use serde::Serialize;
 use tokio::join;
 use tracing::info;
@@ -170,11 +171,11 @@ impl DeleteTaskPipeline {
         let tag_fields = doc_mapper.tag_named_fields()?;
         let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_supervisor_handler) = ctx.spawn_actor().supervise(packager);
-        let index_pipeline_id = IndexingPipelineId {
+        let pipeline_id = IndexingPipelineId {
             index_id: self.index_id.to_string(),
-            node_id: "unknown".to_string(),
-            pipeline_ord: 0,
             source_id: "unknown".to_string(),
+            node_id: NodeId::from("unknown"),
+            pipeline_ord: 0,
         };
         let throughput_limit: f64 = index_config
             .indexing_settings
@@ -190,7 +191,7 @@ impl DeleteTaskPipeline {
             .clone()
             .set_index_and_component(self.index_id.as_str(), "split_downloader_delete");
         let delete_executor = MergeExecutor::new(
-            index_pipeline_id,
+            pipeline_id,
             self.metastore.clone(),
             doc_mapper.clone(),
             delete_executor_io_controls,

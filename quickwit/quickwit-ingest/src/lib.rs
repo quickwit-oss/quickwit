@@ -31,6 +31,7 @@ mod queue;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{bail, Context};
 pub use errors::IngestServiceError;
@@ -41,7 +42,10 @@ use once_cell::sync::OnceCell;
 pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_common::tower::Pool;
 use quickwit_config::IngestApiConfig;
+use quickwit_metastore::Metastore;
+use quickwit_types::NodeId;
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
@@ -52,6 +56,8 @@ pub const QUEUES_DIR_NAME: &str = "queues";
 
 pub type Result<T> = std::result::Result<T, IngestServiceError>;
 
+pub type IngestServiceClientPool = Pool<NodeId, IngestServiceClient>;
+
 type IngestApiServiceMailboxes = HashMap<PathBuf, Mailbox<IngestApiService>>;
 
 pub static INGEST_API_SERVICE_MAILBOXES: OnceCell<Mutex<IngestApiServiceMailboxes>> =
@@ -59,7 +65,10 @@ pub static INGEST_API_SERVICE_MAILBOXES: OnceCell<Mutex<IngestApiServiceMailboxe
 
 /// Initializes an [`IngestApiService`] consuming the queue located at `queue_path`.
 pub async fn init_ingest_api(
+    node_id: NodeId,
     universe: &Universe,
+    metastore: Arc<dyn Metastore>,
+    pool: IngestServiceClientPool,
     queues_dir_path: &Path,
     config: &IngestApiConfig,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
@@ -71,7 +80,10 @@ pub async fn init_ingest_api(
         return Ok(mailbox.clone());
     }
     let ingest_api_actor = IngestApiService::with_queues_dir(
+        node_id,
         queues_dir_path,
+        metastore,
+        pool,
         config.max_queue_memory_usage.get_bytes() as usize,
         config.max_queue_disk_usage.get_bytes() as usize,
     )
@@ -106,12 +118,23 @@ pub async fn get_ingest_api_service(
 
 /// Starts an [`IngestApiService`] instance at `<data_dir_path>/queues`.
 pub async fn start_ingest_api_service(
+    node_id: NodeId,
     universe: &Universe,
     data_dir_path: &Path,
     config: &IngestApiConfig,
+    metastore: Arc<dyn Metastore>,
+    ingester_pool: IngestServiceClientPool,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
     let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-    init_ingest_api(universe, &queues_dir_path, config).await
+    init_ingest_api(
+        node_id,
+        universe,
+        metastore,
+        ingester_pool,
+        &queues_dir_path,
+        config,
+    )
+    .await
 }
 
 #[repr(u32)]
@@ -151,22 +174,35 @@ mod tests {
 
     use byte_unit::Byte;
     use quickwit_actors::AskError;
+    use quickwit_metastore::metastore_for_test;
 
     use super::*;
     use crate::{CreateQueueRequest, IngestRequest, SuggestTruncateRequest};
 
     #[tokio::test]
     async fn test_get_ingest_api_service() {
-        let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
-
         let queues_0_dir_path = temp_dir.path().join("queues-0");
         get_ingest_api_service(&queues_0_dir_path)
             .await
             .unwrap_err();
-        init_ingest_api(&universe, &queues_0_dir_path, &IngestApiConfig::default())
-            .await
-            .unwrap();
+
+        let node_id = NodeId::from("test-node");
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let pool = Pool::new();
+
+        init_ingest_api(
+            node_id.clone(),
+            &universe,
+            metastore.clone(),
+            pool.clone(),
+            &queues_0_dir_path,
+            &IngestApiConfig::default(),
+        )
+        .await
+        .unwrap();
+
         let ingest_api_service_0 = get_ingest_api_service(&queues_0_dir_path).await.unwrap();
         ingest_api_service_0
             .ask_for_res(CreateQueueRequest {
@@ -176,9 +212,17 @@ mod tests {
             .unwrap();
 
         let queues_1_dir_path = temp_dir.path().join("queues-1");
-        init_ingest_api(&universe, &queues_1_dir_path, &IngestApiConfig::default())
-            .await
-            .unwrap();
+        init_ingest_api(
+            node_id,
+            &universe,
+            metastore,
+            pool,
+            &queues_1_dir_path,
+            &IngestApiConfig::default(),
+        )
+        .await
+        .unwrap();
+
         let ingest_api_service_1 = get_ingest_api_service(&queues_1_dir_path).await.unwrap();
         ingest_api_service_1
             .ask_for_res(CreateQueueRequest {
@@ -191,20 +235,31 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_ingest_multiple_index_api_service() {
+        let node_id = NodeId::from("test-node");
         let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let pool = Pool::new();
         let temp_dir = tempfile::tempdir().unwrap();
-
         let queues_0_dir_path = temp_dir.path().join("queues-0");
-        let ingest_api_service =
-            init_ingest_api(&universe, &queues_0_dir_path, &IngestApiConfig::default())
-                .await
-                .unwrap();
+
+        let ingest_api_service = init_ingest_api(
+            node_id,
+            &universe,
+            metastore,
+            pool,
+            &queues_0_dir_path,
+            &IngestApiConfig::default(),
+        )
+        .await
+        .unwrap();
+
         ingest_api_service
             .ask_for_res(CreateQueueRequest {
                 queue_id: "index-1".to_string(),
             })
             .await
             .unwrap();
+
         let ingest_request = IngestRequest {
             doc_batches: vec![
                 DocBatch {
@@ -233,13 +288,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_queue_limit() {
-        let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
-
         let queues_dir_path = temp_dir.path().join("queues-0");
         get_ingest_api_service(&queues_dir_path).await.unwrap_err();
+
+        let node_id = NodeId::from("test-node");
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let pool = Pool::new();
+
         init_ingest_api(
+            node_id,
             &universe,
+            metastore,
+            pool,
             &queues_dir_path,
             &IngestApiConfig {
                 max_queue_memory_usage: Byte::from_bytes(1200),
@@ -248,6 +310,7 @@ mod tests {
         )
         .await
         .unwrap();
+
         let ingest_api_service = get_ingest_api_service(&queues_dir_path).await.unwrap();
 
         ingest_api_service

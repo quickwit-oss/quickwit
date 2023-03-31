@@ -20,6 +20,7 @@
 use std::collections::BTreeSet;
 use std::ops::{Range, RangeInclusive};
 
+use quickwit_types::NodeId;
 use serde::{Deserialize, Serialize};
 
 use crate::split_metadata::utc_now_timestamp;
@@ -44,7 +45,7 @@ pub(crate) struct SplitMetadataV0_5 {
     pub source_id: Option<String>,
 
     #[serde(default)]
-    pub node_id: Option<String>,
+    pub node_id: Option<NodeId>,
 
     /// Number of records (or documents) in the split.
     pub num_docs: usize,
@@ -93,15 +94,15 @@ impl From<SplitMetadataV0_5> for SplitMetadata {
         let node_id = if let Some(node_id) = v3.node_id {
             // The previous version encoded `v1.node_id` as `{node_id}/{pipeline_ord}`.
             // Since pipeline_ord is no longer needed, we only extract the `node_id` portion
-            // to keep backward compatibility.  This has the advantage of avoiding a
+            // to keep backward compatibility. This has the advantage of avoiding a
             // brand new version.
-            if let Some((node_id, _)) = node_id.rsplit_once('/') {
-                node_id.to_string()
+            if let Some((node_id, _)) = node_id.as_str().rsplit_once('/') {
+                NodeId::from(node_id)
             } else {
                 node_id
             }
         } else {
-            "unknown".to_string()
+            NodeId::from("unknown")
         };
 
         SplitMetadata {

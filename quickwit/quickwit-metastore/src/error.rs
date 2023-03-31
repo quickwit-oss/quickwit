@@ -23,6 +23,16 @@ use thiserror::Error;
 
 use crate::checkpoint::IncompatibleCheckpointDelta;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum EntityKind {
+    Index,
+    Shard,
+    Source,
+    Split,
+}
+
+pub type EntityId = String;
+
 /// Metastore error kinds.
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Error, Serialize, Deserialize, PartialEq, Eq)]
@@ -32,6 +42,15 @@ pub enum MetastoreError {
 
     #[error("Index `{index_id}` already exists.")]
     IndexAlreadyExists { index_id: String },
+
+    #[error("Invalid argument: `{0}`")]
+    InvalidArgument(String),
+
+    #[error("{0:?} not found: `{1}`.")]
+    NotFound(EntityKind, EntityId),
+
+    #[error("{0:?} already exists: `{1}`.")]
+    AlreadyExists(EntityKind, EntityId),
 
     #[error("Access forbidden: `{message}`.")]
     Forbidden { message: String },
@@ -109,22 +128,25 @@ impl From<MetastoreError> for quickwit_proto::tonic::Status {
 impl ServiceError for MetastoreError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
+            Self::AlreadyExists(_, _) => ServiceErrorCode::BadRequest,
             Self::ConnectionError { .. } => ServiceErrorCode::Internal,
+            Self::DbError { .. } => ServiceErrorCode::Internal,
             Self::Forbidden { .. } => ServiceErrorCode::MethodNotAllowed,
             Self::IncompatibleCheckpointDelta(_) => ServiceErrorCode::BadRequest,
             Self::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             Self::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
             Self::InternalError { .. } => ServiceErrorCode::Internal,
+            Self::InvalidArgument(_) => ServiceErrorCode::BadRequest,
             Self::InvalidManifest { .. } => ServiceErrorCode::Internal,
             Self::Io { .. } => ServiceErrorCode::Internal,
+            Self::JsonDeserializeError { .. } => ServiceErrorCode::Internal,
+            Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
+            Self::NotFound(_, _) => ServiceErrorCode::NotFound,
             Self::SourceAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             Self::SourceDoesNotExist { .. } => ServiceErrorCode::NotFound,
             Self::SplitsDoNotExist { .. } => ServiceErrorCode::BadRequest,
             Self::SplitsNotDeletable { .. } => ServiceErrorCode::BadRequest,
             Self::SplitsNotStaged { .. } => ServiceErrorCode::BadRequest,
-            Self::DbError { .. } => ServiceErrorCode::Internal,
-            Self::JsonDeserializeError { .. } => ServiceErrorCode::Internal,
-            Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
         }
     }
 }

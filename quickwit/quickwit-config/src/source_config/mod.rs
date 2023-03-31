@@ -134,6 +134,18 @@ impl SourceConfig {
         }
     }
 
+    pub fn is_cli(&self) -> bool {
+        matches!(self.source_params, SourceParams::IngestCli)
+    }
+
+    pub fn is_file(&self) -> bool {
+        matches!(self.source_params, SourceParams::File(_))
+    }
+
+    pub fn is_ingest(&self) -> bool {
+        matches!(self.source_params, SourceParams::IngestApi)
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(source_id: &str, source_params: SourceParams) -> Self {
         Self {

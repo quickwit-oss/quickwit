@@ -591,12 +591,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_trigger_on_target_num_docs() -> anyhow::Result<()> {
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
         let schema = doc_mapper.schema();
@@ -725,12 +720,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_trigger_on_memory_limit() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
         let schema = doc_mapper.schema();
@@ -800,12 +790,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_on_timeout() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
         let schema = doc_mapper.schema();
@@ -888,12 +873,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_eof() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
@@ -967,12 +947,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_partitioning() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let doc_mapper: Arc<dyn DocMapper> = Arc::new(
             serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap(),
         );
@@ -1064,12 +1039,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_exceeding_max_num_partitions() {
         let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
@@ -1136,12 +1106,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_propagates_publish_lock() {
         let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
@@ -1210,12 +1175,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_ignores_messages_when_publish_lock_is_dead() {
         let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
@@ -1277,12 +1237,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_honors_batch_commit_request() {
         let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
@@ -1340,12 +1295,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_checkpoint_on_all_failed_docs() -> anyhow::Result<()> {
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
         let indexing_directory = ScratchDirectory::for_test();

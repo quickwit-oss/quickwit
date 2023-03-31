@@ -19,7 +19,7 @@
 
 mod serialize;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::net::SocketAddr;
 use std::num::NonZeroU64;
@@ -30,6 +30,7 @@ use anyhow::bail;
 use byte_unit::Byte;
 use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
+use quickwit_types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -72,14 +73,13 @@ impl IndexerConfig {
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test() -> anyhow::Result<Self> {
-        let indexer_config = IndexerConfig {
+    pub fn for_test() -> Self {
+        Self {
             enable_otlp_endpoint: true,
             split_store_max_num_bytes: Byte::from_bytes(1_000_000),
             split_store_max_num_splits: 3,
             max_concurrent_split_uploads: 4,
-        };
-        Ok(indexer_config)
+        }
     }
 }
 
@@ -199,8 +199,8 @@ impl Default for JaegerConfig {
 #[derive(Clone, Debug, Serialize)]
 pub struct QuickwitConfig {
     pub cluster_id: String,
-    pub node_id: String,
-    pub enabled_services: HashSet<QuickwitService>,
+    pub node_id: NodeId,
+    pub enabled_services: BTreeSet<QuickwitService>,
     pub rest_listen_addr: SocketAddr,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,

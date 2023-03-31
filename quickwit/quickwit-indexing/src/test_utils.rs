@@ -26,16 +26,18 @@ use chitchat::transport::ChannelTransport;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::create_cluster_for_test;
 use quickwit_common::rand::append_random_suffix;
+use quickwit_common::tower::Pool;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{
     build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, IngestApiConfig, SourceConfig,
     SourceParams, VecSourceParams,
 };
 use quickwit_doc_mapper::DocMapper;
-use quickwit_ingest::{init_ingest_api, QUEUES_DIR_NAME};
+use quickwit_ingest::{init_ingest_api, IngestServiceClient, QUEUES_DIR_NAME};
 use quickwit_metastore::file_backed_metastore::FileBackedMetastoreFactory;
 use quickwit_metastore::{Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState};
 use quickwit_storage::{Storage, StorageUriResolver};
+use quickwit_types::NodeId;
 use serde_json::Value as JsonValue;
 
 use crate::actors::IndexingService;
@@ -72,7 +74,7 @@ impl TestSandbox {
         indexing_settings_yaml: &str,
         search_fields: &[&str],
     ) -> anyhow::Result<Self> {
-        let node_id = append_random_suffix("test-node");
+        let node_id = NodeId::new(append_random_suffix("test-node"));
         let transport = ChannelTransport::default();
         let cluster = Arc::new(
             create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
@@ -91,7 +93,7 @@ impl TestSandbox {
         let doc_mapper =
             build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
         let temp_dir = tempfile::tempdir()?;
-        let indexer_config = IndexerConfig::for_test()?;
+        let indexer_config = IndexerConfig::for_test();
         let storage_resolver = StorageUriResolver::for_test();
         let metastore_uri_resolver = MetastoreUriResolver::builder()
             .register(
@@ -105,11 +107,24 @@ impl TestSandbox {
         metastore.create_index(index_config.clone()).await?;
         let storage = storage_resolver.resolve(&index_uri)?;
         let universe = Universe::with_accelerated_time();
+        let pool = Pool::new();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
-        let ingest_api_service =
-            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default()).await?;
+        let ingest_api_service = init_ingest_api(
+            node_id.clone(),
+            &universe,
+            metastore.clone(),
+            pool.clone(),
+            &queues_dir_path,
+            &IngestApiConfig::default(),
+        )
+        .await?;
+        pool.add_node(
+            node_id.clone(),
+            IngestServiceClient::from_mailbox(ingest_api_service.clone()),
+        )
+        .await;
         let indexing_service_actor = IndexingService::new(
-            node_id.to_string(),
+            node_id.clone(),
             temp_dir.path().to_path_buf(),
             indexer_config,
             cluster,

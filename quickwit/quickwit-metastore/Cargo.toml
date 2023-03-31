@@ -13,21 +13,23 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 byte-unit = { workspace = true }
-sqlx = { workspace = true, optional = true }
 futures = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
+prost-types = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sqlx = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
+tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 utoipa = { workspace = true }
@@ -39,6 +41,7 @@ quickwit-doc-mapper = { workspace = true }
 quickwit-grpc-clients = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
+quickwit-types = { workspace = true }
 
 [dev-dependencies]
 dotenv = { workspace = true }

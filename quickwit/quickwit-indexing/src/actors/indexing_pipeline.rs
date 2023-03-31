@@ -540,6 +540,7 @@ mod tests {
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
+    use quickwit_types::NodeId;
 
     use super::{IndexingPipeline, *};
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
@@ -602,12 +603,12 @@ mod tests {
                 },
             )
             .returning(|_, _, _, _| Ok(()));
-        let node_id = "test-node";
+        let node_id = NodeId::from("test-node");
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
-            node_id: node_id.to_string(),
+            node_id: node_id.clone(),
             pipeline_ord: 0,
         };
         let source_config = SourceConfig {
@@ -692,12 +693,12 @@ mod tests {
             )
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
-        let node_id = "test-node";
+        let node_id = NodeId::from("test-node");
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
-            node_id: node_id.to_string(),
+            node_id: node_id.clone(),
             pipeline_ord: 0,
         };
         let source_config = SourceConfig {
@@ -750,13 +751,13 @@ mod tests {
             });
         metastore.expect_list_splits().returning(|_| Ok(Vec::new()));
         let universe = Universe::with_accelerated_time();
-        let node_id = "test-node";
+        let node_id = NodeId::from("test-node");
         let metastore = Arc::new(metastore);
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
-            node_id: node_id.to_string(),
+            node_id: node_id.clone(),
             pipeline_ord: 0,
         };
         let source_config = SourceConfig {
@@ -861,12 +862,12 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::with_accelerated_time();
-        let node_id = "test-node";
+        let node_id = NodeId::from("test-node");
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
-            node_id: node_id.to_string(),
+            node_id: node_id.clone(),
             pipeline_ord: 0,
         };
         let source_config = SourceConfig {

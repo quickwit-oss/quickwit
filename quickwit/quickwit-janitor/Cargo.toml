@@ -38,6 +38,7 @@ quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
+quickwit-types = { workspace = true }
 
 [dev-dependencies]
 mockall = "0.11"

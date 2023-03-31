@@ -107,7 +107,6 @@ pub struct IndexingScheduler {
 impl fmt::Debug for IndexingScheduler {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IndexingScheduler")
-            .field("cluster_id", &self.cluster.cluster_id)
             .field("metastore_uri", &self.metastore.uri())
             .field(
                 "last_applied_plan_ts",

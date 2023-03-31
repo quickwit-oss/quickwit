@@ -40,6 +40,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "DeleteQuery.end_timestamp",
             "#[serde(skip_serializing_if = \"Option::is_none\")]",
         )
+        .field_attribute(
+            "Shard.create_timestamp",
+            "#[serde(with = \"quickwit_common::timestamp_opt_serde\")]",
+        )
+        .field_attribute(
+            "Shard.publish_timestamp",
+            "#[serde(with = \"quickwit_common::timestamp_opt_serde\")]",
+        )
+        .field_attribute(
+            "Shard.close_timestamp",
+            "#[serde(with = \"quickwit_common::timestamp_opt_serde\")]",
+        )
         .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
         .out_dir("src/")
         .compile_with_config(prost_config, &protos, &["protos/quickwit"])?;

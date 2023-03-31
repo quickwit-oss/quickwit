@@ -31,6 +31,7 @@ members = [
   "quickwit-serve",
   "quickwit-storage",
   "quickwit-telemetry",
+  "quickwit-types",
 ]
 
 [profile.dev]
@@ -50,7 +51,7 @@ backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.21"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
 bytes = "1"
-chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "4973853" }
+chitchat = { path = "../../chitchat/chitchat" }
 chrono = "0.4.23"
 clap = { version = "=3.1", features = ["env"] }
 colored = "2.0.0"
@@ -172,8 +173,8 @@ tikv-jemalloc-ctl = "0.5"
 tikv-jemallocator = "0.5"
 time = { version = "0.3.17", features = ["std", "formatting", "macros"] }
 tokio = { version = "1.27", features = ["full"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-util = { version = "0.7", features = ["full"] }
+tokio-stream = { version = "0.1.12", features = ["sync"] }
+tokio-util = { version = "0.7.7", features = ["full"] }
 toml = "0.6.0"
 tonic = { version = "0.8.3", features = ["gzip"] }
 tonic-build = "0.8.4"
@@ -224,6 +225,7 @@ quickwit-search = { version = "0.5.0", path = "./quickwit-search" }
 quickwit-serve = { version = "0.5.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.5.0", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.5.0", path = "./quickwit-telemetry" }
+quickwit-types = { version = "0.5.0", path = "./quickwit-types" }
 
 tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "0ed13ee", default-features = false, features = [
   "mmap",

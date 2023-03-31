@@ -39,6 +39,7 @@ use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageError, StorageResolverError, StorageUriResolver};
+use quickwit_types::NodeId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
@@ -128,7 +129,7 @@ struct MergePipelineHandle {
 }
 
 pub struct IndexingService {
-    node_id: String,
+    node_id: NodeId,
     data_dir_path: PathBuf,
     cluster: Arc<Cluster>,
     metastore: Arc<dyn Metastore>,
@@ -144,7 +145,7 @@ pub struct IndexingService {
 
 impl IndexingService {
     pub async fn new(
-        node_id: String,
+        node_id: NodeId,
         data_dir_path: PathBuf,
         indexer_config: IndexerConfig,
         cluster: Arc<Cluster>,
@@ -768,30 +769,38 @@ mod tests {
     use quickwit_actors::{Health, ObservationType, Supervisable, Universe, HEARTBEAT};
     use quickwit_cluster::create_cluster_for_test;
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::tower::Pool;
     use quickwit_common::uri::Uri;
     use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, VecSourceParams};
-    use quickwit_ingest::{init_ingest_api, CreateQueueIfNotExistsRequest};
+    use quickwit_ingest::{init_ingest_api, CreateQueueIfNotExistsRequest, IngestServiceClient};
     use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore};
     use quickwit_proto::indexing_api::IndexingTask;
 
     use super::*;
 
     async fn spawn_indexing_service(
+        node_id: NodeId,
         universe: &Universe,
         metastore: Arc<dyn Metastore>,
         cluster: Arc<Cluster>,
     ) -> (Mailbox<IndexingService>, ActorHandle<IndexingService>) {
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
-        let indexer_config = IndexerConfig::for_test().unwrap();
+        let indexer_config = IndexerConfig::for_test();
         let storage_resolver = StorageUriResolver::for_test();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        let ingest_api_service =
-            init_ingest_api(universe, &queues_dir_path, &IngestApiConfig::default())
-                .await
-                .unwrap();
+        let ingest_api_service = init_ingest_api(
+            node_id.clone(),
+            universe,
+            metastore,
+            pool,
+            &queues_dir_path,
+            &IngestApiConfig::default(),
+        )
+        .await
+        .unwrap();
         let indexing_server = IndexingService::new(
-            "test-node".to_string(),
+            node_id,
             data_dir_path,
             indexer_config,
             cluster,
@@ -1068,9 +1077,9 @@ mod tests {
             4
         );
 
-        let self_member = &cluster.ready_members_from_chitchat_state().await[0];
+        let self_node = cluster.self_node().await;
         assert_eq!(
-            HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
+            HashSet::<_>::from_iter(self_node.indexing_tasks.iter()),
             HashSet::from_iter(indexing_tasks.iter())
         );
         let indexing_tasks = vec![
@@ -1098,9 +1107,9 @@ mod tests {
         assert_eq!(indexing_service_obs.num_deleted_queues, 0);
         assert_eq!(indexing_service_obs.num_delete_queue_failures, 0);
         indexing_service_handle.process_pending_and_observe().await;
-        let self_member = &cluster.ready_members_from_chitchat_state().await[0];
+        let self_node = cluster.self_node().await;
         assert_eq!(
-            HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
+            HashSet::<_>::from_iter(self_node.indexing_tasks.iter()),
             HashSet::from_iter(indexing_tasks.iter())
         );
 
@@ -1154,18 +1163,29 @@ mod tests {
             .unwrap();
 
         // Test `IndexingService::new`.
+        let node_id = NodeId::from("test-node");
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
-        let indexer_config = IndexerConfig::for_test().unwrap();
-        let storage_resolver = StorageUriResolver::for_test();
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        let ingest_api_service =
-            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
-                .await
-                .unwrap();
+        let pool = Pool::new();
+        let ingest_api_service = init_ingest_api(
+            node_id.clone(),
+            &universe,
+            metastore.clone(),
+            pool.clone(),
+            &queues_dir_path,
+            &IngestApiConfig::default(),
+        )
+        .await
+        .unwrap();
+        let ingester = IngestServiceClient::from_mailbox(ingest_api_service.clone());
+        pool.add_node(node_id.clone(), ingester).await;
+
+        let indexer_config = IndexerConfig::for_test();
+        let storage_resolver = StorageUriResolver::for_test();
         let indexing_server = IndexingService::new(
-            "test-node".to_string(),
+            node_id.clone(),
             data_dir_path,
             indexer_config,
             cluster.clone(),
@@ -1332,10 +1352,14 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
-        let ingest_api_service =
-            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
-                .await
-                .unwrap();
+        let ingest_api_service = init_ingest_api(
+            node_id,
+            &universe,
+            &queues_dir_path,
+            &IngestApiConfig::default(),
+        )
+        .await
+        .unwrap();
         let create_queue_req = CreateQueueIfNotExistsRequest {
             queue_id: index_id.clone(),
         };
@@ -1346,7 +1370,7 @@ mod tests {
 
         // Setup `IndexingService`
         let data_dir_path = temp_dir.path().to_path_buf();
-        let indexer_config = IndexerConfig::for_test().unwrap();
+        let indexer_config = IndexerConfig::for_test();
         let storage_resolver = StorageUriResolver::for_test();
         let mut indexing_server = IndexingService::new(
             "test-ingest-api-gc-node".to_string(),

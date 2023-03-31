@@ -306,6 +306,7 @@ mod tests {
     };
     use quickwit_config::IndexingSettings;
     use quickwit_metastore::SplitMetadata;
+    use quickwit_types::NodeId;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
 
@@ -321,11 +322,12 @@ mod tests {
         num_docs: usize,
         num_merge_ops: usize,
     ) -> SplitMetadata {
+        let node_id = NodeId::from("test-node");
         SplitMetadata {
             split_id: split_id.to_string(),
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id,
             num_docs,
             partition_id,
             num_merge_ops,
@@ -339,12 +341,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
             universe.create_test_mailbox();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let merge_policy = Arc::new(StableLogMergePolicy::new(
             StableLogMergePolicyConfig {
                 min_level_num_docs: 10_000,
@@ -424,12 +421,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
             universe.create_test_mailbox();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
             max_merge_factor: 2,
@@ -475,12 +467,7 @@ mod tests {
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) = universe
             .spawn_ctx()
             .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
             max_merge_factor: 2,

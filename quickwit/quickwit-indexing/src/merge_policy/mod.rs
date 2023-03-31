@@ -164,6 +164,7 @@ pub mod tests {
 
     use proptest::prelude::*;
     use quickwit_actors::Universe;
+    use quickwit_types::NodeId;
     use rand::seq::SliceRandom;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
@@ -315,12 +316,8 @@ pub mod tests {
         assert!(!splits.is_empty(), "Split list should not be empty.");
         let merged_split_id = new_split_id();
         let tags = merge_tags(splits);
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test_index".to_string(),
-            source_id: "test_source".to_string(),
-            node_id: "test_node".to_string(),
-            pipeline_ord: 0,
-        };
+
+        let pipeline_id = IndexingPipelineId::for_test();
         let split_attrs = merge_split_attrs(merged_split_id, &pipeline_id, splits);
         create_split_metadata(&split_attrs, tags, 0..0)
     }
@@ -345,12 +342,7 @@ pub mod tests {
         let universe = Universe::new();
         let (merge_op_mailbox, merge_op_inbox) =
             universe.create_test_mailbox::<MergeSplitDownloader>();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let merge_planner =
             MergePlanner::new(pipeline_id, Vec::new(), merge_policy, merge_op_mailbox);
         let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
@@ -392,6 +384,7 @@ pub mod tests {
         time_range: RangeInclusive<i64>,
         num_docs: u64,
     ) -> SplitMetadata {
+        let node_id = NodeId::from("test-node");
         SplitMetadata {
             split_id: crate::new_split_id(),
             partition_id: 3u64,
@@ -403,7 +396,7 @@ pub mod tests {
             footer_offsets: 0..100,
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id,
             ..Default::default()
         }
     }

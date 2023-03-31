@@ -271,7 +271,7 @@ impl MergeExecutor {
         io_controls: IoControls,
         merge_packager_mailbox: Mailbox<Packager>,
     ) -> Self {
-        MergeExecutor {
+        Self {
             pipeline_id,
             metastore,
             doc_mapper,
@@ -518,6 +518,7 @@ mod tests {
     use quickwit_common::split_file;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
+    use quickwit_types::NodeId;
     use serde_json::Value as JsonValue;
     use tantivy::{Inventory, ReloadPolicy};
 
@@ -528,12 +529,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let doc_mapping_yaml = r#"
             field_mappings:
               - name: body
@@ -654,9 +650,9 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_id: index_id.to_string(),
-            node_id: "unknown".to_string(),
-            pipeline_ord: 0,
             source_id: "unknown".to_string(),
+            node_id: NodeId::from("unknown"),
+            pipeline_ord: 0,
         };
         let doc_mapping_yaml = r#"
             field_mappings:

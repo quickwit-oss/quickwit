@@ -36,6 +36,7 @@ quickwit-grpc-clients = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-types = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

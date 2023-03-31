@@ -30,7 +30,9 @@ utoipa = { workspace = true }
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
+quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-types = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
@@ -39,6 +41,7 @@ rand_distr = { workspace = true }
 tempfile = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
+quickwit-metastore = { workspace = true, features = ["testsuite"] }
 
 [build-dependencies]
 quickwit-codegen = { workspace = true }

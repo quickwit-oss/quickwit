@@ -25,6 +25,7 @@ use std::iter::FromIterator;
 use std::ops::Range;
 use std::sync::Arc;
 
+use quickwit_proto::metastore_api::Position as ProtoBufPosition;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -73,8 +74,9 @@ impl From<i64> for PartitionId {
 ///
 /// The empty string can be used to represent the beginning of the source,
 /// if no position makes sense. It can be built via `Position::default()`.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Position {
+    #[default]
     Beginning,
     Offset(Arc<String>),
 }
@@ -113,11 +115,25 @@ impl From<String> for Position {
     }
 }
 
-impl<'a> From<&'a str> for Position {
-    fn from(position_str: &'a str) -> Self {
+impl From<&str> for Position {
+    fn from(position_str: &str) -> Self {
         match position_str {
             "" => Position::Beginning,
             _ => Position::Offset(Arc::new(position_str.to_string())),
+        }
+    }
+}
+
+impl From<ProtoBufPosition> for Position {
+    fn from(protobuf_position: ProtoBufPosition) -> Self {
+        Self::from(protobuf_position.offset)
+    }
+}
+
+impl Into<ProtoBufPosition> for Position {
+    fn into(self) -> ProtoBufPosition {
+        ProtoBufPosition {
+            offset: self.as_str().to_string(),
         }
     }
 }

@@ -268,6 +268,66 @@ impl MetastoreApiService for MetastoreProxyService {
         let resp = lock.client.list_stale_splits(request).await?;
         Ok(resp)
     }
+    /// / Creates a new open shard.
+    async fn open_shard(
+        &self,
+        request: tonic::Request<OpenShardRequest>,
+    ) -> Result<tonic::Response<OpenShardResponse>, tonic::Status> {
+        let mut lock = self.inner.lock().await;
+        lock.record(request.get_ref().clone()).await.unwrap();
+        let resp = lock.client.open_shard(request).await?;
+        Ok(resp)
+    }
+    /// / Gets a shard's metadata.
+    async fn get_shard(
+        &self,
+        request: tonic::Request<GetShardRequest>,
+    ) -> Result<tonic::Response<GetShardResponse>, tonic::Status> {
+        let mut lock = self.inner.lock().await;
+        lock.record(request.get_ref().clone()).await.unwrap();
+        let resp = lock.client.get_shard(request).await?;
+        Ok(resp)
+    }
+    /// / Applies a shard delta. //TODO: bulk apply
+    async fn apply_shard_delta(
+        &self,
+        request: tonic::Request<ApplyShardDeltaRequest>,
+    ) -> Result<tonic::Response<ApplyShardDeltaResponse>, tonic::Status> {
+        let mut lock = self.inner.lock().await;
+        lock.record(request.get_ref().clone()).await.unwrap();
+        let resp = lock.client.apply_shard_delta(request).await?;
+        Ok(resp)
+    }
+    /// / Closes a shard. // TODO: bulk close
+    async fn close_shard(
+        &self,
+        request: tonic::Request<CloseShardRequest>,
+    ) -> Result<tonic::Response<CloseShardResponse>, tonic::Status> {
+        let mut lock = self.inner.lock().await;
+        lock.record(request.get_ref().clone()).await.unwrap();
+        let resp = lock.client.close_shard(request).await?;
+        Ok(resp)
+    }
+    /// / Deletes a shard. // TODO: bulk delete
+    async fn delete_shard(
+        &self,
+        request: tonic::Request<DeleteShardRequest>,
+    ) -> Result<tonic::Response<DeleteShardResponse>, tonic::Status> {
+        let mut lock = self.inner.lock().await;
+        lock.record(request.get_ref().clone()).await.unwrap();
+        let resp = lock.client.delete_shard(request).await?;
+        Ok(resp)
+    }
+    /// / Lists shards.
+    async fn list_shards(
+        &self,
+        request: tonic::Request<ListShardsRequest>,
+    ) -> Result<tonic::Response<ListShardsResponse>, tonic::Status> {
+        let mut lock = self.inner.lock().await;
+        lock.record(request.get_ref().clone()).await.unwrap();
+        let resp = lock.client.list_shards(request).await?;
+        Ok(resp)
+    }
 }
 
 #[derive(Debug, StructOpt)]

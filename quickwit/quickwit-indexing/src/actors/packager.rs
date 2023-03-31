@@ -393,13 +393,7 @@ mod tests {
             }
         }
         index_writer.commit()?;
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
-
+        let pipeline_id = IndexingPipelineId::for_test();
         // TODO: In the future we would like that kind of segment flush to emit a new split,
         // but this will require work on tantivy.
         let indexed_split = IndexedSplit {

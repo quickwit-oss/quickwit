@@ -23,6 +23,7 @@ mod checklist;
 mod coolid;
 
 pub mod binary_heap;
+pub mod btree_utils;
 mod file_entry;
 pub mod fs;
 pub mod io;
@@ -37,6 +38,7 @@ pub mod runtimes;
 pub mod simple_list;
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;
+pub mod timestamp;
 pub mod tower;
 pub mod type_map;
 pub mod uri;
@@ -53,6 +55,7 @@ pub use coolid::new_coolid;
 pub use file_entry::FileEntry;
 pub use kill_switch::KillSwitch;
 pub use progress::{Progress, ProtectedZoneGuard};
+pub use timestamp::{timestamp_opt_serde, timestamp_serde};
 use tracing::{error, info};
 
 pub fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {
@@ -174,6 +177,16 @@ where T: Debug
     }
 }
 
+pub fn opt_contains<T>(opt: &Option<T>, needle: &T) -> bool
+where T: PartialEq {
+    opt.iter().any(|value| value == needle)
+}
+
+pub fn opt_exists<T, F>(opt: &Option<T>, func: F) -> bool
+where F: Fn(&T) -> bool {
+    opt.iter().any(func)
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::ErrorKind;
@@ -228,5 +241,19 @@ mod tests {
 
         let pretty_sample = PrettySample::new(&[1, 2, 3, 4], 2);
         assert_eq!(format!("{pretty_sample:?}"), "[1, 2, and 2 more]");
+    }
+
+    #[test]
+    fn test_opt_contains() {
+        assert!(opt_contains(&Some(0), &0));
+        assert!(!opt_contains(&Some(1), &0));
+        assert!(!opt_contains(&None, &0));
+    }
+
+    #[test]
+    fn test_opt_exists() {
+        assert!(opt_exists(&Some(0), |value| *value == 0));
+        assert!(!opt_exists(&Some(0), |value| *value != 0));
+        assert!(!opt_exists(&Option::<usize>::None, |value| *value != 0));
     }
 }

@@ -468,13 +468,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
+        let pipeline_id = IndexingPipelineId::for_test();
         let universe = Universe::new();
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
         let (sequencer_mailbox, sequencer_inbox) =
             universe.create_test_mailbox::<Sequencer<Publisher>>();
         let mut mock_metastore = MockMetastore::default();
@@ -574,12 +569,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_uploader_with_sequencer_emits_replace() -> anyhow::Result<()> {
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let universe = Universe::new();
         let (sequencer_mailbox, sequencer_inbox) =
             universe.create_test_mailbox::<Sequencer<Publisher>>();
@@ -716,12 +706,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_uploader_without_sequencer() -> anyhow::Result<()> {
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index-no-sequencer".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
+        let pipeline_id = IndexingPipelineId::for_test();
         let universe = Universe::new();
         let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let mut mock_metastore = MockMetastore::default();

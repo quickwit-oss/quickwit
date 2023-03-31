@@ -23,14 +23,20 @@ syntax = "proto3";
 package ingest_service;
 
 service IngestService {
-  /// Ingests document in a given queue.
+  /// Ingests documents in a given queue.
   ///
   /// Upon any kind of error, the client should
-  /// - retry to get at least once delivery.
-  /// - not retry to get at most once delivery.
+  /// - retry to get at-least-once delivery.
+  /// - not retry to get at-most-once delivery.
   ///
-  /// Exactly once delivery is not supported yet.
+  /// Exactly-once delivery is not supported yet.
   rpc Ingest(IngestRequest) returns (IngestResponse);
+
+  rpc IngestV2(IngestRequestV2) returns (IngestResponseV2);
+
+  rpc Persist(PersistRequest) returns (PersistResponse);
+
+  rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
 
   /// Fetches record from a given queue.
   ///
@@ -75,6 +81,39 @@ message IngestRequest {
 
 message IngestResponse {
     uint64 num_docs_for_processing = 1;
+}
+
+message IngestRequestV2 {
+    repeated DocBatch doc_batches = 1;
+    uint32 commit = 2;
+}
+
+message IngestResponseV2 {
+}
+
+message PersistRequest {
+    string index_id = 1;
+    string source_id = 2;
+    uint64 shard_id = 3;
+    string leader_id = 4;
+    optional string follower_id = 5;
+    repeated DocBatch doc_batches = 6;
+    uint32 commit = 7;
+}
+
+message PersistResponse {
+}
+
+message ReplicateRequest {
+    string index_id = 1;
+    string source_id = 2;
+    uint64 shard_id = 3;
+    string follower_id = 4;
+    repeated DocBatch doc_batches = 5;
+    uint32 commit = 6;
+}
+
+message ReplicateResponse {
 }
 
 message FetchRequest {

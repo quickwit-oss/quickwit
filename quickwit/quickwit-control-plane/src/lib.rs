@@ -28,10 +28,11 @@ use async_trait::async_trait;
 pub use control_plane_service::*;
 use quickwit_actors::{AskError, Mailbox, Universe};
 use quickwit_cluster::Cluster;
-use quickwit_common::pubsub::EventSubscriber;
+use quickwit_common::{pubsub::EventSubscriber, tower::Pool};
 use quickwit_config::SourceParams;
 use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 use quickwit_metastore::{Metastore, MetastoreEvent};
+use quickwit_types::NodeId;
 use scheduler::IndexingScheduler;
 use tracing::error;
 
@@ -82,7 +83,7 @@ impl From<AskError<ControlPlaneError>> for ControlPlaneError {
 /// Starts the Control Plane.
 pub async fn start_control_plane_service(
     universe: &Universe,
-    cluster: Arc<Cluster>,
+    indexer_pool: Pool<NodeId, Ige>
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<IndexingScheduler>> {
     let indexing_service_client_pool =

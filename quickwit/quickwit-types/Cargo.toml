@@ -1,0 +1,16 @@
+[package]
+name = "quickwit-types"
+version = "0.5.0"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
+license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
+description = "Defines the structs and traits used in the project."
+repository = "https://github.com/quickwit-oss/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
