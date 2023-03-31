@@ -156,24 +156,22 @@ impl QuickwitClient {
         };
         while let Some(batch) = batch_reader.next_batch().await? {
             loop {
-                let response = if let (Some(query_param), false) = (
-                    last_block_commit.to_query_parameter(),
-                    batch_reader.has_next(),
-                ) {
-                    self.transport
-                        .send::<()>(
-                            Method::POST,
-                            &format!("{ingest_path}?{query_param}"),
-                            None,
-                            None,
-                            Some(batch.clone()),
-                        )
-                        .await?
+                let query_params = if !batch_reader.has_next() {
+                    last_block_commit.to_query_parameter()
                 } else {
-                    self.transport
-                        .send::<()>(Method::POST, &ingest_path, None, None, Some(batch.clone()))
-                        .await?
+                    None
                 };
+
+                let response = self
+                    .transport
+                    .send(
+                        Method::POST,
+                        &ingest_path,
+                        None,
+                        query_params,
+                        Some(batch.clone()),
+                    )
+                    .await?;
 
                 if response.status_code() == StatusCode::TOO_MANY_REQUESTS {
                     if let Some(event_fn) = &on_ingest_event {
