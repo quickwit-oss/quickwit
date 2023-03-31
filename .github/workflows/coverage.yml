@@ -150,4 +150,3 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: ./quickwit/lcov.info
-          fail_ci_if_error: true
