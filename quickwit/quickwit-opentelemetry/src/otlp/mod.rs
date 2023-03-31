@@ -18,9 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::fmt;
 use std::str::FromStr;
 
+use base64::display::Base64Display;
+use base64::engine::GeneralPurpose;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpValue;
 use quickwit_proto::opentelemetry::proto::common::v1::{
@@ -41,11 +42,12 @@ pub use trace::{
     OTEL_TRACE_INDEX_CONFIG, OTEL_TRACE_INDEX_ID,
 };
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[serde(into = "B64TraceId", from = "B64TraceId")]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct TraceId([u8; 16]);
 
 impl TraceId {
+    pub const BASE64_LENGTH: usize = 24;
+
     pub fn new(bytes: [u8; 16]) -> Self {
         Self(bytes)
     }
@@ -58,18 +60,34 @@ impl TraceId {
         self.0.to_vec()
     }
 
-    pub fn b64_encode(&self) -> B64TraceId {
-        let mut buffer = [0u8; 24];
-        BASE64_STANDARD
-            .encode_slice(self.0, &mut buffer)
-            .expect("Buffer should be large enough.");
-        B64TraceId(buffer)
+    pub fn base64_display(&self) -> Base64Display<'_, '_, GeneralPurpose> {
+        Base64Display::new(&self.0, &BASE64_STANDARD)
+    }
+}
+
+impl Serialize for TraceId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let b64trace_id = BASE64_STANDARD.encode(self.0);
+        serializer.serialize_str(&b64trace_id)
+    }
+}
+
+impl<'de> Deserialize<'de> for TraceId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(de::Error::custom)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Trace ID must be 16 bytes long, got {0}.")]
-pub struct TryFromTraceIdError(usize);
+pub enum TryFromTraceIdError {
+    #[error("Trace ID must be 16 bytes long, got {0}.")]
+    InvalidLength(usize),
+    #[error("Invalid Base64 trace ID: {0}.")]
+    InvalidBase64(#[from] base64::DecodeError),
+}
 
 impl TryFrom<&[u8]> for TraceId {
     type Error = TryFromTraceIdError;
@@ -77,7 +95,7 @@ impl TryFrom<&[u8]> for TraceId {
     fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
         let trace_id = slice
             .try_into()
-            .map_err(|_| TryFromTraceIdError(slice.len()))?;
+            .map_err(|_| TryFromTraceIdError::InvalidLength(slice.len()))?;
         Ok(TraceId(trace_id))
     }
 }
@@ -86,108 +104,25 @@ impl TryFrom<Vec<u8>> for TraceId {
     type Error = TryFromTraceIdError;
 
     fn try_from(vec: Vec<u8>) -> Result<Self, Self::Error> {
-        let trace_id = vec
-            .try_into()
-            .map_err(|vec: Vec<u8>| TryFromTraceIdError(vec.len()))?;
-        Ok(TraceId(trace_id))
+        Self::try_from(&vec[..])
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("Base64 trace ID must be 24 bytes long, got {0}.")]
-pub struct TryFromB64TraceIdError(usize);
+impl FromStr for TraceId {
+    type Err = TryFromTraceIdError;
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct B64TraceId([u8; 24]);
-
-impl B64TraceId {
-    pub fn new(bytes: [u8; 24]) -> Self {
-        Self(bytes)
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-
-    pub fn to_vec(&self) -> Vec<u8> {
-        self.0.to_vec()
-    }
-
-    pub fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.0).expect("Base64 should be valid UTF-8.")
-    }
-
-    pub fn b64_decode(&self) -> TraceId {
-        let mut buffer = [0u8; 16];
+    fn from_str(b64_trace_id: &str) -> Result<Self, Self::Err> {
+        if b64_trace_id.len() != Self::BASE64_LENGTH {
+            return Err(TryFromTraceIdError::from(
+                base64::DecodeError::InvalidLength,
+            ));
+        }
+        let mut trace_id = [0u8; 16];
         BASE64_STANDARD
             // Using the unchecked version here because otherwise the engine gets the wrong size
             // estimate and fails.
-            .decode_slice_unchecked(self.0, &mut buffer)
-            .expect("Base64 trace ID should be valid Base64.");
-        TraceId(buffer)
-    }
-}
-
-impl fmt::Debug for B64TraceId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "B64TraceId({})", self.as_str())
-    }
-}
-
-impl ToString for B64TraceId {
-    fn to_string(&self) -> String {
-        String::from_utf8(self.0.to_vec()).expect("Base64 should be valid UTF-8.")
-    }
-}
-
-impl From<TraceId> for B64TraceId {
-    fn from(trace_id: TraceId) -> Self {
-        trace_id.b64_encode()
-    }
-}
-
-impl From<B64TraceId> for TraceId {
-    fn from(b64_trace_id: B64TraceId) -> Self {
-        b64_trace_id.b64_decode()
-    }
-}
-
-impl TryFrom<Vec<u8>> for B64TraceId {
-    type Error = TryFromB64TraceIdError;
-
-    fn try_from(vec: Vec<u8>) -> Result<Self, Self::Error> {
-        let trace_id = vec
-            .try_into()
-            .map_err(|vec: Vec<u8>| TryFromB64TraceIdError(vec.len()))?;
-        Ok(B64TraceId(trace_id))
-    }
-}
-
-impl FromStr for B64TraceId {
-    type Err = TryFromB64TraceIdError;
-
-    fn from_str(b64_trace_id_str: &str) -> Result<Self, Self::Err> {
-        let trace_id = b64_trace_id_str
-            .as_bytes()
-            .try_into()
-            .map_err(|_| TryFromB64TraceIdError(b64_trace_id_str.len()))?;
-        Ok(B64TraceId(trace_id))
-    }
-}
-
-impl Serialize for B64TraceId {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for B64TraceId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
-        String::deserialize(deserializer)?
-            .into_bytes()
-            .try_into()
-            .map_err(de::Error::custom)
+            .decode_slice_unchecked(b64_trace_id, &mut trace_id)?;
+        Ok(TraceId(trace_id))
     }
 }
 
@@ -238,7 +173,7 @@ mod tests {
 
     #[test]
     fn test_trace_id_serde() {
-        let expected_trace_id = TraceId::new([1; 16]);
+        let expected_trace_id = TraceId([1; 16]);
         let trace_id_json = serde_json::to_string(&expected_trace_id).unwrap();
         assert_eq!(trace_id_json, r#""AQEBAQEBAQEBAQEBAQEBAQ==""#);
 
@@ -247,12 +182,25 @@ mod tests {
     }
 
     #[test]
-    fn test_b64trace_id_serde() {
-        let expected_b64trace_id = TraceId::new([1; 16]).b64_encode();
-        let b64trace_id_json = serde_json::to_string(&expected_b64trace_id).unwrap();
-        assert_eq!(b64trace_id_json, r#""AQEBAQEBAQEBAQEBAQEBAQ==""#);
+    fn test_trace_id_try_from() {
+        let expected_trace_id = TraceId([1; 16]);
+        let trace_id_json = serde_json::to_string(&expected_trace_id).unwrap();
+        assert_eq!(trace_id_json, r#""AQEBAQEBAQEBAQEBAQEBAQ==""#);
 
-        let b64trace_id = serde_json::from_str::<B64TraceId>(&b64trace_id_json).unwrap();
-        assert_eq!(b64trace_id, expected_b64trace_id);
+        let trace_id = serde_json::from_str::<TraceId>(&trace_id_json).unwrap();
+        assert_eq!(trace_id, expected_trace_id,);
+    }
+
+    #[test]
+    fn test_trace_id_from_str() {
+        let expected_trace_id = TraceId([1; 16]);
+        let trace_id: TraceId = "AQEBAQEBAQEBAQEBAQEBAQ==".parse().unwrap();
+        assert_eq!(trace_id, expected_trace_id);
+
+        let error = "AQEBAQEBAQEBAQEBAQEBAQEB==".parse::<TraceId>().unwrap_err();
+        assert!(matches!(
+            error,
+            TryFromTraceIdError::InvalidBase64(base64::DecodeError::InvalidLength)
+        ));
     }
 }

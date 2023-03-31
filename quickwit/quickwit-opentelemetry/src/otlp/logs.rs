@@ -35,7 +35,7 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
-use super::{parse_log_record_body, B64TraceId, TraceId};
+use super::{parse_log_record_body, TraceId};
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
@@ -131,7 +131,7 @@ pub struct LogRecord {
     pub body: Option<JsonValue>,
     pub attributes: HashMap<String, JsonValue>,
     pub dropped_attributes_count: u32,
-    pub trace_id: Option<B64TraceId>,
+    pub trace_id: Option<TraceId>,
     pub span_id: Option<Base64>,
     pub trace_flags: Option<u32>,
     pub resource_attributes: HashMap<String, JsonValue>,
@@ -294,8 +294,7 @@ impl OtlpGrpcLogsService {
 
                     let trace_id = if log_record.trace_id.iter().any(|&byte| byte != 0) {
                         let b64trace_id = TraceId::try_from(log_record.trace_id)
-                            .map_err(|error| Status::invalid_argument(error.to_string()))?
-                            .b64_encode();
+                            .map_err(|error| Status::invalid_argument(error.to_string()))?;
                         Some(b64trace_id)
                     } else {
                         None
