@@ -29,6 +29,7 @@ use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::{AggregationLimits, AggregationSegmentCollector};
 use tantivy::collector::{Collector, SegmentCollector};
+use tantivy::columnar::ColumnType;
 use tantivy::fastfield::Column;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 
@@ -113,9 +114,9 @@ fn resolve_sort_by(
     match sort_by {
         SortBy::DocId => Ok(SortingFieldComputer::DocId),
         SortBy::FastField { field_name, order } => {
-            let sort_column_opt: Option<Column<u64>> =
+            let sort_column_opt: Option<(Column<u64>, ColumnType)> =
                 segment_reader.fast_fields().u64_lenient(field_name)?;
-            let sort_column = if let Some(sort_column) = sort_column_opt {
+            let sort_column = if let Some((sort_column, _column_type)) = sort_column_opt {
                 sort_column
             } else {
                 Column::build_empty_column(segment_reader.max_doc())
