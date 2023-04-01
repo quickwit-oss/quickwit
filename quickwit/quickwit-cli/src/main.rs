@@ -317,15 +317,19 @@ mod tests {
         ));
 
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from([
-            "index",
-            "ingest",
-            "--index",
-            "wikipedia",
-            "--wait",
-            "--force",
-        ])?;
-        assert!(CliCommand::parse_cli_args(&matches).is_err());
+        assert_eq!(
+            app.try_get_matches_from([
+                "index",
+                "ingest",
+                "--index",
+                "wikipedia",
+                "--wait",
+                "--force",
+            ])
+            .unwrap_err()
+            .kind(),
+            clap::ErrorKind::ArgumentConflict
+        );
         Ok(())
     }
 
