@@ -9,10 +9,6 @@ repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
-[[bin]]
-name = "elastic-api-generator"
-path = "src/elastic_api_generator.rs"
-
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -51,7 +47,6 @@ quickwit-control-plane = { workspace = true }
 quickwit-core = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
-quickwit_elastic_api_generation = { workspace = true }
 quickwit-grpc-clients = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-ingest = { workspace = true }

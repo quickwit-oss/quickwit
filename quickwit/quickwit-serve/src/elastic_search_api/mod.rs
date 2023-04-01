@@ -20,6 +20,7 @@
 mod api_specs;
 mod rest_handler;
 
+use quickwit_common::simple_list::{from_simple_list, to_simple_list, SimpleList};
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
