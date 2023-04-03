@@ -115,7 +115,7 @@ pub async fn start_ingest_api_service(
 }
 
 #[repr(u32)]
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all(deserialize = "snake_case"))]
 #[derive(Default)]
 pub enum CommitType {

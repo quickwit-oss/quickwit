@@ -314,6 +314,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VecSourceParams {
+    #[schema(value_type = Vec<String>)]
     pub docs: Vec<Bytes>,
     pub batch_num_docs: usize,
     #[serde(default)]
