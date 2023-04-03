@@ -128,6 +128,7 @@ rest_listen_port: 1111
 ```
 
 ## Configuring CORS (Cross-origin resource sharing)
+
 CORS (Cross-origin resource sharing) describes what address/origins can access the REST API from the browser, 
 by default no origins are allowed.
 
