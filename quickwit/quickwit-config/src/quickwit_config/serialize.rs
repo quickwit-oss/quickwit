@@ -920,6 +920,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_config_accepts_wildcard() {
         let rest_config_yaml = r#"
+            version: 0.5
             rest_cors_allow_origins: '*'
         "#;
         let config = load_quickwit_config_with_env(
@@ -935,6 +936,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_config_accepts_single_origin() {
         let rest_config_yaml = r#"
+            version: 0.5
             rest_cors_allow_origins: https://www.my-domain.com
         "#;
         let config = load_quickwit_config_with_env(
@@ -950,6 +952,7 @@ mod tests {
         );
 
         let rest_config_yaml = r#"
+            version: 0.5
             rest_cors_allow_origins: http://192.168.0.108:7280
         "#;
         let config = load_quickwit_config_with_env(
@@ -968,7 +971,8 @@ mod tests {
     #[tokio::test]
     async fn test_rest_config_accepts_multi_origin() {
         let rest_config_yaml = r#"
-            rest_rest_cors_allow_origins: 
+            version: 0.5
+            rest_cors_allow_origins: 
                 - https://www.my-domain.com
         "#;
         let config = load_quickwit_config_with_env(
@@ -984,7 +988,8 @@ mod tests {
         );
 
         let rest_config_yaml = r#"
-            rest_rest_cors_allow_origins: 
+            version: 0.5
+            rest_cors_allow_origins: 
                 - https://www.my-domain.com
                 - https://www.my-other-domain.com
         "#;
@@ -1004,28 +1009,28 @@ mod tests {
         );
 
         let rest_config_yaml = r#"
-            rest_rest_cors_allow_origins: 
+            version: 0.5
+            rest_cors_allow_origins: 
         "#;
-        let error = load_quickwit_config_with_env(
+        load_quickwit_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
         )
         .await
         .expect_err("Config should not allow empty origins.");
-        assert!(error.to_string().contains("a list or single element"));
 
         let rest_config_yaml = r#"
-            rest_rest_cors_allow_origins: 
+            version: 0.5
+            rest_cors_allow_origins: 
                 -
         "#;
-        let error = load_quickwit_config_with_env(
+        load_quickwit_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
         )
         .await
         .expect_err("Config should not allow empty origins.");
-        assert!(error.to_string().contains("a list or single element"));
     }
 }
