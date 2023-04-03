@@ -186,6 +186,7 @@ mod tests {
         ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, MergeArgs, ToolCliCommand,
     };
     use quickwit_common::uri::Uri;
+    use quickwit_rest_client::rest_client::CommitType;
     use reqwest::Url;
 
     #[test]
@@ -278,12 +279,14 @@ mod tests {
                     cluster_endpoint,
                     index_id,
                     input_path_opt: None,
+                    commit_type: CommitType::Auto,
                 })) if &index_id == "wikipedia"
                        && cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
         ));
 
         let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(["index", "ingest", "--index", "wikipedia"])?;
+        let matches =
+            app.try_get_matches_from(["index", "ingest", "--index", "wikipedia", "--force"])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
@@ -292,9 +295,41 @@ mod tests {
                     cluster_endpoint,
                     index_id,
                     input_path_opt: None,
+                    commit_type: CommitType::Force,
                 })) if &index_id == "wikipedia"
                         && cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
         ));
+
+        let app = build_cli().no_binary_name(true);
+        let matches =
+            app.try_get_matches_from(["index", "ingest", "--index", "wikipedia", "--wait"])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Ingest(
+                IngestDocsArgs {
+                    cluster_endpoint,
+                    index_id,
+                    input_path_opt: None,
+                    commit_type: CommitType::WaitFor,
+                })) if &index_id == "wikipedia"
+                        && cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+        ));
+
+        let app = build_cli().no_binary_name(true);
+        assert_eq!(
+            app.try_get_matches_from([
+                "index",
+                "ingest",
+                "--index",
+                "wikipedia",
+                "--wait",
+                "--force",
+            ])
+            .unwrap_err()
+            .kind(),
+            clap::ErrorKind::ArgumentConflict
+        );
         Ok(())
     }
 
