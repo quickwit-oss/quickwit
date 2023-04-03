@@ -132,7 +132,7 @@ impl OpenApiMerger for utoipa::openapi::OpenApi {
         for (path, detail) in paths {
             // We can panic here as it will be raised during unit tests.
             assert!(
-                !path.starts_with('/'),
+                path.starts_with('/'),
                 "Path {path:?} does not start with `/`."
             );
 
