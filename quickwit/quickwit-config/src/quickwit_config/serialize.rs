@@ -925,8 +925,10 @@ mod tests {
         let config = load_quickwit_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
-            &Default::default()
-        ).await.expect("Deserialize rest config");
+            &Default::default(),
+        )
+        .await
+        .expect("Deserialize rest config");
         assert_eq!(config.rest_cors_allow_origins, ["*"]);
     }
 
@@ -938,9 +940,14 @@ mod tests {
         let config = load_quickwit_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
-            &Default::default()
-        ).await.expect("Deserialize rest config");
-        assert_eq!(config.rest_cors_allow_origins, ["https://www.my-domain.com"]);
+            &Default::default(),
+        )
+        .await
+        .expect("Deserialize rest config");
+        assert_eq!(
+            config.rest_cors_allow_origins,
+            ["https://www.my-domain.com"]
+        );
 
         let rest_config_yaml = r#"
             rest_cors_allow_origins: http://192.168.0.108:7280
@@ -948,9 +955,14 @@ mod tests {
         let config = load_quickwit_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
-            &Default::default()
-        ).await.expect("Deserialize rest config");
-        assert_eq!(config.rest_cors_allow_origins, ["http://192.168.0.108:7280"]);
+            &Default::default(),
+        )
+        .await
+        .expect("Deserialize rest config");
+        assert_eq!(
+            config.rest_cors_allow_origins,
+            ["http://192.168.0.108:7280"]
+        );
     }
 
     #[tokio::test]
@@ -962,9 +974,14 @@ mod tests {
         let config = load_quickwit_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
-            &Default::default()
-        ).await.expect("Deserialize rest config");
-        assert_eq!(config.rest_cors_allow_origins, ["https://www.my-domain.com"]);
+            &Default::default(),
+        )
+        .await
+        .expect("Deserialize rest config");
+        assert_eq!(
+            config.rest_cors_allow_origins,
+            ["https://www.my-domain.com"]
+        );
 
         let rest_config_yaml = r#"
             rest_rest_cors_allow_origins: 
@@ -974,8 +991,10 @@ mod tests {
         let config = load_quickwit_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
-            &Default::default()
-        ).await.expect("Deserialize rest config");
+            &Default::default(),
+        )
+        .await
+        .expect("Deserialize rest config");
         assert_eq!(
             config.rest_cors_allow_origins,
             [
@@ -990,8 +1009,10 @@ mod tests {
         let error = load_quickwit_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
-            &Default::default()
-        ).await.expect_err("Config should not allow empty origins.");
+            &Default::default(),
+        )
+        .await
+        .expect_err("Config should not allow empty origins.");
         assert!(error.to_string().contains("a list or single element"));
 
         let rest_config_yaml = r#"
@@ -1001,8 +1022,10 @@ mod tests {
         let error = load_quickwit_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
-            &Default::default()
-        ).await.expect_err("Config should not allow empty origins.");
+            &Default::default(),
+        )
+        .await
+        .expect_err("Config should not allow empty origins.");
         assert!(error.to_string().contains("a list or single element"));
     }
 }
