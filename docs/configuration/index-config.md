@@ -99,7 +99,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 ### Field types
 
 Each field has a type that indicates the kind of data it contains, such as integer on 64 bits or text.
-Quickwit supports the following raw types `text`, `i64`, `u64`, `f64`, `datetime`, `bool`, and `bytes`, and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
+Quickwit supports the following raw types [`text`](#text-type), [`i64`](#numeric-types-i64-u64-and-f64-type), [`u64`](#numeric-types-i64-u64-and-f64-type), [`f64`](#numeric-types-i64-u64-and-f64-type), [`datetime`](#datetime-type), [`bool`](#bool-type), [`ip`](#ip-type), and [`bytes`](#bytes-type), and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
 
 ### Raw types
 
@@ -456,7 +456,7 @@ For field names containing the `.` character, you will need to escape it when re
 
 ### Behavior with null values or missing fields
 
-Fields with `null` or missing fields in your JSON document will be silently ignored when indexing with the exception of non-text fast fields. Non-text fast fields are required and entire record will be rejected with an error if at least one fast field is missing. 
+Fields with `null` or missing fields in your JSON document will be silently ignored when indexing with the exception of non-text fast fields. Non-text fast fields are required and entire record will be rejected with an error if at least one fast field is missing.
 
 ## Indexing settings
 

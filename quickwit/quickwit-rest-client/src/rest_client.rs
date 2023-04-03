@@ -22,6 +22,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use quickwit_common::FileEntry;
 use quickwit_config::{ConfigFormat, SourceConfig};
+pub use quickwit_ingest::CommitType;
 use quickwit_metastore::{IndexMetadata, Split};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString};
@@ -144,6 +145,7 @@ impl QuickwitClient {
         index_id: &str,
         ingest_source: IngestSource,
         on_ingest_event: Option<&dyn Fn(IngestEvent)>,
+        last_block_commit: CommitType,
     ) -> Result<(), Error> {
         let ingest_path = format!("{index_id}/ingest");
         let mut batch_reader = match ingest_source {
@@ -154,9 +156,21 @@ impl QuickwitClient {
         };
         while let Some(batch) = batch_reader.next_batch().await? {
             loop {
+                let query_params = if !batch_reader.has_next() {
+                    last_block_commit.to_query_parameter()
+                } else {
+                    None
+                };
+
                 let response = self
                     .transport
-                    .send::<()>(Method::POST, &ingest_path, None, None, Some(batch.clone()))
+                    .send(
+                        Method::POST,
+                        &ingest_path,
+                        None,
+                        query_params,
+                        Some(batch.clone()),
+                    )
                     .await?;
 
                 if response.status_code() == StatusCode::TOO_MANY_REQUESTS {
@@ -422,6 +436,7 @@ mod test {
     use bytes::Bytes;
     use quickwit_config::{ConfigFormat, SourceConfig};
     use quickwit_indexing::mock_split;
+    use quickwit_ingest::CommitType;
     use quickwit_metastore::IndexMetadata;
     use quickwit_search::SearchResponseRest;
     use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString};
@@ -529,7 +544,7 @@ mod test {
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
         qw_client
-            .ingest("my-index", ingest_source, None)
+            .ingest("my-index", ingest_source, None, CommitType::Auto)
             .await
             .unwrap();
     }
@@ -558,7 +573,7 @@ mod test {
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
         let error = qw_client
-            .ingest("my-index", ingest_source, None)
+            .ingest("my-index", ingest_source, None, CommitType::Auto)
             .await
             .unwrap_err();
         assert!(matches!(error, Error::Api(_)));
