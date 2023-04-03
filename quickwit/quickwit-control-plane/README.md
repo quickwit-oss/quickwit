@@ -13,14 +13,6 @@ It then applies a placement algorithm to decide which indexer should be running 
 
 The control plane then emits gRPC to the indexers that are not already following their assigned part of the indexing plan.
 
-## Control loop
-
-Each indexer reports its currently running plan via chitchat.
-A control loop makes sure that this cluster state matches the latest applied plan.
-If a divergence is observed (for instance, if a node leaves the cluster), or if a node reports not being running a given pipeline, the control plane will take the necessary actions (respectively recompute the physical plan or reapply the plan).
-
-## Read more in the [Scheduler](./src/scheduler.rs#L66) Rust docs
-
 ```mermaid
 flowchart TB
     StartScheduling(Start scheduling)--"(Sources, Nodes)"-->Define
@@ -36,3 +28,11 @@ flowchart TB
     Apply --IndexerPlan--> Indexer2
     Apply --IndexerPlan--> Indexer...
 ```
+
+## Control loop
+
+Each indexer reports its currently running plan via chitchat.
+A control loop makes sure that this cluster state matches the latest applied plan.
+If a divergence is observed (for instance, if a node leaves the cluster), or if a node reports not being running a given pipeline, the control plane will take the necessary actions (respectively recompute the physical plan or reapply the plan).
+
+## Read more in the [Scheduler](./src/scheduler.rs#L66) Rust docs
