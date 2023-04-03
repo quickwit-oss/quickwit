@@ -173,6 +173,7 @@ mod openapi_schema_tests {
 
         let mut errors = Vec::new();
         for (path, detail) in openapi.paths.paths.iter() {
+            let path = path.as_str();
             for (method, operation) in detail.operations.iter() {
                 let method = serde_json::to_string(method).unwrap();
                 let contents = operation
@@ -204,6 +205,30 @@ mod openapi_schema_tests {
                         errors.push((location.clone(), method.clone(), path, info));
                     }
                 }
+
+                for parameter in operation.parameters.as_deref().unwrap_or(&[]) {
+                    let location = match &parameter.schema {
+                        Some(RefOr::Ref(r)) => &r.ref_location,
+                        Some(RefOr::T(schema)) => {
+                            let parent = format!("param: {}", &parameter.name);
+                            check_schema(
+                                &method,
+                                path,
+                                &schemas_lookup,
+                                &mut errors,
+                                &parent,
+                                schema,
+                            );
+                            continue;
+                        }
+                        _ => continue,
+                    };
+
+                    if !schemas_lookup.contains(location) {
+                        let info = format!("param:{}", parameter.name);
+                        errors.push((location.clone(), method.clone(), path, info));
+                    }
+                }
             }
         }
 
@@ -211,8 +236,7 @@ mod openapi_schema_tests {
             let errors = errors
                 .into_iter()
                 .map(|(location, method, path, info)| {
-                    let (location, type_name) = location.rsplit_once('/').unwrap();
-                    format!("{method} {path:?} {info} - Location: {location:?} Type: {type_name:?}")
+                    format!("{method} {path:?} {info} - Location: {location}")
                 })
                 .join("\n");
 
@@ -378,6 +402,113 @@ mod openapi_schema_tests {
                             parent_location.to_owned(),
                         )),
                         RefOr::T(schema) => resolve_schema(resolve_once, parent_location, schema),
+                    }
+                }
+            }
+            _ => unimplemented!("Unknown schema variant"),
+        }
+    }
+
+    fn check_schema<'a>(
+        method: &str,
+        path: &'a str,
+        schemas_lookup: &BTreeSet<String>,
+        errors: &mut Vec<(String, String, &'a str, String)>,
+        parent_location: &str,
+        schema: &Schema,
+    ) {
+        match schema {
+            Schema::Array(array) => {
+                let parent = format!("{parent_location}.Vec");
+                match &*array.items {
+                    RefOr::Ref(r) => {
+                        if !schemas_lookup.contains(&r.ref_location) {
+                            errors.push((parent, method.to_string(), path, String::new()));
+                        }
+                    }
+                    RefOr::T(schema) => {
+                        check_schema(method, path, schemas_lookup, errors, &parent, schema)
+                    }
+                }
+            }
+            Schema::Object(object) => {
+                for (key, r) in object.properties.iter() {
+                    let parent = format!("{parent_location}.{key}");
+                    match r {
+                        RefOr::Ref(r) => {
+                            if !schemas_lookup.contains(&r.ref_location) {
+                                errors.push((parent, method.to_string(), path, String::new()));
+                            }
+                        }
+                        RefOr::T(schema) => {
+                            check_schema(method, path, schemas_lookup, errors, &parent, schema)
+                        }
+                    }
+                }
+
+                if let Some(ref props) = object.additional_properties {
+                    if let AdditionalProperties::RefOr(ref r) = **props {
+                        match r {
+                            RefOr::Ref(r) => {
+                                if !schemas_lookup.contains(&r.ref_location) {
+                                    errors.push((
+                                        parent_location.to_string(),
+                                        method.to_string(),
+                                        path,
+                                        String::new(),
+                                    ));
+                                }
+                            }
+                            RefOr::T(schema) => check_schema(
+                                method,
+                                path,
+                                schemas_lookup,
+                                errors,
+                                parent_location,
+                                schema,
+                            ),
+                        }
+                    }
+                }
+            }
+            Schema::OneOf(one_of) => {
+                let parent = format!("{parent_location}.Enum");
+                for r in &one_of.items {
+                    match r {
+                        RefOr::Ref(r) => {
+                            if !schemas_lookup.contains(&r.ref_location) {
+                                errors.push((
+                                    parent.clone(),
+                                    method.to_string(),
+                                    path,
+                                    String::new(),
+                                ));
+                            }
+                        }
+                        RefOr::T(schema) => {
+                            check_schema(method, path, schemas_lookup, errors, &parent, schema)
+                        }
+                    }
+                }
+            }
+            Schema::AllOf(all_of) => {
+                for r in &all_of.items {
+                    match r {
+                        RefOr::Ref(r) => {
+                            let (_, type_name) = r.ref_location.rsplit_once('/').unwrap();
+                            let parent = format!("{parent_location}.{type_name}");
+                            if !schemas_lookup.contains(&r.ref_location) {
+                                errors.push((parent, method.to_string(), path, String::new()));
+                            }
+                        }
+                        RefOr::T(schema) => check_schema(
+                            method,
+                            path,
+                            schemas_lookup,
+                            errors,
+                            parent_location,
+                            schema,
+                        ),
                     }
                 }
             }
