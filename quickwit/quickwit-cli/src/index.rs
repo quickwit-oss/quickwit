@@ -129,7 +129,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                     Arg::new("force")
                         .long("force")
                         .short('f')
-                        .help("Force a commit after the last document is sent, and wait for all documents to be commited .nd available before exiting")
+                        .help("Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting")
                         .takes_value(false)
                         .conflicts_with("wait"),
                 ])
