@@ -19,6 +19,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
+use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_doc_mapper::{DocMapper, WarmupInfo};
@@ -28,12 +29,14 @@ use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::{AggregationLimits, AggregationSegmentCollector};
 use tantivy::collector::{Collector, SegmentCollector};
+use tantivy::columnar::ColumnType;
 use tantivy::fastfield::Column;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 
 use crate::filters::{create_timestamp_filter_builder, TimestampFilter, TimestampFilterBuilder};
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector};
 use crate::partial_hit_sorting_key;
+use crate::service::SearcherContext;
 
 #[derive(Clone, Debug)]
 pub(crate) enum SortBy {
@@ -111,9 +114,9 @@ fn resolve_sort_by(
     match sort_by {
         SortBy::DocId => Ok(SortingFieldComputer::DocId),
         SortBy::FastField { field_name, order } => {
-            let sort_column_opt: Option<Column<u64>> =
+            let sort_column_opt: Option<(Column<u64>, ColumnType)> =
                 segment_reader.fast_fields().u64_lenient(field_name)?;
-            let sort_column = if let Some(sort_column) = sort_column_opt {
+            let sort_column = if let Some((sort_column, _column_type)) = sort_column_opt {
                 sort_column
             } else {
                 Column::build_empty_column(segment_reader.max_doc())
@@ -318,6 +321,7 @@ pub(crate) struct QuickwitCollector {
     pub sort_by: SortBy,
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     pub aggregation: Option<QuickwitAggregations>,
+    pub aggregation_limits: AggregationLimits,
 }
 
 impl QuickwitCollector {
@@ -377,7 +381,7 @@ impl Collector for QuickwitCollector {
                     AggregationSegmentCollector::from_agg_req_and_reader(
                         aggs,
                         segment_reader,
-                        &AggregationLimits::default(),
+                        &self.aggregation_limits,
                     )?,
                 ),
             ),
@@ -527,6 +531,7 @@ pub(crate) fn make_collector_for_split(
     split_id: String,
     doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
+    aggregation_limits: AggregationLimits,
 ) -> crate::Result<QuickwitCollector> {
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
@@ -563,7 +568,22 @@ pub(crate) fn make_collector_for_split(
         sort_by,
         timestamp_filter_builder_opt,
         aggregation,
+        aggregation_limits,
     })
+}
+
+pub fn aggregation_limits_from_searcher_context(
+    searcher_context: &Arc<SearcherContext>,
+) -> AggregationLimits {
+    AggregationLimits::new(
+        Some(
+            searcher_context
+                .searcher_config
+                .aggregation_memory_limit
+                .get_bytes(),
+        ),
+        Some(searcher_context.searcher_config.aggregation_bucket_limit),
+    )
 }
 
 /// Builds a QuickwitCollector that's only useful for merging fruits.
@@ -572,6 +592,7 @@ pub(crate) fn make_collector_for_split(
 /// can be set to default.
 pub(crate) fn make_merge_collector(
     search_request: &SearchRequest,
+    searcher_context: &Arc<SearcherContext>,
 ) -> crate::Result<QuickwitCollector> {
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
@@ -584,6 +605,7 @@ pub(crate) fn make_merge_collector(
         sort_by: SortBy::DocId,
         timestamp_filter_builder_opt: None,
         aggregation,
+        aggregation_limits: aggregation_limits_from_searcher_context(searcher_context),
     })
 }
 
