@@ -486,7 +486,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4114279215a005bc675e386011e594e1d9b800918cea18fcadadcce864a2046b"
 dependencies = [
  "borsh-derive",
- "hashbrown 0.13.2",
+ "hashbrown 0.12.3",
 ]
 
 [[package]]
@@ -2676,15 +2676,6 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e7d46de488603ffdd5f30afbc64fbba2378214a2c3a2fb83abf3d33126df17"
-dependencies = [
- "hashbrown 0.13.2",
-]
-
-[[package]]
-name = "lru"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03f1160296536f10c833a82dca22267d5486734230d47bf00bf435885814ba1e"
@@ -4798,7 +4789,7 @@ dependencies = [
  "http",
  "hyper",
  "itertools",
- "lru 0.9.0",
+ "lru",
  "mockall",
  "once_cell",
  "opentelemetry",
@@ -4899,7 +4890,7 @@ dependencies = [
  "bytes",
  "fnv",
  "futures",
- "lru 0.9.0",
+ "lru",
  "md5",
  "mockall",
  "once_cell",
@@ -6495,7 +6486,7 @@ dependencies = [
  "itertools",
  "levenshtein_automata",
  "log",
- "lru 0.10.0",
+ "lru",
  "lz4_flex",
  "measure_time",
  "memmap2",
