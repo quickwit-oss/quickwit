@@ -196,18 +196,6 @@ impl Default for JaegerConfig {
     }
 }
 
-#[serde_with::serde_as]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct RestConfig {
-    #[serde(default)]
-    #[serde_as(deserialize_as = "serde_with::OneOrMany<_>")]
-    /// Specify CORS origins which are allowed to access Quickwit.
-    ///
-    /// Optionally, a wildcard (*) can be used to allow all origins.
-    pub cors_allow_origins: Vec<String>,
-}
-
 #[derive(Clone, Debug, Serialize)]
 pub struct QuickwitConfig {
     pub cluster_id: String,
@@ -222,11 +210,11 @@ pub struct QuickwitConfig {
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,
     pub default_index_root_uri: Uri,
+    pub rest_cors_allow_origins: Vec<String>,
     pub indexer_config: IndexerConfig,
     pub searcher_config: SearcherConfig,
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
-    pub rest_config: RestConfig,
 }
 
 impl QuickwitConfig {

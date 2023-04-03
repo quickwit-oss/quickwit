@@ -123,7 +123,7 @@ pub(crate) async fn start_rest_server(
     let warp_service = warp::service(rest_routes);
     let compression_predicate =
         DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
-    let cors = build_cors(&quickwit_services.config.rest_config.cors_allow_origins);
+    let cors = build_cors(&quickwit_services.config.rest_cors_allow_origins);
 
     let service = ServiceBuilder::new()
         .layer(
