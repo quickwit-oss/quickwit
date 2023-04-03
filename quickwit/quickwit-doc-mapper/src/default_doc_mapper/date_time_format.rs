@@ -57,16 +57,17 @@ impl FromStr for StrptimeParser {
 
 impl StrptimeParser {
     /// Parse a given date according to the datetime format specified during the StrptimeParser
-    /// creation. If the date format does not specific a time, the time will be set to 00:00:00.
+    /// creation. If the date format does not provide a specific a time, the time will be set to
+    /// 00:00:00.
     fn parse_primitive_date_time(
         &self,
         date_time_str: &str,
     ) -> Result<PrimitiveDateTime, time::error::Parse> {
         let mut parsed = Parsed::new();
         parsed.parse_items(date_time_str.as_bytes(), self.borrow_items())?;
-        // The parsed datetime seems to time.
-        // We complete it artificially with 00:00::00.
-        if !parsed.hour_24().is_some()
+        // The parsed datetime contains a date but seems to be missing "time".
+        // We complete it artificially with 00:00:00.
+        if parsed.hour_24().is_none()
             && !(parsed.hour_12().is_some() && parsed.hour_12_is_pm().is_some())
         {
             parsed.set_hour_24(0u8);
