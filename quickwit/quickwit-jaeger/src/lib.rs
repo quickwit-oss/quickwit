@@ -31,8 +31,8 @@ use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
-    B64TraceId, Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint,
-    SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId, OTEL_TRACE_INDEX_ID,
+    Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint, SpanKind as QwSpanKind,
+    SpanStatus as QwSpanStatus, TraceId, OTEL_TRACE_INDEX_ID,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -172,7 +172,7 @@ impl JaegerService {
         let (trace_ids, _) = self.find_trace_ids(trace_query).await?;
         let trace_ids = trace_ids
             .into_iter()
-            .map(|trace_id| trace_id.b64_decode().to_vec())
+            .map(|trace_id| trace_id.to_vec())
             .collect();
         debug!(trace_ids=?trace_ids, "`find_trace_ids` response");
         let response = FindTraceIDsResponse { trace_ids };
@@ -211,8 +211,7 @@ impl JaegerService {
         debug!(request=?request, "`get_trace` request");
         debug_assert_eq!(request.trace_id.len(), 16);
         let trace_id = TraceId::try_from(request.trace_id)
-            .map_err(|error| Status::invalid_argument(error.to_string()))?
-            .b64_encode();
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let end = OffsetDateTime::now_utc().unix_timestamp();
         let start = end - self.lookback_period_secs;
         let search_window = start..=end;
@@ -226,7 +225,7 @@ impl JaegerService {
     async fn find_trace_ids(
         &self,
         trace_query: TraceQueryParameters,
-    ) -> Result<(Vec<B64TraceId>, TimeIntervalSecs), Status> {
+    ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
         let index_id = OTEL_TRACE_INDEX_ID.to_string();
         let span_kind_opt = None;
         let min_span_start_timestamp_secs_opt = trace_query.start_time_min.map(|ts| ts.seconds);
@@ -276,7 +275,7 @@ impl JaegerService {
     #[instrument("stream_spans", skip_all, fields(num_traces=%trace_ids.len(), num_spans=Empty, num_bytes=Empty))]
     async fn stream_spans(
         &self,
-        trace_ids: &[B64TraceId],
+        trace_ids: &[TraceId],
         search_window: TimeIntervalSecs,
         operation_name: &'static str,
         request_start: Instant,
@@ -293,7 +292,8 @@ impl JaegerService {
                 query.push_str(" OR ");
             }
             query.push_str("trace_id:");
-            query.push_str(trace_id.as_str())
+            write!(query, "{}", trace_id.base64_display())
+                .expect("Writing to string should not fail.");
         }
         debug!(query=%query, "Fetch spans query");
 
@@ -938,7 +938,7 @@ fn qw_event_to_jaeger_log(event: QwEvent) -> Result<JaegerLog, Status> {
     Ok(log)
 }
 
-fn collect_trace_ids(trace_ids_json: &str) -> Result<(Vec<B64TraceId>, TimeIntervalSecs), Status> {
+fn collect_trace_ids(trace_ids_json: &str) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
     let collector_fruit: <FindTraceIdsCollector as Collector>::Fruit =
         json_deserialize(trace_ids_json, "trace IDs aggregation")?;
     if collector_fruit.is_empty() {

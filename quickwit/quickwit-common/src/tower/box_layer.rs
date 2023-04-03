@@ -21,7 +21,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use tower::layer::layer_fn;
-use tower::{Layer, Service, ServiceBuilder};
+use tower::{Layer, Service};
 
 use crate::tower::BoxService;
 
@@ -60,17 +60,6 @@ impl<S, R, T, E> Clone for BoxLayer<S, R, T, E> {
         Self {
             inner: self.inner.clone(),
         }
-    }
-}
-
-impl<L, S, R, T, E> From<ServiceBuilder<L>> for BoxLayer<S, R, T, E>
-where
-    L: Layer<S> + Send + Sync + 'static,
-    L::Service: Service<R, Response = T, Error = E> + Clone + Send + Sync + 'static,
-    <L::Service as Service<R>>::Future: Send + 'static,
-{
-    fn from(builder: ServiceBuilder<L>) -> Self {
-        Self::new(builder.into_inner())
     }
 }
 
