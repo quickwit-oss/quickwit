@@ -197,6 +197,22 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_date_without_time() {
+        let strptime_parser = StrptimeParser::from_str("%Y-%m-%d").unwrap();
+        let date = strptime_parser.parse_date_time("2012-05-21").unwrap();
+        assert_eq!(date, datetime!(2012-05-21 00:00:00 UTC));
+    }
+
+    #[test]
+    fn test_parse_date_am_pm_hour_not_zeroed() {
+        let strptime_parser = StrptimeParser::from_str("%Y-%m-%d %I:%M:%S %p").unwrap();
+        let date = strptime_parser
+            .parse_date_time("2012-05-21 10:05:12 pm")
+            .unwrap();
+        assert_eq!(date, datetime!(2012-05-21 22:05:12 UTC));
+    }
+
+    #[test]
     fn test_parse_date_time_str() {
         for date_time_str in [
             "20120521T120914Z",
