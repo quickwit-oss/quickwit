@@ -28,7 +28,7 @@ use std::{fmt, io};
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use bytes::Bytes;
-use clap::{arg, ArgMatches, Command};
+use clap::{arg, Arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -42,7 +42,7 @@ use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::{IndexMetadata, Split, SplitState};
 use quickwit_proto::SortOrder;
 use quickwit_rest_client::models::IngestSource;
-use quickwit_rest_client::rest_client::{IngestEvent, QuickwitClient, Transport};
+use quickwit_rest_client::rest_client::{CommitType, IngestEvent, QuickwitClient, Transport};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortByField};
 use quickwit_storage::load_file;
@@ -121,6 +121,17 @@ pub fn build_index_command<'a>() -> Command<'a> {
                         .display_order(1),
                     arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
                         .required(false),
+                    Arg::new("wait")
+                        .long("wait")
+                        .short('w')
+                        .help("Wait for all documents to be commited and available for search before exiting")
+                        .takes_value(false),
+                    Arg::new("force")
+                        .long("force")
+                        .short('f')
+                        .help("Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting")
+                        .takes_value(false)
+                        .conflicts_with("wait"),
                 ])
             )
         .subcommand(
@@ -182,6 +193,7 @@ pub struct IngestDocsArgs {
     pub cluster_endpoint: Url,
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
+    pub commit_type: CommitType,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -323,11 +335,18 @@ impl IndexCliCommand {
         } else {
             None
         };
+        let commit_type = match (matches.is_present("wait"), matches.is_present("force")) {
+            (false, false) => CommitType::Auto,
+            (false, true) => CommitType::Force,
+            (true, false) => CommitType::WaitFor,
+            (true, true) => bail!("Can't specify both --wait and --force"),
+        };
 
         Ok(Self::Ingest(IngestDocsArgs {
             cluster_endpoint,
             index_id,
             input_path_opt,
+            commit_type,
         }))
     }
 
@@ -784,7 +803,12 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         None => IngestSource::Stdin,
     };
     qw_client
-        .ingest(&args.index_id, ingest_source, Some(&update_progress_bar))
+        .ingest(
+            &args.index_id,
+            ingest_source,
+            Some(&update_progress_bar),
+            args.commit_type,
+        )
         .await?;
     progress_bar.finish();
     println!(

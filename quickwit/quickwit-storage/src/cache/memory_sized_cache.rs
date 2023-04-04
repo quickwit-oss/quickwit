@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use lru::{KeyRef, LruCache};
+use lru::LruCache;
 use tokio::time::Instant;
 use tracing::{error, warn};
 
@@ -114,7 +114,7 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
 
     pub fn get<Q>(&mut self, cache_key: &Q) -> Option<OwnedBytes>
     where
-        KeyRef<K>: Borrow<Q>,
+        K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
         let item_opt = self.lru_cache.get_mut(cache_key);
@@ -208,7 +208,7 @@ impl<K: Hash + Eq> MemorySizedCache<K> {
     /// If available, returns the cached view of the slice.
     pub fn get<Q>(&self, cache_key: &Q) -> Option<OwnedBytes>
     where
-        KeyRef<K>: Borrow<Q>,
+        K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
         self.inner.lock().unwrap().get(cache_key)
