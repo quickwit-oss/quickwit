@@ -296,6 +296,7 @@ pub(crate) mod test_suite {
     }
 
     /// Generic single-part upload test.
+    #[cfg(feature = "testsuite")]
     pub async fn storage_test_single_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("hello_small.txt");
         let data = b"hello, happy tax payer!".to_vec();
@@ -306,6 +307,7 @@ pub(crate) mod test_suite {
     }
 
     /// Generic multi-part upload test.
+    #[cfg(feature = "testsuite")]
     pub async fn storage_test_multi_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("hello_large.txt");
         let test_buffer = vec![0u8; 15_000_000];

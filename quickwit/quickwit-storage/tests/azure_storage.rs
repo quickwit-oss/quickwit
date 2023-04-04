@@ -21,16 +21,15 @@
 // to Azurite (the emulated azure blob storage environment)
 // with default `loose` config is possible.
 
-use std::path::Path;
-
-use anyhow::Context;
-use azure_storage_blobs::prelude::ClientBuilder;
-use quickwit_storage::{AzureBlobStorage, MultiPartPolicy};
-
 #[cfg(feature = "testsuite")]
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
+    use std::path::Path;
+
+    use anyhow::Context;
+    use azure_storage_blobs::prelude::ClientBuilder;
+    use quickwit_storage::{AzureBlobStorage, MultiPartPolicy};
     let _ = tracing_subscriber::fmt::try_init();
 
     // Setup container.
