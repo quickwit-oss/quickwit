@@ -30,7 +30,7 @@ use rusoto_core::credential::{
 };
 use rusoto_core::{HttpClient, HttpConfig};
 use rusoto_sts::WebIdentityProvider;
-use tracing::warn;
+use tracing::error;
 
 pub mod error;
 pub mod region;
@@ -99,16 +99,21 @@ impl ExtendedChainProvider {
 #[async_trait]
 impl ProvideAwsCredentials for ExtendedChainProvider {
     async fn credentials(&self) -> Result<AwsCredentials, CredentialsError> {
-        match self.web_identity_provider.credentials().await {
-            Ok(credentials) => return Ok(credentials),
-            Err(error) => {
-                warn!(err=?error, "Failed to find AWS credentials from `WebIdentityProvider`.")
+        let identity_provider = self.web_identity_provider.credentials().await;
+        let chain_provider = self.chain_provider.credentials().await;
+
+        match (identity_provider, chain_provider) {
+            (Ok(credentials), _) => return Ok(credentials),
+            (_, Ok(credentials)) => return Ok(credentials),
+            (Err(identity_error), Err(chain_error)) => {
+                error!(
+                    web_identity_error=?identity_error,
+                    chain_provider_error=?chain_error,
+                    "Failed to find AWS credentials from `WebIdentityProvider` or `ChainProvider`.",
+                )
             }
         }
-        match self.chain_provider.credentials().await {
-            Ok(credentials) => return Ok(credentials),
-            Err(error) => warn!(err=?error, "Failed to find AWS credentials from `ChainProvider`."),
-        }
+
         Err(CredentialsError::new(
             "Failed to find AWS credentials in environment, credentials file, or IAM role for \
              instance or service account.",
