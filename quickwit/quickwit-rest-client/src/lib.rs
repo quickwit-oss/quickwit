@@ -35,6 +35,7 @@ pub(crate) struct BatchLineReader {
     alloc_num_bytes: usize,
     max_batch_num_bytes: usize,
     num_lines: usize,
+    has_next: bool,
 }
 
 impl BatchLineReader {
@@ -58,6 +59,7 @@ impl BatchLineReader {
             alloc_num_bytes,
             max_batch_num_bytes,
             num_lines: 0,
+            has_next: true,
         }
     }
 
@@ -86,6 +88,7 @@ impl BatchLineReader {
                 return Ok(Some(Bytes::from(batch)));
             }
             if line_num_bytes == 0 {
+                self.has_next = false;
                 if self.buffer.is_empty() {
                     return Ok(None);
                 }
@@ -94,6 +97,14 @@ impl BatchLineReader {
             }
             self.num_lines += 1;
         }
+    }
+
+    /// Returns whether there is still data available
+    ///
+    /// This can spuriously return `true` when there was no data
+    /// to send at all.
+    pub fn has_next(&self) -> bool {
+        self.has_next
     }
 
     #[cfg(any(test, feature = "testsuite"))]

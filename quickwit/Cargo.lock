@@ -4771,6 +4771,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-indexing",
+ "quickwit-ingest",
  "quickwit-metastore",
  "quickwit-search",
  "quickwit-serve",
