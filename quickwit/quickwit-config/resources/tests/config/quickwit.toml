@@ -18,6 +18,8 @@ split_store_max_num_splits = 10_000
 max_concurrent_split_uploads = 8
 
 [searcher]
+aggregation_memory_limit = "1G"
+aggregation_bucket_limit = 500_000
 fast_field_cache_capacity = "10G"
 split_footer_cache_capacity = "1G"
 max_num_concurrent_split_streams = 120

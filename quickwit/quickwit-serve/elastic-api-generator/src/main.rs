@@ -50,7 +50,10 @@ const GENERATED_FILE_HEADER: &str = r#"
 
 pub static ROOT_DIR: Lazy<path::PathBuf> = Lazy::new(|| {
     let mf = env::var("CARGO_MANIFEST_DIR").expect("Should be run using 'cargo run ...'");
-    path::Path::new(&mf).parent().unwrap().to_path_buf()
+    path::Path::new(&mf)
+        .parent().unwrap()
+        .parent().unwrap()
+        .to_path_buf()
 });
 
 // Elasticsearch stack versions https://artifacts-api.elastic.co/v1/versions

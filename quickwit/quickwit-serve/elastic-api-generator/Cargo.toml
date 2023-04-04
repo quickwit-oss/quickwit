@@ -1,0 +1,15 @@
+[package]
+name = "elastic-api-generator"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+# This is just to make sure this project is not part
+# of the quickwit workspace.
+members = []
+
+[dependencies]
+quickwit-elastic-api-generation = { git = "https://github.com/quickwit-oss/elasticsearch-rs", rev = "ffbb4fd" }
+once_cell = "1"
+clap = "4"
+anyhow = "1"

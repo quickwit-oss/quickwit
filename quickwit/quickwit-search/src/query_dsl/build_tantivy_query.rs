@@ -17,27 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-syntax = "proto3";
+use quickwit_doc_mapper::DocMapper;
 
-package hello;
-
-message HelloRequest {
-    string name = 1;
-}
-
-message HelloResponse {
-    string message = 1;
-}
-
-message GoodbyeRequest {
-    string name = 1;
-}
-
-message GoodbyeResponse {
-    string message = 1;
-}
-
-service Hello {
-    rpc Hello(HelloRequest) returns (HelloResponse);
-    rpc Goodbye(GoodbyeRequest) returns (GoodbyeResponse);
+pub trait BuildTantivyQuery {
+    fn build_tantivy_query(
+        &self,
+        doc_mapper: &dyn DocMapper,
+    ) -> anyhow::Result<Box<dyn crate::TantivyQuery>>;
 }

@@ -301,47 +301,98 @@ pub struct IngestServiceTowerBlockBuilder {
     >,
 }
 impl IngestServiceTowerBlockBuilder {
-    pub fn ingest_layer(
-        mut self,
-        layer: quickwit_common::tower::BoxLayer<
-            Box<dyn IngestService>,
-            IngestRequest,
-            IngestResponse,
-            crate::IngestServiceError,
-        >,
-    ) -> Self {
-        self.ingest_layer = Some(layer);
-        self
-    }
-    pub fn fetch_layer(
-        mut self,
-        layer: quickwit_common::tower::BoxLayer<
-            Box<dyn IngestService>,
-            FetchRequest,
-            FetchResponse,
-            crate::IngestServiceError,
-        >,
-    ) -> Self {
-        self.fetch_layer = Some(layer);
-        self
-    }
-    pub fn tail_layer(
-        mut self,
-        layer: quickwit_common::tower::BoxLayer<
-            Box<dyn IngestService>,
-            TailRequest,
-            FetchResponse,
-            crate::IngestServiceError,
-        >,
-    ) -> Self {
-        self.tail_layer = Some(layer);
-        self
-    }
-    pub fn service<T>(self, instance: T) -> IngestServiceClient
+    pub fn shared_layer<L>(mut self, layer: L) -> Self
     where
-        T: IngestService + Clone,
+        L: tower::Layer<Box<dyn IngestService>> + Clone + Send + Sync + 'static,
+        L::Service: Service<
+                IngestRequest,
+                Response = IngestResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as Service<IngestRequest>>::Future: Send + 'static,
+        L::Service: Service<
+                FetchRequest,
+                Response = FetchResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as Service<FetchRequest>>::Future: Send + 'static,
+        L::Service: Service<
+                TailRequest,
+                Response = FetchResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as Service<TailRequest>>::Future: Send + 'static,
     {
-        let boxed_instance: Box<dyn IngestService> = Box::new(instance);
+        self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.fetch_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.tail_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn ingest_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
+        L::Service: Service<
+                IngestRequest,
+                Response = IngestResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as Service<IngestRequest>>::Future: Send + 'static,
+    {
+        self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn fetch_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
+        L::Service: Service<
+                FetchRequest,
+                Response = FetchResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as Service<FetchRequest>>::Future: Send + 'static,
+    {
+        self.fetch_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn tail_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
+        L::Service: Service<
+                TailRequest,
+                Response = FetchResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as Service<TailRequest>>::Future: Send + 'static,
+    {
+        self.tail_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn build<T>(self, instance: T) -> IngestServiceClient
+    where
+        T: IngestService,
+    {
+        self.build_from_boxed(Box::new(instance))
+    }
+    pub fn build_from_channel<T>(
+        self,
+        channel: tower::timeout::Timeout<tonic::transport::Channel>,
+    ) -> IngestServiceClient {
+        self.build_from_boxed(Box::new(IngestServiceClient::from_channel(channel)))
+    }
+    pub fn build_from_mailbox<A>(
+        self,
+        mailbox: quickwit_actors::Mailbox<A>,
+    ) -> IngestServiceClient
+    where
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        IngestServiceMailbox<A>: IngestService,
+    {
+        self.build_from_boxed(Box::new(IngestServiceClient::from_mailbox(mailbox)))
+    }
+    fn build_from_boxed(
+        self,
+        boxed_instance: Box<dyn IngestService>,
+    ) -> IngestServiceClient {
         let ingest_svc = if let Some(layer) = self.ingest_layer {
             layer.layer(boxed_instance.clone())
         } else {

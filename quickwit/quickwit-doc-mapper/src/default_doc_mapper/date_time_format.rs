@@ -25,6 +25,7 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use time::error::Format;
 use time::format_description::FormatItem;
+use time::parsing::Parsed;
 use time::{OffsetDateTime, PrimitiveDateTime};
 use time_fmt::parse::time_format_item::parse_to_format_item;
 
@@ -55,11 +56,33 @@ impl FromStr for StrptimeParser {
 }
 
 impl StrptimeParser {
+    /// Parse a given date according to the datetime format specified during the StrptimeParser
+    /// creation. If the date format does not provide a specific a time, the time will be set to
+    /// 00:00:00.
+    fn parse_primitive_date_time(
+        &self,
+        date_time_str: &str,
+    ) -> Result<PrimitiveDateTime, time::error::Parse> {
+        let mut parsed = Parsed::new();
+        parsed.parse_items(date_time_str.as_bytes(), self.borrow_items())?;
+        // The parsed datetime contains a date but seems to be missing "time".
+        // We complete it artificially with 00:00:00.
+        if parsed.hour_24().is_none()
+            && !(parsed.hour_12().is_some() && parsed.hour_12_is_pm().is_some())
+        {
+            parsed.set_hour_24(0u8);
+            parsed.set_minute(0u8);
+            parsed.set_second(0u8);
+        }
+        let date_time = parsed.try_into()?;
+        Ok(date_time)
+    }
+
     pub fn parse_date_time(&self, date_time_str: &str) -> Result<OffsetDateTime, String> {
         if *self.borrow_with_timezone() {
             OffsetDateTime::parse(date_time_str, self.borrow_items()).map_err(|err| err.to_string())
         } else {
-            PrimitiveDateTime::parse(date_time_str, self.borrow_items())
+            self.parse_primitive_date_time(date_time_str)
                 .map(|date_time| date_time.assume_utc())
                 .map_err(|err| err.to_string())
         }

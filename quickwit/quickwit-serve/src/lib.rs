@@ -259,9 +259,9 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
                     .layer(EstimateRateLayer::<IngestRequest, _>::new(rate_estimator))
                     .layer(BufferLayer::new(100))
                     .layer(RateLimitLayer::new(rate_modulator))
-                    .into(),
+                    .into_inner(),
             )
-            .service(IngestServiceClient::from_mailbox(ingest_api_service));
+            .build_from_mailbox(ingest_api_service);
         (ingest_service, Some(indexing_service))
     } else {
         let (channel, _) = create_balance_channel_from_watched_members(

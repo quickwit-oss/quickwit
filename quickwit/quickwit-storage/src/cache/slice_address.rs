@@ -22,8 +22,6 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use lru::KeyRef;
-
 #[derive(Hash, Clone, Debug, Eq, PartialEq)]
 pub struct SliceAddress {
     pub path: PathBuf,
@@ -61,10 +59,9 @@ impl<'a> SliceAddressKey for SliceAddressRef<'a> {
     }
 }
 
-impl<'a> Borrow<dyn SliceAddressKey + 'a> for KeyRef<SliceAddress> {
+impl<'a> Borrow<dyn SliceAddressKey + 'a> for SliceAddress {
     fn borrow(&self) -> &(dyn SliceAddressKey + 'a) {
-        let slice_address: &SliceAddress = self.borrow();
-        slice_address
+        self
     }
 }
 impl<'a> PartialEq for (dyn SliceAddressKey + 'a) {

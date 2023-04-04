@@ -144,6 +144,7 @@ fn deserialize_doc_mapper(doc_mapper_str: &str) -> crate::Result<Arc<dyn DocMapp
 impl SearchService for SearchServiceImpl {
     async fn root_search(&self, search_request: SearchRequest) -> crate::Result<SearchResponse> {
         let search_result = root_search(
+            self.searcher_context.clone(),
             &search_request,
             self.metastore.as_ref(),
             &self.cluster_client,
@@ -294,6 +295,19 @@ pub struct SearcherContext {
     pub split_footer_cache: MemorySizedCache<String>,
     /// Fast fields cache.
     pub fast_fields_cache: Arc<dyn Cache>,
+}
+
+impl std::fmt::Debug for SearcherContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SearcherContext")
+            .field("searcher_config", &self.searcher_config)
+            .field(
+                "leaf_search_split_semaphore",
+                &self.leaf_search_split_semaphore,
+            )
+            .field("split_stream_semaphore", &self.split_stream_semaphore)
+            .finish()
+    }
 }
 
 impl SearcherContext {

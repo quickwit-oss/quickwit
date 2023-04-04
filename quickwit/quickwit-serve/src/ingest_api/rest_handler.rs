@@ -42,6 +42,8 @@ pub struct IngestApi;
     quickwit_ingest::DocBatch,
     quickwit_ingest::FetchResponse,
     quickwit_ingest::IngestResponse,
+    quickwit_ingest::CommitType,
+    ElasticRefresh,
 )))]
 pub struct IngestApiSchemas;
 
@@ -220,7 +222,7 @@ async fn tail_endpoint(
 /// - Absence of ?refresh parameter or ?refresh=false means no refresh
 /// - Presence of ?refresh parameter without any values or ?refresh=true means force refresh
 /// - ?refresh=wait_for means wait for refresh
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(rename_all(deserialize = "snake_case"))]
 #[derive(Default)]
 pub enum ElasticRefresh {
