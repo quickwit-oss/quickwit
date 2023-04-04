@@ -95,71 +95,41 @@ impl Default for IndexerConfig {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, default)]
 pub struct SearcherConfig {
-    #[serde(default = "SearcherConfig::default_fast_field_cache_capacity")]
+    pub aggregation_memory_limit: Byte,
+    pub aggregation_bucket_limit: u32,
     pub fast_field_cache_capacity: Byte,
-    #[serde(default = "SearcherConfig::default_split_footer_cache_capacity")]
     pub split_footer_cache_capacity: Byte,
-    #[serde(default = "SearcherConfig::default_max_num_concurrent_split_searches")]
     pub max_num_concurrent_split_searches: usize,
-    #[serde(default = "SearcherConfig::default_max_num_concurrent_split_streams")]
     pub max_num_concurrent_split_streams: usize,
-}
-
-impl SearcherConfig {
-    fn default_fast_field_cache_capacity() -> Byte {
-        Byte::from_bytes(1_000_000_000) // 1G
-    }
-
-    fn default_split_footer_cache_capacity() -> Byte {
-        Byte::from_bytes(500_000_000) // 500M
-    }
-
-    fn default_max_num_concurrent_split_searches() -> usize {
-        100
-    }
-
-    fn default_max_num_concurrent_split_streams() -> usize {
-        100
-    }
 }
 
 impl Default for SearcherConfig {
     fn default() -> Self {
         Self {
-            fast_field_cache_capacity: Self::default_fast_field_cache_capacity(),
-            split_footer_cache_capacity: Self::default_split_footer_cache_capacity(),
-            max_num_concurrent_split_streams: Self::default_max_num_concurrent_split_streams(),
-            max_num_concurrent_split_searches: Self::default_max_num_concurrent_split_searches(),
+            fast_field_cache_capacity: Byte::from_bytes(1_000_000_000), // 1G
+            split_footer_cache_capacity: Byte::from_bytes(500_000_000), // 500M
+            max_num_concurrent_split_streams: 100,
+            max_num_concurrent_split_searches: 100,
+            aggregation_memory_limit: Byte::from_bytes(500_000_000), // 500M
+            aggregation_bucket_limit: 65000,
         }
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, default)]
 pub struct IngestApiConfig {
-    #[serde(default = "IngestApiConfig::default_max_queue_memory_usage")]
     pub max_queue_memory_usage: Byte,
-    #[serde(default = "IngestApiConfig::default_max_queue_disk_usage")]
     pub max_queue_disk_usage: Byte,
-}
-
-impl IngestApiConfig {
-    fn default_max_queue_memory_usage() -> Byte {
-        Byte::from_bytes(2 * 1024 * 1024 * 1024) // 2 GiB // TODO maybe we want more?
-    }
-
-    fn default_max_queue_disk_usage() -> Byte {
-        Byte::from_bytes(4 * 1024 * 1024 * 1024) // 4 GiB // TODO maybe we want more?
-    }
 }
 
 impl Default for IngestApiConfig {
     fn default() -> Self {
         Self {
-            max_queue_memory_usage: Self::default_max_queue_memory_usage(),
-            max_queue_disk_usage: Self::default_max_queue_disk_usage(),
+            max_queue_memory_usage: Byte::from_bytes(2 * 1024 * 1024 * 1024), /* 2 GiB // TODO maybe we want more? */
+            max_queue_disk_usage: Byte::from_bytes(4 * 1024 * 1024 * 1024), /* 4 GiB // TODO maybe we want more? */
         }
     }
 }

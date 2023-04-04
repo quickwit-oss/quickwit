@@ -30,121 +30,121 @@ pub struct SearchQueryParams {
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    pub _source: Option<Vec<String>>,
+    _source: Option<Vec<String>>,
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    pub _source_excludes: Option<Vec<String>>,
+    _source_excludes: Option<Vec<String>>,
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    pub _source_includes: Option<Vec<String>>,
+    _source_includes: Option<Vec<String>>,
     #[serde(default)]
-    pub allow_no_indices: Option<bool>,
+    allow_no_indices: Option<bool>,
     #[serde(default)]
-    pub allow_partial_search_results: Option<bool>,
+    allow_partial_search_results: Option<bool>,
     #[serde(default)]
-    pub analyze_wildcard: Option<bool>,
+    analyze_wildcard: Option<bool>,
     #[serde(default)]
-    pub analyzer: Option<String>,
+    analyzer: Option<String>,
     #[serde(default)]
-    pub batched_reduce_size: Option<i64>,
+    batched_reduce_size: Option<i64>,
     #[serde(default)]
-    pub ccs_minimize_roundtrips: Option<bool>,
+    ccs_minimize_roundtrips: Option<bool>,
     #[serde(default)]
-    pub default_operator: Option<DefaultOperator>,
+    default_operator: Option<DefaultOperator>,
     #[serde(default)]
-    pub df: Option<String>,
+    df: Option<String>,
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    pub docvalue_fields: Option<Vec<String>>,
+    docvalue_fields: Option<Vec<String>>,
     #[serde(default)]
-    pub error_trace: Option<bool>,
+    error_trace: Option<bool>,
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    pub expand_wildcards: Option<Vec<ExpandWildcards>>,
+    expand_wildcards: Option<Vec<ExpandWildcards>>,
     #[serde(default)]
-    pub explain: Option<bool>,
+    explain: Option<bool>,
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    pub filter_path: Option<Vec<String>>,
+    filter_path: Option<Vec<String>>,
     #[serde(default)]
-    pub force_synthetic_source: Option<bool>,
+    force_synthetic_source: Option<bool>,
     #[serde(default)]
-    pub from: Option<i64>,
+    from: Option<i64>,
     #[serde(default)]
-    pub human: Option<bool>,
+    human: Option<bool>,
     #[serde(default)]
-    pub ignore_throttled: Option<bool>,
+    ignore_throttled: Option<bool>,
     #[serde(default)]
-    pub ignore_unavailable: Option<bool>,
+    ignore_unavailable: Option<bool>,
     #[serde(default)]
-    pub lenient: Option<bool>,
+    lenient: Option<bool>,
     #[serde(default)]
-    pub max_concurrent_shard_requests: Option<i64>,
+    max_concurrent_shard_requests: Option<i64>,
     #[serde(default)]
-    pub min_compatible_shard_node: Option<String>,
+    min_compatible_shard_node: Option<String>,
     #[serde(default)]
-    pub pre_filter_shard_size: Option<i64>,
+    pre_filter_shard_size: Option<i64>,
     #[serde(default)]
-    pub preference: Option<String>,
+    preference: Option<String>,
     #[serde(default)]
-    pub pretty: Option<bool>,
+    pretty: Option<bool>,
     #[serde(default)]
-    pub q: Option<String>,
+    q: Option<String>,
     #[serde(default)]
-    pub request_cache: Option<bool>,
+    request_cache: Option<bool>,
     #[serde(default)]
-    pub rest_total_hits_as_int: Option<bool>,
+    rest_total_hits_as_int: Option<bool>,
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    pub routing: Option<Vec<String>>,
+    routing: Option<Vec<String>>,
     #[serde(default)]
-    pub scroll: Option<String>,
+    scroll: Option<String>,
     #[serde(default)]
-    pub search_type: Option<SearchType>,
+    search_type: Option<SearchType>,
     #[serde(default)]
-    pub seq_no_primary_term: Option<bool>,
+    seq_no_primary_term: Option<bool>,
     #[serde(default)]
-    pub size: Option<i64>,
+    size: Option<i64>,
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    pub sort: Option<Vec<String>>,
+    sort: Option<Vec<String>>,
     #[serde(default)]
-    pub source: Option<String>,
+    source: Option<String>,
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    pub stats: Option<Vec<String>>,
+    stats: Option<Vec<String>>,
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    pub stored_fields: Option<Vec<String>>,
+    stored_fields: Option<Vec<String>>,
     #[serde(default)]
-    pub suggest_field: Option<String>,
+    suggest_field: Option<String>,
     #[serde(default)]
-    pub suggest_mode: Option<SuggestMode>,
+    suggest_mode: Option<SuggestMode>,
     #[serde(default)]
-    pub suggest_size: Option<i64>,
+    suggest_size: Option<i64>,
     #[serde(default)]
-    pub suggest_text: Option<String>,
+    suggest_text: Option<String>,
     #[serde(default)]
-    pub terminate_after: Option<i64>,
+    terminate_after: Option<i64>,
     #[serde(default)]
-    pub timeout: Option<String>,
+    timeout: Option<String>,
     #[serde(default)]
-    pub track_scores: Option<bool>,
+    track_scores: Option<bool>,
     #[serde(default)]
-    pub track_total_hits: Option<TrackTotalHits>,
+    track_total_hits: Option<TrackTotalHits>,
     #[serde(default)]
-    pub typed_keys: Option<bool>,
+    typed_keys: Option<bool>,
     #[serde(default)]
-    pub version: Option<bool>,
+    version: Option<bool>,
 }
 #[doc = "The default operator for query string query (AND or OR)"]
 #[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
@@ -267,17 +267,30 @@ impl ToString for SuggestMode {
     }
 }
 #[utoipa::path(get, tag = "Search", path = "/_search")]
-pub(crate) fn elastic_search_filter(
+pub(crate) fn elastic_get_search_filter(
 ) -> impl Filter<Extract = (SearchQueryParams,), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_search")
-        .and(warp::get().or(warp::post()).unify())
+        .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
-
+#[utoipa::path(post, tag = "Search", path = "/_search")]
+pub(crate) fn elastic_post_search_filter(
+) -> impl Filter<Extract = (SearchQueryParams,), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_search")
+        .and(warp::post())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+}
 #[utoipa::path(get, tag = "Search", path = "/{index}/_search")]
-pub(crate) fn elastic_index_search_filter(
+pub(crate) fn elastic_get_index_search_filter(
 ) -> impl Filter<Extract = (SimpleList, SearchQueryParams), Error = Rejection> + Clone {
     warp::path!("_elastic" / SimpleList / "_search")
-        .and(warp::get().or(warp::post()).unify())
+        .and(warp::get())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+}
+#[utoipa::path(post, tag = "Search", path = "/{index}/_search")]
+pub(crate) fn elastic_post_index_search_filter(
+) -> impl Filter<Extract = (SimpleList, SearchQueryParams), Error = Rejection> + Clone {
+    warp::path!("_elastic" / SimpleList / "_search")
+        .and(warp::post())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }

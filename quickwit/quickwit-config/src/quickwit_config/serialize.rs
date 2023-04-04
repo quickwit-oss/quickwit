@@ -437,6 +437,8 @@ mod tests {
         assert_eq!(
             config.searcher_config,
             SearcherConfig {
+                aggregation_memory_limit: Byte::from_str("1G").unwrap(),
+                aggregation_bucket_limit: 500_000,
                 fast_field_cache_capacity: Byte::from_str("10G").unwrap(),
                 split_footer_cache_capacity: Byte::from_str("1G").unwrap(),
                 max_num_concurrent_split_searches: 150,
@@ -471,7 +473,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_quickwit_config_parse_yaml() {
-        test_quickwit_config_parse_aux(ConfigFormat::Toml)
+        test_quickwit_config_parse_aux(ConfigFormat::Yaml)
             .await
             .unwrap();
     }

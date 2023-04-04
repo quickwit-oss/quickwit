@@ -34,6 +34,7 @@ use quickwit_proto::{
 use quickwit_storage::{
     wrap_storage_with_long_term_cache, BundleStorage, MemorySizedCache, OwnedBytes, Storage,
 };
+use tantivy::aggregation::AggregationLimits;
 use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
@@ -42,7 +43,9 @@ use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 use tracing::*;
 
-use crate::collector::{make_collector_for_split, make_merge_collector};
+use crate::collector::{
+    aggregation_limits_from_searcher_context, make_collector_for_split, make_merge_collector,
+};
 use crate::service::SearcherContext;
 use crate::SearchError;
 
@@ -298,19 +301,31 @@ async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyh
 }
 
 /// Apply a leaf search on a single split.
-#[instrument(skip(searcher_context, search_request, storage, split, doc_mapper))]
+#[instrument(skip(
+    searcher_context,
+    search_request,
+    storage,
+    split,
+    doc_mapper,
+    agg_limits
+))]
 async fn leaf_search_single_split(
     searcher_context: &Arc<SearcherContext>,
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
+    agg_limits: AggregationLimits,
 ) -> crate::Result<LeafSearchResponse> {
     let split_id = split.split_id.to_string();
     let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
     let split_schema = index.schema();
-    let quickwit_collector =
-        make_collector_for_split(split_id.clone(), doc_mapper.as_ref(), search_request)?;
+    let quickwit_collector = make_collector_for_split(
+        split_id.clone(),
+        doc_mapper.as_ref(),
+        search_request,
+        agg_limits,
+    )?;
     let (query, mut warmup_info) = doc_mapper.query(split_schema, search_request)?;
     let reader = index
         .reader_builder()
@@ -347,9 +362,11 @@ pub async fn leaf_search(
     splits: &[SplitIdAndFooterOffsets],
     doc_mapper: Arc<dyn DocMapper>,
 ) -> Result<LeafSearchResponse, SearchError> {
+    let agg_limits = aggregation_limits_from_searcher_context(&searcher_context);
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
         .map(|split| {
+            let agg_limits = agg_limits.clone();
             let doc_mapper_clone = doc_mapper.clone();
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
@@ -368,6 +385,7 @@ pub async fn leaf_search(
                     index_storage_clone,
                     split.clone(),
                     doc_mapper_clone,
+                    agg_limits,
                 )
                 .await;
                 timer.observe_duration();
@@ -390,7 +408,7 @@ pub async fn leaf_search(
         });
 
     // Creates a collector which merges responses into one
-    let merge_collector = make_merge_collector(request)?;
+    let merge_collector = make_merge_collector(request, &searcher_context)?;
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
