@@ -54,7 +54,7 @@ Quickwit is the fastest search engine on cloud storage. It is a great fit for:
 - Multiple [data sources](https://quickwit.io/docs/ingest-data/) Kafka / Kinesis / Pulsar native
 - Multi-tenancy: indexing with many indexes and partitioning
 - Retention policies
-- Delete tasks (for GRPR use cases)
+- Delete tasks (for GDPR use cases)
 - Distributed and highly available* engine that scales out in seconds (*HA indexing only with Kafka)
 
 # 🚀 Quickstart
