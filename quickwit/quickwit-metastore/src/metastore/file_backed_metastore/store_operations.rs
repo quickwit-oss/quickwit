@@ -81,8 +81,8 @@ pub(crate) async fn check_indexes_states_exist(storage: Arc<dyn Storage>) -> any
 }
 
 /// Fetch `INDEXES_STATES_FILENAME` file and build the map (index, state).
-/// If the file does not exist, return an empty map.
-pub(crate) async fn fetch_and_build_indexes_states(
+/// If the file does not exist, it will create it and return an empty map.
+pub(crate) async fn fetch_or_init_indexes_states(
     storage: Arc<dyn Storage>,
     polling_interval_opt: Option<Duration>,
 ) -> MetastoreResult<HashMap<String, IndexState>> {

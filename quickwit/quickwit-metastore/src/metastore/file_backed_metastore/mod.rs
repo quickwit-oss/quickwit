@@ -42,7 +42,7 @@ use self::file_backed_index::FileBackedIndex;
 pub use self::file_backed_metastore_factory::FileBackedMetastoreFactory;
 use self::lazy_file_backed_index::LazyFileBackedIndex;
 use self::store_operations::{
-    check_indexes_states_exist, delete_index, fetch_and_build_indexes_states, fetch_index,
+    check_indexes_states_exist, delete_index, fetch_index, fetch_or_init_indexes_states,
     index_exists, put_index, put_indexes_states,
 };
 use crate::checkpoint::IndexCheckpointDelta;
@@ -130,7 +130,7 @@ impl FileBackedMetastore {
         polling_interval_opt: Option<Duration>,
     ) -> MetastoreResult<Self> {
         let indexes_map =
-            fetch_and_build_indexes_states(storage.clone(), polling_interval_opt).await?;
+            fetch_or_init_indexes_states(storage.clone(), polling_interval_opt).await?;
         let per_index_metastores = Arc::new(RwLock::new(indexes_map));
         Ok(Self {
             storage,
@@ -655,7 +655,7 @@ mod tests {
 
     use super::lazy_file_backed_index::LazyFileBackedIndex;
     use super::store_operations::{
-        fetch_and_build_indexes_states, meta_path, put_index_given_index_id, put_indexes_states,
+        fetch_or_init_indexes_states, meta_path, put_index_given_index_id, put_indexes_states,
     };
     use super::{FileBackedIndex, FileBackedMetastore, IndexState};
     use crate::tests::test_suite::DefaultForTest;
@@ -1087,7 +1087,7 @@ mod tests {
         ));
         // Check index state is in `Creating` in the states file.
         let index_states =
-            fetch_and_build_indexes_states(Arc::new(ram_storage_clone_2.clone()), None)
+            fetch_or_init_indexes_states(Arc::new(ram_storage_clone_2.clone()), None)
                 .await
                 .unwrap();
         assert!(matches!(
@@ -1100,7 +1100,7 @@ mod tests {
             deleted_index_error,
             MetastoreError::IndexDoesNotExist { .. }
         ));
-        let index_states = fetch_and_build_indexes_states(Arc::new(ram_storage_clone_2), None)
+        let index_states = fetch_or_init_indexes_states(Arc::new(ram_storage_clone_2), None)
             .await
             .unwrap();
         assert!(index_states.get(index_id).is_none());

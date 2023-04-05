@@ -148,17 +148,19 @@ impl MetastoreUriResolver {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use quickwit_common::uri::Uri;
 
     use crate::quickwit_metastore_uri_resolver;
 
     #[tokio::test]
-    async fn test_metastore_resolver_should_not_raise_errors_on_file() -> anyhow::Result<()> {
+    async fn test_metastore_resolver_should_not_raise_errors_on_file() {
         let metastore_resolver = quickwit_metastore_uri_resolver();
-        metastore_resolver
-            .resolve(&Uri::from_well_formed("file://"))
-            .await?;
-        Ok(())
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let metastore_filepath = format!("file://{}/metastore", tmp_dir.path().display());
+        let metastore_uri = Uri::from_str(&metastore_filepath).unwrap();
+        metastore_resolver.resolve(&metastore_uri).await.unwrap();
     }
 
     #[cfg(feature = "postgres")]
