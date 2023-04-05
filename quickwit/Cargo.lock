@@ -4375,6 +4375,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "serde_with 2.3.1",
  "serde_yaml 0.9.19",
  "tokio",
  "toml 0.6.0",

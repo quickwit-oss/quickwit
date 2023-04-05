@@ -210,6 +210,7 @@ pub struct QuickwitConfig {
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,
     pub default_index_root_uri: Uri,
+    pub rest_cors_allow_origins: Vec<String>,
     pub indexer_config: IndexerConfig,
     pub searcher_config: SearcherConfig,
     pub ingest_api_config: IngestApiConfig,

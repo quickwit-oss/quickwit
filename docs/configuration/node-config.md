@@ -28,6 +28,7 @@ A commented example is accessible here: [quickwit.yaml](https://github.com/quick
 | `data_dir` | Path to directory where data (tmp data, splits kept for caching purpose) is persisted. This is mostly used in indexing. | `QW_DATA_DIR` | `./qwdata` |
 | `metastore_uri` | Metastore URI. Can be a local directory or `s3://my-bucket/indexes` or `postgres://username:password@localhost:5432/metastore`. [Learn more about the metastore configuration](metastore-config.md). | `QW_METASTORE_URI` | `{data_dir}/indexes` |
 | `default_index_root_uri` | Default index root URI that defines the location where index data (splits) is stored. The index URI is built following the scheme: `{default_index_root_uri}/{index-id}` | `QW_DEFAULT_INDEX_ROOT_URI` | `{data_dir}/indexes` |
+| `rest_cors_allow_origins` | Configure the CORS origins which are allowed to access the API. [Read more](#configuring-cors-cross-origin-resource-sharing) |  |
 
 
 There are also other parameters that can be only defined by env variables:
@@ -124,4 +125,22 @@ cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: 0.0.0.0
 rest_listen_port: 1111
+```
+
+## Configuring CORS (Cross-origin resource sharing)
+
+CORS (Cross-origin resource sharing) describes what address/origins can access the REST API from the browser, 
+by default no origins are allowed.
+
+A wildcard, single origin or multiple origins can be specified as part of the `rest_cors_allow_origins` parameter:
+
+```yaml
+version: 0.5
+index_id: hdfs
+
+rest_cors_allow_origins: '*'                                 # Allow all origins
+# rest_cors_allow_origins: https://my-hdfs-logs.domain.com   # Optionally we can specify one domain
+# rest_cors_allow_origins:                                   # Or allow multiple origins
+#   - https://my-hdfs-logs.domain.com
+#   - https://my-hdfs.other-domain.com
 ```
