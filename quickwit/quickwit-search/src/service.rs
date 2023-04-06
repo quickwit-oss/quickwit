@@ -145,7 +145,7 @@ impl SearchService for SearchServiceImpl {
     async fn root_search(&self, search_request: SearchRequest) -> crate::Result<SearchResponse> {
         let search_result = root_search(
             self.searcher_context.clone(),
-            &search_request,
+            search_request,
             self.metastore.as_ref(),
             &self.cluster_client,
             &self.search_job_placer,

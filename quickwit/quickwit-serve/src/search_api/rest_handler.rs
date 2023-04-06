@@ -23,8 +23,7 @@ use std::sync::Arc;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
-use quickwit_common::simple_list::{from_simple_list, to_simple_list};
-use quickwit_proto::{OutputFormat, ServiceError, SortOrder};
+use quickwit_proto::{query_ast_from_user_text, OutputFormat, ServiceError, SortOrder};
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
@@ -33,6 +32,7 @@ use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
+use crate::simple_list::{from_simple_list, to_simple_list};
 use crate::{with_arg, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
@@ -186,10 +186,14 @@ async fn search_endpoint(
     search_service: &dyn SearchService,
 ) -> Result<SearchResponseRest, SearchError> {
     let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
+    // The query ast below may still contain user input query. The actual
+    // parsing of the user query will happen in the root service, and might require
+    // the user of the docmapper default fields (which we do not have at this point).
+    let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
+    let query_ast_json = serde_json::to_string(&query_ast)?;
     let search_request = quickwit_proto::SearchRequest {
         index_id,
-        query: search_request.query,
-        search_fields: search_request.search_fields.unwrap_or_default(),
+        query_ast: query_ast_json,
         snippet_fields: search_request.snippet_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,
@@ -339,10 +343,11 @@ async fn search_stream_endpoint(
     search_request: SearchStreamRequestQueryString,
     search_service: &dyn SearchService,
 ) -> Result<hyper::Body, SearchError> {
+    let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
+    let query_ast_json = serde_json::to_string(&query_ast)?;
     let request = quickwit_proto::SearchStreamRequest {
         index_id,
-        query: search_request.query,
-        search_fields: search_request.search_fields.unwrap_or_default(),
+        query_ast: query_ast_json,
         snippet_fields: search_request.snippet_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,
@@ -786,7 +791,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rest_search_stream_api() -> anyhow::Result<()> {
+    async fn test_rest_search_stream_api() {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_root_search_stream()
@@ -798,13 +803,15 @@ mod tests {
             });
         let rest_search_stream_api_handler = search_handler(mock_search_service);
         let response = warp::test::request()
-            .path("/my-index/search/stream?query=obama&fast_field=external_id&output_format=csv")
+            .path(
+                "/my-index/search/stream?query=obama&search_field=body&fast_field=external_id&\
+                 output_format=csv",
+            )
             .reply(&rest_search_stream_api_handler)
             .await;
         assert_eq!(response.status(), 200);
         let body = String::from_utf8_lossy(response.body());
         assert_eq!(body, "first row\nsecond row");
-        Ok(())
     }
 
     #[tokio::test]
@@ -908,7 +915,10 @@ mod tests {
         });
         let rest_search_api_handler = search_handler(mock_search_service);
         let resp = warp::test::request()
-            .path("/quickwit-demo-index/search?query=bar&snippet_fields=title,body")
+            .path(
+                "/quickwit-demo-index/search?query=bar&search_field=title,body&\
+                 snippet_fields=title,body",
+            )
             .reply(&rest_search_api_handler)
             .await;
 

@@ -26,6 +26,7 @@ members = [
   "quickwit-metastore-utils",
   "quickwit-opentelemetry",
   "quickwit-proto",
+  "quickwit-query",
   "quickwit-rest-client",
   "quickwit-search",
   "quickwit-serve",
@@ -216,6 +217,7 @@ quickwit-macros-impl = { version = "0.5.0", path = "./quickwit-macros/impl" }
 quickwit-metastore = { version = "0.5.0", path = "./quickwit-metastore" }
 quickwit-opentelemetry = { version = "0.5.0", path = "./quickwit-opentelemetry" }
 quickwit-proto = { version = "0.5.0", path = "./quickwit-proto" }
+quickwit-query = { version = "0.5.0", path = "./quickwit-query" }
 quickwit-rest-client = { version = "0.5.0", path = "./quickwit-rest-client" }
 quickwit-search = { version = "0.5.0", path = "./quickwit-search" }
 quickwit-serve = { version = "0.5.0", path = "./quickwit-serve" }

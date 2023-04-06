@@ -671,6 +671,7 @@ mod tests {
     use futures::executor::block_on;
     use quickwit_config::IndexConfig;
     use quickwit_proto::metastore_api::DeleteQuery;
+    use quickwit_proto::qast_helper;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
     use rand::Rng;
     use time::OffsetDateTime;
@@ -1358,8 +1359,7 @@ mod tests {
             start_timestamp: None,
             end_timestamp: None,
             index_id: index_id.to_string(),
-            query: "harry potter".to_string(),
-            search_fields: Vec::new(),
+            query_ast: qast_helper("harry potter", &["body"]),
         };
 
         let delete_task_1 = metastore
@@ -1394,8 +1394,7 @@ mod tests {
             start_timestamp: None,
             end_timestamp: None,
             index_id: index_id_2.to_string(),
-            query: "harry potter".to_string(),
-            search_fields: Vec::new(),
+            query_ast: qast_helper("harry potter", &["body"]),
         };
         let delete_task_4 = metastore
             .create_delete_task(delete_query.clone())

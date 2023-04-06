@@ -17,11 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_doc_mapper::DocMapper;
+mod search_body;
+mod search_query_params;
 
-pub trait BuildTantivyQuery {
-    fn build_tantivy_query(
-        &self,
-        doc_mapper: &dyn DocMapper,
-    ) -> anyhow::Result<Box<dyn crate::TantivyQuery>>;
-}
+pub use search_body::SearchBody;
+pub use search_query_params::SearchQueryParams;

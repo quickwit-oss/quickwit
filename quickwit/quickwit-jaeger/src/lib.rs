@@ -77,6 +77,13 @@ pub struct JaegerService {
     max_fetch_spans: u64,
 }
 
+fn query_ast_json(user_query: &str) -> Result<String, Status> {
+    let query_ast = quickwit_proto::query_ast_from_user_text(user_query, None);
+    let query_ast_json =
+        serde_json::to_string(&query_ast).map_err(|err| Status::internal(err.to_string()))?;
+    Ok(query_ast_json)
+}
+
 impl JaegerService {
     pub fn new(config: JaegerConfig, search_service: Arc<dyn SearchService>) -> Self {
         Self {
@@ -250,16 +257,12 @@ impl JaegerService {
         let max_hits = 0;
         let search_request = SearchRequest {
             index_id,
-            query,
+            query_ast: query_ast_json(&query)?,
             aggregation_request: Some(aggregation_query),
             max_hits,
             start_timestamp: min_span_start_timestamp_secs_opt,
             end_timestamp: max_span_start_timestamp_secs_opt,
-            search_fields: Vec::new(),
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            snippet_fields: Vec::new(),
+            ..Default::default()
         };
         let search_response = self.search_service.root_search(search_request).await?;
 
@@ -299,16 +302,11 @@ impl JaegerService {
 
         let search_request = SearchRequest {
             index_id: OTEL_TRACE_INDEX_ID.to_string(),
-            query,
-            search_fields: Vec::new(),
+            query_ast: query_ast_json(&query)?,
             start_timestamp: Some(*search_window.start()),
             end_timestamp: Some(*search_window.end()),
             max_hits: self.max_fetch_spans,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-            snippet_fields: Vec::new(),
+            ..Default::default()
         };
         let search_response = match self.search_service.root_search(search_request).await {
             Ok(search_response) => search_response,
