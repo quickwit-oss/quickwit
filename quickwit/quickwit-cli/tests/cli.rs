@@ -304,7 +304,6 @@ async fn test_cmd_search_aggregation() {
         sort_by_score: false,
     };
     let search_response = search_index(args).await.unwrap();
-
     let aggregation_res = search_response.aggregations.unwrap();
 
     assert_eq!(

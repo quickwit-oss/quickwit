@@ -17,11 +17,34 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_doc_mapper::DocMapper;
+use std::collections::BTreeSet;
 
-pub trait BuildTantivyQuery {
-    fn build_tantivy_query(
-        &self,
-        doc_mapper: &dyn DocMapper,
-    ) -> anyhow::Result<Box<dyn crate::TantivyQuery>>;
+use quickwit_proto::SortOrder;
+use quickwit_query::ElasticQueryDsl;
+use serde::{Deserialize, Serialize};
+
+use crate::elastic_search_api::TrackTotalHits;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FieldSort {
+    field: String,
+    order: Option<SortOrder>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+pub struct SearchBody {
+    #[serde(default)]
+    pub from: Option<u64>,
+    #[serde(default)]
+    pub size: Option<u64>,
+    #[serde(default)]
+    pub query: Option<ElasticQueryDsl>,
+    #[serde(default)]
+    pub sort: Option<Vec<FieldSort>>,
+    #[serde(default)]
+    pub aggs: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    pub track_total_hits: Option<TrackTotalHits>,
+    #[serde(default)]
+    pub stored_fields: Option<BTreeSet<String>>,
 }

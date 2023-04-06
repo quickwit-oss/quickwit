@@ -196,7 +196,7 @@ impl From<QuickwitTextOptions> for TextOptions {
             text_options = text_options.set_stored();
         }
         if quickwit_text_options.fast {
-            text_options = text_options.set_fast();
+            text_options = text_options.set_fast(None);
         }
         if quickwit_text_options.indexed {
             let index_record_option = quickwit_text_options

@@ -33,7 +33,8 @@ use quickwit_metastore::{
     split_tag_filter, split_time_range_filter, Metastore, MetastoreResult, Split,
 };
 use quickwit_proto::metastore_api::DeleteTask;
-use quickwit_proto::SearchRequest;
+use quickwit_proto::{query_string, SearchRequest};
+use quickwit_query::DefaultOperator;
 use quickwit_search::{jobs_to_leaf_request, SearchJob, SearchJobPlacer};
 use serde::Serialize;
 use tantivy::Inventory;
@@ -236,8 +237,13 @@ impl DeleteTaskPlanner {
                         delete_query.end_timestamp,
                     );
                     // TODO: validate the query at the beginning and return an appropriate error.
-                    let tags_filter = extract_tags_from_query(&delete_query.query)
-                        .expect("Delete query must have been validated upfront.");
+                    let delete_query_ast = quickwit_query::parse_user_query(
+                        &delete_query.query,
+                        &[],
+                        DefaultOperator::And,
+                    )
+                    .expect("Delete query must have been validated upfront.");
+                    let tags_filter = extract_tags_from_query(delete_query_ast);
                     split_time_range_filter(stale_split, time_range.as_ref())
                         && split_tag_filter(stale_split, tags_filter.as_ref())
                 })
@@ -292,7 +298,7 @@ impl DeleteTaskPlanner {
                 .expect("Delete task must have a delete query.");
             let search_request = SearchRequest {
                 index_id: delete_query.index_id.clone(),
-                query: delete_query.query.clone(),
+                query_ast: query_string(&delete_query.query)?,
                 start_timestamp: delete_query.start_timestamp,
                 end_timestamp: delete_query.end_timestamp,
                 search_fields: delete_query.search_fields.clone(),
@@ -478,8 +484,9 @@ mod tests {
             move |request: LeafSearchRequest| {
                 // Search on body:delete should return one hit only on the last split
                 // that should contains the doc.
-                if request.split_offsets[0].split_id == split_id_with_doc_to_delete
-                    && request.search_request.as_ref().unwrap().query == "body:delete"
+                if request.split_offsets[0].split_id != split_id_with_doc_to_delete
+                    && request.search_request.as_ref().unwrap().query_ast
+                        == query_string("body:delete").unwrap()
                 {
                     return Ok(LeafSearchResponse {
                         num_hits: 1,

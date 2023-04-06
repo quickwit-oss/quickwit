@@ -386,13 +386,7 @@ impl DocMapper for DefaultDocMapper {
         split_schema: Schema,
         request: &SearchRequest,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
-        let mut tantivy_default_search_field_names = self.default_search_field_names.clone();
-        if let Mode::Dynamic(default_mapping_options) = &self.mode {
-            if default_mapping_options.indexed {
-                tantivy_default_search_field_names.push(DYNAMIC_FIELD_NAME.to_string());
-            }
-        }
-        build_query(split_schema, request, &tantivy_default_search_field_names)
+        build_query(request, split_schema)
     }
 
     fn schema(&self) -> Schema {
@@ -416,7 +410,7 @@ impl DocMapper for DefaultDocMapper {
 mod tests {
     use std::collections::HashMap;
 
-    use quickwit_proto::SearchRequest;
+    use quickwit_proto::{query_string, SearchRequest};
     use serde_json::{self, json, Value as JsonValue};
     use tantivy::schema::{FieldType, Type, Value as TantivyValue};
 
@@ -1087,7 +1081,7 @@ mod tests {
         query: &str,
     ) -> Result<String, String> {
         let search_request = SearchRequest {
-            query: query.to_string(),
+            query_ast: query_string(query).unwrap(),
             ..Default::default()
         };
         let (query, _) = doc_mapper

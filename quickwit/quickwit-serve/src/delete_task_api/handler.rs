@@ -144,7 +144,8 @@ pub async fn post_delete_request(
     // TODO should it be something else than a JanitorError?
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|error| JanitorError::InternalError(error.to_string()))?;
-    let delete_search_request = SearchRequest::from(delete_query.clone());
+    let delete_search_request = SearchRequest::try_from(delete_query.clone())
+        .map_err(|error| JanitorError::InvalidDeleteQuery(error.to_string()))?;
     // Validate the delete query.
     doc_mapper
         .query(doc_mapper.schema(), &delete_search_request)

@@ -58,6 +58,7 @@ quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
+quickwit-query = { workspace = true }
 
 [build-dependencies]
 time = { workspace = true }

@@ -36,6 +36,7 @@ quickwit-grpc-clients = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
 

@@ -20,17 +20,9 @@
 use std::collections::BTreeSet;
 use std::fmt::Display;
 
+use quickwit_query::quickwit_query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
-use tantivy::query::QueryParserError as TantivyQueryParserError;
-use tantivy::query_grammar::{Occur, UserInputAst, UserInputLeaf, UserInputLiteral};
-
-use crate::QueryParserError;
-
-fn user_input_ast_to_tags_filter_ast(user_input_ast: UserInputAst) -> Option<TagFilterAst> {
-    let filters_ast = collect_tag_filters(user_input_ast);
-    let term_filters_ast = simplify_ast(filters_ast)?;
-    Some(expand_to_tag_ast(term_filters_ast))
-}
+use tantivy::query_grammar::Occur;
 
 /// Returns true if and only if tag is of form `{field_name}:any_value`.
 pub fn match_tag_field_name(field_name: &str, tag: &str) -> bool {
@@ -45,10 +37,68 @@ pub fn match_tag_field_name(field_name: &str, tag: &str) -> bool {
 /// If the predicate evaluates to false for a given set of tags
 /// associated with a split, we are guaranteed that no documents
 /// in the split matches the query.
-pub fn extract_tags_from_query(user_query: &str) -> Result<Option<TagFilterAst>, QueryParserError> {
-    let user_input_ast = tantivy::query_grammar::parse_query(user_query)
-        .map_err(|_| TantivyQueryParserError::SyntaxError(user_query.to_string()))?;
-    Ok(user_input_ast_to_tags_filter_ast(user_input_ast))
+pub fn extract_tags_from_query(query_ast: QueryAst) -> Option<TagFilterAst> {
+    let unsimplified_tag_filter_ast = extract_unsimplified_tags_filter_ast(query_ast);
+    let term_filters_ast = simplify_ast(unsimplified_tag_filter_ast)?;
+    Some(expand_to_tag_ast(term_filters_ast))
+}
+
+fn extract_unsimplified_tags_filter_ast(query_ast: QueryAst) -> UnsimplifiedTagFilterAst {
+    match query_ast {
+        QueryAst::Bool(bool_query) => {
+            let mut clause_with_resolved_occur: Vec<(Occur, UnsimplifiedTagFilterAst)> = Vec::new();
+            for (occur, children) in [
+                (Occur::Must, bool_query.must),
+                (Occur::Must, bool_query.filter),
+                (Occur::Should, bool_query.should),
+                (Occur::MustNot, bool_query.must_not),
+            ] {
+                for child_ast in children {
+                    let child_unsimplified_tag_ast =
+                        extract_unsimplified_tags_filter_ast(child_ast);
+                    clause_with_resolved_occur.push((occur, child_unsimplified_tag_ast));
+                }
+            }
+            collect_tag_filters_for_clause(clause_with_resolved_occur)
+        }
+        QueryAst::Term(term_query) => UnsimplifiedTagFilterAst::Tag {
+            is_present: true,
+            field: term_query.field,
+            value: term_query.value,
+        },
+        QueryAst::MatchAll | QueryAst::MatchNone => UnsimplifiedTagFilterAst::Uninformative,
+        QueryAst::Range(_) => {
+            // We could technically add support for range over some quantitive tag value (like we do
+            // for timestamps). This is not supported at this point.
+            UnsimplifiedTagFilterAst::Uninformative
+        }
+        QueryAst::TermSet(term_set) => {
+            let children: Vec<UnsimplifiedTagFilterAst> = term_set
+                .terms_per_field
+                .into_iter()
+                .flat_map(|(field, terms)| {
+                    terms
+                        .into_iter()
+                        .map(move |term| UnsimplifiedTagFilterAst::Tag {
+                            is_present: true,
+                            field: field.clone(),
+                            value: term,
+                        })
+                })
+                .collect();
+            UnsimplifiedTagFilterAst::Or(children)
+        }
+        QueryAst::Phrase(phrase_query) => {
+            // TODO This is a bug in a sense.
+            // A phrase is supposed to go through the tokenizer.
+            UnsimplifiedTagFilterAst::Tag {
+                is_present: true,
+                field: phrase_query.field,
+                value: phrase_query.phrase,
+            }
+        }
+        QueryAst::Boost { underlying, .. } => extract_unsimplified_tags_filter_ast(*underlying),
+    }
 }
 
 /// Intermediary AST that may contain leaf that are
@@ -302,46 +352,6 @@ fn negate_ast(clause: UnsimplifiedTagFilterAst) -> UnsimplifiedTagFilterAst {
     }
 }
 
-/// query implies this boolean formula.
-
-/// TermQuery on fields that are not tag fields are transformed into the predicate `Uninformative`.
-///
-///
-/// In other words, we are guaranteed that if we were to run the query
-/// described by this predicate only, the matched documents would all
-/// be in the original query too (The opposite is rarely true).
-fn collect_tag_filters(user_input_ast: UserInputAst) -> UnsimplifiedTagFilterAst {
-    match user_input_ast {
-        UserInputAst::Clause(sub_queries) => {
-            let clause_with_resolved_occur: Vec<(Occur, UnsimplifiedTagFilterAst)> = sub_queries
-                .into_iter()
-                .map(|(occur_opt, ast)| {
-                    (occur_opt.unwrap_or(Occur::Should), collect_tag_filters(ast))
-                })
-                .collect();
-            collect_tag_filters_for_clause(clause_with_resolved_occur)
-        }
-        UserInputAst::Boost(ast, _) => collect_tag_filters(*ast),
-        UserInputAst::Leaf(leaf) => match *leaf {
-            UserInputLeaf::Literal(UserInputLiteral {
-                field_name: Some(field_name),
-                phrase,
-                slop: _,
-            }) => UnsimplifiedTagFilterAst::Tag {
-                is_present: true,
-                field: field_name,
-                value: phrase,
-            },
-            UserInputLeaf::Literal(UserInputLiteral {
-                field_name: None, ..
-            })
-            | UserInputLeaf::All
-            | UserInputLeaf::Range { .. }
-            | UserInputLeaf::Set { .. } => UnsimplifiedTagFilterAst::Uninformative,
-        },
-    }
-}
-
 /// Helper to build a TagFilterAst checking for the presence of a tag.
 pub fn tag(tag: impl ToString) -> TagFilterAst {
     TagFilterAst::Tag {
@@ -359,41 +369,40 @@ pub fn no_tag(tag: impl ToString) -> TagFilterAst {
 }
 #[cfg(test)]
 mod test {
+    use quickwit_query::DefaultOperator;
+
     use super::extract_tags_from_query;
+    use crate::tag_pruning::TagFilterAst;
 
-    #[test]
-    fn test_extract_tags_from_query_invalid_query() -> anyhow::Result<()> {
-        assert!(matches!(extract_tags_from_query(":>"), Err(..)));
-        Ok(())
+    fn extract_tags_from_query_helper(user_query: &str) -> Option<TagFilterAst> {
+        let ast = quickwit_query::parse_user_query(user_query, &[], DefaultOperator::Or).unwrap();
+        extract_tags_from_query(ast)
     }
 
     #[test]
-    fn test_extract_tags_from_query_all() -> anyhow::Result<()> {
-        assert_eq!(extract_tags_from_query("*")?, None);
-        Ok(())
+    fn test_extract_tags_from_query_all() {
+        assert_eq!(extract_tags_from_query_helper("*"), None);
     }
 
     #[test]
-    fn test_extract_tags_from_query_range_query() -> anyhow::Result<()> {
-        assert_eq!(extract_tags_from_query("title:>foo lang:fr")?, None);
-        Ok(())
+    fn test_extract_tags_from_query_range_query() {
+        assert_eq!(extract_tags_from_query_helper("title:>foo lang:fr"), None);
     }
 
     #[test]
-    fn test_extract_tags_from_query_range_query_conjunction() -> anyhow::Result<()> {
+    fn test_extract_tags_from_query_range_query_conjunction() {
         assert_eq!(
-            &extract_tags_from_query("title:>foo AND lang:fr")?
+            &extract_tags_from_query_helper("title:>foo AND lang:fr")
                 .unwrap()
                 .to_string(),
             "(¬lang! ∨ lang:fr)"
         );
-        Ok(())
     }
 
     #[test]
     fn test_extract_tags_from_query_mixed_disjunction() -> anyhow::Result<()> {
         assert_eq!(
-            &extract_tags_from_query("title:foo user:bart lang:fr")?
+            &extract_tags_from_query_helper("title:foo user:bart lang:fr")
                 .unwrap()
                 .to_string(),
             "((¬title! ∨ title:foo) ∨ (¬user! ∨ user:bart) ∨ (¬lang! ∨ lang:fr))"
@@ -404,7 +413,7 @@ mod test {
     #[test]
     fn test_extract_tags_from_query_and_or() -> anyhow::Result<()> {
         assert_eq!(
-            extract_tags_from_query("title:foo AND (user:bart OR lang:fr)")?
+            &extract_tags_from_query_helper("title:foo AND (user:bart OR lang:fr)")
                 .unwrap()
                 .to_string(),
             "(¬title! ∨ title:foo) ∧ ((¬user! ∨ user:bart) ∨ (¬lang! ∨ lang:fr))"
@@ -413,58 +422,53 @@ mod test {
     }
 
     #[test]
-    fn test_conjunction_of_tags() -> anyhow::Result<()> {
+    fn test_conjunction_of_tags() {
         assert_eq!(
-            &extract_tags_from_query("(user:bart AND lang:fr)")?
+            &extract_tags_from_query_helper("(user:bart AND lang:fr)")
                 .unwrap()
                 .to_string(),
             "(¬user! ∨ user:bart) ∧ (¬lang! ∨ lang:fr)"
         );
-        Ok(())
     }
 
     #[test]
-    fn test_disjunction_of_tags() -> anyhow::Result<()> {
+    fn test_disjunction_of_tags() {
         assert_eq!(
-            &extract_tags_from_query("(user:bart OR lang:fr)")?
+            &extract_tags_from_query_helper("(user:bart OR lang:fr)")
                 .unwrap()
                 .to_string(),
             "((¬user! ∨ user:bart) ∨ (¬lang! ∨ lang:fr))"
         );
-        Ok(())
     }
 
     #[test]
-    fn test_disjunction_of_tag_disjunction_with_not_clause() -> anyhow::Result<()> {
+    fn test_disjunction_of_tag_disjunction_with_not_clause() {
         assert_eq!(
-            extract_tags_from_query("(user:bart -lang:fr)")?
+            extract_tags_from_query_helper("(user:bart -lang:fr)")
                 .unwrap()
                 .to_string(),
             "((¬user! ∨ user:bart) ∨ (¬lang! ∨ ¬lang:fr))"
         );
-        Ok(())
     }
 
     #[test]
-    fn test_disjunction_of_tag_conjunction_with_not_clause() -> anyhow::Result<()> {
+    fn test_disjunction_of_tag_conjunction_with_not_clause() {
         assert_eq!(
-            &extract_tags_from_query("user:bart AND NOT lang:fr")?
+            &extract_tags_from_query_helper("user:bart AND NOT lang:fr")
                 .unwrap()
                 .to_string(),
             "(¬user! ∨ user:bart) ∧ (¬lang! ∨ ¬lang:fr)"
         );
-        Ok(())
     }
 
     #[test]
-    fn test_disjunction_of_tag_must_should() -> anyhow::Result<()> {
+    fn test_disjunction_of_tag_must_should() {
         assert_eq!(
-            &extract_tags_from_query("(+user:bart lang:fr)")?
+            &extract_tags_from_query_helper("(+user:bart lang:fr)")
                 .unwrap()
                 .to_string(),
             "(¬user! ∨ user:bart)"
         );
-        Ok(())
     }
 
     #[test]

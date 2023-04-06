@@ -17,101 +17,62 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_doc_mapper::DocMapper;
 use serde::{Deserialize, Serialize};
 use serde_with::formats::PreferMany;
 use serde_with::{serde_as, OneOrMany};
-use tantivy::query::{BooleanQuery, BoostQuery, Occur};
 
-use crate::query_dsl::build_tantivy_query::BuildTantivyQuery;
-use crate::query_dsl::QueryDsl;
-use crate::TantivyQuery;
-
-const DEFAULT_BOOST: NotNaNf32 = NotNaNf32(1.0f32);
+use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
+use crate::not_nan_f32::NotNaNf32;
+use crate::quickwit_query_ast::{self, QueryAst};
 
 /// # Unsupported features
 /// - minimum_should_match
 /// - named queries
 #[serde_as]
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct BoolQuery {
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
     #[serde(default)]
-    must: Vec<QueryDsl>,
+    must: Vec<ElasticQueryDslInner>,
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
     #[serde(default)]
-    must_not: Vec<QueryDsl>,
+    must_not: Vec<ElasticQueryDslInner>,
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
     #[serde(default)]
-    should: Vec<QueryDsl>,
+    should: Vec<ElasticQueryDslInner>,
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
     #[serde(default)]
-    filter: Vec<QueryDsl>,
-    #[serde(default = "default_boost")]
-    boost: NotNaNf32,
+    filter: Vec<ElasticQueryDslInner>,
+    #[serde(default)]
+    pub boost: Option<NotNaNf32>,
 }
 
-fn default_boost() -> NotNaNf32 {
-    DEFAULT_BOOST
+fn convert_vec(
+    query_dsls: Vec<ElasticQueryDslInner>,
+    default_search_fields: &[&str],
+) -> anyhow::Result<Vec<QueryAst>> {
+    query_dsls
+        .into_iter()
+        .map(|query_dsl| query_dsl.convert_to_query_ast(default_search_fields))
+        .collect()
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq)]
-#[serde(into = "f32", try_from = "f32")]
-struct NotNaNf32(f32);
-
-impl From<NotNaNf32> for f32 {
-    fn from(not_nan_f32: NotNaNf32) -> f32 {
-        not_nan_f32.0
-    }
-}
-
-impl TryFrom<f32> for NotNaNf32 {
-    type Error = &'static str;
-
-    fn try_from(possibly_nan: f32) -> Result<NotNaNf32, &'static str> {
-        if possibly_nan.is_nan() {
-            return Err("NaN is not supported as a boost value.");
-        }
-        Ok(NotNaNf32(possibly_nan))
-    }
-}
-
-impl Eq for NotNaNf32 {}
-
-impl BuildTantivyQuery for BoolQuery {
-    fn build_tantivy_query(
-        &self,
-        doc_mapper: &dyn DocMapper,
-    ) -> anyhow::Result<Box<dyn tantivy::query::Query>> {
-        let mut clauses: Vec<(Occur, Box<dyn TantivyQuery>)> = Vec::new();
-        for must in &self.must {
-            let must_leaf = must.build_tantivy_query(doc_mapper)?;
-            clauses.push((Occur::Must, must_leaf));
-        }
-        for must_not in &self.must_not {
-            let must_not_leaf = must_not.build_tantivy_query(doc_mapper)?;
-            clauses.push((Occur::MustNot, must_not_leaf));
-        }
-        for should in &self.should {
-            let must_not_leaf = should.build_tantivy_query(doc_mapper)?;
-            clauses.push((Occur::MustNot, must_not_leaf));
-        }
-        for filter in &self.filter {
-            let filter_leaf = filter.build_tantivy_query(doc_mapper)?;
-            clauses.push((Occur::Must, Box::new(BoostQuery::new(filter_leaf, 0.0f32))));
-        }
-        let bool_query = Box::new(BooleanQuery::from(clauses));
-        if self.boost == DEFAULT_BOOST {
-            return Ok(bool_query);
-        }
-        Ok(Box::new(BoostQuery::new(bool_query, self.boost.0)))
+impl ConvertableToQueryAst for BoolQuery {
+    fn convert_to_query_ast(self, default_search_fields: &[&str]) -> anyhow::Result<QueryAst> {
+        let bool_query_ast = quickwit_query_ast::BoolQuery {
+            must: convert_vec(self.must, default_search_fields)?,
+            must_not: convert_vec(self.must_not, default_search_fields)?,
+            should: convert_vec(self.should, default_search_fields)?,
+            filter: convert_vec(self.filter, default_search_fields)?,
+        };
+        Ok(bool_query_ast.into())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::query_dsl::bool_query::{BoolQuery, DEFAULT_BOOST};
-    use crate::query_dsl::term_query::TermQuery;
+    use crate::elastic_query_dsl::bool_query::BoolQuery;
+    use crate::elastic_query_dsl::term_query::TermQuery;
 
     #[test]
     fn test_dsl_bool_query_deserialize_simple() {
@@ -132,7 +93,7 @@ mod tests {
                 must_not: Vec::new(),
                 should: Vec::new(),
                 filter: Vec::new(),
-                boost: DEFAULT_BOOST,
+                boost: None,
             }
         );
     }
@@ -151,7 +112,7 @@ mod tests {
                 must_not: Vec::new(),
                 should: Vec::new(),
                 filter: vec![TermQuery::from_field_value("product_id", "2").into(),],
-                boost: DEFAULT_BOOST,
+                boost: None,
             }
         );
     }

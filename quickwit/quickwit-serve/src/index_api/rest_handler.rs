@@ -21,7 +21,6 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use hyper::header::CONTENT_TYPE;
-use quickwit_common::simple_list::{from_simple_list, to_simple_list};
 use quickwit_common::uri::Uri;
 use quickwit_common::FileEntry;
 use quickwit_config::{
@@ -39,6 +38,7 @@ use tracing::info;
 use warp::{Filter, Rejection};
 
 use crate::format::{extract_format_from_qs, make_response};
+use crate::simple_list::{from_simple_list, to_simple_list};
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]

@@ -44,7 +44,7 @@ use quickwit_proto::jaeger::storage::v1::{
     GetOperationsResponse, GetServicesRequest, GetServicesResponse, GetTraceRequest, Operation,
     SpansResponseChunk, TraceQueryParameters,
 };
-use quickwit_proto::{ListTermsRequest, SearchRequest};
+use quickwit_proto::{query_string, ListTermsRequest, SearchRequest};
 use quickwit_search::{FindTraceIdsCollector, SearchService};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -53,7 +53,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Response, Status};
+use tonic::{Code, Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{debug, error, instrument, warn, Span as RuntimeSpan};
 
@@ -250,7 +250,9 @@ impl JaegerService {
         let max_hits = 0;
         let search_request = SearchRequest {
             index_id,
-            query,
+            query_ast: quickwit_proto::query_string(&query).map_err(|_| {
+                Status::new(Code::InvalidArgument, format!("Invalid query: `{query}`."))
+            })?,
             aggregation_request: Some(aggregation_query),
             max_hits,
             start_timestamp: min_span_start_timestamp_secs_opt,
@@ -299,7 +301,9 @@ impl JaegerService {
 
         let search_request = SearchRequest {
             index_id: OTEL_TRACE_INDEX_ID.to_string(),
-            query,
+            query_ast: query_string(&query).map_err(|_| {
+                Status::new(Code::InvalidArgument, format!("Invalid query: `{query}`."))
+            })?,
             search_fields: Vec::new(),
             start_timestamp: Some(*search_window.start()),
             end_timestamp: Some(*search_window.end()),

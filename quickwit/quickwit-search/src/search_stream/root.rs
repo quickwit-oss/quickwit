@@ -43,7 +43,7 @@ pub async fn root_search_stream(
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
 
-    let search_request = SearchRequest::from(search_stream_request.clone());
+    let search_request = SearchRequest::try_from(search_stream_request.clone())?;
     let index_config: IndexConfig = metastore
         .index_metadata(&search_request.index_id)
         .await?

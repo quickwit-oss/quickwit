@@ -23,8 +23,7 @@ use std::sync::Arc;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
-use quickwit_common::simple_list::{from_simple_list, to_simple_list};
-use quickwit_proto::{OutputFormat, ServiceError, SortOrder};
+use quickwit_proto::{query_string_with_default_fields, OutputFormat, ServiceError, SortOrder};
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
@@ -33,6 +32,7 @@ use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
+use crate::simple_list::{from_simple_list, to_simple_list};
 use crate::{with_arg, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
@@ -186,10 +186,16 @@ async fn search_endpoint(
     search_service: &dyn SearchService,
 ) -> Result<SearchResponseRest, SearchError> {
     let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
+    let search_fields = search_request.search_fields.unwrap_or_default();
+    let search_fields_ref: Vec<&str> = search_fields.iter().map(String::as_str).collect();
+    let query_ast = query_string_with_default_fields(&search_request.query, &search_fields_ref)
+        .map_err(|_| {
+            SearchError::InvalidQuery(format!("Invalid query `{}`", search_request.query))
+        })?;
     let search_request = quickwit_proto::SearchRequest {
         index_id,
-        query: search_request.query,
-        search_fields: search_request.search_fields.unwrap_or_default(),
+        query_ast,
+        search_fields,
         snippet_fields: search_request.snippet_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,

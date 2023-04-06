@@ -67,8 +67,8 @@ message SearchRequest {
   // Index ID
   string index_id = 1;
 
-  // Query
-  string query = 2;
+  // Json object representing Quickwit's QueryAst.
+  string query_ast = 13;
 
   // Fields to search on
   repeated string  search_fields = 3;
@@ -349,7 +349,8 @@ message SearchStreamRequest {
   // Index ID
   string index_id = 1;
 
-  // Query
+  // Query in tantivy query format
+  // TODO switch to query ast
   string query = 2;
 
   // Fields to search on

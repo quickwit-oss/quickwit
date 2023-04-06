@@ -26,7 +26,7 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::{DocMapper, WarmupInfo, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_doc_mapper::{DocMapper, WarmupInfo};
 use quickwit_proto::{
     LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, SearchRequest,
     SplitIdAndFooterOffsets, SplitSearchError,
@@ -119,7 +119,7 @@ pub(crate) async fn open_index_with_caches(
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
     };
     let mut index = Index::open(hot_directory)?;
-    index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+    index.set_tokenizers(quickwit_query::get_quickwit_tokenizer_manager().clone());
     Ok(index)
 }
 
@@ -140,6 +140,7 @@ pub(crate) async fn open_index_with_caches(
 /// to be hit.
 #[instrument(skip(searcher))]
 pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> anyhow::Result<()> {
+    debug!(warmup_info=?warmup_info, "warmup");
     let warm_up_terms_future = warm_up_terms(searcher, &warmup_info.terms_grouped_by_field)
         .instrument(debug_span!("warm_up_terms"));
     let warm_up_term_dict_future =

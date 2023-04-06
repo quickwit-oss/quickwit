@@ -34,7 +34,7 @@ pub mod pubsub;
 pub mod rand;
 pub mod rendezvous_hasher;
 pub mod runtimes;
-pub mod simple_list;
+
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;
 pub mod tower;

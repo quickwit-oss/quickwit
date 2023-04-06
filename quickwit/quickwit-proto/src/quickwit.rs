@@ -5,9 +5,9 @@ pub struct SearchRequest {
     /// Index ID
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    /// Query
-    #[prost(string, tag = "2")]
-    pub query: ::prost::alloc::string::String,
+    /// Json object representing Quickwit's QueryAst.
+    #[prost(string, tag = "13")]
+    pub query_ast: ::prost::alloc::string::String,
     /// Fields to search on
     #[prost(string, repeated, tag = "3")]
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
@@ -323,7 +323,8 @@ pub struct SearchStreamRequest {
     /// Index ID
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    /// Query
+    /// Query in tantivy query format
+    /// TODO switch to query ast
     #[prost(string, tag = "2")]
     pub query: ::prost::alloc::string::String,
     /// Fields to search on
@@ -379,6 +380,7 @@ pub struct LeafSearchStreamResponse {
     pub split_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SortOrder {

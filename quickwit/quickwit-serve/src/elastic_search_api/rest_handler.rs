@@ -22,27 +22,29 @@ use std::time::Instant;
 
 use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticSearchResponse};
 use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
-use quickwit_common::simple_list::SimpleList;
-use quickwit_proto::SearchResponse;
+use quickwit_proto::{SearchResponse, ServiceErrorCode};
+use quickwit_query::quickwit_query_ast::QueryAst;
+use quickwit_query::DefaultOperator;
 use quickwit_search::{SearchError, SearchService};
 use warp::{Filter, Rejection};
 
-use super::api_specs::SearchQueryParams;
-use crate::elastic_search_api::api_specs::{elastic_index_search_filter, elastic_search_filter};
-use crate::format::BodyFormat;
+use super::model::{SearchBody, SearchQueryParams};
+use crate::elastic_search_api::filter::elastic_index_search_filter;
+use crate::format::{ApiError, BodyFormat};
 use crate::with_arg;
 
 /// GET or POST _elastic/_search
 pub fn es_compat_search_handler(
     _search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_search_filter().then(|params: SearchQueryParams| async move {
-        // TODO: implement
-        let resp = serde_json::json!({
-            "index": "all indexes",
-            "params": params,
-        });
-        warp::reply::json(&resp)
+    super::filter::elastic_search_filter().then(|_params: SearchQueryParams| async move {
+        // TODO
+        BodyFormat::Json.make_reply_for_err(ApiError {
+            code: ServiceErrorCode::NotSupportedYet,
+            message: "_elastic/_search is not supported yet. Please try the index search endpoint \
+                      (_elastic/{index}/search)"
+                .to_string(),
+        })
     })
 }
 
@@ -56,26 +58,46 @@ pub fn es_compat_index_search_handler(
         .map(|resp| BodyFormat::Json.make_rest_reply(resp))
 }
 
-async fn es_compat_index_search(
-    indexes: SimpleList,
+fn build_request_for_es_api(
+    index_id: String,
     search_params: SearchQueryParams,
+    search_body: SearchBody,
+) -> Result<quickwit_proto::SearchRequest, SearchError> {
+    let default_operator = search_params
+        .default_operator
+        .unwrap_or(DefaultOperator::Or);
+    let query_ast = if let Some(q) = &search_params.q {
+        quickwit_query::parse_user_query(q, &[], default_operator)?
+    } else if let Some(query_dsl) = search_body.query {
+        query_dsl
+            .convert_to_query_ast(&[])
+            .map_err(|err| SearchError::InvalidQuery(err.to_string()))?
+    } else {
+        QueryAst::MatchAll
+    };
+    let aggregation_request: Option<String> = if search_body.aggs.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&search_body.aggs).ok()
+    };
+    Ok(quickwit_proto::SearchRequest {
+        index_id,
+        query_ast: serde_json::to_string(&query_ast).expect("Failed to serialize QueryAst"),
+        max_hits: search_params.size.unwrap_or(10).max(0i64) as u64,
+        start_offset: search_params.from.unwrap_or(0).max(0i64) as u64,
+        aggregation_request,
+        ..Default::default()
+    })
+}
+
+async fn es_compat_index_search(
+    index_id: String,
+    search_params: SearchQueryParams,
+    search_body: SearchBody,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticSearchResponse, SearchError> {
     let start_instant = Instant::now();
-    if indexes.0.len() != 1 {
-        let error_msg = format!("Expected exaclty one index, got {indexes:?}.");
-        return Err(SearchError::InvalidArgument(error_msg));
-    }
-    let index_id: String = indexes.0.into_iter().next().expect(
-        "There should be exactly once index in the list, as checked by the if statement above.",
-    );
-    let search_request = quickwit_proto::SearchRequest {
-        index_id,
-        query: search_params.q.unwrap_or_else(|| "*".to_string()),
-        max_hits: search_params.size.unwrap_or(10).max(0i64) as u64,
-        start_offset: search_params.from.unwrap_or(0).max(0i64) as u64,
-        ..Default::default()
-    };
+    let search_request = build_request_for_es_api(index_id, search_params, search_body)?;
     let search_response: SearchResponse = search_service.root_search(search_request).await?;
     let elapsed = start_instant.elapsed();
     let mut search_response_rest: ElasticSearchResponse =
@@ -105,6 +127,11 @@ fn convert_hit(hit: quickwit_proto::Hit) -> ElasticHit {
 
 fn convert_to_es_search_response(resp: SearchResponse) -> ElasticSearchResponse {
     let hits: Vec<ElasticHit> = resp.hits.into_iter().map(convert_hit).collect();
+    let aggregations: Option<serde_json::Value> = if let Some(aggregation_json) = resp.aggregation {
+        serde_json::from_str(&aggregation_json).ok()
+    } else {
+        None
+    };
     ElasticSearchResponse {
         timed_out: false,
         hits: HitsMetadata {
@@ -115,6 +142,7 @@ fn convert_to_es_search_response(resp: SearchResponse) -> ElasticSearchResponse 
             max_score: None,
             hits,
         },
+        aggregations,
         ..Default::default()
     }
 }

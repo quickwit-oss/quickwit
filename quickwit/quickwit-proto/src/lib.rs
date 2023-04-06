@@ -112,6 +112,10 @@ use tonic::codegen::http;
 use tonic::service::Interceptor;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+pub use quickwit_query::query_string;
+pub use quickwit_query::query_string_with_default_fields;
+
 use ::opentelemetry::propagation::Injector;
 use ::opentelemetry::propagation::Extractor;
 
@@ -128,6 +132,7 @@ pub enum ServiceErrorCode {
     RateLimited,
     Unavailable,
     UnsupportedMediaType,
+    NotSupportedYet, //< Used for API that is available in elasticsearch but is not yet available in Quickwit.
 }
 
 impl ServiceErrorCode {
@@ -140,6 +145,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::RateLimited => tonic::Code::ResourceExhausted,
             ServiceErrorCode::Unavailable => tonic::Code::Unavailable,
             ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
+            ServiceErrorCode::NotSupportedYet => tonic::Code::Unimplemented,
         }
     }
     pub fn to_http_status_code(self) -> http::StatusCode {
@@ -151,6 +157,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::RateLimited => http::StatusCode::TOO_MANY_REQUESTS,
             ServiceErrorCode::Unavailable => http::StatusCode::SERVICE_UNAVAILABLE,
             ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ServiceErrorCode::NotSupportedYet => http::StatusCode::NOT_IMPLEMENTED,
         }
     }
 }
@@ -177,34 +184,39 @@ pub fn convert_to_grpc_result<T, E: ServiceError>(
     res.map(tonic::Response::new).map_err(|error| error.grpc_error())
 }
 
-impl From<SearchStreamRequest> for SearchRequest {
-    fn from(item: SearchStreamRequest) -> Self {
-        Self {
-            index_id: item.index_id,
-            query: item.query,
-            search_fields: item.search_fields,
-            snippet_fields: item.snippet_fields,
-            start_timestamp: item.start_timestamp,
-            end_timestamp: item.end_timestamp,
+impl TryFrom<SearchStreamRequest> for SearchRequest {
+
+    type Error = anyhow::Error;
+
+    fn try_from(search_stream_req: SearchStreamRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            index_id: search_stream_req.index_id,
+            query_ast: quickwit_query::query_string(&search_stream_req.query)?,
+            search_fields: search_stream_req.search_fields,
+            snippet_fields: search_stream_req.snippet_fields,
+            start_timestamp: search_stream_req.start_timestamp,
+            end_timestamp: search_stream_req.end_timestamp,
             max_hits: 0,
             start_offset: 0,
             sort_by_field: None,
             sort_order: None,
             aggregation_request: None,
-        }
+        })
     }
 }
 
-impl From<DeleteQuery> for SearchRequest {
-    fn from(delete_query: DeleteQuery) -> Self {
-        Self {
+impl TryFrom<DeleteQuery> for SearchRequest {
+    type Error = anyhow::Error;
+
+    fn try_from(delete_query: DeleteQuery) -> anyhow::Result<Self> {
+        Ok(Self {
             index_id: delete_query.index_id,
-            query: delete_query.query,
+            query_ast: query_string(&delete_query.query)?,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,
             search_fields: delete_query.search_fields,
             ..Default::default()
-        }
+        })
     }
 }
 

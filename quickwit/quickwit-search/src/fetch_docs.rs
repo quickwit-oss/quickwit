@@ -293,7 +293,7 @@ async fn create_fields_snippet_generator(
     let mut snippet_generators = HashMap::new();
     for field_name in &search_request.snippet_fields {
         let field = schema.get_field(field_name)?;
-        let snippet_generator = create_snippet_generator(searcher, &*query, field).await?;
+        let snippet_generator = create_snippet_generator(searcher, &query, field).await?;
         snippet_generators.insert(field_name.clone(), snippet_generator);
     }
 

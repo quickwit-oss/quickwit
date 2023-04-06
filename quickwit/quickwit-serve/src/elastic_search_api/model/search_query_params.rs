@@ -19,11 +19,12 @@
 
 use std::str::FromStr;
 
-/// This file is auto-generated, any change can be overridden.
+use quickwit_query::DefaultOperator;
 use serde::{Deserialize, Serialize};
-use warp::{Filter, Rejection};
 
-use super::{from_simple_list, to_simple_list, SimpleList, TrackTotalHits};
+use super::super::TrackTotalHits;
+use crate::simple_list::{from_simple_list, to_simple_list};
+
 #[serde_with::skip_serializing_none]
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct SearchQueryParams {
@@ -106,8 +107,6 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub scroll: Option<String>,
     #[serde(default)]
-    pub search_type: Option<SearchType>,
-    #[serde(default)]
     pub seq_no_primary_term: Option<bool>,
     #[serde(default)]
     pub size: Option<i64>,
@@ -146,46 +145,18 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub version: Option<bool>,
 }
-#[doc = "The default operator for query string query (AND or OR)"]
-#[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
-pub enum DefaultOperator {
-    #[serde(rename = "AND")]
-    And,
-    #[serde(rename = "OR")]
-    Or,
-}
-impl FromStr for DefaultOperator {
-    type Err = &'static str;
-    fn from_str(value_str: &str) -> Result<Self, Self::Err> {
-        match value_str {
-            "AND" => Ok(Self::And),
-            "OR" => Ok(Self::Or),
-            _ => Err("unknown enum variant"),
-        }
-    }
-}
-impl ToString for DefaultOperator {
-    fn to_string(&self) -> String {
-        match &self {
-            Self::And => "AND".to_string(),
-            Self::Or => "OR".to_string(),
-        }
-    }
-}
+
 #[doc = "Whether to expand wildcard expression to concrete indices that are open, closed or both."]
 #[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
 pub enum ExpandWildcards {
-    #[serde(rename = "open")]
     Open,
-    #[serde(rename = "closed")]
     Closed,
-    #[serde(rename = "hidden")]
     Hidden,
-    #[serde(rename = "none")]
     None,
-    #[serde(rename = "all")]
     All,
 }
+
 impl FromStr for ExpandWildcards {
     type Err = &'static str;
     fn from_str(value_str: &str) -> Result<Self, Self::Err> {
@@ -210,42 +181,16 @@ impl ToString for ExpandWildcards {
         }
     }
 }
-#[doc = "Search operation type"]
+
+/// Specify suggest mode
 #[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
-pub enum SearchType {
-    #[serde(rename = "query_then_fetch")]
-    QueryThenFetch,
-    #[serde(rename = "dfs_query_then_fetch")]
-    DfsQueryThenFetch,
-}
-impl FromStr for SearchType {
-    type Err = &'static str;
-    fn from_str(value_str: &str) -> Result<Self, Self::Err> {
-        match value_str {
-            "query_then_fetch" => Ok(Self::QueryThenFetch),
-            "dfs_query_then_fetch" => Ok(Self::DfsQueryThenFetch),
-            _ => Err("unknown enum variant"),
-        }
-    }
-}
-impl ToString for SearchType {
-    fn to_string(&self) -> String {
-        match &self {
-            Self::QueryThenFetch => "query_then_fetch".to_string(),
-            Self::DfsQueryThenFetch => "dfs_query_then_fetch".to_string(),
-        }
-    }
-}
-#[doc = "Specify suggest mode"]
-#[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
 pub enum SuggestMode {
-    #[serde(rename = "missing")]
     Missing,
-    #[serde(rename = "popular")]
     Popular,
-    #[serde(rename = "always")]
     Always,
 }
+
 impl FromStr for SuggestMode {
     type Err = &'static str;
     fn from_str(value_str: &str) -> Result<Self, Self::Err> {
@@ -265,19 +210,4 @@ impl ToString for SuggestMode {
             Self::Always => "always".to_string(),
         }
     }
-}
-#[utoipa::path(get, tag = "Search", path = "/_search")]
-pub(crate) fn elastic_search_filter(
-) -> impl Filter<Extract = (SearchQueryParams,), Error = Rejection> + Clone {
-    warp::path!("_elastic" / "_search")
-        .and(warp::get().or(warp::post()).unify())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
-}
-
-#[utoipa::path(get, tag = "Search", path = "/{index}/_search")]
-pub(crate) fn elastic_index_search_filter(
-) -> impl Filter<Extract = (SimpleList, SearchQueryParams), Error = Rejection> + Clone {
-    warp::path!("_elastic" / SimpleList / "_search")
-        .and(warp::get().or(warp::post()).unify())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
 }

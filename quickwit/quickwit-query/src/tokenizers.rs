@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Borrow;
 use std::str::CharIndices;
 
 use once_cell::sync::Lazy;
@@ -25,7 +26,7 @@ use tantivy::tokenizer::{
     TokenizerManager,
 };
 
-fn get_quickwit_tokenizer_manager() -> TokenizerManager {
+fn create_quickwit_tokenizer_manager() -> TokenizerManager {
     let raw_tokenizer = TextAnalyzer::builder(RawTokenizer)
         .filter(RemoveLongFilter::limit(100))
         .build();
@@ -36,10 +37,8 @@ fn get_quickwit_tokenizer_manager() -> TokenizerManager {
         .build();
 
     let tokenizer_manager = TokenizerManager::default();
-
     tokenizer_manager.register("raw", raw_tokenizer);
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
-
     tokenizer_manager
 }
 
@@ -149,9 +148,12 @@ impl<'a> TokenStream for ChineseTokenStream<'a> {
     }
 }
 
-/// Quickwits default tokenizer
-pub static QUICKWIT_TOKENIZER_MANAGER: Lazy<TokenizerManager> =
-    Lazy::new(get_quickwit_tokenizer_manager);
+pub fn get_quickwit_tokenizer_manager() -> &'static TokenizerManager {
+    /// Quickwits default tokenizer
+    static QUICKWIT_TOKENIZER_MANAGER: Lazy<TokenizerManager> =
+        Lazy::new(create_quickwit_tokenizer_manager);
+    QUICKWIT_TOKENIZER_MANAGER.borrow()
+}
 
 #[cfg(test)]
 mod tests {
@@ -251,7 +253,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(dbg!(res), dbg!(expected));
+        assert_eq!(res, expected);
     }
 
     #[test]
@@ -299,7 +301,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(dbg!(res), dbg!(expected));
+        assert_eq!(res, expected);
     }
 
     proptest::proptest! {
