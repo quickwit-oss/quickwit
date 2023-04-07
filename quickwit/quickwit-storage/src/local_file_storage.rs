@@ -18,8 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeSet, HashMap};
-use std::fmt;
-use std::io::{ErrorKind, SeekFrom};
+use std::time::{Instant, Duration};
+use std::{fmt, io};
+use std::io::{ErrorKind, SeekFrom, Read, Seek};
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -30,8 +31,9 @@ use futures::StreamExt;
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::{Protocol, Uri};
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use tracing::warn;
+use tokio::io::AsyncWriteExt;
+use tokio::task::JoinHandle;
+use tracing::{warn, info, instrument};
 
 use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
 use crate::{
@@ -209,13 +211,27 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
+
+    #[instrument(skip(self))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let full_path = self.full_path(path)?;
-        let mut file = fs::File::open(full_path).await?;
-        file.seek(SeekFrom::Start(range.start as u64)).await?;
-        let mut content_bytes: Vec<u8> = vec![0u8; range.len()];
-        file.read_exact(&mut content_bytes).await?;
-        Ok(OwnedBytes::new(content_bytes))
+        let join_handle: JoinHandle<io::Result<(OwnedBytes, Duration)>> = tokio::task::spawn_blocking(move || {
+            let start = Instant::now();
+            let mut file = std::fs::File::open(full_path)?;
+            file.seek(SeekFrom::Start(range.start as u64))?;
+            let mut content_bytes: Vec<u8> = Vec::with_capacity(range.len());
+            unsafe { content_bytes.set_len(range.len()) } ;
+            file.read_exact(&mut content_bytes)?;
+            drop(file);
+            let data = OwnedBytes::new(content_bytes);
+            let elapsed = start.elapsed();
+            Ok((data, elapsed))
+        });
+        let (data, elapsed) = join_handle
+            .await
+            .unwrap()?;
+        info!(elapsed=?elapsed, "elapsed-in-spawn-blocking");
+        Ok(data)
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
