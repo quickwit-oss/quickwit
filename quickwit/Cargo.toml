@@ -195,6 +195,7 @@ vrl = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" }
 vrl-stdlib = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" }
 warp = "0.3"
 wiremock = "0.5"
+whichlang = { git = "https://github.com/quickwit-oss/whichlang", rev = "fe406416" }
 
 quickwit-actors = { version = "0.5.0", path = "./quickwit-actors" }
 quickwit-aws = { version = "0.5.0", path = "./quickwit-aws" }
@@ -223,7 +224,7 @@ quickwit-serve = { version = "0.5.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.5.0", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.5.0", path = "./quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "0ed13ee", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "dc461ee", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
@@ -231,8 +232,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "0ed13ee", d
 ] }
 
 # Tantivy tokenizers
-tantivy-jieba = "0.7.0"
-lindera-tantivy = { version = "0.23.0", features = ["ipadic"] }
+lindera-tantivy = { git = "https://github.com/quickwit-oss/lindera-tantivy/", rev = "25baa85", features = ["ipadic", "ipadic-compress", "cc-cedict", "cc-cedict-compress"] }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest.

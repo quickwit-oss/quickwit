@@ -25,6 +25,8 @@ use tantivy::tokenizer::{
     TokenizerManager,
 };
 
+use crate::multilanguage_tokenizer::MultiLanguageTokenizer;
+
 fn get_quickwit_tokenizer_manager() -> TokenizerManager {
     let raw_tokenizer = TextAnalyzer::builder(RawTokenizer)
         .filter(RemoveLongFilter::limit(100))
@@ -35,10 +37,16 @@ fn get_quickwit_tokenizer_manager() -> TokenizerManager {
         .filter(LowerCaser)
         .build();
 
+    let multi_language_tokenizer = TextAnalyzer::builder(MultiLanguageTokenizer::new())
+        .filter(RemoveLongFilter::limit(40))
+        .filter(LowerCaser)
+        .build();
+
     let tokenizer_manager = TokenizerManager::default();
 
     tokenizer_manager.register("raw", raw_tokenizer);
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
+    tokenizer_manager.register("multi_language", multi_language_tokenizer);
 
     tokenizer_manager
 }
@@ -158,6 +166,18 @@ mod tests {
     use tantivy::tokenizer::Token;
 
     use super::get_quickwit_tokenizer_manager;
+
+    #[test]
+    fn test_tokenizers_in_manager() {
+        get_quickwit_tokenizer_manager()
+            .get("multi_language")
+            .unwrap();
+        get_quickwit_tokenizer_manager().get("default").unwrap();
+        get_quickwit_tokenizer_manager()
+            .get("chinese_compatible")
+            .unwrap();
+        get_quickwit_tokenizer_manager().get("raw").unwrap();
+    }
 
     #[test]
     fn test_raw_tokenizer() {

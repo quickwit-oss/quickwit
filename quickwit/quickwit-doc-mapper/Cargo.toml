@@ -25,7 +25,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 siphasher = { workspace = true }
 tantivy = { workspace = true }
-tantivy-jieba = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 time-fmt = "0.3.8"
@@ -33,6 +32,7 @@ ouroboros = "0.15.5"
 tracing = { workspace = true }
 typetag = { workspace = true }
 utoipa = { workspace = true }
+whichlang = { workspace = true }
 
 quickwit-proto = { workspace = true }
 
