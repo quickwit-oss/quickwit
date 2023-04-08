@@ -363,14 +363,17 @@ pub async fn leaf_search(
     doc_mapper: Arc<dyn DocMapper>,
 ) -> Result<LeafSearchResponse, SearchError> {
     let agg_limits = aggregation_limits_from_searcher_context(&searcher_context);
+    let request = Arc::new(request.clone());
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
         .map(|split| {
+            let split = split.clone();
             let agg_limits = agg_limits.clone();
             let doc_mapper_clone = doc_mapper.clone();
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
-            async move {
+            let request = request.clone();
+            tokio::spawn(async move {
                 let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore
                     .acquire()
                     .await
@@ -381,7 +384,7 @@ pub async fn leaf_search(
                     .start_timer();
                 let leaf_search_single_split_res = leaf_search_single_split(
                     &searcher_context_clone,
-                    request,
+                    &request,
                     index_storage_clone,
                     split.clone(),
                     doc_mapper_clone,
@@ -390,7 +393,7 @@ pub async fn leaf_search(
                 .await;
                 timer.observe_duration();
                 leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
-            }
+            })
         })
         .collect();
     let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
@@ -402,13 +405,15 @@ pub async fn leaf_search(
         Vec<(String, SearchError)>,
     ) = split_search_results
         .into_iter()
-        .partition_map(|split_search_res| match split_search_res {
-            Ok(split_search_resp) => Either::Left(Ok(split_search_resp)),
-            Err(err) => Either::Right(err),
-        });
+        .partition_map(
+            |split_search_res| match split_search_res.expect("spawned future died") {
+                Ok(split_search_resp) => Either::Left(Ok(split_search_resp)),
+                Err(err) => Either::Right(err),
+            },
+        );
 
     // Creates a collector which merges responses into one
-    let merge_collector = make_merge_collector(request, &searcher_context)?;
+    let merge_collector = make_merge_collector(&request, &searcher_context)?;
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
