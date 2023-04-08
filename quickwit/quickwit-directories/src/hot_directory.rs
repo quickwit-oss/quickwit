@@ -29,6 +29,7 @@ use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, FileSlice, OwnedBytes};
 use tantivy::error::DataCorruption;
 use tantivy::{Directory, HasLen, Index, IndexReader, ReloadPolicy};
+use tracing::instrument;
 
 use crate::{CachingDirectory, DebugProxyDirectory};
 
@@ -333,6 +334,7 @@ pub struct HotDirectory {
 
 impl HotDirectory {
     /// Wraps an index, with a static cache serialized into `hot_cache_bytes`.
+    #[instrument(skip_all)]
     pub fn open<D: Directory>(
         underlying: D,
         hot_cache_bytes: OwnedBytes,

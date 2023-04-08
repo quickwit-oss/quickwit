@@ -21,6 +21,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Context;
 use futures::future::try_join_all;
@@ -49,6 +50,7 @@ use crate::collector::{
 use crate::service::SearcherContext;
 use crate::SearchError;
 
+#[instrument(skip_all)]
 async fn get_split_footer_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
@@ -88,8 +90,9 @@ async fn get_split_footer_from_cache_or_fetch(
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
 /// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
+#[instrument(skip_all)]
 pub(crate) async fn open_index_with_caches(
-    searcher_context: &Arc<SearcherContext>,
+    searcher_context: Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     ephemeral_unbounded_cache: bool,
@@ -101,25 +104,30 @@ pub(crate) async fn open_index_with_caches(
         &searcher_context.split_footer_cache,
     )
     .await?;
+    tokio::task::yield_now().await;
+    let index_res: tantivy::Result<Index> = tokio::task::spawn_blocking(move || {
+        let (hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data(
+            index_storage,
+            split_file,
+            FileSlice::new(Arc::new(footer_data)),
+        )?;
+        let bundle_storage_with_cache = wrap_storage_with_long_term_cache(
+            searcher_context.fast_fields_cache.clone(),
+            Arc::new(bundle_storage),
+        );
+        let directory = StorageDirectory::new(bundle_storage_with_cache);
+        let hot_directory = if ephemeral_unbounded_cache {
+            let caching_directory = CachingDirectory::new_unbounded(Arc::new(directory));
+            HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
+        } else {
+            HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
+        };
+        let mut index = Index::open(hot_directory)?;
+        index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+        Ok(index)
+    }).await.unwrap();
 
-    let (hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data(
-        index_storage,
-        split_file,
-        FileSlice::new(Arc::new(footer_data)),
-    )?;
-    let bundle_storage_with_cache = wrap_storage_with_long_term_cache(
-        searcher_context.fast_fields_cache.clone(),
-        Arc::new(bundle_storage),
-    );
-    let directory = StorageDirectory::new(bundle_storage_with_cache);
-    let hot_directory = if ephemeral_unbounded_cache {
-        let caching_directory = CachingDirectory::new_unbounded(Arc::new(directory));
-        HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
-    } else {
-        HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
-    };
-    let mut index = Index::open(hot_directory)?;
-    index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+    let index = index_res?;
     Ok(index)
 }
 
@@ -141,7 +149,7 @@ pub(crate) async fn open_index_with_caches(
 #[instrument(skip(searcher))]
 pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> anyhow::Result<()> {
     let warm_up_terms_future = warm_up_terms(searcher, &warmup_info.terms_grouped_by_field)
-        .instrument(debug_span!("warm_up_terms"));
+        .instrument(info_span!("warm_up_terms"));
     let warm_up_term_dict_future =
         warm_up_term_dict_fields(searcher, &warmup_info.term_dict_field_names)
             .instrument(debug_span!("warm_up_term_dicts"));
@@ -214,7 +222,6 @@ async fn warm_up_postings(
         let field = searcher.schema().get_field(field_name).with_context(|| {
             format!("Couldn't get field named `{field_name}` from schema to warm up postings.")
         })?;
-
         fields.push(field);
     }
 
@@ -274,7 +281,9 @@ async fn warm_up_terms(
             for (term, position_needed) in terms.iter() {
                 let inv_idx_clone = inv_idx.clone();
                 warm_up_futures
-                    .push(async move { inv_idx_clone.warm_postings(term, *position_needed).await });
+                    .push(async move { inv_idx_clone.warm_postings(term, *position_needed)
+                        .instrument(info_span!("warm_postings")).await
+                    });
             }
         }
     }
@@ -318,7 +327,7 @@ async fn leaf_search_single_split(
     agg_limits: AggregationLimits,
 ) -> crate::Result<LeafSearchResponse> {
     let split_id = split.split_id.to_string();
-    let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
+    let index = open_index_with_caches(searcher_context.clone(), storage, &split, true).await?;
     let split_schema = index.schema();
     let quickwit_collector = make_collector_for_split(
         split_id.clone(),
@@ -436,7 +445,7 @@ async fn leaf_list_terms_single_split(
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
 ) -> crate::Result<LeafListTermsResponse> {
-    let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
+    let index = open_index_with_caches(searcher_context.clone(), storage, &split, true).await?;
     let split_schema = index.schema();
     let reader = index
         .reader_builder()

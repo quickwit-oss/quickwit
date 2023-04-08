@@ -31,6 +31,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 pub use quickwit_cache::QuickwitCache;
 pub use storage_with_cache::StorageWithCache;
+use tracing::instrument;
 
 pub use self::byte_range_cache::ByteRangeCache;
 pub use self::memory_sized_cache::MemorySizedCache;
@@ -44,6 +45,7 @@ use crate::{OwnedBytes, Storage};
 /// - it relies on the idea that all of the files we attempt to cache
 /// have universally unique names. It happens to be true today, but this might be very error prone
 /// in the future.
+#[instrument(skip_all)]
 pub fn wrap_storage_with_long_term_cache(
     long_term_cache: Arc<dyn Cache>,
     storage: Arc<dyn Storage>,

@@ -33,7 +33,7 @@ use tantivy::directory::FileSlice;
 use tantivy::HasLen;
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
-use tracing::error;
+use tracing::{error, instrument};
 
 use crate::storage::{BulkDeleteError, SendableAsync};
 use crate::{OwnedBytes, Storage, StorageError, StorageResult};
@@ -70,6 +70,7 @@ impl BundleStorage {
     /// more up front.
     ///
     /// Returns (Hotcache, Self)
+    #[instrument(skip_all)]
     pub fn open_from_split_data(
         storage: Arc<dyn Storage>,
         bundle_filepath: PathBuf,
