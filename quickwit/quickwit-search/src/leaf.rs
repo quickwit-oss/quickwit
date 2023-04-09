@@ -49,6 +49,7 @@ use crate::collector::{
 use crate::service::SearcherContext;
 use crate::SearchError;
 
+#[instrument(skip(index_storage, footer_cache))]
 async fn get_split_footer_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
@@ -88,6 +89,7 @@ async fn get_split_footer_from_cache_or_fetch(
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
 /// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
+#[instrument(skip(searcher_context, index_storage))]
 pub(crate) async fn open_index_with_caches(
     searcher_context: &Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
@@ -373,7 +375,8 @@ pub async fn leaf_search(
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
             let request = request.clone();
-            tokio::spawn(async move {
+            tokio::spawn(
+                async move {
                 let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore
                     .acquire()
                     .await
@@ -393,7 +396,7 @@ pub async fn leaf_search(
                 .await;
                 timer.observe_duration();
                 leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
-            })
+            }.in_current_span())
         })
         .collect();
     let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;

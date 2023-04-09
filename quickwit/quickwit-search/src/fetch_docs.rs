@@ -29,7 +29,7 @@ use quickwit_storage::Storage;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Value};
 use tantivy::{ReloadPolicy, Score, Searcher, SnippetGenerator, Term};
-use tracing::error;
+use tracing::{error, Instrument};
 
 use crate::leaf::open_index_with_caches;
 use crate::service::SearcherContext;
@@ -49,9 +49,9 @@ async fn fetch_docs_to_map(
 ) -> anyhow::Result<HashMap<GlobalDocAddress, Document>> {
     let mut split_fetch_docs_futures = Vec::new();
 
-    let split_offsets_map: HashMap<&str, &SplitIdAndFooterOffsets> = splits
+    let split_offsets_map: HashMap<&str, SplitIdAndFooterOffsets> = splits
         .iter()
-        .map(|split| (split.split_id.as_str(), split))
+        .map(|split| (split.split_id.as_str(), split.clone()))
         .collect();
 
     // We sort global hit addrs in order to allow for the grouby.
@@ -66,17 +66,28 @@ async fn fetch_docs_to_map(
         let split_and_offset = split_offsets_map
             .get(split_id)
             .ok_or_else(|| anyhow::anyhow!("Failed to find offset for split {}", split_id))?;
-        split_fetch_docs_futures.push(fetch_docs_in_split(
-            searcher_context.clone(),
-            global_doc_addrs,
-            index_storage.clone(),
-            split_and_offset,
-            doc_mapper.clone(),
-            search_request_opt,
-        ));
+        split_fetch_docs_futures.push(tokio::spawn({
+            let searcher_context = searcher_context.clone();
+            let index_storage = index_storage.clone();
+            let split_and_offset = split_and_offset.clone();
+            let doc_mapper = doc_mapper.clone();
+            let search_request_opt = search_request_opt.cloned();
+            async move {
+                fetch_docs_in_split(
+                    searcher_context,
+                    global_doc_addrs,
+                    index_storage,
+                    &split_and_offset,
+                    doc_mapper,
+                    search_request_opt.as_ref(),
+                )
+                .await
+            }
+            .in_current_span()
+        }));
     }
 
-    let split_fetch_docs: Vec<Vec<(GlobalDocAddress, Document)>> = futures::future::try_join_all(
+    let split_fetch_docs: Vec<Result<Vec<(GlobalDocAddress, Document)>, _>> = futures::future::try_join_all(
         split_fetch_docs_futures,
     )
     .await
@@ -95,6 +106,7 @@ async fn fetch_docs_to_map(
 
     let global_doc_addr_to_doc_json: HashMap<GlobalDocAddress, Document> = split_fetch_docs
         .into_iter()
+        .map(|e| e.unwrap())
         .flat_map(|docs| docs.into_iter())
         .collect();
 
