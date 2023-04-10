@@ -49,9 +49,9 @@ async fn fetch_docs_to_map(
 ) -> anyhow::Result<HashMap<GlobalDocAddress, Document>> {
     let mut split_fetch_docs_futures = Vec::new();
 
-    let split_offsets_map: HashMap<&str, SplitIdAndFooterOffsets> = splits
+    let split_offsets_map: HashMap<&str, &SplitIdAndFooterOffsets> = splits
         .iter()
-        .map(|split| (split.split_id.as_str(), split.clone()))
+        .map(|split| (split.split_id.as_str(), split))
         .collect();
 
     // We sort global hit addrs in order to allow for the grouby.
@@ -66,28 +66,17 @@ async fn fetch_docs_to_map(
         let split_and_offset = split_offsets_map
             .get(split_id)
             .ok_or_else(|| anyhow::anyhow!("Failed to find offset for split {}", split_id))?;
-        split_fetch_docs_futures.push(tokio::spawn({
-            let searcher_context = searcher_context.clone();
-            let index_storage = index_storage.clone();
-            let split_and_offset = split_and_offset.clone();
-            let doc_mapper = doc_mapper.clone();
-            let search_request_opt = search_request_opt.cloned();
-            async move {
-                fetch_docs_in_split(
-                    searcher_context,
-                    global_doc_addrs,
-                    index_storage,
-                    &split_and_offset,
-                    doc_mapper,
-                    search_request_opt.as_ref(),
-                )
-                .await
-            }
-            .in_current_span()
-        }));
+        split_fetch_docs_futures.push(fetch_docs_in_split(
+            searcher_context.clone(),
+            global_doc_addrs,
+            index_storage.clone(),
+            split_and_offset,
+            doc_mapper.clone(),
+            search_request_opt,
+        ));
     }
 
-    let split_fetch_docs: Vec<Result<Vec<(GlobalDocAddress, Document)>, _>> = futures::future::try_join_all(
+    let split_fetch_docs: Vec<Vec<(GlobalDocAddress, Document)>> = futures::future::try_join_all(
         split_fetch_docs_futures,
     )
     .await
@@ -106,7 +95,6 @@ async fn fetch_docs_to_map(
 
     let global_doc_addr_to_doc_json: HashMap<GlobalDocAddress, Document> = split_fetch_docs
         .into_iter()
-        .map(|e| e.unwrap())
         .flat_map(|docs| docs.into_iter())
         .collect();
 
@@ -160,6 +148,7 @@ pub async fn fetch_docs(
     Ok(FetchDocsResponse { hits })
 }
 
+// number of concurrent fetch allowed for a single split.
 const NUM_CONCURRENT_REQUESTS: usize = 10;
 
 /// A struct for holding a fetched document's content and snippet.
@@ -202,57 +191,62 @@ async fn fetch_docs_in_split(
         let moved_searcher = searcher.clone();
         let moved_doc_mapper = doc_mapper.clone();
         let fields_snippet_generator_opt_clone = fields_snippet_generator_opt.clone();
-        async move {
-            let doc = moved_searcher
-                .doc_async(global_doc_addr.doc_addr)
-                .await
-                .context("searcher-doc-async")?;
+        tokio::spawn(
+            async move {
+                let doc = moved_searcher
+                    .doc_async(global_doc_addr.doc_addr)
+                    .await
+                    .context("searcher-doc-async")?;
 
-            let named_field_doc = moved_searcher.schema().to_named_doc(&doc);
-            let content_json =
-                convert_document_to_json_string(named_field_doc, &*moved_doc_mapper)?;
-            if fields_snippet_generator_opt_clone.is_none() {
-                return Ok((
-                    global_doc_addr,
-                    Document {
-                        content_json,
-                        snippet_json: None,
-                    },
-                ));
-            }
-
-            let fields_snippet_generator_clone = fields_snippet_generator_opt_clone.unwrap();
-            if fields_snippet_generator_clone.is_empty() {
-                return Ok((
-                    global_doc_addr,
-                    Document {
-                        content_json,
-                        snippet_json: None,
-                    },
-                ));
-            }
-
-            let mut snippets = HashMap::new();
-            for (field, field_values) in doc.get_sorted_field_values() {
-                let field_name = moved_searcher.schema().get_field_name(field);
-                if let Some(values) = fields_snippet_generator_clone
-                    .snippets_from_field_values(field_name, field_values)
-                {
-                    snippets.insert(field_name, values);
+                let named_field_doc = moved_searcher.schema().to_named_doc(&doc);
+                let content_json =
+                    convert_document_to_json_string(named_field_doc, &*moved_doc_mapper)?;
+                if fields_snippet_generator_opt_clone.is_none() {
+                    return Ok((
+                        global_doc_addr,
+                        Document {
+                            content_json,
+                            snippet_json: None,
+                        },
+                    ));
                 }
+
+                let fields_snippet_generator_clone = fields_snippet_generator_opt_clone.unwrap();
+                if fields_snippet_generator_clone.is_empty() {
+                    return Ok((
+                        global_doc_addr,
+                        Document {
+                            content_json,
+                            snippet_json: None,
+                        },
+                    ));
+                }
+
+                let mut snippets = HashMap::new();
+                for (field, field_values) in doc.get_sorted_field_values() {
+                    let field_name = moved_searcher.schema().get_field_name(field);
+                    if let Some(values) = fields_snippet_generator_clone
+                        .snippets_from_field_values(field_name, field_values)
+                    {
+                        snippets.insert(field_name, values);
+                    }
+                }
+                let snippet_json = serde_json::to_string(&snippets)?;
+                Ok((
+                    global_doc_addr,
+                    Document {
+                        content_json,
+                        snippet_json: Some(snippet_json),
+                    },
+                ))
             }
-            let snippet_json = serde_json::to_string(&snippets)?;
-            Ok((
-                global_doc_addr,
-                Document {
-                    content_json,
-                    snippet_json: Some(snippet_json),
-                },
-            ))
-        }
+            .in_current_span(),
+        )
     });
 
-    let stream = futures::stream::iter(doc_futures).buffer_unordered(NUM_CONCURRENT_REQUESTS);
+    let stream = futures::stream::iter(doc_futures)
+        .map(|f| async { f.await.unwrap() })
+        .buffer_unordered(NUM_CONCURRENT_REQUESTS);
     stream.try_collect::<Vec<_>>().await
 }
 
