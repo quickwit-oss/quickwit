@@ -18,10 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, HashMap};
+use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::{Context, Ok};
-use futures::stream::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::{FetchDocsResponse, PartialHit, SearchRequest, SplitIdAndFooterOffsets};
@@ -191,63 +192,87 @@ async fn fetch_docs_in_split(
         let moved_searcher = searcher.clone();
         let moved_doc_mapper = doc_mapper.clone();
         let fields_snippet_generator_opt_clone = fields_snippet_generator_opt.clone();
-        tokio::spawn(
-            async move {
-                let doc = moved_searcher
-                    .doc_async(global_doc_addr.doc_addr)
-                    .await
-                    .context("searcher-doc-async")?;
+        async move {
+            let doc = moved_searcher
+                .doc_async(global_doc_addr.doc_addr)
+                .await
+                .context("searcher-doc-async")?;
 
-                let named_field_doc = moved_searcher.schema().to_named_doc(&doc);
-                let content_json =
-                    convert_document_to_json_string(named_field_doc, &*moved_doc_mapper)?;
-                if fields_snippet_generator_opt_clone.is_none() {
-                    return Ok((
-                        global_doc_addr,
-                        Document {
-                            content_json,
-                            snippet_json: None,
-                        },
-                    ));
-                }
-
-                let fields_snippet_generator_clone = fields_snippet_generator_opt_clone.unwrap();
-                if fields_snippet_generator_clone.is_empty() {
-                    return Ok((
-                        global_doc_addr,
-                        Document {
-                            content_json,
-                            snippet_json: None,
-                        },
-                    ));
-                }
-
-                let mut snippets = HashMap::new();
-                for (field, field_values) in doc.get_sorted_field_values() {
-                    let field_name = moved_searcher.schema().get_field_name(field);
-                    if let Some(values) = fields_snippet_generator_clone
-                        .snippets_from_field_values(field_name, field_values)
-                    {
-                        snippets.insert(field_name, values);
-                    }
-                }
-                let snippet_json = serde_json::to_string(&snippets)?;
-                Ok((
+            let named_field_doc = moved_searcher.schema().to_named_doc(&doc);
+            let content_json =
+                convert_document_to_json_string(named_field_doc, &*moved_doc_mapper)?;
+            if fields_snippet_generator_opt_clone.is_none() {
+                return Ok((
                     global_doc_addr,
                     Document {
                         content_json,
-                        snippet_json: Some(snippet_json),
+                        snippet_json: None,
                     },
-                ))
+                ));
             }
-            .in_current_span(),
-        )
+
+            let fields_snippet_generator_clone = fields_snippet_generator_opt_clone.unwrap();
+            if fields_snippet_generator_clone.is_empty() {
+                return Ok((
+                    global_doc_addr,
+                    Document {
+                        content_json,
+                        snippet_json: None,
+                    },
+                ));
+            }
+
+            let mut snippets = HashMap::new();
+            for (field, field_values) in doc.get_sorted_field_values() {
+                let field_name = moved_searcher.schema().get_field_name(field);
+                if let Some(values) = fields_snippet_generator_clone
+                    .snippets_from_field_values(field_name, field_values)
+                {
+                    snippets.insert(field_name, values);
+                }
+            }
+            let snippet_json = serde_json::to_string(&snippets)?;
+            Ok((
+                global_doc_addr,
+                Document {
+                    content_json,
+                    snippet_json: Some(snippet_json),
+                },
+            ))
+        }
     });
 
-    let stream = futures::stream::iter(doc_futures)
-        .map(|f| async { f.await.unwrap() })
-        .buffer_unordered(NUM_CONCURRENT_REQUESTS);
-    stream.try_collect::<Vec<_>>().await
+    spawn_buffer_unordered(doc_futures, NUM_CONCURRENT_REQUESTS).await
+}
+
+/// Run a group a future in a buffered maner, spawning each one in a dedicated task.
+///
+/// Stop processing if any future returns an `Err`.
+async fn spawn_buffer_unordered<T, E, Fut>(
+    mut futures: impl Iterator<Item = Fut>,
+    max_running: usize,
+) -> Result<Vec<T>, E>
+where
+    Fut: Future<Output = Result<T, E>> + Send + 'static,
+    T: Send + 'static,
+    E: Send + 'static,
+{
+    assert!(max_running > 0);
+
+    let mut results = Vec::new();
+    let mut future_set = futures::stream::FuturesUnordered::new();
+    for future in (&mut futures).take(max_running) {
+        future_set.push(tokio::spawn(future.in_current_span()));
+    }
+
+    while let Some(result) = future_set.next().await {
+        results.push(result.expect("should never be canceled")?);
+        if let Some(future) = futures.next() {
+            future_set.push(tokio::spawn(future.in_current_span()));
+        }
+    }
+
+    Result::<_, E>::Ok(results)
 }
 
 // A struct to hold the snippet generators associated to
