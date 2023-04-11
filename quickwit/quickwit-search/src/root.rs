@@ -21,6 +21,7 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, IndexConfig};
@@ -35,8 +36,7 @@ use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResult
 use tantivy::aggregation::AggregationLimits;
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
-use tokio::task::spawn_blocking;
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{make_merge_collector, QuickwitAggregations};
@@ -213,12 +213,16 @@ pub async fn root_search(
     // Wrap into result for merge_fruits
     let leaf_search_responses: Vec<tantivy::Result<LeafSearchResponse>> =
         leaf_search_responses.into_iter().map(Ok).collect_vec();
-    let leaf_search_response =
-        spawn_blocking(move || merge_collector.merge_fruits(leaf_search_responses))
-            .await?
-            .map_err(|merge_error: TantivyError| {
-                crate::SearchError::InternalError(format!("{merge_error}"))
-            })?;
+    let span = info_span!("merge_fruits");
+    let leaf_search_response = crate::run_cpu_intensive(move || {
+        let _span_guard = span.enter();
+        merge_collector.merge_fruits(leaf_search_responses)
+    })
+    .await
+    .context("failed to merge fruits")?
+    .map_err(|merge_error: TantivyError| {
+        crate::SearchError::InternalError(format!("{merge_error}"))
+    })?;
     debug!(leaf_search_response = ?leaf_search_response, "Merged leaf search response.");
 
     if !leaf_search_response.failed_splits.is_empty() {

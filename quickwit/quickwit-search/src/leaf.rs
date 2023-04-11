@@ -40,7 +40,6 @@ use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
-use tokio::task::spawn_blocking;
 use tracing::*;
 
 use crate::collector::{
@@ -420,11 +419,13 @@ pub async fn leaf_search(
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
-    let mut merged_search_response =
-        spawn_blocking(move || merge_collector.merge_fruits(split_search_responses))
-            .instrument(info_span!("merge_search_responses"))
-            .await
-            .context("Failed to merge split search responses.")??;
+    let span = info_span!("merge_search_responses");
+    let mut merged_search_response = crate::run_cpu_intensive(move || {
+        let _span_guard = span.enter();
+        merge_collector.merge_fruits(split_search_responses)
+    })
+    .await
+    .context("Failed to merge split search responses.")??;
 
     merged_search_response
         .failed_splits
