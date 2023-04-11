@@ -57,7 +57,7 @@ impl MultiLanguageTokenizer {
     }
 }
 
-pub(crate) enum MultiLanguageTokenStream<'a> {
+pub enum MultiLanguageTokenStream<'a> {
     Lindera(LinderaTokenStream),
     Simple(SimpleTokenStream<'a>),
 }

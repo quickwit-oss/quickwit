@@ -19,6 +19,7 @@
 
 use std::str::CharIndices;
 
+use lindera_tantivy::{dictionary::load_dictionary, tokenizer::LinderaTokenizer, Mode, DictionaryConfig, DictionaryKind};
 use once_cell::sync::Lazy;
 use tantivy::tokenizer::{
     LowerCaser, RawTokenizer, RemoveLongFilter, TextAnalyzer, Token, TokenStream, Tokenizer,
@@ -42,11 +43,20 @@ fn get_quickwit_tokenizer_manager() -> TokenizerManager {
         .filter(LowerCaser)
         .build();
 
+    let jpn_dictionary_config = DictionaryConfig {
+        kind: Some(DictionaryKind::IPADIC),
+        path: None,
+    };
+    let jpn_dictionary = load_dictionary(jpn_dictionary_config)
+        .expect("Lindera `IPAD` dictionary must be present");
+    let jpn_tokenizer = TextAnalyzer::builder(LinderaTokenizer::new(jpn_dictionary, None, Mode::Normal)).build();
+
     let tokenizer_manager = TokenizerManager::default();
 
     tokenizer_manager.register("raw", raw_tokenizer);
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
     tokenizer_manager.register("multi_language", multi_language_tokenizer);
+    tokenizer_manager.register("japanese", jpn_tokenizer);
 
     tokenizer_manager
 }
