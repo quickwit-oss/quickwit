@@ -7,13 +7,13 @@ Quickwit supports deletes thanks to the [delete API](../../reference/rest-api.md
 
 ## Delete tasks
 
-A delete task on a given index is executed on all splits created after the delete task creation. This can be a long-running task that could last several hours if the delete query is matching documents present in many splits.
+A delete task on a given index is executed on all splits created before the delete task creation. This can be a long-running task that could last several hours if the delete query is matching documents present in many splits.
 
 To track the progress of the execution, each delete task is given a unique and incremental identifier called "operation stamp" or `opstamp`. All existing splits will undergo a delete operation and, after its success, each split metadata will be updated with the corresponding operation stamp.
 
 All splits created after the creation of a delete tasks will have a `opstamp` greater or equal to the `opstamp` of the delete task (greater if other delete tasks have been created at the same moment).
 
-Quickwit batches delete operations on a given split: for example, if a split has it delete `opstamp = n` and the last created delete task has a `opstamp = n + 10`, ten delete queries will be executed at once on the split.
+Quickwit batches delete operations on a given split: for example, if a split has it delete `opstamp = n` and the last created delete task has a `opstamp = n + 10`, ten (10) delete queries will be executed at once on the split.
 
 ## Delete API
 
@@ -23,7 +23,7 @@ Delete tasks are created through the [Delete REST API](../../reference/rest-api.
 
 ### Immature splits
 
-Delete operations are applied only to “mature” splits, that is splits that do not undergo merges. Whether a split is mature depends on the [merge policy](../../configuration/index-config.md#merge-policies). It is possible to define `maturation_period` after which a split will be mature. Thus, a delete request created at `t0` will first apply deletes to mature splits and, in the worst case, will wait the `t0 maturation_period` for immature splits to become mature.
+Delete operations are applied only to “mature” splits, that is splits that will no longer undergo merges. Whether a split is mature depends on the [merge policy](../../configuration/index-config.md#merge-policies). It is possible to define `maturation_period` after which a split will be mature. Thus, a delete request created at `t0` will first apply deletes to mature splits and, in the worst case, will wait the `t0 + maturation_period` for immature splits to become mature.
 
 
 ### Monitoring and dev XP

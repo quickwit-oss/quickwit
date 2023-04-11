@@ -15,7 +15,7 @@ A commented example is accessible here: [quickwit.yaml](https://github.com/quick
 
 | Property | Description | Env variable | Default value |
 | --- | --- | --- | --- |
-| `version` | Config file version. 0.4 is the only available value. |  |  |
+| `version` | Config file version. `0.5` is the only available value with a retro compatibility on `0.4`. |  |  |
 | `cluster_id` | Unique Id for the cluster this node will be joining. Should be set to a unique name to ensure clusters do not accidentally merge together. | `QW_CLUSTER_ID` | `quickwit-default-cluster` |
 | `node_id` | Node ID of the instance (searcher or indexer). It must be unique in your cluster. If not set, a random ID is generated at each boot. | `QW_NODE_ID` |  |
 | `enabled_services` | Enabled services (indexer, janitor, metastore, searcher) | `QW_ENABLED_SERVICES` | all services enabled |
