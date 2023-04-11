@@ -33,8 +33,8 @@ use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
 use crate::templating::render_config;
 use crate::{
-    validate_identifier, ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig,
-    QuickwitConfig, SearcherConfig,
+    validate_identifier, validate_node_id, ConfigFormat, IndexerConfig, IngestApiConfig,
+    JaegerConfig, QuickwitConfig, SearcherConfig,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
@@ -47,7 +47,15 @@ fn default_cluster_id() -> ConfigValue<String, QW_CLUSTER_ID> {
 }
 
 fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
-    ConfigValue::with_default(new_coolid("node"))
+    let node_id = match hostname::get() {
+        Ok(hostname) => hostname.to_string_lossy().to_string(),
+        Err(error) => {
+            let node_id = new_coolid("node");
+            warn!(error=?error, "Failed to determine hostname, falling back to random node ID `{}`.", node_id);
+            node_id
+        }
+    };
+    ConfigValue::with_default(node_id)
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -275,11 +283,12 @@ impl QuickwitConfigBuilder {
 
 fn validate(quickwit_config: &QuickwitConfig) -> anyhow::Result<()> {
     validate_identifier("Cluster ID", &quickwit_config.cluster_id)?;
-    validate_identifier("Node ID", &quickwit_config.node_id)?;
+    validate_node_id(&quickwit_config.node_id)?;
+
     if quickwit_config.cluster_id == DEFAULT_CLUSTER_ID {
         warn!(
-            cluster_id=%DEFAULT_CLUSTER_ID,
-            "Cluster ID is not set, falling back to default value."
+            "Cluster ID is not set, falling back to default value: `{}`.",
+            DEFAULT_CLUSTER_ID
         );
     }
     if quickwit_config.peer_seeds.is_empty() {
@@ -511,7 +520,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
-        assert!(config.node_id.starts_with("node-"));
+        assert_eq!(config.node_id, hostname::get().unwrap().to_string_lossy());
         assert_eq!(
             config.enabled_services,
             QuickwitService::supported_services()
@@ -972,7 +981,7 @@ mod tests {
     async fn test_rest_config_accepts_multi_origin() {
         let rest_config_yaml = r#"
             version: 0.5
-            rest_cors_allow_origins: 
+            rest_cors_allow_origins:
                 - https://www.my-domain.com
         "#;
         let config = load_quickwit_config_with_env(
@@ -989,7 +998,7 @@ mod tests {
 
         let rest_config_yaml = r#"
             version: 0.5
-            rest_cors_allow_origins: 
+            rest_cors_allow_origins:
                 - https://www.my-domain.com
                 - https://www.my-other-domain.com
         "#;
@@ -1010,7 +1019,7 @@ mod tests {
 
         let rest_config_yaml = r#"
             version: 0.5
-            rest_cors_allow_origins: 
+            rest_cors_allow_origins:
         "#;
         load_quickwit_config_with_env(
             ConfigFormat::Yaml,
@@ -1022,7 +1031,7 @@ mod tests {
 
         let rest_config_yaml = r#"
             version: 0.5
-            rest_cors_allow_origins: 
+            rest_cors_allow_origins:
                 -
         "#;
         load_quickwit_config_with_env(

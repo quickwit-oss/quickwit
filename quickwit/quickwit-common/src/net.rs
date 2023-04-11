@@ -319,7 +319,7 @@ fn is_private_ip(ip_addr: &IpAddr) -> bool {
         .any(|network| network.contains(*ip_addr))
 }
 
-/// Returns whether a hostname is valid according to [IETF RFC 1123](https://tools.ietf.org/html/rfc1123).
+/// Returns whether a hostname is valid according to [RFC 1123](https://www.rfc-editor.org/rfc/rfc1123).
 ///
 /// A hostname is valid if the following conditions are met:
 ///
@@ -330,7 +330,7 @@ fn is_private_ip(ip_addr: &IpAddr) -> bool {
 /// - Its labels (characters separated by `.`) are not empty.
 /// - Its labels are 63 or fewer characters.
 /// - Its labels do not start or end with '-' or '.'.
-fn is_valid_hostname(hostname: &str) -> bool {
+pub fn is_valid_hostname(hostname: &str) -> bool {
     if hostname.is_empty() || hostname.len() > 253 {
         return false;
     }

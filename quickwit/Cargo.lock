@@ -4366,6 +4366,7 @@ dependencies = [
  "chrono",
  "cron",
  "enum-iterator",
+ "hostname",
  "humantime",
  "itertools",
  "json_comments",
