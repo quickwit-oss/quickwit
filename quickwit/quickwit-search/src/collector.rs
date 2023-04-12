@@ -31,7 +31,7 @@ use tantivy::aggregation::{AggregationLimits, AggregationSegmentCollector};
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::columnar::ColumnType;
 use tantivy::fastfield::Column;
-use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
+use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
 use crate::filters::{create_timestamp_filter_builder, TimestampFilter, TimestampFilterBuilder};
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector};
@@ -267,15 +267,16 @@ impl SegmentCollector for QuickwitSegmentCollector {
             .collect();
 
         let intermediate_aggregation_result = match self.aggregation {
-            Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => Some(
-                serde_json::to_string(&collector.harvest())
-                    .expect("Collector fruit should be JSON serializable."),
-            ),
+            Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
+                let fruit = collector.harvest();
+                let serialized =
+                    postcard::to_allocvec(&fruit).expect("Collector fruit should be serializable.");
+                Some(serialized)
+            }
             Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
-                Some(
-                    serde_json::to_string(&collector.harvest()?)
-                        .expect("Collector fruit should be JSON serializable."),
-                )
+                let serialized = postcard::to_allocvec(&collector.harvest()?)
+                    .expect("Collector fruit should be serializable.");
+                Some(serialized)
             }
             None => None,
         };
@@ -438,15 +439,19 @@ impl Collector for QuickwitCollector {
     }
 }
 
+fn map_error(err: postcard::Error) -> TantivyError {
+    TantivyError::InternalError(format!("Merge Result Postcard Error: {}", err))
+}
+
 /// Merges a set of Leaf Results.
 fn merge_leaf_responses(
     aggregations_opt: &Option<QuickwitAggregations>,
-    leaf_responses: Vec<LeafSearchResponse>,
+    mut leaf_responses: Vec<LeafSearchResponse>,
     max_hits: usize,
 ) -> tantivy::Result<LeafSearchResponse> {
     // Optimization: No merging needed if there is only one result.
     if leaf_responses.len() == 1 {
-        return Ok(leaf_responses.into_iter().next().unwrap_or_default()); //< default is actually never called
+        return Ok(leaf_responses.pop().unwrap());
     }
     let merged_intermediate_aggregation_result = match aggregations_opt {
         Some(QuickwitAggregations::FindTraceIdsAggregation(collector)) => {
@@ -457,13 +462,15 @@ fn merge_leaf_responses(
                 .filter_map(|leaf_response| {
                     leaf_response.intermediate_aggregation_result.as_ref().map(
                         |intermediate_aggregation_result| {
-                            serde_json::from_str(intermediate_aggregation_result)
+                            postcard::from_bytes(intermediate_aggregation_result.as_slice())
+                                .map_err(map_error)
                         },
                     )
                 })
                 .collect::<Result<_, _>>()?;
             let merged_fruit = collector.merge_fruits(fruits)?;
-            Some(serde_json::to_string(&merged_fruit)?)
+            let serialized = postcard::to_allocvec(&merged_fruit).map_err(map_error)?;
+            Some(serialized)
         }
         Some(QuickwitAggregations::TantivyAggregations(_)) => {
             let fruits: Vec<IntermediateAggregationResults> = leaf_responses
@@ -471,7 +478,8 @@ fn merge_leaf_responses(
                 .filter_map(|leaf_response| {
                     leaf_response.intermediate_aggregation_result.as_ref().map(
                         |intermediate_aggregation_result| {
-                            serde_json::from_str(intermediate_aggregation_result)
+                            postcard::from_bytes(intermediate_aggregation_result.as_slice())
+                                .map_err(map_error)
                         },
                     )
                 })
@@ -483,7 +491,9 @@ fn merge_leaf_responses(
                 for fruit in fruit_iter {
                     merged_fruit.merge_fruits(fruit)?;
                 }
-                Some(serde_json::to_string(&merged_fruit)?)
+                let serialized = postcard::to_allocvec(&merged_fruit).map_err(map_error)?;
+
+                Some(serialized)
             } else {
                 None
             }

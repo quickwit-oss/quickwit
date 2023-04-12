@@ -347,6 +347,7 @@ async fn leaf_search_single_split(
     .map_err(|_| {
         crate::SearchError::InternalError(format!("Leaf search panicked. split={split_id}"))
     })??;
+
     Ok(leaf_search_response)
 }
 
