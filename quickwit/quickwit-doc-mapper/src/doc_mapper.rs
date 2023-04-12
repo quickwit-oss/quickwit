@@ -198,7 +198,9 @@ mod tests {
     use quickwit_proto::SearchRequest;
     use tantivy::schema::{Field, FieldType, Term};
 
-    use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions};
+    use crate::default_doc_mapper::{
+        FastFieldOptions, FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions,
+    };
     use crate::{
         Cardinality, DefaultDocMapperBuilder, DocMapper, DocParsingError, FieldMappingEntry,
         WarmupInfo, DYNAMIC_FIELD_NAME,
@@ -333,7 +335,7 @@ mod tests {
     fn test_doc_mapper_query_with_invalid_sort_field() {
         let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
         let text_opt = QuickwitTextOptions {
-            fast: true,
+            fast: FastFieldOptions::IsEnabled(true),
             ..Default::default()
         };
 

@@ -452,7 +452,7 @@ For field names containing the `.` character, you will need to escape it when re
 
 ### Behavior with null values or missing fields
 
-Fields with `null` or missing fields in your JSON document will be silently ignored when indexing with the exception of non-text fast fields. Non-text fast fields are required and entire record will be rejected with an error if at least one fast field is missing.
+Fields with `null` or missing fields in your JSON document will be silently ignored when indexing.
 
 ## Indexing settings
 
