@@ -69,17 +69,13 @@ The index ID is a string that uniquely identifies the index within the metastore
 The index-uri defines where the index files (also called splits) should be stored.
 This parameter expects a [storage uri](../reference/storage-uri).
 
-
 The `index-uri` parameter is optional.
 By default, the `index-uri` will be computed by concatenating the `index-id` with the
 `default_index_root_uri` defined in the [Quickwit's config](node-config).
 
-
 :::caution
-The file storage will not work when running quickwit in distributed mode.
-Today, only the s3 storage is available when running several searcher nodes.
+The file storage will not work when running quickwit in distributed mode. Instead, AWS S3, Azure Blob Storage, Google Cloud Storage (in s3 interoperability mode) or other S3-compatible storage systems including Scaleway Object Storage and Garage should be used as storage when running several searcher nodes.
 :::
-
 
 ## Doc mapping
 
@@ -456,7 +452,7 @@ For field names containing the `.` character, you will need to escape it when re
 
 ### Behavior with null values or missing fields
 
-Fields with `null` or missing fields in your JSON document will be silently ignored when indexing with the exception of non-text fast fields. Non-text fast fields are required and entire record will be rejected with an error if at least one fast field is missing.
+Fields with `null` or missing fields in your JSON document will be silently ignored when indexing.
 
 ## Indexing settings
 

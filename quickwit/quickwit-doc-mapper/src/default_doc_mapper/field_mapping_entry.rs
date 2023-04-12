@@ -172,7 +172,20 @@ pub struct QuickwitTextOptions {
     #[serde(default = "default_as_true")]
     pub stored: bool,
     #[serde(default)]
-    pub fast: bool,
+    pub fast: FastFieldOptions,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FastFieldOptions {
+    IsEnabled(bool),
+    EnabledWithTokenizer { with_tokenizer: String },
+}
+
+impl Default for FastFieldOptions {
+    fn default() -> Self {
+        FastFieldOptions::IsEnabled(false)
+    }
 }
 
 impl Default for QuickwitTextOptions {
@@ -184,7 +197,7 @@ impl Default for QuickwitTextOptions {
             record: None,
             fieldnorms: false,
             stored: true,
-            fast: false,
+            fast: FastFieldOptions::default(),
         }
     }
 }
@@ -195,8 +208,14 @@ impl From<QuickwitTextOptions> for TextOptions {
         if quickwit_text_options.stored {
             text_options = text_options.set_stored();
         }
-        if quickwit_text_options.fast {
-            text_options = text_options.set_fast();
+        match &quickwit_text_options.fast {
+            FastFieldOptions::IsEnabled(true) => {
+                text_options = text_options.set_fast(None);
+            }
+            FastFieldOptions::EnabledWithTokenizer { with_tokenizer } => {
+                text_options = text_options.set_fast(Some(with_tokenizer));
+            }
+            FastFieldOptions::IsEnabled(false) => {}
         }
         if quickwit_text_options.indexed {
             let index_record_option = quickwit_text_options

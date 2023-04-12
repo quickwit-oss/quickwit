@@ -168,20 +168,20 @@ fn merge_leaf_search_results(
                 .append(&mut retry_response.partial_hits);
             let intermediate_aggregation_result = initial_response
                 .intermediate_aggregation_result
-                .map(|res1_str| {
+                .map::<crate::Result<_>, _>(|res1_str| {
                     if let Some(res2_str) = retry_response.intermediate_aggregation_result.as_ref()
                     {
                         let mut res1: IntermediateAggregationResults =
                             serde_json::from_str(&res1_str)?;
                         let res2: IntermediateAggregationResults = serde_json::from_str(res2_str)?;
-                        res1.merge_fruits(res2);
-                        serde_json::to_string(&res1)
+                        res1.merge_fruits(res2)?;
+                        let res = serde_json::to_string(&res1)?;
+                        Ok(res)
                     } else {
                         Ok(res1_str)
                     }
                 })
-                .transpose()
-                .map_err(|json_err| SearchError::InternalError(json_err.to_string()))?;
+                .transpose()?;
             let merged_response = LeafSearchResponse {
                 intermediate_aggregation_result,
                 num_hits: initial_response.num_hits + retry_response.num_hits,
