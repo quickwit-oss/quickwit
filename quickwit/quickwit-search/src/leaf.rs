@@ -407,12 +407,14 @@ pub async fn leaf_search(
         Vec<(String, SearchError)>,
     ) = split_search_results
         .into_iter()
-        .partition_map(
-            |split_search_res| match split_search_res.expect("spawned future died") {
-                Ok(split_search_resp) => Either::Left(Ok(split_search_resp)),
-                Err(err) => Either::Right(err),
-            },
-        );
+        .partition_map(|split_search_res| match split_search_res {
+            Ok(Ok(split_search_resp)) => Either::Left(Ok(split_search_resp)),
+            Ok(Err(err)) => Either::Right(err),
+            Err(e) => {
+                warn!("A leaf_search_single_split panicked");
+                Either::Right(("unknown".to_string(), e.into()))
+            }
+        });
 
     // Creates a collector which merges responses into one
     let merge_collector = make_merge_collector(&request, &searcher_context)?;
@@ -429,8 +431,8 @@ pub async fn leaf_search(
 
     merged_search_response
         .failed_splits
-        .extend(errors.iter().map(|(split_id, err)| SplitSearchError {
-            split_id: split_id.to_string(),
+        .extend(errors.into_iter().map(|(split_id, err)| SplitSearchError {
+            split_id,
             error: format!("{err}"),
             retryable_error: true,
         }));
