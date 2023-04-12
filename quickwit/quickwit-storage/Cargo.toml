@@ -10,6 +10,11 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
+aws-config = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-smithy-http = { workspace = true }
+hyper = { workspace = true }
+
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 azure_core = { workspace = true, optional = true }
@@ -25,8 +30,6 @@ mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
-rusoto_core = { workspace = true }
-rusoto_s3 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }

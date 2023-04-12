@@ -128,6 +128,12 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
                 StorageResolverError::InvalidUri { message } => {
                     MetastoreResolverError::InvalidUri(message)
                 }
+                StorageResolverError::MissingAWSConfig => {
+                    MetastoreResolverError::FailedToOpenMetastore(MetastoreError::InternalError { 
+                        message: format!("Failed to open metastore file `{uri}`."),
+                        cause: "Could not connect to AWS due to the AWS config not yet being initialised.".to_string(),
+                    })
+                }
                 StorageResolverError::ProtocolUnsupported { protocol } => {
                     MetastoreResolverError::ProtocolUnsupported(protocol)
                 }

@@ -19,94 +19,56 @@
 
 #![deny(clippy::disallowed_methods)]
 
-use std::time::Duration;
-
-use anyhow::Context;
-use async_trait::async_trait;
+use aws_config::retry::RetryConfig;
 use hyper_rustls::HttpsConnectorBuilder;
-use once_cell::sync::OnceCell;
-use rusoto_core::credential::{
-    AutoRefreshingProvider, AwsCredentials, ChainProvider, CredentialsError, ProvideAwsCredentials,
-};
-use rusoto_core::{HttpClient, HttpConfig};
-use rusoto_sts::WebIdentityProvider;
+use aws_smithy_client::hyper_ext;
+use tokio::sync::OnceCell;
 
 pub mod error;
-pub mod region;
 pub mod retry;
+ 
+static AWS_CONFIG: OnceCell<aws_config::SdkConfig> = OnceCell::const_new();
 
-/// A timeout for idle sockets being kept-alive.
-const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Sets the request timeout for HTTP-based credentials providers (container and instance metadata
-/// providers).
-const CREDENTIALS_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// Returns a hyper http client.
-pub fn get_http_client() -> HttpClient {
-    let mut http_config: HttpConfig = HttpConfig::default();
-    // We experience an issue similar to https://github.com/hyperium/hyper/issues/2312.
-    // It seems like the setting below solved it.
-    http_config.pool_idle_timeout(POOL_IDLE_TIMEOUT);
-    let builder = HttpsConnectorBuilder::new();
-    let builder = builder.with_native_roots();
-    let connector = builder
-        .https_or_http()
-        // We do not enable HTTP2.
-        // It is not enabled on S3 and it does not seem to work with Google Cloud Storage at
-        // this point. https://github.com/quickwit-oss/quickwit/issues/1584
-        //
-        // (HTTP2 would be awesome since we do a lot of concurrent requests and
-        // HTTP2 enables multiplexing a given connection.)
-        .enable_http1()
-        .build();
-    HttpClient::from_connector_with_config(connector, http_config)
+/// Attempts to get the current AWS SDK config.
+/// 
+/// If the config has not yet been initialised this will return `None`.
+pub fn try_get_aws_config() -> Option<&'static aws_config::SdkConfig> {
+    AWS_CONFIG.get()
 }
 
-/// Returns a singleton credentials provider.
-pub fn get_credentials_provider() -> anyhow::Result<impl ProvideAwsCredentials + Send + Sync> {
-    static CREDENTIALS_PROVIDER_SINGLETON: OnceCell<AutoRefreshingProvider<ExtendedChainProvider>> =
-        OnceCell::new();
-    CREDENTIALS_PROVIDER_SINGLETON
-        .get_or_try_init(move || {
-            let chain_provider = ExtendedChainProvider::new();
-            let credentials_provider = AutoRefreshingProvider::new(chain_provider)
-                .context("Failed to instantiate AWS credentials provider.")?;
-            Ok(credentials_provider)
+/// Attempts to initialise the AWS SDK config.
+/// 
+/// If the config is already initialised, this is a no-op.
+pub async fn try_init_aws_config() -> &'static aws_config::SdkConfig {
+    AWS_CONFIG
+        .get_or_init(|| async move {                    
+            let builder = HttpsConnectorBuilder::new();
+            let builder = builder.with_native_roots();
+            let connector = builder
+                .https_or_http()
+                // We do not enable HTTP2.
+                // It is not enabled on S3 and it does not seem to work with Google Cloud Storage at
+                // this point. https://github.com/quickwit-oss/quickwit/issues/1584
+                //
+                // (HTTP2 would be awesome since we do a lot of concurrent requests and
+                // HTTP2 enables multiplexing a given connection.)
+                .enable_http1()
+                .build();
+            
+            let smithy_connector = hyper_ext::Adapter::builder()
+                .build(connector);
+
+            aws_config::from_env()
+                .http_connector(smithy_connector)
+                // Currently handle this ourselves so probably best for now to leave it as is.
+                .retry_config(RetryConfig::disabled())
+                .load()
+                .await
         })
-        .cloned()
+        .await
 }
 
-#[derive(Clone, Debug)]
-struct ExtendedChainProvider {
-    chain_provider: ChainProvider,
-    web_identity_provider: WebIdentityProvider,
-}
-
-impl ExtendedChainProvider {
-    fn new() -> Self {
-        let mut chain_provider = ChainProvider::new();
-        chain_provider.set_timeout(CREDENTIALS_FETCH_TIMEOUT);
-        let web_identity_provider = WebIdentityProvider::from_k8s_env();
-        Self {
-            chain_provider,
-            web_identity_provider,
-        }
-    }
-}
-
-#[async_trait]
-impl ProvideAwsCredentials for ExtendedChainProvider {
-    async fn credentials(&self) -> Result<AwsCredentials, CredentialsError> {
-        if let Ok(credentials) = self.web_identity_provider.credentials().await {
-            return Ok(credentials);
-        }
-        if let Ok(credentials) = self.chain_provider.credentials().await {
-            return Ok(credentials);
-        }
-        Err(CredentialsError::new(
-            "Failed to find AWS credentials in environment, credentials file, or IAM role for \
-             instance or service account.",
-        ))
-    }
+/// Get the set S3 endpoint if applicable.
+pub fn get_s3_endpoint() -> Option<String> {
+    std::env::var("QW_S3_ENDPOINT").ok()
 }

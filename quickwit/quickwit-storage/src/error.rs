@@ -35,6 +35,8 @@ pub enum StorageErrorKind {
     Service,
     /// Any generic internal error.
     InternalError,
+    /// A timeout occured during the operation.
+    Timeout,
     /// Io error.
     Io,
 }
@@ -47,6 +49,10 @@ pub enum StorageResolverError {
     /// A protocol is required for the URI.
     #[error("Invalid format for URI: required: `{message}`")]
     InvalidUri { message: String },
+    #[error("The system does not have a initialised AWS config available")]
+    /// This should never happen if the `quickwit_aws::try_init_aws_config` method
+    /// has been called, if this error occurs this is a bug.
+    MissingAWSConfig,
     /// The protocol is not supported by this resolver.
     #[error("Unsupported protocol: `{protocol}`")]
     ProtocolUnsupported { protocol: String },

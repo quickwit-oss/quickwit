@@ -20,7 +20,6 @@
 use std::sync::Arc;
 
 use quickwit_common::uri::{Protocol, Uri};
-pub use rusoto_core::Region;
 
 use crate::{
     DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,

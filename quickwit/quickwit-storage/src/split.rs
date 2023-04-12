@@ -24,8 +24,9 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use hyper::body::Body;
 use futures::{stream, StreamExt};
-use rusoto_core::ByteStream;
+use aws_smithy_http::byte_stream::ByteStream;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
@@ -57,7 +58,8 @@ async fn range_byte_stream_from_payloads(
         );
     }
 
-    let concat_stream = ByteStream::new(stream::iter(bytestreams).flatten());
+    let body = Body::wrap_stream(stream::iter(bytestreams).flatten());
+    let concat_stream = ByteStream::new(body.into());
     Ok(concat_stream)
 }
 
@@ -91,12 +93,16 @@ impl PutPayload for FilePayload {
         if range.start > 0 {
             file.seek(SeekFrom::Start(range.start)).await?;
         }
-        if range.end == self.len {
-            return Ok(ByteStream::new(ReaderStream::new(file)));
-        }
-        Ok(ByteStream::new(ReaderStream::new(
+
+        let body = if range.end == self.len {
+            Body::wrap_stream(ReaderStream::new(file))
+        } else {
+            Body::wrap_stream(ReaderStream::new(
             file.take(range.end - range.start),
-        )))
+            ))
+        };
+        
+        Ok(ByteStream::new(body.into()))
     }
 }
 

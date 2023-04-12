@@ -19,64 +19,52 @@
 
 #![allow(clippy::match_like_matches_macro)]
 
-use std::error::Error as StdError;
-use std::{fmt, io};
-
-use rusoto_core::RusotoError;
+use aws_sdk_s3::operation::{get_object::GetObjectError, delete_object::DeleteObjectError, delete_objects::DeleteObjectsError, upload_part::UploadPartError, complete_multipart_upload::CompleteMultipartUploadError, abort_multipart_upload::AbortMultipartUploadError, create_multipart_upload::CreateMultipartUploadError, put_object::PutObjectError, head_object::HeadObjectError};
 #[cfg(feature = "kinesis")]
-use rusoto_kinesis::{
-    CreateStreamError, DeleteStreamError, DescribeStreamError, GetRecordsError,
-    GetShardIteratorError, ListShardsError, ListStreamsError, MergeShardsError, SplitShardError,
-};
-use rusoto_s3::{
-    AbortMultipartUploadError, CompleteMultipartUploadError, CreateMultipartUploadError,
-    DeleteObjectError, DeleteObjectsError, GetObjectError, HeadObjectError, PutObjectError,
-    UploadPartError,
-};
+use aws_sdk_kinesis::operation::{get_records::GetRecordsError, get_shard_iterator::GetShardIteratorError, list_shards::ListShardsError, create_stream::CreateStreamError, delete_stream::DeleteStreamError, describe_stream::DescribeStreamError, list_streams::ListStreamsError, merge_shards::MergeShardsError, split_shard::SplitShardError};
+use aws_smithy_client::SdkError;
+
 
 use crate::retry::Retryable;
 
-pub struct RusotoErrorWrapper<T: Retryable + StdError>(pub RusotoError<T>);
-
-impl<T: Retryable + StdError> From<RusotoError<T>> for RusotoErrorWrapper<T> {
-    fn from(err: RusotoError<T>) -> Self {
-        RusotoErrorWrapper(err)
-    }
+#[derive(Debug, thiserror::Error)]
+/// A wrapper around the generic SDK error and some other intermediate errors
+/// which the SDK crate can produce but is not returned in the form of an [SdkError].
+/// 
+/// For example, IO errors on `byte_stream`.
+pub enum SdkErrorWrapper<E> {
+    #[error("IO Error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("S3 Error: {0}")]
+    Sdk(#[from] SdkError<E>)
 }
 
-impl<T: Retryable + StdError + 'static> StdError for RusotoErrorWrapper<T> {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        Some(&self.0)
-    }
-}
-
-impl<T: Retryable + StdError> fmt::Debug for RusotoErrorWrapper<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl<T: Retryable + StdError + 'static> fmt::Display for RusotoErrorWrapper<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl<T: Retryable + StdError> From<io::Error> for RusotoErrorWrapper<T> {
-    fn from(err: io::Error) -> Self {
-        RusotoErrorWrapper::from(RusotoError::from(err))
-    }
-}
-
-impl<T: Retryable + StdError> Retryable for RusotoErrorWrapper<T> {
+impl<E> Retryable for SdkErrorWrapper<E>
+where
+    E: Retryable 
+{
     fn is_retryable(&self) -> bool {
-        match &self.0 {
-            RusotoError::HttpDispatch(_) => true,
-            RusotoError::Service(service_error) => service_error.is_retryable(),
-            RusotoError::Unknown(http_resp) => http_resp.status.is_server_error(),
-            _ => false,
+        match self {
+            SdkErrorWrapper::Io(_) => false,
+            SdkErrorWrapper::Sdk(e) => e.is_retryable(),
         }
     }
+}
+
+impl<E> Retryable for SdkError<E>
+where
+    E: Retryable
+{
+    fn is_retryable(&self) -> bool {
+        match self {
+            SdkError::ConstructionFailure(_) => false,
+            SdkError::TimeoutError(_) => true,
+            SdkError::DispatchFailure(_) => false,
+            SdkError::ResponseError(_) => true,
+            SdkError::ServiceError(e) => e.err().is_retryable(),
+            _ => false,
+        }
+    }    
 }
 
 impl Retryable for GetObjectError {
@@ -137,8 +125,8 @@ impl Retryable for HeadObjectError {
 impl Retryable for GetRecordsError {
     fn is_retryable(&self) -> bool {
         match self {
-            GetRecordsError::KMSThrottling(_) => true,
-            GetRecordsError::ProvisionedThroughputExceeded(_) => true,
+            GetRecordsError::KmsThrottlingException(_) => true,
+            GetRecordsError::ProvisionedThroughputExceededException(_) => true,
             _ => false,
         }
     }
@@ -149,7 +137,7 @@ impl Retryable for GetShardIteratorError {
     fn is_retryable(&self) -> bool {
         matches!(
             self,
-            GetShardIteratorError::ProvisionedThroughputExceeded(_)
+            GetShardIteratorError::ProvisionedThroughputExceededException(_)
         )
     }
 }
@@ -157,48 +145,48 @@ impl Retryable for GetShardIteratorError {
 #[cfg(feature = "kinesis")]
 impl Retryable for ListShardsError {
     fn is_retryable(&self) -> bool {
-        matches!(self, ListShardsError::LimitExceeded(_))
+        matches!(self, ListShardsError::LimitExceededException(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for CreateStreamError {
     fn is_retryable(&self) -> bool {
-        matches!(self, CreateStreamError::LimitExceeded(_))
+        matches!(self, CreateStreamError::LimitExceededException(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for DeleteStreamError {
     fn is_retryable(&self) -> bool {
-        matches!(self, DeleteStreamError::LimitExceeded(_))
+        matches!(self, DeleteStreamError::LimitExceededException(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for DescribeStreamError {
     fn is_retryable(&self) -> bool {
-        matches!(self, DescribeStreamError::LimitExceeded(_))
+        matches!(self, DescribeStreamError::LimitExceededException(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for ListStreamsError {
     fn is_retryable(&self) -> bool {
-        matches!(self, ListStreamsError::LimitExceeded(_))
+        matches!(self, ListStreamsError::LimitExceededException(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for MergeShardsError {
     fn is_retryable(&self) -> bool {
-        matches!(self, MergeShardsError::LimitExceeded(_))
+        matches!(self, MergeShardsError::LimitExceededException(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
 impl Retryable for SplitShardError {
     fn is_retryable(&self) -> bool {
-        matches!(self, SplitShardError::LimitExceeded(_))
+        matches!(self, SplitShardError::LimitExceededException(_))
     }
 }

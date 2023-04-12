@@ -17,29 +17,60 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_aws::error::RusotoErrorWrapper;
+use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
+use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError;
+use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadError;
+use aws_sdk_s3::operation::delete_object::DeleteObjectError;
+use aws_sdk_s3::operation::delete_objects::DeleteObjectsError;
+use aws_sdk_s3::operation::head_object::HeadObjectError;
+use aws_sdk_s3::operation::upload_part::UploadPartError;
+use aws_sdk_s3::{error::SdkError, operation::get_object::GetObjectError};
+use aws_sdk_s3::operation::put_object::PutObjectError;
+use hyper::http::StatusCode;
+use quickwit_aws::error::SdkErrorWrapper;
 use quickwit_aws::retry::Retryable;
-use rusoto_core::RusotoError;
-use rusoto_s3::{
-    AbortMultipartUploadError, CompleteMultipartUploadError, CreateMultipartUploadError,
-    DeleteObjectError, DeleteObjectsError, GetObjectError, HeadObjectError, PutObjectError,
-    UploadPartError,
-};
 
 use crate::{StorageError, StorageErrorKind};
 
-impl<T> From<RusotoErrorWrapper<T>> for StorageError
-where T: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
+impl<E> From<SdkErrorWrapper<E>> for StorageError 
+where 
+    E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
 {
-    fn from(err: RusotoErrorWrapper<T>) -> StorageError {
-        let error_kind = match &err.0 {
-            RusotoError::Credentials(_) => StorageErrorKind::Unauthorized,
-            RusotoError::Service(err) => err.to_storage_error_kind(),
-            RusotoError::Unknown(http_resp) => match http_resp.status.as_u16() {
-                403 => StorageErrorKind::Unauthorized,
-                404 => StorageErrorKind::DoesNotExist,
-                _ => StorageErrorKind::InternalError,
+    fn from(err: SdkErrorWrapper<E>) -> StorageError {
+        match err {
+            SdkErrorWrapper::Io(e) => StorageErrorKind::Io.with_error(e),
+            SdkErrorWrapper::Sdk(e) => StorageError::from(e),
+        }
+    }
+}
+
+impl<E> From<SdkError<E>> for StorageError
+where
+    E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
+{
+    fn from(err: SdkError<E>) -> StorageError {
+        let error_kind = match &err {
+            SdkError::ConstructionFailure(_) => StorageErrorKind::InternalError,
+            SdkError::TimeoutError(_) => StorageErrorKind::Timeout,
+            SdkError::DispatchFailure(e) => {
+                match e {
+                    e if e.is_io() => StorageErrorKind::Io,
+                    e if e.is_timeout() => StorageErrorKind::Timeout,
+                    e if e.is_other().is_some() => StorageErrorKind::InternalError,
+                    e if e.is_user() => StorageErrorKind::InternalError,
+                    _ => StorageErrorKind::InternalError,
+                }
             },
+            SdkError::ResponseError(e) => {
+                let resp = e.raw().http();
+
+                match resp.status() {
+                    StatusCode::UNAUTHORIZED => StorageErrorKind::Unauthorized,
+                    StatusCode::NOT_FOUND => StorageErrorKind::DoesNotExist,
+                    _ => StorageErrorKind::InternalError,
+                }
+            },
+            SdkError::ServiceError(e) => e.err().to_storage_error_kind(),
             _ => StorageErrorKind::InternalError,
         };
         error_kind.with_error(err)
@@ -55,6 +86,8 @@ impl ToStorageErrorKind for GetObjectError {
         match self {
             GetObjectError::InvalidObjectState(_) => StorageErrorKind::Service,
             GetObjectError::NoSuchKey(_) => StorageErrorKind::DoesNotExist,
+            GetObjectError::Unhandled(_) => StorageErrorKind::InternalError,
+            _ => StorageErrorKind::InternalError,
         }
     }
 }
