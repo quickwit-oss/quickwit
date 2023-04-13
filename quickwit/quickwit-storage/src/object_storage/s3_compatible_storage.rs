@@ -26,16 +26,16 @@ use std::path::{Path, PathBuf};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use aws_sdk_s3::error::SdkError;
-use aws_sdk_s3::operation::get_object::{GetObjectOutput, GetObjectError};
+use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::operation::put_object::PutObjectError;
-use aws_sdk_s3::types::{Delete, ObjectIdentifier, CompletedPart, CompletedMultipartUpload};
+use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
 use aws_smithy_http::byte_stream::ByteStream;
 use base64::prelude::{Engine, BASE64_STANDARD};
-use futures::{stream, StreamExt, Future};
+use futures::{stream, Future, StreamExt};
 use once_cell::sync::OnceCell;
 use quickwit_aws::error::SdkErrorWrapper;
-use quickwit_aws::try_get_aws_config;
 use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
+use quickwit_aws::try_get_aws_config;
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
@@ -92,8 +92,7 @@ fn create_s3_client() -> Option<aws_sdk_s3::Client> {
 impl S3CompatibleObjectStorage {
     /// Creates an object storage given a region and a bucket name.
     pub fn new(uri: Uri, bucket: String) -> Result<Self, StorageResolverError> {
-        let s3_client = create_s3_client()
-            .ok_or(StorageResolverError::MissingAWSConfig)?;
+        let s3_client = create_s3_client().ok_or(StorageResolverError::MissingAWSConfig)?;
         let retry_params = RetryParams {
             max_attempts: 3,
             ..Default::default()
@@ -162,7 +161,6 @@ pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
             })
         })
 }
-
 
 #[derive(Clone, Debug)]
 struct MultipartUploadId(pub String);
@@ -247,10 +245,7 @@ impl S3CompatibleObjectStorage {
         Ok(())
     }
 
-    async fn create_multipart_upload(
-        &self,
-        key: &str,
-    ) -> Result<MultipartUploadId, StorageError> {
+    async fn create_multipart_upload(&self, key: &str) -> Result<MultipartUploadId, StorageError> {
         let upload_id = retry(&self.retry_params, || async {
             self.s3_client
                 .create_multipart_upload()
@@ -261,7 +256,10 @@ impl S3CompatibleObjectStorage {
         })
         .await?
         .upload_id
-        .ok_or_else(|| StorageErrorKind::InternalError.with_error(anyhow!("The returned multipart upload id was null.")))?;
+        .ok_or_else(|| {
+            StorageErrorKind::InternalError
+                .with_error(anyhow!("The returned multipart upload id was null."))
+        })?;
         Ok(MultipartUploadId(upload_id))
     }
 
@@ -333,7 +331,6 @@ impl S3CompatibleObjectStorage {
                 }
             })?;
 
-
         let completed_part = CompletedPart::builder()
             .set_e_tag(upload_part_output.e_tag().map(|tag| tag.to_string()))
             .part_number(part.part_number as i32)
@@ -348,9 +345,7 @@ impl S3CompatibleObjectStorage {
         part_len: u64,
         total_len: u64,
     ) -> StorageResult<()> {
-        let upload_id = self
-            .create_multipart_upload(key)
-            .await?;
+        let upload_id = self.create_multipart_upload(key).await?;
         let parts = self
             .create_multipart_requests(payload.clone(), total_len, part_len)
             .await?;
@@ -449,7 +444,7 @@ impl S3CompatibleObjectStorage {
         range_opt: Option<Range<usize>>,
     ) -> StorageResult<Vec<u8>> {
         let cap = range_opt.as_ref().map(Range::len).unwrap_or(0);
-        let get_object_output = retry(&self.retry_params, || { 
+        let get_object_output = retry(&self.retry_params, || {
             self.create_get_object_request(path, range_opt.clone())
         })
         .await?;
@@ -503,7 +498,7 @@ impl Storage for S3CompatibleObjectStorage {
 
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let get_object_output = retry(&self.retry_params, || {
-            self.create_get_object_request(path, None)            
+            self.create_get_object_request(path, None)
         })
         .await?;
         let mut body_read = BufReader::new(get_object_output.body.into_async_read());
@@ -548,15 +543,9 @@ impl Storage for S3CompatibleObjectStorage {
             }
             let objects: Vec<ObjectIdentifier> = chunk
                 .iter()
-                .map(|path| {
-                    ObjectIdentifier::builder()
-                        .key(self.key(path))
-                        .build()
-                })
+                .map(|path| ObjectIdentifier::builder().key(self.key(path)).build())
                 .collect();
-            let delete = Delete::builder()
-                .set_objects(Some(objects))
-                .build();
+            let delete = Delete::builder().set_objects(Some(objects)).build();
             let delete_objects_res = retry(&self.retry_params, || async {
                 self.s3_client
                     .delete_objects()
@@ -578,7 +567,7 @@ impl Storage for S3CompatibleObjectStorage {
                         }
                     }
                     if let Some(s3_errors) = delete_objects_output.errors {
-                        for s3_error in s3_errors {                            
+                        for s3_error in s3_errors {
                             if let Some(key) = s3_error.key {
                                 let path = self.relative_path(&key);
                                 match s3_error.code {

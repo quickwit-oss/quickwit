@@ -20,28 +20,28 @@
 #![deny(clippy::disallowed_methods)]
 
 use aws_config::retry::RetryConfig;
-use hyper_rustls::HttpsConnectorBuilder;
 use aws_smithy_client::hyper_ext;
+use hyper_rustls::HttpsConnectorBuilder;
 use tokio::sync::OnceCell;
 
 pub mod error;
 pub mod retry;
- 
+
 static AWS_CONFIG: OnceCell<aws_config::SdkConfig> = OnceCell::const_new();
 
 /// Attempts to get the current AWS SDK config.
-/// 
+///
 /// If the config has not yet been initialised this will return `None`.
 pub fn try_get_aws_config() -> Option<&'static aws_config::SdkConfig> {
     AWS_CONFIG.get()
 }
 
 /// Attempts to initialise the AWS SDK config.
-/// 
+///
 /// If the config is already initialised, this is a no-op.
 pub async fn try_init_aws_config() -> &'static aws_config::SdkConfig {
     AWS_CONFIG
-        .get_or_init(|| async move {                    
+        .get_or_init(|| async move {
             let builder = HttpsConnectorBuilder::new();
             let builder = builder.with_native_roots();
             let connector = builder
@@ -54,9 +54,8 @@ pub async fn try_init_aws_config() -> &'static aws_config::SdkConfig {
                 // HTTP2 enables multiplexing a given connection.)
                 .enable_http1()
                 .build();
-            
-            let smithy_connector = hyper_ext::Adapter::builder()
-                .build(connector);
+
+            let smithy_connector = hyper_ext::Adapter::builder().build(connector);
 
             aws_config::from_env()
                 .http_connector(smithy_connector)

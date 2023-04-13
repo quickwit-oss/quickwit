@@ -18,8 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::anyhow;
+use aws_sdk_kinesis::config::Region;
+use aws_sdk_kinesis::{Client, Config};
 use quickwit_aws::try_get_aws_config;
-use aws_sdk_kinesis::{Client, Config, config::Region};
 use quickwit_config::RegionOrEndpoint;
 
 pub fn get_kinesis_client(region_or_endpoint: RegionOrEndpoint) -> anyhow::Result<Client> {
@@ -36,10 +37,10 @@ pub fn get_kinesis_client(region_or_endpoint: RegionOrEndpoint) -> anyhow::Resul
     match region_or_endpoint {
         RegionOrEndpoint::Region(region) => {
             kinesis_config = kinesis_config.region(Some(Region::new(region)));
-        },
+        }
         RegionOrEndpoint::Endpoint(endpoint) => {
             kinesis_config = kinesis_config.endpoint_url(endpoint);
-        },
+        }
     }
 
     Ok(Client::from_conf(kinesis_config.build()))
@@ -97,7 +98,8 @@ pub(crate) mod tests {
                 .into_iter()
                 .flat_map(|shard| {
                     let starting_hash_key = shard.hash_key_range?.starting_hash_key?;
-                    shard.shard_id
+                    shard
+                        .shard_id
                         .and_then(parse_shard_id)
                         .map(|shard_id| (shard_id, starting_hash_key))
                 })

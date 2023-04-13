@@ -17,24 +17,24 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
 use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError;
 use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadError;
 use aws_sdk_s3::operation::delete_object::DeleteObjectError;
 use aws_sdk_s3::operation::delete_objects::DeleteObjectsError;
+use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
-use aws_sdk_s3::operation::upload_part::UploadPartError;
-use aws_sdk_s3::{error::SdkError, operation::get_object::GetObjectError};
 use aws_sdk_s3::operation::put_object::PutObjectError;
+use aws_sdk_s3::operation::upload_part::UploadPartError;
 use hyper::http::StatusCode;
 use quickwit_aws::error::SdkErrorWrapper;
 use quickwit_aws::retry::Retryable;
 
 use crate::{StorageError, StorageErrorKind};
 
-impl<E> From<SdkErrorWrapper<E>> for StorageError 
-where 
-    E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
+impl<E> From<SdkErrorWrapper<E>> for StorageError
+where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
 {
     fn from(err: SdkErrorWrapper<E>) -> StorageError {
         match err {
@@ -45,21 +45,18 @@ where
 }
 
 impl<E> From<SdkError<E>> for StorageError
-where
-    E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
+where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
 {
     fn from(err: SdkError<E>) -> StorageError {
         let error_kind = match &err {
             SdkError::ConstructionFailure(_) => StorageErrorKind::InternalError,
             SdkError::TimeoutError(_) => StorageErrorKind::Timeout,
-            SdkError::DispatchFailure(e) => {
-                match e {
-                    e if e.is_io() => StorageErrorKind::Io,
-                    e if e.is_timeout() => StorageErrorKind::Timeout,
-                    e if e.is_other().is_some() => StorageErrorKind::InternalError,
-                    e if e.is_user() => StorageErrorKind::InternalError,
-                    _ => StorageErrorKind::InternalError,
-                }
+            SdkError::DispatchFailure(e) => match e {
+                e if e.is_io() => StorageErrorKind::Io,
+                e if e.is_timeout() => StorageErrorKind::Timeout,
+                e if e.is_other().is_some() => StorageErrorKind::InternalError,
+                e if e.is_user() => StorageErrorKind::InternalError,
+                _ => StorageErrorKind::InternalError,
             },
             SdkError::ResponseError(e) => {
                 let resp = e.raw().http();
@@ -69,7 +66,7 @@ where
                     StatusCode::NOT_FOUND => StorageErrorKind::DoesNotExist,
                     _ => StorageErrorKind::InternalError,
                 }
-            },
+            }
             SdkError::ServiceError(e) => e.err().to_storage_error_kind(),
             _ => StorageErrorKind::InternalError,
         };

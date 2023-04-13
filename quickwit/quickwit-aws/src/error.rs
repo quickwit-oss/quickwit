@@ -19,29 +19,40 @@
 
 #![allow(clippy::match_like_matches_macro)]
 
-use aws_sdk_s3::operation::{get_object::GetObjectError, delete_object::DeleteObjectError, delete_objects::DeleteObjectsError, upload_part::UploadPartError, complete_multipart_upload::CompleteMultipartUploadError, abort_multipart_upload::AbortMultipartUploadError, create_multipart_upload::CreateMultipartUploadError, put_object::PutObjectError, head_object::HeadObjectError};
 #[cfg(feature = "kinesis")]
-use aws_sdk_kinesis::operation::{get_records::GetRecordsError, get_shard_iterator::GetShardIteratorError, list_shards::ListShardsError, create_stream::CreateStreamError, delete_stream::DeleteStreamError, describe_stream::DescribeStreamError, list_streams::ListStreamsError, merge_shards::MergeShardsError, split_shard::SplitShardError};
+use aws_sdk_kinesis::operation::{
+    create_stream::CreateStreamError, delete_stream::DeleteStreamError,
+    describe_stream::DescribeStreamError, get_records::GetRecordsError,
+    get_shard_iterator::GetShardIteratorError, list_shards::ListShardsError,
+    list_streams::ListStreamsError, merge_shards::MergeShardsError, split_shard::SplitShardError,
+};
+use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
+use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError;
+use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadError;
+use aws_sdk_s3::operation::delete_object::DeleteObjectError;
+use aws_sdk_s3::operation::delete_objects::DeleteObjectsError;
+use aws_sdk_s3::operation::get_object::GetObjectError;
+use aws_sdk_s3::operation::head_object::HeadObjectError;
+use aws_sdk_s3::operation::put_object::PutObjectError;
+use aws_sdk_s3::operation::upload_part::UploadPartError;
 use aws_smithy_client::SdkError;
-
 
 use crate::retry::Retryable;
 
 #[derive(Debug, thiserror::Error)]
 /// A wrapper around the generic SDK error and some other intermediate errors
 /// which the SDK crate can produce but is not returned in the form of an [SdkError].
-/// 
+///
 /// For example, IO errors on `byte_stream`.
 pub enum SdkErrorWrapper<E> {
     #[error("IO Error: {0}")]
     Io(#[from] std::io::Error),
     #[error("S3 Error: {0}")]
-    Sdk(#[from] SdkError<E>)
+    Sdk(#[from] SdkError<E>),
 }
 
 impl<E> Retryable for SdkErrorWrapper<E>
-where
-    E: Retryable 
+where E: Retryable
 {
     fn is_retryable(&self) -> bool {
         match self {
@@ -52,8 +63,7 @@ where
 }
 
 impl<E> Retryable for SdkError<E>
-where
-    E: Retryable
+where E: Retryable
 {
     fn is_retryable(&self) -> bool {
         match self {
@@ -64,7 +74,7 @@ where
             SdkError::ServiceError(e) => e.err().is_retryable(),
             _ => false,
         }
-    }    
+    }
 }
 
 impl Retryable for GetObjectError {

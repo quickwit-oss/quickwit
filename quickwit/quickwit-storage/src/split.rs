@@ -24,9 +24,9 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use hyper::body::Body;
-use futures::{stream, StreamExt};
 use aws_smithy_http::byte_stream::ByteStream;
+use futures::{stream, StreamExt};
+use hyper::body::Body;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
@@ -97,11 +97,9 @@ impl PutPayload for FilePayload {
         let body = if range.end == self.len {
             Body::wrap_stream(ReaderStream::new(file))
         } else {
-            Body::wrap_stream(ReaderStream::new(
-            file.take(range.end - range.start),
-            ))
+            Body::wrap_stream(ReaderStream::new(file.take(range.end - range.start)))
         };
-        
+
         Ok(ByteStream::new(body.into()))
     }
 }

@@ -22,7 +22,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use aws_sdk_kinesis::Client;
 use bytes::Bytes;
@@ -234,7 +234,7 @@ impl Source for KinesisSource {
                             for (i, record) in records.into_iter().enumerate() {
                                 let record_data = record.data.map(|blob| blob.into_inner()).unwrap_or_default();
 
-                                // This should in theory never be `None` but is an `Option<T>` nontheless 
+                                // This should in theory never be `None` but is an `Option<T>` nontheless
                                 // so it is probably best to error rather than skip here in case this changes.
                                 let record_sequence_number = record.sequence_number
                                     .ok_or_else(|| anyhow!("Received kinesis record without sequence number"))?;
@@ -349,14 +349,15 @@ impl Source for KinesisSource {
     }
 }
 
-pub(super) fn get_region(region_or_endpoint_opt: Option<RegionOrEndpoint>) -> anyhow::Result<RegionOrEndpoint> {
+pub(super) fn get_region(
+    region_or_endpoint_opt: Option<RegionOrEndpoint>,
+) -> anyhow::Result<RegionOrEndpoint> {
     if let Some(region_or_endpoint) = region_or_endpoint_opt {
         return Ok(region_or_endpoint);
     }
 
     //< We fallback to AWS region if `region_or_endpoint` is `None`
-    let sdk_config = try_get_aws_config()
-        .ok_or_else(|| anyhow!("AWS config is not intialised"))?;
+    let sdk_config = try_get_aws_config().ok_or_else(|| anyhow!("AWS config is not intialised"))?;
 
     if let Some(region) = sdk_config.region() {
         return Ok(RegionOrEndpoint::Region(region.to_string()));
@@ -365,7 +366,7 @@ pub(super) fn get_region(region_or_endpoint_opt: Option<RegionOrEndpoint>) -> an
     if let Some(endpoint) = sdk_config.endpoint_url() {
         return Ok(RegionOrEndpoint::Endpoint(endpoint.to_string()));
     }
-    
+
     bail!("Unable to sniff region from envioronment")
 }
 

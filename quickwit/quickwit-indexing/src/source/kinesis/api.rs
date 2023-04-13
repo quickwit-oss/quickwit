@@ -17,9 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use aws_sdk_kinesis::{types::{ShardIteratorType, Shard}, operation::get_records::GetRecordsOutput};
+use aws_sdk_kinesis::operation::get_records::GetRecordsOutput;
+use aws_sdk_kinesis::types::{Shard, ShardIteratorType};
 use quickwit_aws::retry::{retry, RetryParams};
-
 
 /// Gets records from a Kinesis data stream's shard.
 /// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html>
@@ -61,7 +61,7 @@ pub(crate) async fn get_shard_iterator(
     } else {
         ShardIteratorType::TrimHorizon
     };
-    
+
     let response = retry(retry_params, || async {
         kinesis_client
             .get_shard_iterator()
@@ -123,7 +123,7 @@ pub(crate) mod tests {
     use std::num;
     use std::time::Duration;
 
-    use anyhow::{Context, anyhow};
+    use anyhow::{anyhow, Context};
     use aws_sdk_kinesis::types::StreamDescription;
 
     use super::*;
@@ -206,7 +206,8 @@ pub(crate) mod tests {
                     .await
             })
             .await?;
-            exclusive_start_stream_name = response.stream_names
+            exclusive_start_stream_name = response
+                .stream_names
                 .as_ref()
                 .and_then(|names| names.last())
                 .cloned();
@@ -297,6 +298,7 @@ mod kinesis_localstack_tests {
     use std::time::Duration;
 
     use aws_sdk_kinesis::primitives::Blob;
+    use aws_sdk_kinesis::types::StreamStatus;
     use quickwit_common::rand::append_random_suffix;
 
     use super::*;
@@ -307,7 +309,6 @@ mod kinesis_localstack_tests {
         get_localstack_client, make_shard_id, put_records_into_shards, setup, teardown,
         wait_for_active_stream, DEFAULT_RETRY_PARAMS,
     };
-    use aws_sdk_kinesis::types::StreamStatus;
 
     #[tokio::test]
     async fn test_create_stream() -> anyhow::Result<()> {
@@ -318,7 +319,10 @@ mod kinesis_localstack_tests {
         wait_for_active_stream(&kinesis_client, &stream_name).await??;
         let description_summary = describe_stream(&kinesis_client, &stream_name).await?;
         assert_eq!(description_summary.stream_name.as_ref(), Some(&stream_name));
-        assert_eq!(description_summary.stream_status, Some(StreamStatus::Active));
+        assert_eq!(
+            description_summary.stream_status,
+            Some(StreamStatus::Active)
+        );
         teardown(&kinesis_client, &stream_name).await;
         Ok(())
     }
@@ -369,11 +373,23 @@ mod kinesis_localstack_tests {
         let records = get_records_output.records.unwrap_or_default();
         assert_eq!(records.len(), 2);
         assert_eq!(
-            std::str::from_utf8(&records[0].data.as_ref().map(|blob| blob.as_ref()).unwrap_or(&[]))?,
+            std::str::from_utf8(
+                &records[0]
+                    .data
+                    .as_ref()
+                    .map(|blob| blob.as_ref())
+                    .unwrap_or(&[])
+            )?,
             "Record #00"
         );
         assert_eq!(
-            std::str::from_utf8(&records[1].data.as_ref().map(|blob| blob.as_ref()).unwrap_or(&[]))?,
+            std::str::from_utf8(
+                &records[1]
+                    .data
+                    .as_ref()
+                    .map(|blob| blob.as_ref())
+                    .unwrap_or(&[])
+            )?,
             "Record #01"
         );
         teardown(&kinesis_client, &stream_name).await;
