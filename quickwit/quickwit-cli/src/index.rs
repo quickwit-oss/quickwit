@@ -866,6 +866,13 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
 pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "delete-index");
     println!("❯ Deleting index...");
+    if !args.dry_run && !args.assume_yes {
+        let prompt = "This operation will delete the index. Do you want to proceed?".to_string();
+        if !prompt_confirmation(&prompt, false) {
+            return Ok(());
+        }
+    }
+
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
     let endpoint =
         Url::parse(args.cluster_endpoint.as_str()).context("Failed to parse cluster endpoint.")?;
@@ -875,12 +882,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         .indexes()
         .delete(&args.index_id, args.dry_run)
         .await?;
-    if !args.dry_run && !args.assume_yes {
-        let prompt = "This operation will delete the index. Do you want to proceed?".to_string();
-        if !prompt_confirmation(&prompt, false) {
-            return Ok(());
-        }
-    }
+
     if args.dry_run {
         if affected_files.is_empty() {
             println!("Only the index will be deleted since it does not contains any data file.");
