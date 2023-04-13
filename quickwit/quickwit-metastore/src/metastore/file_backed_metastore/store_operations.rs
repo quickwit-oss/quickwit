@@ -73,7 +73,7 @@ fn convert_error(index_id: &str, storage_err: StorageError) -> MetastoreError {
     }
 }
 
-/// Check if `INDEXES_STATES_FILENAME` file exists.
+/// Checks whether `INDEXES_STATES_FILENAME` file exists.
 pub(crate) async fn check_indexes_states_exist(storage: Arc<dyn Storage>) -> anyhow::Result<()> {
     let indexes_list_path = Path::new(INDEXES_STATES_FILENAME);
     storage.exists(indexes_list_path).await?;
