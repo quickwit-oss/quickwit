@@ -70,7 +70,7 @@ It might take some time for the cluster to start. During the startup process ind
 
 ## Using PostgreSQL as a metadata store
 
-The file-backed metastore is mainly useful for testing purposes. Though a file-backed metastore might be easier to setup, we strongly encourage you to use a PostgreSQL metastore in production. For the quickwit installation to work with PostgreSQL metadata you need to provide connection PostgreSQL information instead of metastore url:
+The file-backed metastore is mainly useful for testing purposes. Though a file-backed metastore might be easier to setup, we strongly encourage you to use a PostgreSQL metastore in production. For the quickwit installation to work with PostgreSQL metadata you need to provide connection PostgreSQL information instead of metastore URI:
 
 ```yaml
 config:
