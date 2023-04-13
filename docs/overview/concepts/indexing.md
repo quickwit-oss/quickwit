@@ -11,7 +11,7 @@ Quickwit does not yet support file formats such as `Avro` or `CSV`. Compression 
 
 ## Data model
 
-So far, Quickwit only supports indexes with a fixed schema. The "document mapping" of an index, also commonly called "doc mapping", is a list of field names and types that declares the schema of an index. Additionally, a doc mapping specifies how documents are indexed (tokenizers) and stored (column-oriented vs. row-oriented).
+Quickwit supports both schemaless indexes and fixed schemas. The "document mapping" of an index, also commonly called "doc mapping", is a list of field names and types that declares the schema of an index. For a schemaless or mixed fixed schema and schemaless indexing, follow our [guide on schemaless indexing](../../guides/schemaless.md). Additionally, a doc mapping specifies how documents are indexed (tokenizers) and stored (column-oriented vs. row-oriented).
 
 
 ## Merge process and merge policy
