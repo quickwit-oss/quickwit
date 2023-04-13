@@ -246,7 +246,7 @@ pub async fn single_node_search(
                 let res: IntermediateAggregationResults =
                     serde_json::from_str(&intermediate_aggregation_result)?;
                 let res: AggregationResults =
-                    res.into_final_bucket_result(aggregations, &AggregationLimits::default())?;
+                    res.into_final_result(aggregations, &AggregationLimits::default())?;
                 Some(serde_json::to_string(&res)?)
             }
         }

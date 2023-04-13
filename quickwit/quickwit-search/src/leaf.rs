@@ -40,7 +40,6 @@ use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
-use tokio::task::spawn_blocking;
 use tracing::*;
 
 use crate::collector::{
@@ -49,6 +48,7 @@ use crate::collector::{
 use crate::service::SearcherContext;
 use crate::SearchError;
 
+#[instrument(skip(index_storage, footer_cache))]
 async fn get_split_footer_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
@@ -88,6 +88,7 @@ async fn get_split_footer_from_cache_or_fetch(
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
 /// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
+#[instrument(skip(searcher_context, index_storage))]
 pub(crate) async fn open_index_with_caches(
     searcher_context: &Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
@@ -363,14 +364,18 @@ pub async fn leaf_search(
     doc_mapper: Arc<dyn DocMapper>,
 ) -> Result<LeafSearchResponse, SearchError> {
     let agg_limits = aggregation_limits_from_searcher_context(&searcher_context);
+    let request = Arc::new(request.clone());
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
         .map(|split| {
+            let split = split.clone();
             let agg_limits = agg_limits.clone();
             let doc_mapper_clone = doc_mapper.clone();
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
-            async move {
+            let request = request.clone();
+            tokio::spawn(
+                async move {
                 let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore
                     .acquire()
                     .await
@@ -381,7 +386,7 @@ pub async fn leaf_search(
                     .start_timer();
                 let leaf_search_single_split_res = leaf_search_single_split(
                     &searcher_context_clone,
-                    request,
+                    &request,
                     index_storage_clone,
                     split.clone(),
                     doc_mapper_clone,
@@ -390,7 +395,7 @@ pub async fn leaf_search(
                 .await;
                 timer.observe_duration();
                 leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
-            }
+            }.in_current_span())
         })
         .collect();
     let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
@@ -403,25 +408,31 @@ pub async fn leaf_search(
     ) = split_search_results
         .into_iter()
         .partition_map(|split_search_res| match split_search_res {
-            Ok(split_search_resp) => Either::Left(Ok(split_search_resp)),
-            Err(err) => Either::Right(err),
+            Ok(Ok(split_search_resp)) => Either::Left(Ok(split_search_resp)),
+            Ok(Err(err)) => Either::Right(err),
+            Err(e) => {
+                warn!("A leaf_search_single_split panicked");
+                Either::Right(("unknown".to_string(), e.into()))
+            }
         });
 
     // Creates a collector which merges responses into one
-    let merge_collector = make_merge_collector(request, &searcher_context)?;
+    let merge_collector = make_merge_collector(&request, &searcher_context)?;
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
-    let mut merged_search_response =
-        spawn_blocking(move || merge_collector.merge_fruits(split_search_responses))
-            .instrument(info_span!("merge_search_responses"))
-            .await
-            .context("Failed to merge split search responses.")??;
+    let span = info_span!("merge_search_responses");
+    let mut merged_search_response = crate::run_cpu_intensive(move || {
+        let _span_guard = span.enter();
+        merge_collector.merge_fruits(split_search_responses)
+    })
+    .await
+    .context("Failed to merge split search responses.")??;
 
     merged_search_response
         .failed_splits
-        .extend(errors.iter().map(|(split_id, err)| SplitSearchError {
-            split_id: split_id.to_string(),
+        .extend(errors.into_iter().map(|(split_id, err)| SplitSearchError {
+            split_id,
             error: format!("{err}"),
             retryable_error: true,
         }));

@@ -47,9 +47,9 @@ pub enum DocParsingError {
     /// The document contains a array of values but a single value is expected.
     #[error("The document contains an array of values but a single value is expected: {0:?}")]
     MultiValuesNotSupported(String),
-    /// The document does not contains a field that is required.
-    #[error("The document must contain field {0:?}. As a fast field, it is implicitly required.")]
-    RequiredFastField(String),
+    /// The document does not contain a field that is required.
+    #[error("The document must contain field {0:?}.")]
+    RequiredField(String),
 }
 
 impl From<TantivyDocParsingError> for DocParsingError {

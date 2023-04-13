@@ -18,10 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, HashMap};
+use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::{Context, Ok};
-use futures::stream::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::{FetchDocsResponse, PartialHit, SearchRequest, SplitIdAndFooterOffsets};
@@ -29,7 +30,7 @@ use quickwit_storage::Storage;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Value};
 use tantivy::{ReloadPolicy, Score, Searcher, SnippetGenerator, Term};
-use tracing::error;
+use tracing::{error, Instrument};
 
 use crate::leaf::open_index_with_caches;
 use crate::service::SearcherContext;
@@ -148,6 +149,7 @@ pub async fn fetch_docs(
     Ok(FetchDocsResponse { hits })
 }
 
+// number of concurrent fetch allowed for a single split.
 const NUM_CONCURRENT_REQUESTS: usize = 10;
 
 /// A struct for holding a fetched document's content and snippet.
@@ -240,8 +242,37 @@ async fn fetch_docs_in_split(
         }
     });
 
-    let stream = futures::stream::iter(doc_futures).buffer_unordered(NUM_CONCURRENT_REQUESTS);
-    stream.try_collect::<Vec<_>>().await
+    spawn_buffer_unordered(doc_futures, NUM_CONCURRENT_REQUESTS).await
+}
+
+/// Run a group a future in a buffered maner, spawning each one in a dedicated task.
+///
+/// Stop processing if any future returns an `Err`.
+async fn spawn_buffer_unordered<T, E, Fut>(
+    mut futures: impl Iterator<Item = Fut>,
+    max_running: usize,
+) -> Result<Vec<T>, E>
+where
+    Fut: Future<Output = Result<T, E>> + Send + 'static,
+    T: Send + 'static,
+    E: Send + 'static,
+{
+    assert!(max_running > 0);
+
+    let mut results = Vec::new();
+    let mut future_set = futures::stream::FuturesUnordered::new();
+    for future in (&mut futures).take(max_running) {
+        future_set.push(tokio::spawn(future.in_current_span()));
+    }
+
+    while let Some(result) = future_set.next().await {
+        results.push(result.expect("should never be canceled")?);
+        if let Some(future) = futures.next() {
+            future_set.push(tokio::spawn(future.in_current_span()));
+        }
+    }
+
+    Result::<_, E>::Ok(results)
 }
 
 // A struct to hold the snippet generators associated to

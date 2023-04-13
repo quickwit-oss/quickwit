@@ -473,14 +473,16 @@ fn merge_leaf_responses(
                 })
                 .collect::<Result<_, _>>()?;
 
-            fruits
-                .into_iter()
-                .reduce(|mut left, right| {
-                    left.merge_fruits(right);
-                    left
-                })
-                .map(|merged_fruit| serde_json::to_string(&merged_fruit))
-                .transpose()?
+            let mut fruit_iter = fruits.into_iter();
+            if let Some(first_fruit) = fruit_iter.next() {
+                let mut merged_fruit = first_fruit;
+                for fruit in fruit_iter {
+                    merged_fruit.merge_fruits(fruit)?;
+                }
+                Some(serde_json::to_string(&merged_fruit)?)
+            } else {
+                None
+            }
         }
         None => None,
     };

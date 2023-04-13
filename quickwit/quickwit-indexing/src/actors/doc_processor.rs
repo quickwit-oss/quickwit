@@ -244,7 +244,7 @@ impl DocProcessor {
         let (partition, doc) = doc_parsing_result.map_err(|doc_parsing_error| {
             warn!(err=?doc_parsing_error);
             match doc_parsing_error {
-                DocParsingError::RequiredFastField(_) => PrepareDocumentError::MissingField,
+                DocParsingError::RequiredField(_) => PrepareDocumentError::MissingField,
                 _ => PrepareDocumentError::ParsingError,
             }
         })?;

@@ -54,20 +54,6 @@ pub enum LeafType {
 }
 
 impl LeafType {
-    pub fn is_single_value_fast_field(&self) -> bool {
-        match self {
-            LeafType::Text(_) => false, // Text is always multivalue
-            LeafType::I64(opt)
-            | LeafType::U64(opt)
-            | LeafType::F64(opt)
-            | LeafType::Bool(opt)
-            | LeafType::Bytes(opt) => opt.fast,
-            LeafType::IpAddr(opt) => opt.fast,
-            LeafType::DateTime(opt) => opt.fast,
-            LeafType::Json(_) => false,
-        }
-    }
-
     fn value_from_json(&self, json_val: JsonValue) -> Result<TantivyValue, String> {
         match self {
             LeafType::Text(_) => {
@@ -176,10 +162,6 @@ impl MappingLeaf {
         {
             insert_json_val(field_path, json_val, doc_json);
         }
-    }
-
-    pub fn field(&self) -> Field {
-        self.field
     }
 
     pub fn get_type(&self) -> &LeafType {
@@ -321,13 +303,6 @@ impl MappingNode {
     #[cfg(test)]
     pub fn num_fields(&self) -> usize {
         self.branches.len()
-    }
-
-    /// Returns an iterator over the tree child.
-    ///
-    /// The returned child are not ordered.
-    pub fn children(&self) -> impl Iterator<Item = &MappingTree> {
-        self.branches.values()
     }
 
     pub fn insert(&mut self, path: &str, node: MappingTree) {
