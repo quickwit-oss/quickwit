@@ -18,24 +18,50 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use quickwit_doc_mapper::{QUICKWIT_TOKENIZER_MANAGER};
-use tantivy::tokenizer::{Token, TextAnalyzer};
+use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
+use tantivy::tokenizer::{TextAnalyzer, Token};
 
 // A random ascii string of length 100 chars.
 const ASCII_SHORT: &str = "It is a long established fact";
-const ASCII_MEDIUM: &str = "It is a long established fact that a reader will be distracted by the readable content of a page when looking at its layout. The point of using Lorem Ipsum is that it has a more-or-less normal distribution of letters, as opposed to using 'Content here, content here', making it look like readable English. Many desktop publishing packages and web page editors now use Lorem Ipsum as their default model text, and a search for 'lorem ipsum' will uncover many web sites still in their infancy. Various versions have evolved over the years, sometimes by accident, sometimes on purpose (injected humour and the like).";
+const ASCII_MEDIUM: &str =
+    "It is a long established fact that a reader will be distracted by the readable content of a \
+     page when looking at its layout. The point of using Lorem Ipsum is that it has a \
+     more-or-less normal distribution of letters, as opposed to using 'Content here, content \
+     here', making it look like readable English. Many desktop publishing packages and web page \
+     editors now use Lorem Ipsum as their default model text, and a search for 'lorem ipsum' will \
+     uncover many web sites still in their infancy. Various versions have evolved over the years, \
+     sometimes by accident, sometimes on purpose (injected humour and the like).";
+const ASCII_WITH_LANG_PREFIX_SHORT: &str = "ENG:it is a long established fact";
+const ASCII_WITH_LANG_PREFIX_MEDIUM: &str =
+    "ENG:It is a long established fact that a reader will be distracted by the readable content \
+     of a page when looking at its layout. The point of using Lorem Ipsum is that it has a \
+     more-or-less normal distribution of letters, as opposed to using 'Content here, content \
+     here', making it look like readable English. Many desktop publishing packages and web page \
+     editors now use Lorem Ipsum as their default model text, and a search for 'lorem ipsum' will \
+     uncover many web sites still in their infancy. Various versions have evolved over the years, \
+     sometimes by accident, sometimes on purpose (injected humour and the like).";
 const JP_SHORT: &str = "日本ごです。　とても素敵な言葉ですね";
-const JP_MEDIUM: &str = "日本ごです。　和名の由来は、太陽の動きにつれてその方向を追うように花が回るといわれたことから。ただしこの動きは生長に伴うものであるため、実際に太陽を追って動くのは生長が盛んな若い時期だけである。若いヒマワリの茎の上部の葉は太陽に正対になるように動き、朝には東を向いていたのが夕方には西を向く。日没後はまもなく起きあがり、夜明け前にはふたたび東に向く。この運動はつぼみを付ける頃まで続くが、つぼみが大きくなり花が開く素敵な言葉ですね.";
+const JP_MEDIUM: &str = "日本ごです。　和名の由来は、\
+                         太陽の動きにつれてその方向を追うように花が回るといわれたことから。\
+                         ただしこの動きは生長に伴うものであるため、\
+                         実際に太陽を追って動くのは生長が盛んな若い時期だけである。\
+                         若いヒマワリの茎の上部の葉は太陽に正対になるように動き、\
+                         朝には東を向いていたのが夕方には西を向く。日没後はまもなく起きあがり、\
+                         夜明け前にはふたたび東に向く。この運動はつぼみを付ける頃まで続くが、\
+                         つぼみが大きくなり花が開く素敵な言葉ですね.";
 const CN_SHORT: &str = "滚滚长江东逝水，浪花淘尽英雄。";
-const CN_MEDIUM: &str = "滚滚长江东逝水，浪花淘尽英雄。是非成败转头空，青山依旧在，几度夕阳红。白发渔樵江渚上，惯看秋月春风。一壶浊酒喜相逢，古今多少事，都付笑谈中。是非成败转头空，青山依旧在，惯看秋月春风。一壶浊酒喜相逢，古今多少事，滚滚长江东逝水，浪花淘尽英雄。 几度夕阳红。白发渔樵江渚上，都付笑谈中。";
-
+const CN_MEDIUM: &str = "滚滚长江东逝水，浪花淘尽英雄。是非成败转头空，青山依旧在，几度夕阳红。\
+                         白发渔樵江渚上，惯看秋月春风。一壶浊酒喜相逢，古今多少事，都付笑谈中。\
+                         是非成败转头空，青山依旧在，惯看秋月春风。一壶浊酒喜相逢，古今多少事，\
+                         滚滚长江东逝水，浪花淘尽英雄。 几度夕阳红。白发渔樵江渚上，都付笑谈中。";
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("multilanguage");
     let default_tokenizer = QUICKWIT_TOKENIZER_MANAGER.get("default").unwrap();
-    let multilanguage_tokenizer = QUICKWIT_TOKENIZER_MANAGER.get("multi_language").unwrap();
-    let chinese_tokenizer = QUICKWIT_TOKENIZER_MANAGER.get("chinese_compatible").unwrap();
-    let japanese_tokenizer = QUICKWIT_TOKENIZER_MANAGER.get("japanese").unwrap();
+    let multilanguage_tokenizer = QUICKWIT_TOKENIZER_MANAGER.get("multilanguage").unwrap();
+    let chinese_tokenizer = QUICKWIT_TOKENIZER_MANAGER
+        .get("chinese_compatible")
+        .unwrap();
     fn process_tokens(analyzer: &TextAnalyzer, text: &str) -> Vec<Token> {
         let mut token_stream = analyzer.token_stream(text);
         let mut tokens: Vec<Token> = vec![];
@@ -63,6 +89,24 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             b.iter(|| process_tokens(&multilanguage_tokenizer, black_box(text)));
         });
     group
+        .throughput(Throughput::Bytes(ASCII_SHORT.len() as u64))
+        .bench_with_input(
+            "multilanguage-prefix-lang-tokenize-short",
+            ASCII_WITH_LANG_PREFIX_SHORT,
+            |b, text| {
+                b.iter(|| process_tokens(&multilanguage_tokenizer, black_box(text)));
+            },
+        );
+    group
+        .throughput(Throughput::Bytes(ASCII_MEDIUM.len() as u64))
+        .bench_with_input(
+            "multilanguage-prefix-lang-detection-tokenize-long",
+            ASCII_WITH_LANG_PREFIX_MEDIUM,
+            |b, text| {
+                b.iter(|| process_tokens(&multilanguage_tokenizer, black_box(text)));
+            },
+        );
+    group
         .throughput(Throughput::Bytes(JP_SHORT.len() as u64))
         .bench_with_input("multilanguage-tokenize-jpn-short", JP_SHORT, |b, text| {
             b.iter(|| process_tokens(&multilanguage_tokenizer, black_box(text)));
@@ -84,24 +128,22 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         });
     group
         .throughput(Throughput::Bytes(CN_SHORT.len() as u64))
-        .bench_with_input("chinese-compatible-tokenize-cmn-short", CN_SHORT, |b, text| {
-            b.iter(|| process_tokens(&chinese_tokenizer, black_box(text)));
-        });
+        .bench_with_input(
+            "chinese-compatible-tokenize-cmn-short",
+            CN_SHORT,
+            |b, text| {
+                b.iter(|| process_tokens(&chinese_tokenizer, black_box(text)));
+            },
+        );
     group
         .throughput(Throughput::Bytes(CN_MEDIUM.len() as u64))
-        .bench_with_input("chinese-compatible-tokenize-cmn-medium", CN_MEDIUM, |b, text| {
-            b.iter(|| process_tokens(&chinese_tokenizer, black_box(text)));
-        });
-    group
-        .throughput(Throughput::Bytes(JP_SHORT.len() as u64))
-        .bench_with_input("japanese-tokenize-cmn-short", JP_SHORT, |b, text| {
-            b.iter(|| process_tokens(&japanese_tokenizer, black_box(text)));
-        });
-    group
-        .throughput(Throughput::Bytes(JP_MEDIUM.len() as u64))
-        .bench_with_input("japanese-tokenize-cmn-medium", JP_MEDIUM, |b, text| {
-            b.iter(|| process_tokens(&japanese_tokenizer, black_box(text)));
-        });
+        .bench_with_input(
+            "chinese-compatible-tokenize-cmn-medium",
+            CN_MEDIUM,
+            |b, text| {
+                b.iter(|| process_tokens(&chinese_tokenizer, black_box(text)));
+            },
+        );
 }
 
 criterion_group!(benches, criterion_benchmark);

@@ -44,8 +44,7 @@ use default_doc_mapper::{
 };
 pub use doc_mapper::{DocMapper, NamedField, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
-pub use tokenizers::{QUICKWIT_TOKENIZER_MANAGER};
-pub use multilanguage_tokenizer::MultiLanguageTokenStream;
+pub use tokenizers::QUICKWIT_TOKENIZER_MANAGER;
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";

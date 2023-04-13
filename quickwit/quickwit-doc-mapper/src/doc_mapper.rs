@@ -200,6 +200,7 @@ mod tests {
 
     use crate::default_doc_mapper::{
         FastFieldOptions, FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions,
+        QuickwitTextTokenizer,
     };
     use crate::{
         Cardinality, DefaultDocMapperBuilder, DocMapper, DocParsingError, FieldMappingEntry,
@@ -515,5 +516,40 @@ mod tests {
         let mut wi_cloned = wi_base.clone();
         wi_cloned.merge(wi_2);
         assert_eq!(wi_cloned, wi_base);
+    }
+
+    #[test]
+    fn test_doc_mapper_query_with_multilanguage_field() {
+        let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
+        doc_mapper_builder.field_mappings.push(FieldMappingEntry {
+            name: "multilang".to_string(),
+            mapping_type: FieldMappingType::Text(
+                QuickwitTextOptions {
+                    tokenizer: Some(QuickwitTextTokenizer::Multilanguage),
+                    ..Default::default()
+                },
+                Cardinality::SingleValue,
+            ),
+        });
+        let doc_mapper = doc_mapper_builder.try_build().unwrap();
+        let schema = doc_mapper.schema();
+        let search_request = SearchRequest {
+            index_id: "quickwit-index".to_string(),
+            query: "multilang:\"JPN:す\"".to_string(),
+            search_fields: vec![],
+            snippet_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+            aggregation_request: None,
+        };
+        let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
+        assert_eq!(
+            format!("{query:?}"),
+            r#"TermQuery(Term(type=Str, field=0, "す"))"#
+        );
     }
 }
