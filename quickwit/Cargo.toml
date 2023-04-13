@@ -135,21 +135,6 @@ reqwest = { version = "0.11", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-rusoto_core = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_kinesis = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_mock = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_s3 = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_sts = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
 rust-embed = "6.6.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_cbor = "0.11"

@@ -17,18 +17,32 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_aws::{get_credentials_provider, get_http_client};
-use rusoto_core::Region;
-use rusoto_kinesis::KinesisClient;
+use anyhow::anyhow;
+use quickwit_aws::try_get_aws_config;
+use aws_sdk_kinesis::{Client, Config, config::Region};
+use quickwit_config::RegionOrEndpoint;
 
-pub fn get_kinesis_client(region: Region) -> anyhow::Result<KinesisClient> {
-    let http_client = get_http_client();
-    let credentials_provider = get_credentials_provider()?;
-    Ok(KinesisClient::new_with(
-        http_client,
-        credentials_provider,
-        region,
-    ))
+pub fn get_kinesis_client(region_or_endpoint: RegionOrEndpoint) -> anyhow::Result<Client> {
+    let sdk_config = try_get_aws_config()
+        .ok_or_else(|| anyhow!("AWS config is not intialised, unable to connect"))?;
+
+    let mut kinesis_config = Config::builder();
+    kinesis_config.set_retry_config(sdk_config.retry_config().cloned());
+    kinesis_config.set_credentials_provider(sdk_config.credentials_provider().cloned());
+    kinesis_config.set_http_connector(sdk_config.http_connector().cloned());
+    kinesis_config.set_timeout_config(sdk_config.timeout_config().cloned());
+    kinesis_config.set_credentials_cache(sdk_config.credentials_cache().cloned());
+
+    match region_or_endpoint {
+        RegionOrEndpoint::Region(region) => {
+            kinesis_config = kinesis_config.region(Some(Region::new(region)));
+        },
+        RegionOrEndpoint::Endpoint(endpoint) => {
+            kinesis_config = kinesis_config.endpoint_url(endpoint);
+        },
+    }
+
+    Ok(Client::from_conf(kinesis_config.build()))
 }
 
 #[cfg(test)]
@@ -37,11 +51,12 @@ pub(crate) mod tests {
     use std::time::Duration;
 
     use anyhow::bail;
+    use aws_sdk_kinesis::primitives::Blob;
+    use aws_sdk_kinesis::types::{PutRecordsRequestEntry, StreamStatus};
     use once_cell::sync::Lazy;
     use quickwit_aws::retry::RetryParams;
     use quickwit_common::rand::append_random_suffix;
-    use rusoto_core::Region;
-    use rusoto_kinesis::{Kinesis, KinesisClient, PutRecordsInput, PutRecordsRequestEntry};
+    use quickwit_config::RegionOrEndpoint;
     use tracing::error;
 
     use crate::source::kinesis::api::list_shards;
@@ -52,12 +67,9 @@ pub(crate) mod tests {
 
     pub static DEFAULT_RETRY_PARAMS: Lazy<RetryParams> = Lazy::new(RetryParams::default);
 
-    pub fn get_localstack_client() -> anyhow::Result<KinesisClient> {
-        let region = Region::Custom {
-            name: "localstack".to_string(),
-            endpoint: "http://localhost:4566".to_string(),
-        };
-        get_kinesis_client(region)
+    pub fn get_localstack_client() -> anyhow::Result<aws_sdk_kinesis::Client> {
+        let endpoint = RegionOrEndpoint::Endpoint("http://localhost:4566".to_string());
+        get_kinesis_client(endpoint)
     }
 
     pub fn make_shard_id(id: usize) -> String {
@@ -72,7 +84,7 @@ pub(crate) mod tests {
     }
 
     pub async fn put_records_into_shards<I>(
-        kinesis_client: &KinesisClient,
+        kinesis_client: &aws_sdk_kinesis::Client,
         stream_name: &str,
         records: I,
     ) -> anyhow::Result<HashMap<usize, Vec<String>>>
@@ -84,28 +96,33 @@ pub(crate) mod tests {
                 .await?
                 .into_iter()
                 .flat_map(|shard| {
-                    parse_shard_id(shard.shard_id)
-                        .map(|shard_id| (shard_id, shard.hash_key_range.starting_hash_key))
+                    let starting_hash_key = shard.hash_key_range?.starting_hash_key?;
+                    shard.shard_id
+                        .and_then(parse_shard_id)
+                        .map(|shard_id| (shard_id, starting_hash_key))
                 })
                 .collect();
 
         let put_records_request_entries = records
             .into_iter()
-            .map(|(shard_id, record)| PutRecordsRequestEntry {
-                explicit_hash_key: shard_hash_keys.get(&shard_id).cloned(),
-                partition_key: "Overridden by hash key".to_string(),
-                data: bytes::Bytes::from(record),
+            .map(|(shard_id, record)| {
+                PutRecordsRequestEntry::builder()
+                    .set_explicit_hash_key(shard_hash_keys.get(&shard_id).cloned())
+                    .partition_key("Overridden by hash key".to_string())
+                    .data(Blob::new(record.as_bytes()))
+                    .build()
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        let request = PutRecordsInput {
-            stream_name: stream_name.to_string(),
-            records: put_records_request_entries,
-        };
-        let response = kinesis_client.put_records(request).await?;
+        let response = kinesis_client
+            .put_records()
+            .stream_name(stream_name.to_string())
+            .set_records(Some(put_records_request_entries))
+            .send()
+            .await?;
 
         let mut sequence_numbers = HashMap::new();
-        for record in response.records {
+        for record in response.records.unwrap_or_default() {
             if let Some(sequence_number) = record.sequence_number {
                 sequence_numbers
                     .entry(record.shard_id.and_then(parse_shard_id).unwrap())
@@ -121,7 +138,7 @@ pub(crate) mod tests {
     pub async fn setup<S: AsRef<str>>(
         test_name: S,
         num_shards: usize,
-    ) -> anyhow::Result<(KinesisClient, String)> {
+    ) -> anyhow::Result<(aws_sdk_kinesis::Client, String)> {
         let stream_name = append_random_suffix(test_name.as_ref());
         let kinesis_client = get_localstack_client()?;
         create_stream(&kinesis_client, &stream_name, num_shards).await?;
@@ -129,20 +146,20 @@ pub(crate) mod tests {
         Ok((kinesis_client, stream_name))
     }
 
-    pub async fn teardown(kinesis_client: &dyn Kinesis, stream_name: &str) {
+    pub async fn teardown(kinesis_client: &aws_sdk_kinesis::Client, stream_name: &str) {
         if let Err(error) = delete_stream(kinesis_client, stream_name).await {
             error!(stream_name = %stream_name, error = ?error, "Failed to delete stream.")
         }
     }
 
     pub async fn wait_for_active_stream(
-        kinesis_client: &dyn Kinesis,
+        kinesis_client: &aws_sdk_kinesis::Client,
         stream_name: &str,
     ) -> Result<anyhow::Result<()>, tokio::time::error::Elapsed> {
         wait_for_stream_status(
             kinesis_client,
             stream_name,
-            |stream_status| stream_status == "ACTIVE",
+            |stream_status| stream_status == StreamStatus::Active,
             Duration::from_secs(30),
         )
         .await

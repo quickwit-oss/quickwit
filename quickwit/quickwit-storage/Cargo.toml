@@ -47,7 +47,6 @@ quickwit-common = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
-rusoto_mock = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 

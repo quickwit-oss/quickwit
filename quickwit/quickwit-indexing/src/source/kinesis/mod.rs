@@ -39,12 +39,12 @@ pub(super) async fn check_connectivity(params: KinesisSourceParams) -> anyhow::R
     };
     let shards = list_shards(&kinesis_client, &retry_params, &params.stream_name, Some(1)).await?;
 
-    if let Some(shard) = shards.get(0) {
+    if let Some(shard_id) = shards.get(0).and_then(|s| s.shard_id()) {
         let shard_iterator_opt = get_shard_iterator(
             &kinesis_client,
             &retry_params,
             &params.stream_name,
-            &shard.shard_id,
+            shard_id,
             None,
         )
         .await?;

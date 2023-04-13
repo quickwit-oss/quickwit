@@ -22,18 +22,18 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{Context, anyhow, bail};
 use async_trait::async_trait;
+use aws_sdk_kinesis::Client;
+use bytes::Bytes;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_aws::region::sniff_aws_region_and_cache;
 use quickwit_aws::retry::RetryParams;
+use quickwit_aws::try_get_aws_config;
 use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
 use quickwit_metastore::checkpoint::{
     PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
-use rusoto_core::Region;
-use rusoto_kinesis::KinesisClient;
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::mpsc;
 use tokio::time;
@@ -93,7 +93,7 @@ pub struct KinesisSource {
     stream_name: String,
     // Initialization checkpoint.
     checkpoint: SourceCheckpoint,
-    kinesis_client: KinesisClient,
+    kinesis_client: Client,
     // Retry parameters (max attempts, max delay, ...).
     retry_params: RetryParams,
     // Sender for the communication channel between the source and the shard consumers.
@@ -192,7 +192,11 @@ impl Source for KinesisSource {
             ))
             .await?;
         for shard in shards {
-            self.spawn_shard_consumer(ctx, shard.shard_id);
+            if let Some(shard_id) = shard.shard_id {
+                self.spawn_shard_consumer(ctx, shard_id);
+            } else {
+                warn!(shard = ?shard, "Unable to get shard ID from returned list of shards");
+            }
         }
         info!(
             stream_name = %self.stream_name,
@@ -228,18 +232,25 @@ impl Source for KinesisSource {
                             let num_records = records.len();
 
                             for (i, record) in records.into_iter().enumerate() {
-                                if record.data.is_empty() {
+                                let record_data = record.data.map(|blob| blob.into_inner()).unwrap_or_default();
+
+                                // This should in theory never be `None` but is an `Option<T>` nontheless 
+                                // so it is probably best to error rather than skip here in case this changes.
+                                let record_sequence_number = record.sequence_number
+                                    .ok_or_else(|| anyhow!("Received kinesis record without sequence number"))?;
+
+                                if record_data.is_empty() {
                                     warn!(
                                         stream_name=%self.stream_name,
                                         shard_id=%shard_id,
-                                        sequence_number=%record.sequence_number,
+                                        sequence_number=%record_sequence_number,
                                         "Record is empty."
                                     );
                                     self.state.num_invalid_records += 1;
                                     continue;
                                 }
-                                let doc_num_bytes = record.data.len() as u64;
-                                docs.push(record.data);
+                                let doc_num_bytes = record_data.len() as u64;
+                                docs.push(Bytes::from(record_data));
                                 batch_num_bytes += doc_num_bytes;
                                 self.state.num_bytes_processed += doc_num_bytes;
                                 self.state.num_records_processed += 1;
@@ -257,7 +268,7 @@ impl Source for KinesisSource {
                                     shard_consumer_state.lag_millis = lag_millis;
 
                                     let partition_id = shard_consumer_state.partition_id.clone();
-                                    let current_position = Position::from(record.sequence_number);
+                                    let current_position = Position::from(record_sequence_number);
                                     let previous_position = std::mem::replace(&mut shard_consumer_state.position, current_position.clone());
 
                                     checkpoint_delta.record_partition_delta(
@@ -338,21 +349,24 @@ impl Source for KinesisSource {
     }
 }
 
-pub(super) fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow::Result<Region> {
-    if let Some(RegionOrEndpoint::Endpoint(endpoint)) = region_or_endpoint {
-        return Ok(Region::Custom {
-            name: "Custom".to_string(),
-            endpoint,
-        });
+pub(super) fn get_region(region_or_endpoint_opt: Option<RegionOrEndpoint>) -> anyhow::Result<RegionOrEndpoint> {
+    if let Some(region_or_endpoint) = region_or_endpoint_opt {
+        return Ok(region_or_endpoint);
     }
 
-    if let Some(RegionOrEndpoint::Region(region)) = region_or_endpoint {
-        return region
-            .parse()
-            .with_context(|| format!("Failed to parse region: `{region}`"));
+    //< We fallback to AWS region if `region_or_endpoint` is `None`
+    let sdk_config = try_get_aws_config()
+        .ok_or_else(|| anyhow!("AWS config is not intialised"))?;
+
+    if let Some(region) = sdk_config.region() {
+        return Ok(RegionOrEndpoint::Region(region.to_string()));
     }
 
-    sniff_aws_region_and_cache() //< We fallback to AWS region if `region_or_endpoint` is `None`
+    if let Some(endpoint) = sdk_config.endpoint_url() {
+        return Ok(RegionOrEndpoint::Endpoint(endpoint.to_string()));
+    }
+    
+    bail!("Unable to sniff region from envioronment")
 }
 
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]
@@ -378,34 +392,6 @@ mod tests {
         }
         merged_batch.docs.sort();
         Ok(merged_batch)
-    }
-
-    #[test]
-    fn test_kinesis_region_resolution() {
-        {
-            let region_or_endpoint = Some(RegionOrEndpoint::Endpoint(
-                "mycustomendpoint.quickwit".to_string(),
-            ));
-            let region = get_region(region_or_endpoint).unwrap();
-            assert_eq!(
-                Region::Custom {
-                    name: "Custom".to_string(),
-                    endpoint: "mycustomendpoint.quickwit".to_string()
-                },
-                region
-            );
-        }
-
-        {
-            let region_or_endpoint = Some(RegionOrEndpoint::Region("us-east-1".to_string()));
-            let region = get_region(region_or_endpoint).unwrap();
-            assert_eq!(Region::UsEast1, region);
-        }
-
-        {
-            let region_or_endpoint = Some(RegionOrEndpoint::Region("quickwit-hq-1".to_string()));
-            get_region(region_or_endpoint).unwrap_err();
-        }
     }
 
     #[tokio::test]

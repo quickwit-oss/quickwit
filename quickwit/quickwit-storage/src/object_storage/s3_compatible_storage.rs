@@ -93,7 +93,7 @@ impl S3CompatibleObjectStorage {
     /// Creates an object storage given a region and a bucket name.
     pub fn new(uri: Uri, bucket: String) -> Result<Self, StorageResolverError> {
         let s3_client = create_s3_client()
-            .ok_or_else(|| StorageResolverError::MissingAWSConfig)?;
+            .ok_or(StorageResolverError::MissingAWSConfig)?;
         let retry_params = RetryParams {
             max_attempts: 3,
             ..Default::default()
@@ -675,9 +675,6 @@ mod tests {
 
     use quickwit_common::chunk_range;
     use quickwit_common::uri::Uri;
-    use rusoto_mock::{
-        MockCredentialsProvider, MockRequestDispatcher, MultipleMockRequestDispatcher,
-    };
 
     use super::*;
     use crate::{MultiPartPolicy, S3CompatibleObjectStorage};
@@ -739,13 +736,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_s3_compatible_storage_relative_path() {
-        let s3_client = rusoto_s3::S3Client::new_with(
-            MockRequestDispatcher::default(),
-            MockCredentialsProvider,
-            Default::default(),
-        );
+    #[tokio::test]
+    async fn test_s3_compatible_storage_relative_path() {
+        let sdk_config = aws_config::load_from_env().await;
+        let s3_client = aws_sdk_s3::Client::new(&sdk_config);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
         let prefix = PathBuf::new();
@@ -803,11 +797,8 @@ mod tests {
                 </Error>"#
             ),
         ]);
-        let s3_client = rusoto_s3::S3Client::new_with(
-            request_dispatcher,
-            MockCredentialsProvider,
-            Default::default(),
-        );
+        let sdk_config = aws_config::load_from_env().await;
+        let s3_client = aws_sdk_s3::Client::new(&sdk_config);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
         let prefix = PathBuf::new();
