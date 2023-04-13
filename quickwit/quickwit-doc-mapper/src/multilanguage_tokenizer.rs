@@ -25,15 +25,28 @@ use nom::InputTake;
 use tantivy::tokenizer::{SimpleTokenStream, SimpleTokenizer, Token, TokenStream, Tokenizer};
 use whichlang::{detect_language, Lang};
 
+/// Multilanguage tokenizer that uses the `whichlang` to detect the language of the text
+/// and uses the appropriate tokenizer for the detected language:
+/// - lindera for Chinese, Japanese, and Korean.
+/// - Quickwit's default tokenizer for other languages.
+/// It is possible to bypass the language detection by prefixing the text with the language code
+/// followed by a colon. For example, `KOR:일본입니다` will be tokenized by the english tokenizer.
+/// Current supported prefix are:
+/// - `KOR:` for Korean tokenizer
+/// - `JPN:` for Japanese tokenizer
+/// - `CMN:` for Chinese tokenizer
+/// - `ENG:` for Quickwit's default tokenizer
 #[derive(Clone)]
 pub(crate) struct MultiLanguageTokenizer {
     cmn_tokenizer: LinderaTokenizer,
     jpn_tokenizer: LinderaTokenizer,
+    kor_tokenizer: LinderaTokenizer,
     default_tokenizer: SimpleTokenizer,
 }
 
 impl MultiLanguageTokenizer {
     pub fn new() -> Self {
+        // Chinese tokenizer
         let cmn_dictionary_config = DictionaryConfig {
             kind: Some(DictionaryKind::CcCedict),
             path: None,
@@ -42,6 +55,7 @@ impl MultiLanguageTokenizer {
             .expect("Lindera `CcCedict` dictionary must be present");
         let cmn_tokenizer = LinderaTokenizer::new(cmn_dictionary, None, Mode::Normal);
 
+        // Japanese tokenizer
         let jpn_dictionary_config = DictionaryConfig {
             kind: Some(DictionaryKind::IPADIC),
             path: None,
@@ -50,9 +64,19 @@ impl MultiLanguageTokenizer {
             .expect("Lindera `IPAD` dictionary must be present");
         let jpn_tokenizer = LinderaTokenizer::new(jpn_dictionary, None, Mode::Normal);
 
+        // Korean tokenizer
+        let kor_dictionary_config = DictionaryConfig {
+            kind: Some(DictionaryKind::KoDic),
+            path: None,
+        };
+        let kor_dictionary = load_dictionary(kor_dictionary_config)
+            .expect("Lindera `KoDic` dictionary must be present");
+        let kor_tokenizer = LinderaTokenizer::new(kor_dictionary, None, Mode::Normal);
+
         Self {
             cmn_tokenizer,
             jpn_tokenizer,
+            kor_tokenizer,
             default_tokenizer: SimpleTokenizer,
         }
     }
@@ -93,9 +117,10 @@ impl<'a> TokenStream for MultiLanguageTokenStream<'a> {
 fn process_language_prefix(text: &str) -> (Option<Lang>, &str) {
     let prefix_bytes = text.as_bytes().take(std::cmp::min(4, text.len()));
     let predefined_language = match prefix_bytes {
-        b"JPN:" => Some(Lang::Jpn),
         b"CMN:" => Some(Lang::Cmn),
         b"ENG:" => Some(Lang::Eng),
+        b"JPN:" => Some(Lang::Jpn),
+        b"KOR:" => Some(Lang::Kor),
         _ => None,
     };
     let text_to_tokenize = if predefined_language.is_some() {
@@ -118,6 +143,9 @@ impl Tokenizer for MultiLanguageTokenizer {
             Lang::Jpn => {
                 MultiLanguageTokenStream::Lindera(self.jpn_tokenizer.token_stream(text_to_tokenize))
             }
+            Lang::Kor => {
+                MultiLanguageTokenStream::Lindera(self.kor_tokenizer.token_stream(text_to_tokenize))
+            }
             _ => MultiLanguageTokenStream::Simple(
                 self.default_tokenizer.token_stream(text_to_tokenize),
             ),
@@ -139,31 +167,6 @@ mod tests {
     }
 
     #[test]
-    fn test_multilanguage_tokenizer_jpn() {
-        let tokenizer = MultiLanguageTokenizer::new();
-        {
-            let tokens = test_helper(tokenizer.token_stream("すもももももももものうち"));
-            assert_eq!(tokens.len(), 7);
-            {
-                let token = &tokens[0];
-                assert_eq!(token.text, "すもも");
-                assert_eq!(token.offset_from, 0);
-                assert_eq!(token.offset_to, 9);
-                assert_eq!(token.position, 0);
-                assert_eq!(token.position_length, 1);
-            }
-        }
-        {
-            let tokens = test_helper(tokenizer.token_stream("ENG:すもももももももものうち"));
-            assert_eq!(tokens.len(), 1);
-        }
-        {
-            let tokens = test_helper(tokenizer.token_stream("CMN:すもももももももものうち"));
-            assert_eq!(tokens.len(), 1);
-        }
-    }
-
-    #[test]
     fn test_multilanguage_tokenizer_cmn() {
         let tokenizer = MultiLanguageTokenizer::new();
         let tokens = test_helper(
@@ -181,15 +184,56 @@ mod tests {
     }
 
     #[test]
-    fn test_multilanguage_tokenizer_with_predefined_language() {
+    fn test_multilanguage_tokenizer_jpn() {
+        let tokenizer = MultiLanguageTokenizer::new();
         {
-            // Force usage of JPN tokenizer. This tokenizer will not ignore the dash
-            // wherease the default tokenizer will.
-            let tokenizer = MultiLanguageTokenizer::new();
-            let tokens = test_helper(tokenizer.token_stream("JPN:-"));
+            let tokens = test_helper(tokenizer.token_stream("すもももももももものうち"));
+            assert_eq!(tokens.len(), 7);
+            {
+                let token = &tokens[0];
+                assert_eq!(token.text, "すもも");
+                assert_eq!(token.offset_from, 0);
+                assert_eq!(token.offset_to, 9);
+                assert_eq!(token.position, 0);
+                assert_eq!(token.position_length, 1);
+            }
+        }
+        {
+            // Force usage of JPN tokenizer.
+            let tokens = test_helper(tokenizer.token_stream("JPN:すもももももももものうち"));
+            assert_eq!(tokens.len(), 7);
+        }
+        {
+            // Force usage of ENG tokenizer.
+            // This tokenizer will return only one token.
+            let tokens = test_helper(tokenizer.token_stream("ENG:すもももももももものうち"));
             assert_eq!(tokens.len(), 1);
-            let tokens = test_helper(tokenizer.token_stream("-"));
-            assert_eq!(tokens.len(), 0);
+        }
+    }
+
+    #[test]
+    fn test_multilanguage_tokenizer_kor() {
+        let tokenizer = MultiLanguageTokenizer::new();
+        {
+            let tokens = test_helper(tokenizer.token_stream("일본입니다. 매우 멋진 단어입니다."));
+            assert_eq!(tokens.len(), 11);
+            {
+                let token = &tokens[0];
+                assert_eq!(token.text, "일본");
+                assert_eq!(token.offset_from, 0);
+                assert_eq!(token.offset_to, 6);
+                assert_eq!(token.position, 0);
+                assert_eq!(token.position_length, 1);
+            }
+        }
+        {
+            let tokens =
+                test_helper(tokenizer.token_stream("KOR:일본입니다. 매우 멋진 단어입니다."));
+            assert_eq!(tokens.len(), 11);
+        }
+        {
+            let tokens = test_helper(tokenizer.token_stream("ENG:일본입니다"));
+            assert_eq!(tokens.len(), 1);
         }
     }
 
