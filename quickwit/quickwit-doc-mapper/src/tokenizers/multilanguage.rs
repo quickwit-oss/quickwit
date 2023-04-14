@@ -83,6 +83,7 @@ impl MultiLanguageTokenizer {
 }
 
 pub(crate) enum MultiLanguageTokenStream<'a> {
+    Empty,
     Lindera(LinderaTokenStream),
     Simple(SimpleTokenStream<'a>),
 }
@@ -90,6 +91,7 @@ pub(crate) enum MultiLanguageTokenStream<'a> {
 impl<'a> TokenStream for MultiLanguageTokenStream<'a> {
     fn advance(&mut self) -> bool {
         match self {
+            MultiLanguageTokenStream::Empty => false,
             MultiLanguageTokenStream::Lindera(tokenizer) => tokenizer.advance(),
             MultiLanguageTokenStream::Simple(tokenizer) => tokenizer.advance(),
         }
@@ -97,6 +99,9 @@ impl<'a> TokenStream for MultiLanguageTokenStream<'a> {
 
     fn token(&self) -> &Token {
         match self {
+            MultiLanguageTokenStream::Empty => {
+                panic!("Cannot call token() on an empty token stream.")
+            }
             MultiLanguageTokenStream::Lindera(tokenizer) => tokenizer.token(),
             MultiLanguageTokenStream::Simple(tokenizer) => tokenizer.token(),
         }
@@ -104,6 +109,9 @@ impl<'a> TokenStream for MultiLanguageTokenStream<'a> {
 
     fn token_mut(&mut self) -> &mut Token {
         match self {
+            MultiLanguageTokenStream::Empty => {
+                panic!("Cannot call token_mut() on an empty token stream.")
+            }
             MultiLanguageTokenStream::Lindera(tokenizer) => tokenizer.token_mut(),
             MultiLanguageTokenStream::Simple(tokenizer) => tokenizer.token_mut(),
         }
@@ -136,6 +144,11 @@ impl Tokenizer for MultiLanguageTokenizer {
     type TokenStream<'a> = MultiLanguageTokenStream<'a>;
     fn token_stream<'a>(&self, text: &'a str) -> MultiLanguageTokenStream<'a> {
         let (language_prefix, text_to_tokenize) = process_language_prefix(text);
+        // If the text is empty, we return an empty token stream.
+        // `detect_language` panicks if the text is empty.
+        if text.trim().is_empty() {
+            return MultiLanguageTokenStream::Empty;
+        }
         let language = language_prefix.unwrap_or_else(|| detect_language(text_to_tokenize));
         match language {
             Lang::Cmn => {
@@ -234,6 +247,19 @@ mod tests {
         {
             let tokens = test_helper(tokenizer.token_stream("ENG:일본입니다"));
             assert_eq!(tokens.len(), 1);
+        }
+    }
+
+    #[test]
+    fn test_multilanguage_tokenizer_with_empty_string() {
+        let tokenizer = MultiLanguageTokenizer::new();
+        {
+            let tokens = test_helper(tokenizer.token_stream(""));
+            assert_eq!(tokens.len(), 0);
+        }
+        {
+            let tokens = test_helper(tokenizer.token_stream("   "));
+            assert_eq!(tokens.len(), 0);
         }
     }
 
