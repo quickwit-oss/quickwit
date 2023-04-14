@@ -157,8 +157,7 @@ impl Tokenizer for MultiLanguageTokenizer {
 mod tests {
     use tantivy::tokenizer::{Token, TokenStream, Tokenizer};
 
-    use super::{MultiLanguageTokenStream, MultiLanguageTokenizer};
-    use crate::multilanguage_tokenizer::process_language_prefix;
+    use super::{process_language_prefix, MultiLanguageTokenStream, MultiLanguageTokenizer};
 
     fn test_helper(mut tokenizer: MultiLanguageTokenStream) -> Vec<Token> {
         let mut tokens: Vec<Token> = vec![];

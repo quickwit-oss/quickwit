@@ -19,40 +19,10 @@
 
 use std::str::CharIndices;
 
-use once_cell::sync::Lazy;
-use tantivy::tokenizer::{
-    LowerCaser, RawTokenizer, RemoveLongFilter, TextAnalyzer, Token, TokenStream, Tokenizer,
-    TokenizerManager,
-};
-
-use crate::multilanguage_tokenizer::MultiLanguageTokenizer;
-
-fn get_quickwit_tokenizer_manager() -> TokenizerManager {
-    let raw_tokenizer = TextAnalyzer::builder(RawTokenizer)
-        .filter(RemoveLongFilter::limit(100))
-        .build();
-
-    let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
-        .filter(RemoveLongFilter::limit(40))
-        .filter(LowerCaser)
-        .build();
-
-    let multilanguage_tokenizer = TextAnalyzer::builder(MultiLanguageTokenizer::new())
-        .filter(RemoveLongFilter::limit(40))
-        .filter(LowerCaser)
-        .build();
-
-    let tokenizer_manager = TokenizerManager::default();
-
-    tokenizer_manager.register("raw", raw_tokenizer);
-    tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
-    tokenizer_manager.register("multilanguage", multilanguage_tokenizer);
-
-    tokenizer_manager
-}
+use tantivy::tokenizer::{Token, TokenStream, Tokenizer};
 
 #[derive(Clone)]
-struct ChineseTokenizer;
+pub(crate) struct ChineseTokenizer;
 
 impl Tokenizer for ChineseTokenizer {
     type TokenStream<'a> = ChineseTokenStream<'a>;
@@ -67,7 +37,7 @@ impl Tokenizer for ChineseTokenizer {
     }
 }
 
-struct ChineseTokenStream<'a> {
+pub(crate) struct ChineseTokenStream<'a> {
     text: &'a str,
     last_char: Option<(usize, char)>,
     chars: CharIndices<'a>,
@@ -157,45 +127,11 @@ impl<'a> TokenStream for ChineseTokenStream<'a> {
     }
 }
 
-/// Quickwits default tokenizer
-pub static QUICKWIT_TOKENIZER_MANAGER: Lazy<TokenizerManager> =
-    Lazy::new(get_quickwit_tokenizer_manager);
-
 #[cfg(test)]
 mod tests {
     use tantivy::tokenizer::Token;
 
-    use super::get_quickwit_tokenizer_manager;
-
-    #[test]
-    fn test_tokenizers_in_manager() {
-        get_quickwit_tokenizer_manager()
-            .get("multilanguage")
-            .unwrap();
-        get_quickwit_tokenizer_manager().get("default").unwrap();
-        get_quickwit_tokenizer_manager()
-            .get("chinese_compatible")
-            .unwrap();
-        get_quickwit_tokenizer_manager().get("raw").unwrap();
-    }
-
-    #[test]
-    fn test_raw_tokenizer() {
-        let my_haiku = r#"
-        white sandy beach
-        a strong wind is coming
-        sand in my face
-        "#;
-        let my_long_text = "a text, that is just too long, no one will type it, no one will like \
-                            it, no one shall find it. I just need some more chars, now you may \
-                            not pass.";
-
-        let tokenizer = get_quickwit_tokenizer_manager().get("raw").unwrap();
-        let mut haiku_stream = tokenizer.token_stream(my_haiku);
-        assert!(haiku_stream.advance());
-        assert!(!haiku_stream.advance());
-        assert!(!tokenizer.token_stream(my_long_text).advance());
-    }
+    use crate::tokenizers::get_quickwit_tokenizer_manager;
 
     #[test]
     fn test_chinese_tokenizer() {
