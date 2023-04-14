@@ -240,7 +240,7 @@ mod tests {
         async fn new() -> (Self, ActorContext<IngestApiService>) {
             let temp_dir = tempfile::tempdir().unwrap();
             let mut queues_for_test = QueuesForTest {
-                temp_dir: temp_dir,
+                temp_dir,
                 queues: None,
             };
             queues_for_test.reload().await;
