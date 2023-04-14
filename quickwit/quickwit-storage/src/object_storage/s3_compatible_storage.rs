@@ -92,7 +92,8 @@ fn create_s3_client() -> Option<aws_sdk_s3::Client> {
 impl S3CompatibleObjectStorage {
     /// Creates an object storage given a region and a bucket name.
     pub fn new(uri: Uri, bucket: String) -> Result<Self, StorageResolverError> {
-        let s3_client = create_s3_client().ok_or(StorageResolverError::MissingAWSConfig)?;
+        let s3_client =
+            create_s3_client().ok_or(StorageResolverError::S3StorageConfigUnitialised)?;
         let retry_params = RetryParams {
             max_attempts: 3,
             ..Default::default()
@@ -588,6 +589,7 @@ impl Storage for S3CompatibleObjectStorage {
                     }
                 }
                 Err(delete_objects_error) => {
+                    dbg!(&delete_objects_error);
                     error = Some(delete_objects_error.into());
                     unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
                 }
@@ -662,6 +664,11 @@ mod tests {
 
     use std::path::PathBuf;
 
+    use aws_sdk_s3::config::{Credentials, Region};
+    use aws_sdk_s3::primitives::SdkBody;
+    use aws_smithy_client::test_connection::TestConnection;
+    use bytes::Bytes;
+    use hyper::{http, Body};
     use quickwit_common::chunk_range;
     use quickwit_common::uri::Uri;
 
@@ -756,38 +763,63 @@ mod tests {
 
     #[tokio::test]
     async fn test_s3_compatible_storage_bulk_delete() {
-        let request_dispatcher = MultipleMockRequestDispatcher::new([
-            MockRequestDispatcher::with_status(200).with_body(
-                r#"
-                <?xml version="1.0" encoding="UTF-8"?>
-                <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-                    <Deleted>
-                        <Key>foo</Key>
-                    </Deleted>
-                    <Error>
-                        <Key>bar</Key>
-                        <Code>NoSuchKey</Code>
-                        <Message>The specified key does not exist</Message>
-                    </Error>
-                    <Error>
-                        <Key>baz</Key>
-                        <Code>AccessDenied</Code>
-                        <Message>Access Denied</Message>
-                    </Error>
-                </DeleteResult>"#,
+        let client = TestConnection::new(vec![
+            (
+                // This is quite fragile, currently this is *not* validated by the SDK
+                // but may in future, that being said, there is no way to know what the
+                // request should look like until it raises an error in reality as this
+                // is up to how the validation is implemented.
+                http::Request::builder().body(SdkBody::from(Body::empty())).unwrap(),
+                http::Response::builder()
+                    .status(200)
+                    .body(SdkBody::from(Body::from(Bytes::from(
+                        r#"<?xml version="1.0" encoding="UTF-8"?>
+                        <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+                            <Deleted>
+                                <Key>foo</Key>
+                            </Deleted>
+                            <Error>
+                                <Key>bar</Key>
+                                <Code>NoSuchKey</Code>
+                                <Message>The specified key does not exist</Message>
+                            </Error>
+                            <Error>
+                                <Key>baz</Key>
+                                <Code>AccessDenied</Code>
+                                <Message>Access Denied</Message>
+                            </Error>
+                        </DeleteResult>"#
+                    ))))
+                    .unwrap()
             ),
-            MockRequestDispatcher::with_status(400).with_body(r#"
-                <?xml version="1.0" encoding="UTF-8"?>
-                <Error>
-                    <Code>MalformedXML</Code>
-                    <Message>The XML you provided was not well-formed or did not validate against our published schema.</Message>
-                    <RequestId>264A17BF16E9E80A</RequestId>
-                    <HostId>P3xqrhuhYxlrefdw3rEzmJh8z5KDtGzb+/FB7oiQaScI9Yaxd8olYXc7d1111ab+</HostId>
-                </Error>"#
+            (
+                // This is quite fragile, currently this is *not* validated by the SDK
+                // but may in future, that being said, there is no way to know what the
+                // request should look like until it raises an error in reality as this
+                // is up to how the validation is implemented.
+                http::Request::builder().body(SdkBody::from(Body::empty())).unwrap(),
+                http::Response::builder()
+                    .status(400)
+                    .body(SdkBody::from(Body::from(Bytes::from(
+                        r#"<?xml version="1.0" encoding="UTF-8"?>
+                        <Error>
+                            <Code>MalformedXML</Code>
+                            <Message>The XML you provided was not well-formed or did not validate against our published schema.</Message>
+                            <RequestId>264A17BF16E9E80A</RequestId>
+                            <HostId>P3xqrhuhYxlrefdw3rEzmJh8z5KDtGzb+/FB7oiQaScI9Yaxd8olYXc7d1111ab+</HostId>
+                        </Error>"#
+                    ))))
+                    .unwrap()
             ),
         ]);
-        let sdk_config = aws_config::load_from_env().await;
-        let s3_client = aws_sdk_s3::Client::new(&sdk_config);
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+
+        let cfg = aws_sdk_s3::Config::builder()
+            .region(Some(Region::new("Foo")))
+            .http_connector(client)
+            .credentials_provider(credentials)
+            .build();
+        let s3_client = aws_sdk_s3::Client::from_conf(cfg);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
         let prefix = PathBuf::new();
@@ -832,6 +864,7 @@ mod tests {
             ]
         );
         let delete_objects_error = bulk_delete_error.error.unwrap();
+        dbg!(&delete_objects_error.to_string());
         assert!(delete_objects_error.to_string().contains("MalformedXML"));
     }
 }

@@ -17,7 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use aws_sdk_s3::error::SdkError;
+use anyhow::anyhow;
+use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
 use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError;
 use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadError;
@@ -34,7 +35,7 @@ use quickwit_aws::retry::Retryable;
 use crate::{StorageError, StorageErrorKind};
 
 impl<E> From<SdkErrorWrapper<E>> for StorageError
-where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
+where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + ToHelpfulAnyhow + Retryable
 {
     fn from(err: SdkErrorWrapper<E>) -> StorageError {
         match err {
@@ -45,7 +46,7 @@ where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retrya
 }
 
 impl<E> From<SdkError<E>> for StorageError
-where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
+where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + ToHelpfulAnyhow + Retryable
 {
     fn from(err: SdkError<E>) -> StorageError {
         let error_kind = match &err {
@@ -70,7 +71,136 @@ where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retrya
             SdkError::ServiceError(e) => e.err().to_storage_error_kind(),
             _ => StorageErrorKind::InternalError,
         };
-        error_kind.with_error(err)
+
+        if let SdkError::ServiceError(e) = &err {
+            let inner_error = e.err();
+            error_kind.with_error(inner_error.to_helpful_anyhow())
+        } else {
+            error_kind.with_error(err)
+        }
+    }
+}
+
+/// A helper trait for improving the state of and error message if it
+/// is perticularly unhelpful.
+pub trait ToHelpfulAnyhow {
+    fn to_helpful_anyhow(&self) -> anyhow::Error;
+}
+
+fn unhandled_error_message() -> anyhow::Error {
+    anyhow!("Unknown Error: An unknown error occured which is not handled")
+}
+
+fn unhandled_error(e: &aws_smithy_types::error::Unhandled) -> anyhow::Error {
+    let meta = e.meta();
+
+    let code = meta.code().unwrap_or("UnknownError");
+
+    if let Some(msg) = meta.message() {
+        anyhow!("{code}: {msg}")
+    } else {
+        anyhow!("{code}: Failed to complete operation due to an unknown error")
+    }
+}
+
+impl ToHelpfulAnyhow for GetObjectError {
+    fn to_helpful_anyhow(&self) -> anyhow::Error {
+        match self {
+            GetObjectError::InvalidObjectState(e) => anyhow!("{e:?}"),
+            GetObjectError::NoSuchKey(e) => anyhow!("{e:?}"),
+            GetObjectError::Unhandled(e) => anyhow!("{e:?}"),
+            _ => unhandled_error_message(),
+        }
+    }
+}
+
+impl ToHelpfulAnyhow for DeleteObjectError {
+    fn to_helpful_anyhow(&self) -> anyhow::Error {
+        match self {
+            DeleteObjectError::Unhandled(e) => unhandled_error(e),
+            _ => unhandled_error_message(),
+        }
+    }
+}
+
+impl ToHelpfulAnyhow for DeleteObjectsError {
+    fn to_helpful_anyhow(&self) -> anyhow::Error {
+        match self {
+            DeleteObjectsError::Unhandled(e) => unhandled_error(e),
+            _ => unhandled_error_message(),
+        }
+    }
+}
+
+impl ToHelpfulAnyhow for UploadPartError {
+    fn to_helpful_anyhow(&self) -> anyhow::Error {
+        match self {
+            UploadPartError::Unhandled(e) => unhandled_error(e),
+            _ => unhandled_error_message(),
+        }
+    }
+}
+
+impl ToHelpfulAnyhow for CompleteMultipartUploadError {
+    fn to_helpful_anyhow(&self) -> anyhow::Error {
+        match self {
+            CompleteMultipartUploadError::Unhandled(e) => unhandled_error(e),
+            _ => unhandled_error_message(),
+        }
+    }
+}
+
+impl ToHelpfulAnyhow for AbortMultipartUploadError {
+    fn to_helpful_anyhow(&self) -> anyhow::Error {
+        match self {
+            AbortMultipartUploadError::NoSuchUpload(e) => {
+                let code = e.code().unwrap_or("NoSuchUpload");
+
+                if let Some(msg) = e.message() {
+                    anyhow!("{code}: {msg}")
+                } else {
+                    anyhow!("{code}: Failed to complete operation due to an unknown error")
+                }
+            }
+            AbortMultipartUploadError::Unhandled(e) => unhandled_error(e),
+            _ => unhandled_error_message(),
+        }
+    }
+}
+
+impl ToHelpfulAnyhow for CreateMultipartUploadError {
+    fn to_helpful_anyhow(&self) -> anyhow::Error {
+        match self {
+            CreateMultipartUploadError::Unhandled(e) => unhandled_error(e),
+            _ => unhandled_error_message(),
+        }
+    }
+}
+
+impl ToHelpfulAnyhow for PutObjectError {
+    fn to_helpful_anyhow(&self) -> anyhow::Error {
+        match self {
+            PutObjectError::Unhandled(e) => unhandled_error(e),
+            _ => unhandled_error_message(),
+        }
+    }
+}
+
+impl ToHelpfulAnyhow for HeadObjectError {
+    fn to_helpful_anyhow(&self) -> anyhow::Error {
+        match self {
+            HeadObjectError::NotFound(e) => {
+                let code = e.code().unwrap_or("NotFound");
+
+                if let Some(msg) = e.message() {
+                    anyhow!("{code}: {msg}")
+                } else {
+                    anyhow!("{code}: Failed to complete operation due to an unknown error")
+                }
+            }
+            HeadObjectError::Unhandled(e) => unhandled_error(e),
+            _ => unhandled_error_message(),
+        }
     }
 }
 

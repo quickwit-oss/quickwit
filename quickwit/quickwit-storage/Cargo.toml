@@ -13,6 +13,7 @@ documentation = "https://quickwit.io/docs/"
 aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 aws-smithy-http = { workspace = true }
+aws-smithy-types = { workspace = true }
 hyper = { workspace = true }
 
 anyhow = { workspace = true }
@@ -47,6 +48,8 @@ quickwit-common = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
+aws-sdk-s3 = { workspace = true, features = ["test-util"] }
+aws-smithy-client = { workspace = true, features = ["test-util"] }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 

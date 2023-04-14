@@ -128,7 +128,7 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
                 StorageResolverError::InvalidUri { message } => {
                     MetastoreResolverError::InvalidUri(message)
                 }
-                StorageResolverError::MissingAWSConfig => {
+                StorageResolverError::S3StorageConfigUnitialised => {
                     MetastoreResolverError::FailedToOpenMetastore(MetastoreError::InternalError {
                         message: format!("Failed to open metastore file `{uri}`."),
                         cause: "Could not connect to AWS due to the AWS config not yet being \
