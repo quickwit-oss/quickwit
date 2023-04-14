@@ -116,26 +116,27 @@ impl<'a> TokenStream for MultiLanguageTokenStream<'a> {
 /// to whichlang language code.
 fn process_language_prefix(text: &str) -> (Option<Lang>, &str) {
     let prefix_bytes = text.as_bytes().take(std::cmp::min(4, text.len()));
-    let predefined_language = match prefix_bytes {
+    let prefix_language = match prefix_bytes {
         b"CMN:" => Some(Lang::Cmn),
         b"ENG:" => Some(Lang::Eng),
         b"JPN:" => Some(Lang::Jpn),
         b"KOR:" => Some(Lang::Kor),
         _ => None,
     };
-    let text_to_tokenize = if predefined_language.is_some() {
+    let text_without_prefix = if prefix_language.is_some() {
+        // This is safe as we know that the prefix is made of 4 ascii characters.
         &text[4..]
     } else {
         text
     };
-    (predefined_language, text_to_tokenize)
+    (prefix_language, text_without_prefix)
 }
 
 impl Tokenizer for MultiLanguageTokenizer {
     type TokenStream<'a> = MultiLanguageTokenStream<'a>;
     fn token_stream<'a>(&self, text: &'a str) -> MultiLanguageTokenStream<'a> {
-        let (predefined_language, text_to_tokenize) = process_language_prefix(text);
-        let language = predefined_language.unwrap_or_else(|| detect_language(text_to_tokenize));
+        let (language_prefix, text_to_tokenize) = process_language_prefix(text);
+        let language = language_prefix.unwrap_or_else(|| detect_language(text_to_tokenize));
         match language {
             Lang::Cmn => {
                 MultiLanguageTokenStream::Lindera(self.cmn_tokenizer.token_stream(text_to_tokenize))
@@ -237,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn test_multilanguage_process_predefined_language() {
+    fn test_multilanguage_process_language_prefix() {
         {
             let (lang, text) = process_language_prefix("JPN:すもももももももものうち");
             assert_eq!(lang, Some(whichlang::Lang::Jpn));
