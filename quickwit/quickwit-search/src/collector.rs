@@ -279,7 +279,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             intermediate_aggregation_result,
             num_hits: self.num_hits,
             partial_hits,
-            failed_splits: vec![],
+            failed_splits: Vec::new(),
             num_attempted_splits: 1,
         })
     }

@@ -326,7 +326,7 @@ pub async fn root_search(
         num_hits: leaf_search_response.num_hits,
         hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
-        errors: vec![],
+        errors: Vec::new(),
     })
 }
 
@@ -445,7 +445,7 @@ pub async fn root_list_terms(
         num_hits: leaf_list_terms_response.len() as u64,
         terms: leaf_list_terms_response,
         elapsed_time_micros: elapsed.as_micros() as u64,
-        errors: vec![],
+        errors: Vec::new(),
     })
 }
 
@@ -880,7 +880,7 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResponse {
                     // requests from split 2 arrive here - simulate failure
                     num_hits: 0,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split2".to_string(),
@@ -956,7 +956,7 @@ mod tests {
                 // a retry will be made on the second service.
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 0,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split2".to_string(),
@@ -1014,7 +1014,7 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResponse {
                     // requests from split 2 arrive here - simulate failure
                     num_hits: 0,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split1".to_string(),
@@ -1091,7 +1091,7 @@ mod tests {
                     first_call = false;
                     Ok(quickwit_proto::LeafSearchResponse {
                         num_hits: 0,
-                        partial_hits: vec![],
+                        partial_hits: Vec::new(),
                         failed_splits: vec![SplitSearchError {
                             error: "mock_error".to_string(),
                             split_id: "split1".to_string(),
@@ -1169,7 +1169,7 @@ mod tests {
             .returning(move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 0,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split1".to_string(),
@@ -1255,7 +1255,7 @@ mod tests {
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 0,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split1".to_string(),

@@ -781,7 +781,7 @@ mod tests {
 
     #[test]
     fn test_split_range_empty() {
-        assert_eq!(chunk_range(0..0, 1).collect::<Vec<_>>(), vec![]);
+        assert_eq!(chunk_range(0..0, 1).collect::<Vec<_>>(), Vec::new());
     }
 
     #[test]

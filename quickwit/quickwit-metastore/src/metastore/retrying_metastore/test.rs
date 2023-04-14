@@ -95,7 +95,7 @@ impl Metastore for RetryTestMetastore {
     async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
         let result = self.try_success();
         match result {
-            Ok(_) => Ok(vec![]),
+            Ok(_) => Ok(Vec::new()),
             Err(err) => Err(err),
         }
     }
@@ -125,7 +125,7 @@ impl Metastore for RetryTestMetastore {
     async fn list_splits<'a>(&self, _query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
         let result = self.try_success();
         match result {
-            Ok(_) => Ok(vec![]),
+            Ok(_) => Ok(Vec::new()),
             Err(err) => Err(err),
         }
     }
@@ -207,7 +207,7 @@ impl Metastore for RetryTestMetastore {
     ) -> MetastoreResult<Vec<DeleteTask>> {
         let result = self.try_success();
         match result {
-            Ok(_) => Ok(vec![]),
+            Ok(_) => Ok(Vec::new()),
             Err(err) => Err(err),
         }
     }
