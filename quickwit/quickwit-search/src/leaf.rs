@@ -198,11 +198,11 @@ async fn warm_up_term_dict_fields(
             let inverted_index = segment_reader.inverted_index(field)?.clone();
             warm_up_futures.push(async move {
                 let dict = inverted_index.terms();
-                // dict.warm_up_dictionary().await
+                dict.warm_up_dictionary().await
             });
         }
     }
-    // try_join_all(warm_up_futures).await?;
+    try_join_all(warm_up_futures).await?;
     Ok(())
 }
 
@@ -478,24 +478,24 @@ async fn leaf_list_terms_single_split(
     for segment_reader in searcher.segment_readers() {
         let inverted_index = segment_reader.inverted_index(field)?.clone();
         let dict = inverted_index.terms();
-        // dict.file_slice_for_range(
-        //     (
-        //         start_term
-        //             .as_ref()
-        //             .map(Term::value_bytes)
-        //             .map(Bound::Included)
-        //             .unwrap_or(Bound::Unbounded),
-        //         end_term
-        //             .as_ref()
-        //             .map(Term::value_bytes)
-        //             .map(Bound::Excluded)
-        //             .unwrap_or(Bound::Unbounded),
-        //     ),
-        //     search_request.max_hits,
-        // )
-        // .read_bytes_async()
-        // .await
-        // .with_context(|| "Failed to load sstable range")?;
+        dict.file_slice_for_range(
+            (
+                start_term
+                    .as_ref()
+                    .map(Term::value_bytes)
+                    .map(Bound::Included)
+                    .unwrap_or(Bound::Unbounded),
+                end_term
+                    .as_ref()
+                    .map(Term::value_bytes)
+                    .map(Bound::Excluded)
+                    .unwrap_or(Bound::Unbounded),
+            ),
+            search_request.max_hits,
+        )
+        .read_bytes_async()
+        .await
+        .with_context(|| "Failed to load sstable range")?;
 
         let mut range = dict.range();
         if let Some(limit) = search_request.max_hits {

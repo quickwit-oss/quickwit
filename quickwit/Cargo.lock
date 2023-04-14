@@ -2992,7 +2992,7 @@ dependencies = [
 [[package]]
 name = "lindera-tantivy"
 version = "0.23.0"
-source = "git+https://github.com/quickwit-oss/lindera-tantivy/?rev=d89de21#d89de214a0602e78eeb1cf406ada1be0f239ad9a"
+source = "git+https://github.com/quickwit-oss/lindera-tantivy/?rev=b7d2c34#b7d2c34e4c719850c31d816783ae2ba058f8e431"
 dependencies = [
  "lindera",
  "tantivy",
@@ -3865,7 +3865,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=36138c4#36138c493b78d01885bd0e2b51161b25f19ee836"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0286ece#0286ecea09bc402d1712edb55f5f189248930156"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -6553,8 +6553,9 @@ checksum = "7bd3e3206899af3f8b12af284fafc038cc1dc2b41d1b89dd17297221c5d225de"
 
 [[package]]
 name = "sketches-ddsketch"
-version = "0.2.0"
-source = "git+https://github.com/PSeitz/rust-sketches-ddsketch#f14e98a10ff8adeb118a20c5ef77c8773c2a99ea"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68a406c1882ed7f29cd5e248c9848a80e7cb6ae0fea82346d2746f2f941c07e1"
 dependencies = [
  "serde",
 ]
@@ -6947,7 +6948,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.19.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=36138c4#36138c493b78d01885bd0e2b51161b25f19ee836"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0286ece#0286ecea09bc402d1712edb55f5f189248930156"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -7001,7 +7002,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=36138c4#36138c493b78d01885bd0e2b51161b25f19ee836"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0286ece#0286ecea09bc402d1712edb55f5f189248930156"
 dependencies = [
  "bitpacking",
 ]
@@ -7009,7 +7010,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=36138c4#36138c493b78d01885bd0e2b51161b25f19ee836"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0286ece#0286ecea09bc402d1712edb55f5f189248930156"
 dependencies = [
  "fastdivide",
  "fnv",
@@ -7025,7 +7026,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=36138c4#36138c493b78d01885bd0e2b51161b25f19ee836"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0286ece#0286ecea09bc402d1712edb55f5f189248930156"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -7048,7 +7049,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.19.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=36138c4#36138c493b78d01885bd0e2b51161b25f19ee836"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0286ece#0286ecea09bc402d1712edb55f5f189248930156"
 dependencies = [
  "combine",
  "once_cell",
@@ -7058,7 +7059,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=36138c4#36138c493b78d01885bd0e2b51161b25f19ee836"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0286ece#0286ecea09bc402d1712edb55f5f189248930156"
 dependencies = [
  "tantivy-common",
  "tantivy-fst",
@@ -7067,7 +7068,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=36138c4#36138c493b78d01885bd0e2b51161b25f19ee836"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0286ece#0286ecea09bc402d1712edb55f5f189248930156"
 dependencies = [
  "byteorder",
  "murmurhash32",
@@ -7077,7 +7078,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=36138c4#36138c493b78d01885bd0e2b51161b25f19ee836"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=0286ece#0286ecea09bc402d1712edb55f5f189248930156"
 dependencies = [
  "serde",
 ]

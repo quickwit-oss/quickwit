@@ -224,7 +224,7 @@ quickwit-serve = { version = "0.5.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.5.0", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.5.0", path = "./quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "36138c4", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "0286ece", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
@@ -232,7 +232,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "36138c4", d
 ] }
 
 # Tantivy tokenizers
-lindera-tantivy = { git = "https://github.com/quickwit-oss/lindera-tantivy/", rev = "d89de21", features = ["ipadic", "ipadic-compress", "cc-cedict", "cc-cedict-compress", "ko-dic", "ko-dic-compress"] }
+lindera-tantivy = { git = "https://github.com/quickwit-oss/lindera-tantivy/", rev = "b7d2c34", features = ["ipadic", "ipadic-compress", "cc-cedict", "cc-cedict-compress", "ko-dic", "ko-dic-compress"] }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest.
