@@ -462,8 +462,8 @@ mod tests {
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
 
-        let mut docs = vec![];
-        let mut filtered_timestamp_values = vec![];
+        let mut docs = Vec::new();
+        let mut filtered_timestamp_values = Vec::new();
         let start_timestamp = 72057595;
         let end_timestamp = start_timestamp + 20;
         for i in 0..30 {
@@ -479,8 +479,8 @@ mod tests {
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
             query: "info".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: Some(end_timestamp),
             fast_field: "ts".to_string(),
@@ -535,7 +535,7 @@ mod tests {
             timestamp_field: ts
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
-        let mut docs = vec![];
+        let mut docs = Vec::new();
         let mut filtered_timestamp_values = Vec::new();
         let start_date = OffsetDateTime::now_utc();
         let num_days = 20;
@@ -557,8 +557,8 @@ mod tests {
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
             query: "info".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: Some(end_timestamp),
             fast_field: "ts".to_string(),
@@ -614,8 +614,8 @@ mod tests {
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
             query: "info".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             fast_field: "app".to_string(),
@@ -671,7 +671,7 @@ mod tests {
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
 
-        let mut docs = vec![];
+        let mut docs = Vec::new();
         let partition_by_fast_field_values = vec![1, 2, 3, 4, 5];
         let mut expected_output_tmp: HashMap<u64, Vec<u64>> = HashMap::new();
         let start_timestamp = 72057595;
@@ -707,8 +707,8 @@ mod tests {
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
             query: "info".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: Some(end_timestamp),
             fast_field: "fast_field".to_string(),
@@ -745,7 +745,7 @@ mod tests {
     fn deserialize_partitions(buffer: Vec<u8>) -> Vec<PartitionValues<u64, u64>> {
         // Note: this function is only meant to be used with valid payloads for testing purposes
         let mut cursor = 0;
-        let mut partitions_values = vec![];
+        let mut partitions_values = Vec::new();
         while cursor < buffer.len() {
             let partition_slice: [u8; 8] = buffer[cursor..cursor + 8].try_into().unwrap();
             let partition = u64::from_le_bytes(partition_slice);

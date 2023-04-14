@@ -296,7 +296,7 @@ async fn test_single_node_several_splits() -> anyhow::Result<()> {
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
         query: "beagle".to_string(),
-        search_fields: vec![],
+        search_fields: Vec::new(),
         start_timestamp: None,
         end_timestamp: None,
         max_hits: 6,
@@ -351,7 +351,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     )
     .await?;
 
-    let mut docs = vec![];
+    let mut docs = Vec::new();
     let start_timestamp = OffsetDateTime::now_utc().unix_timestamp();
     for i in 0..30 {
         let body = format!("info @ t:{}", i + 1);
@@ -362,7 +362,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
         query: "info".to_string(),
-        search_fields: vec![],
+        search_fields: Vec::new(),
         start_timestamp: Some(start_timestamp + 10),
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 15,
@@ -386,7 +386,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
         query: "info".to_string(),
-        search_fields: vec![],
+        search_fields: Vec::new(),
         start_timestamp: None,
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 25,
@@ -410,7 +410,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
         query: "tag:foo AND info".to_string(),
-        search_fields: vec![],
+        search_fields: Vec::new(),
         start_timestamp: None,
         end_timestamp: None,
         max_hits: 25,
@@ -485,7 +485,7 @@ async fn single_node_search_sort_by_field(
     )
     .await?;
 
-    let mut docs = vec![];
+    let mut docs = Vec::new();
     let start_timestamp = 72057595;
     for i in 0..30 {
         let timestamp = start_timestamp + (i + 1) as i64;
@@ -497,7 +497,7 @@ async fn single_node_search_sort_by_field(
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
         query: "city".to_string(),
-        search_fields: vec![],
+        search_fields: Vec::new(),
         start_timestamp: None,
         end_timestamp: None,
         max_hits: 15,
@@ -569,7 +569,7 @@ async fn test_single_node_invalid_sorting_with_query() -> anyhow::Result<()> {
     let test_sandbox =
         TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["description"]).await?;
 
-    let mut docs = vec![];
+    let mut docs = Vec::new();
     for i in 0..30 {
         let description = format!("city info-{}", i + 1);
         docs.push(json!({"description": description, "ts": i+1, "temperature": i+32}));
@@ -579,7 +579,7 @@ async fn test_single_node_invalid_sorting_with_query() -> anyhow::Result<()> {
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
         query: "city".to_string(),
-        search_fields: vec![],
+        search_fields: Vec::new(),
         start_timestamp: None,
         end_timestamp: None,
         max_hits: 15,
@@ -620,7 +620,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[]).await?;
     let owners = ["paul", "adrien"];
     for owner in owners {
-        let mut docs = vec![];
+        let mut docs = Vec::new();
         for i in 0..10 {
             docs.push(json!({"body": format!("content num #{}", i + 1), "owner": owner}));
         }
@@ -829,7 +829,7 @@ fn json_value_to_tantivy_value(value: JsonValue) -> Vec<TantivyValue> {
         JsonValue::Object(object) => {
             vec![TantivyValue::JsonObject(object)]
         }
-        JsonValue::Null => vec![],
+        JsonValue::Null => Vec::new(),
         value => vec![value.into()],
     }
 }

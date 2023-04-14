@@ -134,7 +134,7 @@ impl SplitPayloadBuilder {
     /// and returns the byte-range of this metadata information.
     pub fn finalize(self, hotcache: &[u8]) -> io::Result<SplitPayload> {
         // Build the footer.
-        let mut footer_bytes = vec![];
+        let mut footer_bytes = Vec::new();
         // Fix paths to be relative
         let metadata_with_fixed_paths = self
             .metadata
@@ -208,7 +208,7 @@ fn chunk_payload_ranges(
     payloads: &[Box<dyn PutPayload>],
     range: Range<usize>,
 ) -> Vec<(Box<dyn PutPayload>, Range<usize>)> {
-    let mut ranges = vec![];
+    let mut ranges = Vec::new();
     for (payload, payload_absolute_range) in get_payloads_with_absolute_range(payloads) {
         let absolute_range_overlap = get_ranges_overlap(&payload_absolute_range, &range);
         if !absolute_range_overlap.is_empty() {
@@ -255,7 +255,7 @@ mod tests {
         split_streamer: &SplitPayload,
         range: Range<u64>,
     ) -> anyhow::Result<Vec<u8>> {
-        let mut data = vec![];
+        let mut data = Vec::new();
         split_streamer
             .range_byte_stream(range)
             .await?

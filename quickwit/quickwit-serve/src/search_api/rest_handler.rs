@@ -687,7 +687,7 @@ mod tests {
                 hits: Vec::new(),
                 num_hits: 10,
                 elapsed_time_micros: 16,
-                errors: vec![],
+                errors: Vec::new(),
                 ..Default::default()
             })
         });
@@ -902,7 +902,7 @@ mod tests {
                 }],
                 num_hits: 1,
                 elapsed_time_micros: 16,
-                errors: vec![],
+                errors: Vec::new(),
                 ..Default::default()
             })
         });

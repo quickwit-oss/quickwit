@@ -314,8 +314,8 @@ mod tests {
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
             query: "json_field.toto.titi:hello".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
@@ -351,8 +351,8 @@ mod tests {
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
             query: "text_field:hello".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
@@ -386,8 +386,8 @@ mod tests {
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
             query: "toto.titi:hello".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
@@ -421,8 +421,8 @@ mod tests {
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
             query: "toto:5".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,

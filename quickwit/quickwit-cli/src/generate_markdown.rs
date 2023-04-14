@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
 fn markdown_for_command(command: &Command, doc_extensions: &toml::Value) {
     let command_name = command.get_name();
     let command_ext: Option<&Value> = doc_extensions.get(command_name.to_owned());
-    markdown_for_command_helper(command, command_ext, command_name.to_string(), vec![]);
+    markdown_for_command_helper(command, command_ext, command_name.to_string(), Vec::new());
 }
 
 fn markdown_for_subcommand(

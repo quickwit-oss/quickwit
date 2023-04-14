@@ -100,7 +100,7 @@ impl MergeSplitDownloader {
         ctx: &ActorContext<Self>,
     ) -> Result<Vec<Box<dyn Directory>>, quickwit_actors::ActorExitStatus> {
         // we download all of the split files in the scratch directory.
-        let mut tantivy_dirs = vec![];
+        let mut tantivy_dirs = Vec::new();
         for split in splits {
             if ctx.kill_switch().is_dead() {
                 debug!(

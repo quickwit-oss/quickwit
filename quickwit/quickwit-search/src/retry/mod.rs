@@ -99,7 +99,7 @@ mod tests {
     fn test_should_not_retry_if_result_is_ok() {
         let retry_policy = DefaultRetryPolicy {};
         let response_res =
-            crate::Result::<FetchDocsResponse>::Ok(FetchDocsResponse { hits: vec![] });
+            crate::Result::<FetchDocsResponse>::Ok(FetchDocsResponse { hits: Vec::new() });
         assert!(retry_policy.retry_request((), &response_res).is_none());
     }
 
