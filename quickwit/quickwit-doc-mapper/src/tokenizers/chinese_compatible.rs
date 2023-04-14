@@ -131,13 +131,13 @@ impl<'a> TokenStream for ChineseTokenStream<'a> {
 mod tests {
     use tantivy::tokenizer::Token;
 
-    use crate::tokenizers::get_quickwit_tokenizer_manager;
+    use crate::QUICKWIT_TOKENIZER_MANAGER;
 
     #[test]
     fn test_chinese_tokenizer() {
         let text = "Hello world, 你好世界, bonjour monde";
 
-        let tokenizer = get_quickwit_tokenizer_manager()
+        let tokenizer = QUICKWIT_TOKENIZER_MANAGER
             .get("chinese_compatible")
             .unwrap();
         let mut text_stream = tokenizer.token_stream(text);
@@ -214,7 +214,7 @@ mod tests {
     fn test_chinese_tokenizer_no_space() {
         let text = "Hello你好bonjour";
 
-        let tokenizer = get_quickwit_tokenizer_manager()
+        let tokenizer = QUICKWIT_TOKENIZER_MANAGER
             .get("chinese_compatible")
             .unwrap();
         let mut text_stream = tokenizer.token_stream(text);
@@ -261,8 +261,8 @@ mod tests {
     proptest::proptest! {
         #[test]
         fn test_proptest_ascii_default_chinese_equal(text in "[ -~]{0,64}") {
-            let cn_tok = get_quickwit_tokenizer_manager().get("chinese_compatible").unwrap();
-            let default_tok = get_quickwit_tokenizer_manager().get("default").unwrap();
+            let cn_tok = QUICKWIT_TOKENIZER_MANAGER.get("chinese_compatible").unwrap();
+            let default_tok = QUICKWIT_TOKENIZER_MANAGER.get("default").unwrap();
 
             let mut text_stream = cn_tok.token_stream(&text);
 

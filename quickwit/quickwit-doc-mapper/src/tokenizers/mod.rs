@@ -58,18 +58,16 @@ fn get_quickwit_tokenizer_manager() -> TokenizerManager {
 
 #[cfg(test)]
 mod tests {
-    use super::get_quickwit_tokenizer_manager;
+    use crate::QUICKWIT_TOKENIZER_MANAGER;
 
     #[test]
     fn test_tokenizers_in_manager() {
-        get_quickwit_tokenizer_manager()
+        QUICKWIT_TOKENIZER_MANAGER
             .get("chinese_compatible")
             .unwrap();
-        get_quickwit_tokenizer_manager().get("default").unwrap();
-        get_quickwit_tokenizer_manager()
-            .get("multilanguage")
-            .unwrap();
-        get_quickwit_tokenizer_manager().get("raw").unwrap();
+        QUICKWIT_TOKENIZER_MANAGER.get("default").unwrap();
+        QUICKWIT_TOKENIZER_MANAGER.get("multilanguage").unwrap();
+        QUICKWIT_TOKENIZER_MANAGER.get("raw").unwrap();
     }
 
     #[test]
@@ -83,7 +81,7 @@ mod tests {
                             it, no one shall find it. I just need some more chars, now you may \
                             not pass.";
 
-        let tokenizer = get_quickwit_tokenizer_manager().get("raw").unwrap();
+        let tokenizer = QUICKWIT_TOKENIZER_MANAGER.get("raw").unwrap();
         let mut haiku_stream = tokenizer.token_stream(my_haiku);
         assert!(haiku_stream.advance());
         assert!(!haiku_stream.advance());
