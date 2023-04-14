@@ -233,14 +233,14 @@ mod tests {
 
     struct QueuesForTest {
         queues: Option<Queues>,
-        tempdir: tempfile::TempDir,
+        temp_dir: tempfile::TempDir,
     }
 
     impl QueuesForTest {
         async fn new() -> (Self, ActorContext<IngestApiService>) {
-            let tempdir = tempfile::tempdir().unwrap();
+            let temp_dir = tempfile::tempdir().unwrap();
             let mut queues_for_test = QueuesForTest {
-                tempdir,
+                temp_dir: temp_dir,
                 queues: None,
             };
             queues_for_test.reload().await;
@@ -256,7 +256,7 @@ mod tests {
     impl QueuesForTest {
         async fn reload(&mut self) {
             std::mem::drop(self.queues.take());
-            self.queues = Some(Queues::open(self.tempdir.path()).await.unwrap());
+            self.queues = Some(Queues::open(self.temp_dir.path()).await.unwrap());
         }
 
         #[track_caller]
