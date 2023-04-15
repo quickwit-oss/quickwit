@@ -22,8 +22,40 @@ use lindera_tantivy::stream::LinderaTokenStream;
 use lindera_tantivy::tokenizer::LinderaTokenizer;
 use lindera_tantivy::{DictionaryConfig, DictionaryKind, Mode};
 use nom::InputTake;
+use once_cell::sync::Lazy;
 use tantivy::tokenizer::{SimpleTokenStream, SimpleTokenizer, Token, TokenStream, Tokenizer};
 use whichlang::{detect_language, Lang};
+
+// Use lazy lindera tokenizers to load the dictionaries only when needed.
+static CMN_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
+    let cmn_dictionary_config = DictionaryConfig {
+        kind: Some(DictionaryKind::CcCedict),
+        path: None,
+    };
+    let cmn_dictionary = load_dictionary(cmn_dictionary_config)
+        .expect("Lindera `CcCedict` dictionary must be present");
+    LinderaTokenizer::new(cmn_dictionary, None, Mode::Normal)
+});
+
+static JPN_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
+    let jpn_dictionary_config = DictionaryConfig {
+        kind: Some(DictionaryKind::IPADIC),
+        path: None,
+    };
+    let jpn_dictionary =
+        load_dictionary(jpn_dictionary_config).expect("Lindera `IPAD` dictionary must be present");
+    LinderaTokenizer::new(jpn_dictionary, None, Mode::Normal)
+});
+
+static KOR_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
+    let kor_dictionary_config = DictionaryConfig {
+        kind: Some(DictionaryKind::KoDic),
+        path: None,
+    };
+    let kor_dictionary =
+        load_dictionary(kor_dictionary_config).expect("Lindera `KoDic` dictionary must be present");
+    LinderaTokenizer::new(kor_dictionary, None, Mode::Normal)
+});
 
 /// Multilanguage tokenizer that uses the `whichlang` to detect the language of the text
 /// and uses the appropriate tokenizer for the detected language:
@@ -38,45 +70,12 @@ use whichlang::{detect_language, Lang};
 /// - `ENG:` for Quickwit's default tokenizer
 #[derive(Clone)]
 pub(crate) struct MultiLanguageTokenizer {
-    cmn_tokenizer: LinderaTokenizer,
-    jpn_tokenizer: LinderaTokenizer,
-    kor_tokenizer: LinderaTokenizer,
     default_tokenizer: SimpleTokenizer,
 }
 
 impl MultiLanguageTokenizer {
     pub fn new() -> Self {
-        // Chinese tokenizer
-        let cmn_dictionary_config = DictionaryConfig {
-            kind: Some(DictionaryKind::CcCedict),
-            path: None,
-        };
-        let cmn_dictionary = load_dictionary(cmn_dictionary_config)
-            .expect("Lindera `CcCedict` dictionary must be present");
-        let cmn_tokenizer = LinderaTokenizer::new(cmn_dictionary, None, Mode::Normal);
-
-        // Japanese tokenizer
-        let jpn_dictionary_config = DictionaryConfig {
-            kind: Some(DictionaryKind::IPADIC),
-            path: None,
-        };
-        let jpn_dictionary = load_dictionary(jpn_dictionary_config)
-            .expect("Lindera `IPAD` dictionary must be present");
-        let jpn_tokenizer = LinderaTokenizer::new(jpn_dictionary, None, Mode::Normal);
-
-        // Korean tokenizer
-        let kor_dictionary_config = DictionaryConfig {
-            kind: Some(DictionaryKind::KoDic),
-            path: None,
-        };
-        let kor_dictionary = load_dictionary(kor_dictionary_config)
-            .expect("Lindera `KoDic` dictionary must be present");
-        let kor_tokenizer = LinderaTokenizer::new(kor_dictionary, None, Mode::Normal);
-
         Self {
-            cmn_tokenizer,
-            jpn_tokenizer,
-            kor_tokenizer,
             default_tokenizer: SimpleTokenizer,
         }
     }
@@ -152,13 +151,13 @@ impl Tokenizer for MultiLanguageTokenizer {
         let language = language_prefix.unwrap_or_else(|| detect_language(text_to_tokenize));
         match language {
             Lang::Cmn => {
-                MultiLanguageTokenStream::Lindera(self.cmn_tokenizer.token_stream(text_to_tokenize))
+                MultiLanguageTokenStream::Lindera(CMN_TOKENIZER.token_stream(text_to_tokenize))
             }
             Lang::Jpn => {
-                MultiLanguageTokenStream::Lindera(self.jpn_tokenizer.token_stream(text_to_tokenize))
+                MultiLanguageTokenStream::Lindera(JPN_TOKENIZER.token_stream(text_to_tokenize))
             }
             Lang::Kor => {
-                MultiLanguageTokenStream::Lindera(self.kor_tokenizer.token_stream(text_to_tokenize))
+                MultiLanguageTokenStream::Lindera(KOR_TOKENIZER.token_stream(text_to_tokenize))
             }
             _ => MultiLanguageTokenStream::Simple(
                 self.default_tokenizer.token_stream(text_to_tokenize),
