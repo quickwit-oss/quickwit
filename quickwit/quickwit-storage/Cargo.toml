@@ -21,6 +21,7 @@ fnv = { workspace = true }
 futures = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
+memmap2 = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
 rand = { workspace = true }
@@ -37,6 +38,7 @@ tokio = { workspace = true, features = ["test-util"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+stable_deref_trait = { workspace = true }
 
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }

@@ -22,7 +22,7 @@ use std::fmt;
 use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use futures::future::{BoxFuture, FutureExt};
@@ -33,6 +33,7 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tracing::warn;
 
+use crate::mmap_storage::{MmapCache, MmapArc};
 use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
 use crate::{
     DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory,
@@ -40,10 +41,20 @@ use crate::{
 };
 
 /// File system compatible storage implementation.
-#[derive(Clone)]
 pub struct LocalFileStorage {
     uri: Uri,
     root: PathBuf,
+    mmap_cache: RwLock<MmapCache>,
+}
+
+impl Clone for LocalFileStorage {
+    fn clone(&self) -> Self {
+        Self {
+            uri: self.uri.clone(),
+            root: self.root.clone(),
+            mmap_cache: Default::default(),
+        }
+    }
 }
 
 impl fmt::Debug for LocalFileStorage {
@@ -67,6 +78,7 @@ impl LocalFileStorage {
             .map(|root| Self {
                 uri: uri.clone(),
                 root: root.to_path_buf(),
+                mmap_cache: Default::default(),
             })
             .ok_or_else(|| StorageResolverError::InvalidUri {
                 message: format!("URI `{uri}` is not a valid file URI."),
@@ -211,11 +223,16 @@ impl Storage for LocalFileStorage {
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let full_path = self.full_path(path)?;
-        let mut file = fs::File::open(full_path).await?;
-        file.seek(SeekFrom::Start(range.start as u64)).await?;
-        let mut content_bytes: Vec<u8> = vec![0u8; range.len()];
-        file.read_exact(&mut content_bytes).await?;
-        Ok(OwnedBytes::new(content_bytes))
+        let mut mmap_cache = self.mmap_cache.write().expect("mmap cache lock poisoned");
+        let owned_bytes = mmap_cache
+            .get_mmap(&full_path)
+            .map(|mmap_arc| {
+                let mmap_arc_obj = MmapArc(mmap_arc);
+                OwnedBytes::new(mmap_arc_obj)
+            })
+            .unwrap_or_else(OwnedBytes::empty);
+        
+        Ok(owned_bytes.slice(range))
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {

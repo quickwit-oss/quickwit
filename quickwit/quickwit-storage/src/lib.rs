@@ -34,6 +34,7 @@ mod cache;
 mod debouncer;
 mod metrics;
 mod storage;
+mod mmap_storage;
 pub use debouncer::AsyncDebouncer;
 pub(crate) use debouncer::DebouncedStorage;
 
