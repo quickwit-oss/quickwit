@@ -33,6 +33,7 @@ pub struct TimestampFilter {
 }
 
 impl TimestampFilter {
+    #[inline]
     pub fn is_within_range(&self, doc_id: DocId) -> bool {
         if let Some(ts) = self.timestamp_column.first(doc_id) {
             self.time_range.contains(&ts)
