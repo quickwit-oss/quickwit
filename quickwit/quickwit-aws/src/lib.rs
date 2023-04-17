@@ -23,6 +23,7 @@ use aws_config::retry::RetryConfig;
 use aws_smithy_client::hyper_ext;
 use hyper_rustls::HttpsConnectorBuilder;
 use tokio::sync::OnceCell;
+pub use aws_smithy_async::rt::sleep::TokioSleep;
 
 pub mod error;
 pub mod retry;
@@ -61,6 +62,7 @@ pub async fn try_init_aws_config() -> &'static aws_config::SdkConfig {
                 .http_connector(smithy_connector)
                 // Currently handle this ourselves so probably best for now to leave it as is.
                 .retry_config(RetryConfig::disabled())
+                .sleep_impl(TokioSleep::default())
                 .load()
                 .await
         })

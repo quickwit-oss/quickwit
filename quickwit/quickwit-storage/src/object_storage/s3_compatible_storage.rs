@@ -22,6 +22,7 @@ use std::fmt::{self};
 use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -77,6 +78,7 @@ fn create_s3_client() -> Option<aws_sdk_s3::Client> {
     s3_config.set_http_connector(cfg.http_connector().cloned());
     s3_config.set_timeout_config(cfg.timeout_config().cloned());
     s3_config.set_credentials_cache(cfg.credentials_cache().cloned());
+    s3_config.set_sleep_impl(Some(Arc::new(quickwit_aws::TokioSleep::default())));
 
     // We have a custom endpoint set, otherwise we let the SDK set it.
     if let Some(endpoint) = quickwit_aws::get_s3_endpoint() {

@@ -33,6 +33,7 @@ pub fn get_kinesis_client(region_or_endpoint: RegionOrEndpoint) -> anyhow::Resul
     kinesis_config.set_http_connector(sdk_config.http_connector().cloned());
     kinesis_config.set_timeout_config(sdk_config.timeout_config().cloned());
     kinesis_config.set_credentials_cache(sdk_config.credentials_cache().cloned());
+    kinesis_config.set_sleep_impl(Some(Arc::new(quickwit_aws::TokioSleep::default())));
 
     match region_or_endpoint {
         RegionOrEndpoint::Region(region) => {

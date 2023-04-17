@@ -13,6 +13,7 @@ documentation = "https://quickwit.io/docs/"
 aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 aws-smithy-client = { workspace = true }
+aws-smithy-async = { workspace = true }
 aws-sdk-kinesis = { worksapce = true, optional = true }
 
 anyhow = { workspace = true }
