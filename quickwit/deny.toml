@@ -113,7 +113,6 @@ confidence-threshold = 0.8
 # Allow 1 or more licenses on a per-crate basis, so that particular licenses
 # aren't accepted for every possible crate as with the normal allow list
 exceptions = [
-    { name = "quickwit-actors", allow = ["AGPL-3.0"], version = "*" },
     { name = "quickwit-aws", allow = ["AGPL-3.0"], version = "*" },
     { name = "quickwit-cli", allow = ["AGPL-3.0"], version = "*" },
     { name = "quickwit-cluster", allow = ["AGPL-3.0"], version = "*" },
