@@ -122,7 +122,7 @@ pub async fn wait_port_ready(port: u16) -> anyhow::Result<()> {
 /// A struct to hold few info about the test environment.
 pub struct TestEnv {
     /// The temporary directory of the test.
-    _tempdir: TempDir,
+    _temp_dir: TempDir,
     /// Path of the directory where indexing directory are created.
     pub data_dir_path: PathBuf,
     /// Path of the directory where indexes are stored.
@@ -184,10 +184,10 @@ pub enum TestStorageType {
 
 /// Creates all necessary artifacts in a test environment.
 pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
-    let tempdir = tempdir()?;
-    let data_dir_path = tempdir.path().join("data");
+    let temp_dir = tempdir()?;
+    let data_dir_path = temp_dir.path().join("data");
     let indexes_dir_path = data_dir_path.join("indexes");
-    let resources_dir_path = tempdir.path().join("resources");
+    let resources_dir_path = temp_dir.path().join("resources");
 
     for dir_path in [&data_dir_path, &indexes_dir_path, &resources_dir_path] {
         fs::create_dir(dir_path)?;
@@ -258,7 +258,7 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
         .context("Failed to parse cluster endpoint.")?;
 
     Ok(TestEnv {
-        _tempdir: tempdir,
+        _temp_dir: temp_dir,
         data_dir_path,
         indexes_dir_path,
         resource_files,

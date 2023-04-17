@@ -47,19 +47,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_dir() -> anyhow::Result<()> {
-        let tempdir = tempfile::tempdir()?;
+        let temp_dir = tempfile::tempdir()?;
 
-        let file_path = tempdir.path().join("file");
+        let file_path = temp_dir.path().join("file");
         tokio::fs::File::create(file_path).await?;
 
-        let subdir = tempdir.path().join("subdir");
+        let subdir = temp_dir.path().join("subdir");
         tokio::fs::create_dir(&subdir).await?;
 
         let subfile_path = subdir.join("subfile");
         tokio::fs::File::create(subfile_path).await?;
 
-        empty_dir(tempdir.path()).await?;
-        assert!(tokio::fs::read_dir(tempdir.path())
+        empty_dir(temp_dir.path()).await?;
+        assert!(tokio::fs::read_dir(temp_dir.path())
             .await?
             .next_entry()
             .await?

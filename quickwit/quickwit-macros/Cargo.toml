@@ -1,0 +1,18 @@
+[package]
+name = "quickwit-macros"
+version = "0.5.0"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
+license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
+description = "Defines the procedural macros used in Quickwit."
+repository = "https://github.com/quickwit-oss/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = { workspace = true }
+
+quickwit-macros-impl = { workspace = true }

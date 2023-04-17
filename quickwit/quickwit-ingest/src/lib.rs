@@ -158,9 +158,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_ingest_api_service() {
         let universe = Universe::with_accelerated_time();
-        let tempdir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
 
-        let queues_0_dir_path = tempdir.path().join("queues-0");
+        let queues_0_dir_path = temp_dir.path().join("queues-0");
         get_ingest_api_service(&queues_0_dir_path)
             .await
             .unwrap_err();
@@ -175,7 +175,7 @@ mod tests {
             .await
             .unwrap();
 
-        let queues_1_dir_path = tempdir.path().join("queues-1");
+        let queues_1_dir_path = temp_dir.path().join("queues-1");
         init_ingest_api(&universe, &queues_1_dir_path, &IngestApiConfig::default())
             .await
             .unwrap();
@@ -192,9 +192,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_ingest_multiple_index_api_service() {
         let universe = Universe::with_accelerated_time();
-        let tempdir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
 
-        let queues_0_dir_path = tempdir.path().join("queues-0");
+        let queues_0_dir_path = temp_dir.path().join("queues-0");
         let ingest_api_service =
             init_ingest_api(&universe, &queues_0_dir_path, &IngestApiConfig::default())
                 .await
@@ -234,9 +234,9 @@ mod tests {
     #[tokio::test]
     async fn test_queue_limit() {
         let universe = Universe::with_accelerated_time();
-        let tempdir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
 
-        let queues_dir_path = tempdir.path().join("queues-0");
+        let queues_dir_path = temp_dir.path().join("queues-0");
         get_ingest_api_service(&queues_dir_path).await.unwrap_err();
         init_ingest_api(
             &universe,

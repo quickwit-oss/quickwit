@@ -17,24 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod box_layer;
-mod box_service;
-mod buffer;
-mod estimate_rate;
-mod metrics;
-mod rate;
-mod rate_estimator;
-mod rate_limit;
+use proc_macro::TokenStream;
+use quickwit_macros_impl::derive_prometheus_labels_impl;
 
-pub use box_layer::BoxLayer;
-pub use box_service::BoxService;
-pub use buffer::{Buffer, BufferError, BufferLayer};
-pub use estimate_rate::{EstimateRate, EstimateRateLayer};
-pub use metrics::{PrometheusMetrics, PrometheusMetricsLayer};
-pub use rate::{ConstantRate, Rate};
-pub use rate_estimator::{RateEstimator, SmaRateEstimator};
-pub use rate_limit::{RateLimit, RateLimitLayer};
-
-pub trait Cost {
-    fn cost(&self) -> u64;
+#[proc_macro_derive(PrometheusLabels, attributes(prometheus_label))]
+pub fn derive_prometheus_labels(input: TokenStream) -> TokenStream {
+    derive_prometheus_labels_impl(input.into()).into()
 }

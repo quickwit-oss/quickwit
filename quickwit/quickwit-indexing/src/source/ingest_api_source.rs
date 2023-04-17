@@ -236,7 +236,7 @@ mod tests {
         batch_size: usize,
         commit_type: CommitType,
     ) -> IngestRequest {
-        let mut doc_batches = vec![];
+        let mut doc_batches = Vec::new();
         let mut doc_id = 0usize;
         for _ in 0..num_batch {
             let mut doc_batch_builder = DocBatchBuilder::new(index_id.clone());
