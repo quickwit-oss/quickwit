@@ -4,15 +4,15 @@ sidebar_position: 4
 ---
 
 Quickwit can insert data into an index from one or multiple sources.
-A source can be added after the index creation using the [CLI command](../reference/cli.md#source) `quickwit source create`.
-It can also be enabled or disabled with `quickwit source enable/disable`.
+A source can be added after index creation using the [CLI command](../reference/cli.md#source) `quickwit source create`.
+It can also be enabled or disabled with the `quickwit source enable/disable` subcommands.
 
-A source is declared using an object called source config. A source config uniquely identifies and defines a source. It consists of seven parameters:
+A source is declared using an object called source config, which defines the source's settings. It consists of seven parameters:
 
 - source ID
 - source type
 - source parameters
-- max number of pipelines per indexer (optional)
+- maximum number of pipelines per indexer (optional)
 - desired number of pipelines (optional)
 - transform parameters (optional)
 
@@ -22,7 +22,7 @@ The source ID is a string that uniquely identifies the source within an index. I
 
 ## Source type
 
-The source type designates the kind of source being configured. As of version 0.5, available source types are `ingest-api`, `kafka`, `kinesis` and `pulsar`. The `file` type is also supported but only for local ingestion from [the CLI](/docs/reference/cli.md#tool-local-ingest). 
+The source type designates the kind of source being configured. As of version 0.5, available source types are `ingest-api`, `kafka`, `kinesis`, and `pulsar`. The `file` type is also supported but only for local ingestion from [the CLI](/docs/reference/cli.md#tool-local-ingest).
 
 ## Source parameters
 
@@ -30,7 +30,7 @@ The source parameters indicate how to connect to a data store and are specific t
 
 ### File source (CLI only)
 
-A file source reads data from a local file. The file must consist of JSON objects separated by a newline.
+A file source reads data from a local file. The file must consist of JSON objects separated by a newline (NDJSON).
 As of version 0.5, a file source can only be ingested with the [CLI command](/docs/reference/cli.md#tool-local-ingest). Compressed files (bz2, gzip, ...) and remote files (Amazon S3, HTTP, ...) are not supported.
 
 ```bash
@@ -39,7 +39,7 @@ As of version 0.5, a file source can only be ingested with the [CLI command](/do
 
 ### Ingest API source
 
-An ingest source reads data from the [Ingest API](/docs/reference/rest-api.md#ingest-data-into-an-index). This source is automatically created at the index creation and cannot be deleted nor disabled.
+An ingest API source reads data from the [Ingest API](/docs/reference/rest-api.md#ingest-data-into-an-index). This source is automatically created at the index creation and cannot be deleted nor disabled.
 
 ### Kafka source
 
@@ -158,12 +158,12 @@ EOF
 ./quickwit source create --index my-index --source-config source-config.yaml
 ```
 
-## Max number of pipelines per indexer
+## Maximum number of pipelines per indexer
 
-`max_num_pipelines_per_indexer` parameter is only available for sources that can be distributed: Kafka and Pulsar (coming soon).
+The `max_num_pipelines_per_indexer` parameter is only available for sources that can be distributed: Kafka and (coming soon) Pulsar.
 
-The maximum number of indexing pipelines defines the limit of pipelines spawned for this source on a given indexer.
-The maximum can be reached only if there is enough `desired_num_pipelines` to run.
+The maximum number of indexing pipelines defines the limit of pipelines spawned for the source on a given indexer.
+This maximum can be reached only if there are enough `desired_num_pipelines` to run.
 
 :::note
 
@@ -197,14 +197,14 @@ For all source types but the `ingest-api`, ingested documents can be transformed
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `script` | source code of the VRL program executed to transform documents | required |
-| `timezone` | Timezone used in the VRL program for date and time manipulations. Must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | `UTC` |
+| `script` | Source code of the VRL program executed to transform documents. | required |
+| `timezone` | Timezone used in the VRL program for date and time manipulations. It must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | `UTC` |
 
 ```yaml
 # Your source config here
 # ...
 transform:
-  source: |
+  script: |
     .message = downcase(string!(.message))
     .timestamp = now()
     del(.username)
@@ -219,7 +219,7 @@ A source can be enabled or disabled from an index using the [CLI command](../ref
 quickwit source disable --index my-index --source my-source
 ```
 
-A source is enabled by default. When disabling a source, the related indexing pipelines will be shut down on each concerned indexer and indexing from this source will stop.
+A source is enabled by default. When disabling a source, the related indexing pipelines will be shut down on each relevant indexer and indexing for this source will be paused.
 
 ## Deleting a source from an index
 

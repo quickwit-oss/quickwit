@@ -19,7 +19,6 @@
 
 #![deny(clippy::disallowed_methods)]
 
-mod args;
 mod format;
 mod metrics;
 
@@ -83,7 +82,6 @@ use tower::ServiceBuilder;
 use tracing::{debug, error, warn};
 use warp::{Filter, Rejection};
 
-pub use crate::args::ServeArgs;
 pub use crate::index_api::ListSplitsQueryParams;
 pub use crate::metrics::SERVE_METRICS;
 #[cfg(test)]

@@ -21,6 +21,7 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, IndexConfig};
@@ -35,8 +36,7 @@ use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResult
 use tantivy::aggregation::AggregationLimits;
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
-use tokio::task::spawn_blocking;
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{make_merge_collector, QuickwitAggregations};
@@ -213,12 +213,16 @@ pub async fn root_search(
     // Wrap into result for merge_fruits
     let leaf_search_responses: Vec<tantivy::Result<LeafSearchResponse>> =
         leaf_search_responses.into_iter().map(Ok).collect_vec();
-    let leaf_search_response =
-        spawn_blocking(move || merge_collector.merge_fruits(leaf_search_responses))
-            .await?
-            .map_err(|merge_error: TantivyError| {
-                crate::SearchError::InternalError(format!("{merge_error}"))
-            })?;
+    let span = info_span!("merge_fruits");
+    let leaf_search_response = crate::run_cpu_intensive(move || {
+        let _span_guard = span.enter();
+        merge_collector.merge_fruits(leaf_search_responses)
+    })
+    .await
+    .context("failed to merge fruits")?
+    .map_err(|merge_error: TantivyError| {
+        crate::SearchError::InternalError(format!("{merge_error}"))
+    })?;
     debug!(leaf_search_response = ?leaf_search_response, "Merged leaf search response.");
 
     if !leaf_search_response.failed_splits.is_empty() {
@@ -309,7 +313,7 @@ pub async fn root_search(
                 let res: IntermediateAggregationResults =
                     serde_json::from_str(&intermediate_aggregation_result)?;
                 let res: AggregationResults =
-                    res.into_final_bucket_result(aggregations, &AggregationLimits::default())?;
+                    res.into_final_result(aggregations, &AggregationLimits::default())?;
                 Some(serde_json::to_string(&res)?)
             }
         }
@@ -322,7 +326,7 @@ pub async fn root_search(
         num_hits: leaf_search_response.num_hits,
         hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
-        errors: vec![],
+        errors: Vec::new(),
     })
 }
 
@@ -441,7 +445,7 @@ pub async fn root_list_terms(
         num_hits: leaf_list_terms_response.len() as u64,
         terms: leaf_list_terms_response,
         elapsed_time_micros: elapsed.as_micros() as u64,
-        errors: vec![],
+        errors: Vec::new(),
     })
 }
 
@@ -876,7 +880,7 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResponse {
                     // requests from split 2 arrive here - simulate failure
                     num_hits: 0,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split2".to_string(),
@@ -952,7 +956,7 @@ mod tests {
                 // a retry will be made on the second service.
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 0,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split2".to_string(),
@@ -1010,7 +1014,7 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResponse {
                     // requests from split 2 arrive here - simulate failure
                     num_hits: 0,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split1".to_string(),
@@ -1087,7 +1091,7 @@ mod tests {
                     first_call = false;
                     Ok(quickwit_proto::LeafSearchResponse {
                         num_hits: 0,
-                        partial_hits: vec![],
+                        partial_hits: Vec::new(),
                         failed_splits: vec![SplitSearchError {
                             error: "mock_error".to_string(),
                             split_id: "split1".to_string(),
@@ -1165,7 +1169,7 @@ mod tests {
             .returning(move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 0,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split1".to_string(),
@@ -1251,7 +1255,7 @@ mod tests {
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 0,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split1".to_string(),

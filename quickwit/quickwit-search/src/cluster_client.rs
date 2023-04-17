@@ -168,20 +168,20 @@ fn merge_leaf_search_results(
                 .append(&mut retry_response.partial_hits);
             let intermediate_aggregation_result = initial_response
                 .intermediate_aggregation_result
-                .map(|res1_str| {
+                .map::<crate::Result<_>, _>(|res1_str| {
                     if let Some(res2_str) = retry_response.intermediate_aggregation_result.as_ref()
                     {
                         let mut res1: IntermediateAggregationResults =
                             serde_json::from_str(&res1_str)?;
                         let res2: IntermediateAggregationResults = serde_json::from_str(res2_str)?;
-                        res1.merge_fruits(res2);
-                        serde_json::to_string(&res1)
+                        res1.merge_fruits(res2)?;
+                        let res = serde_json::to_string(&res1)?;
+                        Ok(res)
                     } else {
                         Ok(res1_str)
                     }
                 })
-                .transpose()
-                .map_err(|json_err| SearchError::InternalError(json_err.to_string()))?;
+                .transpose()?;
             let merged_response = LeafSearchResponse {
                 intermediate_aggregation_result,
                 num_hits: initial_response.num_hits + retry_response.num_hits,
@@ -250,7 +250,7 @@ mod tests {
 
     fn mock_doc_request(split_id: &str) -> FetchDocsRequest {
         FetchDocsRequest {
-            partial_hits: vec![],
+            partial_hits: Vec::new(),
             index_id: "id".to_string(),
             index_uri: "uri".to_string(),
             split_offsets: vec![SplitIdAndFooterOffsets {
@@ -297,7 +297,7 @@ mod tests {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
-            snippet_fields: vec![],
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             fast_field: "fast".to_string(),
@@ -330,7 +330,7 @@ mod tests {
         mock_service
             .expect_fetch_docs()
             .return_once(|_: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse { hits: vec![] })
+                Ok(quickwit_proto::FetchDocsResponse { hits: Vec::new() })
             });
         let grpc_address = ([127, 0, 0, 1], 1000).into();
         let client_pool =
@@ -360,7 +360,7 @@ mod tests {
         mock_service_2
             .expect_fetch_docs()
             .return_once(|_: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse { hits: vec![] })
+                Ok(quickwit_proto::FetchDocsResponse { hits: Vec::new() })
             });
         let client_pool = ServiceClientPool::for_clients_list(vec![
             SearchServiceClient::from_service(
@@ -415,8 +415,8 @@ mod tests {
             .return_once(|_: LeafSearchRequest| {
                 Ok(LeafSearchResponse {
                     num_hits: 0,
-                    partial_hits: vec![],
-                    failed_splits: vec![],
+                    partial_hits: Vec::new(),
+                    failed_splits: Vec::new(),
                     num_attempted_splits: 1,
                     ..Default::default()
                 })
@@ -445,7 +445,7 @@ mod tests {
             .return_once(|_: LeafSearchRequest| {
                 Ok(LeafSearchResponse {
                     num_hits: 1,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split_2".to_string(),
@@ -461,7 +461,7 @@ mod tests {
             .return_once(|_: LeafSearchRequest| {
                 Ok(LeafSearchResponse {
                     num_hits: 1,
-                    partial_hits: vec![],
+                    partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split_3".to_string(),
@@ -504,7 +504,7 @@ mod tests {
         let leaf_response_retry = LeafSearchResponse {
             num_hits: 1,
             partial_hits: vec![mock_partial_hit("split_2", 3, 1)],
-            failed_splits: vec![],
+            failed_splits: Vec::new(),
             num_attempted_splits: 1,
             ..Default::default()
         };

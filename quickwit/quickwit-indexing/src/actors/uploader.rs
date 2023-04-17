@@ -384,8 +384,8 @@ impl Handler<EmptySplit> for Uploader {
             .await?;
         let splits_update = SplitsUpdate {
             index_id: empty_split.index_id,
-            new_splits: vec![],
-            replaced_split_ids: vec![],
+            new_splits: Vec::new(),
+            replaced_split_ids: Vec::new(),
             checkpoint_delta_opt: Some(empty_split.checkpoint_delta),
             publish_lock: empty_split.publish_lock,
             merge_operation: None,
@@ -523,8 +523,8 @@ mod tests {
                     },
                     split_scratch_directory,
                     tags: Default::default(),
-                    hotcache_bytes: vec![],
-                    split_files: vec![],
+                    hotcache_bytes: Vec::new(),
+                    split_files: Vec::new(),
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),
@@ -629,8 +629,8 @@ mod tests {
             },
             split_scratch_directory: split_scratch_directory_1,
             tags: Default::default(),
-            split_files: vec![],
-            hotcache_bytes: vec![],
+            split_files: Vec::new(),
+            hotcache_bytes: Vec::new(),
         };
         let package_split_2 = PackagedSplit {
             split_attrs: SplitAttrs {
@@ -652,8 +652,8 @@ mod tests {
             },
             split_scratch_directory: split_scratch_directory_2,
             tags: Default::default(),
-            split_files: vec![],
-            hotcache_bytes: vec![],
+            split_files: Vec::new(),
+            hotcache_bytes: Vec::new(),
         };
         uploader_mailbox
             .send_message(PackagedSplitBatch::new(
@@ -762,8 +762,8 @@ mod tests {
                     },
                     split_scratch_directory,
                     tags: Default::default(),
-                    hotcache_bytes: vec![],
-                    split_files: vec![],
+                    hotcache_bytes: Vec::new(),
+                    split_files: Vec::new(),
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),

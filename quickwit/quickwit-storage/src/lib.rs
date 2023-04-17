@@ -175,8 +175,8 @@ pub(crate) mod test_suite {
         storage
             .put(test_path, Box::new(payload_bytes.to_vec()))
             .await?;
-        let tempdir = tempfile::tempdir()?;
-        let dest_path = tempdir.path().to_path_buf();
+        let temp_dir = tempfile::tempdir()?;
+        let dest_path = temp_dir.path().to_path_buf();
         let local_copy = dest_path.join("local_copy");
         storage.copy_to_file(test_path, &local_copy).await?;
         let payload = std::fs::read(&local_copy)?;
@@ -296,6 +296,7 @@ pub(crate) mod test_suite {
     }
 
     /// Generic single-part upload test.
+    #[cfg(feature = "testsuite")]
     pub async fn storage_test_single_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("hello_small.txt");
         let data = b"hello, happy tax payer!".to_vec();
@@ -306,6 +307,7 @@ pub(crate) mod test_suite {
     }
 
     /// Generic multi-part upload test.
+    #[cfg(feature = "testsuite")]
     pub async fn storage_test_multi_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("hello_large.txt");
         let test_buffer = vec![0u8; 15_000_000];

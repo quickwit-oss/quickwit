@@ -438,9 +438,7 @@ mod tests {
                             make_split("split-3", None),
                         ]
                     }
-                    "b" => {
-                        vec![]
-                    }
+                    "b" => Vec::new(),
                     unknown => panic!("Unknown index: `{unknown}`."),
                 };
                 Ok(splits)

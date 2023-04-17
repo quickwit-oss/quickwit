@@ -108,8 +108,8 @@ mod tests {
         let request = mock_leaf_search_request();
         let response_res = Ok(LeafSearchResponse {
             num_hits: 0,
-            partial_hits: vec![],
-            failed_splits: vec![],
+            partial_hits: Vec::new(),
+            failed_splits: Vec::new(),
             num_attempted_splits: 1,
             ..Default::default()
         });
@@ -129,7 +129,7 @@ mod tests {
         };
         let response_res = Ok(LeafSearchResponse {
             num_hits: 0,
-            partial_hits: vec![],
+            partial_hits: Vec::new(),
             failed_splits: vec![split_error],
             num_attempted_splits: 1,
             ..Default::default()

@@ -914,7 +914,7 @@ mod tests {
                     && list_split_query.time_range.is_unbounded()
                     && list_split_query.create_timestamp.is_unbounded()
                 {
-                    return Ok(vec![]);
+                    return Ok(Vec::new());
                 }
                 Err(MetastoreError::InternalError {
                     message: "".to_string(),

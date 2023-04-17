@@ -9,7 +9,7 @@ edition = "2021"
 members = []
 
 [dependencies]
-quickwit_elastic_api_generation = { git = "https://github.com/quickwit-oss/elasticsearch-rs", rev = "dca3aba" }
+quickwit-elastic-api-generation = { git = "https://github.com/quickwit-oss/elasticsearch-rs", rev = "ffbb4fd" }
 once_cell = "1"
 clap = "4"
 anyhow = "1"

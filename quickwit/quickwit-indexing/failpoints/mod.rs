@@ -263,7 +263,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     let downloaded_splits_directory =
         merge_scratch_directory.named_temp_child("downloaded-splits-")?;
     let storage = test_index_builder.storage();
-    let mut tantivy_dirs: Vec<Box<dyn Directory>> = vec![];
+    let mut tantivy_dirs: Vec<Box<dyn Directory>> = Vec::new();
     for split in &split_metadatas {
         let split_filename = split_file(split.split_id());
         let dest_filepath = downloaded_splits_directory.path().join(&split_filename);

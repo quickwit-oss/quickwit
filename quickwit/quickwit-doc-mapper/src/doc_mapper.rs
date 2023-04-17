@@ -198,7 +198,9 @@ mod tests {
     use quickwit_proto::SearchRequest;
     use tantivy::schema::{Field, FieldType, Term};
 
-    use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions};
+    use crate::default_doc_mapper::{
+        FastFieldOptions, FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions,
+    };
     use crate::{
         Cardinality, DefaultDocMapperBuilder, DocMapper, DocParsingError, FieldMappingEntry,
         WarmupInfo, DYNAMIC_FIELD_NAME,
@@ -312,8 +314,8 @@ mod tests {
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
             query: "json_field.toto.titi:hello".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
@@ -333,7 +335,7 @@ mod tests {
     fn test_doc_mapper_query_with_invalid_sort_field() {
         let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
         let text_opt = QuickwitTextOptions {
-            fast: true,
+            fast: FastFieldOptions::IsEnabled(true),
             ..Default::default()
         };
 
@@ -349,8 +351,8 @@ mod tests {
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
             query: "text_field:hello".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
@@ -384,8 +386,8 @@ mod tests {
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
             query: "toto.titi:hello".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
@@ -419,8 +421,8 @@ mod tests {
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
             query: "toto:5".to_string(),
-            search_fields: vec![],
-            snippet_fields: vec![],
+            search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,

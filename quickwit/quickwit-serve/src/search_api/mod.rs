@@ -68,7 +68,7 @@ mod tests {
             index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
-            snippet_fields: vec![],
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             fast_field: "timestamp".to_string(),

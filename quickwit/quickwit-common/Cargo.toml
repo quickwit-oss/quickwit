@@ -23,7 +23,7 @@ hyper = { workspace = true }
 itertools = { workspace = true }
 num_cpus = { workspace = true }
 once_cell = { workspace = true }
-pin-project-lite = { workspace = true }
+pin-project = { workspace = true }
 pnet = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
@@ -42,3 +42,5 @@ testsuite = []
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+
+quickwit-macros = { workspace = true }

@@ -356,7 +356,7 @@ mod tests {
         ));
         let merge_planner = MergePlanner::new(
             pipeline_id,
-            vec![],
+            Vec::new(),
             merge_policy,
             merge_split_downloader_mailbox,
         );

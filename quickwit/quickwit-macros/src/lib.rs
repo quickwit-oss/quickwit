@@ -17,20 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::net::SocketAddr;
-use std::path::PathBuf;
+use proc_macro::TokenStream;
+use quickwit_macros_impl::derive_prometheus_labels_impl;
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct ServeArgs {
-    /// Socket address of the REST server.
-    pub rest_socket_addr: SocketAddr,
-
-    /// The path to the file that stores the ID to make the node unique.
-    pub host_key_path: PathBuf,
-
-    /// Socket addresses of the peer REST server.
-    pub peer_socket_addrs: Vec<SocketAddr>,
-
-    /// Metastore URI.
-    pub metastore_uri: String,
+#[proc_macro_derive(PrometheusLabels, attributes(prometheus_label))]
+pub fn derive_prometheus_labels(input: TokenStream) -> TokenStream {
+    derive_prometheus_labels_impl(input.into()).into()
 }

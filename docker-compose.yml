@@ -26,7 +26,7 @@ services:
       KINESIS_PROVIDER: kinesalite
       SERVICES: kinesis,s3
     volumes:
-      - ".localstack:/docker-entrypoint-initaws.d"
+      - ".localstack:/etc/localstack/init/ready.d"
       - "${TMPDIR:-/tmp}/quickwit/services/localstack:/var/lib/localstack"
     healthcheck:
       test: ["CMD", "curl", "-k", "-f", "https://localhost:4566/quickwit-integration-tests"]

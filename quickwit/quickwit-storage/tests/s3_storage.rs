@@ -20,17 +20,16 @@
 // This file is an integration test that assumes that the environment
 // makes it possible to connect to Amazon S3's quickwit-integration-test bucket.
 
-use std::path::Path;
-
-use anyhow::Context;
-use quickwit_common::uri::Uri;
-use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
-
 #[cfg(feature = "testsuite")]
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 // Weirdly this does not work for localstack. The error messages seem off.
 async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
+    use std::path::Path;
+
+    use anyhow::Context;
+    use quickwit_common::uri::Uri;
+    use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
     let _ = tracing_subscriber::fmt::try_init();
     let storage_uri = Uri::from_well_formed("s3://quickwit-integration-tests");
     let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?;

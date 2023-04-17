@@ -515,7 +515,7 @@ mod tests {
     #[test]
     fn test_merge_segment_fruits() {
         {
-            let segment_fruits = vec![];
+            let segment_fruits = Vec::new();
             let merged_fruit = merge_segment_fruits(segment_fruits, 0);
             assert_eq!(merged_fruit, &[]);
         }

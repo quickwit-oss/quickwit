@@ -17,8 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
+
 use once_cell::sync::OnceCell;
-use quickwit_common::metrics::create_gauge_guard;
+use quickwit_common::metrics::GaugeGuard;
 use tracing::error;
 
 fn search_thread_pool() -> &'static rayon::ThreadPool {
@@ -36,6 +38,14 @@ fn search_thread_pool() -> &'static rayon::ThreadPool {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Panicked;
+
+impl fmt::Display for Panicked {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Scheduled job panicked")
+    }
+}
+
+impl std::error::Error for Panicked {}
 
 /// Function similar to `tokio::spawn_blocking`.
 ///
@@ -61,7 +71,7 @@ where
     let (tx, rx) = tokio::sync::oneshot::channel();
     search_thread_pool().spawn(move || {
         let _active_thread_guard =
-            create_gauge_guard(&crate::SEARCH_METRICS.active_search_threads_count);
+            GaugeGuard::from_gauge(&crate::SEARCH_METRICS.active_search_threads_count);
         if tx.is_closed() {
             return;
         }
