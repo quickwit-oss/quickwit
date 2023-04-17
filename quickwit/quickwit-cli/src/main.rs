@@ -139,6 +139,8 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    quickwit_aws::try_init_aws_config().await;
+
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
