@@ -113,50 +113,106 @@ fn setup_logging_and_tracing(
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    #[cfg(feature = "openssl-support")]
-    openssl_probe::init_ssl_cert_env_vars();
+fn main() -> anyhow::Result<()> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .on_thread_unpark(busy_detector::thread_unpark)
+        .on_thread_park(busy_detector::thread_park)
+        .build()
+        .unwrap()
+        .block_on(async {
+            #[cfg(feature = "openssl-support")]
+            openssl_probe::init_ssl_cert_env_vars();
 
-    let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
-    let about_text = about_text();
-    let build_info = quickwit_build_info();
-    let version_text = format!(
-        "{} ({} {})",
-        build_info.version, build_info.commit_short_hash, build_info.build_date
-    );
+            let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
+            let about_text = about_text();
+            let build_info = quickwit_build_info();
+            let version_text = format!(
+                "{} ({} {})",
+                build_info.version, build_info.commit_short_hash, build_info.build_date
+            );
 
-    let app = build_cli()
-        .about(about_text.as_str())
-        .version(version_text.as_str());
-    let matches = app.get_matches();
+            let app = build_cli()
+                .about(about_text.as_str())
+                .version(version_text.as_str());
+            let matches = app.get_matches();
 
-    let command = match CliCommand::parse_cli_args(&matches) {
-        Ok(command) => command,
-        Err(err) => {
-            eprintln!("Failed to parse command arguments: {err:?}");
-            std::process::exit(1);
-        }
-    };
+            let command = match CliCommand::parse_cli_args(&matches) {
+                Ok(command) => command,
+                Err(err) => {
+                    eprintln!("Failed to parse command arguments: {err:?}");
+                    std::process::exit(1);
+                }
+            };
 
-    #[cfg(feature = "jemalloc")]
-    start_jemalloc_metrics_loop();
+            #[cfg(feature = "jemalloc")]
+            start_jemalloc_metrics_loop();
 
-    setup_logging_and_tracing(
-        command.default_log_level(),
-        !matches.is_present("no-color"),
-        build_info,
-    )?;
-    let return_code: i32 = if let Err(err) = command.execute().await {
-        eprintln!("{} Command failed: {:?}\n", "✘".color(RED_COLOR), err);
-        1
-    } else {
-        0
-    };
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code }).await;
-    telemetry_handle.terminate_telemetry().await;
-    global::shutdown_tracer_provider();
-    std::process::exit(return_code)
+            setup_logging_and_tracing(
+                command.default_log_level(),
+                !matches.is_present("no-color"),
+                build_info,
+            )?;
+            let return_code: i32 = if let Err(err) = command.execute().await {
+                eprintln!("{} Command failed: {:?}\n", "✘".color(RED_COLOR), err);
+                1
+            } else {
+                0
+            };
+            quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code })
+                .await;
+            telemetry_handle.terminate_telemetry().await;
+            global::shutdown_tracer_provider();
+            std::process::exit(return_code)
+        })
+}
+
+mod busy_detector {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Instant;
+
+    use once_cell::sync::Lazy;
+    use tracing::warn;
+
+    // we need that time reference to use an atomic and not a mutex for LAST_UNPARK
+    static TIME_REF: Lazy<Instant> = Lazy::new(Instant::now);
+
+    const ALLOWED_DELAY_MICROS: u64 = 5000;
+
+    thread_local!(static LAST_UNPARK: AtomicU64 = AtomicU64::new(0));
+    thread_local!(static MY_ID: AtomicU64 = AtomicU64::new(0));
+    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+
+    pub fn thread_unpark() {
+        LAST_UNPARK.with(|time| {
+            let now = Instant::now()
+                .checked_duration_since(*TIME_REF)
+                .unwrap_or_default();
+            time.store(now.as_micros() as u64, Ordering::Relaxed);
+        })
+    }
+
+    pub fn thread_park() {
+        LAST_UNPARK.with(|time| {
+            let now = Instant::now()
+                .checked_duration_since(*TIME_REF)
+                .unwrap_or_default();
+            let delta = now.as_micros() as u64 - time.load(Ordering::Relaxed);
+            if delta > ALLOWED_DELAY_MICROS {
+                let id = MY_ID.with(|my_id| {
+                    let id = my_id.load(Ordering::Relaxed);
+                    if id == 0 {
+                        let new_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+                        my_id.store(new_id, Ordering::Relaxed);
+                        new_id
+                    } else {
+                        id
+                    }
+                });
+                warn!("Thread{id} wasn't parked for {delta}µs, is the runtime too busy?");
+            }
+        })
+    }
 }
 
 /// Return the about text with telemetry info.
