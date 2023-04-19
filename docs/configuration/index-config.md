@@ -40,7 +40,7 @@ doc_mapping:
       type: text
       tokenizer: raw
       fast: 
-        - with_tokenizer: lowercase
+        - tokenizer: lowercase
     - name: body
       type: text
       tokenizer: default
@@ -126,7 +126,7 @@ fieldnorms: true
 | `tokenizer` | Name of the `Tokenizer`. ([See tokenizers](#description-of-available-tokenizers)) for a list of available tokenizers.  | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 | `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |
-| `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids and the dictionary. The effective cardinality depends on the tokenizer. The default behaviour for `true` is to store the original text unchanged. The tokenizer on the fast field is seperately configured. It can be configured via `{"with_tokenizer": "lowercase"}`. ([See tokenizers](#description-of-available-tokenizers)) for a list of available tokenizers. | `false` |
+| `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids and the dictionary. The effective cardinality depends on the tokenizer. The default behaviour for `true` is to store the original text unchanged. The tokenizer on the fast field is seperately configured. It can be configured via `{"tokenizer": "lowercase"}`. ([See tokenizers](#description-of-available-tokenizers)) for a list of available tokenizers. | `false` |
 
 #### **Description of available tokenizers**
 

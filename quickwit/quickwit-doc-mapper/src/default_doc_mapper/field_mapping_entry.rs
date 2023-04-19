@@ -179,7 +179,7 @@ pub struct QuickwitTextOptions {
 #[serde(untagged)]
 pub enum FastFieldOptions {
     IsEnabled(bool),
-    EnabledWithTokenizer { with_tokenizer: String },
+    EnabledWithTokenizer { tokenizer: String },
 }
 
 impl Default for FastFieldOptions {
@@ -212,8 +212,8 @@ impl From<QuickwitTextOptions> for TextOptions {
             FastFieldOptions::IsEnabled(true) => {
                 text_options = text_options.set_fast(None);
             }
-            FastFieldOptions::EnabledWithTokenizer { with_tokenizer } => {
-                text_options = text_options.set_fast(Some(with_tokenizer));
+            FastFieldOptions::EnabledWithTokenizer { tokenizer } => {
+                text_options = text_options.set_fast(Some(tokenizer));
             }
             FastFieldOptions::IsEnabled(false) => {}
         }
@@ -1113,7 +1113,7 @@ mod tests {
             {
                 "name": "my_field_name",
                 "type": "text",
-                "fast": {"with_tokenizer": "lowercase"}
+                "fast": {"tokenizer": "lowercase"}
             }
             "#,
         )
@@ -1124,7 +1124,7 @@ mod tests {
             json!({
                 "name": "my_field_name",
                 "type": "text",
-                "fast": {"with_tokenizer": "lowercase"},
+                "fast": {"tokenizer": "lowercase"},
                 "stored": true,
                 "indexed": true,
                 "fieldnorms": false,
