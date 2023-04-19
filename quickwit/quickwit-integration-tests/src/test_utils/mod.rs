@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod cluster_sandbox;
-mod rest_client;
+mod test_client;
 
 pub use cluster_sandbox::{build_node_configs, ClusterSandbox};
-pub use rest_client::QuickwitRestClient;
+pub use test_client::TestClient;

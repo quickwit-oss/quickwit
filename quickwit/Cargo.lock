@@ -4615,6 +4615,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-integration-tests"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "chitchat",
+ "futures-util",
+ "hyper",
+ "itertools",
+ "quickwit-actors",
+ "quickwit-cluster",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-indexing",
+ "quickwit-metastore",
+ "quickwit-proto",
+ "quickwit-rest-client",
+ "quickwit-search",
+ "quickwit-serve",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-jaeger"
 version = "0.5.0"
 dependencies = [
@@ -4790,6 +4820,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "quickwit-actors",
+ "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
  "quickwit-indexing",

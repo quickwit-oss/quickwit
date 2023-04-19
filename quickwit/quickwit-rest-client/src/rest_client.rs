@@ -20,8 +20,10 @@
 use std::time::Duration;
 
 use bytes::Bytes;
+use quickwit_cluster::ClusterSnapshot;
 use quickwit_common::FileEntry;
 use quickwit_config::{ConfigFormat, SourceConfig};
+use quickwit_indexing::actors::IndexingServiceCounters;
 pub use quickwit_ingest::CommitType;
 use quickwit_metastore::{IndexMetadata, Split};
 use quickwit_search::SearchResponseRest;
@@ -138,6 +140,14 @@ impl QuickwitClient {
 
     pub fn sources<'a, 'b: 'a>(&'a self, index_id: &'b str) -> SourceClient {
         SourceClient::new(&self.transport, index_id)
+    }
+
+    pub fn cluster(&self) -> ClusterClient {
+        ClusterClient::new(&self.transport)
+    }
+
+    pub fn stats(&self) -> StatsClient {
+        StatsClient::new(&self.transport)
     }
 
     pub async fn ingest(
@@ -415,6 +425,46 @@ impl<'a, 'b> SourceClient<'a, 'b> {
             .await?;
         response.check().await?;
         Ok(())
+    }
+}
+
+/// Client for Cluster APIs.
+pub struct ClusterClient<'a> {
+    transport: &'a Transport,
+}
+
+impl<'a> ClusterClient<'a> {
+    pub fn new(transport: &'a Transport) -> Self {
+        Self { transport }
+    }
+
+    pub async fn snapshot(&self) -> Result<ClusterSnapshot, Error> {
+        let response = self
+            .transport
+            .send::<()>(Method::GET, "cluster", None, None, None)
+            .await?;
+        let cluster_snapshot = response.deserialize().await?;
+        Ok(cluster_snapshot)
+    }
+}
+
+/// Client for Stats APIs.
+pub struct StatsClient<'a> {
+    transport: &'a Transport,
+}
+
+impl<'a> StatsClient<'a> {
+    pub fn new(transport: &'a Transport) -> Self {
+        Self { transport }
+    }
+
+    pub async fn indexing(&self) -> Result<IndexingServiceCounters, Error> {
+        let response = self
+            .transport
+            .send::<()>(Method::GET, "indexing", None, None, None)
+            .await?;
+        let indexing_stats = response.deserialize().await?;
+        Ok(indexing_stats)
     }
 }
 

@@ -20,6 +20,7 @@
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 
+use futures::Future;
 use quickwit_config::service::QuickwitService;
 use quickwit_control_plane::control_plane_service_grpc_server::ControlPlaneServiceGrpcServer;
 use quickwit_control_plane::ControlPlaneServiceGrpcServerAdapter;
@@ -44,10 +45,14 @@ use crate::search_api::GrpcSearchAdapter;
 use crate::QuickwitServices;
 
 /// Starts gRPC services given a gRPC address.
-pub(crate) async fn start_grpc_server(
+pub(crate) async fn start_grpc_server<F>(
     grpc_listen_addr: SocketAddr,
     services: &QuickwitServices,
-) -> anyhow::Result<()> {
+    shutdown_signal: F,
+) -> anyhow::Result<()>
+where
+    F: Future<Output = ()>,
+{
     let mut enabled_grpc_services = BTreeSet::new();
     let mut server = Server::builder();
 
@@ -150,6 +155,8 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(jaeger_grpc_service);
 
     info!(enabled_grpc_services=?enabled_grpc_services, grpc_listen_addr=?grpc_listen_addr, "Starting gRPC server.");
-    server_router.serve(grpc_listen_addr).await?;
+    server_router
+        .serve_with_shutdown(grpc_listen_addr, shutdown_signal)
+        .await?;
     Ok(())
 }
