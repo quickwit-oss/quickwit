@@ -149,7 +149,7 @@ impl Bucket {
     }
 
     fn bucket_ord(&self) -> u64 {
-        self.bucket_ord.load(Ordering::Acquire)
+        self.bucket_ord.load(Ordering::Relaxed)
     }
 
     fn cumulated_work(&self) -> u64 {
@@ -166,12 +166,12 @@ impl Bucket {
             .compare_exchange(
                 current_bucket_ord,
                 new_bucket_ord,
-                Ordering::AcqRel,
-                Ordering::Acquire,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
             )
             .is_ok()
         {
-            self.cumulated_work.store(0, Ordering::Release);
+            self.cumulated_work.store(0, Ordering::Relaxed);
         }
     }
 }

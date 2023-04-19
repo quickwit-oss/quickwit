@@ -146,7 +146,7 @@ impl TestSandbox {
             .into_iter()
             .map(|json_doc| Bytes::from(json_doc.to_string()))
             .collect();
-        let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
+        let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::Relaxed);
         let source_config = SourceConfig {
             source_id: self.index_id.clone(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),

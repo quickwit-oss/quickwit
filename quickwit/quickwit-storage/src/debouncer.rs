@@ -244,7 +244,7 @@ mod tests {
             .get_or_create(addr1.clone(), || {
                 let test_filepath1 = test_filepath1.clone();
                 async move {
-                    COUNT.fetch_add(1, Ordering::SeqCst);
+                    COUNT.fetch_add(1, Ordering::Relaxed);
                     let contents = Box::pin(fs::read_to_string(test_filepath1.as_ref().clone()))
                         .await
                         // to string, so that the error is cloneable
@@ -268,7 +268,7 @@ mod tests {
 
         println!("{val}");
 
-        assert_eq!(COUNT.load(Ordering::SeqCst), 2);
+        assert_eq!(COUNT.load(Ordering::Relaxed), 2);
 
         // Load via function, new entry
         let addr2 = SliceAddress {
@@ -283,7 +283,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(COUNT.load(Ordering::SeqCst), 3);
+        assert_eq!(COUNT.load(Ordering::Relaxed), 3);
 
         let load = || load_via_fn(test_filepath1.as_ref().clone(), &COUNT);
 
@@ -295,7 +295,7 @@ mod tests {
         futures::future::join_all(handles).await;
 
         // Count is only increased by one, because of debouncing
-        assert_eq!(COUNT.load(Ordering::SeqCst), 4);
+        assert_eq!(COUNT.load(Ordering::Relaxed), 4);
 
         // Quadruple debouncing
         let handles = vec![
@@ -307,7 +307,7 @@ mod tests {
         futures::future::join_all(handles).await;
 
         // Count is only increased by one, because of debouncing
-        assert_eq!(COUNT.load(Ordering::SeqCst), 5);
+        assert_eq!(COUNT.load(Ordering::Relaxed), 5);
     }
 
     #[tokio::test]
@@ -333,7 +333,7 @@ mod tests {
         futures::future::join_all(handles).await;
 
         // Count is only increased by one, because of debouncing
-        assert_eq!(COUNT.load(Ordering::SeqCst), 1);
+        assert_eq!(COUNT.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]
@@ -399,7 +399,7 @@ mod tests {
     }
 
     async fn load_via_fn(path: PathBuf, cnt: &AtomicU32) -> Result<String, String> {
-        cnt.fetch_add(1, Ordering::SeqCst);
+        cnt.fetch_add(1, Ordering::Relaxed);
         let contents = Box::pin(fs::read_to_string(path))
             .await
             .map_err(|err| err.to_string())?;

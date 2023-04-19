@@ -62,8 +62,10 @@ impl IndexingStatistics {
         self.num_invalid_docs += doc_processor_counters.num_invalid_docs();
         self.num_local_splits += indexer_counters.num_splits_emitted;
         self.total_bytes_processed += doc_processor_counters.overall_num_bytes;
-        self.num_staged_splits += uploader_counters.num_staged_splits.load(Ordering::SeqCst);
-        self.num_uploaded_splits += uploader_counters.num_uploaded_splits.load(Ordering::SeqCst);
+        self.num_staged_splits += uploader_counters.num_staged_splits.load(Ordering::Relaxed);
+        self.num_uploaded_splits += uploader_counters
+            .num_uploaded_splits
+            .load(Ordering::Relaxed);
         self.num_published_splits += publisher_counters.num_published_splits;
         self.num_empty_splits += publisher_counters.num_empty_splits;
         self

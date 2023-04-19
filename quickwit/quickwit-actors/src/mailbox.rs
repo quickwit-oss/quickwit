@@ -71,7 +71,7 @@ impl<A: Actor> Mailbox<A> {
 
 impl<A: Actor> Drop for Mailbox<A> {
     fn drop(&mut self) {
-        let old_val = self.ref_count.fetch_sub(1, Ordering::SeqCst);
+        let old_val = self.ref_count.fetch_sub(1, Ordering::Relaxed);
         if old_val == 2 {
             // This was the last mailbox.
             // `ref_count == 1` means that only the mailbox in the ActorContext
@@ -118,7 +118,7 @@ pub(crate) enum Priority {
 
 impl<A: Actor> Clone for Mailbox<A> {
     fn clone(&self) -> Self {
-        self.ref_count.fetch_add(1, Ordering::SeqCst);
+        self.ref_count.fetch_add(1, Ordering::Relaxed);
         Mailbox {
             inner: self.inner.clone(),
             ref_count: self.ref_count.clone(),
@@ -128,7 +128,7 @@ impl<A: Actor> Clone for Mailbox<A> {
 
 impl<A: Actor> Mailbox<A> {
     pub(crate) fn is_last_mailbox(&self) -> bool {
-        self.ref_count.load(Ordering::SeqCst) == 1
+        self.ref_count.load(Ordering::Relaxed) == 1
     }
 
     pub fn id(&self) -> &str {

@@ -84,8 +84,8 @@ impl AtomicState {
         let _ = self.0.compare_exchange(
             ActorState::Idle as u32,
             ActorState::Processing as u32,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
         );
     }
 
@@ -93,15 +93,15 @@ impl AtomicState {
         let _ = self.0.compare_exchange(
             ActorState::Processing as u32,
             ActorState::Idle as u32,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
         );
     }
 
     pub fn pause(&self) {
         let _ = self
             .0
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |state| {
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
                 if ActorState::from(state).is_running() {
                     return Some(ActorState::Paused as u32);
                 }
@@ -113,8 +113,8 @@ impl AtomicState {
         let _ = self.0.compare_exchange(
             ActorState::Paused as u32,
             ActorState::Processing as u32,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
         );
     }
 
@@ -124,11 +124,11 @@ impl AtomicState {
         } else {
             ActorState::Failure
         };
-        self.0.fetch_max(new_state as u32, Ordering::Release);
+        self.0.fetch_max(new_state as u32, Ordering::Relaxed);
     }
 
     pub fn get_state(&self) -> ActorState {
-        ActorState::from(self.0.load(Ordering::Acquire))
+        ActorState::from(self.0.load(Ordering::Relaxed))
     }
 }
 

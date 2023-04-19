@@ -242,10 +242,7 @@ impl TelemetrySender {
         }
 
         assert!(
-            self.inner
-                .is_started
-                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                .is_ok(),
+            !self.inner.is_started.swap(true, Ordering::Relaxed),
             "The telemetry loop is already started."
         );
 

@@ -87,7 +87,7 @@ impl SchedulerClient {
     fn is_advance_time_forbidden(&self) -> bool {
         self.inner
             .no_advance_time_guard_count
-            .load(Ordering::SeqCst)
+            .load(Ordering::Relaxed)
             > 0
     }
 
@@ -112,7 +112,7 @@ impl SchedulerClient {
     pub(crate) fn inc_no_advance_time(&self) {
         self.inner
             .no_advance_time_guard_count
-            .fetch_add(1, Ordering::SeqCst);
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     // Decrease the number of reasons to not simulate advance time.
@@ -122,7 +122,7 @@ impl SchedulerClient {
         let previous_count = self
             .inner
             .no_advance_time_guard_count
-            .fetch_sub(1, Ordering::SeqCst);
+            .fetch_sub(1, Ordering::Relaxed);
         if previous_count == 1 {
             self.process_time();
         }
@@ -389,7 +389,7 @@ mod tests {
             _tick: Tick,
             ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
-            self.count.fetch_add(1, Ordering::SeqCst);
+            self.count.fetch_add(1, Ordering::Relaxed);
             ctx.schedule_self_msg(Duration::from_secs(1), Tick).await;
             Ok(())
         }
@@ -404,9 +404,9 @@ mod tests {
         };
         let universe = Universe::with_accelerated_time();
         universe.spawn_builder().spawn(simple_actor);
-        assert_eq!(count.load(Ordering::SeqCst), 0);
+        assert_eq!(count.load(Ordering::Relaxed), 0);
         universe.sleep(Duration::from_millis(15)).await;
-        assert_eq!(count.load(Ordering::SeqCst), 1);
+        assert_eq!(count.load(Ordering::Relaxed), 1);
         universe.assert_quit().await;
     }
 
@@ -420,9 +420,9 @@ mod tests {
         };
         let universe = Universe::with_accelerated_time();
         universe.spawn_builder().spawn(simple_actor);
-        assert_eq!(count.load(Ordering::SeqCst), 0);
+        assert_eq!(count.load(Ordering::Relaxed), 0);
         universe.sleep(Duration::from_secs(10)).await;
-        assert_eq!(count.load(Ordering::SeqCst), 10);
+        assert_eq!(count.load(Ordering::Relaxed), 10);
         let elapsed = start.elapsed();
         // The whole point is to accelerate time.
         assert!(elapsed.as_millis() < 50);

@@ -63,7 +63,7 @@ impl MemoryCapacity {
     /// capacity available.
     pub fn reserve_capacity(&self, num_bytes: usize) -> Result<(), ReserveCapacityError> {
         loop {
-            let current_capacity = self.inner.capacity.load(Ordering::Acquire);
+            let current_capacity = self.inner.capacity.load(Ordering::Relaxed);
 
             if current_capacity < num_bytes {
                 return Err(ReserveCapacityError(current_capacity));
@@ -73,11 +73,11 @@ impl MemoryCapacity {
             if self
                 .inner
                 .capacity
-                .compare_exchange(
+                .compare_exchange_weak(
                     current_capacity,
                     new_capacity,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
                 )
                 .is_ok()
             {
@@ -88,7 +88,7 @@ impl MemoryCapacity {
 
     /// Resets the capacity to `new_capacity`.
     pub fn reset_capacity(&self, new_capacity: usize) {
-        self.inner.capacity.store(new_capacity, Ordering::Release);
+        self.inner.capacity.store(new_capacity, Ordering::Relaxed);
     }
 
     pub fn max_capacity(&self) -> usize {

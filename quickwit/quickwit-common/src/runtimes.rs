@@ -86,7 +86,7 @@ fn start_runtimes(config: RuntimesConfiguration) -> HashMap<RuntimeType, Runtime
         .worker_threads(config.num_threads_blocking)
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1, Ordering::AcqRel);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::Relaxed);
             format!("blocking-{id}")
         })
         .enable_all()
@@ -97,7 +97,7 @@ fn start_runtimes(config: RuntimesConfiguration) -> HashMap<RuntimeType, Runtime
         .worker_threads(config.num_threads_non_blocking)
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1, Ordering::AcqRel);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::Relaxed);
             format!("non-blocking-{id}")
         })
         .enable_all()

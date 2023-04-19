@@ -104,12 +104,12 @@ mod tests {
             let counter_clone = counter.clone();
             let fut = run_cpu_intensive(move || {
                 std::thread::sleep(Duration::from_millis(5));
-                counter_clone.fetch_add(1, Ordering::SeqCst)
+                counter_clone.fetch_add(1, Ordering::Relaxed)
             });
             // The first few num_cores tasks should run, but the other should get cancelled.
             futures.push(tokio::time::timeout(Duration::from_millis(1), fut));
         }
         futures::future::join_all(futures).await;
-        assert!(counter.load(Ordering::SeqCst) < 100);
+        assert!(counter.load(Ordering::Relaxed) < 100);
     }
 }

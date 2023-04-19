@@ -44,7 +44,9 @@ impl MergeStatistics {
         uploader_counters: &UploaderCounters,
         publisher_counters: &PublisherCounters,
     ) -> Self {
-        self.num_uploaded_splits += uploader_counters.num_uploaded_splits.load(Ordering::SeqCst);
+        self.num_uploaded_splits += uploader_counters
+            .num_uploaded_splits
+            .load(Ordering::Relaxed);
         self.num_published_splits += publisher_counters.num_published_splits;
         self
     }

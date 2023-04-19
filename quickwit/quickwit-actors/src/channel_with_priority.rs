@@ -37,8 +37,9 @@ impl<T> LockedOption<T> {
         }
     }
 
+    // this is inherently racy: we could .is_some(), and the value be put/taken just after
     pub fn is_some(&self) -> bool {
-        self.has_val.load(Ordering::Acquire)
+        self.has_val.load(Ordering::Relaxed)
     }
 
     pub fn is_none(&self) -> bool {
@@ -46,18 +47,18 @@ impl<T> LockedOption<T> {
     }
 
     pub fn take(&self) -> Option<T> {
-        if !self.has_val.load(Ordering::Acquire) {
+        if !self.has_val.load(Ordering::Relaxed) {
             return None;
         }
         let mut lock = self.opt.lock().unwrap();
         let val_opt = lock.take();
-        self.has_val.store(false, Ordering::Release);
+        self.has_val.store(false, Ordering::Relaxed);
         val_opt
     }
 
     pub fn place(&self, val: T) {
         let mut lock = self.opt.lock().unwrap();
-        self.has_val.store(true, Ordering::Release);
+        self.has_val.store(true, Ordering::Relaxed);
         *lock = Some(val);
     }
 }

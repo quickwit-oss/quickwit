@@ -321,7 +321,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 metastore
                     .stage_splits(&index_id, split_metadata_list.clone())
                     .await?;
-                counters.num_staged_splits.fetch_add(split_metadata_list.len() as u64, Ordering::SeqCst);
+                counters.num_staged_splits.fetch_add(split_metadata_list.len() as u64, Ordering::Relaxed);
 
                 let mut packaged_splits_and_metadata = Vec::with_capacity(batch.splits.len());
                 for (packaged_split, metadata) in batch.splits.into_iter().zip(split_metadata_list) {
@@ -448,7 +448,7 @@ async fn upload_split(
             Box::new(split_streamer),
         )
         .await?;
-    counters.num_uploaded_splits.fetch_add(1, Ordering::SeqCst);
+    counters.num_uploaded_splits.fetch_add(1, Ordering::Relaxed);
     Ok(())
 }
 

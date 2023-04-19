@@ -60,9 +60,11 @@ impl RetryTestMetastore {
     }
 
     fn try_success(&self) -> MetastoreResult<()> {
-        let retry_count = self.retry_count.load(Ordering::SeqCst);
+        let retry_count = self.retry_count.load(Ordering::Relaxed);
         if retry_count < self.error_count {
-            self.retry_count.fetch_add(1, Ordering::SeqCst);
+            // TODO(trinity) Note to self: this is racy, we could return Ok more than we should
+            // I don't think we care, but I'm leaving that to check again later
+            self.retry_count.fetch_add(1, Ordering::Relaxed);
             Err(self.errors_to_return[retry_count].clone())
         } else {
             Ok(())
