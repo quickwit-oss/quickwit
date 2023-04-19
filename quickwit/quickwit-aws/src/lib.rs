@@ -20,6 +20,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use aws_config::retry::RetryConfig;
+use aws_types::region::Region;
 use aws_smithy_client::hyper_ext;
 use hyper_rustls::HttpsConnectorBuilder;
 use tokio::sync::OnceCell;
@@ -29,6 +30,7 @@ pub mod error;
 pub mod retry;
 
 static AWS_CONFIG: OnceCell<aws_config::SdkConfig> = OnceCell::const_new();
+pub const DEFAULT_AWS_REGION: Region = Region::from_static("us-east-1");
 
 /// Attempts to get the current AWS SDK config.
 ///

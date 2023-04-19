@@ -17,10 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::sync::Arc;
+
 use anyhow::anyhow;
 use aws_sdk_kinesis::config::Region;
 use aws_sdk_kinesis::{Client, Config};
-use quickwit_aws::try_get_aws_config;
+use quickwit_aws::{try_get_aws_config, DEFAULT_AWS_REGION};
 use quickwit_config::RegionOrEndpoint;
 
 pub fn get_kinesis_client(region_or_endpoint: RegionOrEndpoint) -> anyhow::Result<Client> {
@@ -41,6 +43,7 @@ pub fn get_kinesis_client(region_or_endpoint: RegionOrEndpoint) -> anyhow::Resul
         }
         RegionOrEndpoint::Endpoint(endpoint) => {
             kinesis_config = kinesis_config.endpoint_url(endpoint);
+            kinesis_config = kinesis_config.region(Some(DEFAULT_AWS_REGION));
         }
     }
 

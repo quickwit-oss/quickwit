@@ -4629,6 +4629,7 @@ dependencies = [
  "aws-sdk-s3",
  "aws-smithy-async",
  "aws-smithy-client",
+ "aws-types",
  "ec2_instance_metadata",
  "futures",
  "hyper-rustls",

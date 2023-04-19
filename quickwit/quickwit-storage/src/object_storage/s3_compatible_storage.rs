@@ -36,7 +36,7 @@ use futures::{stream, Future, StreamExt};
 use once_cell::sync::OnceCell;
 use quickwit_aws::error::SdkErrorWrapper;
 use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
-use quickwit_aws::try_get_aws_config;
+use quickwit_aws::{try_get_aws_config, DEFAULT_AWS_REGION};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
@@ -71,6 +71,7 @@ impl fmt::Debug for S3CompatibleObjectStorage {
 }
 
 fn create_s3_client() -> Option<aws_sdk_s3::Client> {
+    dbg!("Getting S3 client");
     let cfg = try_get_aws_config()?;
     let mut s3_config = aws_sdk_s3::Config::builder();
     s3_config.set_retry_config(cfg.retry_config().cloned());
@@ -83,9 +84,10 @@ fn create_s3_client() -> Option<aws_sdk_s3::Client> {
     // We have a custom endpoint set, otherwise we let the SDK set it.
     if let Some(endpoint) = quickwit_aws::get_s3_endpoint() {
         s3_config.set_endpoint_url(Some(endpoint));
+        s3_config = s3_config.region(Some(DEFAULT_AWS_REGION));
     } else {
         s3_config.set_endpoint_url(cfg.endpoint_url().map(|v| v.to_owned()));
-        s3_config = s3_config.region(cfg.region().cloned());
+        s3_config = s3_config.region(cfg.region().cloned().unwrap_or(DEFAULT_AWS_REGION));
     }
 
     Some(aws_sdk_s3::Client::from_conf(s3_config.build()))
