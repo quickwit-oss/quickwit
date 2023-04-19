@@ -20,11 +20,11 @@
 #![deny(clippy::disallowed_methods)]
 
 use aws_config::retry::RetryConfig;
-use aws_types::region::Region;
+pub use aws_smithy_async::rt::sleep::TokioSleep;
 use aws_smithy_client::hyper_ext;
+use aws_types::region::Region;
 use hyper_rustls::HttpsConnectorBuilder;
 use tokio::sync::OnceCell;
-pub use aws_smithy_async::rt::sleep::TokioSleep;
 
 pub mod error;
 pub mod retry;
@@ -78,7 +78,7 @@ pub fn get_s3_endpoint() -> Option<String> {
 
 /// Check the environment variable if Quickwit should
 /// use path style bucket access or not.
-/// 
+///
 /// This is required for things like MinIO, etc...
 pub fn should_use_path_style_s3_access() -> Option<bool> {
     std::env::var("QW_S3_FORCE_PATH_STYLE_ACCESS")
