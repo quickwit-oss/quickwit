@@ -75,3 +75,13 @@ pub async fn try_init_aws_config() -> &'static aws_config::SdkConfig {
 pub fn get_s3_endpoint() -> Option<String> {
     std::env::var("QW_S3_ENDPOINT").ok()
 }
+
+/// Check the environment variable if Quickwit should
+/// use path style bucket access or not.
+/// 
+/// This is required for things like MinIO, etc...
+pub fn should_use_path_style_s3_access() -> Option<bool> {
+    std::env::var("QW_S3_FORCE_PATH_STYLE_ACCESS")
+        .map(|v| v.parse::<bool>().unwrap_or_default())
+        .ok()
+}

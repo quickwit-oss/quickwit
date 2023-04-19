@@ -71,7 +71,6 @@ impl fmt::Debug for S3CompatibleObjectStorage {
 }
 
 fn create_s3_client() -> Option<aws_sdk_s3::Client> {
-    dbg!("Getting S3 client");
     let cfg = try_get_aws_config()?;
     let mut s3_config = aws_sdk_s3::Config::builder();
     s3_config.set_retry_config(cfg.retry_config().cloned());
@@ -80,6 +79,7 @@ fn create_s3_client() -> Option<aws_sdk_s3::Client> {
     s3_config.set_timeout_config(cfg.timeout_config().cloned());
     s3_config.set_credentials_cache(cfg.credentials_cache().cloned());
     s3_config.set_sleep_impl(Some(Arc::new(quickwit_aws::TokioSleep::default())));
+    s3_config.set_force_path_style(quickwit_aws::should_use_path_style_s3_access());
 
     // We have a custom endpoint set, otherwise we let the SDK set it.
     if let Some(endpoint) = quickwit_aws::get_s3_endpoint() {
@@ -593,7 +593,6 @@ impl Storage for S3CompatibleObjectStorage {
                     }
                 }
                 Err(delete_objects_error) => {
-                    dbg!(&delete_objects_error);
                     error = Some(delete_objects_error.into());
                     unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
                 }
