@@ -136,7 +136,7 @@ fieldnorms: true
 | `default`     | Chops the text on according to whitespace and punctuation, removes tokens that are too long, and converts to lowercase |
 | `en_stem`     |  Like `default`, but also applies stemming on the resulting tokens  |
 | `chinese_compatible` |  Chop between each CJK character in addition to what `default` does. Should be used with `record: position` to be able to properly search |
-| `lowercase` |  Applies a lowercase transformation on the text. |
+| `lowercase` |  Applies a lowercase transformation on the text. It does not tokenize the text. |
 
 **Description of record options**
 
