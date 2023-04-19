@@ -1,4 +1,4 @@
-Copyright (C) 2021 Quickwit Inc.
+Copyright (C) 2023 Quickwit, Inc.
 
 Quickwit is offered under the [GNU Affero General Public License v3.0](https://opensource.org/licenses/AGPL-3.0)
 and as commercial software.

@@ -30,7 +30,7 @@ use futures::StreamExt;
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::{Protocol, Uri};
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tracing::warn;
 
 use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
@@ -209,13 +209,24 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), level = "debug")]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let full_path = self.full_path(path)?;
-        let mut file = fs::File::open(full_path).await?;
-        file.seek(SeekFrom::Start(range.start as u64)).await?;
-        let mut content_bytes: Vec<u8> = vec![0u8; range.len()];
-        file.read_exact(&mut content_bytes).await?;
-        Ok(OwnedBytes::new(content_bytes))
+        tokio::task::spawn_blocking(move || {
+            use std::io::{Read, Seek};
+
+            // we run these io in a spawn_blocking so there is no scheduling delay between each
+            // step, as there would be if using tokio async File.
+            let mut file = std::fs::File::open(full_path)?;
+            file.seek(SeekFrom::Start(range.start as u64))?;
+            let mut content_bytes: Vec<u8> = vec![0u8; range.len()];
+            file.read_exact(&mut content_bytes)?;
+            Ok(OwnedBytes::new(content_bytes))
+        })
+        .await
+        .map_err(|_| {
+            StorageErrorKind::InternalError.with_error(anyhow::anyhow!("reading file panicked"))
+        })?
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
