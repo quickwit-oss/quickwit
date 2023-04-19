@@ -1107,6 +1107,32 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_text_fast_field_tokenizer() {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "text",
+                "fast": {"with_tokenizer": "lowercase"}
+            }
+            "#,
+        )
+        .unwrap();
+        let entry_deserser = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_deserser,
+            json!({
+                "name": "my_field_name",
+                "type": "text",
+                "fast": {"with_tokenizer": "lowercase"},
+                "stored": true,
+                "indexed": true,
+                "fieldnorms": false,
+            })
+        );
+    }
+
+    #[test]
     fn test_parse_text_mapping_multivalued() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"

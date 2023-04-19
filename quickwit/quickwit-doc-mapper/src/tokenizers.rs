@@ -30,6 +30,10 @@ fn get_quickwit_tokenizer_manager() -> TokenizerManager {
         .filter(RemoveLongFilter::limit(100))
         .build();
 
+    let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer)
+        .filter(LowerCaser)
+        .build();
+
     let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
         .filter(RemoveLongFilter::limit(40))
         .filter(LowerCaser)
@@ -38,6 +42,7 @@ fn get_quickwit_tokenizer_manager() -> TokenizerManager {
     let tokenizer_manager = TokenizerManager::default();
 
     tokenizer_manager.register("raw", raw_tokenizer);
+    tokenizer_manager.register("lowercase", lower_case_tokenizer);
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
 
     tokenizer_manager
