@@ -1031,8 +1031,8 @@ mod test {
         let server_url = Url::parse(&mock_server.uri()).unwrap();
         let qw_client = QuickwitClient::new(Transport::new(server_url));
 
-        assert_eq!(qw_client.node_health().is_live().await.is_ok(), false);
-        assert_eq!(qw_client.node_health().is_ready().await.is_ok(), false);
+        assert!(qw_client.node_health().is_live().await.is_err());
+        assert!(qw_client.node_health().is_ready().await.is_err());
 
         // GET /health/livez
         Mock::given(method("GET"))
@@ -1041,7 +1041,7 @@ mod test {
             .expect(1)
             .mount(&mock_server)
             .await;
-        assert_eq!(qw_client.node_health().is_live().await.unwrap(), true);
+        assert!(qw_client.node_health().is_live().await.unwrap());
 
         // GET /health/readyz
         Mock::given(method("GET"))
@@ -1050,6 +1050,6 @@ mod test {
             .expect(1)
             .mount(&mock_server)
             .await;
-        assert_eq!(qw_client.node_health().is_ready().await.unwrap(), true);
+        assert!(qw_client.node_health().is_ready().await.unwrap());
     }
 }

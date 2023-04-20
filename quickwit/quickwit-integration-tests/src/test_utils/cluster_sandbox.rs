@@ -32,7 +32,6 @@ use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
 use quickwit_rest_client::rest_client::{QuickwitClient, Transport, DEFAULT_BASE_URL};
-
 use quickwit_serve::serve_quickwit;
 use reqwest::Url;
 use tempfile::TempDir;
