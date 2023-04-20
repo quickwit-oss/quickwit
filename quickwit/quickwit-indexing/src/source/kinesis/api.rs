@@ -297,7 +297,6 @@ pub(crate) mod tests {
 mod kinesis_localstack_tests {
     use std::time::Duration;
 
-    use aws_sdk_kinesis::primitives::Blob;
     use aws_sdk_kinesis::types::StreamStatus;
     use quickwit_common::rand::append_random_suffix;
 
@@ -374,7 +373,7 @@ mod kinesis_localstack_tests {
         assert_eq!(records.len(), 2);
         assert_eq!(
             std::str::from_utf8(
-                &records[0]
+                records[0]
                     .data
                     .as_ref()
                     .map(|blob| blob.as_ref())
@@ -384,7 +383,7 @@ mod kinesis_localstack_tests {
         );
         assert_eq!(
             std::str::from_utf8(
-                &records[1]
+                records[1]
                     .data
                     .as_ref()
                     .map(|blob| blob.as_ref())
