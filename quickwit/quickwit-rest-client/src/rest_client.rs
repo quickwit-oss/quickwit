@@ -445,7 +445,9 @@ mod test {
     use serde_json::json;
     use tokio::fs::File;
     use tokio::io::AsyncReadExt;
-    use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
+    use wiremock::matchers::{
+        body_bytes, body_json, header, method, path, query_param, query_param_is_missing,
+    };
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{QuickwitClient, Transport};
@@ -529,6 +531,7 @@ mod test {
             .unwrap();
         Mock::given(method("POST"))
             .and(path("/api/v1/my-index/ingest"))
+            .and(query_param_is_missing("commit"))
             .and(body_bytes(buffer.clone()))
             .respond_with(ResponseTemplate::new(StatusCode::TOO_MANY_REQUESTS))
             .up_to_n_times(2)
@@ -537,6 +540,7 @@ mod test {
             .await;
         Mock::given(method("POST"))
             .and(path("/api/v1/my-index/ingest"))
+            .and(query_param_is_missing("commit"))
             .and(body_bytes(buffer))
             .respond_with(ResponseTemplate::new(StatusCode::OK))
             .up_to_n_times(1)
@@ -545,6 +549,62 @@ mod test {
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
         qw_client
             .ingest("my-index", ingest_source, None, CommitType::Auto)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_ingest_endpoint_with_force_commit() {
+        let mock_server = MockServer::start().await;
+        let server_url = Url::parse(&mock_server.uri()).unwrap();
+        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let ndjson_filepath = get_ndjson_filepath("documents_to_ingest.json");
+        let mut buffer = Vec::new();
+        File::open(&ndjson_filepath)
+            .await
+            .unwrap()
+            .read_to_end(&mut buffer)
+            .await
+            .unwrap();
+        Mock::given(method("POST"))
+            .and(path("/api/v1/my-index/ingest"))
+            .and(query_param("commit", "force"))
+            .and(body_bytes(buffer))
+            .respond_with(ResponseTemplate::new(StatusCode::OK))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
+        qw_client
+            .ingest("my-index", ingest_source, None, CommitType::Force)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_ingest_endpoint_with_wait_for_commit() {
+        let mock_server = MockServer::start().await;
+        let server_url = Url::parse(&mock_server.uri()).unwrap();
+        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let ndjson_filepath = get_ndjson_filepath("documents_to_ingest.json");
+        let mut buffer = Vec::new();
+        File::open(&ndjson_filepath)
+            .await
+            .unwrap()
+            .read_to_end(&mut buffer)
+            .await
+            .unwrap();
+        Mock::given(method("POST"))
+            .and(path("/api/v1/my-index/ingest"))
+            .and(query_param("commit", "wait_for"))
+            .and(body_bytes(buffer))
+            .respond_with(ResponseTemplate::new(StatusCode::OK))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
+        qw_client
+            .ingest("my-index", ingest_source, None, CommitType::WaitFor)
             .await
             .unwrap();
     }

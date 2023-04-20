@@ -189,10 +189,12 @@ pub struct QuickwitSegmentCollector {
 }
 
 impl QuickwitSegmentCollector {
+    #[inline]
     fn at_capacity(&self) -> bool {
         self.hits.len() >= self.max_hits
     }
 
+    #[inline]
     fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
         let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id, score);
         if self.at_capacity() {
@@ -216,6 +218,7 @@ impl QuickwitSegmentCollector {
         }
     }
 
+    #[inline]
     fn accept_document(&self, doc_id: DocId) -> bool {
         if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
             return timestamp_filter.is_within_range(doc_id);
@@ -227,6 +230,7 @@ impl QuickwitSegmentCollector {
 impl SegmentCollector for QuickwitSegmentCollector {
     type Fruit = tantivy::Result<LeafSearchResponse>;
 
+    #[inline]
     fn collect(&mut self, doc_id: DocId, score: Score) {
         if !self.accept_document(doc_id) {
             return;

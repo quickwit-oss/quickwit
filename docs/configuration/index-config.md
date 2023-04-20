@@ -39,6 +39,8 @@ doc_mapping:
     - name: severity_text
       type: text
       tokenizer: raw
+      fast: 
+        - tokenizer: lowercase
     - name: body
       type: text
       tokenizer: default
@@ -121,10 +123,10 @@ fieldnorms: true
 | ------------- | ------------- | ------------- |
 | `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
-| `tokenizer` | Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `default` |
+| `tokenizer` | Name of the `Tokenizer`. ([See tokenizers](#description-of-available-tokenizers)) for a list of available tokenizers.  | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 | `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |
-| `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids. The effective cardinality depends on the tokenizer. When creating fast fields on text fields it is recommended to use the "raw" tokenizer, since it will store the original text unchanged. The "default" tokenizer will store the terms as lower case and this will be reflected in the dictionary ([see tokenizers](#description-of-available-tokenizers)). | `false` |
+| `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids and the dictionary. The effective cardinality depends on the tokenizer. The default behaviour for `true` is to store the original text unchanged. The tokenizer on the fast field is seperately configured. It can be configured via `{"tokenizer": "lowercase"}`. ([See tokenizers](#description-of-available-tokenizers)) for a list of available tokenizers. | `false` |
 
 #### **Description of available tokenizers**
 
@@ -134,6 +136,7 @@ fieldnorms: true
 | `default`     | Chops the text on according to whitespace and punctuation, removes tokens that are too long, and converts to lowercase |
 | `en_stem`     |  Like `default`, but also applies stemming on the resulting tokens  |
 | `chinese_compatible` |  Chop between each CJK character in addition to what `default` does. Should be used with `record: position` to be able to properly search |
+| `lowercase` |  Applies a lowercase transformation on the text. It does not tokenize the text. |
 
 **Description of record options**
 

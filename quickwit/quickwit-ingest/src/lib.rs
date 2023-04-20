@@ -137,11 +137,11 @@ impl From<u32> for CommitType {
 }
 
 impl CommitType {
-    pub fn to_query_parameter(&self) -> Option<&'static str> {
+    pub fn to_query_parameter(&self) -> Option<&'static [(&'static str, &'static str)]> {
         match self {
             CommitType::Auto => None,
-            CommitType::WaitFor => Some("commit=wait_for"),
-            CommitType::Force => Some("commit=force"),
+            CommitType::WaitFor => Some(&[("commit", "wait_for")]),
+            CommitType::Force => Some(&[("commit", "force")]),
         }
     }
 }
