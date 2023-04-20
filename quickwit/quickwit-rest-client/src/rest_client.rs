@@ -43,6 +43,7 @@ pub const INGEST_CONTENT_LENGTH_LIMIT: usize = 10 * 1024 * 1024; // 10MiB
 
 pub struct Transport {
     base_url: Url,
+    api_url: Url,
     client: Client,
 }
 
@@ -55,17 +56,23 @@ impl Default for Transport {
 
 impl Transport {
     pub fn new(endpoint: Url) -> Self {
-        let base_url = endpoint
+        let base_url = endpoint;
+        let api_url = base_url
             .join("api/v1/")
             .expect("Endpoint should not be malformed.");
         Self {
             base_url,
+            api_url,
             client: Client::new(),
         }
     }
 
     pub fn base_url(&self) -> &Url {
         &self.base_url
+    }
+
+    pub fn api_url(&self) -> &Url {
+        &self.api_url
     }
 
     /// Creates an asynchronous request that can be awaited
@@ -77,10 +84,12 @@ impl Transport {
         query_string: Option<&Q>,
         body: Option<Bytes>,
     ) -> Result<ApiResponse, Error> {
-        let url = self
-            .base_url
-            .join(path.trim_start_matches('/'))
-            .map_err(|error| Error::UrlParse(error.to_string()))?;
+        let url = if path.starts_with("/") {
+            self.base_url.join(path)
+        } else {
+            self.api_url.join(path)
+        }
+        .map_err(|error| Error::UrlParse(error.to_string()))?;
         let mut request_builder = self.client.request(method, url);
         request_builder = request_builder.timeout(Duration::from_secs(10));
         let mut request_headers = HeaderMap::new();
@@ -146,8 +155,12 @@ impl QuickwitClient {
         ClusterClient::new(&self.transport)
     }
 
-    pub fn stats(&self) -> StatsClient {
-        StatsClient::new(&self.transport)
+    pub fn node_stats(&self) -> NodeStatsClient {
+        NodeStatsClient::new(&self.transport)
+    }
+
+    pub fn node_health(&self) -> NodeHealthClient {
+        NodeHealthClient::new(&self.transport)
     }
 
     pub async fn ingest(
@@ -197,6 +210,7 @@ impl QuickwitClient {
                 event_fn(IngestEvent::IngestedDocBatch(batch.len()))
             }
         }
+
         Ok(())
     }
 }
@@ -448,12 +462,12 @@ impl<'a> ClusterClient<'a> {
     }
 }
 
-/// Client for Stats APIs.
-pub struct StatsClient<'a> {
+/// Client for Node-level Stats APIs.
+pub struct NodeStatsClient<'a> {
     transport: &'a Transport,
 }
 
-impl<'a> StatsClient<'a> {
+impl<'a> NodeStatsClient<'a> {
     pub fn new(transport: &'a Transport) -> Self {
         Self { transport }
     }
@@ -465,6 +479,37 @@ impl<'a> StatsClient<'a> {
             .await?;
         let indexing_stats = response.deserialize().await?;
         Ok(indexing_stats)
+    }
+}
+
+/// Client for Node-level Health APIs.
+pub struct NodeHealthClient<'a> {
+    transport: &'a Transport,
+}
+
+impl<'a> NodeHealthClient<'a> {
+    pub fn new(transport: &'a Transport) -> Self {
+        Self { transport }
+    }
+
+    /// Returns true if the node is healthy, returns false or an error otherwise.
+    pub async fn is_live(&self) -> Result<bool, Error> {
+        let response = self
+            .transport
+            .send::<()>(Method::GET, "/health/livez", None, None, None)
+            .await?;
+        let result: bool = response.deserialize().await?;
+        Ok(result)
+    }
+
+    /// Returns true if the node is ready, returns false or an error otherwise.
+    pub async fn is_ready(&self) -> Result<bool, Error> {
+        let response = self
+            .transport
+            .send::<()>(Method::GET, "/health/readyz", None, None, None)
+            .await?;
+        let result: bool = response.deserialize().await?;
+        Ok(result)
     }
 }
 
@@ -509,8 +554,12 @@ mod test {
         let transport = Transport::default();
         assert_eq!(
             transport.base_url(),
+            &Url::parse("http://127.0.0.1:7280/").unwrap()
+        );
+        assert_eq!(
+            transport.api_url(),
             &Url::parse("http://127.0.0.1:7280/api/v1/").unwrap()
-        )
+        );
     }
 
     #[tokio::test]
@@ -974,5 +1023,33 @@ mod test {
             .delete("my-source")
             .await
             .unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn test_health_endpoints() {
+        let mock_server = MockServer::start().await;
+        let server_url = Url::parse(&mock_server.uri()).unwrap();
+        let qw_client = QuickwitClient::new(Transport::new(server_url));
+
+        assert_eq!(qw_client.node_health().is_live().await.is_ok(), false);
+        assert_eq!(qw_client.node_health().is_ready().await.is_ok(), false);
+
+        // GET /health/livez
+        Mock::given(method("GET"))
+            .and(path("/health/livez"))
+            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(true))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+        assert_eq!(qw_client.node_health().is_live().await.unwrap(), true);
+
+        // GET /health/readyz
+        Mock::given(method("GET"))
+            .and(path("/health/readyz"))
+            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(true))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+        assert_eq!(qw_client.node_health().is_ready().await.unwrap(), true);
     }
 }

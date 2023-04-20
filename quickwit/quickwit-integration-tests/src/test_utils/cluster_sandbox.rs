@@ -34,13 +34,10 @@ use quickwit_config::QuickwitConfig;
 use quickwit_rest_client::rest_client::{QuickwitClient, Transport, DEFAULT_BASE_URL};
 use quickwit_search::{create_search_service_client, SearchServiceClient};
 use quickwit_serve::serve_quickwit;
-use rand::seq::IteratorRandom;
 use reqwest::Url;
 use tempfile::TempDir;
 use tokio::sync::watch::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
-
-use super::TestClient;
 
 /// Configuration of a node made of a [`QuickwitConfig`] and a
 /// set of services.
@@ -83,11 +80,8 @@ impl ClusterShutdownTrigger {
 /// dropped by the first running test and the other tests will fail.
 pub struct ClusterSandbox {
     pub node_configs: Vec<NodeConfig>,
-    pub grpc_search_clients: HashMap<SocketAddr, SearchServiceClient>,
     pub searcher_rest_client: QuickwitClient,
     pub indexer_rest_client: QuickwitClient,
-    pub searcher_rest_test_client: TestClient,
-    pub indexer_rest_test_client: TestClient,
     _temp_dir: TempDir,
     join_handles: Vec<JoinHandle<Result<HashMap<String, ActorExitStatus>, anyhow::Error>>>,
     shutdown_trigger: ClusterShutdownTrigger,
@@ -116,23 +110,14 @@ impl ClusterSandbox {
             Result::<_, anyhow::Error>::Ok(result)
         })];
         wait_for_server_ready(node_config.quickwit_config.grpc_listen_addr).await?;
-        let mut grpc_search_clients = HashMap::new();
-        let search_client =
-            create_search_service_client(node_config.quickwit_config.grpc_listen_addr).await?;
-        grpc_search_clients.insert(node_config.quickwit_config.grpc_listen_addr, search_client);
         Ok(Self {
             node_configs,
-            grpc_search_clients,
             indexer_rest_client: QuickwitClient::new(Transport::new(transport_url(
                 node_config.quickwit_config.rest_listen_addr,
             ))),
             searcher_rest_client: QuickwitClient::new(Transport::new(transport_url(
                 node_config.quickwit_config.rest_listen_addr,
             ))),
-            indexer_rest_test_client: TestClient::new(node_config.quickwit_config.rest_listen_addr),
-            searcher_rest_test_client: TestClient::new(
-                node_config.quickwit_config.rest_listen_addr,
-            ),
             _temp_dir: temp_dir,
             join_handles,
             shutdown_trigger,
@@ -166,33 +151,17 @@ impl ClusterSandbox {
             .find(|node_config| node_config.services.contains(&QuickwitService::Indexer))
             .cloned()
             .unwrap();
-        let mut grpc_search_clients = HashMap::new();
-        for node_config in node_configs.iter() {
-            if !node_config.services.contains(&QuickwitService::Searcher) {
-                continue;
-            }
-            let search_client =
-                create_search_service_client(node_config.quickwit_config.grpc_listen_addr).await?;
-            grpc_search_clients.insert(search_client.grpc_addr(), search_client);
-        }
         // Wait for a duration greater than chitchat GOSSIP_INTERVAL (50ms) so that the cluster is
         // formed.
         tokio::time::sleep(Duration::from_millis(100)).await;
         Ok(Self {
             node_configs,
-            grpc_search_clients,
             searcher_rest_client: QuickwitClient::new(Transport::new(transport_url(
                 searcher_config.quickwit_config.rest_listen_addr,
             ))),
             indexer_rest_client: QuickwitClient::new(Transport::new(transport_url(
                 indexer_config.quickwit_config.rest_listen_addr,
             ))),
-            searcher_rest_test_client: TestClient::new(
-                searcher_config.quickwit_config.rest_listen_addr,
-            ),
-            indexer_rest_test_client: TestClient::new(
-                indexer_config.quickwit_config.rest_listen_addr,
-            ),
             _temp_dir: temp_dir,
             join_handles,
             shutdown_trigger,
@@ -219,17 +188,10 @@ impl ClusterSandbox {
         Ok(())
     }
 
-    pub fn get_random_search_client(&self) -> SearchServiceClient {
-        let mut rng = rand::thread_rng();
-        let selected_addr = self.grpc_search_clients.keys().choose(&mut rng).unwrap();
-        self.grpc_search_clients.get(selected_addr).unwrap().clone()
-    }
-
-    pub async fn join(self) -> Result<Vec<HashMap<String, ActorExitStatus>>, anyhow::Error> {
+    pub async fn shutdown(self) -> Result<Vec<HashMap<String, ActorExitStatus>>, anyhow::Error> {
         self.shutdown_trigger.shutdown();
         let result = future::join_all(self.join_handles).await;
         let mut statuses = Vec::new();
-
         for node in result {
             statuses.push(node??);
         }

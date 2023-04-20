@@ -339,18 +339,20 @@ where
 
     let shutdown_handle = tokio::spawn(async move {
         shutdown_signal.await;
+
         grpc_shutdown_trigger
             .send(())
             .expect("Failure to send shutdown signal to grpc seservicerver");
         rest_shutdown_trigger
             .send(())
             .expect("Failure to send shutdown signal to rest service");
+
+        universe.quit().await
     });
 
     tokio::try_join!(grpc_server, rest_server)?;
-    shutdown_handle.await?;
 
-    let result = universe.quit().await;
+    let result = shutdown_handle.await?;
 
     Ok(result)
 }

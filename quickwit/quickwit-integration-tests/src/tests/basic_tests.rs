@@ -24,9 +24,9 @@ use std::time::Duration;
 
 use hyper::{Body, Method, Request, StatusCode};
 use quickwit_config::service::QuickwitService;
-use quickwit_proto::SearchRequest;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::CommitType;
+use quickwit_serve::SearchRequestQueryString;
 
 use crate::test_utils::ClusterSandbox;
 
@@ -42,9 +42,19 @@ fn get_ndjson_filepath(ndjson_dataset_filename: &str) -> String {
 async fn test_ui_redirect_on_get() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
-    let client = sandbox.indexer_rest_test_client.client();
-    assert!(sandbox.indexer_rest_test_client.is_ready().await.unwrap());
-    let root_uri = format!("{}/", sandbox.indexer_rest_test_client.root_url())
+    assert!(sandbox
+        .indexer_rest_client
+        .node_health()
+        .is_ready()
+        .await
+        .unwrap());
+
+    let node_config = sandbox.node_configs.first().unwrap();
+    let client = hyper::Client::builder()
+        .pool_idle_timeout(Duration::from_secs(30))
+        .http2_only(true)
+        .build_http();
+    let root_uri = format!("http://{}/", node_config.quickwit_config.rest_listen_addr)
         .parse::<hyper::Uri>()
         .unwrap();
     let response = client.get(root_uri.clone()).await.unwrap();
@@ -56,38 +66,30 @@ async fn test_ui_redirect_on_get() {
         .unwrap();
     let response = client.request(post_request).await.unwrap();
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
-    sandbox.join().await.unwrap();
+    sandbox.shutdown().await.unwrap();
 }
 
 #[tokio::test]
 async fn test_standalone_server() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
-    let state = sandbox
+    assert!(sandbox
         .indexer_rest_client
-        .cluster()
-        .snapshot()
+        .node_health()
+        .is_ready()
         .await
-        .unwrap();
-    assert_eq!(
-        sandbox
-            .node_configs
-            .get(0)
-            .unwrap()
-            .quickwit_config
-            .cluster_id,
-        state.cluster_id
-    );
+        .unwrap());
     {
         // The indexing service should be running.
         let counters = sandbox
             .indexer_rest_client
-            .stats()
+            .node_stats()
             .indexing()
             .await
             .unwrap();
         assert_eq!(counters.num_running_pipelines, 0);
     }
+
     {
         // Create an dynamic index.
         sandbox
@@ -110,33 +112,32 @@ async fn test_standalone_server() {
             .unwrap();
 
         // Index should be searchable
-        let mut search_client = sandbox.get_random_search_client();
-        search_client
-            .root_search(SearchRequest {
-                index_id: "my-new-index".to_string(),
-                query: "body:test".to_string(),
-                search_fields: Vec::new(),
-                snippet_fields: Vec::new(),
-                start_timestamp: None,
-                end_timestamp: None,
-                aggregation_request: None,
-                max_hits: 10,
-                sort_by_field: None,
-                sort_order: None,
-                start_offset: 0,
-            })
-            .await
-            .unwrap();
+        assert_eq!(
+            sandbox
+                .indexer_rest_client
+                .search(
+                    "my-new-index",
+                    SearchRequestQueryString {
+                        query: "body:test".to_string(),
+                        max_hits: 10,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap()
+                .num_hits,
+            0
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
         let counters = sandbox
             .indexer_rest_client
-            .stats()
+            .node_stats()
             .indexing()
             .await
             .unwrap();
         assert_eq!(counters.num_running_pipelines, 1);
     }
-    sandbox.join().await.unwrap();
+    sandbox.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -160,7 +161,7 @@ async fn test_multi_nodes_cluster() {
         tokio::time::sleep(Duration::from_secs(3)).await;
         let indexing_service_counters = sandbox
             .indexer_rest_client
-            .stats()
+            .node_stats()
             .indexing()
             .await
             .unwrap();
@@ -188,35 +189,33 @@ async fn test_multi_nodes_cluster() {
         )
         .await
         .unwrap();
-    assert!(sandbox.indexer_rest_test_client.is_live().await.unwrap());
+    assert!(sandbox
+        .indexer_rest_client
+        .node_health()
+        .is_live()
+        .await
+        .unwrap());
 
     // Wait until indexing pipelines are started.
     tokio::time::sleep(Duration::from_millis(100)).await;
     let indexing_service_counters = sandbox
         .indexer_rest_client
-        .stats()
+        .node_stats()
         .indexing()
         .await
         .unwrap();
     assert_eq!(indexing_service_counters.num_running_pipelines, 1);
 
     // Check search is working.
-    let mut search_client = sandbox.get_random_search_client();
-    let search_request = SearchRequest {
-        index_id: "my-new-multi-node-index".to_string(),
-        query: "body:bar".to_string(),
-        search_fields: Vec::new(),
-        start_timestamp: None,
-        end_timestamp: None,
-        aggregation_request: None,
-        max_hits: 10,
-        sort_by_field: None,
-        sort_order: None,
-        start_offset: 0,
-        snippet_fields: Vec::new(),
-    };
-    let search_response_empty = search_client
-        .root_search(search_request.clone())
+    let search_response_empty = sandbox
+        .searcher_rest_client
+        .search(
+            "my-new-multi-node-index",
+            SearchRequestQueryString {
+                query: "body:bar".to_string(),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap();
     assert_eq!(search_response_empty.num_hits, 0);
@@ -236,11 +235,17 @@ async fn test_multi_nodes_cluster() {
         .unwrap();
     // Wait until split is commited and search.
     tokio::time::sleep(Duration::from_secs(4)).await;
-    let mut search_client = sandbox.get_random_search_client();
-    let search_response_one_hit = search_client
-        .root_search(search_request.clone())
+    let search_response_one_hit = sandbox
+        .searcher_rest_client
+        .search(
+            "my-new-multi-node-index",
+            SearchRequestQueryString {
+                query: "body:bar".to_string(),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap();
     assert_eq!(search_response_one_hit.num_hits, 1);
-    sandbox.join().await.unwrap();
+    sandbox.shutdown().await.unwrap();
 }
