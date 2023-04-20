@@ -84,7 +84,7 @@ impl Transport {
         query_string: Option<&Q>,
         body: Option<Bytes>,
     ) -> Result<ApiResponse, Error> {
-        let url = if path.starts_with("/") {
+        let url = if path.starts_with('/') {
             self.base_url.join(path)
         } else {
             self.api_url.join(path)
