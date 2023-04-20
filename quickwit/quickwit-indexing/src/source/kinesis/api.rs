@@ -120,7 +120,6 @@ pub(crate) async fn list_shards(
 #[cfg(test)]
 pub(crate) mod tests {
     use std::collections::BTreeSet;
-    use std::num;
     use std::time::Duration;
 
     use anyhow::{anyhow, Context};
