@@ -236,3 +236,11 @@ encoding_rs = "=0.8.29"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }
+
+#tracing = { git = "https://github.com/trinity-1686a/tracing.git", branch = "tracing-subscriber-0.3.16-poll-duration" }
+#tracing-attributes = { git = "https://github.com/trinity-1686a/tracing.git", branch = "tracing-subscriber-0.3.16-poll-duration" }
+#tracing-core = { git = "https://github.com/trinity-1686a/tracing.git", branch = "tracing-subscriber-0.3.16-poll-duration" }
+#tracing-futures = { git = "https://github.com/trinity-1686a/tracing.git", branch = "tracing-subscriber-0.3.16-poll-duration" }
+#tracing-log = { git = "https://github.com/trinity-1686a/tracing.git", branch = "tracing-subscriber-0.3.16-poll-duration" }
+#tracing-opentelemetry = { git = "https://github.com/trinity-1686a/tracing.git", branch = "tracing-subscriber-0.3.16-poll-duration" }
+#tracing-subscriber = { git = "https://github.com/trinity-1686a/tracing.git", branch = "tracing-subscriber-0.3.16-poll-duration" }
