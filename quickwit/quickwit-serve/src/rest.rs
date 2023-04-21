@@ -19,6 +19,7 @@
 
 use std::net::SocketAddr;
 
+use futures::Future;
 use hyper::http::HeaderValue;
 use hyper::{http, Method};
 use quickwit_common::metrics;
@@ -49,10 +50,14 @@ use crate::{BodyFormat, QuickwitServices};
 const MINIMUM_RESPONSE_COMPRESSION_SIZE: u16 = 10 << 10;
 
 /// Starts REST services.
-pub(crate) async fn start_rest_server(
+pub(crate) async fn start_rest_server<F>(
     rest_listen_addr: SocketAddr,
     quickwit_services: &QuickwitServices,
-) -> anyhow::Result<()> {
+    shutdown_signal: F,
+) -> anyhow::Result<()>
+where
+    F: Future<Output = ()>,
+{
     info!(rest_listen_addr = %rest_listen_addr, "Starting REST server.");
     let request_counter = warp::log::custom(|_| {
         crate::SERVE_METRICS.http_requests_total.inc();
@@ -140,6 +145,7 @@ pub(crate) async fn start_rest_server(
 
     hyper::Server::bind(&rest_listen_addr)
         .serve(Shared::new(service))
+        .with_graceful_shutdown(shutdown_signal)
         .await?;
     Ok(())
 }

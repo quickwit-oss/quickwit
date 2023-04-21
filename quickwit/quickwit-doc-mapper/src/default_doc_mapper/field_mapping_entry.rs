@@ -179,7 +179,7 @@ pub struct QuickwitTextOptions {
 #[serde(untagged)]
 pub enum FastFieldOptions {
     IsEnabled(bool),
-    EnabledWithTokenizer { with_tokenizer: String },
+    EnabledWithTokenizer { tokenizer: String },
 }
 
 impl Default for FastFieldOptions {
@@ -212,8 +212,8 @@ impl From<QuickwitTextOptions> for TextOptions {
             FastFieldOptions::IsEnabled(true) => {
                 text_options = text_options.set_fast(None);
             }
-            FastFieldOptions::EnabledWithTokenizer { with_tokenizer } => {
-                text_options = text_options.set_fast(Some(with_tokenizer));
+            FastFieldOptions::EnabledWithTokenizer { tokenizer } => {
+                text_options = text_options.set_fast(Some(tokenizer));
             }
             FastFieldOptions::IsEnabled(false) => {}
         }
@@ -1099,6 +1099,32 @@ mod tests {
                 "name": "my_field_name",
                 "type": "text",
                 "fast": false,
+                "stored": true,
+                "indexed": true,
+                "fieldnorms": false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_text_fast_field_tokenizer() {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "text",
+                "fast": {"tokenizer": "lowercase"}
+            }
+            "#,
+        )
+        .unwrap();
+        let entry_deserser = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_deserser,
+            json!({
+                "name": "my_field_name",
+                "type": "text",
+                "fast": {"tokenizer": "lowercase"},
                 "stored": true,
                 "indexed": true,
                 "fieldnorms": false,

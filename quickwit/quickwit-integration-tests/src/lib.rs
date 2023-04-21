@@ -17,8 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod cluster_sandbox;
-mod rest_client;
-
-pub use cluster_sandbox::{build_node_configs, ClusterSandbox};
-pub use rest_client::QuickwitRestClient;
+#[cfg(test)]
+mod test_utils;
+#[cfg(test)]
+mod tests;
