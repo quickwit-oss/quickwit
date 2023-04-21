@@ -120,51 +120,52 @@ fn main() -> anyhow::Result<()> {
         .on_thread_park(busy_detector::thread_park)
         .build()
         .unwrap()
-        .block_on(async {
-            #[cfg(feature = "openssl-support")]
-            openssl_probe::init_ssl_cert_env_vars();
+        .block_on(main_impl())
+}
 
-            let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
-            let about_text = about_text();
-            let build_info = quickwit_build_info();
-            let version_text = format!(
-                "{} ({} {})",
-                build_info.version, build_info.commit_short_hash, build_info.build_date
-            );
+async fn main_impl() -> anyhow::Result<()> {
+    #[cfg(feature = "openssl-support")]
+    openssl_probe::init_ssl_cert_env_vars();
 
-            let app = build_cli()
-                .about(about_text.as_str())
-                .version(version_text.as_str());
-            let matches = app.get_matches();
+    let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
+    let about_text = about_text();
+    let build_info = quickwit_build_info();
+    let version_text = format!(
+        "{} ({} {})",
+        build_info.version, build_info.commit_short_hash, build_info.build_date
+    );
 
-            let command = match CliCommand::parse_cli_args(&matches) {
-                Ok(command) => command,
-                Err(err) => {
-                    eprintln!("Failed to parse command arguments: {err:?}");
-                    std::process::exit(1);
-                }
-            };
+    let app = build_cli()
+        .about(about_text.as_str())
+        .version(version_text.as_str());
+    let matches = app.get_matches();
 
-            #[cfg(feature = "jemalloc")]
-            start_jemalloc_metrics_loop();
+    let command = match CliCommand::parse_cli_args(&matches) {
+        Ok(command) => command,
+        Err(err) => {
+            eprintln!("Failed to parse command arguments: {err:?}");
+            std::process::exit(1);
+        }
+    };
 
-            setup_logging_and_tracing(
-                command.default_log_level(),
-                !matches.is_present("no-color"),
-                build_info,
-            )?;
-            let return_code: i32 = if let Err(err) = command.execute().await {
-                eprintln!("{} Command failed: {:?}\n", "✘".color(RED_COLOR), err);
-                1
-            } else {
-                0
-            };
-            quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code })
-                .await;
-            telemetry_handle.terminate_telemetry().await;
-            global::shutdown_tracer_provider();
-            std::process::exit(return_code)
-        })
+    #[cfg(feature = "jemalloc")]
+    start_jemalloc_metrics_loop();
+
+    setup_logging_and_tracing(
+        command.default_log_level(),
+        !matches.is_present("no-color"),
+        build_info,
+    )?;
+    let return_code: i32 = if let Err(err) = command.execute().await {
+        eprintln!("{} Command failed: {:?}\n", "✘".color(RED_COLOR), err);
+        1
+    } else {
+        0
+    };
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code }).await;
+    telemetry_handle.terminate_telemetry().await;
+    global::shutdown_tracer_provider();
+    std::process::exit(return_code)
 }
 
 mod busy_detector {
@@ -178,10 +179,15 @@ mod busy_detector {
     static TIME_REF: Lazy<Instant> = Lazy::new(Instant::now);
 
     const ALLOWED_DELAY_MICROS: u64 = 5000;
+    const WARN_SUPPRESSION_DURATION: u64 = 30_000_000;
 
-    thread_local!(static LAST_UNPARK: AtomicU64 = AtomicU64::new(0));
     thread_local!(static MY_ID: AtomicU64 = AtomicU64::new(0));
     static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+
+    // LAST_UNPARK and NEXT_WARN are semantically timestamps
+    thread_local!(static LAST_UNPARK: AtomicU64 = AtomicU64::new(0));
+    static NEXT_WARN: AtomicU64 = AtomicU64::new(0);
+    static SUPPRESSED_WARN: AtomicU64 = AtomicU64::new(0);
 
     pub fn thread_unpark() {
         LAST_UNPARK.with(|time| {
@@ -197,21 +203,49 @@ mod busy_detector {
             let now = Instant::now()
                 .checked_duration_since(*TIME_REF)
                 .unwrap_or_default();
-            let delta = now.as_micros() as u64 - time.load(Ordering::Relaxed);
+            let now = now.as_micros() as u64;
+            let delta = now - time.load(Ordering::Relaxed);
             if delta > ALLOWED_DELAY_MICROS {
-                let id = MY_ID.with(|my_id| {
-                    let id = my_id.load(Ordering::Relaxed);
-                    if id == 0 {
-                        let new_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-                        my_id.store(new_id, Ordering::Relaxed);
-                        new_id
-                    } else {
-                        id
-                    }
-                });
-                warn!("Thread{id} wasn't parked for {delta}µs, is the runtime too busy?");
+                emit_warn(delta, now);
             }
         })
+    }
+
+    fn emit_warn(delta: u64, now: u64) {
+        if NEXT_WARN
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next_warn| {
+                if next_warn < now {
+                    Some(now + WARN_SUPPRESSION_DURATION)
+                } else {
+                    None
+                }
+            })
+            .is_err()
+        {
+            // a warn was emited recently, don't emit log for this one
+            SUPPRESSED_WARN.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+
+        let id = MY_ID.with(|my_id| {
+            let id = my_id.load(Ordering::Relaxed);
+            if id == 0 {
+                let new_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+                my_id.store(new_id, Ordering::Relaxed);
+                new_id
+            } else {
+                id
+            }
+        });
+        let suppressed = SUPPRESSED_WARN.swap(0, Ordering::Relaxed);
+        if suppressed == 0 {
+            warn!("Thread{id} wasn't parked for {delta}µs, is the runtime too busy?");
+        } else {
+            warn!(
+                "Thread{id} wasn't parked for {delta}µs, is the runtime too busy? ({suppressed} \
+                 similar messages suppressed)"
+            );
+        }
     }
 }
 
