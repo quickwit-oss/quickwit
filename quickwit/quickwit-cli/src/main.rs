@@ -126,9 +126,7 @@ async fn main() -> anyhow::Result<()> {
         build_info.version, build_info.commit_short_hash, build_info.build_date
     );
 
-    let app = build_cli()
-        .about(about_text.as_str())
-        .version(version_text.as_str());
+    let app = build_cli().about(about_text).version(version_text);
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
@@ -144,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
 
     setup_logging_and_tracing(
         command.default_log_level(),
-        !matches.is_present("no-color"),
+        !matches.get_flag("no-color"),
         build_info,
     )?;
     let return_code: i32 = if let Err(err) = command.execute().await {

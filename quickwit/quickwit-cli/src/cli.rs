@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::bail;
-use clap::{arg, Arg, ArgMatches, Command};
+use clap::{arg, Arg, ArgAction, ArgMatches, Command};
 use tracing::Level;
 
 use crate::index::{build_index_command, IndexCliCommand};
@@ -27,7 +27,7 @@ use crate::source::{build_source_command, SourceCliCommand};
 use crate::split::{build_split_command, SplitCliCommand};
 use crate::tool::{build_tool_command, ToolCliCommand};
 
-pub fn build_cli<'a>() -> Command<'a> {
+pub fn build_cli<'a>() -> Command {
     Command::new("Quickwit")
         .arg(
             Arg::new("no-color")
@@ -38,7 +38,7 @@ pub fn build_cli<'a>() -> Command<'a> {
                 )
                 .env("NO_COLOR")
                 .global(true)
-                .takes_value(false),
+                .action(ArgAction::SetFalse),
         )
         .arg(arg!(-y --"yes" "Assume \"yes\" as an answer to all prompts and run non-interactively.")
             .global(true)

@@ -21,7 +21,7 @@ use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use bytes::Bytes;
-use clap::{arg, ArgMatches, Command};
+use clap::{arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
@@ -37,7 +37,7 @@ use tracing::debug;
 
 use crate::{cluster_endpoint_arg, make_table, prompt_confirmation};
 
-pub fn build_source_command<'a>() -> Command<'a> {
+pub fn build_source_command<'a>() -> Command {
     Command::new("source")
         .about("Manages sources: creates, updates, deletes sources...")
         .arg(cluster_endpoint_arg())
@@ -75,9 +75,9 @@ pub fn build_source_command<'a>() -> Command<'a> {
                     arg!(--enable "Enables the ingest API.")
                         .required(true)
                         .conflicts_with("disable")
-                        .takes_value(false),
+                        .action(ArgAction::SetFalse),
                     arg!(--disable "Disables the ingest API.")
-                        .takes_value(false)
+                        .action(ArgAction::SetFalse)
                         .required(false),
                 ])
             )
@@ -216,16 +216,16 @@ impl SourceCliCommand {
 
     fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<CreateSourceArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
+            .get_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .value_of("index")
+            .get_one::<String>("index")
             .map(String::from)
             .expect("`index` is a required arg.");
         let source_config_uri = matches
-            .value_of("source-config")
-            .map(Uri::from_str)
+            .get_one::<String>("source-config")
+            .map(|s| Uri::from_str(s.as_str()))
             .expect("`source-config` is a required arg.")?;
         Ok(CreateSourceArgs {
             cluster_endpoint,
@@ -239,15 +239,15 @@ impl SourceCliCommand {
         matches: &ArgMatches,
     ) -> anyhow::Result<ToggleSourceArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
+            .get_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .value_of("index")
+            .get_one::<String>("index")
             .map(String::from)
             .expect("`index` is a required arg.");
         let source_id = matches
-            .value_of("source")
+            .get_one::<String>("source")
             .map(String::from)
             .expect("`source` is a required arg.");
         let enable = matches!(subcommand, "enable");
@@ -261,18 +261,18 @@ impl SourceCliCommand {
 
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<DeleteSourceArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
+            .get_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .value_of("index")
+            .get_one::<String>("index")
             .map(String::from)
             .expect("`index` is a required arg.");
         let source_id = matches
-            .value_of("source")
+            .get_one::<String>("source")
             .map(String::from)
             .expect("`source` is a required arg.");
-        let assume_yes = matches.is_present("yes");
+        let assume_yes = matches.get_flag("yes");
         Ok(DeleteSourceArgs {
             cluster_endpoint,
             index_id,
@@ -283,15 +283,15 @@ impl SourceCliCommand {
 
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<DescribeSourceArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
+            .get_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .value_of("index")
+            .get_one::<String>("index")
             .map(String::from)
             .expect("`index` is a required arg.");
         let source_id = matches
-            .value_of("source")
+            .get_one::<String>("source")
             .map(String::from)
             .expect("`source` is a required arg.");
         Ok(DescribeSourceArgs {
@@ -303,11 +303,11 @@ impl SourceCliCommand {
 
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<ListSourcesArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
+            .get_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .value_of("index")
+            .get_one::<String>("index")
             .map(String::from)
             .expect("`index` is a required arg.");
         Ok(ListSourcesArgs {
@@ -318,18 +318,18 @@ impl SourceCliCommand {
 
     fn parse_reset_checkpoint_args(matches: &ArgMatches) -> anyhow::Result<ResetCheckpointArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
+            .get_one::<String>("endpoint")
+            .map(|s| Url::from_str(s))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .value_of("index")
+            .get_one::<String>("index")
             .map(String::from)
             .expect("`index` is a required arg.");
         let source_id = matches
-            .value_of("source")
+            .get_one::<String>("source")
             .map(String::from)
             .expect("`source` is a required arg.");
-        let assume_yes = matches.is_present("yes");
+        let assume_yes = matches.get_flag("yes");
         Ok(ResetCheckpointArgs {
             cluster_endpoint,
             index_id,
@@ -473,7 +473,9 @@ async fn list_sources_cli(args: ListSourcesArgs) -> anyhow::Result<()> {
 }
 
 fn make_list_sources_table<I>(sources: I) -> Table
-where I: IntoIterator<Item = SourceConfig> {
+where
+    I: IntoIterator<Item = SourceConfig>,
+{
     let rows = sources
         .into_iter()
         .map(|source| SourceRow {
