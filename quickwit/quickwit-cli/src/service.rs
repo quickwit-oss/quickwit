@@ -26,6 +26,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::TelemetryEvent;
+use tokio::signal;
 use tracing::debug;
 
 use crate::{config_cli_arg, load_quickwit_config, start_actor_runtimes};
@@ -80,7 +81,12 @@ impl RunCliCommand {
         quickwit_telemetry::send_telemetry_event(telemetry_event).await;
         // TODO move in serve quickwit?
         start_actor_runtimes(&config.enabled_services)?;
-        serve_quickwit(config).await?;
+        let _ = serve_quickwit(config, async move {
+            signal::ctrl_c()
+                .await
+                .expect("Failure listening for CTRL+C signal")
+        })
+        .await?;
         Ok(())
     }
 }

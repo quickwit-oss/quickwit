@@ -36,12 +36,10 @@ mod node_info_handler;
 mod openapi;
 mod search_api;
 #[cfg(test)]
-mod test_utils;
-#[cfg(test)]
 mod tests;
 mod ui_handler;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -50,9 +48,10 @@ use std::time::Duration;
 use anyhow::anyhow;
 use byte_unit::n_mib_bytes;
 use format::BodyFormat;
+use futures::Future;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
-use quickwit_actors::{Mailbox, Universe};
+use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::tower::{
@@ -78,6 +77,7 @@ use quickwit_opentelemetry::otlp::{OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONF
 use quickwit_search::{start_searcher_service, SearchJobPlacer, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
 use tower::ServiceBuilder;
 use tracing::{debug, error, warn};
 use warp::{Filter, Rejection};
@@ -123,7 +123,13 @@ fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
     })
 }
 
-pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
+pub async fn serve_quickwit<F>(
+    config: QuickwitConfig,
+    shutdown_signal: F,
+) -> anyhow::Result<HashMap<String, ActorExitStatus>>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
     let universe = Universe::new();
     let event_broker = EventBroker::default();
     let storage_resolver = quickwit_storage_uri_resolver().clone();
@@ -314,15 +320,41 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         index_service,
         services,
     };
-    let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
-    let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
+    let (grpc_shutdown_trigger, grpc_shutdown_signal) = oneshot::channel::<()>();
+    let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services, async move {
+        grpc_shutdown_signal
+            .await
+            .expect("Failure to shutdown grpc sevice");
+    });
+    let (rest_shutdown_trigger, rest_shutdown_signal) = oneshot::channel::<()>();
+    let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services, async move {
+        rest_shutdown_signal
+            .await
+            .expect("Failure to shutdown rest service");
+    });
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
     tokio::spawn(node_readiness_reporting_task(cluster, metastore));
 
+    let shutdown_handle = tokio::spawn(async move {
+        shutdown_signal.await;
+
+        grpc_shutdown_trigger
+            .send(())
+            .expect("Failure to send shutdown signal to grpc seservicerver");
+        rest_shutdown_trigger
+            .send(())
+            .expect("Failure to send shutdown signal to rest service");
+
+        universe.quit().await
+    });
+
     tokio::try_join!(grpc_server, rest_server)?;
-    Ok(())
+
+    let result = shutdown_handle.await?;
+
+    Ok(result)
 }
 
 #[derive(Clone)]

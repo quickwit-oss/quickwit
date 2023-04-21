@@ -23,19 +23,20 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
+use futures_util::{future, Future};
 use itertools::Itertools;
+use quickwit_actors::ActorExitStatus;
 use quickwit_common::new_coolid;
 use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
-use quickwit_search::{create_search_service_client, SearchServiceClient};
-use rand::seq::IteratorRandom;
+use quickwit_rest_client::rest_client::{QuickwitClient, Transport, DEFAULT_BASE_URL};
+use quickwit_serve::serve_quickwit;
+use reqwest::Url;
 use tempfile::TempDir;
-use tracing::info;
-
-use super::rest_client::QuickwitRestClient;
-use crate::serve_quickwit;
+use tokio::sync::watch::{self, Receiver, Sender};
+use tokio::task::JoinHandle;
 
 /// Configuration of a node made of a [`QuickwitConfig`] and a
 /// set of services.
@@ -43,6 +44,29 @@ use crate::serve_quickwit;
 pub struct NodeConfig {
     pub quickwit_config: QuickwitConfig,
     pub services: HashSet<QuickwitService>,
+}
+
+struct ClusterShutdownTrigger {
+    sender: Sender<bool>,
+    receiver: Receiver<bool>,
+}
+
+impl ClusterShutdownTrigger {
+    fn new() -> Self {
+        let (sender, receiver) = watch::channel(false);
+        Self { sender, receiver }
+    }
+
+    fn shutdown_signal(&self) -> impl Future<Output = ()> {
+        let mut receiver = self.receiver.clone();
+        async move {
+            receiver.changed().await.unwrap();
+        }
+    }
+
+    fn shutdown(self) {
+        self.sender.send(true).unwrap();
+    }
 }
 
 /// Creates a Cluster Test environment.
@@ -55,10 +79,18 @@ pub struct NodeConfig {
 /// dropped by the first running test and the other tests will fail.
 pub struct ClusterSandbox {
     pub node_configs: Vec<NodeConfig>,
-    pub grpc_search_clients: HashMap<SocketAddr, SearchServiceClient>,
-    pub searcher_rest_client: QuickwitRestClient,
-    pub indexer_rest_client: QuickwitRestClient,
+    pub searcher_rest_client: QuickwitClient,
+    pub indexer_rest_client: QuickwitClient,
     _temp_dir: TempDir,
+    join_handles: Vec<JoinHandle<Result<HashMap<String, ActorExitStatus>, anyhow::Error>>>,
+    shutdown_trigger: ClusterShutdownTrigger,
+}
+
+fn transport_url(addr: SocketAddr) -> Url {
+    let mut url = Url::parse(DEFAULT_BASE_URL).unwrap();
+    url.set_ip_host(addr.ip()).unwrap();
+    url.set_port(Some(addr.port())).unwrap();
+    url
 }
 
 impl ClusterSandbox {
@@ -70,28 +102,24 @@ impl ClusterSandbox {
         // There is exactly one node.
         let node_config = node_configs[0].clone();
         let node_config_clone = node_config.clone();
-        // Creates an index before starting nodes as currently Quickwit does not support
-        // dynamic creation/deletion of indexes/sources.
-        tokio::spawn(async move {
-            let result = serve_quickwit(node_config_clone.quickwit_config).await;
-            println!("Quickwit server terminated: {result:?}");
-            Result::<_, anyhow::Error>::Ok(())
-        });
+        let shutdown_trigger = ClusterShutdownTrigger::new();
+        let shutdown_signal = shutdown_trigger.shutdown_signal();
+        let join_handles = vec![tokio::spawn(async move {
+            let result = serve_quickwit(node_config_clone.quickwit_config, shutdown_signal).await?;
+            Result::<_, anyhow::Error>::Ok(result)
+        })];
         wait_for_server_ready(node_config.quickwit_config.grpc_listen_addr).await?;
-        let mut grpc_search_clients = HashMap::new();
-        let search_client =
-            create_search_service_client(node_config.quickwit_config.grpc_listen_addr).await?;
-        grpc_search_clients.insert(node_config.quickwit_config.grpc_listen_addr, search_client);
         Ok(Self {
             node_configs,
-            grpc_search_clients,
-            indexer_rest_client: QuickwitRestClient::new(
+            indexer_rest_client: QuickwitClient::new(Transport::new(transport_url(
                 node_config.quickwit_config.rest_listen_addr,
-            ),
-            searcher_rest_client: QuickwitRestClient::new(
+            ))),
+            searcher_rest_client: QuickwitClient::new(Transport::new(transport_url(
                 node_config.quickwit_config.rest_listen_addr,
-            ),
+            ))),
             _temp_dir: temp_dir,
+            join_handles,
+            shutdown_trigger,
         })
     }
 
@@ -101,13 +129,16 @@ impl ClusterSandbox {
     ) -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
+        let mut join_handles = Vec::new();
+        let shutdown_trigger = ClusterShutdownTrigger::new();
         for node_config in node_configs.iter() {
             let node_config_clone = node_config.clone();
-            tokio::spawn(async move {
-                let result = serve_quickwit(node_config_clone.quickwit_config).await;
-                info!("Quickwit server terminated: {:?}", result);
-                Result::<_, anyhow::Error>::Ok(())
-            });
+            let shutdown_signal = shutdown_trigger.shutdown_signal();
+            join_handles.push(tokio::spawn(async move {
+                let result =
+                    serve_quickwit(node_config_clone.quickwit_config, shutdown_signal).await?;
+                Result::<_, anyhow::Error>::Ok(result)
+            }));
         }
         let searcher_config = node_configs
             .iter()
@@ -119,28 +150,20 @@ impl ClusterSandbox {
             .find(|node_config| node_config.services.contains(&QuickwitService::Indexer))
             .cloned()
             .unwrap();
-        let mut grpc_search_clients = HashMap::new();
-        for node_config in node_configs.iter() {
-            if !node_config.services.contains(&QuickwitService::Searcher) {
-                continue;
-            }
-            let search_client =
-                create_search_service_client(node_config.quickwit_config.grpc_listen_addr).await?;
-            grpc_search_clients.insert(search_client.grpc_addr(), search_client);
-        }
         // Wait for a duration greater than chitchat GOSSIP_INTERVAL (50ms) so that the cluster is
         // formed.
         tokio::time::sleep(Duration::from_millis(100)).await;
         Ok(Self {
             node_configs,
-            grpc_search_clients,
-            searcher_rest_client: QuickwitRestClient::new(
+            searcher_rest_client: QuickwitClient::new(Transport::new(transport_url(
                 searcher_config.quickwit_config.rest_listen_addr,
-            ),
-            indexer_rest_client: QuickwitRestClient::new(
+            ))),
+            indexer_rest_client: QuickwitClient::new(Transport::new(transport_url(
                 indexer_config.quickwit_config.rest_listen_addr,
-            ),
+            ))),
             _temp_dir: temp_dir,
+            join_handles,
+            shutdown_trigger,
         })
     }
 
@@ -152,7 +175,7 @@ impl ClusterSandbox {
         let max_num_attempts = 3;
         while num_attempts < max_num_attempts {
             tokio::time::sleep(Duration::from_millis(100 * (num_attempts + 1))).await;
-            let cluster_snapshot = self.indexer_rest_client.cluster_snapshot().await?;
+            let cluster_snapshot = self.indexer_rest_client.cluster().snapshot().await?;
             if cluster_snapshot.ready_nodes.len() == expected_num_alive_nodes {
                 return Ok(());
             }
@@ -164,10 +187,14 @@ impl ClusterSandbox {
         Ok(())
     }
 
-    pub fn get_random_search_client(&self) -> SearchServiceClient {
-        let mut rng = rand::thread_rng();
-        let selected_addr = self.grpc_search_clients.keys().choose(&mut rng).unwrap();
-        self.grpc_search_clients.get(selected_addr).unwrap().clone()
+    pub async fn shutdown(self) -> Result<Vec<HashMap<String, ActorExitStatus>>, anyhow::Error> {
+        self.shutdown_trigger.shutdown();
+        let result = future::join_all(self.join_handles).await;
+        let mut statuses = Vec::new();
+        for node in result {
+            statuses.push(node??);
+        }
+        Ok(statuses)
     }
 }
 
