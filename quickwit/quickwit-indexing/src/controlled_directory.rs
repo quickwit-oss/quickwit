@@ -152,7 +152,9 @@ impl HotswappableIoControls {
 
 impl IoControlsAccess for HotswappableIoControls {
     fn apply<F, R>(&self, f: F) -> R
-    where F: Fn(&IoControls) -> R {
+    where
+        F: Fn(&IoControls) -> R,
+    {
         let guard = self.0.load();
         f(&guard)
     }

@@ -34,7 +34,7 @@ use tracing::debug;
 
 use crate::{cluster_endpoint_arg, make_table, prompt_confirmation};
 
-pub fn build_split_command<'a>() -> Command {
+pub fn build_split_command() -> Command {
     Command::new("split")
         .about("Manages splits: lists, describes, marks for deletion...")
         .arg(cluster_endpoint_arg())

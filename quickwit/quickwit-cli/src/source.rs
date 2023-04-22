@@ -37,7 +37,7 @@ use tracing::debug;
 
 use crate::{cluster_endpoint_arg, make_table, prompt_confirmation};
 
-pub fn build_source_command<'a>() -> Command {
+pub fn build_source_command() -> Command {
     Command::new("source")
         .about("Manages sources: creates, updates, deletes sources...")
         .arg(cluster_endpoint_arg())

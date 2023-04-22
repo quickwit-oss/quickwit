@@ -56,7 +56,7 @@ use tracing::{debug, Level};
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{cluster_endpoint_arg, make_table, prompt_confirmation, THROUGHPUT_WINDOW_SIZE};
 
-pub fn build_index_command<'a>() -> Command {
+pub fn build_index_command() -> Command {
     Command::new("index")
         .about("Manages indexes: creates, deletes, ingests, searches, describes...")
         .arg(cluster_endpoint_arg())

@@ -195,14 +195,18 @@ impl FromStr for DateTimeInputFormat {
 
 impl Serialize for DateTimeInputFormat {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         serializer.serialize_str(self.as_str())
     }
 }
 
 impl<'de> Deserialize<'de> for DateTimeInputFormat {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let date_time_format_str: String = Deserialize::deserialize(deserializer)?;
         let date_time_format = date_time_format_str.parse().map_err(D::Error::custom)?;
         Ok(date_time_format)
@@ -269,14 +273,18 @@ impl FromStr for DateTimeOutputFormat {
 
 impl Serialize for DateTimeOutputFormat {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         serializer.serialize_str(self.as_str())
     }
 }
 
 impl<'de> Deserialize<'de> for DateTimeOutputFormat {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let date_time_format_str: String = Deserialize::deserialize(deserializer)?;
         let date_time_format = date_time_format_str.parse().map_err(D::Error::custom)?;
         Ok(date_time_format)

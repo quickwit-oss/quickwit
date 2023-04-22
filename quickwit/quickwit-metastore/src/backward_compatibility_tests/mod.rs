@@ -62,14 +62,18 @@ fn test_global_version<T: Serialize>(serializable: &T) -> anyhow::Result<()> {
 }
 
 fn deserialize_json_file<T>(path: &Path) -> anyhow::Result<T>
-where for<'a> T: Deserialize<'a> {
+where
+    for<'a> T: Deserialize<'a>,
+{
     let payload = std::fs::read(path)?;
     let deserialized: T = serde_json::from_slice(&payload)?;
     Ok(deserialized)
 }
 
 fn test_backward_compatibility_single_case<T>(path: &Path) -> anyhow::Result<()>
-where T: TestableForRegression {
+where
+    T: TestableForRegression,
+{
     println!("---\nTest deserialization of {}", path.display());
     let deserialized: T = deserialize_json_file(path)?;
     let expected_path = path.to_string_lossy().replace(".json", ".expected.json");
@@ -79,7 +83,9 @@ where T: TestableForRegression {
 }
 
 fn test_backward_compatibility<T>(test_dir: &Path) -> anyhow::Result<()>
-where T: TestableForRegression {
+where
+    T: TestableForRegression,
+{
     for entry in
         fs::read_dir(test_dir).with_context(|| format!("Failed to read {}", test_dir.display()))?
     {
@@ -95,7 +101,9 @@ where T: TestableForRegression {
 }
 
 fn test_and_update_expected_files_single_case<T>(expected_path: &Path) -> anyhow::Result<bool>
-where for<'a> T: Serialize + Deserialize<'a> {
+where
+    for<'a> T: Serialize + Deserialize<'a>,
+{
     let expected: T = deserialize_json_file(Path::new(&expected_path))?;
     let expected_old_json_value: JsonValue = deserialize_json_file(Path::new(&expected_path))?;
     let expected_new_json_value: JsonValue = serde_json::to_value(&expected)?;
@@ -111,7 +119,9 @@ where for<'a> T: Serialize + Deserialize<'a> {
 }
 
 fn test_and_update_expected_files<T>(test_dir: &Path) -> anyhow::Result<()>
-where for<'a> T: Deserialize<'a> + Serialize {
+where
+    for<'a> T: Deserialize<'a> + Serialize,
+{
     let mut updated_expected_files = Vec::new();
     for entry in fs::read_dir(test_dir)? {
         let entry = entry?;
@@ -133,7 +143,9 @@ where for<'a> T: Deserialize<'a> + Serialize {
 }
 
 fn test_and_create_new_test<T>(test_dir: &Path, sample: T) -> anyhow::Result<()>
-where for<'a> T: Serialize {
+where
+    for<'a> T: Serialize,
+{
     let sample_json_value = serde_json::to_value(&sample)?;
     let version: &str = sample_json_value
         .as_object()
@@ -161,7 +173,9 @@ where for<'a> T: Serialize {
 /// - `test` is a function asserting the equality of the deserialized version
 /// and the expected version.
 pub(crate) fn test_json_backward_compatibility_helper<T>(test_name: &str) -> anyhow::Result<()>
-where T: TestableForRegression {
+where
+    T: TestableForRegression,
+{
     let sample_instance: T = T::sample_for_regression();
     let test_dir = Path::new("test-data").join(test_name);
     test_global_version(&sample_instance).context("Version is not the global version.")?;

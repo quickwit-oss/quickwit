@@ -29,7 +29,8 @@ use rusoto_s3::{
 use crate::{StorageError, StorageErrorKind};
 
 impl<T> From<RusotoErrorWrapper<T>> for StorageError
-where T: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
+where
+    T: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable,
 {
     fn from(err: RusotoErrorWrapper<T>) -> StorageError {
         let error_kind = match &err.0 {

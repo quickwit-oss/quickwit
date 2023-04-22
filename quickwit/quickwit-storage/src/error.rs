@@ -64,7 +64,9 @@ pub enum StorageResolverError {
 impl StorageErrorKind {
     /// Creates a StorageError.
     pub fn with_error<E>(self, source: E) -> StorageError
-    where anyhow::Error: From<E> {
+    where
+        anyhow::Error: From<E>,
+    {
         StorageError {
             kind: self,
             source: Arc::new(From::from(source)),
@@ -98,7 +100,9 @@ pub type StorageResult<T> = Result<T, StorageError>;
 impl StorageError {
     /// Add some context to the wrapper error.
     pub fn add_context<C>(self, ctx: C) -> Self
-    where C: fmt::Display + Send + Sync + 'static {
+    where
+        C: fmt::Display + Send + Sync + 'static,
+    {
         StorageError {
             kind: self.kind,
             source: Arc::new(anyhow::anyhow!("{} Ctx:{}", self.source.to_string(), ctx)),

@@ -58,7 +58,8 @@ pub trait PutPayloadClone {
 }
 
 impl<T> PutPayloadClone for T
-where T: 'static + PutPayload + Clone
+where
+    T: 'static + PutPayload + Clone,
 {
     fn box_clone(&self) -> Box<dyn PutPayload> {
         Box::new(self.clone())

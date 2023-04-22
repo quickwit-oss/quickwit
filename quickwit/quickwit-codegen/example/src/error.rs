@@ -41,7 +41,8 @@ impl From<HelloError> for tonic::Status {
 }
 
 impl<E> From<AskError<E>> for HelloError
-where E: fmt::Debug
+where
+    E: fmt::Debug,
 {
     fn from(error: AskError<E>) -> Self {
         HelloError::InternalError(format!("{error:?}"))

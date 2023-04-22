@@ -9,8 +9,7 @@ pub struct ApplyIndexingPlanRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ApplyIndexingPlanResponse {}
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
-#[derive(Eq, Hash)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema, Eq, Hash)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexingTask {
@@ -24,8 +23,8 @@ pub struct IndexingTask {
 /// Generated client implementations.
 pub mod indexing_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct IndexingServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -69,9 +68,8 @@ pub mod indexing_service_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
             IndexingServiceClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -95,15 +93,12 @@ pub mod indexing_service_client {
             &mut self,
             request: impl tonic::IntoRequest<super::ApplyIndexingPlanRequest>,
         ) -> Result<tonic::Response<super::ApplyIndexingPlanResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_indexing_api.IndexingService/applyIndexingPlan",
@@ -144,10 +139,7 @@ pub mod indexing_service_server {
                 send_compression_encodings: Default::default(),
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -175,10 +167,7 @@ pub mod indexing_service_server {
         type Response = http::Response<tonic::body::BoxBody>;
         type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(
-            &mut self,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -187,23 +176,18 @@ pub mod indexing_service_server {
                 "/quickwit_indexing_api.IndexingService/applyIndexingPlan" => {
                     #[allow(non_camel_case_types)]
                     struct applyIndexingPlanSvc<T: IndexingService>(pub Arc<T>);
-                    impl<
-                        T: IndexingService,
-                    > tonic::server::UnaryService<super::ApplyIndexingPlanRequest>
-                    for applyIndexingPlanSvc<T> {
+                    impl<T: IndexingService>
+                        tonic::server::UnaryService<super::ApplyIndexingPlanRequest>
+                        for applyIndexingPlanSvc<T>
+                    {
                         type Response = super::ApplyIndexingPlanResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::ApplyIndexingPlanRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).apply_indexing_plan(request).await
-                            };
+                            let fut = async move { (*inner).apply_indexing_plan(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -214,28 +198,23 @@ pub mod indexing_service_server {
                         let inner = inner.0;
                         let method = applyIndexingPlanSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        Ok(
-                            http::Response::builder()
-                                .status(200)
-                                .header("grpc-status", "12")
-                                .header("content-type", "application/grpc")
-                                .body(empty_body())
-                                .unwrap(),
-                        )
-                    })
-                }
+                _ => Box::pin(async move {
+                    Ok(http::Response::builder()
+                        .status(200)
+                        .header("grpc-status", "12")
+                        .header("content-type", "application/grpc")
+                        .body(empty_body())
+                        .unwrap())
+                }),
             }
         }
     }

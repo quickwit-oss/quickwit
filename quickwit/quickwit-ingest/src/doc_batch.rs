@@ -26,7 +26,8 @@ use crate::DocBatch;
 #[derive(Debug)]
 /// Represents a command that can be stored in a [`DocBatch`].
 pub enum DocCommand<T>
-where T: Buf
+where
+    T: Buf,
 {
     Ingest { payload: T },
     Commit,
@@ -53,7 +54,8 @@ impl From<u8> for DocCommandCode {
 }
 
 impl<T> DocCommand<T>
-where T: Buf + Default
+where
+    T: Buf + Default,
 {
     /// Returns the binary serialization code for the current version of this command.
     pub fn code(&self) -> DocCommandCode {
@@ -125,7 +127,9 @@ impl DocBatchBuilder {
 
     /// Adds a parsed command to the batch
     pub fn command<T>(&mut self, command: DocCommand<T>) -> usize
-    where T: Buf + Default {
+    where
+        T: Buf + Default,
+    {
         let len = command.write(&mut self.concat_docs);
         self.doc_lens.push(len as u64);
         len

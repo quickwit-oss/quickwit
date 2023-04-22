@@ -252,7 +252,9 @@ async fn test_slop_queries() -> anyhow::Result<()> {
 
 // TODO remove me once `Iterator::is_sorted_by_key` is stabilized.
 fn is_sorted<E, I: Iterator<Item = E>>(mut it: I) -> bool
-where E: Ord {
+where
+    E: Ord,
+{
     let mut previous_el = if let Some(first_el) = it.next() {
         first_el
     } else {

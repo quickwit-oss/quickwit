@@ -31,7 +31,7 @@ use tracing::debug;
 
 use crate::{config_cli_arg, load_quickwit_config, start_actor_runtimes};
 
-pub fn build_run_command<'a>() -> Command {
+pub fn build_run_command() -> Command {
     Command::new("run")
         .about("Starts Quickwit server with all services by default (`indexer`, `searcher`...).")
         .long_about("Starts Quickwit server with all services by default: `indexer`, `searcher`, `metastore`, `control_plane` and `janitor`.")

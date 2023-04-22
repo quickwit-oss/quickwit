@@ -56,7 +56,7 @@ use crate::{
     start_actor_runtimes, THROUGHPUT_WINDOW_SIZE,
 };
 
-pub fn build_tool_command<'a>() -> Command {
+pub fn build_tool_command() -> Command {
     Command::new("tool")
         .about("Performs utility operations. Requires a node config.")
         .arg(config_cli_arg())
@@ -180,8 +180,7 @@ impl ToolCliCommand {
         let index_id = matches
             .get_one::<String>("index")
             .map(|s| s.to_owned())
-            .expect("`index` is a required arg.")
-            .to_string();
+            .expect("`index` is a required arg.");
         let input_path_opt =
             if let Some(input_path) = matches.get_one::<String>("input-path").map(|s| s.as_str()) {
                 Uri::from_str(input_path)?
@@ -263,7 +262,7 @@ impl ToolCliCommand {
             .expect("`config` is a required arg.")?;
         let target_dir = matches
             .get_one::<String>("target-dir")
-            .map(|s| PathBuf::from(s))
+            .map(PathBuf::from)
             .expect("`target-dir` is a required arg.");
         Ok(Self::ExtractSplit(ExtractSplitArgs {
             config_uri,

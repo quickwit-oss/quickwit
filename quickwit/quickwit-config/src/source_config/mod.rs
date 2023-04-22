@@ -220,7 +220,9 @@ pub struct FileSourceParams {
 
 // Deserializing a filepath string into an absolute filepath.
 fn absolute_filepath_from_str<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
-where D: Deserializer<'de> {
+where
+    D: Deserializer<'de>,
+{
     let filepath_opt: Option<String> = Deserialize::deserialize(deserializer)?;
     if let Some(filepath) = filepath_opt {
         let uri = Uri::from_str(&filepath).map_err(D::Error::custom)?;
@@ -360,7 +362,9 @@ pub enum PulsarSourceAuth {
 
 // Deserializing a string into an pulsar uri.
 fn pulsar_uri<'de, D>(deserializer: D) -> Result<String, D::Error>
-where D: Deserializer<'de> {
+where
+    D: Deserializer<'de>,
+{
     let uri: String = Deserialize::deserialize(deserializer)?;
 
     if uri.strip_prefix("pulsar://").is_none() {
@@ -408,9 +412,9 @@ impl TransformConfig {
         let timezone_str = self.timezone_opt.as_deref().unwrap_or("UTC");
         let timezone = TimeZone::parse(timezone_str).with_context(|| {
             format!(
-            "Failed to parse timezone: `{timezone_str}`. Timezone must be a valid name \
+                "Failed to parse timezone: `{timezone_str}`. Timezone must be a valid name \
             in the TZ database: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
-        )
+            )
         })?;
         // Append "\n." to the script to return the entire document and not only the modified
         // fields.

@@ -47,7 +47,9 @@ impl ToString for BodyFormat {
 
 impl Serialize for BodyFormat {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         serializer.serialize_str(&self.to_string())
     }
 }

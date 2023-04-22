@@ -125,7 +125,8 @@ pub struct ResponseFuture<const N: usize, F> {
 }
 
 impl<const N: usize, F, T, E> Future for ResponseFuture<N, F>
-where F: Future<Output = Result<T, E>>
+where
+    F: Future<Output = Result<T, E>>,
 {
     type Output = Result<T, E>;
 

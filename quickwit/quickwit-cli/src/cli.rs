@@ -27,7 +27,7 @@ use crate::source::{build_source_command, SourceCliCommand};
 use crate::split::{build_split_command, SplitCliCommand};
 use crate::tool::{build_tool_command, ToolCliCommand};
 
-pub fn build_cli<'a>() -> Command {
+pub fn build_cli() -> Command {
     Command::new("Quickwit")
         .arg(
             Arg::new("no-color")

@@ -231,7 +231,9 @@ impl SourceCheckpoint {
 /// ```
 impl FromIterator<(PartitionId, Position)> for SourceCheckpoint {
     fn from_iter<I>(iter: I) -> SourceCheckpoint
-    where I: IntoIterator<Item = (PartitionId, Position)> {
+    where
+        I: IntoIterator<Item = (PartitionId, Position)>,
+    {
         SourceCheckpoint {
             per_partition: iter.into_iter().collect(),
         }
@@ -240,7 +242,9 @@ impl FromIterator<(PartitionId, Position)> for SourceCheckpoint {
 
 impl Serialize for SourceCheckpoint {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         let mut map = serializer.serialize_map(Some(self.per_partition.len()))?;
         for (partition, position) in &self.per_partition {
             map.serialize_entry(&*partition.0, position.as_str())?;
@@ -251,7 +255,9 @@ impl Serialize for SourceCheckpoint {
 
 impl<'de> Deserialize<'de> for SourceCheckpoint {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let string_to_string_map: BTreeMap<String, String> = BTreeMap::deserialize(deserializer)?;
         let per_partition: BTreeMap<PartitionId, Position> = string_to_string_map
             .into_iter()
