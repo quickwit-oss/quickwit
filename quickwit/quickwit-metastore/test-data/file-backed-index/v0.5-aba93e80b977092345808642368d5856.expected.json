@@ -17,7 +17,7 @@
       }
     },
     "create_timestamp": 1789,
-    "incarnation_id": "00000000000000000000000000",
+    "incarnation_id": "0001EHZADJ3VAF00JK8RQ0VMSA",
     "index_config": {
       "doc_mapping": {
         "field_mappings": [
@@ -98,7 +98,7 @@
           "message"
         ]
       },
-      "version": "0.4"
+      "version": "0.5"
     },
     "sources": [
       {
@@ -111,10 +111,13 @@
         },
         "source_id": "kafka-source",
         "source_type": "kafka",
-        "version": "0.4"
+        "transform": {
+          "script": ".message = downcase(string!(.message))"
+        },
+        "version": "0.5"
       }
     ],
-    "version": "0.4"
+    "version": "0.5"
   },
   "splits": [
     {
@@ -143,8 +146,8 @@
       },
       "uncompressed_docs_size_in_bytes": 234234,
       "update_timestamp": 1789,
-      "version": "0.4"
+      "version": "0.5"
     }
   ],
-  "version": "0.4"
+  "version": "0.5"
 }

@@ -17,6 +17,7 @@
       }
     },
     "create_timestamp": 1789,
+    "incarnation_id": "00000000000000000000000000",
     "index_config": {
       "doc_mapping": {
         "field_mappings": [

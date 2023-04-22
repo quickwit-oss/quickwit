@@ -107,8 +107,7 @@ impl BatchLineReader {
         self.has_next
     }
 
-    #[cfg(any(test, feature = "testsuite"))]
-    fn from_bytes(bytes: &[u8], max_batch_num_bytes: usize) -> Self {
+    fn from_bytes(bytes: Bytes, max_batch_num_bytes: usize) -> Self {
         use std::io::Cursor;
 
         Self::new(Box::new(Cursor::new(bytes.to_vec())), max_batch_num_bytes)
@@ -122,12 +121,12 @@ mod tests {
     #[tokio::test]
     async fn test_batch_reader() {
         {
-            let mut batch_reader = BatchLineReader::from_bytes(b"", 10);
+            let mut batch_reader = BatchLineReader::from_bytes("".into(), 10);
             assert!(batch_reader.next_batch().await.unwrap().is_none());
             assert!(batch_reader.next_batch().await.unwrap().is_none());
         }
         {
-            let mut batch_reader = BatchLineReader::from_bytes(b"foo\n", 10);
+            let mut batch_reader = BatchLineReader::from_bytes("foo\n".into(), 10);
             assert_eq!(
                 &batch_reader.next_batch().await.unwrap().unwrap()[..],
                 b"foo\n"
@@ -136,7 +135,7 @@ mod tests {
             assert!(batch_reader.next_batch().await.unwrap().is_none());
         }
         {
-            let mut batch_reader = BatchLineReader::from_bytes(b"foo\nbar\nqux\n", 10);
+            let mut batch_reader = BatchLineReader::from_bytes("foo\nbar\nqux\n".into(), 10);
             assert_eq!(
                 &batch_reader.next_batch().await.unwrap().unwrap()[..],
                 b"foo\nbar\n"
@@ -149,7 +148,7 @@ mod tests {
             assert!(batch_reader.next_batch().await.unwrap().is_none());
         }
         {
-            let mut batch_reader = BatchLineReader::from_bytes(b"fooo\nbaar\nqux\n", 10);
+            let mut batch_reader = BatchLineReader::from_bytes("fooo\nbaar\nqux\n".into(), 10);
             assert_eq!(
                 &batch_reader.next_batch().await.unwrap().unwrap()[..],
                 b"fooo\nbaar\n"
@@ -163,7 +162,7 @@ mod tests {
         }
         {
             let mut batch_reader =
-                BatchLineReader::from_bytes(b"foobarquxbaz\nfoo\nbar\nqux\n", 10);
+                BatchLineReader::from_bytes("foobarquxbaz\nfoo\nbar\nqux\n".into(), 10);
             assert_eq!(
                 &batch_reader.next_batch().await.unwrap().unwrap()[..],
                 b"foo\nbar\n"
@@ -177,7 +176,7 @@ mod tests {
         }
         {
             let mut batch_reader =
-                BatchLineReader::from_bytes(b"foo\nbar\nfoobarquxbaz\nqux\n", 10);
+                BatchLineReader::from_bytes("foo\nbar\nfoobarquxbaz\nqux\n".into(), 10);
             assert_eq!(
                 &batch_reader.next_batch().await.unwrap().unwrap()[..],
                 b"foo\nbar\n"

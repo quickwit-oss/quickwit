@@ -28,7 +28,7 @@ use std::fmt::Debug;
 
 use itertools::Itertools;
 use quickwit_common::PrettySample;
-use quickwit_config::{SourceConfig, TestableForRegression};
+use quickwit_config::SourceConfig;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
@@ -68,7 +68,8 @@ pub struct FileBackedIndex {
     pub discarded: bool,
 }
 
-impl TestableForRegression for FileBackedIndex {
+#[cfg(any(test, feature = "testsuite"))]
+impl quickwit_config::TestableForRegression for FileBackedIndex {
     fn sample_for_regression() -> Self {
         let index_metadata = IndexMetadata::sample_for_regression();
         let split_metadata = SplitMetadata::sample_for_regression();

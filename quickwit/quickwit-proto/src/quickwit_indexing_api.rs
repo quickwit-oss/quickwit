@@ -20,6 +20,9 @@ pub struct IndexingTask {
     /// / Source ID of the task.
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
+    /// / Index incarnation id.
+    #[prost(string, tag = "3")]
+    pub incarnation_id: ::prost::alloc::string::String,
 }
 /// Generated client implementations.
 pub mod indexing_service_client {

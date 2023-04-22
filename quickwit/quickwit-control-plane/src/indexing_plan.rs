@@ -245,6 +245,7 @@ fn compute_node_score(node_id: &str, physical_plan: &PhysicalIndexingPlan) -> f3
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub(crate) struct IndexSourceId {
     pub index_id: String,
+    pub incarnation_id: String,
     pub source_id: String,
 }
 
@@ -252,6 +253,7 @@ impl From<IndexingTask> for IndexSourceId {
     fn from(indexing_task: IndexingTask) -> Self {
         Self {
             index_id: indexing_task.index_id,
+            incarnation_id: indexing_task.incarnation_id,
             source_id: indexing_task.source_id,
         }
     }
@@ -303,6 +305,7 @@ pub(crate) fn build_indexing_plan(
             indexing_tasks.push(IndexingTask {
                 index_id: index_source_id.index_id.clone(),
                 source_id: index_source_id.source_id.clone(),
+                incarnation_id: index_source_id.incarnation_id.clone(),
             });
         }
     }
@@ -383,6 +386,7 @@ mod tests {
         let index_source_id = IndexSourceId {
             index_id: "one-source-index".to_string(),
             source_id: "source-0".to_string(),
+            incarnation_id: "11111111111111111111111111".to_string(),
         };
         source_configs_map.insert(
             index_source_id.clone(),
@@ -405,6 +409,7 @@ mod tests {
                 IndexingTask {
                     index_id: index_source_id.index_id.to_string(),
                     source_id: index_source_id.source_id.to_string(),
+                    incarnation_id: "11111111111111111111111111".to_string(),
                 }
             );
         }
@@ -417,6 +422,7 @@ mod tests {
         let index_source_id = IndexSourceId {
             index_id: "ingest-api-index".to_string(),
             source_id: INGEST_API_SOURCE_ID.to_string(),
+            incarnation_id: "11111111111111111111111111".to_string(),
         };
         source_configs_map.insert(
             index_source_id.clone(),
@@ -439,6 +445,7 @@ mod tests {
                 IndexingTask {
                     index_id: index_source_id.index_id.to_string(),
                     source_id: index_source_id.source_id.to_string(),
+                    incarnation_id: "11111111111111111111111111".to_string(),
                 }
             );
         }
@@ -451,14 +458,17 @@ mod tests {
         let file_index_source_id = IndexSourceId {
             index_id: "one-source-index".to_string(),
             source_id: "file-source".to_string(),
+            incarnation_id: "11111111111111111111111111".to_string(),
         };
         let cli_ingest_index_source_id = IndexSourceId {
             index_id: "second-source-index".to_string(),
             source_id: CLI_INGEST_SOURCE_ID.to_string(),
+            incarnation_id: "11111111111111111111111111".to_string(),
         };
         let kafka_index_source_id = IndexSourceId {
             index_id: "third-source-index".to_string(),
             source_id: "kafka-source".to_string(),
+            incarnation_id: "11111111111111111111111111".to_string(),
         };
         source_configs_map.insert(
             file_index_source_id.clone(),
@@ -511,10 +521,12 @@ mod tests {
         let kafka_index_source_id_1 = IndexSourceId {
             index_id: index_1.to_string(),
             source_id: source_1.to_string(),
+            incarnation_id: "11111111111111111111111111".to_string(),
         };
         let kafka_index_source_id_2 = IndexSourceId {
             index_id: index_2.to_string(),
             source_id: source_2.to_string(),
+            incarnation_id: "11111111111111111111111111".to_string(),
         };
         source_configs_map.insert(
             kafka_index_source_id_1.clone(),
@@ -543,12 +555,14 @@ mod tests {
             indexing_tasks.push(IndexingTask {
                 index_id: index_1.to_string(),
                 source_id: source_1.to_string(),
+                incarnation_id: "11111111111111111111111111".to_string(),
             });
         }
         for _ in 0..2 {
             indexing_tasks.push(IndexingTask {
                 index_id: index_2.to_string(),
                 source_id: source_2.to_string(),
+                incarnation_id: "11111111111111111111111111".to_string(),
             });
         }
 
@@ -593,6 +607,7 @@ mod tests {
         let kafka_index_source_id_1 = IndexSourceId {
             index_id: index_1.to_string(),
             source_id: source_1.to_string(),
+            incarnation_id: "11111111111111111111111111".to_string(),
         };
         source_configs_map.insert(
             kafka_index_source_id_1.clone(),
@@ -609,10 +624,12 @@ mod tests {
             IndexingTask {
                 index_id: index_1.to_string(),
                 source_id: source_1.to_string(),
+                incarnation_id: "11111111111111111111111111".to_string(),
             },
             IndexingTask {
                 index_id: index_1.to_string(),
                 source_id: source_1.to_string(),
+                incarnation_id: "11111111111111111111111111".to_string(),
             },
         ];
 
@@ -631,7 +648,7 @@ mod tests {
             let source_configs: HashMap<IndexSourceId, SourceConfig> = index_id_sources
                 .into_iter()
                 .map(|(index_id, source_config)| {
-                    (IndexSourceId { index_id, source_id: source_config.source_id.to_string() }, source_config)
+                    (IndexSourceId { index_id, source_id: source_config.source_id.to_string(), incarnation_id: "11111111111111111111111111".to_string(), }, source_config)
                 })
                 .collect();
             let mut indexing_tasks = build_indexing_plan(&indexers, &source_configs);

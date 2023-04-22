@@ -337,6 +337,7 @@ mod tests {
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+    use quickwit_metastore::IndexConfigId;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, Index};
     use tracing::Span;
@@ -394,7 +395,7 @@ mod tests {
         }
         index_writer.commit()?;
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,

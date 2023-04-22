@@ -37,4 +37,6 @@ message IndexingTask {
   string index_id = 1;
   /// Source ID of the task.
   string source_id = 2;
+  /// Index incarnation id.
+  string incarnation_id = 3;
 }

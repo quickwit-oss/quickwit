@@ -31,7 +31,7 @@ pub mod retrying_metastore;
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
-pub use index_metadata::IndexMetadata;
+pub use index_metadata::{IndexConfigId, IndexMetadata};
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;

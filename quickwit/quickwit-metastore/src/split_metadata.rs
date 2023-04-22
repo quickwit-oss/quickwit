@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::split_metadata_version::VersionedSplitMetadata;
+use crate::IndexConfigId;
 
 /// Carries split metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -68,7 +69,7 @@ pub struct SplitMetadata {
     pub split_id: String,
 
     /// Id of the index this split belongs to.
-    pub index_id: String,
+    pub index_config_id: IndexConfigId,
 
     /// Partition to which the split belongs to.
     ///
@@ -132,14 +133,14 @@ impl SplitMetadata {
     /// Creates a new instance of split metadata.
     pub fn new(
         split_id: String,
-        index_id: String,
+        index_config_id: IndexConfigId,
         partition_id: u64,
         source_id: String,
         node_id: String,
     ) -> Self {
         Self {
             split_id,
-            index_id,
+            index_config_id,
             partition_id,
             source_id,
             node_id,
@@ -172,11 +173,12 @@ impl From<&SplitMetadata> for FileEntry {
     }
 }
 
+#[cfg(any(test, feature = "testsuite"))]
 impl TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
         SplitMetadata {
             split_id: "split".to_string(),
-            index_id: "my-index".to_string(),
+            index_config_id: IndexConfigId::for_test("my-index"),
             source_id: "source".to_string(),
             node_id: "node".to_string(),
             delete_opstamp: 10,

@@ -331,7 +331,8 @@ mod tests {
 
     use quickwit_config::IndexConfig;
     use quickwit_metastore::{
-        metastore_for_test, ListSplitsQuery, MockMetastore, SplitMetadata, SplitState,
+        metastore_for_test, IndexConfigId, ListSplitsQuery, MockMetastore, SplitMetadata,
+        SplitState,
     };
     use quickwit_storage::storage_for_test;
 
@@ -350,7 +351,7 @@ mod tests {
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
             split_id: split_id.to_string(),
-            index_id: index_id.to_string(),
+            index_config_id: IndexConfigId::for_test(index_id),
             ..Default::default()
         };
         metastore
@@ -408,7 +409,7 @@ mod tests {
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
             split_id: split_id.to_string(),
-            index_id: index_id.to_string(),
+            index_config_id: IndexConfigId::for_test(index_id),
             ..Default::default()
         };
         metastore

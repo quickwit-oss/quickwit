@@ -38,7 +38,9 @@ pub mod test_suite {
     use crate::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
-    use crate::{ListSplitsQuery, Metastore, MetastoreError, Split, SplitMetadata, SplitState};
+    use crate::{
+        IndexConfigId, ListSplitsQuery, Metastore, MetastoreError, Split, SplitMetadata, SplitState,
+    };
 
     #[async_trait]
     pub trait DefaultForTest {
@@ -191,6 +193,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = append_random_suffix("test-delete-index");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -206,7 +209,7 @@ pub mod test_suite {
         let split_id = format!("{index_id}--split");
         let split_metadata = SplitMetadata {
             split_id: split_id.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             ..Default::default()
         };
 
@@ -388,6 +391,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = append_random_suffix("test-reset-checkpoint");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -412,7 +416,7 @@ pub mod test_suite {
 
             let split_metadata = SplitMetadata {
                 split_id: split_id.clone(),
-                index_id: index_id.clone(),
+                index_config_id: index_config_id.clone(),
                 ..Default::default()
             };
             metastore
@@ -532,6 +536,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = append_random_suffix("test-publish-splits");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -540,7 +545,7 @@ pub mod test_suite {
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
             split_id: split_id_1.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -549,7 +554,7 @@ pub mod test_suite {
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
             split_id: split_id_2.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             time_range: Some(30..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -954,7 +959,7 @@ pub mod test_suite {
                 let split_id = format!("{index_id}--split-{partition_id}");
                 let split_metadata = SplitMetadata {
                     split_id: split_id.clone(),
-                    index_id: index_id.clone(),
+                    index_config_id: IndexConfigId::for_test(index_id.clone()),
                     ..Default::default()
                 };
                 metastore
@@ -997,13 +1002,14 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = append_random_suffix("test-replace-splits");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
             split_id: split_id_1.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             time_range: None,
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1012,7 +1018,7 @@ pub mod test_suite {
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
             split_id: split_id_2.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             time_range: None,
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1021,7 +1027,7 @@ pub mod test_suite {
         let split_id_3 = format!("{index_id}--split-3");
         let split_metadata_3 = SplitMetadata {
             split_id: split_id_3.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             time_range: None,
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1219,6 +1225,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = append_random_suffix("test-mark-splits-for-deletion");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -1238,7 +1245,7 @@ pub mod test_suite {
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
             split_id: split_id_1.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -1250,7 +1257,7 @@ pub mod test_suite {
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
             split_id: split_id_2.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -1266,7 +1273,7 @@ pub mod test_suite {
         let split_id_3 = format!("{index_id}--split-3");
         let split_metadata_3 = SplitMetadata {
             split_id: split_id_3.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -1340,6 +1347,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = append_random_suffix("test-delete-splits");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -1360,7 +1368,7 @@ pub mod test_suite {
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
             split_id: split_id_1.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             ..Default::default()
         };
         metastore
@@ -1375,7 +1383,7 @@ pub mod test_suite {
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
             split_id: split_id_2.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             ..Default::default()
         };
         metastore
@@ -1411,43 +1419,44 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = append_random_suffix("test-list-all-splits");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
             split_id: split_id_1.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             ..Default::default()
         };
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
             split_id: split_id_2.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             ..Default::default()
         };
         let split_id_3 = format!("{index_id}--split-3");
         let split_metadata_3 = SplitMetadata {
             split_id: split_id_3.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             ..Default::default()
         };
         let split_id_4 = format!("{index_id}--split-4");
         let split_metadata_4 = SplitMetadata {
             split_id: split_id_4.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             ..Default::default()
         };
         let split_id_5 = format!("{index_id}--split-5");
         let split_metadata_5 = SplitMetadata {
             split_id: split_id_5.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             ..Default::default()
         };
         let split_id_6 = format!("{index_id}--split-6");
         let split_metadata_6 = SplitMetadata {
             split_id: split_id_6.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             ..Default::default()
         };
 
@@ -1507,13 +1516,14 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = append_random_suffix("test-list-splits");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
             split_id: split_id_1.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             tags: to_btree_set(&["tag!", "tag:foo", "tag:bar"]),
@@ -1524,7 +1534,7 @@ pub mod test_suite {
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
             split_id: split_id_2.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             time_range: Some(100..=199),
             create_timestamp: current_timestamp,
             tags: to_btree_set(&["tag!", "tag:bar"]),
@@ -1535,7 +1545,7 @@ pub mod test_suite {
         let split_id_3 = format!("{index_id}--split-3");
         let split_metadata_3 = SplitMetadata {
             split_id: split_id_3.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             time_range: Some(200..=299),
             create_timestamp: current_timestamp,
             tags: to_btree_set(&["tag!", "tag:foo", "tag:baz"]),
@@ -1546,7 +1556,7 @@ pub mod test_suite {
         let split_id_4 = format!("{index_id}--split-4");
         let split_metadata_4 = SplitMetadata {
             split_id: split_id_4.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             time_range: Some(300..=399),
             tags: to_btree_set(&["tag!", "tag:foo"]),
             delete_opstamp: 7,
@@ -1556,7 +1566,7 @@ pub mod test_suite {
         let split_id_5 = format!("{index_id}--split-5");
         let split_metadata_5 = SplitMetadata {
             split_id: split_id_5.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             time_range: None,
             create_timestamp: current_timestamp,
             tags: to_btree_set(&["tag!", "tag:baz", "tag:biz"]),
@@ -1828,7 +1838,7 @@ pub mod test_suite {
             let split_id_6 = format!("{index_id}--split-6");
             let split_metadata_6 = SplitMetadata {
                 split_id: split_id_6.clone(),
-                index_id: index_id.clone(),
+                index_config_id: index_config_id.clone(),
                 time_range: None,
                 create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                 ..Default::default()
@@ -1934,6 +1944,7 @@ pub mod test_suite {
         let mut current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = append_random_suffix("split-update-timestamp");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -1942,7 +1953,7 @@ pub mod test_suite {
         let split_id = format!("{index_id}--split");
         let split_metadata = SplitMetadata {
             split_id: split_id.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -2183,13 +2194,14 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let index_id = append_random_suffix("test-list-stale-splits");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
             split_id: split_id_1.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 20,
             ..Default::default()
@@ -2197,7 +2209,7 @@ pub mod test_suite {
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
             split_id: split_id_2.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 10,
             ..Default::default()
@@ -2205,7 +2217,7 @@ pub mod test_suite {
         let split_id_3 = format!("{index_id}--split-3");
         let split_metadata_3 = SplitMetadata {
             split_id: split_id_3.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 0,
             ..Default::default()
@@ -2213,7 +2225,7 @@ pub mod test_suite {
         let split_id_4 = format!("{index_id}--split-4");
         let split_metadata_4 = SplitMetadata {
             split_id: split_id_4.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 20,
             ..Default::default()
@@ -2300,13 +2312,14 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let index_id = append_random_suffix("update-splits-delete-opstamp");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
             split_id: split_id_1.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 20,
             ..Default::default()
@@ -2314,7 +2327,7 @@ pub mod test_suite {
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
             split_id: split_id_2.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 10,
             ..Default::default()
@@ -2322,7 +2335,7 @@ pub mod test_suite {
         let split_id_3 = format!("{index_id}--split-3");
         let split_metadata_3 = SplitMetadata {
             split_id: split_id_3.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 0,
             ..Default::default()
@@ -2394,13 +2407,14 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let index_id = append_random_suffix("test-stage-splits");
+        let index_config_id = IndexConfigId::for_test(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
             split_id: split_id_1.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 20,
             ..Default::default()
@@ -2408,7 +2422,7 @@ pub mod test_suite {
         let split_id_2 = format!("{index_id}--split-2");
         let split_metadata_2 = SplitMetadata {
             split_id: split_id_2.clone(),
-            index_id: index_id.clone(),
+            index_config_id: index_config_id.clone(),
             create_timestamp: current_timestamp,
             delete_opstamp: 10,
             ..Default::default()
