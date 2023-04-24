@@ -127,7 +127,7 @@ rdkafka = { version = "0.28", default-features = false, features = [
   "ssl",
   "cmake-build",
 ] }
-regex = "1.7.1"
+regex = "1.8.1"
 reqwest = { version = "0.11", default-features = false, features = [
   "json",
   "rustls-tls",
