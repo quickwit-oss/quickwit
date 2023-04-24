@@ -123,6 +123,14 @@ impl RoutingExpr {
             0u64
         }
     }
+
+    pub fn field_names(&self) -> Vec<String> {
+        if let Some(inner) = self.inner_opt.as_ref() {
+            inner.field_names()
+        } else {
+            vec![]
+        }
+    }
 }
 
 impl Display for RoutingExpr {
@@ -130,7 +138,7 @@ impl Display for RoutingExpr {
         if let Some(inner_expr) = self.inner_opt.as_ref() {
             inner_expr.fmt(f)
         } else {
-            write!(f, "EmptyRoutingExpr")
+            write!(f, "")
         }
     }
 }
@@ -163,6 +171,21 @@ impl InnerRoutingExpr {
                 inner_expr.eval_hash(ctx, &mut sub_hasher);
                 hasher.write_u64(sub_hasher.finish() % modulo);
             }
+        }
+    }
+
+    // return all fields in a vector
+    fn field_names(&self) -> Vec<String> {
+        match self {
+            InnerRoutingExpr::Field(field_name) => vec![field_name.to_string()],
+            InnerRoutingExpr::Composite(children) => {
+                let mut fields = vec![];
+                for child in children {
+                    fields.extend(child.field_names());
+                }
+                fields
+            }
+            InnerRoutingExpr::Modulo(inner_expr, _) => inner_expr.field_names(),
         }
     }
 }
