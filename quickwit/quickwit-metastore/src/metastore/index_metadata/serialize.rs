@@ -70,6 +70,7 @@ impl From<IndexMetadata> for IndexMetadataV0_5 {
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub(crate) struct IndexMetadataV0_5 {
     #[schema(value_type = String)]
+    // Defaults to nil for backward compatibility.
     #[serde(default)]
     pub incarnation_id: Ulid,
     #[schema(value_type = VersionedIndexConfig)]
