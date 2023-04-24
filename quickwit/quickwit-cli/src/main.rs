@@ -181,9 +181,6 @@ mod busy_detector {
     const ALLOWED_DELAY_MICROS: u64 = 5000;
     const WARN_SUPPRESSION_MICROS: u64 = 30_000_000;
 
-    thread_local!(static MY_THREAD_ID: AtomicU64 = AtomicU64::new(0));
-    static NEXT_THREAD_ID: AtomicU64 = AtomicU64::new(1);
-
     // LAST_UNPARK_TIMESTAMP and NEXT_WARN_TIMESTAMP are semantically micro-second
     // precision timestamps, but we use atomics to allow accessing them without locks.
     thread_local!(static LAST_UNPARK_TIMESTAMP: AtomicU64 = AtomicU64::new(0));
@@ -228,22 +225,12 @@ mod busy_detector {
             return;
         }
 
-        let id = MY_THREAD_ID.with(|my_id| {
-            let id = my_id.load(Ordering::Relaxed);
-            if id == 0 {
-                let new_id = NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed);
-                my_id.store(new_id, Ordering::Relaxed);
-                new_id
-            } else {
-                id
-            }
-        });
         let suppressed = SUPPRESSED_WARN_COUNT.swap(0, Ordering::Relaxed);
         if suppressed == 0 {
-            warn!("Thread{id} wasn't parked for {delta}µs, is the runtime too busy?");
+            warn!("Thread wasn't parked for {delta}µs, is the runtime too busy?");
         } else {
             warn!(
-                "Thread{id} wasn't parked for {delta}µs, is the runtime too busy? ({suppressed} \
+                "Thread wasn't parked for {delta}µs, is the runtime too busy? ({suppressed} \
                  similar messages suppressed)"
             );
         }
