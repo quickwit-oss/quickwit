@@ -179,18 +179,19 @@ mod busy_detector {
     static TIME_REF: Lazy<Instant> = Lazy::new(Instant::now);
 
     const ALLOWED_DELAY_MICROS: u64 = 5000;
-    const WARN_SUPPRESSION_DURATION: u64 = 30_000_000;
+    const WARN_SUPPRESSION_MICROS: u64 = 30_000_000;
 
-    thread_local!(static MY_ID: AtomicU64 = AtomicU64::new(0));
-    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+    thread_local!(static MY_THREAD_ID: AtomicU64 = AtomicU64::new(0));
+    static NEXT_THREAD_ID: AtomicU64 = AtomicU64::new(1);
 
-    // LAST_UNPARK and NEXT_WARN are semantically timestamps
-    thread_local!(static LAST_UNPARK: AtomicU64 = AtomicU64::new(0));
-    static NEXT_WARN: AtomicU64 = AtomicU64::new(0);
-    static SUPPRESSED_WARN: AtomicU64 = AtomicU64::new(0);
+    // LAST_UNPARK_TIMESTAMP and NEXT_WARN_TIMESTAMP are semantically micro-second
+    // precision timestamps, but we use atomics to allow accessing them without locks.
+    thread_local!(static LAST_UNPARK_TIMESTAMP: AtomicU64 = AtomicU64::new(0));
+    static NEXT_WARN_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
+    static SUPPRESSED_WARN_COUNT: AtomicU64 = AtomicU64::new(0);
 
     pub fn thread_unpark() {
-        LAST_UNPARK.with(|time| {
+        LAST_UNPARK_TIMESTAMP.with(|time| {
             let now = Instant::now()
                 .checked_duration_since(*TIME_REF)
                 .unwrap_or_default();
@@ -199,7 +200,7 @@ mod busy_detector {
     }
 
     pub fn thread_park() {
-        LAST_UNPARK.with(|time| {
+        LAST_UNPARK_TIMESTAMP.with(|time| {
             let now = Instant::now()
                 .checked_duration_since(*TIME_REF)
                 .unwrap_or_default();
@@ -212,10 +213,10 @@ mod busy_detector {
     }
 
     fn emit_warn(delta: u64, now: u64) {
-        if NEXT_WARN
+        if NEXT_WARN_TIMESTAMP
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next_warn| {
                 if next_warn < now {
-                    Some(now + WARN_SUPPRESSION_DURATION)
+                    Some(now + WARN_SUPPRESSION_MICROS)
                 } else {
                     None
                 }
@@ -223,21 +224,21 @@ mod busy_detector {
             .is_err()
         {
             // a warn was emited recently, don't emit log for this one
-            SUPPRESSED_WARN.fetch_add(1, Ordering::Relaxed);
+            SUPPRESSED_WARN_COUNT.fetch_add(1, Ordering::Relaxed);
             return;
         }
 
-        let id = MY_ID.with(|my_id| {
+        let id = MY_THREAD_ID.with(|my_id| {
             let id = my_id.load(Ordering::Relaxed);
             if id == 0 {
-                let new_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+                let new_id = NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed);
                 my_id.store(new_id, Ordering::Relaxed);
                 new_id
             } else {
                 id
             }
         });
-        let suppressed = SUPPRESSED_WARN.swap(0, Ordering::Relaxed);
+        let suppressed = SUPPRESSED_WARN_COUNT.swap(0, Ordering::Relaxed);
         if suppressed == 0 {
             warn!("Thread{id} wasn't parked for {delta}µs, is the runtime too busy?");
         } else {

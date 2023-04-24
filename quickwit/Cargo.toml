@@ -239,6 +239,8 @@ encoding_rs = "=0.8.29"
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }
 
+## this patched version of tracing helps better understand what happens inside futures (when are
+## they polled, how long does poll take...)
 #tracing = { git = "https://github.com/trinity-1686a/tracing.git", branch = "tracing-subscriber-0.3.16-poll-duration" }
 #tracing-attributes = { git = "https://github.com/trinity-1686a/tracing.git", branch = "tracing-subscriber-0.3.16-poll-duration" }
 #tracing-core = { git = "https://github.com/trinity-1686a/tracing.git", branch = "tracing-subscriber-0.3.16-poll-duration" }
