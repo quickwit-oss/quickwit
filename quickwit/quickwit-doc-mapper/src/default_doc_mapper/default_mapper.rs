@@ -775,6 +775,77 @@ mod tests {
     }
 
     #[test]
+    fn test_partion_key_in_tags() {
+        let doc_mapper = r#"{
+            "default_search_fields": [],
+            "timestamp_field": null,
+            "tag_fields": ["city"],
+            "store_source": true,
+            "partition_key": "hash_mod((service,division,city), 50)",
+            "field_mappings": [
+                {
+                    "name": "city",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                },
+                {
+                    "name": "division",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                },
+                {
+                    "name": "service",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                }
+            ]
+        }"#;
+
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let doc_mapper = builder.try_build().unwrap();
+        let tag_fields: Vec<_> = doc_mapper.tag_field_names.into_iter().collect();
+        assert_eq!(tag_fields, vec!["city", "division", "service",]);
+    }
+
+    #[test]
+    fn test_partion_key_in_tags_without_explicit_tags() {
+        let doc_mapper = r#"{
+            "default_search_fields": [],
+            "timestamp_field": null,
+            "store_source": true,
+            "partition_key": "service,hash_mod((division,city), 50)",
+            "field_mappings": [
+                {
+                    "name": "city",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                },
+                {
+                    "name": "division",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                },
+                {
+                    "name": "service",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                }
+            ]
+        }"#;
+
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let doc_mapper = builder.try_build().unwrap();
+        let tag_fields: Vec<_> = doc_mapper.tag_field_names.into_iter().collect();
+        assert_eq!(tag_fields, vec!["city", "division", "service",]);
+    }
+
+    #[test]
     fn test_fail_to_build_doc_mapper_with_wrong_tag_fields_types() -> anyhow::Result<()> {
         let doc_mapper_one = r#"{
             "default_search_fields": [],
