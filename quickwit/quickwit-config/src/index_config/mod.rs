@@ -427,7 +427,7 @@ impl TestableForRegression for IndexConfig {
             store_source: true,
             mode: ModeType::Dynamic,
             dynamic_mapping: None,
-            partition_key: Some("tenant".to_string()),
+            partition_key: Some("tenant_id".to_string()),
             max_num_partitions: NonZeroU32::new(100).unwrap(),
             timestamp_field: Some("timestamp".to_string()),
         };
