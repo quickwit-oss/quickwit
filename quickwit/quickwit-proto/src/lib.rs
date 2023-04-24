@@ -22,6 +22,7 @@
 #![allow(rustdoc::invalid_html_tags)]
 
 use anyhow::anyhow;
+use anyhow::Context;
 use ulid::Ulid;
 mod quickwit;
 mod quickwit_indexing_api;
@@ -322,18 +323,16 @@ impl TryFrom<&str> for IndexingTask {
                 index_task_str
             )
         })?;
-        let incarnation_id = iter.next().map_or_else(
-            || Ok(ulid::Ulid::default()),
-            |encoded| {
-                Ulid::from_string(encoded).map_err(|err| {
-                    anyhow!(
-                        "Invalid index task format, cannot parse incarnation_id in `{}` due to {}",
-                        index_task_str,
-                        err
-                    )
-                })
-            },
-        )?;
+        let incarnation_id = if let Some(incarnation_id_str) = iter.next() {
+            Ulid::from_string(incarnation_id_str).with_context(|| {
+                format!(
+                    "Invalid index task format, cannot parse incarnation_id in `{}`",
+                    index_task_str
+                )
+            })?
+        } else {
+            Ulid::default()
+        };
         Ok(IndexingTask {
             index_id: index_id.to_string(),
             source_id: source_id.to_string(),
@@ -384,7 +383,7 @@ mod tests {
             IndexingTask::try_from("foo").unwrap_err().to_string()
         );
         assert_eq!(
-            "Invalid index task format, cannot parse incarnation_id in `foo:bar:baz` due to invalid length",
+            "Invalid index task format, cannot parse incarnation_id in `foo:bar:baz`",
             IndexingTask::try_from("foo:bar:baz")
                 .unwrap_err()
                 .to_string()
