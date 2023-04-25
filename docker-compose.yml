@@ -1,5 +1,5 @@
 version: "3.9"
-name: quickwit
+
 networks:
   default:
     name: quickwit-network
@@ -35,7 +35,8 @@ services:
       retries: 100
 
   postgres:
-    image: postgres:${POSTGRES_VERSION:-9.6.20} # Oldest version we support.
+    # The oldest supported version. EOL November 9, 2023
+    image: postgres:${POSTGRES_VERSION:-11.19-alpine} 
     container_name: postgres
     ports:
       - "5432:5432"
@@ -56,7 +57,8 @@ services:
       retries: 100
 
   pulsar-broker:
-    image: apachepulsar/pulsar:${PULSAR_VERSION:-2.11.0}
+    # The oldest supported version. EOL January 10, 2024
+    image: apachepulsar/pulsar:${PULSAR_VERSION:-2.11.1}
     container_name: pulsar-broker
     command: bin/pulsar standalone
     ports:
@@ -69,7 +71,8 @@ services:
       - pulsar
 
   kafka-broker:
-    image: confluentinc/cp-kafka:${CP_VERSION:-7.2.1}
+    # The oldest supported version with arm64 docker images. EOL October 27, 2023 
+    image: confluentinc/cp-kafka:${CP_VERSION:-7.0.9} 
     container_name: kafka-broker
     depends_on:
       - zookeeper
@@ -98,7 +101,8 @@ services:
       retries: 100
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:${CP_VERSION:-7.2.1}
+    # The oldest supported version with arm64 images. EOL October 27, 2023 
+    image: confluentinc/cp-zookeeper:${CP_VERSION:-7.0.9}
     container_name: zookeeper
     ports:
       - "2181:2181"
