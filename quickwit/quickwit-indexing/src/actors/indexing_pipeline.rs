@@ -858,7 +858,6 @@ mod tests {
                             .ends_with(":(00000000000000000000..00000000000000001030])")
                 },
             )
-            .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::with_accelerated_time();
         let node_id = "test-node";
