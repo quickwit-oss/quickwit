@@ -480,14 +480,45 @@ impl IndexingService {
         let running_pipeline_ids: HashSet<IndexingPipelineId> =
             self.indexing_pipeline_handles.keys().cloned().collect();
 
-        let new_pipeline_ids: Vec<&IndexingPipelineId> = updated_pipeline_ids
-            .difference(&running_pipeline_ids)
-            .collect();
+        // Spawn new pipeline in the new plan that are not currently running
+        let failed_spawning_pipeline_ids = self
+            .spawn_pipelines(
+                ctx,
+                updated_pipeline_ids
+                    .difference(&running_pipeline_ids)
+                    .collect(),
+            )
+            .await?;
 
+        // Shut down currently running pipelines that are missing in the new plan.
+        self.shutdown_pipelines(
+            running_pipeline_ids
+                .difference(&updated_pipeline_ids)
+                .collect(),
+        )
+        .await;
+
+        self.update_cluster_running_indexing_tasks().await;
+
+        if !failed_spawning_pipeline_ids.is_empty() {
+            return Err(IndexingServiceError::SpawnPipelinesError {
+                pipeline_ids: failed_spawning_pipeline_ids,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Spawns the pipelines with supplied ids and returns a list of failed pipelines.
+    async fn spawn_pipelines(
+        &mut self,
+        ctx: &ActorContext<Self>,
+        added_pipeline_ids: Vec<&IndexingPipelineId>,
+    ) -> Result<Vec<IndexingPipelineId>, IndexingServiceError> {
         // We fetch the new indexes metadata.
-        let indexes_metadata_futures = new_pipeline_ids
+        let indexes_metadata_futures = added_pipeline_ids
             .iter()
-            // No need to emit two request for the same `index_id`
+            // No need to emit two request for the same `index_config_id`
             .unique_by(|pipeline_id| pipeline_id.index_config_id.clone())
             .map(|pipeline_id| self.index_metadata(ctx, &pipeline_id.index_config_id.index_id));
         let indexes_metadata = try_join_all(indexes_metadata_futures).await?;
@@ -499,32 +530,46 @@ impl IndexingService {
         let mut failed_spawning_pipeline_ids: Vec<IndexingPipelineId> = Vec::new();
 
         // Add new pipelines.
-        for new_pipeline_id in new_pipeline_ids {
+        for new_pipeline_id in added_pipeline_ids {
             info!(pipeline_id=?new_pipeline_id, "Spawning indexing pipeline.");
 
-            let index_metadata = indexes_metadata_by_index_id
-                .get(&new_pipeline_id.index_config_id)
-                .expect("`indexes_metadata_by_index_id` must contain the index incarnation ID."); // TODO: should we now just warn here?
-            if let Some(source_config) = index_metadata.sources.get(&new_pipeline_id.source_id) {
-                if let Err(error) = self
-                    .spawn_pipeline_inner(
-                        ctx,
-                        new_pipeline_id.clone(),
-                        index_metadata.index_config.clone(),
-                        source_config.clone(),
-                    )
-                    .await
+            if let Some(index_metadata) =
+                indexes_metadata_by_index_id.get(&new_pipeline_id.index_config_id)
+            {
+                if let Some(source_config) = index_metadata.sources.get(&new_pipeline_id.source_id)
                 {
-                    error!(pipeline_id=?new_pipeline_id, err=?error, "Failed to spawn pipeline.");
+                    if let Err(error) = self
+                        .spawn_pipeline_inner(
+                            ctx,
+                            new_pipeline_id.clone(),
+                            index_metadata.index_config.clone(),
+                            source_config.clone(),
+                        )
+                        .await
+                    {
+                        error!(pipeline_id=?new_pipeline_id, err=?error, "Failed to spawn pipeline.");
+                        failed_spawning_pipeline_ids.push(new_pipeline_id.clone());
+                    }
+                } else {
+                    error!(pipeline_id=?new_pipeline_id, "Failed to spawn pipeline: source does not exist.");
                     failed_spawning_pipeline_ids.push(new_pipeline_id.clone());
                 }
             } else {
-                error!(pipeline_id=?new_pipeline_id, "Failed to spawn pipeline: source does not exist.");
+                error!(
+                    "Failed to spawn pipeline: index {} with incarnation id {} no longer exists.",
+                    &new_pipeline_id.index_config_id.index_id,
+                    &new_pipeline_id.index_config_id.incarnation_id
+                );
+                failed_spawning_pipeline_ids.push(new_pipeline_id.clone());
             }
         }
 
-        // Remove missing pipeline ids.
-        for pipeline_id_to_remove in running_pipeline_ids.difference(&updated_pipeline_ids) {
+        Ok(failed_spawning_pipeline_ids)
+    }
+
+    /// Shuts down the pipelines with supplied ids and performs necessary cleanup.
+    async fn shutdown_pipelines(&mut self, pipeline_ids: Vec<&IndexingPipelineId>) {
+        for pipeline_id_to_remove in pipeline_ids.clone() {
             match self.detach_pipeline(pipeline_id_to_remove).await {
                 Ok(pipeline_handle) => {
                     // Killing the pipeline ensure that all pipeline actors will stop.
@@ -545,8 +590,8 @@ impl IndexingService {
         // If at least one ingest source has been removed, the related index has possibly been
         // deleted. Thus we run a garbage collect to remove queues of potentially deleted
         // indexes.
-        let should_gc_ingest_api_queues = running_pipeline_ids
-            .difference(&updated_pipeline_ids)
+        let should_gc_ingest_api_queues = pipeline_ids
+            .iter()
             .any(|pipeline_id_to_remove| pipeline_id_to_remove.source_id == INGEST_API_SOURCE_ID);
         if should_gc_ingest_api_queues {
             if let Err(error) = self.run_ingest_api_queues_gc().await {
@@ -556,16 +601,6 @@ impl IndexingService {
                 );
             }
         }
-
-        if !failed_spawning_pipeline_ids.is_empty() {
-            return Err(IndexingServiceError::SpawnPipelinesError {
-                pipeline_ids: failed_spawning_pipeline_ids,
-            });
-        }
-
-        self.update_cluster_running_indexing_tasks().await;
-
-        Ok(())
     }
 
     /// Updates running indexing tasks in chitchat cluster state.
