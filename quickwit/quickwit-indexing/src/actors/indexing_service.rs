@@ -479,12 +479,15 @@ impl IndexingService {
 
         let running_pipeline_ids: HashSet<IndexingPipelineId> =
             self.indexing_pipeline_handles.keys().cloned().collect();
-        let new_pipeline_ids = updated_pipeline_ids
-            .difference(&running_pipeline_ids)
-            .collect_vec();
 
+        let new_pipeline_ids: Vec<&IndexingPipelineId> = updated_pipeline_ids
+            .difference(&running_pipeline_ids)
+            .collect();
+
+        // We fetch the new indexes metadata.
         let indexes_metadata_futures = new_pipeline_ids
             .iter()
+            // No need to emit two request for the same `index_id`
             .unique_by(|pipeline_id| pipeline_id.index_config_id.clone())
             .map(|pipeline_id| self.index_metadata(ctx, &pipeline_id.index_config_id.index_id));
         let indexes_metadata = try_join_all(indexes_metadata_futures).await?;
@@ -496,7 +499,7 @@ impl IndexingService {
         let mut failed_spawning_pipeline_ids: Vec<IndexingPipelineId> = Vec::new();
 
         // Add new pipelines.
-        for new_pipeline_id in updated_pipeline_ids.difference(&running_pipeline_ids) {
+        for new_pipeline_id in new_pipeline_ids {
             info!(pipeline_id=?new_pipeline_id, "Spawning indexing pipeline.");
 
             let index_metadata = indexes_metadata_by_index_id
