@@ -1,5 +1,22 @@
 version: "3.9"
 
+# By default, this docker compose script maps all services to localhost only.
+# If you need to make services available outside of your machine, add 
+# appropriate service mappings to the .env file. See .env.example file for  
+# configuration example.
+#
+# Notes on image versions:
+#  - For the key services such as postgres and pulsar we are trying to run
+#    against the oldest supported version
+#  - For the zookeeper and kafka we are trying to use the oldest supported 
+#    version that has arm64 images
+#  - For everything else we are trying to run against the latest version.
+#
+# To run against the latest image versions update .env file. See .env.example
+# file for configuration examples. You might need to remove the old images 
+# first if they are already tagged latest and volumes if their content is 
+# incompatible with the latest version, as in case of postgres.
+
 networks:
   default:
     name: quickwit-network
@@ -13,9 +30,9 @@ services:
     image: localstack/localstack:${LOCALSTACK_VERSION:-2.0.2}
     container_name: localstack
     ports:
-      - "4566:4566"
-      - "4571:4571"
-      - "8080:8080"
+      - "${MAP_HOST_LOCALSTACK:-127.0.0.1}:4566:4566"
+      - "${MAP_HOST_LOCALSTACK:-127.0.0.1}:4571:4571"
+      - "${MAP_HOST_LOCALSTACK:-127.0.0.1}:8080:8080"
     profiles:
       - all
       - localstack
@@ -39,7 +56,7 @@ services:
     image: postgres:${POSTGRES_VERSION:-11.19-alpine} 
     container_name: postgres
     ports:
-      - "5432:5432"
+      - "${MAP_HOST_POSTGRESS:-127.0.0.1}:5432:5432"
     profiles:
       - all
       - postgres
@@ -62,8 +79,8 @@ services:
     container_name: pulsar-broker
     command: bin/pulsar standalone
     ports:
-      - "6650:6650"
-      - "8081:8080"
+      - "${MAP_HOST_PULSAR:-127.0.0.1}:6650:6650"
+      - "${MAP_HOST_PULSAR:-127.0.0.1}:8081:8080"
     environment:
       PULSAR_MEM: " -Xms512m -Xmx512m -XX:MaxDirectMemorySize=2g"
     profiles:
@@ -77,8 +94,8 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"
-      - "9101:9101"
+      - "${MAP_HOST_KAFKA:-127.0.0.1}:9092:9092"
+      - "${MAP_HOST_KAFKA:-127.0.0.1}:9101:9101"
     profiles:
       - all
       - kafka
@@ -105,7 +122,7 @@ services:
     image: confluentinc/cp-zookeeper:${CP_VERSION:-7.0.9}
     container_name: zookeeper
     ports:
-      - "2181:2181"
+      - "${MAP_HOST_ZOOKEEPER:-127.0.0.1}:2181:2181"
     profiles:
       - all
       - kafka
@@ -123,7 +140,7 @@ services:
     image: mcr.microsoft.com/azure-storage/azurite:${AZURITE_VERSION:-3.23.0}
     container_name: azurite
     ports:
-        - "10000:10000" # Blob store port
+        - "${MAP_HOST_AZURITE:-127.0.0.1}:10000:10000" # Blob store port
     profiles:
       - all
       - azurite
@@ -135,7 +152,7 @@ services:
     image: grafana/grafana-oss:${GRAFANA_VERSION:-9.4.7}
     container_name: grafana
     ports:
-      - "3000:3000"
+      - "${MAP_HOST_GRAFANA:-127.0.0.1}:3000:3000"
     profiles:
       - grafana
       - monitoring
@@ -151,13 +168,13 @@ services:
     image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.20.0}
     container_name: jaeger
     ports:
-      - "5775:5775/udp"
-      - "5778:5778"
-      - "6831:6831/udp"
-      - "6832:6832/udp"
-      - "14250:14250"
-      - "14268:14268"
-      - "16686:16686"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:5775:5775/udp"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:5778:5778"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:6831:6831/udp"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:6832:6832/udp"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:14250:14250"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:14268:14268"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:16686:16686"
     profiles:
       - jaeger
       - monitoring
@@ -166,13 +183,13 @@ services:
     image: otel/opentelemetry-collector:${OTEL_VERSION:-0.75.0}
     container_name: otel-collector
     ports:
-      - "1888:1888"   # pprof extension
-      - "8888:8888"   # Prometheus metrics exposed by the collector
-      - "8889:8889"   # Prometheus exporter metrics
-      - "13133:13133" # health_check extension
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP http receiver
-      - "55679:55679" # zpages extension
+      - "${MAP_HOST_OTEL:-127.0.0.1}:1888:1888"   # pprof extension
+      - "${MAP_HOST_OTEL:-127.0.0.1}:8888:8888"   # Prometheus metrics exposed by the collector
+      - "${MAP_HOST_OTEL:-127.0.0.1}:8889:8889"   # Prometheus exporter metrics
+      - "${MAP_HOST_OTEL:-127.0.0.1}:13133:13133" # health_check extension
+      - "${MAP_HOST_OTEL:-127.0.0.1}:4317:4317"   # OTLP gRPC receiver
+      - "${MAP_HOST_OTEL:-127.0.0.1}:4318:4318"   # OTLP http receiver
+      - "${MAP_HOST_OTEL:-127.0.0.1}:55679:55679" # zpages extension
     profiles:
       - otel
       - monitoring
@@ -184,7 +201,7 @@ services:
     image: prom/prometheus:${PROMETHEUS_VERSION:-v2.43.0}
     container_name: prometheus
     ports:
-      - "9090:9090"
+      - "${MAP_HOST_PROMETHEUS:-127.0.0.1}:9090:9090"
     profiles:
       - prometheus
       - monitoring
