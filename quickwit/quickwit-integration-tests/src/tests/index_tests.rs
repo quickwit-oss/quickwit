@@ -17,14 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+
+
 use bytes::Bytes;
 use quickwit_metastore::SplitState;
-use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
 use serde_json::json;
 
-use crate::test_utils::ClusterSandbox;
+use crate::ingest_json;
+use crate::test_utils::{ingest_with_retry, ClusterSandbox};
 
 #[tokio::test]
 async fn test_restarting_standalone_server() {
@@ -74,16 +76,14 @@ async fn test_restarting_standalone_server() {
         .incarnation_id;
 
     // Index one record.
-    sandbox
-        .indexer_rest_client
-        .ingest(
-            index_id,
-            IngestSource::Bytes(json!({"body": "first record"}).to_string().into()),
-            None,
-            CommitType::Force,
-        )
-        .await
-        .unwrap();
+    ingest_with_retry(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "first record"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
 
     // Delete the indexq
     sandbox
@@ -113,33 +113,29 @@ async fn test_restarting_standalone_server() {
     assert_ne!(old_incarnation_id, new_incarnation_id);
 
     // Index a couple of records to create 2 additional splits.
+    ingest_with_retry(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "second record"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
     sandbox
         .indexer_rest_client
         .ingest(
             index_id,
-            IngestSource::Bytes(json!({"body": "second record"}).to_string().into()),
+            ingest_json!({"body": "third record"}),
             None,
             CommitType::Force,
         )
         .await
         .unwrap();
-
     sandbox
         .indexer_rest_client
         .ingest(
             index_id,
-            IngestSource::Bytes(json!({"body": "third record"}).to_string().into()),
-            None,
-            CommitType::Force,
-        )
-        .await
-        .unwrap();
-
-    sandbox
-        .indexer_rest_client
-        .ingest(
-            index_id,
-            IngestSource::Bytes(json!({"body": "fourth record"}).to_string().into()),
+            ingest_json!({"body": "fourth record"}),
             None,
             CommitType::Force,
         )

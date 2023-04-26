@@ -27,17 +27,19 @@ use futures_util::{future, Future};
 use itertools::Itertools;
 use quickwit_actors::ActorExitStatus;
 use quickwit_common::new_coolid;
-use quickwit_common::test_utils::wait_for_server_ready;
+use quickwit_common::test_utils::{wait_for_server_ready, wait_until_predicate};
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
 use quickwit_metastore::SplitState;
-use quickwit_rest_client::rest_client::{QuickwitClient, Transport, DEFAULT_BASE_URL};
+use quickwit_rest_client::models::IngestSource;
+use quickwit_rest_client::rest_client::{CommitType, QuickwitClient, Transport, DEFAULT_BASE_URL};
 use quickwit_serve::{serve_quickwit, ListSplitsQueryParams};
 use reqwest::Url;
 use tempfile::TempDir;
 use tokio::sync::watch::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
+use tracing::debug;
 
 /// Configuration of a node made of a [`QuickwitConfig`] and a
 /// set of services.
@@ -92,6 +94,43 @@ fn transport_url(addr: SocketAddr) -> Url {
     url.set_ip_host(addr.ip()).unwrap();
     url.set_port(Some(addr.port())).unwrap();
     url
+}
+
+#[macro_export]
+macro_rules! ingest_json {
+    ($($json:tt)+) => {
+        quickwit_rest_client::models::IngestSource::Bytes(json!($($json)+).to_string().into())
+    };
+}
+
+pub async fn ingest_with_retry(
+    client: &QuickwitClient,
+    index_id: &str,
+    ingest_source: IngestSource,
+    commit_type: CommitType,
+) -> anyhow::Result<()> {
+    wait_until_predicate(
+        || {
+            let commit_type_clone = commit_type.clone();
+            let ingest_source_clone = ingest_source.clone();
+            async move {
+                // Index one record.
+                if let Err(err) = client
+                    .ingest(index_id, ingest_source_clone, None, commit_type_clone)
+                    .await
+                {
+                    debug!("Failed to index into {} due to error: {}", index_id, err);
+                    false
+                } else {
+                    true
+                }
+            }
+        },
+        Duration::from_secs(10),
+        Duration::from_millis(100),
+    )
+    .await?;
+    Ok(())
 }
 
 impl ClusterSandbox {
@@ -172,19 +211,31 @@ impl ClusterSandbox {
         &self,
         expected_num_alive_nodes: usize,
     ) -> anyhow::Result<()> {
-        let mut num_attempts = 0;
-        let max_num_attempts = 3;
-        while num_attempts < max_num_attempts {
-            tokio::time::sleep(Duration::from_millis(100 * (num_attempts + 1))).await;
-            let cluster_snapshot = self.indexer_rest_client.cluster().snapshot().await?;
-            if cluster_snapshot.ready_nodes.len() == expected_num_alive_nodes {
-                return Ok(());
-            }
-            num_attempts += 1;
-        }
-        if num_attempts == max_num_attempts {
-            anyhow::bail!("Too many attempts to get expected num members.");
-        }
+        wait_until_predicate(
+            || async move {
+                match self.indexer_rest_client.cluster().snapshot().await {
+                    Ok(result) => {
+                        if result.live_nodes.len() != expected_num_alive_nodes {
+                            debug!(
+                                "wait_for_cluster_num_ready_nodes expected {} alive nodes, got {}",
+                                expected_num_alive_nodes,
+                                result.live_nodes.len()
+                            );
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    Err(err) => {
+                        debug!("wait_for_cluster_num_ready_nodes error {err}");
+                        false
+                    }
+                }
+            },
+            Duration::from_secs(10),
+            Duration::from_millis(100),
+        )
+        .await?;
         Ok(())
     }
 
@@ -193,28 +244,30 @@ impl ClusterSandbox {
         &self,
         required_pipeline_num: usize,
     ) -> anyhow::Result<()> {
-        let mut num_attempts = 0;
-        let max_num_attempts = 3;
-        while num_attempts < max_num_attempts {
-            if num_attempts > 0 {
-                tokio::time::sleep(Duration::from_millis(100 * (num_attempts))).await;
-            }
-            if self
-                .indexer_rest_client
-                .node_stats()
-                .indexing()
-                .await
-                .unwrap()
-                .num_running_pipelines
-                == required_pipeline_num
-            {
-                return Ok(());
-            }
-            num_attempts += 1;
-        }
-        if num_attempts == max_num_attempts {
-            anyhow::bail!("Too many attempts to get expected number of pipelines.");
-        }
+        wait_until_predicate(
+            || async move {
+                match self.indexer_rest_client.node_stats().indexing().await {
+                    Ok(result) => {
+                        if result.num_running_pipelines != required_pipeline_num {
+                            debug!(
+                                "wait_for_indexing_pipelines expected {} pipelines, got {}",
+                                required_pipeline_num, result.num_running_pipelines
+                            );
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    Err(err) => {
+                        debug!("wait_for_cluster_num_ready_nodes error {err}");
+                        false
+                    }
+                }
+            },
+            Duration::from_secs(10),
+            Duration::from_millis(100),
+        )
+        .await?;
         Ok(())
     }
 
@@ -225,29 +278,43 @@ impl ClusterSandbox {
         split_states: Option<Vec<SplitState>>,
         required_splits_num: usize,
     ) -> anyhow::Result<()> {
-        let mut num_attempts = 0;
-        let max_num_attempts = 3;
-        while num_attempts < max_num_attempts {
-            if num_attempts > 0 {
-                tokio::time::sleep(Duration::from_millis(100 * (num_attempts))).await;
-            }
-            if self
-                .indexer_rest_client
-                .splits(index_id)
-                .list(ListSplitsQueryParams {
+        wait_until_predicate(
+            || {
+                let splits_query_params = ListSplitsQueryParams {
                     split_states: split_states.clone(),
                     ..Default::default()
-                })
-                .await
-                .unwrap()
-                .len()
-                == required_splits_num
-            {
-                return Ok(());
-            }
-            num_attempts += 1;
-        }
-        anyhow::bail!("Too many attempts to get expected number of published splits.");
+                };
+                async move {
+                    match self
+                        .indexer_rest_client
+                        .splits(index_id)
+                        .list(splits_query_params)
+                        .await
+                    {
+                        Ok(result) => {
+                            if result.len() != required_splits_num {
+                                debug!(
+                                    "wait_for_published_splits expected {} splits, got {}",
+                                    required_splits_num,
+                                    result.len()
+                                );
+                                false
+                            } else {
+                                true
+                            }
+                        }
+                        Err(err) => {
+                            debug!("wait_for_cluster_num_ready_nodes error {err}");
+                            false
+                        }
+                    }
+                }
+            },
+            Duration::from_secs(10),
+            Duration::from_millis(100),
+        )
+        .await?;
+        Ok(())
     }
 
     pub async fn shutdown(self) -> Result<Vec<HashMap<String, ActorExitStatus>>, anyhow::Error> {
