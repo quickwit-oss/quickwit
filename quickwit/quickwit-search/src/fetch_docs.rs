@@ -321,7 +321,8 @@ async fn create_snippet_generator(
     });
     let mut terms_text: BTreeMap<String, f32> = BTreeMap::default();
     for term in terms {
-        let Some(term_str) = term.as_str() else {
+        let value = term.value();
+        let Some(term_str) = value.as_str() else {
             continue;
         };
         let doc_freq = searcher.doc_freq_async(term).await?;

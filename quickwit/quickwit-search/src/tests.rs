@@ -1319,7 +1319,7 @@ fn collect_str_terms(response: LeafListTermsResponse) -> Vec<String> {
     response
         .terms
         .into_iter()
-        .map(|term| Term::wrap(term).as_str().unwrap().to_string())
+        .map(|term| Term::wrap(term).value().as_str().unwrap().to_string())
         .collect()
 }
 

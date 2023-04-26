@@ -293,7 +293,7 @@ macro_rules! encode_term_for_test {
             ::tantivy::schema::Field::from_field_id($field),
             $value,
         )
-        .as_slice()
+        .serialized_term()
         .to_vec()
     };
     ($value:expr) => {
