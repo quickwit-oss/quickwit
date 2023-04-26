@@ -1085,7 +1085,7 @@ mod tests {
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "body.dynamic_field:hello"),
             Ok(
-                r#"TermQuery(Term(type=Json, field=0, path=dynamic_field, vtype=Str, "hello"))"#
+                r#"TermQuery(Term(field=0, type=Json, path=dynamic_field, type=Str, "hello"))"#
                     .to_string()
             )
         );
@@ -1108,11 +1108,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "identity.username:toto").unwrap(),
-            r#"TermQuery(Term(type=Str, field=0, "toto"))"#
+            r#"TermQuery(Term(field=0, type=Str, "toto"))"#
         );
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
-            r#"TermQuery(Term(type=Str, field=1, "toto"))"#
+            r#"TermQuery(Term(field=1, type=Str, "toto"))"#
         );
     }
 
@@ -1129,11 +1129,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "identity.username:toto").unwrap(),
-            r#"TermQuery(Term(type=Json, field=0, path=username, vtype=Str, "toto"))"#
+            r#"TermQuery(Term(field=0, type=Json, path=username, type=Str, "toto"))"#
         );
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
-            r#"TermQuery(Term(type=Str, field=1, "toto"))"#
+            r#"TermQuery(Term(field=1, type=Str, "toto"))"#
         );
     }
 }
