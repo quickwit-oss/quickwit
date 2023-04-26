@@ -171,7 +171,7 @@ thousands = "0.2.0"
 tikv-jemalloc-ctl = "0.5"
 tikv-jemallocator = "0.5"
 time = { version = "0.3.17", features = ["std", "formatting", "macros"] }
-tokio = { version = "1.27", features = ["full"] }
+tokio = { version = "1.28", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
 toml = "0.6.0"
@@ -225,7 +225,7 @@ quickwit-serve = { version = "0.5.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.5.0", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.5.0", path = "./quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "0ed13ee", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "80df1d9", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",

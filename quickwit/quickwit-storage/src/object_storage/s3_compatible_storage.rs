@@ -781,7 +781,10 @@ mod tests {
 
     #[test]
     fn test_split_range_empty() {
-        assert!(chunk_range(0..0, 1).collect::<Vec<_>>().is_empty());
+        assert_eq!(
+            chunk_range(0..0, 1).collect::<Vec<_>>(),
+            Vec::<Range<usize>>::new()
+        );
     }
 
     #[test]
