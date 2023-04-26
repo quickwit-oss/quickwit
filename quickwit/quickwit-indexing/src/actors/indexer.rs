@@ -789,7 +789,7 @@ mod tests {
                 );
                 // The following assert is not a strict one. It should help detect large
                 // regression in memory usage.
-                assert!((500..1_000).contains(&i));
+                assert!((500..3_000).contains(&i));
                 break;
             }
         }

@@ -482,12 +482,12 @@ async fn leaf_list_terms_single_split(
             (
                 start_term
                     .as_ref()
-                    .map(Term::value_bytes)
+                    .map(Term::serialized_value_bytes)
                     .map(Bound::Included)
                     .unwrap_or(Bound::Unbounded),
                 end_term
                     .as_ref()
-                    .map(Term::value_bytes)
+                    .map(Term::serialized_value_bytes)
                     .map(Bound::Excluded)
                     .unwrap_or(Bound::Unbounded),
             ),
@@ -502,10 +502,10 @@ async fn leaf_list_terms_single_split(
             range = range.limit(limit);
         }
         if let Some(start_term) = &start_term {
-            range = range.ge(start_term.value_bytes())
+            range = range.ge(start_term.serialized_value_bytes())
         }
         if let Some(end_term) = &end_term {
-            range = range.lt(end_term.value_bytes())
+            range = range.lt(end_term.serialized_value_bytes())
         }
         let mut stream = range
             .into_stream()
@@ -544,7 +544,7 @@ fn term_to_data(field: Field, field_type: &FieldType, field_value: &[u8]) -> Vec
     let mut term = Term::from_field_bool(field, false);
     term.clear_with_type(field_type.value_type());
     term.append_bytes(field_value);
-    term.as_slice().to_vec()
+    term.serialized_term().to_vec()
 }
 
 /// `leaf` step of list terms.

@@ -504,6 +504,7 @@ impl SpanReaderPlugin for JaegerService {
 
 fn extract_term(term_bytes: &[u8]) -> String {
     tantivy::Term::wrap(term_bytes)
+        .value()
         .as_str()
         .expect("Term should be a valid UTF-8 string.")
         .to_string()
