@@ -24,7 +24,6 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
-use postcard::{from_bytes, to_allocvec};
 use serde::{Deserialize, Serialize};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, FileSlice, OwnedBytes};
@@ -101,7 +100,7 @@ impl StaticDirectoryCacheBuilder {
         // Write format version
         wrt.write_all(b"\x00")?;
 
-        let file_lengths_bytes = to_allocvec(&self.file_lengths).unwrap();
+        let file_lengths_bytes = postcard::to_allocvec(&self.file_lengths).unwrap();
         wrt.write_all(&(file_lengths_bytes.len() as u64).to_le_bytes())?;
         wrt.write_all(&file_lengths_bytes[..])?;
 
@@ -114,7 +113,7 @@ impl StaticDirectoryCacheBuilder {
             offset += buf.len() as u64;
             data_buffer.extend_from_slice(&buf);
         }
-        let idx_bytes = to_allocvec(&data_idx).unwrap();
+        let idx_bytes = postcard::to_allocvec(&data_idx).unwrap();
         wrt.write_all(&(idx_bytes.len() as u64).to_le_bytes())?;
         wrt.write_all(&idx_bytes[..])?;
         wrt.write_all(&data_buffer[..])?;
@@ -126,7 +125,7 @@ impl StaticDirectoryCacheBuilder {
 fn deserialize_postcard<T>(bytes: &mut OwnedBytes) -> postcard::Result<T>
 where T: serde::de::DeserializeOwned {
     let len = bytes.read_u64();
-    let value = from_bytes(&bytes.as_slice()[..len as usize]);
+    let value = postcard::from_bytes(&bytes.as_slice()[..len as usize]);
     bytes.advance(len as usize);
     value
 }
@@ -216,7 +215,7 @@ impl StaticSliceCache {
         let body_len = u64::from_le_bytes(body_len_bytes);
         let (body, idx) = body.split(body_len as usize);
         let idx_bytes = idx.as_slice();
-        let index: SliceCacheIndex = from_bytes(idx_bytes).map_err(|err| {
+        let index: SliceCacheIndex = postcard::from_bytes(idx_bytes).map_err(|err| {
             DataCorruption::comment_only(format!("Failed to deserialize the slice index: {err:?}"))
         })?;
         Ok(StaticSliceCache { bytes: body, index })
@@ -307,7 +306,7 @@ impl StaticSliceCacheBuilder {
             slices: merged_slices,
         };
         self.wrt.extend_from_slice(
-            &to_allocvec(&slices_idx).map_err(|err| {
+            &postcard::to_allocvec(&slices_idx).map_err(|err| {
                 TantivyError::InternalError(format!("Could not serialize {err:?}"))
             })?,
         );
@@ -648,7 +647,7 @@ mod tests {
             stop: 5,
             addr: 4,
         };
-        let bytes = to_allocvec(&slice_entry)?;
+        let bytes = postcard::to_allocvec(&slice_entry)?;
         assert_eq!(&bytes[..], &[1, 5, 4]);
         Ok(())
     }
