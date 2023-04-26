@@ -22,10 +22,11 @@ use std::str::FromStr;
 
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask as QuickwitDeleteTask};
 use tracing::error;
+use ulid::Ulid;
 
 use crate::{
-    IndexMetadata, MetastoreError, MetastoreResult, Split as QuickwitSplit, SplitMetadata,
-    SplitState,
+    IndexConfigId, IndexMetadata, MetastoreError, MetastoreResult, Split as QuickwitSplit,
+    SplitMetadata, SplitState,
 };
 
 /// A model structure for handling index metadata in a database.
@@ -84,6 +85,8 @@ pub struct Split {
     pub split_metadata_json: String,
     /// Index ID. It is used as a foreign key in the database.
     pub index_id: String,
+    /// Index Incarnation ID.
+    pub incarnation_id: String,
     /// Delete opstamp.
     pub delete_opstamp: i64,
 }
@@ -127,7 +130,10 @@ impl TryInto<QuickwitSplit> for Split {
         let publish_timestamp = self
             .publish_timestamp
             .map(|publish_timestamp| publish_timestamp.assume_utc().unix_timestamp());
-        split_metadata.index_id = self.index_id;
+        split_metadata.index_config_id = IndexConfigId {
+            index_id: self.index_id,
+            incarnation_id: Ulid::from_string(self.incarnation_id.as_str()).unwrap_or_default(),
+        };
         split_metadata.delete_opstamp = self.delete_opstamp as u64;
         Ok(QuickwitSplit {
             split_metadata,

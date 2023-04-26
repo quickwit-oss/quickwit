@@ -96,7 +96,7 @@ impl IndexerState {
         let io_controls = IoControls::default()
             .set_progress(ctx.progress().clone())
             .set_kill_switch(ctx.kill_switch().clone())
-            .set_index_and_component(&self.pipeline_id.index_id, "indexer");
+            .set_index_and_component(&self.pipeline_id.index_config_id.index_id, "indexer");
 
         let indexed_split = IndexedSplitBuilder::new_in_dir(
             self.pipeline_id.clone(),
@@ -160,11 +160,11 @@ impl IndexerState {
         let last_delete_opstamp = ctx
             .protect_future(
                 self.metastore
-                    .last_delete_opstamp(&self.pipeline_id.index_id),
+                    .last_delete_opstamp(&self.pipeline_id.index_config_id.index_id),
             )
             .await?;
         let batch_parent_span = info_span!(target: "quickwit-indexing", "index_batch",
-            index_id=%self.pipeline_id.index_id,
+            index_id=%self.pipeline_id.index_config_id.index_id,
             source_id=%self.pipeline_id.source_id,
             pipeline_ord=%self.pipeline_id.pipeline_ord
         );
@@ -513,7 +513,12 @@ impl Indexer {
                 ctx.send_message(
                     &self.index_serializer_mailbox,
                     EmptySplit {
-                        index_id: self.indexer_state.pipeline_id.index_id.clone(),
+                        index_id: self
+                            .indexer_state
+                            .pipeline_id
+                            .index_config_id
+                            .index_id
+                            .clone(),
                         batch_parent_span,
                         checkpoint_delta,
                         publish_lock,
@@ -553,7 +558,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-    use quickwit_metastore::MockMetastore;
+    use quickwit_metastore::{IndexConfigId, MockMetastore};
     use tantivy::{doc, DateTime};
 
     use super::*;
@@ -592,7 +597,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_trigger_on_target_num_docs() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -726,7 +731,7 @@ mod tests {
     async fn test_indexer_trigger_on_memory_limit() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -801,7 +806,7 @@ mod tests {
     async fn test_indexer_on_timeout() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -889,7 +894,7 @@ mod tests {
     async fn test_indexer_eof() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -968,7 +973,7 @@ mod tests {
     async fn test_indexer_partitioning() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1065,7 +1070,7 @@ mod tests {
     async fn test_indexer_exceeding_max_num_partitions() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1137,7 +1142,7 @@ mod tests {
     async fn test_indexer_propagates_publish_lock() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1211,7 +1216,7 @@ mod tests {
     async fn test_indexer_ignores_messages_when_publish_lock_is_dead() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1278,7 +1283,7 @@ mod tests {
     async fn test_indexer_honors_batch_commit_request() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1341,7 +1346,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_checkpoint_on_all_failed_docs() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,

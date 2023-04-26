@@ -4293,6 +4293,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "ulid",
  "utoipa",
 ]
 
@@ -4718,6 +4719,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "ulid",
  "utoipa",
 ]
 
@@ -4773,6 +4775,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "ulid",
  "utoipa",
 ]
 
@@ -4815,6 +4818,7 @@ dependencies = [
 name = "quickwit-proto"
 version = "0.5.0"
 dependencies = [
+ "anyhow",
  "glob",
  "opentelemetry",
  "prost",
@@ -4826,6 +4830,7 @@ dependencies = [
  "tonic-build",
  "tracing",
  "tracing-opentelemetry",
+ "ulid",
  "utoipa",
 ]
 
@@ -7388,6 +7393,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13a3aaa69b04e5b66cc27309710a569ea23593612387d67daaf102e73aa974fd"
 dependencies = [
  "rand 0.8.5",
+ "serde",
 ]
 
 [[package]]

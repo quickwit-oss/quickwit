@@ -458,7 +458,7 @@ mod tests {
 
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-    use quickwit_metastore::MockMetastore;
+    use quickwit_metastore::{IndexConfigId, MockMetastore};
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;
@@ -470,7 +470,7 @@ mod tests {
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
         let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -575,7 +575,7 @@ mod tests {
     #[tokio::test]
     async fn test_uploader_with_sequencer_emits_replace() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -717,7 +717,7 @@ mod tests {
     #[tokio::test]
     async fn test_uploader_without_sequencer() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index-no-sequencer".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index-no-sequencer"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,

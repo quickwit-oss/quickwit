@@ -19,6 +19,7 @@
 
 use std::path::PathBuf;
 
+use bytes::Bytes;
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 
@@ -71,6 +72,7 @@ impl ApiResponse {
 }
 
 pub enum IngestSource {
+    Bytes(Bytes),
     File(PathBuf),
     Stdin,
 }

@@ -31,8 +31,9 @@ use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
+use quickwit_metastore::SplitState;
 use quickwit_rest_client::rest_client::{QuickwitClient, Transport, DEFAULT_BASE_URL};
-use quickwit_serve::serve_quickwit;
+use quickwit_serve::{serve_quickwit, ListSplitsQueryParams};
 use reqwest::Url;
 use tempfile::TempDir;
 use tokio::sync::watch::{self, Receiver, Sender};
@@ -185,6 +186,68 @@ impl ClusterSandbox {
             anyhow::bail!("Too many attempts to get expected num members.");
         }
         Ok(())
+    }
+
+    // Waits for the needed number of indexing pipeline to start.
+    pub async fn wait_for_indexing_pipelines(
+        &self,
+        required_pipeline_num: usize,
+    ) -> anyhow::Result<()> {
+        let mut num_attempts = 0;
+        let max_num_attempts = 3;
+        while num_attempts < max_num_attempts {
+            if num_attempts > 0 {
+                tokio::time::sleep(Duration::from_millis(100 * (num_attempts))).await;
+            }
+            if self
+                .indexer_rest_client
+                .node_stats()
+                .indexing()
+                .await
+                .unwrap()
+                .num_running_pipelines
+                == required_pipeline_num
+            {
+                return Ok(());
+            }
+            num_attempts += 1;
+        }
+        if num_attempts == max_num_attempts {
+            anyhow::bail!("Too many attempts to get expected number of pipelines.");
+        }
+        Ok(())
+    }
+
+    // Waits for the needed number of indexing pipeline to start.
+    pub async fn wait_for_published_splits(
+        &self,
+        index_id: &str,
+        split_states: Option<Vec<SplitState>>,
+        required_splits_num: usize,
+    ) -> anyhow::Result<()> {
+        let mut num_attempts = 0;
+        let max_num_attempts = 3;
+        while num_attempts < max_num_attempts {
+            if num_attempts > 0 {
+                tokio::time::sleep(Duration::from_millis(100 * (num_attempts))).await;
+            }
+            if self
+                .indexer_rest_client
+                .splits(index_id)
+                .list(ListSplitsQueryParams {
+                    split_states: split_states.clone(),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .len()
+                == required_splits_num
+            {
+                return Ok(());
+            }
+            num_attempts += 1;
+        }
+        anyhow::bail!("Too many attempts to get expected number of published splits.");
     }
 
     pub async fn shutdown(self) -> Result<Vec<HashMap<String, ActorExitStatus>>, anyhow::Error> {

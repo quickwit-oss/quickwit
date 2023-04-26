@@ -81,7 +81,7 @@ impl PackagedSplitBatch {
         assert_eq!(
             splits
                 .iter()
-                .map(|split| split.split_attrs.pipeline_id.index_id.clone())
+                .map(|split| split.split_attrs.pipeline_id.index_config_id.clone())
                 .collect::<HashSet<_>>()
                 .len(),
             1,
@@ -99,7 +99,14 @@ impl PackagedSplitBatch {
     pub fn index_id(&self) -> String {
         self.splits
             .get(0)
-            .map(|split| split.split_attrs.pipeline_id.index_id.clone())
+            .map(|split| {
+                split
+                    .split_attrs
+                    .pipeline_id
+                    .index_config_id
+                    .index_id
+                    .clone()
+            })
             .unwrap()
     }
 

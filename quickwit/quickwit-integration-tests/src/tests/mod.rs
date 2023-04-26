@@ -18,3 +18,4 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod basic_tests;
+mod index_tests;

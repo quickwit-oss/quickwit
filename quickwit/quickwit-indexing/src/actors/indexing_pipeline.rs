@@ -240,7 +240,7 @@ impl IndexingPipeline {
         level="info",
         skip_all,
         fields(
-            index=%self.params.pipeline_id.index_id,
+            index=%self.params.pipeline_id.index_config_id.index_id,
             gen=self.generation()
         ))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
@@ -249,7 +249,7 @@ impl IndexingPipeline {
             .await
             .expect("The semaphore should not be closed.");
         self.statistics.num_spawn_attempts += 1;
-        let index_id = self.params.pipeline_id.index_id.as_str();
+        let index_id = self.params.pipeline_id.index_config_id.index_id.as_str();
         let source_id = self.params.pipeline_id.source_id.as_str();
         self.kill_switch = ctx.kill_switch().child();
         info!(
@@ -373,7 +373,7 @@ impl IndexingPipeline {
             .protect_future(quickwit_supported_sources().load_source(
                 Arc::new(SourceExecutionContext {
                     metastore: self.params.metastore.clone(),
-                    index_id: self.params.pipeline_id.index_id.clone(),
+                    index_id: self.params.pipeline_id.index_config_id.index_id.clone(),
                     queues_dir_path: self.params.queues_dir_path.clone(),
                     source_config: self.params.source_config.clone(),
                 }),
@@ -538,7 +538,7 @@ mod tests {
     use quickwit_actors::{Command, Universe};
     use quickwit_config::{IndexingSettings, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
-    use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
+    use quickwit_metastore::{IndexConfigId, IndexMetadata, MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
@@ -605,7 +605,7 @@ mod tests {
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -695,7 +695,7 @@ mod tests {
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -754,7 +754,7 @@ mod tests {
         let metastore = Arc::new(metastore);
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -863,7 +863,7 @@ mod tests {
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_config_id: IndexConfigId::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,

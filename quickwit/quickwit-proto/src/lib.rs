@@ -19,9 +19,11 @@
 
 #![allow(clippy::derive_partial_eq_without_eq)]
 #![deny(clippy::disallowed_methods)]
-
 #![allow(rustdoc::invalid_html_tags)]
 
+use anyhow::anyhow;
+use anyhow::Context;
+use ulid::Ulid;
 mod quickwit;
 mod quickwit_indexing_api;
 mod quickwit_metastore_api;
@@ -36,7 +38,7 @@ pub mod metastore_api {
 
 pub mod jaeger {
     pub mod api_v2 {
-            include!("jaeger.api_v2.rs");
+        include!("jaeger.api_v2.rs");
     }
     pub mod storage {
         pub mod v1 {
@@ -104,16 +106,17 @@ use std::convert::Infallible;
 use std::fmt;
 
 use ::opentelemetry::global;
+use ::opentelemetry::propagation::Extractor;
+use ::opentelemetry::propagation::Injector;
 pub use quickwit::*;
+use quickwit_indexing_api::IndexingTask;
 use quickwit_metastore_api::DeleteQuery;
 pub use tonic;
-use tonic::Status;
 use tonic::codegen::http;
 use tonic::service::Interceptor;
+use tonic::Status;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use ::opentelemetry::propagation::Injector;
-use ::opentelemetry::propagation::Extractor;
 
 /// This enum serves as a Rosetta stone of
 /// gRPC and Http status code.
@@ -174,7 +177,8 @@ impl ServiceError for Infallible {
 pub fn convert_to_grpc_result<T, E: ServiceError>(
     res: Result<T, E>,
 ) -> Result<tonic::Response<T>, tonic::Status> {
-    res.map(tonic::Response::new).map_err(|error| error.grpc_error())
+    res.map(tonic::Response::new)
+        .map_err(|error| error.grpc_error())
 }
 
 impl From<SearchStreamRequest> for SearchRequest {
@@ -263,7 +267,6 @@ impl Interceptor for SpanContextInterceptor {
     }
 }
 
-
 /// `MetadataMap` extracts OpenTelemetry
 /// tracing keys from request's headers.
 struct MetadataMap<'a>(&'a tonic::metadata::MetadataMap);
@@ -287,10 +290,103 @@ impl<'a> Extractor for MetadataMap<'a> {
     }
 }
 
-
 /// Sets parent span context derived from [`tonic::metadata::MetadataMap`].
 pub fn set_parent_span_from_request_metadata(request_metadata: &tonic::metadata::MetadataMap) {
     let parent_cx =
-    global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request_metadata)));
+        global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request_metadata)));
     Span::current().set_parent(parent_cx);
+}
+
+impl ToString for IndexingTask {
+    fn to_string(&self) -> String {
+        format!(
+            "{}:{}:{}",
+            self.index_id, self.source_id, self.incarnation_id
+        )
+    }
+}
+
+impl TryFrom<&str> for IndexingTask {
+    type Error = anyhow::Error;
+
+    fn try_from(index_task_str: &str) -> anyhow::Result<IndexingTask> {
+        let mut iter = index_task_str.split(':');
+        let index_id = iter.next().ok_or_else(|| {
+            anyhow!(
+                "Invalid index task format, cannot find index_id in `{}`",
+                index_task_str
+            )
+        })?;
+        let source_id = iter.next().ok_or_else(|| {
+            anyhow!(
+                "Invalid index task format, cannot find source_id in `{}`",
+                index_task_str
+            )
+        })?;
+        let incarnation_id = if let Some(incarnation_id_str) = iter.next() {
+            Ulid::from_string(incarnation_id_str).with_context(|| {
+                format!(
+                    "Invalid index task format, cannot parse incarnation_id in `{}`",
+                    index_task_str
+                )
+            })?
+        } else {
+            Ulid::default()
+        };
+        Ok(IndexingTask {
+            index_id: index_id.to_string(),
+            source_id: source_id.to_string(),
+            incarnation_id: incarnation_id.to_string(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ulid::Ulid;
+
+    #[test]
+    fn test_indexing_task_serialization() {
+        let incarnation_id = Ulid::new();
+        let original = IndexingTask {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            incarnation_id: incarnation_id.to_string(),
+        };
+
+        let serialized = original.to_string();
+        let deserialized: IndexingTask = serialized.as_str().try_into().unwrap();
+        assert_eq!(original, deserialized);
+    }
+
+    #[test]
+    fn test_indexing_task_serialization_bwc() {
+        assert_eq!(
+            IndexingTask::try_from("foo:bar").unwrap(),
+            IndexingTask {
+                index_id: "foo".to_string(),
+                source_id: "bar".to_string(),
+                incarnation_id: Ulid::default().to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_indexing_task_serialization_errors() {
+        assert_eq!(
+            "Invalid index task format, cannot find source_id in ``",
+            IndexingTask::try_from("").unwrap_err().to_string()
+        );
+        assert_eq!(
+            "Invalid index task format, cannot find source_id in `foo`",
+            IndexingTask::try_from("foo").unwrap_err().to_string()
+        );
+        assert_eq!(
+            "Invalid index task format, cannot parse incarnation_id in `foo:bar:baz`",
+            IndexingTask::try_from("foo:bar:baz")
+                .unwrap_err()
+                .to_string()
+        );
+    }
 }

@@ -31,6 +31,7 @@ tokio-stream = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 utoipa = { workspace = true }
+ulid = { workspace = true, features = ["serde"] }
 
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }

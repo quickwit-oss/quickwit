@@ -42,7 +42,7 @@ use tracing::{debug, error, info};
 use crate::error::{ClusterError, ClusterResult};
 use crate::member::{
     build_cluster_members, ClusterMember, ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY,
-    INDEXING_TASK_PREFIX, INDEXING_TASK_SEPARATOR,
+    INDEXING_TASK_PREFIX,
 };
 use crate::QuickwitService;
 
@@ -342,10 +342,7 @@ impl Cluster {
         for (indexing_task, indexing_tasks_group) in
             indexing_tasks.iter().group_by(|&task| task).into_iter()
         {
-            let key = format!(
-                "{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{}{INDEXING_TASK_SEPARATOR}{}",
-                indexing_task.index_id, indexing_task.source_id
-            );
+            let key = format!("{INDEXING_TASK_PREFIX}:{}", indexing_task.to_string());
             current_indexing_tasks_keys.remove(&key);
             chitchat_guard
                 .self_node_state()
@@ -495,6 +492,7 @@ mod tests {
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_proto::indexing_api::IndexingTask;
     use rand::Rng;
+    use ulid::Ulid;
 
     use super::*;
 
@@ -559,6 +557,7 @@ mod tests {
         let indexing_task = IndexingTask {
             index_id: "index-1".to_string(),
             source_id: "source-1".to_string(),
+            incarnation_id: Ulid::new().to_string(),
         };
         cluster2
             .set_key_value(GRPC_ADVERTISE_ADDR_KEY, "127.0.0.1:1001")
@@ -626,13 +625,15 @@ mod tests {
             .unwrap(),
         );
         let mut random_generator = rand::thread_rng();
-        let indexing_tasks = (0..1_000)
+        // TODO: increase it back to 1000 when https://github.com/quickwit-oss/chitchat/issues/81 is fixed
+        let indexing_tasks = (0..500)
             .map(|_| {
                 let index_id = random_generator.gen_range(0..=10_000);
                 let source_id = random_generator.gen_range(0..=100);
                 IndexingTask {
                     index_id: format!("index-{index_id}"),
                     source_id: format!("source-{source_id}"),
+                    incarnation_id: "11111111111111111111111111".to_string(),
                 }
             })
             .collect_vec();
@@ -739,11 +740,13 @@ mod tests {
             let chitchat_handle = cluster1.chitchat_handle.chitchat();
             let mut chitchat_guard = chitchat_handle.lock().await;
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}my_good_index{INDEXING_TASK_SEPARATOR}my_source"),
+                format!(
+                    "{INDEXING_TASK_PREFIX}:my_good_index:my_source:11111111111111111111111111"
+                ),
                 "2".to_string(),
             );
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}my_bad_index{INDEXING_TASK_SEPARATOR}my_source"),
+                format!("{INDEXING_TASK_PREFIX}:my_bad_index:my_source:11111111111111111111111111"),
                 "malformatted value".to_string(),
             );
         }
