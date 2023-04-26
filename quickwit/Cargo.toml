@@ -106,6 +106,7 @@ opentelemetry-jaeger = { version = "0.17", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.11.0"
 pin-project = "1.0.12"
 pnet = { version = "0.31.0", features = ["std"] }
+postcard = { version = "1.0.4", features = ["use-std"], default-features = false}
 predicates = "2"
 prettyplease = "0.2.0"
 proc-macro2 = "1.0.50"
@@ -149,7 +150,6 @@ rusoto_sts = { version = "0.48", default-features = false, features = [
 ] }
 rust-embed = "6.6.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
-serde_cbor = "0.11"
 serde_json = "1.0"
 serde_qs = { version = "0.10", features = ["warp"] }
 serde_with = "2.3.0"
