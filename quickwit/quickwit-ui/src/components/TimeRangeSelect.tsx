@@ -259,7 +259,7 @@ function DateTimeRangeLabel(props: DateTimeRangeLabelProps): JSX.Element {
     if (props.startTimestamp !== null && props.endTimestamp !== null) {
       return <>
         {convertTimestampSecsIntoDateUtc(props.startTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)} -{" "}
-        {convertTimestampSecsIntoDateUtc(props.startTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)}
+        {convertTimestampSecsIntoDateUtc(props.endTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)}
       </>
     } else if (props.startTimestamp !== null && props.endTimestamp === null) {
       return <>Since {convertTimestampSecsIntoDateUtc(props.startTimestamp).fromNow(true)}</>
