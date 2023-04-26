@@ -10,7 +10,7 @@ networks:
 
 services:
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack:${LOCALSTACK_VERSION:-2.0.2}
     container_name: localstack
     ports:
       - "4566:4566"
@@ -20,14 +20,14 @@ services:
       - all
       - localstack
     environment:
-      DATA_DIR: /tmp/localstack/data
       # `kinesalite` provides a more accurate implementation than
       # the default Kinesis provider (`kinesis-mock`).
       KINESIS_PROVIDER: kinesalite
       SERVICES: kinesis,s3
+      PERSISTENCE: 1
     volumes:
-      - ".localstack:/etc/localstack/init/ready.d"
-      - "${TMPDIR:-/tmp}/quickwit/services/localstack:/var/lib/localstack"
+      - .localstack:/etc/localstack/init/ready.d
+      - localstack_data:/var/lib/localstack
     healthcheck:
       test: ["CMD", "curl", "-k", "-f", "https://localhost:4566/quickwit-integration-tests"]
       interval: 1s
@@ -35,7 +35,8 @@ services:
       retries: 100
 
   postgres:
-    image: postgres:9.6.20 # Oldest version we support.
+    # The oldest supported version. EOL November 9, 2023
+    image: postgres:${POSTGRES_VERSION:-11.19-alpine} 
     container_name: postgres
     ports:
       - "5432:5432"
@@ -48,12 +49,16 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quickwit-dev}
       POSTGRES_DB: ${POSTGRES_DB:-quickwit-metastore-dev}
     volumes:
-      - "${TMPDIR:-/tmp}/quickwit/services/postgres:/var/lib/postgresql/data/pgdata"
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready"]
+      interval: 1s
+      timeout: 5s
+      retries: 100
 
   pulsar-broker:
-    image: apachepulsar/pulsar:2.11.0
+    # The oldest supported version. EOL January 10, 2024
+    image: apachepulsar/pulsar:${PULSAR_VERSION:-2.11.1}
     container_name: pulsar-broker
     command: bin/pulsar standalone
     ports:
@@ -66,7 +71,8 @@ services:
       - pulsar
 
   kafka-broker:
-    image: confluentinc/cp-kafka:7.2.1
+    # The oldest supported version with arm64 docker images. EOL October 27, 2023 
+    image: confluentinc/cp-kafka:${CP_VERSION:-7.0.9} 
     container_name: kafka-broker
     depends_on:
       - zookeeper
@@ -88,10 +94,15 @@ services:
       KAFKA_JMX_PORT: 9101
       KAFKA_JMX_HOSTNAME: localhost
     healthcheck:
-      test: ["CMD", "cub", "kafka-ready", "-b", "localhost:9092", "1", "30"]
+      test: ["CMD", "cub", "kafka-ready", "-b", "localhost:9092", "1", "5"]
+      start_period: 5s
+      interval: 5s
+      timeout: 10s
+      retries: 100
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.2.1
+    # The oldest supported version with arm64 images. EOL October 27, 2023 
+    image: confluentinc/cp-zookeeper:${CP_VERSION:-7.0.9}
     container_name: zookeeper
     ports:
       - "2181:2181"
@@ -102,10 +113,14 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     healthcheck:
-      test: ["CMD", "cub", "zk-ready", "localhost:2181", "30"]
+      test: ["CMD", "cub", "zk-ready", "localhost:2181", "5"]
+      start_period: 5s
+      interval: 5s
+      timeout: 10s
+      retries: 100
 
   azurite:
-    image: mcr.microsoft.com/azure-storage/azurite:latest
+    image: mcr.microsoft.com/azure-storage/azurite:${AZURITE_VERSION:-3.23.0}
     container_name: azurite
     ports:
         - "10000:10000" # Blob store port
@@ -113,11 +128,11 @@ services:
       - all
       - azurite
     volumes:
-        - "${TMPDIR:-/tmp}/quickwit/services/azurite:/data"
+        - azurite_data:/data
     command: azurite --blobHost 0.0.0.0 --loose
 
   grafana:
-    image: grafana/grafana-oss:latest
+    image: grafana/grafana-oss:${GRAFANA_VERSION:-9.4.7}
     container_name: grafana
     ports:
       - "3000:3000"
@@ -133,7 +148,7 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
 
   jaeger:
-    image: jaegertracing/all-in-one:latest
+    image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.20.0}
     container_name: jaeger
     ports:
       - "5775:5775/udp"
@@ -148,7 +163,7 @@ services:
       - monitoring
 
   otel-collector:
-    image: otel/opentelemetry-collector
+    image: otel/opentelemetry-collector:${OTEL_VERSION:-0.75.0}
     container_name: otel-collector
     ports:
       - "1888:1888"   # pprof extension
@@ -166,7 +181,7 @@ services:
     command: ["--config=/etc/otel-collector-config.yaml"]
 
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v2.43.0}
     container_name: prometheus
     ports:
       - "9090:9090"
@@ -177,3 +192,8 @@ services:
       - ./monitoring/prometheus.yaml:/etc/prometheus/prometheus.yml
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+volumes:
+  localstack_data:
+  postgres_data:
+  azurite_data:

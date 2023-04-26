@@ -127,7 +127,7 @@ rdkafka = { version = "0.28", default-features = false, features = [
   "ssl",
   "cmake-build",
 ] }
-regex = "1.7.1"
+regex = "1.8.1"
 reqwest = { version = "0.11", default-features = false, features = [
   "json",
   "rustls-tls",
@@ -171,7 +171,7 @@ thousands = "0.2.0"
 tikv-jemalloc-ctl = "0.5"
 tikv-jemallocator = "0.5"
 time = { version = "0.3.17", features = ["std", "formatting", "macros"] }
-tokio = { version = "1.27", features = ["full"] }
+tokio = { version = "1.28", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
 toml = "0.6.0"
@@ -189,7 +189,7 @@ tracing-subscriber = { version = "0.3.16", features = [
 typetag = "0.2"
 ulid = "1.0"
 username = "0.2"
-utoipa = "3.1.0"
+utoipa = "3.3.0"
 uuid = { version = "1.3", features = ["v4", "serde"] }
 value = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" } # vrl-value
 vrl = { git = "https://github.com/quickwit-oss/vector", rev = "859fe61" }
@@ -238,3 +238,13 @@ encoding_rs = "=0.8.29"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }
+
+## this patched version of tracing helps better understand what happens inside futures (when are
+## they polled, how long does poll take...)
+#tracing = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
+#tracing-attributes = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
+#tracing-core = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
+#tracing-futures = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
+#tracing-log = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
+#tracing-opentelemetry = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
+#tracing-subscriber = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
