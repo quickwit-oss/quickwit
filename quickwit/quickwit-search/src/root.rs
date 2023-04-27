@@ -326,12 +326,12 @@ pub fn finalize_aggregation(
             QuickwitAggregations::FindTraceIdsAggregation(_) => {
                 // The merge collector has already merged the intermediate results.
                 let aggs: Vec<Span> =
-                    postcard::from_bytes(intermediate_aggregation_result.as_slice()).unwrap();
+                    postcard::from_bytes(intermediate_aggregation_result.as_slice())?;
                 Some(serde_json::to_string(&aggs)?)
             }
             QuickwitAggregations::TantivyAggregations(aggregations) => {
                 let res: IntermediateAggregationResults =
-                    postcard::from_bytes(intermediate_aggregation_result.as_slice()).unwrap();
+                    postcard::from_bytes(intermediate_aggregation_result.as_slice())?;
                 let res: AggregationResults =
                     res.into_final_result(aggregations, &AggregationLimits::default())?;
                 Some(serde_json::to_string(&res)?)
