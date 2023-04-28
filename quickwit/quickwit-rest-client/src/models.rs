@@ -71,6 +71,7 @@ impl ApiResponse {
     }
 }
 
+#[derive(Clone)]
 pub enum IngestSource {
     Bytes(Bytes),
     File(PathBuf),
