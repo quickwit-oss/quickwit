@@ -17,7 +17,7 @@
       }
     },
     "create_timestamp": 1789,
-    "incarnation_id": "00000000000000000000000000",
+    "incarnation_id": "11111111111111111111111111",
     "index_config": {
       "doc_mapping": {
         "field_mappings": [
@@ -111,6 +111,9 @@
         },
         "source_id": "kafka-source",
         "source_type": "kafka",
+        "transform": {
+          "script": ".message = downcase(string!(.message))"
+        },
         "version": "0.5"
       }
     ],

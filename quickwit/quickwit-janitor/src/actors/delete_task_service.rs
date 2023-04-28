@@ -24,7 +24,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
 use quickwit_config::IndexConfig;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{IndexConfigId, Metastore};
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::StorageUriResolver;
 use serde::Serialize;
@@ -44,7 +44,7 @@ pub struct DeleteTaskService {
     search_job_placer: SearchJobPlacer,
     storage_resolver: StorageUriResolver,
     data_dir_path: PathBuf,
-    pipeline_handles_by_index_id: HashMap<String, ActorHandle<DeleteTaskPipeline>>,
+    pipeline_handles_by_index_config_id: HashMap<IndexConfigId, ActorHandle<DeleteTaskPipeline>>,
     max_concurrent_split_uploads: usize,
 }
 
@@ -61,7 +61,7 @@ impl DeleteTaskService {
             search_job_placer,
             storage_resolver,
             data_dir_path,
-            pipeline_handles_by_index_id: Default::default(),
+            pipeline_handles_by_index_config_id: Default::default(),
             max_concurrent_split_uploads,
         }
     }
@@ -73,7 +73,7 @@ impl Actor for DeleteTaskService {
 
     fn observable_state(&self) -> Self::ObservableState {
         DeleteTaskServiceState {
-            num_running_pipelines: self.pipeline_handles_by_index_id.len(),
+            num_running_pipelines: self.pipeline_handles_by_index_config_id.len(),
         }
     }
 
@@ -92,43 +92,50 @@ impl DeleteTaskService {
         &mut self,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
-        let mut index_config_by_index_id: HashMap<String, IndexConfig> = self
+        let mut index_config_by_index_id: HashMap<IndexConfigId, IndexConfig> = self
             .metastore
             .list_indexes_metadatas()
             .await?
             .into_iter()
             .map(|index_metadata| {
                 (
-                    index_metadata.index_id().to_string(),
+                    index_metadata.index_config_id(),
                     index_metadata.into_index_config(),
                 )
             })
             .collect();
-        let index_ids: HashSet<String> = index_config_by_index_id.keys().cloned().collect();
-        let pipeline_index_ids: HashSet<String> =
-            self.pipeline_handles_by_index_id.keys().cloned().collect();
+        let index_config_ids: HashSet<IndexConfigId> =
+            index_config_by_index_id.keys().cloned().collect();
+        let pipeline_index_config_ids: HashSet<IndexConfigId> = self
+            .pipeline_handles_by_index_config_id
+            .keys()
+            .cloned()
+            .collect();
 
         // Remove pipelines on deleted indexes.
-        for deleted_index_id in pipeline_index_ids.difference(&index_ids) {
+        for deleted_index_config_id in pipeline_index_config_ids.difference(&index_config_ids) {
             info!(
-                deleted_index_id = deleted_index_id,
+                deleted_index_id = deleted_index_config_id.index_id,
                 "Remove deleted index from delete task pipelines."
             );
             let pipeline_handle = self
-                .pipeline_handles_by_index_id
-                .remove(deleted_index_id)
+                .pipeline_handles_by_index_config_id
+                .remove(deleted_index_config_id)
                 .expect("Handle must be present.");
             // Kill the pipeline, this avoids to wait a long time for a delete operation to finish.
             pipeline_handle.kill().await;
         }
 
         // Start new pipelines and add them to the handles hashmap.
-        for index_id in index_ids.difference(&pipeline_index_ids) {
+        for index_config_id in index_config_ids.difference(&pipeline_index_config_ids) {
             let index_config = index_config_by_index_id
-                .remove(index_id)
+                .remove(index_config_id)
                 .expect("Index metadata must be present.");
             if self.spawn_pipeline(index_config, ctx).await.is_err() {
-                warn!("Failed to spawn delete pipeline for {index_id}");
+                warn!(
+                    "Failed to spawn delete pipeline for {}",
+                    index_config_id.index_id
+                );
             }
         }
 
@@ -143,8 +150,12 @@ impl DeleteTaskService {
         let delete_task_service_dir = self.data_dir_path.join(DELETE_SERVICE_TASK_DIR_NAME);
         let index_uri = index_config.index_uri.clone();
         let index_storage = self.storage_resolver.resolve(&index_uri)?;
+        let index_metadata = self
+            .metastore
+            .index_metadata(index_config.index_id.as_str())
+            .await?;
         let pipeline = DeleteTaskPipeline::new(
-            index_config.index_id.clone(),
+            index_metadata.index_config_id(),
             self.metastore.clone(),
             self.search_job_placer.clone(),
             index_config.indexing_settings,
@@ -153,8 +164,8 @@ impl DeleteTaskService {
             self.max_concurrent_split_uploads,
         );
         let (_pipeline_mailbox, pipeline_handler) = ctx.spawn_actor().spawn(pipeline);
-        self.pipeline_handles_by_index_id
-            .insert(index_config.index_id, pipeline_handler);
+        self.pipeline_handles_by_index_config_id
+            .insert(index_metadata.index_config_id(), pipeline_handler);
         Ok(())
     }
 }

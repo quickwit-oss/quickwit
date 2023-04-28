@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, FileSlice, OwnedBytes};
 use tantivy::error::DataCorruption;
-use tantivy::{Directory, HasLen, Index, IndexReader, ReloadPolicy};
+use tantivy::{Directory, HasLen, Index, IndexReader, ReloadPolicy, TantivyError};
 
 use crate::{CachingDirectory, DebugProxyDirectory};
 
@@ -100,7 +100,7 @@ impl StaticDirectoryCacheBuilder {
         // Write format version
         wrt.write_all(b"\x00")?;
 
-        let file_lengths_bytes = serde_cbor::to_vec(&self.file_lengths).unwrap();
+        let file_lengths_bytes = postcard::to_allocvec(&self.file_lengths).unwrap();
         wrt.write_all(&(file_lengths_bytes.len() as u64).to_le_bytes())?;
         wrt.write_all(&file_lengths_bytes[..])?;
 
@@ -113,7 +113,7 @@ impl StaticDirectoryCacheBuilder {
             offset += buf.len() as u64;
             data_buffer.extend_from_slice(&buf);
         }
-        let idx_bytes = serde_cbor::to_vec(&data_idx).unwrap();
+        let idx_bytes = postcard::to_allocvec(&data_idx).unwrap();
         wrt.write_all(&(idx_bytes.len() as u64).to_le_bytes())?;
         wrt.write_all(&idx_bytes[..])?;
         wrt.write_all(&data_buffer[..])?;
@@ -122,10 +122,10 @@ impl StaticDirectoryCacheBuilder {
     }
 }
 
-fn deserialize_cbor<T>(bytes: &mut OwnedBytes) -> serde_cbor::Result<T>
+fn deserialize_postcard<T>(bytes: &mut OwnedBytes) -> postcard::Result<T>
 where T: serde::de::DeserializeOwned {
     let len = bytes.read_u64();
-    let value = serde_cbor::from_reader(&bytes.as_slice()[..len as usize]);
+    let value = postcard::from_bytes(&bytes.as_slice()[..len as usize]);
     bytes.advance(len as usize);
     value
 }
@@ -148,9 +148,9 @@ impl StaticDirectoryCache {
             ));
         }
 
-        let file_lengths: HashMap<PathBuf, u64> = deserialize_cbor(&mut bytes).unwrap();
+        let file_lengths: HashMap<PathBuf, u64> = deserialize_postcard(&mut bytes).unwrap();
 
-        let mut slice_offsets: Vec<(PathBuf, u64)> = deserialize_cbor(&mut bytes).unwrap();
+        let mut slice_offsets: Vec<(PathBuf, u64)> = deserialize_postcard(&mut bytes).unwrap();
         slice_offsets.push((PathBuf::default(), bytes.len() as u64));
 
         let slices = slice_offsets
@@ -214,8 +214,8 @@ impl StaticSliceCache {
         body_len_bytes.copy_from_slice(len_bytes.as_slice());
         let body_len = u64::from_le_bytes(body_len_bytes);
         let (body, idx) = body.split(body_len as usize);
-        let mut idx_bytes = idx.as_slice();
-        let index: SliceCacheIndex = serde_cbor::from_reader(&mut idx_bytes).map_err(|err| {
+        let idx_bytes = idx.as_slice();
+        let index: SliceCacheIndex = postcard::from_bytes(idx_bytes).map_err(|err| {
             DataCorruption::comment_only(format!("Failed to deserialize the slice index: {err:?}"))
         })?;
         Ok(StaticSliceCache { bytes: body, index })
@@ -305,8 +305,11 @@ impl StaticSliceCacheBuilder {
             total_len: self.total_len,
             slices: merged_slices,
         };
-        serde_cbor::to_writer(&mut self.wrt, &slices_idx)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        self.wrt.extend_from_slice(
+            &postcard::to_allocvec(&slices_idx).map_err(|err| {
+                TantivyError::InternalError(format!("Could not serialize {err:?}"))
+            })?,
+        );
         self.wrt.extend_from_slice(&self.offset.to_le_bytes()[..]);
         Ok(self.wrt)
     }
@@ -644,14 +647,8 @@ mod tests {
             stop: 5,
             addr: 4,
         };
-        let bytes = serde_cbor::ser::to_vec(&slice_entry)?;
-        assert_eq!(
-            &bytes[..],
-            &[
-                163, 101, 115, 116, 97, 114, 116, 1, 100, 115, 116, 111, 112, 5, 100, 97, 100, 100,
-                114, 4
-            ]
-        );
+        let bytes = postcard::to_allocvec(&slice_entry)?;
+        assert_eq!(&bytes[..], &[1, 5, 4]);
         Ok(())
     }
 
