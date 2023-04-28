@@ -453,7 +453,7 @@ mod tests {
             errors: Vec::new(),
             aggregations: None,
         };
-        let search_response_json: JsonValue = serde_json::to_value(&search_response)?;
+        let search_response_json: JsonValue = serde_json::to_value(search_response)?;
         let expected_search_response_json: JsonValue = json!({
             "num_hits": 55,
             "hits": [],
