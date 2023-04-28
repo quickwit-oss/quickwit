@@ -41,7 +41,9 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::node_info_handler::node_info_handler;
-use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
+use crate::search_api::{
+    ping_get_handler, search_get_handler, search_post_handler, search_stream_handler,
+};
 use crate::ui_handler::ui_handler;
 use crate::{BodyFormat, QuickwitServices};
 
@@ -89,6 +91,7 @@ where
             quickwit_services.build_info,
             quickwit_services.config.clone(),
         ))
+        .or(ping_get_handler(quickwit_services.search_service.clone()))
         .or(indexing_get_handler(
             quickwit_services.indexing_service.clone(),
         ))

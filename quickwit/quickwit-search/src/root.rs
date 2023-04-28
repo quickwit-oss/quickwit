@@ -50,8 +50,8 @@ use crate::{
 /// SearchJob to be assigned to search clients by the [`SearchJobPlacer`].
 #[derive(Debug, PartialEq, Clone)]
 pub struct SearchJob {
-    cost: u32,
-    offsets: SplitIdAndFooterOffsets,
+    pub cost: u32,
+    pub offsets: SplitIdAndFooterOffsets,
 }
 
 impl SearchJob {

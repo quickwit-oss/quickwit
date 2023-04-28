@@ -36,10 +36,11 @@ use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
+use crate::search_job_placer::Job;
 use crate::search_stream::{leaf_search_stream, root_search_stream};
 use crate::{
     fetch_docs, leaf_list_terms, leaf_search, root_list_terms, root_search, ClusterClient,
-    SearchError, SearchJobPlacer,
+    SearchError, SearchJob, SearchJobPlacer,
 };
 
 #[derive(Clone)]
@@ -111,6 +112,8 @@ pub trait SearchService: 'static + Send + Sync {
         &self,
         request: LeafListTermsRequest,
     ) -> crate::Result<LeafListTermsResponse>;
+
+    async fn ping(&self, num_recursive_steps: u32) -> crate::Result<()>;
 }
 
 impl SearchServiceImpl {
@@ -278,6 +281,27 @@ impl SearchService for SearchServiceImpl {
         .await?;
 
         Ok(leaf_search_response)
+    }
+
+    async fn ping(&self, num_recursive_steps: u32) -> crate::Result<()> {
+        if num_recursive_steps == 0 {
+            return Ok(());
+        }
+        let mut search_client = self
+            .search_job_placer
+            .assign_job(PingJob, &Default::default())?;
+        search_client.ping(num_recursive_steps - 1).await
+    }
+}
+
+struct PingJob;
+
+impl Job for PingJob {
+    fn split_id(&self) -> &str {
+        ""
+    }
+    fn cost(&self) -> u32 {
+        0u32
     }
 }
 

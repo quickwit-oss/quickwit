@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
@@ -206,6 +207,17 @@ async fn search_endpoint(
     Ok(search_response_rest)
 }
 
+#[derive(Deserialize)]
+struct PingQueryString {
+    num_recursive_steps: u32,
+}
+
+fn ping_get_filter() -> impl Filter<Extract = (PingQueryString,), Error = Rejection> + Clone {
+    warp::path!("ping")
+        .and(warp::get())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+}
+
 fn search_get_filter(
 ) -> impl Filter<Extract = (String, SearchRequestQueryString), Error = Rejection> + Clone {
     warp::path!(String / "search")
@@ -255,6 +267,14 @@ pub fn search_get_handler(
         .then(search)
 }
 
+pub fn ping_get_handler(
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    ping_get_filter()
+        .and(with_arg(search_service))
+        .then(ping_endpoint)
+}
+
 #[utoipa::path(
     post,
     tag = "Search",
@@ -278,6 +298,17 @@ pub fn search_post_handler(
     search_post_filter()
         .and(with_arg(search_service))
         .then(search)
+}
+
+async fn ping_endpoint(
+    ping_query_string: PingQueryString,
+    search_service: Arc<dyn SearchService>,
+) -> impl warp::Reply {
+    search_service
+        .ping(ping_query_string.num_recursive_steps)
+        .await
+        .unwrap();
+    warp::reply::json(&HashMap::<(), ()>::default())
 }
 
 #[utoipa::path(

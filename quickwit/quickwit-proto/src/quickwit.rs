@@ -379,6 +379,18 @@ pub struct LeafSearchStreamResponse {
     pub split_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PingRequest {
+    /// / Number of recursive steps.
+    #[prost(uint32, tag = "1")]
+    pub num_recursive_steps: u32,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PingResponse {}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SortOrder {
@@ -655,6 +667,27 @@ pub mod search_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        /// / Simple ping request used to assess the residual latency response time.
+        /// / (network latency + tokio + framework)
+        pub async fn ping(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PingRequest>,
+        ) -> Result<tonic::Response<super::PingResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.SearchService/Ping",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -720,6 +753,12 @@ pub mod search_service_server {
             &self,
             request: tonic::Request<super::LeafListTermsRequest>,
         ) -> Result<tonic::Response<super::LeafListTermsResponse>, tonic::Status>;
+        /// / Simple ping request used to assess the residual latency response time.
+        /// / (network latency + tokio + framework)
+        async fn ping(
+            &self,
+            request: tonic::Request<super::PingRequest>,
+        ) -> Result<tonic::Response<super::PingResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct SearchServiceServer<T: SearchService> {
@@ -1005,6 +1044,43 @@ pub mod search_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = LeafListTermsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.SearchService/Ping" => {
+                    #[allow(non_camel_case_types)]
+                    struct PingSvc<T: SearchService>(pub Arc<T>);
+                    impl<
+                        T: SearchService,
+                    > tonic::server::UnaryService<super::PingRequest> for PingSvc<T> {
+                        type Response = super::PingResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PingRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).ping(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = PingSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

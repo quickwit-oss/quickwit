@@ -19,6 +19,8 @@
 
 syntax = "proto3";
 
+import "google/protobuf/empty.proto";
+
 package quickwit;
 
 service SearchService {
@@ -59,6 +61,10 @@ service SearchService {
   // it to other nodes.
   // - it should be applied on the given subset of splits
   rpc LeafListTerms(LeafListTermsRequest) returns (LeafListTermsResponse);
+
+  /// Simple ping request used to assess the residual latency response time.
+  /// (network latency + tokio + framework)
+  rpc Ping(PingRequest) returns (PingResponse);
 }
 
 // -- Search -------------------
@@ -400,3 +406,11 @@ message LeafSearchStreamResponse {
   // Split id.
   string split_id = 2;
 }
+
+
+message PingRequest {
+    /// Number of recursive steps.
+    uint32 num_recursive_steps = 1;
+}
+
+message PingResponse {}

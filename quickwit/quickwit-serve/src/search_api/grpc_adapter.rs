@@ -23,7 +23,8 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use quickwit_proto::{
     convert_to_grpc_result, search_service_server as grpc, set_parent_span_from_request_metadata,
-    tonic, LeafSearchStreamRequest, LeafSearchStreamResponse, ServiceError,
+    tonic, LeafSearchStreamRequest, LeafSearchStreamResponse, PingRequest, PingResponse,
+    ServiceError,
 };
 use quickwit_search::SearchService;
 use tracing::instrument;
@@ -115,5 +116,16 @@ impl grpc::SearchService for GrpcSearchAdapter {
         let leaf_search_request = request.into_inner();
         let leaf_search_res = self.0.leaf_list_terms(leaf_search_request).await;
         convert_to_grpc_result(leaf_search_res)
+    }
+
+    #[instrument(skip_all)]
+    async fn ping(
+        &self,
+        request: tonic::Request<PingRequest>,
+    ) -> Result<tonic::Response<PingResponse>, tonic::Status> {
+        set_parent_span_from_request_metadata(request.metadata());
+        let ping_request: PingRequest = request.into_inner();
+        self.0.ping(ping_request.num_recursive_steps).await?;
+        Ok(tonic::Response::new(PingResponse {}))
     }
 }

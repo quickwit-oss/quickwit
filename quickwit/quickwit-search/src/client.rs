@@ -29,7 +29,7 @@ use quickwit_config::service::QuickwitService;
 use quickwit_grpc_clients::service_client_pool::ServiceClient;
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::Endpoint;
-use quickwit_proto::{tonic, LeafSearchStreamResponse, SpanContextInterceptor};
+use quickwit_proto::{tonic, LeafSearchStreamResponse, PingRequest, SpanContextInterceptor};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Channel;
 use tonic::Request;
@@ -236,6 +236,21 @@ impl SearchServiceClient {
                 Ok(tonic_response.into_inner())
             }
             SearchServiceClientImpl::Local(service) => service.leaf_list_terms(request).await,
+        }
+    }
+
+    pub async fn ping(&mut self, num_recursive_steps: u32) -> crate::Result<()> {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Local(service) => service.ping(num_recursive_steps).await,
+            SearchServiceClientImpl::Grpc(grpc_client) => {
+                let resp = grpc_client
+                    .ping(PingRequest {
+                        num_recursive_steps,
+                    })
+                    .await
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+                Ok(())
+            }
         }
     }
 }
