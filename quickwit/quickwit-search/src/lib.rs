@@ -46,9 +46,8 @@ mod tests;
 pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
 use quickwit_doc_mapper::DocMapper;
-use root::validate_request;
+use root::{finalize_aggregation, validate_request};
 use service::SearcherContext;
-use tantivy::aggregation::AggregationLimits;
 use tantivy::query::Query as TantivyQuery;
 use tantivy::schema::NamedFieldDocument;
 
@@ -66,8 +65,6 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{Hit, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
-use tantivy::aggregation::agg_result::AggregationResults;
-use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::DocAddress;
 
 pub use crate::client::{create_search_service_client, SearchServiceClient};
@@ -193,6 +190,7 @@ pub async fn single_node_search(
     // Validates the query by effectively building it against the current schema.
     doc_mapper.query(doc_mapper.schema(), search_request)?;
     let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
+
     let leaf_search_response = leaf_search(
         searcher_context.clone(),
         search_request,
@@ -229,30 +227,17 @@ pub async fn single_node_search(
         })
         .collect();
     let elapsed = start_instant.elapsed();
-    let aggregation = if let Some(intermediate_aggregation_result) =
-        leaf_search_response.intermediate_aggregation_result
-    {
-        let aggregations: QuickwitAggregations =
-            serde_json::from_str(search_request.aggregation_request.as_ref().expect(
-                "Aggregation should be present since we are processing an intermediate \
-                 aggregation result.",
-            ))?;
-        match aggregations {
-            QuickwitAggregations::FindTraceIdsAggregation(_) => {
-                // There is nothing to merge here because there is only one leaf response.
-                Some(intermediate_aggregation_result)
-            }
-            QuickwitAggregations::TantivyAggregations(aggregations) => {
-                let res: IntermediateAggregationResults =
-                    serde_json::from_str(&intermediate_aggregation_result)?;
-                let res: AggregationResults =
-                    res.into_final_result(aggregations, &AggregationLimits::default())?;
-                Some(serde_json::to_string(&res)?)
-            }
-        }
-    } else {
-        None
-    };
+
+    let aggregations: Option<QuickwitAggregations> = search_request
+        .aggregation_request
+        .as_ref()
+        .map(|agg| serde_json::from_str(agg))
+        .transpose()?;
+
+    let aggregation = finalize_aggregation(
+        leaf_search_response.intermediate_aggregation_result,
+        aggregations,
+    )?;
     Ok(SearchResponse {
         aggregation,
         num_hits: leaf_search_response.num_hits,
