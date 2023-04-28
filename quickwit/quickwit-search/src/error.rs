@@ -75,6 +75,12 @@ impl From<TantivyError> for SearchError {
     }
 }
 
+impl From<postcard::Error> for SearchError {
+    fn from(error: postcard::Error) -> Self {
+        SearchError::InternalError(format!("Postcard error: {error}"))
+    }
+}
+
 impl From<serde_json::Error> for SearchError {
     fn from(serde_error: serde_json::Error) -> Self {
         SearchError::InternalError(format!("Serde error: {serde_error}"))

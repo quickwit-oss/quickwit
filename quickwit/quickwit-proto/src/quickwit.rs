@@ -199,10 +199,10 @@ pub struct LeafSearchResponse {
     /// num_attempted_splits = num_successful_splits + num_failed_splits.
     #[prost(uint64, tag = "4")]
     pub num_attempted_splits: u64,
-    /// json serialized intermediate aggregation_result.
-    #[prost(string, optional, tag = "5")]
+    /// postcard serialized intermediate aggregation_result.
+    #[prost(bytes = "vec", optional, tag = "5")]
     pub intermediate_aggregation_result: ::core::option::Option<
-        ::prost::alloc::string::String,
+        ::prost::alloc::vec::Vec<u8>,
     >,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]

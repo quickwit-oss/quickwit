@@ -240,8 +240,12 @@ message LeafSearchResponse {
   // num_attempted_splits = num_successful_splits + num_failed_splits.
   uint64 num_attempted_splits = 4;
 
-  // json serialized intermediate aggregation_result.
-  optional string intermediate_aggregation_result = 5;
+  // Deprecated json serialized intermediate aggregation_result.
+  reserved 5;
+
+  // postcard serialized intermediate aggregation_result.
+  optional bytes intermediate_aggregation_result = 6;
+ 
 
 }
 

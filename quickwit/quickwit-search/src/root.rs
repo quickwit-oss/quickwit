@@ -40,6 +40,7 @@ use tracing::{debug, error, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{make_merge_collector, QuickwitAggregations};
+use crate::find_trace_ids_collector::Span;
 use crate::search_job_placer::Job;
 use crate::service::SearcherContext;
 use crate::{
@@ -298,28 +299,10 @@ pub async fn root_search(
 
     let elapsed = start_instant.elapsed();
 
-    let aggregation = if let Some(intermediate_aggregation_result) =
-        leaf_search_response.intermediate_aggregation_result
-    {
-        match aggregations.expect(
-            "Aggregation should be present since we are processing an intermediate aggregation \
-             result.",
-        ) {
-            QuickwitAggregations::FindTraceIdsAggregation(_) => {
-                // The merge collector has already merged the intermediate results.
-                Some(intermediate_aggregation_result)
-            }
-            QuickwitAggregations::TantivyAggregations(aggregations) => {
-                let res: IntermediateAggregationResults =
-                    serde_json::from_str(&intermediate_aggregation_result)?;
-                let res: AggregationResults =
-                    res.into_final_result(aggregations, &AggregationLimits::default())?;
-                Some(serde_json::to_string(&res)?)
-            }
-        }
-    } else {
-        None
-    };
+    let aggregation = finalize_aggregation(
+        leaf_search_response.intermediate_aggregation_result,
+        aggregations,
+    )?;
 
     Ok(SearchResponse {
         aggregation,
@@ -328,6 +311,36 @@ pub async fn root_search(
         elapsed_time_micros: elapsed.as_micros() as u64,
         errors: Vec::new(),
     })
+}
+
+pub fn finalize_aggregation(
+    intermediate_aggregation_result: Option<Vec<u8>>,
+    aggregations: Option<QuickwitAggregations>,
+) -> crate::Result<Option<String>> {
+    let aggregation = if let Some(intermediate_aggregation_result) = intermediate_aggregation_result
+    {
+        match aggregations.expect(
+            "Aggregation should be present since we are processing an intermediate aggregation \
+             result.",
+        ) {
+            QuickwitAggregations::FindTraceIdsAggregation(_) => {
+                // The merge collector has already merged the intermediate results.
+                let aggs: Vec<Span> =
+                    postcard::from_bytes(intermediate_aggregation_result.as_slice())?;
+                Some(serde_json::to_string(&aggs)?)
+            }
+            QuickwitAggregations::TantivyAggregations(aggregations) => {
+                let res: IntermediateAggregationResults =
+                    postcard::from_bytes(intermediate_aggregation_result.as_slice())?;
+                let res: AggregationResults =
+                    res.into_final_result(aggregations, &AggregationLimits::default())?;
+                Some(serde_json::to_string(&res)?)
+            }
+        }
+    } else {
+        None
+    };
+    Ok(aggregation)
 }
 
 /// Performs a distributed list terms.

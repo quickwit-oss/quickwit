@@ -27,8 +27,7 @@ use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpVa
 use quickwit_proto::opentelemetry::proto::common::v1::{
     AnyValue as OtlpAnyValue, KeyValue as OtlpKeyValue,
 };
-use serde;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{self, de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Number as JsonNumber, Value as JsonValue};
 use tracing::warn;
 
