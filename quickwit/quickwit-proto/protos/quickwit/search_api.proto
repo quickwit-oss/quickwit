@@ -245,8 +245,6 @@ message LeafSearchResponse {
 
   // postcard serialized intermediate aggregation_result.
   optional bytes intermediate_aggregation_result = 6;
- 
-
 }
 
 message FetchDocsRequest {

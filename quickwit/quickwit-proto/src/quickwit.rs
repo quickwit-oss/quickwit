@@ -200,7 +200,7 @@ pub struct LeafSearchResponse {
     #[prost(uint64, tag = "4")]
     pub num_attempted_splits: u64,
     /// postcard serialized intermediate aggregation_result.
-    #[prost(bytes = "vec", optional, tag = "5")]
+    #[prost(bytes = "vec", optional, tag = "6")]
     pub intermediate_aggregation_result: ::core::option::Option<
         ::prost::alloc::vec::Vec<u8>,
     >,

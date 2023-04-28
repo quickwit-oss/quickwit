@@ -1,20 +1,20 @@
 version: "3.9"
 
 # By default, this docker compose script maps all services to localhost only.
-# If you need to make services available outside of your machine, add 
-# appropriate service mappings to the .env file. See .env.example file for  
+# If you need to make services available outside of your machine, add
+# appropriate service mappings to the .env file. See .env.example file for
 # configuration example.
 #
 # Notes on image versions:
 #  - For the key services such as postgres and pulsar we are trying to run
 #    against the oldest supported version
-#  - For the zookeeper and kafka we are trying to use the oldest supported 
+#  - For the zookeeper and kafka we are trying to use the oldest supported
 #    version that has arm64 images
 #  - For everything else we are trying to run against the latest version.
 #
 # To run against the latest image versions update .env file. See .env.example
-# file for configuration examples. You might need to remove the old images 
-# first if they are already tagged latest and volumes if their content is 
+# file for configuration examples. You might need to remove the old images
+# first if they are already tagged latest and volumes if their content is
 # incompatible with the latest version, as in case of postgres.
 
 networks:
