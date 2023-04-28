@@ -36,6 +36,7 @@ use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
+use crate::leaf_cache::LeafSearchCache;
 use crate::search_stream::{leaf_search_stream, root_search_stream};
 use crate::{
     fetch_docs, leaf_list_terms, leaf_search, root_list_terms, root_search, ClusterClient,
@@ -295,6 +296,8 @@ pub struct SearcherContext {
     pub split_footer_cache: MemorySizedCache<String>,
     /// Fast fields cache.
     pub fast_fields_cache: Arc<dyn Cache>,
+    /// Recent sub-query cache.
+    pub leaf_search_cache: LeafSearchCache,
 }
 
 impl std::fmt::Debug for SearcherContext {
@@ -306,6 +309,7 @@ impl std::fmt::Debug for SearcherContext {
                 &self.leaf_search_split_semaphore,
             )
             .field("split_stream_semaphore", &self.split_stream_semaphore)
+            .field("leaf_search_cache", &self.leaf_search_cache)
             .finish()
     }
 }
@@ -330,6 +334,7 @@ impl SearcherContext {
             leaf_search_split_semaphore,
             split_stream_semaphore,
             fast_fields_cache: storage_long_term_cache,
+            leaf_search_cache: LeafSearchCache::new(0),
         }
     }
 }
