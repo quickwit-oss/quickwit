@@ -23,11 +23,12 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use futures_util::{future, Future};
+use futures_util::future;
 use itertools::Itertools;
 use quickwit_actors::ActorExitStatus;
 use quickwit_common::new_coolid;
 use quickwit_common::test_utils::{wait_for_server_ready, wait_until_predicate};
+use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
@@ -50,25 +51,25 @@ pub struct NodeConfig {
 }
 
 struct ClusterShutdownTrigger {
-    sender: Sender<bool>,
-    receiver: Receiver<bool>,
+    sender: Sender<()>,
+    receiver: Receiver<()>,
 }
 
 impl ClusterShutdownTrigger {
     fn new() -> Self {
-        let (sender, receiver) = watch::channel(false);
+        let (sender, receiver) = watch::channel(());
         Self { sender, receiver }
     }
 
-    fn shutdown_signal(&self) -> impl Future<Output = ()> {
-        let mut receiver = self.receiver.clone();
-        async move {
-            receiver.changed().await.unwrap();
-        }
+    fn shutdown_signal(&self) -> BoxFutureInfaillible<()> {
+        let receiver = self.receiver.clone();
+        Box::pin(async move {
+            receiver.clone().changed().await.unwrap();
+        })
     }
 
     fn shutdown(self) {
-        self.sender.send(true).unwrap();
+        self.sender.send(()).unwrap();
     }
 }
 
