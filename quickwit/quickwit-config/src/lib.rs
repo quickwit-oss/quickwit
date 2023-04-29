@@ -24,6 +24,7 @@ use std::str::FromStr;
 use anyhow::{bail, Context};
 use json_comments::StripComments;
 use once_cell::sync::OnceCell;
+use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
 use regex::Regex;
 
@@ -106,6 +107,16 @@ pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
     );
 }
 
+pub fn validate_node_id(node_id: &str) -> anyhow::Result<()> {
+    if !is_valid_hostname(node_id) {
+        bail!(
+            "Node identifier `{node_id}` is invalid. Node identifiers must be valid short \
+             hostnames (see RFC 1123)."
+        );
+    }
+    Ok(())
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ConfigFormat {
     Json,
@@ -124,10 +135,9 @@ impl ConfigFormat {
 
     pub fn sniff_from_uri(uri: &Uri) -> anyhow::Result<ConfigFormat> {
         let extension_str: &str = uri.extension().with_context(|| {
-            anyhow::anyhow!(
-                "Failed to read config file `{}`: file extension is missing. Supported file \
-                 formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml).",
-                uri
+            format!(
+                "Failed to read config file `{uri}`: file extension is missing. Supported file \
+                 formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)."
             )
         })?;
         ConfigFormat::from_str(extension_str)

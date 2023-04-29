@@ -19,6 +19,7 @@ dyn-clone = { workspace = true }
 env_logger = { workspace = true }
 futures = { workspace = true }
 home = { workspace = true }
+hostname = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 num_cpus = { workspace = true }
