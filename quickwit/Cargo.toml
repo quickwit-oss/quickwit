@@ -51,7 +51,7 @@ base64 = "0.21"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
 bytes = "1"
 chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "4973853" }
-chrono = { version = "0.4.24", default-features = false, features = ["clock", "std", "wasmbind"] }
+chrono = { version = "0.4.23", default-features = false, features = ["clock", "std"] }
 clap = { version = "=3.1", features = ["env"] }
 colored = "2.0.0"
 console-subscriber = "0.1.8"
