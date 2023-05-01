@@ -262,9 +262,9 @@ impl ToolCliCommand {
             .map(|s| Uri::from_str(s))
             .expect("`config` is a required arg.")?;
         let target_dir = matches
-            .get_one::<String>("target-dir")
-            .map(PathBuf::from)
-            .expect("`target-dir` is a required arg.");
+            .get_one::<PathBuf>("target-dir")
+            //.map(PathBuf::from)
+            .expect("`target-dir` is a required arg.").to_path_buf();
         Ok(Self::ExtractSplit(ExtractSplitArgs {
             config_uri,
             index_id,
