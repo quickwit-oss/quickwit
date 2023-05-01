@@ -123,13 +123,10 @@ fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
     })
 }
 
-pub async fn serve_quickwit<F>(
+pub async fn serve_quickwit(
     config: QuickwitConfig,
-    shutdown_signal: F,
-) -> anyhow::Result<HashMap<String, ActorExitStatus>>
-where
-    F: Future<Output = ()> + Send + 'static,
-{
+    shutdown_signal: impl Future<Output = ()> + Send + 'static,
+) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
     let universe = Universe::new();
     let event_broker = EventBroker::default();
     let storage_resolver = quickwit_storage_uri_resolver().clone();
@@ -306,7 +303,7 @@ where
     let grpc_listen_addr = config.grpc_listen_addr;
     let rest_listen_addr = config.rest_listen_addr;
     let services = config.enabled_services.clone();
-    let quickwit_services = QuickwitServices {
+    let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         config: Arc::new(config),
         build_info: quickwit_build_info(),
         cluster: cluster.clone(),
@@ -319,15 +316,16 @@ where
         ingest_service,
         index_service,
         services,
-    };
-    let (grpc_shutdown_trigger, grpc_shutdown_signal) = oneshot::channel::<()>();
-    let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services, async move {
-        grpc_shutdown_signal
-            .await
-            .expect("Failure to shutdown grpc sevice");
     });
+    let (grpc_shutdown_trigger, grpc_shutdown_signal) = oneshot::channel::<()>();
+    let grpc_server =
+        grpc::start_grpc_server(grpc_listen_addr, quickwit_services.clone(), async move {
+            grpc_shutdown_signal
+                .await
+                .expect("Failure to shutdown grpc sevice");
+        });
     let (rest_shutdown_trigger, rest_shutdown_signal) = oneshot::channel::<()>();
-    let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services, async move {
+    let rest_server = rest::start_rest_server(rest_listen_addr, quickwit_services, async move {
         rest_shutdown_signal
             .await
             .expect("Failure to shutdown rest service");
@@ -339,21 +337,24 @@ where
 
     let shutdown_handle = tokio::spawn(async move {
         shutdown_signal.await;
-
-        grpc_shutdown_trigger
-            .send(())
-            .expect("Failure to send shutdown signal to grpc seservicerver");
-        rest_shutdown_trigger
-            .send(())
-            .expect("Failure to send shutdown signal to rest service");
-
+        let _ = grpc_shutdown_trigger.send(());
+        let _ = rest_shutdown_trigger.send(());
         universe.quit().await
     });
 
-    tokio::try_join!(grpc_server, rest_server)?;
+    let grpc_join_handle = tokio::spawn(grpc_server);
+    let rest_join_handle = tokio::spawn(rest_server);
 
+    let (grpc_res, rest_res) = tokio::try_join!(grpc_join_handle, rest_join_handle)
+        .expect("Task waiting for gRPC and REST servers tasks panicked or was cancelled.");
+
+    if let Err(grpc_err) = grpc_res {
+        error!("gRPC server failed: {:?}", grpc_err);
+    }
+    if let Err(rest_err) = rest_res {
+        error!("REST server failed: {:?}", rest_err);
+    }
     let result = shutdown_handle.await?;
-
     Ok(result)
 }
 
