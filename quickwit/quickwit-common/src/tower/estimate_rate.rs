@@ -34,8 +34,7 @@ pub struct Handle<T: RateEstimator> {
 }
 
 impl<T> Drop for Handle<T>
-where
-    T: RateEstimator,
+where T: RateEstimator
 {
     fn drop(&mut self) {
         let ended_at = Instant::now();
@@ -54,8 +53,7 @@ pub struct EstimateRate<S, T> {
 }
 
 impl<S, T> EstimateRate<S, T>
-where
-    T: RateEstimator,
+where T: RateEstimator
 {
     /// Creates a new rate estimator.
     pub fn new(service: S, estimator: T) -> Self {

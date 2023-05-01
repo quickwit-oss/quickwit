@@ -155,8 +155,7 @@ impl<'a, T> PrettySample<'a, T> {
 }
 
 impl<T> Debug for PrettySample<'_, T>
-where
-    T: Debug,
+where T: Debug
 {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "[")?;

@@ -349,9 +349,7 @@ impl PartialEq<String> for Uri {
 
 impl<'de> Deserialize<'de> for Uri {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
+    where D: serde::Deserializer<'de> {
         let uri_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
         let uri = Uri::from_str(&uri_str).map_err(D::Error::custom)?;
         Ok(uri)
@@ -360,9 +358,7 @@ impl<'de> Deserialize<'de> for Uri {
 
 impl Serialize for Uri {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    where S: Serializer {
         serializer.serialize_str(&self.uri)
     }
 }

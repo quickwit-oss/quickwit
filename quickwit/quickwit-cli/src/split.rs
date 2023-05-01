@@ -159,19 +159,20 @@ pub enum SplitCliCommand {
 }
 
 impl SplitCliCommand {
-    pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    pub fn parse_cli_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
+        let submatches_clone = submatches.clone();
         match subcommand {
-            "describe" => Self::parse_describe_args(submatches),
-            "list" => Self::parse_list_args(submatches),
-            "mark-for-deletion" => Self::parse_mark_for_deletion_args(submatches),
+            "describe" => Self::parse_describe_args(submatches_clone),
+            "list" => Self::parse_list_args(submatches_clone),
+            "mark-for-deletion" => Self::parse_mark_for_deletion_args(submatches_clone),
             _ => bail!("Subcommand `{}` is not implemented.", subcommand),
         }
     }
 
-    fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_list_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
             .get_one::<String>("endpoint")
             .map(|s| Url::from_str(s.as_str()))
@@ -230,7 +231,7 @@ impl SplitCliCommand {
         }))
     }
 
-    fn parse_mark_for_deletion_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_mark_for_deletion_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
             .get_one::<String>("endpoint")
             .map(|s| Url::from_str(s.as_str()))
@@ -253,7 +254,7 @@ impl SplitCliCommand {
         }))
     }
 
-    fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_describe_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .get_one::<String>("index")
             .map(String::from)
@@ -512,7 +513,7 @@ mod tests {
             "--format",
             "json",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
 
         let expected_split_states = Some(vec![SplitState::Staged, SplitState::Published]);
         let expected_create_date = Some(datetime!(2020-12-24 00:00 UTC));
@@ -565,7 +566,7 @@ mod tests {
             "split1,split2",
             "--yes",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::MarkForDeletion(MarkForDeletionArgs {
@@ -592,7 +593,7 @@ mod tests {
             "--split",
             "ABC",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::Describe(DescribeSplitArgs {

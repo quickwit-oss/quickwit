@@ -158,20 +158,21 @@ pub enum ToolCliCommand {
 }
 
 impl ToolCliCommand {
-    pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    pub fn parse_cli_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
+        let submatches_clone = submatches.clone();
         match subcommand {
-            "gc" => Self::parse_garbage_collect_args(submatches),
-            "local-ingest" => Self::parse_local_ingest_args(submatches),
-            "merge" => Self::parse_merge_args(submatches),
-            "extract-split" => Self::parse_extract_split_args(submatches),
+            "gc" => Self::parse_garbage_collect_args(submatches_clone),
+            "local-ingest" => Self::parse_local_ingest_args(submatches_clone),
+            "merge" => Self::parse_merge_args(submatches_clone),
+            "extract-split" => Self::parse_extract_split_args(submatches_clone),
             _ => bail!("Tool subcommand `{}` is not implemented.", subcommand),
         }
     }
 
-    fn parse_local_ingest_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_local_ingest_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .get_one::<String>("config")
             .map(|s| s.as_str())
@@ -205,7 +206,7 @@ impl ToolCliCommand {
         }))
     }
 
-    fn parse_merge_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_merge_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .get_one::<String>("config")
             .map(|s| Uri::from_str(s.as_str()))
@@ -225,7 +226,7 @@ impl ToolCliCommand {
         }))
     }
 
-    fn parse_garbage_collect_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_garbage_collect_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .get_one::<String>("config")
             .map(|s| Uri::from_str(s.as_str()))
@@ -247,7 +248,7 @@ impl ToolCliCommand {
         }))
     }
 
-    fn parse_extract_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_extract_split_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .get_one::<String>("index")
             .map(|s| s.to_owned())

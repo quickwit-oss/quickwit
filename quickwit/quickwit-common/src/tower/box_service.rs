@@ -37,8 +37,7 @@ trait CloneService<R, T, E>:
 
 dyn_clone::clone_trait_object!(<R, T, E> CloneService<R, T, E>);
 
-impl<S, R, T, E> CloneService<R, T, E> for S where
-    S: Service<R, Response = T, Error = E, Future = BoxFuture<T, E>>
+impl<S, R, T, E> CloneService<R, T, E> for S where S: Service<R, Response = T, Error = E, Future = BoxFuture<T, E>>
         + Clone
         + Send
         + Sync

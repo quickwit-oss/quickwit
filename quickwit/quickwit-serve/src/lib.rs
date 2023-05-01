@@ -365,8 +365,7 @@ struct RateModulator<R> {
 }
 
 impl<R> RateModulator<R>
-where
-    R: Rate,
+where R: Rate
 {
     /// Creates a new [`RateModulator`] instance.
     ///
@@ -389,8 +388,7 @@ where
 }
 
 impl<R> Rate for RateModulator<R>
-where
-    R: Rate,
+where R: Rate
 {
     fn work(&self) -> u64 {
         let memory_usage_ratio = self.memory_capacity.usage_ratio();

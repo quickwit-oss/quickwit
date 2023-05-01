@@ -243,32 +243,32 @@ impl IndexCliCommand {
         }
     }
 
-    pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    pub fn parse_cli_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
+        let submatches_clone = submatches.clone();
         match subcommand {
-            "clear" => Self::parse_clear_args(submatches),
-            "create" => Self::parse_create_args(submatches),
-            "delete" => Self::parse_delete_args(submatches),
-            "describe" => Self::parse_describe_args(submatches),
-            "ingest" => Self::parse_ingest_args(submatches),
-            "list" => Self::parse_list_args(submatches),
-            "search" => Self::parse_search_args(submatches),
+            "clear" => Self::parse_clear_args(submatches_clone),
+            "create" => Self::parse_create_args(submatches_clone),
+            "delete" => Self::parse_delete_args(submatches_clone),
+            "describe" => Self::parse_describe_args(submatches_clone),
+            "ingest" => Self::parse_ingest_args(submatches_clone),
+            "list" => Self::parse_list_args(submatches_clone),
+            "search" => Self::parse_search_args(submatches_clone),
             _ => bail!("Index subcommand `{}` is not implemented.", subcommand),
         }
     }
 
-    fn parse_clear_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_clear_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .get_one::<String>("endpoint")
-            .map(|s| s.as_str())
-            .map(Url::from_str)
+            .remove_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .get_one::<String>("index")
-            .map(|s| s.as_str())
-            .expect("`index` is a required arg.")
+            .remove_one::<String>("index")
+            .map(|s| Url::from_str(s.as_str()))
+            .expect("`index` is a required arg.")?
             .to_string();
         let assume_yes = matches.get_flag("yes");
         Ok(Self::Clear(ClearIndexArgs {
@@ -278,16 +278,14 @@ impl IndexCliCommand {
         }))
     }
 
-    fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_create_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .get_one::<String>("endpoint")
-            .map(|s| s.as_str())
-            .map(Url::from_str)
+            .remove_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_config_uri = matches
-            .get_one::<String>("index-config")
-            .map(|s| s.as_str())
-            .map(Uri::from_str)
+            .remove_one::<String>("index-config")
+            .map(|s| Uri::from_str(s.as_str()))
             .expect("`index-config` is a required arg.")?;
         let overwrite = matches.get_flag("overwrite");
         let assume_yes = matches.get_flag("yes");
@@ -300,15 +298,13 @@ impl IndexCliCommand {
         }))
     }
 
-    fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_describe_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .get_one::<String>("endpoint")
-            .map(|s| s.as_str())
-            .map(Url::from_str)
+            .remove_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .get_one::<String>("index")
-            .map(|s| s.to_owned())
+            .remove_one::<String>("index")
             .expect("`index` is a required arg.");
         Ok(Self::Describe(DescribeIndexArgs {
             cluster_endpoint,
@@ -316,34 +312,29 @@ impl IndexCliCommand {
         }))
     }
 
-    fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_list_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .get_one::<String>("endpoint")
-            .map(|s| s.as_str())
-            .map(Url::from_str)
+            .remove_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         Ok(Self::List(ListIndexesArgs { cluster_endpoint }))
     }
 
-    fn parse_ingest_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_ingest_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .get_one::<String>("endpoint")
-            .map(|s| s.as_str())
-            .map(Url::from_str)
+            .remove_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .get_one::<String>("index")
-            .map(|s| s.as_str())
-            .expect("`index` is a required arg.")
-            .to_string();
-        let input_path_opt =
-            if let Some(input_path) = matches.get_one::<String>("input-path").map(|s| s.as_str()) {
-                Uri::from_str(input_path)?
-                    .filepath()
-                    .map(|path| path.to_path_buf())
-            } else {
-                None
-            };
+            .remove_one::<String>("index")
+            .expect("`index` is a required arg.");
+        let input_path_opt = if let Some(input_path) = matches.remove_one::<String>("input-path") {
+            Uri::from_str(input_path.as_str())?
+                .filepath()
+                .map(|path| path.to_path_buf())
+        } else {
+            None
+        };
         let commit_type = match (matches.get_flag("wait"), matches.get_flag("force")) {
             (false, false) => CommitType::Auto,
             (false, true) => CommitType::Force,
@@ -359,25 +350,21 @@ impl IndexCliCommand {
         }))
     }
 
-    fn parse_search_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_search_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
-            .get_one::<String>("index")
-            .map(|s| s.to_owned())
+            .remove_one::<String>("index")
             .expect("`index` is a required arg.");
         let query = matches
-            .get_one::<String>("query")
-            .map(|s| s.to_owned())
+            .remove_one::<String>("query")
             .context("`query` is a required arg.")?;
-        let aggregation = matches
-            .get_one::<String>("aggregation")
-            .map(|s| s.to_owned());
+        let aggregation = matches.remove_one::<String>("aggregation");
 
         let max_hits = matches
-            .get_one::<usize>("max-hits")
+            .remove_one::<usize>("max-hits")
             .map(|value| value.to_owned())
             .unwrap();
         let start_offset = matches
-            .get_one::<usize>("start-offset")
+            .remove_one::<usize>("start-offset")
             .map(|value| value.to_owned())
             .unwrap();
         let search_fields = matches
@@ -402,9 +389,8 @@ impl IndexCliCommand {
             None
         };
         let cluster_endpoint = matches
-            .get_one::<String>("endpoint")
-            .map(|s| s.as_str())
-            .map(Url::from_str)
+            .remove_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         Ok(Self::Search(SearchIndexArgs {
             index_id,
@@ -421,15 +407,13 @@ impl IndexCliCommand {
         }))
     }
 
-    fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_delete_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .get_one::<String>("endpoint")
-            .map(|s| s.as_str())
-            .map(Url::from_str)
+            .remove_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .get_one::<String>("index")
-            .map(|s| s.to_owned())
+            .remove_one::<String>("index")
             .expect("`index` is a required arg.");
         let dry_run = matches.get_flag("dry-run");
         let assume_yes = matches.get_flag("yes");
@@ -517,9 +501,7 @@ pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
 }
 
 fn make_list_indexes_table<I>(indexes: I) -> Table
-where
-    I: IntoIterator<Item = IndexConfig>,
-{
+where I: IntoIterator<Item = IndexConfig> {
     let rows = indexes
         .into_iter()
         .map(|index| IndexRow {

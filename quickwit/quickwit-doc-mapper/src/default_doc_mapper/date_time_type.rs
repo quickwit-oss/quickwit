@@ -131,9 +131,7 @@ impl Default for InputFormats {
 
 impl<'de> Deserialize<'de> for InputFormats {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    where D: Deserializer<'de> {
         let date_time_formats = IndexSet::<DateTimeInputFormat>::deserialize(deserializer)?;
 
         if date_time_formats.is_empty() {

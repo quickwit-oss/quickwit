@@ -9,9 +9,7 @@ pub struct NotifyIndexChangeResponse {}
 /// BEGIN quickwit-codegen
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
-pub trait ControlPlaneService:
-    std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static
-{
+pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
@@ -33,14 +31,18 @@ impl ControlPlaneServiceClient {
     where
         T: ControlPlaneService,
     {
-        Self {
-            inner: Box::new(instance),
-        }
+        Self { inner: Box::new(instance) }
     }
-    pub fn from_channel(channel: tower::timeout::Timeout<tonic::transport::Channel>) -> Self {
-        ControlPlaneServiceClient::new(ControlPlaneServiceGrpcClientAdapter::new(
-            control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(channel),
-        ))
+    pub fn from_channel(
+        channel: tower::timeout::Timeout<tonic::transport::Channel>,
+    ) -> Self {
+        ControlPlaneServiceClient::new(
+            ControlPlaneServiceGrpcClientAdapter::new(
+                control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
+                    channel,
+                ),
+            ),
+        )
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
@@ -72,8 +74,9 @@ impl From<MockControlPlaneService> for ControlPlaneServiceClient {
         ControlPlaneServiceClient::new(mock)
     }
 }
-pub type BoxFuture<T, E> =
-    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>>;
+pub type BoxFuture<T, E> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
+>;
 impl tower::Service<NotifyIndexChangeRequest> for Box<dyn ControlPlaneService> {
     type Response = NotifyIndexChangeResponse;
     type Error = crate::ControlPlaneError;
@@ -112,11 +115,7 @@ impl ControlPlaneService for ControlPlaneServiceTowerBlock {
         &mut self,
         request: NotifyIndexChangeRequest,
     ) -> crate::Result<NotifyIndexChangeResponse> {
-        self.notify_index_change_svc
-            .ready()
-            .await?
-            .call(request)
-            .await
+        self.notify_index_change_svc.ready().await?.call(request).await
     }
 }
 #[derive(Debug, Default)]
@@ -138,13 +137,13 @@ impl ControlPlaneServiceTowerBlockBuilder {
                 NotifyIndexChangeRequest,
                 Response = NotifyIndexChangeResponse,
                 Error = crate::ControlPlaneError,
-            > + Clone
-            + Send
-            + Sync
-            + 'static,
+            > + Clone + Send + Sync + 'static,
         <L::Service as Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
     {
-        self.notify_index_change_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+            .notify_index_change_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer),
+        );
         self
     }
     pub fn notify_index_change_layer<L>(mut self, layer: L) -> Self
@@ -154,13 +153,13 @@ impl ControlPlaneServiceTowerBlockBuilder {
                 NotifyIndexChangeRequest,
                 Response = NotifyIndexChangeResponse,
                 Error = crate::ControlPlaneError,
-            > + Clone
-            + Send
-            + Sync
-            + 'static,
+            > + Clone + Send + Sync + 'static,
         <L::Service as Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
     {
-        self.notify_index_change_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+            .notify_index_change_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer),
+        );
         self
     }
     pub fn build<T>(self, instance: T) -> ControlPlaneServiceClient
@@ -189,7 +188,8 @@ impl ControlPlaneServiceTowerBlockBuilder {
         self,
         boxed_instance: Box<dyn ControlPlaneService>,
     ) -> ControlPlaneServiceClient {
-        let notify_index_change_svc = if let Some(layer) = self.notify_index_change_layer {
+        let notify_index_change_svc = if let Some(layer) = self.notify_index_change_layer
+        {
             layer.layer(boxed_instance.clone())
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
@@ -240,9 +240,7 @@ use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for ControlPlaneServiceMailbox<A>
 where
     A: quickwit_actors::Actor
-        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>>
-        + Send
-        + Sync
+        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync
         + 'static,
     M: std::fmt::Debug + Send + Sync + 'static,
     T: Send + Sync + 'static,
@@ -264,10 +262,7 @@ where
     fn call(&mut self, message: M) -> Self::Future {
         let mailbox = self.inner.clone();
         let fut = async move {
-            mailbox
-                .ask_for_res(message)
-                .await
-                .map_err(|error| error.into())
+            mailbox.ask_for_res(message).await.map_err(|error| error.into())
         };
         Box::pin(fut)
     }
@@ -276,7 +271,9 @@ where
 impl<A> ControlPlaneService for ControlPlaneServiceMailbox<A>
 where
     A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
-    ControlPlaneServiceMailbox<A>: tower::Service<
+    ControlPlaneServiceMailbox<
+        A,
+    >: tower::Service<
         NotifyIndexChangeRequest,
         Response = NotifyIndexChangeResponse,
         Error = crate::ControlPlaneError,
@@ -301,18 +298,15 @@ impl<T> ControlPlaneServiceGrpcClientAdapter<T> {
 }
 #[async_trait::async_trait]
 impl<T> ControlPlaneService
-    for ControlPlaneServiceGrpcClientAdapter<
-        control_plane_service_grpc_client::ControlPlaneServiceGrpcClient<T>,
-    >
+for ControlPlaneServiceGrpcClientAdapter<
+    control_plane_service_grpc_client::ControlPlaneServiceGrpcClient<T>,
+>
 where
-    T: tonic::client::GrpcService<tonic::body::BoxBody>
-        + std::fmt::Debug
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    T: tonic::client::GrpcService<tonic::body::BoxBody> + std::fmt::Debug + Clone + Send
+        + Sync + 'static,
     T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
-    <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send,
+    <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError>
+        + Send,
     T::Future: Send,
 {
     async fn notify_index_change(
@@ -335,15 +329,12 @@ impl ControlPlaneServiceGrpcServerAdapter {
     where
         T: ControlPlaneService,
     {
-        Self {
-            inner: Box::new(instance),
-        }
+        Self { inner: Box::new(instance) }
     }
 }
 #[async_trait::async_trait]
 impl control_plane_service_grpc_server::ControlPlaneServiceGrpc
-    for ControlPlaneServiceGrpcServerAdapter
-{
+for ControlPlaneServiceGrpcServerAdapter {
     async fn notify_index_change(
         &self,
         request: tonic::Request<NotifyIndexChangeRequest>,
@@ -359,8 +350,8 @@ impl control_plane_service_grpc_server::ControlPlaneServiceGrpc
 /// Generated client implementations.
 pub mod control_plane_service_grpc_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::http::Uri;
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct ControlPlaneServiceGrpcClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -404,10 +395,13 @@ pub mod control_plane_service_grpc_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
-                Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + Send + Sync,
         {
-            ControlPlaneServiceGrpcClient::new(InterceptedService::new(inner, interceptor))
+            ControlPlaneServiceGrpcClient::new(
+                InterceptedService::new(inner, interceptor),
+            )
         }
         /// Compress requests with the given encoding.
         ///
@@ -434,12 +428,15 @@ pub mod control_plane_service_grpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::NotifyIndexChangeRequest>,
         ) -> Result<tonic::Response<super::NotifyIndexChangeResponse>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/control_plane_service.ControlPlaneService/notifyIndexChange",
@@ -485,7 +482,10 @@ pub mod control_plane_service_grpc_server {
                 send_compression_encodings: Default::default(),
             }
         }
-        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -504,7 +504,8 @@ pub mod control_plane_service_grpc_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for ControlPlaneServiceGrpcServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>>
+    for ControlPlaneServiceGrpcServer<T>
     where
         T: ControlPlaneServiceGrpc,
         B: Body + Send + 'static,
@@ -513,7 +514,10 @@ pub mod control_plane_service_grpc_server {
         type Response = http::Response<tonic::body::BoxBody>;
         type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -522,18 +526,23 @@ pub mod control_plane_service_grpc_server {
                 "/control_plane_service.ControlPlaneService/notifyIndexChange" => {
                     #[allow(non_camel_case_types)]
                     struct notifyIndexChangeSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
-                    impl<T: ControlPlaneServiceGrpc>
-                        tonic::server::UnaryService<super::NotifyIndexChangeRequest>
-                        for notifyIndexChangeSvc<T>
-                    {
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<super::NotifyIndexChangeRequest>
+                    for notifyIndexChangeSvc<T> {
                         type Response = super::NotifyIndexChangeResponse;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::NotifyIndexChangeRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move { (*inner).notify_index_change(request).await };
+                            let fut = async move {
+                                (*inner).notify_index_change(request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -544,23 +553,28 @@ pub mod control_plane_service_grpc_server {
                         let inner = inner.0;
                         let method = notifyIndexChangeSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
-                            accept_compression_encodings,
-                            send_compression_encodings,
-                        );
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
                 }
-                _ => Box::pin(async move {
-                    Ok(http::Response::builder()
-                        .status(200)
-                        .header("grpc-status", "12")
-                        .header("content-type", "application/grpc")
-                        .body(empty_body())
-                        .unwrap())
-                }),
+                _ => {
+                    Box::pin(async move {
+                        Ok(
+                            http::Response::builder()
+                                .status(200)
+                                .header("grpc-status", "12")
+                                .header("content-type", "application/grpc")
+                                .body(empty_body())
+                                .unwrap(),
+                        )
+                    })
+                }
             }
         }
     }
@@ -584,7 +598,8 @@ pub mod control_plane_service_grpc_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: ControlPlaneServiceGrpc> tonic::server::NamedService for ControlPlaneServiceGrpcServer<T> {
+    impl<T: ControlPlaneServiceGrpc> tonic::server::NamedService
+    for ControlPlaneServiceGrpcServer<T> {
         const NAME: &'static str = "control_plane_service.ControlPlaneService";
     }
 }

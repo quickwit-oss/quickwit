@@ -98,8 +98,7 @@ where
 }
 
 impl<T, const E: usize> Default for ConfigValue<T, E>
-where
-    T: Default,
+where T: Default
 {
     fn default() -> Self {
         Self {
@@ -110,13 +109,10 @@ where
 }
 
 impl<'de, T, const E: usize> Deserialize<'de> for ConfigValue<T, E>
-where
-    T: Deserialize<'de>,
+where T: Deserialize<'de>
 {
     fn deserialize<D>(deserializer: D) -> Result<ConfigValue<T, E>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    where D: Deserializer<'de> {
         let value: Option<T> = Deserialize::deserialize(deserializer)?;
         Ok(ConfigValue {
             provided: value,

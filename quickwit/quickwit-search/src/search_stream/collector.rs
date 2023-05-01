@@ -81,8 +81,7 @@ pub struct FastFieldCollector<Item: HasAssociatedColumnType> {
 }
 
 impl<Item: HasAssociatedColumnType> Collector for FastFieldCollector<Item>
-where
-    DynamicColumn: Into<Option<Column<Item>>>,
+where DynamicColumn: Into<Option<Column<Item>>>
 {
     type Child = FastFieldSegmentCollector<Item>;
     type Fruit = Vec<Item>;

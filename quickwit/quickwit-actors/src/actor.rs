@@ -227,8 +227,7 @@ pub trait Handler<M>: Actor {
 
 #[async_trait::async_trait]
 impl<H, M> DeferableReplyHandler<M> for H
-where
-    H: Handler<M>,
+where H: Handler<M>
 {
     type Reply = H::Reply;
 

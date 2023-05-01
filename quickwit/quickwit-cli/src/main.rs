@@ -129,7 +129,7 @@ async fn main() -> anyhow::Result<()> {
     let app = build_cli().about(about_text).version(version_text);
     let matches = app.get_matches();
 
-    let command = match CliCommand::parse_cli_args(&matches) {
+    let command = match CliCommand::parse_cli_args(matches.clone()) {
         Ok(command) => command,
         Err(err) => {
             eprintln!("Failed to parse command arguments: {err:?}");
@@ -193,7 +193,7 @@ mod tests {
         let matches = app
             .try_get_matches_from(["index", "clear", "--index", "wikipedia"])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
             cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
             index_id: "wikipedia".to_string(),
@@ -205,7 +205,7 @@ mod tests {
         let matches = app
             .try_get_matches_from(["index", "clear", "--index", "wikipedia", "--yes"])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
             cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
             index_id: "wikipedia".to_string(),
@@ -224,7 +224,7 @@ mod tests {
         let app = build_cli().no_binary_name(true);
         let matches =
             app.try_get_matches_from(["index", "create", "--index-config", "index-conf.yaml"])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_index_config_uri = Uri::from_str(&format!(
             "file://{}/index-conf.yaml",
             std::env::current_dir().unwrap().display()
@@ -246,7 +246,7 @@ mod tests {
             "index-conf.yaml",
             "--overwrite",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
             cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
             index_config_uri: expected_index_config_uri,
@@ -269,7 +269,7 @@ mod tests {
             "--endpoint",
             "http://127.0.0.1:8000",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
@@ -285,7 +285,7 @@ mod tests {
         let app = build_cli().no_binary_name(true);
         let matches =
             app.try_get_matches_from(["index", "ingest", "--index", "wikipedia", "--force"])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
@@ -301,7 +301,7 @@ mod tests {
         let app = build_cli().no_binary_name(true);
         let matches =
             app.try_get_matches_from(["index", "ingest", "--index", "wikipedia", "--wait"])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
@@ -326,7 +326,7 @@ mod tests {
             ])
             .unwrap_err()
             .kind(),
-            clap::ErrorKind::ArgumentConflict
+            clap::error::ErrorKind::ArgumentConflict
         );
         Ok(())
     }
@@ -348,7 +348,7 @@ mod tests {
                 ".message = downcase(string!(.message))",
             ])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         println!("{command:?}");
         assert!(matches!(
             command,
@@ -379,7 +379,7 @@ mod tests {
             "--query",
             "Barack Obama",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
@@ -418,7 +418,7 @@ mod tests {
             "--snippet-fields",
             "body",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let _cluster_endpoint = Uri::from_str("http://127.0.0.1:7280").unwrap();
         assert!(matches!(
             command,
@@ -448,7 +448,7 @@ mod tests {
         let matches = app
             .try_get_matches_from(["index", "delete", "--index", "wikipedia"])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Delete(DeleteIndexArgs {
@@ -462,7 +462,7 @@ mod tests {
         let matches = app
             .try_get_matches_from(["index", "delete", "--index", "wikipedia", "--dry-run"])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Delete(DeleteIndexArgs {
@@ -479,7 +479,7 @@ mod tests {
         let matches = app
             .try_get_matches_from(["index", "describe", "--index", "wikipedia"])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Describe(DescribeIndexArgs {
@@ -500,7 +500,7 @@ mod tests {
             "--split",
             "ABC",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::Describe(DescribeSplitArgs {
@@ -528,7 +528,7 @@ mod tests {
             "--config",
             "/config.yaml",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Tool(ToolCliCommand::ExtractSplit(ExtractSplitArgs {
@@ -552,7 +552,7 @@ mod tests {
             "--config",
             "/config.yaml",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Tool(ToolCliCommand::GarbageCollect(GarbageCollectIndexArgs {
@@ -575,7 +575,7 @@ mod tests {
             "/config.yaml",
             "--dry-run",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
@@ -602,7 +602,7 @@ mod tests {
             "--config",
             "/config.yaml",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Tool(ToolCliCommand::Merge(MergeArgs {

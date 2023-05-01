@@ -969,9 +969,7 @@ fn base64_decode(encoded: &[u8], label: &'static str) -> Result<Vec<u8>, Status>
 }
 
 fn json_deserialize<'a, T>(json: &'a str, label: &'static str) -> Result<T, Status>
-where
-    T: Deserialize<'a>,
-{
+where T: Deserialize<'a> {
     match serde_json::from_str(json) {
         Ok(deserialized) => Ok(deserialized),
         Err(error) => {

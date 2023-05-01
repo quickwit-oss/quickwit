@@ -74,16 +74,18 @@ impl CliCommand {
         }
     }
 
-    pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    pub fn parse_cli_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse command arguments."))?;
         match subcommand {
-            "index" => IndexCliCommand::parse_cli_args(submatches).map(CliCommand::Index),
-            "run" => RunCliCommand::parse_cli_args(submatches).map(CliCommand::Run),
-            "source" => SourceCliCommand::parse_cli_args(submatches).map(CliCommand::Source),
-            "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
-            "tool" => ToolCliCommand::parse_cli_args(submatches).map(CliCommand::Tool),
+            "index" => IndexCliCommand::parse_cli_args(submatches.clone()).map(CliCommand::Index),
+            "run" => RunCliCommand::parse_cli_args(submatches.clone()).map(CliCommand::Run),
+            "source" => {
+                SourceCliCommand::parse_cli_args(submatches.clone()).map(CliCommand::Source)
+            }
+            "split" => SplitCliCommand::parse_cli_args(submatches.clone()).map(CliCommand::Split),
+            "tool" => ToolCliCommand::parse_cli_args(submatches.clone()).map(CliCommand::Tool),
             _ => bail!("Subcommand `{}` is not implemented.", subcommand),
         }
     }

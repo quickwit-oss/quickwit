@@ -50,9 +50,9 @@ pub struct RunCliCommand {
 }
 
 impl RunCliCommand {
-    pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
-            .get_one::<String>("config")
+            .remove_one::<String>("config")
             .map(|s| Uri::from_str(s.as_str()))
             .expect("`config` is a required arg.")?;
         let services = matches
@@ -103,7 +103,7 @@ mod tests {
     fn test_parse_service_run_args_all_services() -> anyhow::Result<()> {
         let command = build_cli().no_binary_name(true);
         let matches = command.try_get_matches_from(vec!["run", "--config", "/config.yaml"])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
@@ -127,7 +127,7 @@ mod tests {
             "--service",
             "indexer",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
@@ -153,7 +153,7 @@ mod tests {
             "--service",
             "metastore",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         let expected_services =
             HashSet::from_iter([QuickwitService::Metastore, QuickwitService::Searcher]);
@@ -179,7 +179,7 @@ mod tests {
             "--service",
             "indexer",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,

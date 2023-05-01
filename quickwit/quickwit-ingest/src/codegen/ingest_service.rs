@@ -138,14 +138,16 @@ impl IngestServiceClient {
     where
         T: IngestService,
     {
-        Self {
-            inner: Box::new(instance),
-        }
+        Self { inner: Box::new(instance) }
     }
-    pub fn from_channel(channel: tower::timeout::Timeout<tonic::transport::Channel>) -> Self {
-        IngestServiceClient::new(IngestServiceGrpcClientAdapter::new(
-            ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
-        ))
+    pub fn from_channel(
+        channel: tower::timeout::Timeout<tonic::transport::Channel>,
+    ) -> Self {
+        IngestServiceClient::new(
+            IngestServiceGrpcClientAdapter::new(
+                ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
+            ),
+        )
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
@@ -180,8 +182,9 @@ impl From<MockIngestService> for IngestServiceClient {
         IngestServiceClient::new(mock)
     }
 }
-pub type BoxFuture<T, E> =
-    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>>;
+pub type BoxFuture<T, E> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
+>;
 impl tower::Service<IngestRequest> for Box<dyn IngestService> {
     type Response = IngestResponse;
     type Error = crate::IngestServiceError;
@@ -238,10 +241,16 @@ struct IngestServiceTowerBlock {
         IngestResponse,
         crate::IngestServiceError,
     >,
-    fetch_svc:
-        quickwit_common::tower::BoxService<FetchRequest, FetchResponse, crate::IngestServiceError>,
-    tail_svc:
-        quickwit_common::tower::BoxService<TailRequest, FetchResponse, crate::IngestServiceError>,
+    fetch_svc: quickwit_common::tower::BoxService<
+        FetchRequest,
+        FetchResponse,
+        crate::IngestServiceError,
+    >,
+    tail_svc: quickwit_common::tower::BoxService<
+        TailRequest,
+        FetchResponse,
+        crate::IngestServiceError,
+    >,
 }
 impl Clone for IngestServiceTowerBlock {
     fn clone(&self) -> Self {
@@ -295,23 +304,23 @@ impl IngestServiceTowerBlockBuilder {
     pub fn shared_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Clone + Send + Sync + 'static,
-        L::Service: Service<IngestRequest, Response = IngestResponse, Error = crate::IngestServiceError>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        L::Service: Service<
+                IngestRequest,
+                Response = IngestResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
         <L::Service as Service<IngestRequest>>::Future: Send + 'static,
-        L::Service: Service<FetchRequest, Response = FetchResponse, Error = crate::IngestServiceError>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        L::Service: Service<
+                FetchRequest,
+                Response = FetchResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
         <L::Service as Service<FetchRequest>>::Future: Send + 'static,
-        L::Service: Service<TailRequest, Response = FetchResponse, Error = crate::IngestServiceError>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        L::Service: Service<
+                TailRequest,
+                Response = FetchResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
         <L::Service as Service<TailRequest>>::Future: Send + 'static,
     {
         self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -322,11 +331,11 @@ impl IngestServiceTowerBlockBuilder {
     pub fn ingest_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
-        L::Service: Service<IngestRequest, Response = IngestResponse, Error = crate::IngestServiceError>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        L::Service: Service<
+                IngestRequest,
+                Response = IngestResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
         <L::Service as Service<IngestRequest>>::Future: Send + 'static,
     {
         self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
@@ -335,11 +344,11 @@ impl IngestServiceTowerBlockBuilder {
     pub fn fetch_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
-        L::Service: Service<FetchRequest, Response = FetchResponse, Error = crate::IngestServiceError>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        L::Service: Service<
+                FetchRequest,
+                Response = FetchResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
         <L::Service as Service<FetchRequest>>::Future: Send + 'static,
     {
         self.fetch_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
@@ -348,11 +357,11 @@ impl IngestServiceTowerBlockBuilder {
     pub fn tail_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
-        L::Service: Service<TailRequest, Response = FetchResponse, Error = crate::IngestServiceError>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        L::Service: Service<
+                TailRequest,
+                Response = FetchResponse,
+                Error = crate::IngestServiceError,
+            > + Clone + Send + Sync + 'static,
         <L::Service as Service<TailRequest>>::Future: Send + 'static,
     {
         self.tail_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
@@ -370,14 +379,20 @@ impl IngestServiceTowerBlockBuilder {
     ) -> IngestServiceClient {
         self.build_from_boxed(Box::new(IngestServiceClient::from_channel(channel)))
     }
-    pub fn build_from_mailbox<A>(self, mailbox: quickwit_actors::Mailbox<A>) -> IngestServiceClient
+    pub fn build_from_mailbox<A>(
+        self,
+        mailbox: quickwit_actors::Mailbox<A>,
+    ) -> IngestServiceClient
     where
         A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
         IngestServiceMailbox<A>: IngestService,
     {
         self.build_from_boxed(Box::new(IngestServiceClient::from_mailbox(mailbox)))
     }
-    fn build_from_boxed(self, boxed_instance: Box<dyn IngestService>) -> IngestServiceClient {
+    fn build_from_boxed(
+        self,
+        boxed_instance: Box<dyn IngestService>,
+    ) -> IngestServiceClient {
         let ingest_svc = if let Some(layer) = self.ingest_layer {
             layer.layer(boxed_instance.clone())
         } else {
@@ -441,9 +456,7 @@ use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for IngestServiceMailbox<A>
 where
     A: quickwit_actors::Actor
-        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>>
-        + Send
-        + Sync
+        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync
         + 'static,
     M: std::fmt::Debug + Send + Sync + 'static,
     T: Send + Sync + 'static,
@@ -465,10 +478,7 @@ where
     fn call(&mut self, message: M) -> Self::Future {
         let mailbox = self.inner.clone();
         let fut = async move {
-            mailbox
-                .ask_for_res(message)
-                .await
-                .map_err(|error| error.into())
+            mailbox.ask_for_res(message).await.map_err(|error| error.into())
         };
         Box::pin(fut)
     }
@@ -477,17 +487,21 @@ where
 impl<A> IngestService for IngestServiceMailbox<A>
 where
     A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
-    IngestServiceMailbox<A>: tower::Service<
+    IngestServiceMailbox<
+        A,
+    >: tower::Service<
             IngestRequest,
             Response = IngestResponse,
             Error = crate::IngestServiceError,
             Future = BoxFuture<IngestResponse, crate::IngestServiceError>,
-        > + tower::Service<
+        >
+        + tower::Service<
             FetchRequest,
             Response = FetchResponse,
             Error = crate::IngestServiceError,
             Future = BoxFuture<FetchResponse, crate::IngestServiceError>,
-        > + tower::Service<
+        >
+        + tower::Service<
             TailRequest,
             Response = FetchResponse,
             Error = crate::IngestServiceError,
@@ -515,16 +529,15 @@ impl<T> IngestServiceGrpcClientAdapter<T> {
 }
 #[async_trait::async_trait]
 impl<T> IngestService
-    for IngestServiceGrpcClientAdapter<ingest_service_grpc_client::IngestServiceGrpcClient<T>>
+for IngestServiceGrpcClientAdapter<
+    ingest_service_grpc_client::IngestServiceGrpcClient<T>,
+>
 where
-    T: tonic::client::GrpcService<tonic::body::BoxBody>
-        + std::fmt::Debug
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    T: tonic::client::GrpcService<tonic::body::BoxBody> + std::fmt::Debug + Clone + Send
+        + Sync + 'static,
     T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
-    <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send,
+    <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError>
+        + Send,
     T::Future: Send,
 {
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
@@ -558,9 +571,7 @@ impl IngestServiceGrpcServerAdapter {
     where
         T: IngestService,
     {
-        Self {
-            inner: Box::new(instance),
-        }
+        Self { inner: Box::new(instance) }
     }
 }
 #[async_trait::async_trait]
@@ -602,8 +613,8 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
 /// Generated client implementations.
 pub mod ingest_service_grpc_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::http::Uri;
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct IngestServiceGrpcClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -647,8 +658,9 @@ pub mod ingest_service_grpc_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
-                Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + Send + Sync,
         {
             IngestServiceGrpcClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -678,14 +690,19 @@ pub mod ingest_service_grpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::IngestRequest>,
         ) -> Result<tonic::Response<super::IngestResponse>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/ingest_service.IngestService/Ingest");
+            let path = http::uri::PathAndQuery::from_static(
+                "/ingest_service.IngestService/Ingest",
+            );
             self.inner.unary(request.into_request(), path, codec).await
         }
         /// / Fetches record from a given queue.
@@ -702,14 +719,19 @@ pub mod ingest_service_grpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::FetchRequest>,
         ) -> Result<tonic::Response<super::FetchResponse>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/ingest_service.IngestService/Fetch");
+            let path = http::uri::PathAndQuery::from_static(
+                "/ingest_service.IngestService/Fetch",
+            );
             self.inner.unary(request.into_request(), path, codec).await
         }
         /// / Returns a batch containing the last records.
@@ -721,14 +743,19 @@ pub mod ingest_service_grpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::TailRequest>,
         ) -> Result<tonic::Response<super::FetchResponse>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/ingest_service.IngestService/Tail");
+            let path = http::uri::PathAndQuery::from_static(
+                "/ingest_service.IngestService/Tail",
+            );
             self.inner.unary(request.into_request(), path, codec).await
         }
     }
@@ -794,7 +821,10 @@ pub mod ingest_service_grpc_server {
                 send_compression_encodings: Default::default(),
             }
         }
-        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -822,7 +852,10 @@ pub mod ingest_service_grpc_server {
         type Response = http::Response<tonic::body::BoxBody>;
         type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -831,9 +864,15 @@ pub mod ingest_service_grpc_server {
                 "/ingest_service.IngestService/Ingest" => {
                     #[allow(non_camel_case_types)]
                     struct IngestSvc<T: IngestServiceGrpc>(pub Arc<T>);
-                    impl<T: IngestServiceGrpc> tonic::server::UnaryService<super::IngestRequest> for IngestSvc<T> {
+                    impl<
+                        T: IngestServiceGrpc,
+                    > tonic::server::UnaryService<super::IngestRequest>
+                    for IngestSvc<T> {
                         type Response = super::IngestResponse;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::IngestRequest>,
@@ -850,10 +889,11 @@ pub mod ingest_service_grpc_server {
                         let inner = inner.0;
                         let method = IngestSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
-                            accept_compression_encodings,
-                            send_compression_encodings,
-                        );
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -862,9 +902,14 @@ pub mod ingest_service_grpc_server {
                 "/ingest_service.IngestService/Fetch" => {
                     #[allow(non_camel_case_types)]
                     struct FetchSvc<T: IngestServiceGrpc>(pub Arc<T>);
-                    impl<T: IngestServiceGrpc> tonic::server::UnaryService<super::FetchRequest> for FetchSvc<T> {
+                    impl<
+                        T: IngestServiceGrpc,
+                    > tonic::server::UnaryService<super::FetchRequest> for FetchSvc<T> {
                         type Response = super::FetchResponse;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::FetchRequest>,
@@ -881,10 +926,11 @@ pub mod ingest_service_grpc_server {
                         let inner = inner.0;
                         let method = FetchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
-                            accept_compression_encodings,
-                            send_compression_encodings,
-                        );
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -893,9 +939,14 @@ pub mod ingest_service_grpc_server {
                 "/ingest_service.IngestService/Tail" => {
                     #[allow(non_camel_case_types)]
                     struct TailSvc<T: IngestServiceGrpc>(pub Arc<T>);
-                    impl<T: IngestServiceGrpc> tonic::server::UnaryService<super::TailRequest> for TailSvc<T> {
+                    impl<
+                        T: IngestServiceGrpc,
+                    > tonic::server::UnaryService<super::TailRequest> for TailSvc<T> {
                         type Response = super::FetchResponse;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::TailRequest>,
@@ -912,23 +963,28 @@ pub mod ingest_service_grpc_server {
                         let inner = inner.0;
                         let method = TailSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
-                            accept_compression_encodings,
-                            send_compression_encodings,
-                        );
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
                 }
-                _ => Box::pin(async move {
-                    Ok(http::Response::builder()
-                        .status(200)
-                        .header("grpc-status", "12")
-                        .header("content-type", "application/grpc")
-                        .body(empty_body())
-                        .unwrap())
-                }),
+                _ => {
+                    Box::pin(async move {
+                        Ok(
+                            http::Response::builder()
+                                .status(200)
+                                .header("grpc-status", "12")
+                                .header("content-type", "application/grpc")
+                                .body(empty_body())
+                                .unwrap(),
+                        )
+                    })
+                }
             }
         }
     }
@@ -952,7 +1008,8 @@ pub mod ingest_service_grpc_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: IngestServiceGrpc> tonic::server::NamedService for IngestServiceGrpcServer<T> {
+    impl<T: IngestServiceGrpc> tonic::server::NamedService
+    for IngestServiceGrpcServer<T> {
         const NAME: &'static str = "ingest_service.IngestService";
     }
 }

@@ -74,9 +74,7 @@ impl Serialize for TraceId {
 
 impl<'de> Deserialize<'de> for TraceId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    where D: Deserializer<'de> {
         String::deserialize(deserializer)?
             .parse()
             .map_err(de::Error::custom)

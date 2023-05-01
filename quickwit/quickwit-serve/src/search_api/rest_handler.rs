@@ -71,18 +71,14 @@ impl From<String> for SortByField {
 }
 
 pub fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     let string = String::deserialize(deserializer)?;
     Ok(Some(SortByField::from(string)))
 }
 
 impl Serialize for SortByField {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    where S: Serializer {
         let sort_str = match self.order {
             SortOrder::Desc => "-",
             SortOrder::Asc => "",
@@ -106,9 +102,7 @@ fn default_max_hits() -> u64 {
 // Conclusion: the best way I found to reject a user query that contains an empty
 // string on an mandatory field is this serializer.
 fn deserialize_not_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     let value = String::deserialize(deserializer)?;
     if value.is_empty() {
         return Err(de::Error::custom("Expected a non empty string field."));

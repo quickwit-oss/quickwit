@@ -47,7 +47,10 @@ pub enum SplitDeletionError {
     },
 }
 
-async fn protect_future<Fut, T>(ctx_opt: Option<&ActorContext<GarbageCollector>>, future: Fut) -> T
+async fn protect_future<Fut, T>(
+    ctx_opt: Option<&ActorContext<GarbageCollector>>,
+    future: Fut,
+) -> T
 where
     Fut: Future<Output = T>,
 {

@@ -26,7 +26,7 @@ use std::path::Path;
 use std::str::FromStr;
 
 use anyhow::Result;
-use clap::ErrorKind;
+use clap::error::ErrorKind;
 use helpers::{TestEnv, TestStorageType};
 use quickwit_cli::cli::build_cli;
 use quickwit_cli::index::{

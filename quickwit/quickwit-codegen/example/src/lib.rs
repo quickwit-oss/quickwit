@@ -42,8 +42,7 @@ struct Counter<S> {
 }
 
 impl<S, R> Service<R> for Counter<S>
-where
-    S: Service<R>,
+where S: Service<R>
 {
     type Response = S::Response;
     type Error = S::Error;

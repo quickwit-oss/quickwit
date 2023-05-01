@@ -146,9 +146,7 @@ impl<A: Actor> ActorContext<A> {
 
     /// Executes a future in a protected zone.
     pub async fn protect_future<Fut, T>(&self, future: Fut) -> T
-    where
-        Fut: Future<Output = T>,
-    {
+    where Fut: Future<Output = T> {
         let _guard = self.protect_zone();
         future.await
     }

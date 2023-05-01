@@ -116,9 +116,7 @@ impl PostgresqlMetastore {
 
 /// Returns an Index object given an index_id or None if it does not exists.
 async fn index_opt<'a, E>(executor: E, index_id: &str) -> MetastoreResult<Option<PgIndex>>
-where
-    E: sqlx::Executor<'a, Database = Postgres>,
-{
+where E: sqlx::Executor<'a, Database = Postgres> {
     let index_opt: Option<PgIndex> = sqlx::query_as::<_, PgIndex>(
         r#"
         SELECT *

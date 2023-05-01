@@ -53,9 +53,7 @@ struct InnerEventBroker {
 impl EventBroker {
     /// Subscribes to an event type.
     pub fn subscribe<E>(&self, subscriber: impl EventSubscriber<E>) -> EventSubscriptionHandle<E>
-    where
-        E: Event,
-    {
+    where E: Event {
         let mut subscriptions = self
             .inner
             .subscriptions
@@ -88,9 +86,7 @@ impl EventBroker {
 
     /// Publishes an event.
     pub fn publish<E>(&self, event: E)
-    where
-        E: Event,
-    {
+    where E: Event {
         let subscriptions = self
             .inner
             .subscriptions
@@ -124,15 +120,13 @@ pub struct EventSubscriptionHandle<E: Event> {
 }
 
 impl<E> EventSubscriptionHandle<E>
-where
-    E: Event,
+where E: Event
 {
     pub fn cancel(self) {}
 }
 
 impl<E> Drop for EventSubscriptionHandle<E>
-where
-    E: Event,
+where E: Event
 {
     fn drop(&mut self) {
         if let Some(broker) = self.broker.upgrade() {
