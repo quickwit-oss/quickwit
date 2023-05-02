@@ -23,6 +23,7 @@ lru = { workspace = true }
 md5 = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
+prost = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 rusoto_core = { workspace = true }
@@ -40,6 +41,7 @@ tracing = { workspace = true }
 
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-proto = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

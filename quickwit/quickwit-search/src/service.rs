@@ -309,7 +309,6 @@ impl std::fmt::Debug for SearcherContext {
                 &self.leaf_search_split_semaphore,
             )
             .field("split_stream_semaphore", &self.split_stream_semaphore)
-            .field("leaf_search_cache", &self.leaf_search_cache)
             .finish()
     }
 }
@@ -328,13 +327,16 @@ impl SearcherContext {
         let fast_field_cache_capacity =
             searcher_config.fast_field_cache_capacity.get_bytes() as usize;
         let storage_long_term_cache = Arc::new(QuickwitCache::new(fast_field_cache_capacity));
+        let leaf_search_cache = LeafSearchCache::new(
+            searcher_config.partial_request_cache_capacity.get_bytes() as usize,
+        );
         Self {
             searcher_config,
             split_footer_cache: global_split_footer_cache,
             leaf_search_split_semaphore,
             split_stream_semaphore,
             fast_fields_cache: storage_long_term_cache,
-            leaf_search_cache: LeafSearchCache::new(0),
+            leaf_search_cache,
         }
     }
 }

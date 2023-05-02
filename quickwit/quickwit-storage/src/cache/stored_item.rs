@@ -22,22 +22,20 @@ use tokio::time::Instant;
 
 /// It is a bit overkill to put this in its own module, but I
 /// wanted to ensure that no one would access payload without updating `last_access_time`.
-pub(super) struct StoredItem {
+pub(super) struct StoredItem<T> {
     last_access_time: Instant,
-    payload: OwnedBytes,
+    payload: T,
 }
 
-impl StoredItem {
-    pub fn new(payload: OwnedBytes, now: Instant) -> Self {
+impl<T: Clone + Len> StoredItem<T> {
+    pub fn new(payload: T, now: Instant) -> Self {
         StoredItem {
             last_access_time: now,
             payload,
         }
     }
-}
 
-impl StoredItem {
-    pub fn payload(&mut self) -> OwnedBytes {
+    pub fn payload(&mut self) -> T {
         self.last_access_time = Instant::now();
         self.payload.clone()
     }
@@ -48,5 +46,24 @@ impl StoredItem {
 
     pub fn last_access_time(&self) -> Instant {
         self.last_access_time
+    }
+}
+
+pub trait Len {
+    fn len(&self) -> usize;
+}
+
+impl Len for OwnedBytes {
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+// this gives us a good approximation of the size of LeafSearchResponse without
+// introspecting in ourselves
+impl Len for quickwit_proto::LeafSearchResponse {
+    fn len(&self) -> usize {
+        use prost::Message;
+        self.encoded_len()
     }
 }

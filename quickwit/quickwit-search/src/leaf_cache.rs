@@ -1,17 +1,17 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
-
 use quickwit_proto::{LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets};
+use quickwit_storage::MemorySizedCache;
 
-#[derive(Debug)]
 pub struct LeafSearchCache {
-    content: Mutex<HashMap<CacheKey, LeafSearchResponse>>,
+    content: MemorySizedCache<CacheKey, LeafSearchResponse>,
 }
 
 impl LeafSearchCache {
-    pub fn new(_capacity: usize) -> LeafSearchCache {
+    pub fn new(capacity: usize) -> LeafSearchCache {
         LeafSearchCache {
-            content: Mutex::new(HashMap::new()),
+            content: MemorySizedCache::with_capacity_in_bytes(
+                capacity,
+                &quickwit_storage::STORAGE_METRICS.partial_request_cache,
+            ),
         }
     }
     pub fn get(
@@ -20,7 +20,7 @@ impl LeafSearchCache {
         search_request: SearchRequest,
     ) -> Option<LeafSearchResponse> {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
-        self.content.lock().unwrap().get(&key).cloned()
+        self.content.get(&key)
     }
 
     pub fn put(
@@ -31,7 +31,7 @@ impl LeafSearchCache {
     ) {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
 
-        self.content.lock().unwrap().insert(key, result);
+        self.content.put(key, result);
     }
 }
 

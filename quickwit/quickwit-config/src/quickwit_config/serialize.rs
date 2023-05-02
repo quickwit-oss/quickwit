@@ -457,6 +457,7 @@ mod tests {
                 aggregation_bucket_limit: 500_000,
                 fast_field_cache_capacity: Byte::from_str("10G").unwrap(),
                 split_footer_cache_capacity: Byte::from_str("1G").unwrap(),
+                partial_request_cache_capacity: Byte::from_str("64M").unwrap(),
                 max_num_concurrent_split_searches: 150,
                 max_num_concurrent_split_streams: 120,
             }
