@@ -97,7 +97,7 @@ where T: Buf + Default
 /// Builds DocBatch from individual commands
 pub struct DocBatchBuilder {
     index_id: String,
-    concat_docs: BytesMut,
+    doc_buffer: BytesMut,
     doc_lens: Vec<u64>,
 }
 
@@ -106,7 +106,7 @@ impl DocBatchBuilder {
     pub fn new(index_id: String) -> Self {
         Self {
             index_id,
-            concat_docs: BytesMut::new(),
+            doc_buffer: BytesMut::new(),
             doc_lens: Vec::new(),
         }
     }
@@ -126,7 +126,7 @@ impl DocBatchBuilder {
     /// Adds a parsed command to the batch
     pub fn command<T>(&mut self, command: DocCommand<T>) -> usize
     where T: Buf + Default {
-        let len = command.write(&mut self.concat_docs);
+        let len = command.write(&mut self.doc_buffer);
         self.doc_lens.push(len as u64);
         len
     }
@@ -134,7 +134,7 @@ impl DocBatchBuilder {
     /// Adds a list of bytes representing a command to the batch
     pub fn command_from_buf(&mut self, raw: impl Buf) -> usize {
         let len = raw.remaining();
-        self.concat_docs.put(raw);
+        self.doc_buffer.put(raw);
         self.doc_lens.push(len as u64);
         len
     }
@@ -143,7 +143,7 @@ impl DocBatchBuilder {
     pub fn json_writer(self) -> JsonDocBatchBuilder {
         JsonDocBatchBuilder {
             index_id: self.index_id,
-            concat_docs: self.concat_docs.writer(),
+            doc_buffer: self.doc_buffer.writer(),
             doc_lens: self.doc_lens,
         }
     }
@@ -152,7 +152,7 @@ impl DocBatchBuilder {
     pub fn build(self) -> DocBatch {
         DocBatch {
             index_id: self.index_id,
-            concat_docs: self.concat_docs.freeze(),
+            doc_buffer: self.doc_buffer.freeze(),
             doc_lens: self.doc_lens,
         }
     }
@@ -162,19 +162,19 @@ impl DocBatchBuilder {
 
 pub struct JsonDocBatchBuilder {
     index_id: String,
-    concat_docs: Writer<BytesMut>,
+    doc_buffer: Writer<BytesMut>,
     doc_lens: Vec<u64>,
 }
 
 impl JsonDocBatchBuilder {
     /// Adds an ingest command to the batch for a Serialize struct
     pub fn ingest_doc(&mut self, payload: impl Serialize) -> serde_json::Result<usize> {
-        let old_len = self.concat_docs.get_ref().len();
-        self.concat_docs
+        let old_len = self.doc_buffer.get_ref().len();
+        self.doc_buffer
             .get_mut()
             .put_u8(DocCommandCode::IngestV1 as u8);
-        let res = serde_json::to_writer(&mut self.concat_docs, &payload);
-        let new_len = self.concat_docs.get_ref().len();
+        let res = serde_json::to_writer(&mut self.doc_buffer, &payload);
+        let new_len = self.doc_buffer.get_ref().len();
         if let Err(err) = res {
             Err(err)
         } else {
@@ -188,7 +188,7 @@ impl JsonDocBatchBuilder {
     pub fn into_inner(self) -> DocBatchBuilder {
         DocBatchBuilder {
             index_id: self.index_id,
-            concat_docs: self.concat_docs.into_inner(),
+            doc_buffer: self.doc_buffer.into_inner(),
             doc_lens: self.doc_lens,
         }
     }
@@ -214,7 +214,7 @@ impl DocBatch {
                 let start = *current_offset;
                 let end = start + doc_num_bytes as usize;
                 *current_offset = end;
-                Some(self.concat_docs.slice(start..end))
+                Some(self.doc_buffer.slice(start..end))
             })
     }
 
@@ -225,7 +225,7 @@ impl DocBatch {
 
     /// Returns the total number of bytes in the batch.
     pub fn num_bytes(&self) -> usize {
-        self.concat_docs.len()
+        self.doc_buffer.len()
     }
 
     /// Returns the number of documents in the batch.

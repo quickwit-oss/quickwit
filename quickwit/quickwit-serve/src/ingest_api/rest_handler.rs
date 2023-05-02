@@ -448,7 +448,7 @@ mod tests {
         assert_eq!(doc_batch.doc_lens.len(), 1);
         assert_eq!(
             doc_batch.doc_lens.iter().sum::<u64>() as usize,
-            doc_batch.concat_docs.len()
+            doc_batch.doc_buffer.len()
         );
 
         universe.assert_quit().await;

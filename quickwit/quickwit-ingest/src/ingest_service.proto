@@ -90,7 +90,7 @@ message FetchResponse {
 
 message DocBatch {
     string index_id = 1;
-    bytes concat_docs = 2;
+    bytes doc_buffer = 2;
     repeated uint64 doc_lens = 3;
 }
 
