@@ -22,7 +22,9 @@ use std::io::Read;
 use anyhow::Context;
 use tantivy::directory::OwnedBytes;
 
-/// Trait to help for versioning.
+/// Helper trait for versioning.
+///
+/// See the unit test for an example.
 pub trait VersionedComponent: Default + Copy + Clone {
     /// This number is used to identify that the type.
     const MAGIC_NUMBER: u32;
@@ -118,8 +120,6 @@ mod tests {
 
     use crate::VersionedComponent;
 
-
-
     #[derive(Copy, Clone, Default)]
     #[repr(u32)]
     enum FakeComponentCodec {
@@ -130,7 +130,7 @@ mod tests {
 
     #[derive(Debug)]
     struct FakeComponent {
-        value: u32
+        value: u32,
     }
 
     impl VersionedComponent for FakeComponentCodec {
@@ -160,24 +160,19 @@ mod tests {
                     if bytes.len() < 8 {
                         anyhow::bail!("Not enough bytes to deserialize");
                     }
-                    let value_bytes: [u8; 8] = bytes[0..8]
-                        .try_into()
-                        .unwrap();
+                    let value_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
                     let value: u32 = u64::from_le_bytes(value_bytes) as u32;
                     Ok(FakeComponent { value })
-
-                },
+                }
                 FakeComponentCodec::V2 => {
                     if bytes.len() < 4 {
                         anyhow::bail!("Not enough bytes to deserialize");
                     }
-                    let value_bytes: [u8; 4] = bytes[0..4]
-                        .try_into()
-                        .unwrap();
+                    let value_bytes: [u8; 4] = bytes[0..4].try_into().unwrap();
                     bytes.advance(4);
                     let value: u32 = u32::from_le_bytes(value_bytes);
                     Ok(FakeComponent { value })
-                },
+                }
             }
         }
     }
@@ -195,17 +190,21 @@ mod tests {
             let mut buf_clone = buf.clone();
             buf_clone[0] = 0u8;
             let mut payload = OwnedBytes::new(buf_clone);
-            let fake_component_err = FakeComponentCodec::try_read_component(&mut payload).unwrap_err();
-            assert!(fake_component_err.to_string().to_lowercase().contains("magic number"));
+            let fake_component_err =
+                FakeComponentCodec::try_read_component(&mut payload).unwrap_err();
+            assert!(fake_component_err
+                .to_string()
+                .to_lowercase()
+                .contains("magic number"));
         }
         {
-            let mut buf_clone = buf.clone();
+            let mut buf_clone = buf;
             buf_clone.truncate(4);
             buf_clone.extend_from_slice(&1u32.to_le_bytes());
             buf_clone.extend_from_slice(&32u64.to_le_bytes());
             let mut payload = OwnedBytes::new(buf_clone);
-            let fake_component= FakeComponentCodec::try_read_component(&mut payload).unwrap();
+            let fake_component = FakeComponentCodec::try_read_component(&mut payload).unwrap();
             assert_eq!(fake_component.value, 32u32);
         }
-   }
+    }
 }

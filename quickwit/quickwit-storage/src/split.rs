@@ -156,9 +156,8 @@ impl SplitPayloadBuilder {
         let bundle_storage_file_offsets = BundleStorageFileOffsets {
             files: metadata_with_fixed_paths,
         };
-        let metadata_json = BundleStorageFileOffsetsVersions::serialize(
-            &bundle_storage_file_offsets,
-        );
+        let metadata_json =
+            BundleStorageFileOffsetsVersions::serialize(&bundle_storage_file_offsets);
 
         footer_bytes.extend(&metadata_json);
         footer_bytes.extend((metadata_json.len() as u32).to_le_bytes());

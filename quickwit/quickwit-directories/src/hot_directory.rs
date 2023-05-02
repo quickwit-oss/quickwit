@@ -62,10 +62,10 @@ impl VersionedComponent for HotDirectoryVersions {
                 if bytes.len() < 4 {
                     bail!("Data too short (len={}).", bytes.len());
                 }
-                let len = bytes.read_u32() as u32;
-                let hot_directory_meta = postcard::from_bytes(&bytes.as_slice()[..len as usize])
+                let len = bytes.read_u32() as usize;
+                let hot_directory_meta = postcard::from_bytes(&bytes.as_slice()[..len])
                     .context("Failed to deserialize Hot Directory Meta")?;
-                bytes.advance(len as usize);
+                bytes.advance(len);
                 Ok(hot_directory_meta)
             }
         }
@@ -162,7 +162,7 @@ impl StaticDirectoryCacheBuilder {
             file_lengths: self.file_lengths,
             slice_offsets: data_idx,
         };
-        let mut buffer = HotDirectoryVersions::serialize(&hot_directory_metas);
+        let buffer = HotDirectoryVersions::serialize(&hot_directory_metas);
         wrt.write_all(&buffer)?;
         wrt.write_all(&data_buffer)?;
         Ok(())
