@@ -85,8 +85,8 @@ enum BulkAction {
 impl BulkAction {
     fn into_index(self) -> String {
         match self {
-            BulkAction::Index(meta) => meta.index,
-            BulkAction::Create(meta) => meta.index,
+            BulkAction::Index(meta) => meta.index_id,
+            BulkAction::Create(meta) => meta.index_id,
         }
     }
 }
@@ -94,16 +94,17 @@ impl BulkAction {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 struct BulkActionMeta {
     #[serde(alias = "_index")]
-    index: String,
+    index_id: String,
     #[serde(alias = "_id")]
     #[serde(default)]
-    id: Option<String>,
+    doc_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 struct IngestOptions {
+    #[serde(alias = "commit")]
     #[serde(default)]
-    commit: CommitType,
+    commit_type: CommitType,
 }
 
 pub(crate) fn ingest_api_handlers(
@@ -361,8 +362,8 @@ mod tests {
             assert_eq!(
                 bulk_action,
                 BulkAction::Create(BulkActionMeta {
-                    index: "test".to_string(),
-                    id: Some("2".to_string()),
+                    index_id: "test".to_string(),
+                    doc_id: Some("2".to_string()),
                 })
             );
         }
@@ -376,8 +377,8 @@ mod tests {
             assert_eq!(
                 bulk_action,
                 BulkAction::Create(BulkActionMeta {
-                    index: "test".to_string(),
-                    id: None,
+                    index_id: "test".to_string(),
+                    doc_id: None,
                 })
             );
         }
