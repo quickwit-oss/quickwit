@@ -43,7 +43,7 @@ impl Cost for IngestRequest {
     fn cost(&self) -> u64 {
         self.doc_batches
             .iter()
-            .map(|doc_batch| doc_batch.doc_buffer.len())
+            .map(|doc_batch| doc_batch.num_bytes())
             .sum::<usize>() as u64
     }
 }

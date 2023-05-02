@@ -102,11 +102,21 @@ pub struct DocBatchBuilder {
 }
 
 impl DocBatchBuilder {
-    /// Creates a new batch builder with the given index name
+    /// Creates a new batch builder for the given index name.
     pub fn new(index_id: String) -> Self {
         Self {
             index_id,
             doc_buffer: BytesMut::new(),
+            doc_lengths: Vec::new(),
+        }
+    }
+
+    /// Creates a new batch builder for the given index name with some pre-allocated capacity for
+    /// the internal doc buffer.
+    pub fn with_capacity(index_id: String, capacity: usize) -> Self {
+        Self {
+            index_id,
+            doc_buffer: BytesMut::with_capacity(capacity),
             doc_lengths: Vec::new(),
         }
     }
