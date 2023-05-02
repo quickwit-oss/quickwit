@@ -68,10 +68,11 @@ pub struct FetchResponse {
 pub struct DocBatch {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "2")]
-    pub doc_buffer: ::prost::alloc::vec::Vec<u8>,
-    #[prost(uint64, repeated, tag = "3")]
-    pub doc_lens: ::prost::alloc::vec::Vec<u64>,
+    #[prost(bytes = "bytes", tag = "2")]
+    #[schema(value_type = String, format = Binary)]
+    pub doc_buffer: ::prost::bytes::Bytes,
+    #[prost(uint32, repeated, tag = "3")]
+    pub doc_lengths: ::prost::alloc::vec::Vec<u32>,
 }
 /// / Suggest to truncate the queue.
 /// /

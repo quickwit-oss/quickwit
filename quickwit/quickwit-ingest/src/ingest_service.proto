@@ -91,7 +91,7 @@ message FetchResponse {
 message DocBatch {
     string index_id = 1;
     bytes doc_buffer = 2;
-    repeated uint64 doc_lens = 3;
+    repeated uint32 doc_lengths = 3;
 }
 
 /// Suggest to truncate the queue.

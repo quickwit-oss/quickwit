@@ -421,12 +421,12 @@ mod tests {
                 DocBatch {
                     index_id: "index-1".to_string(),
                     doc_buffer: Bytes::from_static(&[0, 1, 2]),
-                    doc_lens: vec![1, 2],
+                    doc_lengths: vec![1, 2],
                 },
                 DocBatch {
                     index_id: "index-2".to_string(),
                     doc_buffer: Bytes::from_static(&[3, 4, 5, 6, 7, 8]),
-                    doc_lens: vec![1, 3, 2],
+                    doc_lengths: vec![1, 3, 2],
                 },
             ],
             commit: CommitType::Auto as u32,

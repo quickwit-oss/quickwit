@@ -445,9 +445,9 @@ mod tests {
         let fetch_response: FetchResponse = serde_json::from_slice(resp.body()).unwrap();
         let doc_batch = fetch_response.doc_batch.unwrap();
         assert_eq!(doc_batch.index_id, "my-index");
-        assert_eq!(doc_batch.doc_lens.len(), 1);
+        assert_eq!(doc_batch.doc_lengths.len(), 1);
         assert_eq!(
-            doc_batch.doc_lens.iter().sum::<u64>() as usize,
+            doc_batch.doc_lengths.iter().sum::<u32>() as usize,
             doc_batch.doc_buffer.len()
         );
 

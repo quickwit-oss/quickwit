@@ -98,7 +98,7 @@ where T: Buf + Default
 pub struct DocBatchBuilder {
     index_id: String,
     doc_buffer: BytesMut,
-    doc_lens: Vec<u64>,
+    doc_lengths: Vec<u32>,
 }
 
 impl DocBatchBuilder {
@@ -107,7 +107,7 @@ impl DocBatchBuilder {
         Self {
             index_id,
             doc_buffer: BytesMut::new(),
-            doc_lens: Vec::new(),
+            doc_lengths: Vec::new(),
         }
     }
 
@@ -127,7 +127,7 @@ impl DocBatchBuilder {
     pub fn command<T>(&mut self, command: DocCommand<T>) -> usize
     where T: Buf + Default {
         let len = command.write(&mut self.doc_buffer);
-        self.doc_lens.push(len as u64);
+        self.doc_lengths.push(len as u32);
         len
     }
 
@@ -135,7 +135,7 @@ impl DocBatchBuilder {
     pub fn command_from_buf(&mut self, raw: impl Buf) -> usize {
         let len = raw.remaining();
         self.doc_buffer.put(raw);
-        self.doc_lens.push(len as u64);
+        self.doc_lengths.push(len as u32);
         len
     }
 
@@ -144,7 +144,7 @@ impl DocBatchBuilder {
         JsonDocBatchBuilder {
             index_id: self.index_id,
             doc_buffer: self.doc_buffer.writer(),
-            doc_lens: self.doc_lens,
+            doc_lengths: self.doc_lengths,
         }
     }
 
@@ -153,7 +153,7 @@ impl DocBatchBuilder {
         DocBatch {
             index_id: self.index_id,
             doc_buffer: self.doc_buffer.freeze(),
-            doc_lens: self.doc_lens,
+            doc_lengths: self.doc_lengths,
         }
     }
 }
@@ -163,7 +163,7 @@ impl DocBatchBuilder {
 pub struct JsonDocBatchBuilder {
     index_id: String,
     doc_buffer: Writer<BytesMut>,
-    doc_lens: Vec<u64>,
+    doc_lengths: Vec<u32>,
 }
 
 impl JsonDocBatchBuilder {
@@ -179,7 +179,7 @@ impl JsonDocBatchBuilder {
             Err(err)
         } else {
             let len = new_len - old_len;
-            self.doc_lens.push(len as u64);
+            self.doc_lengths.push(len as u32);
             Ok(len)
         }
     }
@@ -189,7 +189,7 @@ impl JsonDocBatchBuilder {
         DocBatchBuilder {
             index_id: self.index_id,
             doc_buffer: self.doc_buffer.into_inner(),
-            doc_lens: self.doc_lens,
+            doc_lengths: self.doc_lengths,
         }
     }
 
@@ -207,7 +207,7 @@ impl DocBatch {
 
     /// Returns an iterator over the document payloads within a doc_batch.
     pub fn iter_raw(&self) -> impl Iterator<Item = Bytes> + '_ {
-        self.doc_lens
+        self.doc_lengths
             .iter()
             .cloned()
             .scan(0, |current_offset, doc_num_bytes| {
@@ -220,7 +220,7 @@ impl DocBatch {
 
     /// Returns true if the batch is empty.
     pub fn is_empty(&self) -> bool {
-        self.doc_lens.is_empty()
+        self.doc_lengths.is_empty()
     }
 
     /// Returns the total number of bytes in the batch.
@@ -230,7 +230,7 @@ impl DocBatch {
 
     /// Returns the number of documents in the batch.
     pub fn num_docs(&self) -> usize {
-        self.doc_lens.len()
+        self.doc_lengths.len()
     }
 }
 
