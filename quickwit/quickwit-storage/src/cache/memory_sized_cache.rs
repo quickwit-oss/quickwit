@@ -50,7 +50,7 @@ use crate::OwnedBytes;
 /// a regular LRU eviction policy would yield a hit rate of 0.
 const MIN_TIME_SINCE_LAST_ACCESS: Duration = Duration::from_secs(60);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Capacity {
     Unlimited,
     InBytes(usize),
@@ -135,11 +135,13 @@ impl<K: Hash + Eq, V: HasLen + Clone> NeedMutMemorySizedCache<K, V> {
     fn put(&mut self, key: K, bytes: V) {
         if self.capacity.exceeds_capacity(bytes.len()) {
             // The value does not fit in the cache. We simply don't store it.
-            warn!(
-                capacity_in_bytes = ?self.capacity,
-                len = bytes.len(),
-                "Downloaded a byte slice larger than the cache capacity."
-            );
+            if self.capacity != Capacity::InBytes(0) {
+                warn!(
+                    capacity_in_bytes = ?self.capacity,
+                    len = bytes.len(),
+                    "Downloaded a byte slice larger than the cache capacity."
+                );
+            }
             return;
         }
         if let Some(previous_data) = self.lru_cache.pop(&key) {
