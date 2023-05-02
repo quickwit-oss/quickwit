@@ -25,11 +25,12 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use lru::LruCache;
+use tantivy::HasLen;
 use tokio::time::Instant;
 use tracing::{error, warn};
 
 use crate::cache::slice_address::{SliceAddress, SliceAddressKey, SliceAddressRef};
-use crate::cache::stored_item::{Len, StoredItem};
+use crate::cache::stored_item::StoredItem;
 use crate::metrics::CacheMetrics;
 use crate::OwnedBytes;
 
@@ -83,7 +84,7 @@ impl<K: Hash + Eq, V> Drop for NeedMutMemorySizedCache<K, V> {
     }
 }
 
-impl<K: Hash + Eq, V: Len + Clone> NeedMutMemorySizedCache<K, V> {
+impl<K: Hash + Eq, V: HasLen + Clone> NeedMutMemorySizedCache<K, V> {
     /// Creates a new NeedMutSliceCache with the given capacity.
     fn with_capacity(capacity: Capacity, cache_counters: &'static CacheMetrics) -> Self {
         NeedMutMemorySizedCache {
@@ -181,7 +182,7 @@ pub struct MemorySizedCache<K: Hash + Eq = SliceAddress, V = OwnedBytes> {
     inner: Mutex<NeedMutMemorySizedCache<K, V>>,
 }
 
-impl<K: Hash + Eq, V: Len + Clone> MemorySizedCache<K, V> {
+impl<K: Hash + Eq, V: HasLen + Clone> MemorySizedCache<K, V> {
     /// Creates an slice cache with the given capacity.
     pub fn with_capacity_in_bytes(
         capacity_in_bytes: usize,

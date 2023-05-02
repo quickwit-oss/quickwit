@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use tantivy::directory::OwnedBytes;
+use tantivy::HasLen;
 use tokio::time::Instant;
 
 /// It is a bit overkill to put this in its own module, but I
@@ -27,7 +27,7 @@ pub(super) struct StoredItem<T> {
     payload: T,
 }
 
-impl<T: Clone + Len> StoredItem<T> {
+impl<T: Clone + HasLen> StoredItem<T> {
     pub fn new(payload: T, now: Instant) -> Self {
         StoredItem {
             last_access_time: now,
@@ -46,24 +46,5 @@ impl<T: Clone + Len> StoredItem<T> {
 
     pub fn last_access_time(&self) -> Instant {
         self.last_access_time
-    }
-}
-
-pub trait Len {
-    fn len(&self) -> usize;
-}
-
-impl Len for OwnedBytes {
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
-
-// this gives us a good approximation of the size of LeafSearchResponse without
-// introspecting in ourselves
-impl Len for quickwit_proto::LeafSearchResponse {
-    fn len(&self) -> usize {
-        use prost::Message;
-        self.encoded_len()
     }
 }

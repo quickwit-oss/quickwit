@@ -218,6 +218,15 @@ impl fmt::Display for SplitSearchError {
     }
 }
 
+// this gives us a good approximation of the size of LeafSearchResponse without
+// introspecting in ourselves
+impl tantivy::HasLen for LeafSearchResponse {
+    fn len(&self) -> usize {
+        use prost::Message;
+        self.encoded_len()
+    }
+}
+
 /// `MutMetadataMap` used to extract [`tonic::metadata::MetadataMap`] from a request.
 pub struct MutMetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
 
