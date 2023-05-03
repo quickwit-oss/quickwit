@@ -1,3 +1,22 @@
+// Copyright (C) 2023 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+
 use quickwit_proto::{LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets};
 use quickwit_storage::MemorySizedCache;
 
@@ -156,8 +175,8 @@ mod tests {
 
         cache.put(split_1.clone(), query_1.clone(), result.clone());
         assert_eq!(cache.get(split_1.clone(), query_1.clone()).unwrap(), result);
-        assert!(cache.get(split_2.clone(), query_1.clone()).is_none());
-        assert!(cache.get(split_1.clone(), query_2.clone()).is_none());
+        assert!(cache.get(split_2, query_1).is_none());
+        assert!(cache.get(split_1, query_2).is_none());
     }
 
     #[test]
@@ -248,22 +267,22 @@ mod tests {
 
         // for split_2, both 1 and 1bis cover everything, so it should cache-hit
         cache.put(split_2.clone(), query_1.clone(), result.clone());
-        assert!(cache.get(split_2.clone(), query_1.clone()).is_some());
-        assert!(cache.get(split_2.clone(), query_1bis.clone()).is_some());
+        assert!(cache.get(split_2.clone(), query_1).is_some());
+        assert!(cache.get(split_2.clone(), query_1bis).is_some());
 
         // for split_1, both 1 and 1bis cover everything, so it should cache-hit
         cache.put(split_1.clone(), query_2.clone(), result.clone());
         assert!(cache.get(split_1.clone(), query_2.clone()).is_some());
-        assert!(cache.get(split_1.clone(), query_2bis.clone()).is_some());
+        assert!(cache.get(split_1, query_2bis.clone()).is_some());
 
         // for split_2, 2 covers everything, but 2bis cover only a subrange
         cache.put(split_2.clone(), query_2.clone(), result.clone());
         assert!(cache.get(split_2.clone(), query_2.clone()).is_some());
-        assert!(cache.get(split_2.clone(), query_2bis.clone()).is_none());
+        assert!(cache.get(split_2, query_2bis.clone()).is_none());
 
         // same for split_3, but we try caching the bounded request and query for the unbounded one
-        cache.put(split_3.clone(), query_2bis.clone(), result.clone());
-        assert!(cache.get(split_3.clone(), query_2.clone()).is_none());
-        assert!(cache.get(split_3.clone(), query_2bis.clone()).is_some());
+        cache.put(split_3.clone(), query_2bis.clone(), result);
+        assert!(cache.get(split_3.clone(), query_2).is_none());
+        assert!(cache.get(split_3, query_2bis).is_some());
     }
 }
