@@ -62,6 +62,21 @@ pub(crate) enum IndexState {
     Deleting,
 }
 
+pub(crate) enum MutationOccurred<T> {
+    Yes(T),
+    No(T),
+}
+
+impl From<bool> for MutationOccurred<()> {
+    fn from(mutation_occurred: bool) -> Self {
+        if mutation_occurred {
+            Self::Yes(())
+        } else {
+            Self::No(())
+        }
+    }
+}
+
 /// Metastore that stores all of the metadata associated to each index
 /// into as many files and stores a map of indexes
 /// (index_id, index_state) in a dedicated file `indexes_states.json`.
@@ -139,23 +154,25 @@ impl FileBackedMetastore {
         })
     }
 
-    async fn mutate(
+    async fn mutate<T>(
         &self,
         index_id: &str,
-        mutate_fn: impl FnOnce(&mut FileBackedIndex) -> crate::MetastoreResult<bool>,
-    ) -> MetastoreResult<bool> {
+        mutate_fn: impl FnOnce(&mut FileBackedIndex) -> crate::MetastoreResult<MutationOccurred<T>>,
+    ) -> MetastoreResult<T> {
         let mut locked_index = self.get_locked_index(index_id).await?;
         let mut index = locked_index.clone();
-        let mutation_occurred = mutate_fn(&mut index)?;
-        if !mutation_occurred {
-            return Ok(false);
-        }
+        let value = match mutate_fn(&mut index)? {
+            MutationOccurred::Yes(value) => value,
+            MutationOccurred::No(value) => {
+                return Ok(value);
+            }
+        };
         locked_index.set_recently_modified();
         let put_result = put_index(&*self.storage, &index).await;
         match put_result {
             Ok(()) => {
                 *locked_index = index;
-                Ok(true)
+                Ok(value)
             }
             Err(err) => {
                 // For some of the error type here, we cannot know for sure
@@ -393,13 +410,12 @@ impl Metastore for FileBackedMetastore {
                     Err(error) => return Err(error),
                 };
             }
-
             if !failed_split_ids.is_empty() {
                 Err(MetastoreError::SplitsNotStaged {
                     split_ids: failed_split_ids,
                 })
             } else {
-                Ok(true)
+                Ok(MutationOccurred::Yes(()))
             }
         })
         .await?;
@@ -415,7 +431,7 @@ impl Metastore for FileBackedMetastore {
     ) -> MetastoreResult<()> {
         self.mutate(index_id, |index| {
             index.publish_splits(split_ids, replaced_split_ids, checkpoint_delta_opt)?;
-            Ok(true)
+            Ok(MutationOccurred::Yes(()))
         })
         .await?;
         Ok(())
@@ -427,15 +443,17 @@ impl Metastore for FileBackedMetastore {
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
         self.mutate(index_id, |index| {
-            index.mark_splits_for_deletion(
-                split_ids,
-                &[
-                    SplitState::Staged,
-                    SplitState::Published,
-                    SplitState::MarkedForDeletion,
-                ],
-                false,
-            )
+            index
+                .mark_splits_for_deletion(
+                    split_ids,
+                    &[
+                        SplitState::Staged,
+                        SplitState::Published,
+                        SplitState::MarkedForDeletion,
+                    ],
+                    false,
+                )
+                .map(MutationOccurred::from)
         })
         .await?;
         Ok(())
@@ -448,7 +466,7 @@ impl Metastore for FileBackedMetastore {
     ) -> MetastoreResult<()> {
         self.mutate(index_id, |index| {
             index.delete_splits(split_ids)?;
-            Ok(true)
+            Ok(MutationOccurred::Yes(()))
         })
         .await?;
         Ok(())
@@ -457,7 +475,7 @@ impl Metastore for FileBackedMetastore {
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
         self.mutate(index_id, |index| {
             index.add_source(source)?;
-            Ok(true)
+            Ok(MutationOccurred::Yes(()))
         })
         .await?;
         Ok(())
@@ -469,14 +487,20 @@ impl Metastore for FileBackedMetastore {
         source_id: &str,
         enable: bool,
     ) -> MetastoreResult<()> {
-        self.mutate(index_id, |index| index.toggle_source(source_id, enable))
-            .await?;
+        self.mutate(index_id, |index| {
+            index
+                .toggle_source(source_id, enable)
+                .map(MutationOccurred::from)
+        })
+        .await?;
         Ok(())
     }
 
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
-        self.mutate(index_id, |index| index.delete_source(source_id))
-            .await?;
+        self.mutate(index_id, |index| {
+            index.delete_source(source_id).map(MutationOccurred::from)
+        })
+        .await?;
         Ok(())
     }
 
@@ -485,8 +509,12 @@ impl Metastore for FileBackedMetastore {
         index_id: &str,
         source_id: &str,
     ) -> MetastoreResult<()> {
-        self.mutate(index_id, |index| index.reset_source_checkpoint(source_id))
-            .await?;
+        self.mutate(index_id, |index| {
+            index
+                .reset_source_checkpoint(source_id)
+                .map(MutationOccurred::from)
+        })
+        .await?;
         Ok(())
     }
 
@@ -561,22 +589,15 @@ impl Metastore for FileBackedMetastore {
     }
 
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
-        // Ugly hack to get opstamp and create timestamp as `mutate` callback only returns a boolean
-        // and not an actual struct.
-        let mut opstamp: u64 = 0;
-        let mut create_timestamp: i64 = 0;
-        self.mutate(&delete_query.index_id, |index| {
-            let delete_task = index.create_delete_task(delete_query.clone())?;
-            opstamp = delete_task.opstamp;
-            create_timestamp = delete_task.create_timestamp;
-            Ok(true)
-        })
-        .await?;
-        Ok(DeleteTask {
-            create_timestamp,
-            opstamp,
-            delete_query: Some(delete_query),
-        })
+        let index_id = delete_query.index_id.clone();
+        let delete_task = self
+            .mutate(&index_id, |index| {
+                index
+                    .create_delete_task(delete_query)
+                    .map(MutationOccurred::Yes)
+            })
+            .await?;
+        Ok(delete_task)
     }
 
     async fn update_splits_delete_opstamp<'a>(
@@ -586,7 +607,9 @@ impl Metastore for FileBackedMetastore {
         delete_opstamp: u64,
     ) -> MetastoreResult<()> {
         self.mutate(index_id, |index| {
-            index.update_splits_delete_opstamp(split_ids, delete_opstamp)
+            index
+                .update_splits_delete_opstamp(split_ids, delete_opstamp)
+                .map(MutationOccurred::from)
         })
         .await?;
         Ok(())
@@ -657,7 +680,7 @@ mod tests {
     use super::store_operations::{
         fetch_or_init_indexes_states, meta_path, put_index_given_index_id, put_indexes_states,
     };
-    use super::{FileBackedIndex, FileBackedMetastore, IndexState};
+    use super::*;
     use crate::tests::test_suite::DefaultForTest;
     use crate::{
         IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
