@@ -368,9 +368,7 @@ mod tests {
         );
         assert_eq!(
             rx.recv().await.unwrap(),
-            MetastoreEvent::DeleteIndex {
-                index_uid,
-            }
+            MetastoreEvent::DeleteIndex { index_uid }
         );
         subscription.cancel();
     }
