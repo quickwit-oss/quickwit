@@ -25,7 +25,7 @@ use tracing::error;
 use ulid::Ulid;
 
 use crate::{
-    IndexConfigId, IndexMetadata, MetastoreError, MetastoreResult, Split as QuickwitSplit,
+    IndexMetadata, IndexUid, MetastoreError, MetastoreResult, Split as QuickwitSplit,
     SplitMetadata, SplitState,
 };
 
@@ -130,7 +130,7 @@ impl TryInto<QuickwitSplit> for Split {
         let publish_timestamp = self
             .publish_timestamp
             .map(|publish_timestamp| publish_timestamp.assume_utc().unix_timestamp());
-        split_metadata.index_config_id = IndexConfigId {
+        split_metadata.index_uid = IndexUid {
             index_id: self.index_id,
             incarnation_id: Ulid::from_string(self.incarnation_id.as_str()).unwrap_or_default(),
         };

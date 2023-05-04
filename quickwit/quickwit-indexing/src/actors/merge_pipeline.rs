@@ -184,20 +184,20 @@ impl MergePipeline {
     }
 
     // TODO: Should return an error saying whether we can retry or not.
-    #[instrument(name="spawn_merge_pipeline", level="info", skip_all, fields(index=%self.params.pipeline_id.index_config_id.index_id, gen=self.generation()))]
+    #[instrument(name="spawn_merge_pipeline", level="info", skip_all, fields(index=%self.params.pipeline_id.index_uid.index_id, gen=self.generation()))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         self.statistics.num_spawn_attempts += 1;
         self.kill_switch = ctx.kill_switch().child();
 
         info!(
-            index_id=%self.params.pipeline_id.index_config_id.index_id,
+            index_id=%self.params.pipeline_id.index_uid.index_id,
             source_id=%self.params.pipeline_id.source_id,
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
             root_dir=%self.params.indexing_directory.path().display(),
             merge_policy=?self.params.merge_policy,
             "Spawning merge pipeline.",
         );
-        let query = ListSplitsQuery::for_index(&self.params.pipeline_id.index_config_id.index_id)
+        let query = ListSplitsQuery::for_index(self.params.pipeline_id.index_uid.clone())
             .with_split_state(SplitState::Published);
         let published_splits = ctx
             .protect_future(self.params.metastore.list_splits(query))
@@ -249,7 +249,7 @@ impl MergePipeline {
         let split_downloader_io_controls = IoControls::default()
             .set_throughput_limit(max_merge_write_throughput)
             .set_index_and_component(
-                self.params.pipeline_id.index_config_id.index_id.as_str(),
+                self.params.pipeline_id.index_uid.index_id.as_str(),
                 "split_downloader_merge",
             );
 
@@ -258,7 +258,7 @@ impl MergePipeline {
         let merge_executor_io_controls = split_downloader_io_controls
             .clone()
             .set_index_and_component(
-                self.params.pipeline_id.index_config_id.index_id.as_str(),
+                self.params.pipeline_id.index_uid.index_id.as_str(),
                 "merger",
             );
 
@@ -287,7 +287,7 @@ impl MergePipeline {
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
                     .with_label_values([
-                        self.params.pipeline_id.index_config_id.index_id.as_str(),
+                        self.params.pipeline_id.index_uid.index_id.as_str(),
                         "MergeSplitDownloader",
                     ]),
             )
@@ -444,7 +444,7 @@ mod tests {
 
     use quickwit_actors::{ActorExitStatus, Universe};
     use quickwit_doc_mapper::default_doc_mapper_for_test;
-    use quickwit_metastore::{IndexConfigId, MockMetastore};
+    use quickwit_metastore::{IndexUid, MockMetastore};
     use quickwit_storage::RamStorage;
 
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
@@ -461,7 +461,7 @@ mod tests {
             .returning(|_| Ok(Vec::new()));
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::for_test("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,

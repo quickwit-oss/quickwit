@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_janitor::error::JanitorError;
-use quickwit_metastore::{Metastore, MetastoreError};
+use quickwit_metastore::{IndexUid, Metastore, MetastoreError};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_proto::SearchRequest;
 use serde::Deserialize;
@@ -93,7 +93,8 @@ pub async fn get_delete_tasks(
     index_id: String,
     metastore: Arc<dyn Metastore>,
 ) -> Result<Vec<DeleteTask>, MetastoreError> {
-    let delete_tasks = metastore.list_delete_tasks(&index_id, 0).await?;
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid();
+    let delete_tasks = metastore.list_delete_tasks(index_uid, 0).await?;
     Ok(delete_tasks)
 }
 
@@ -130,12 +131,14 @@ pub async fn post_delete_request(
     delete_request: DeleteQueryRequest,
     metastore: Arc<dyn Metastore>,
 ) -> Result<DeleteTask, JanitorError> {
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid();
     let delete_query = DeleteQuery {
-        index_id: index_id.clone(),
+        index_id: index_uid.index_id,
         start_timestamp: delete_request.start_timestamp,
         end_timestamp: delete_request.end_timestamp,
         query: delete_request.query,
         search_fields: delete_request.search_fields,
+        incarnation_id: index_uid.incarnation_id.to_string(),
     };
     let index_config: IndexConfig = metastore
         .index_metadata(&delete_query.index_id)

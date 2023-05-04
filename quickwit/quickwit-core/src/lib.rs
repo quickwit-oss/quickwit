@@ -55,7 +55,7 @@ mod tests {
         ]).await?;
         let splits = test_sandbox
             .metastore()
-            .list_all_splits(index_id)
+            .list_all_splits(test_sandbox.index_uid())
             .await?
             .into_iter()
             .map(|metadata| metadata.split_metadata)

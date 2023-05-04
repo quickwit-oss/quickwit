@@ -128,6 +128,7 @@ impl EventSubscriber<MetastoreEvent> for ControlPlaneServiceClient {
 #[cfg(test)]
 mod tests {
     use quickwit_config::SourceConfig;
+    use quickwit_metastore::IndexUid;
 
     use super::*;
 
@@ -139,20 +140,22 @@ mod tests {
 
         let mut control_plane = ControlPlaneServiceClient::new(mock);
 
+        let index_uid = IndexUid::for_test("test-index");
+
         let event = MetastoreEvent::AddSource {
-            index_id: "test-index".to_string(),
+            index_uid: index_uid.clone(),
             source_config: SourceConfig::for_test("test-source", SourceParams::IngestApi),
         };
         control_plane.handle_event(event).await;
 
         let event = MetastoreEvent::AddSource {
-            index_id: "test-index".to_string(),
+            index_uid: index_uid.clone(),
             source_config: SourceConfig::for_test("test-source", SourceParams::file("test-file")),
         };
         control_plane.handle_event(event).await;
 
         let event = MetastoreEvent::AddSource {
-            index_id: "test-index".to_string(),
+            index_uid: index_uid.clone(),
             source_config: SourceConfig::for_test("test-source", SourceParams::IngestCli),
         };
         control_plane.handle_event(event).await;

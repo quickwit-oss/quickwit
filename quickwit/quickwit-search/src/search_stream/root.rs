@@ -22,7 +22,7 @@ use std::collections::HashSet;
 use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
 use quickwit_common::uri::Uri;
-use quickwit_config::{build_doc_mapper, IndexConfig};
+use quickwit_config::build_doc_mapper;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
 use tokio_stream::StreamMap;
@@ -44,11 +44,11 @@ pub async fn root_search_stream(
     // This needs some refactoring: relevant splits, metadata_map, jobs...
 
     let search_request = SearchRequest::from(search_stream_request.clone());
-    let index_config: IndexConfig = metastore
-        .index_metadata(&search_request.index_id)
-        .await?
-        .into_index_config();
-    let split_metadatas = list_relevant_splits(&search_request, metastore).await?;
+    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+    let index_uid = index_metadata.index_uid();
+    let index_config = index_metadata.into_index_config();
+
+    let split_metadatas = list_relevant_splits(index_uid, &search_request, metastore).await?;
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
             SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))

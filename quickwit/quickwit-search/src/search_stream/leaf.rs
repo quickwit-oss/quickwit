@@ -487,7 +487,10 @@ mod tests {
             output_format: 0,
             partition_by_field: None,
         };
-        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits = test_sandbox
+            .metastore()
+            .list_all_splits(test_sandbox.index_uid())
+            .await?;
         let splits_offsets = splits
             .into_iter()
             .map(|split_meta| SplitIdAndFooterOffsets {
@@ -565,7 +568,10 @@ mod tests {
             output_format: 0,
             partition_by_field: None,
         };
-        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits = test_sandbox
+            .metastore()
+            .list_all_splits(test_sandbox.index_uid())
+            .await?;
         let splits_offsets = splits
             .into_iter()
             .map(|split_meta| SplitIdAndFooterOffsets {
@@ -622,7 +628,10 @@ mod tests {
             output_format: 0,
             partition_by_field: None,
         };
-        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits = test_sandbox
+            .metastore()
+            .list_all_splits(test_sandbox.index_uid())
+            .await?;
         let splits_offsets = splits
             .into_iter()
             .map(|split_meta| SplitIdAndFooterOffsets {
@@ -715,7 +724,10 @@ mod tests {
             output_format: 1,
             partition_by_field: Some(String::from("partition_by_fast_field")),
         };
-        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits = test_sandbox
+            .metastore()
+            .list_all_splits(test_sandbox.index_uid())
+            .await?;
         let splits_offsets = splits
             .into_iter()
             .map(|split_meta| SplitIdAndFooterOffsets {

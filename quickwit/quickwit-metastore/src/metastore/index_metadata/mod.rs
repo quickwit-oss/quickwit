@@ -37,20 +37,28 @@ use crate::{MetastoreError, MetastoreResult};
 /// Index identifiers that uniquely identify not only the index, but also
 /// its incarnation allowing to distinguish between deleted and recreated indexes.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct IndexConfigId {
+pub struct IndexUid {
     /// Name of the index
     pub index_id: String,
     /// Internal index id
     pub incarnation_id: Ulid,
 }
 
-impl IndexConfigId {
-    /// Creates a new index config id for testing purposes
+impl IndexUid {
+    /// Creates a new index uid for testing purposes
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(index_id: impl Into<String>) -> Self {
         Self {
             index_id: index_id.into(),
             incarnation_id: Ulid::new(),
+        }
+    }
+
+    /// Creates a new index uid form index_id and incarnation_id
+    pub fn new(index_id: String, incarnation_id_str: String) -> Self {
+        Self {
+            index_id,
+            incarnation_id: Ulid::from_string(&incarnation_id_str).unwrap_or_default(),
         }
     }
 }
@@ -106,8 +114,8 @@ impl IndexMetadata {
     }
 
     /// Returns the index incarnation id
-    pub fn index_config_id(&self) -> IndexConfigId {
-        IndexConfigId {
+    pub fn index_uid(&self) -> IndexUid {
+        IndexUid {
             index_id: self.index_config.index_id.clone(),
             incarnation_id: self.incarnation_id,
         }

@@ -618,6 +618,8 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         "#;
     let index_id = "single-node-pruning-by-tags";
     let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[]).await?;
+    let index_uid = test_sandbox.index_uid();
+
     let owners = ["paul", "adrien"];
     for owner in owners {
         let mut docs = Vec::new();
@@ -628,6 +630,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     }
 
     let selected_splits = list_relevant_splits(
+        index_uid.clone(),
         &SearchRequest {
             index_id: index_id.to_string(),
             query: "owner:francois".to_string(),
@@ -639,6 +642,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     assert!(selected_splits.is_empty());
 
     let selected_splits = list_relevant_splits(
+        index_uid.clone(),
         &SearchRequest {
             index_id: index_id.to_string(),
             query: "".to_string(),
@@ -650,6 +654,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     assert_eq!(selected_splits.len(), 2);
 
     let selected_splits = list_relevant_splits(
+        index_uid.clone(),
         &SearchRequest {
             index_id: index_id.to_string(),
             query: "owner:francois OR owner:paul OR owner:adrien".to_string(),
@@ -679,7 +684,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
 async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
     let splits = test_sandbox
         .metastore()
-        .list_all_splits(test_sandbox.index_id())
+        .list_all_splits(test_sandbox.index_uid())
         .await
         .unwrap();
     let splits_offsets: Vec<_> = splits
@@ -691,7 +696,7 @@ async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Ve
         })
         .collect();
     let request = quickwit_proto::SearchRequest {
-        index_id: test_sandbox.index_id().to_string(),
+        index_id: test_sandbox.index_uid().index_id,
         query: query.to_string(),
         max_hits: 100,
         ..Default::default()
@@ -1346,7 +1351,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
 
     let splits = test_sandbox
         .metastore()
-        .list_all_splits(test_sandbox.index_id())
+        .list_all_splits(test_sandbox.index_uid())
         .await
         .unwrap();
     let splits_offsets: Vec<_> = splits
@@ -1361,7 +1366,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
 
     {
         let request = quickwit_proto::ListTermsRequest {
-            index_id: test_sandbox.index_id().to_string(),
+            index_id: test_sandbox.index_uid().index_id,
             field: "title".to_string(),
             start_key: None,
             end_key: None,
@@ -1382,7 +1387,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = quickwit_proto::ListTermsRequest {
-            index_id: test_sandbox.index_id().to_string(),
+            index_id: test_sandbox.index_uid().index_id,
             field: "title".to_string(),
             start_key: None,
             end_key: None,
@@ -1403,7 +1408,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = quickwit_proto::ListTermsRequest {
-            index_id: test_sandbox.index_id().to_string(),
+            index_id: test_sandbox.index_uid().index_id,
             field: "title".to_string(),
             start_key: Some("casper".as_bytes().to_vec()),
             end_key: None,
@@ -1424,7 +1429,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = quickwit_proto::ListTermsRequest {
-            index_id: test_sandbox.index_id().to_string(),
+            index_id: test_sandbox.index_uid().index_id,
             field: "title".to_string(),
             start_key: None,
             end_key: Some("casper".as_bytes().to_vec()),

@@ -21,7 +21,7 @@ use std::fmt;
 
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::{IndexUid, SplitMetadata};
 use tantivy::TrackedObject;
 use tracing::Span;
 
@@ -29,7 +29,7 @@ use crate::merge_policy::MergeOperation;
 use crate::models::PublishLock;
 
 pub struct SplitsUpdate {
-    pub index_id: String,
+    pub index_uid: IndexUid,
     pub new_splits: Vec<SplitMetadata>,
     pub replaced_split_ids: Vec<String>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
@@ -50,7 +50,7 @@ impl fmt::Debug for SplitsUpdate {
             .map(|split| split.split_id())
             .join(",");
         f.debug_struct("SplitsUpdate")
-            .field("index_id", &self.index_id)
+            .field("index_id", &self.index_uid.index_id)
             .field("new_splits", &new_split_ids)
             .field("checkpoint_delta", &self.checkpoint_delta_opt)
             .finish()

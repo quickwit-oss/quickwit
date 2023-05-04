@@ -36,8 +36,8 @@ use tracing::{info, warn};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    split_tag_filter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult, Split,
-    SplitMetadata, SplitState,
+    split_tag_filter, IndexMetadata, IndexUid, ListSplitsQuery, MetastoreError, MetastoreResult,
+    Split, SplitMetadata, SplitState,
 };
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -88,6 +88,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
                 end_timestamp: None,
                 query: "Harry Potter".to_string(),
                 search_fields: Vec::new(),
+                incarnation_id: "11111111111111111111111111".to_string(),
             }),
         };
         FileBackedIndex::new(index_metadata, splits, vec![delete_task])
@@ -153,6 +154,11 @@ impl FileBackedIndex {
     /// Index ID accessor.
     pub fn index_id(&self) -> &str {
         self.metadata.index_id()
+    }
+
+    /// Index UID accessor.
+    pub fn index_uid(&self) -> IndexUid {
+        self.metadata.index_uid()
     }
 
     /// Index metadata accessor.
@@ -309,7 +315,7 @@ impl FileBackedIndex {
     }
 
     /// Lists splits.
-    pub(crate) fn list_splits(&self, query: ListSplitsQuery<'_>) -> MetastoreResult<Vec<Split>> {
+    pub(crate) fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
         let limit = query.limit.unwrap_or(usize::MAX);
         let offset = query.offset.unwrap_or_default();
 
@@ -468,7 +474,7 @@ impl Debug for Stamper {
     }
 }
 
-fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
+fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
     if !split_tag_filter(split, query.tags.as_ref()) {
         return false;
     }
@@ -511,7 +517,7 @@ mod tests {
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 
     use crate::file_backed_metastore::file_backed_index::split_query_predicate;
-    use crate::{ListSplitsQuery, Split, SplitMetadata, SplitState};
+    use crate::{IndexUid, ListSplitsQuery, Split, SplitMetadata, SplitState};
 
     fn make_splits() -> [Split; 3] {
         [
@@ -561,47 +567,55 @@ mod tests {
     fn test_single_filter_behaviour() {
         let [split_1, split_2, split_3] = make_splits();
 
-        let query = ListSplitsQuery::for_index("test-index").with_split_state(SplitState::Staged);
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index"))
+            .with_split_state(SplitState::Staged);
         assert!(split_query_predicate(&&split_1, &query));
 
-        let query =
-            ListSplitsQuery::for_index("test-index").with_split_state(SplitState::Published);
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index"))
+            .with_split_state(SplitState::Published);
         assert!(!split_query_predicate(&&split_2, &query));
 
-        let query = ListSplitsQuery::for_index("test-index")
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index"))
             .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index").with_update_timestamp_lt(51);
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index"))
+            .with_update_timestamp_lt(51);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index").with_create_timestamp_gte(51);
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index"))
+            .with_create_timestamp_gte(51);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index").with_delete_opstamp_gte(4);
+        let query =
+            ListSplitsQuery::for_index(IndexUid::for_test("test-index")).with_delete_opstamp_gte(4);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index").with_time_range_start_gt(45);
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index"))
+            .with_time_range_start_gt(45);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index").with_time_range_end_lt(45);
+        let query =
+            ListSplitsQuery::for_index(IndexUid::for_test("test-index")).with_time_range_end_lt(45);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index").with_tags_filter(TagFilterAst::Tag {
-            is_present: false,
-            tag: "tag-2".to_string(),
-        });
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index")).with_tags_filter(
+            TagFilterAst::Tag {
+                is_present: false,
+                tag: "tag-2".to_string(),
+            },
+        );
         assert!(split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
@@ -611,35 +625,35 @@ mod tests {
     fn test_combination_filter() {
         let [split_1, split_2, split_3] = make_splits();
 
-        let query = ListSplitsQuery::for_index("test-index")
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index"))
             .with_time_range_start_gt(0)
             .with_time_range_end_lt(40);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index")
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index"))
             .with_time_range_start_gt(45)
             .with_delete_opstamp_gt(0);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index")
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index"))
             .with_update_timestamp_lt(51)
             .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index")
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index"))
             .with_update_timestamp_lt(51)
             .with_create_timestamp_lte(63);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index")
+        let query = ListSplitsQuery::for_index(IndexUid::for_test("test-index"))
             .with_time_range_start_gt(90)
             .with_tags_filter(TagFilterAst::Tag {
                 is_present: true,

@@ -49,7 +49,7 @@ use tower::timeout::Timeout;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
+    IndexMetadata, IndexUid, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
     SplitMetadata,
 };
 
@@ -144,7 +144,7 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     /// Creates an index.
-    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()> {
+    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<IndexUid> {
         let index_config_serialized_json =
             serde_json::to_string(&index_config).map_err(|error| {
                 MetastoreError::JsonSerializeError {
@@ -155,12 +155,15 @@ impl Metastore for MetastoreGrpcClient {
         let request = CreateIndexRequest {
             index_config_serialized_json,
         };
-        self.underlying
+        let inner_response = self
+            .underlying
             .clone()
             .create_index(request)
             .await
-            .map(|_| ())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
+            .into_inner();
+        let index_uid = IndexUid::new(inner_response.index_id, inner_response.incarnation_id);
+        Ok(index_uid)
     }
 
     /// List indexes.
@@ -202,9 +205,10 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     /// Deletes an index.
-    async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
+    async fn delete_index(&self, index_uid: IndexUid) -> MetastoreResult<()> {
         let request = DeleteIndexRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         self.underlying
             .clone()
@@ -218,7 +222,7 @@ impl Metastore for MetastoreGrpcClient {
     /// Stages several splits.
     async fn stage_splits(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_metadata_list: Vec<SplitMetadata>,
     ) -> MetastoreResult<()> {
         let split_metadata_list_serialized_json = serde_json::to_string(&split_metadata_list)
@@ -227,8 +231,9 @@ impl Metastore for MetastoreGrpcClient {
                 message: error.to_string(),
             })?;
         let tonic_request = StageSplitsRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id.to_string(),
             split_metadata_list_serialized_json,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         self.underlying
             .clone()
@@ -241,7 +246,7 @@ impl Metastore for MetastoreGrpcClient {
     /// Publishes a list of splits.
     async fn publish_splits<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
@@ -259,10 +264,11 @@ impl Metastore for MetastoreGrpcClient {
                 message: error.to_string(),
             })?;
         let request = PublishSplitsRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
             split_ids: split_ids_vec,
             replaced_split_ids: replaced_split_ids_vec,
             index_checkpoint_delta_serialized_json,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         self.underlying
             .clone()
@@ -274,7 +280,7 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     /// Lists the splits.
-    async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
+    async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
         let filter_json =
             serde_json::to_string(&query).map_err(|error| MetastoreError::JsonSerializeError {
                 struct_name: "ListSplitsQuery".to_string(),
@@ -300,9 +306,10 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     /// Lists all the splits without filtering.
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
+    async fn list_all_splits(&self, index_uid: IndexUid) -> MetastoreResult<Vec<Split>> {
         let request = ListAllSplitsRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         let response = self
             .underlying
@@ -324,7 +331,7 @@ impl Metastore for MetastoreGrpcClient {
     /// Marks a list of splits for deletion.
     async fn mark_splits_for_deletion<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
         let split_ids_vec: Vec<String> = split_ids
@@ -332,8 +339,9 @@ impl Metastore for MetastoreGrpcClient {
             .map(|split_id| split_id.to_string())
             .collect();
         let request = MarkSplitsForDeletionRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
             split_ids: split_ids_vec,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         self.underlying
             .clone()
@@ -347,7 +355,7 @@ impl Metastore for MetastoreGrpcClient {
     /// Deletes a list of splits.
     async fn delete_splits<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
         let split_ids_vec: Vec<String> = split_ids
@@ -355,8 +363,9 @@ impl Metastore for MetastoreGrpcClient {
             .map(|split_id| split_id.to_string())
             .collect();
         let request = DeleteSplitsRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
             split_ids: split_ids_vec,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         self.underlying
             .clone()
@@ -368,15 +377,16 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     /// Adds a source to a given index.
-    async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
+    async fn add_source(&self, index_uid: IndexUid, source: SourceConfig) -> MetastoreResult<()> {
         let source_config_serialized_json =
             serde_json::to_string(&source).map_err(|error| MetastoreError::JsonSerializeError {
                 struct_name: "SourceConfig".to_string(),
                 message: error.to_string(),
             })?;
         let request = AddSourceRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
             source_config_serialized_json,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         self.underlying
             .clone()
@@ -390,14 +400,15 @@ impl Metastore for MetastoreGrpcClient {
     /// Toggles the source `enabled` field value.
     async fn toggle_source(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         source_id: &str,
         enable: bool,
     ) -> MetastoreResult<()> {
         let request = ToggleSourceRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
             source_id: source_id.to_string(),
             enable,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         self.underlying
             .clone()
@@ -409,10 +420,11 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     /// Removes a source from a given index.
-    async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
+    async fn delete_source(&self, index_uid: IndexUid, source_id: &str) -> MetastoreResult<()> {
         let request = DeleteSourceRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
             source_id: source_id.to_string(),
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         self.underlying
             .clone()
@@ -426,12 +438,13 @@ impl Metastore for MetastoreGrpcClient {
     /// Resets a source checkpoint.
     async fn reset_source_checkpoint(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         source_id: &str,
     ) -> MetastoreResult<()> {
         let request = ResetSourceCheckpointRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
             source_id: source_id.to_string(),
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         self.underlying
             .clone()
@@ -442,9 +455,10 @@ impl Metastore for MetastoreGrpcClient {
         Ok(())
     }
 
-    async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64> {
+    async fn last_delete_opstamp(&self, index_uid: IndexUid) -> MetastoreResult<u64> {
         let request = LastDeleteOpstampRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         let response = self
             .underlying
@@ -469,7 +483,7 @@ impl Metastore for MetastoreGrpcClient {
 
     async fn update_splits_delete_opstamp<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
         delete_opstamp: u64,
     ) -> MetastoreResult<()> {
@@ -478,9 +492,10 @@ impl Metastore for MetastoreGrpcClient {
             .map(|split_id| split_id.to_string())
             .collect();
         let request = UpdateSplitsDeleteOpstampRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
             split_ids: split_ids_vec,
             delete_opstamp,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         self.underlying
             .clone()
@@ -493,12 +508,13 @@ impl Metastore for MetastoreGrpcClient {
 
     async fn list_delete_tasks(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>> {
         let request = ListDeleteTasksRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
             opstamp_start,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         let response = self
             .underlying
@@ -517,14 +533,15 @@ impl Metastore for MetastoreGrpcClient {
 
     async fn list_stale_splits(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
         let request = ListStaleSplitsRequest {
-            index_id: index_id.to_string(),
+            index_id: index_uid.index_id,
             delete_opstamp,
             num_splits: num_splits as u64,
+            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         let response = self
             .underlying
@@ -613,7 +630,7 @@ mod tests {
 
     use super::grpc_adapter::GrpcMetastoreAdapter;
     use super::{IndexMetadata, Metastore, MetastoreError, MetastoreGrpcClient};
-    use crate::MockMetastore;
+    use crate::{IndexUid, MockMetastore};
 
     pub async fn create_duplex_stream_server_and_client(
         mock_metastore: Arc<dyn Metastore>,
@@ -814,7 +831,7 @@ mod tests {
     #[tokio::test]
     async fn test_grpc_metastore_service_index_metadata() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::new();
-        let index_id = "test-index";
+        let index_uid = IndexUid::for_test("test-index");
         metastore
             .expect_index_metadata()
             .return_once(|index_id: &str| {
@@ -826,16 +843,19 @@ mod tests {
             });
         metastore
             .expect_list_all_splits()
-            .return_once(|index_id: &str| {
-                assert_eq!(index_id, "test-index");
+            .return_once(|index_uid: IndexUid| {
+                assert_eq!(index_uid.index_id, "test-index");
                 Ok(Vec::new())
             });
         let metastore_client = create_duplex_stream_server_and_client(Arc::new(metastore))
             .await
             .unwrap();
 
-        metastore_client.index_metadata(index_id).await.unwrap();
-        metastore_client.list_all_splits(index_id).await.unwrap();
+        metastore_client
+            .index_metadata(&index_uid.index_id)
+            .await
+            .unwrap();
+        metastore_client.list_all_splits(index_uid).await.unwrap();
         Ok(())
     }
 }

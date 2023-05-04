@@ -3,6 +3,7 @@
     {
       "create_timestamp": 0,
       "delete_query": {
+        "incarnation_id": "11111111111111111111111111",
         "index_id": "index",
         "query": "Harry Potter",
         "search_fields": []
