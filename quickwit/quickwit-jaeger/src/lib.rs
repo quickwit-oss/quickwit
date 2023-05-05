@@ -664,7 +664,7 @@ fn build_aggregations_query(num_traces: usize) -> String {
 
 fn qw_span_to_jaeger_span(qw_span: &str) -> Result<JaegerSpan, Status> {
     let mut span: QwSpan = json_deserialize(qw_span, "span")?;
-    let trace_id = base64_decode(span.trace_id.as_bytes(), "trace ID")?;
+    let trace_id = span.trace_id.to_vec();
     let span_id = base64_decode(span.span_id.as_bytes(), "span ID")?;
 
     let start_time = Some(to_well_known_timestamp(span.span_start_timestamp_nanos));
@@ -898,7 +898,7 @@ fn otlp_links_to_jaeger_references(
     // "Span references generated from Link(s) MUST be added after the span reference generated from
     // Parent ID, if any."
     for link in links {
-        let trace_id = base64_decode(link.link_trace_id.as_bytes(), "link trace ID")?;
+        let trace_id = link.link_trace_id.to_vec();
         let span_id = base64_decode(link.link_span_id.as_bytes(), "link span ID")?;
         let reference = JaegerSpanRef {
             trace_id,
