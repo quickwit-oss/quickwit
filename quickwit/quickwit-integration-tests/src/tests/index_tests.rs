@@ -167,3 +167,57 @@ async fn test_restarting_standalone_server() {
 
     sandbox.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn test_shutdown() {
+    quickwit_common::setup_logging_for_tests();
+    let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
+    let index_id = "test_commit_modes_index";
+
+    // Create index
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(
+            r#"
+            version: 0.5
+            index_id: test_commit_modes_index
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+            "#
+            .into(),
+            quickwit_config::ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    // Ensure that the index is ready to accept records.
+    ingest_with_retry(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "one"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+
+    // Test force commit
+    sandbox
+        .indexer_rest_client
+        .ingest(
+            index_id,
+            ingest_json!({"body": "two"}),
+            None,
+            CommitType::Force,
+        )
+        .await
+        .unwrap();
+
+    // Clean up
+    tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown()).await.unwrap().unwrap();
+}
