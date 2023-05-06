@@ -219,5 +219,8 @@ async fn test_shutdown() {
         .unwrap();
 
     // Clean up
-    tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown()).await.unwrap().unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown())
+        .await
+        .unwrap()
+        .unwrap();
 }
