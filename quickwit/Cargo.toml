@@ -235,7 +235,7 @@ encoding_rs = "=0.8.29"
 
 # vrl deps, at the end because the feature list for vrl-stdlib is long
 value = { git = "https://github.com/vectordotdev/vrl", rev = "v0.2.0" }
-vrl = { git = "https://github.com/vectordotdev/vrl", rev = "v0.2.0" }
+vrl = { git = "https://github.com/vectordotdev/vrl", rev = "v0.3.0" }
 # opt out of vrl-stdlib parse-grok* default features
 vrl-stdlib = { git = "https://github.com/vectordotdev/vrl", rev = "v0.2.0", default-features = false, features = [
     "abs",
