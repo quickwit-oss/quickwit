@@ -14,7 +14,6 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 byte-unit = { workspace = true }
-clap = { workspace = true }
 elasticsearch-dsl = "0.4"
 futures = { workspace = true }
 futures-util = { workspace = true }

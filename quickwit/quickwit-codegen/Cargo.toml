@@ -17,15 +17,7 @@ prost = { workspace = true }
 prost-build = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }
-tonic = { workspace = true }
 tonic-build = { workspace = true }
 
 [dev-dependencies]
-async-trait = { workspace = true }
-dyn-clone = { workspace = true }
-mockall = { workspace = true }
 serde = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true }
-tower = { workspace = true }
-utoipa = { workspace = true }
