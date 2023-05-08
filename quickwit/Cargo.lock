@@ -1287,7 +1287,7 @@ checksum = "8d7439c3735f405729d52c3fbbe4de140eaf938a1fe47d227c27f8254d4302a5"
 [[package]]
 name = "datadog-filter"
 version = "0.1.0"
-source = "git+https://github.com/vectordotdev/vrl?rev=v0.2.0#258cc611080c1bdb5ed6897e8a79b76ab2038fcb"
+source = "git+https://github.com/vectordotdev/vrl?rev=v0.3.0#113005bcee6cd7b5ea0a53a7db2fc45ba4bc4125"
 dependencies = [
  "datadog-search-syntax",
  "dyn-clone",
@@ -1297,7 +1297,7 @@ dependencies = [
 [[package]]
 name = "datadog-search-syntax"
 version = "0.1.0"
-source = "git+https://github.com/vectordotdev/vrl?rev=v0.2.0#258cc611080c1bdb5ed6897e8a79b76ab2038fcb"
+source = "git+https://github.com/vectordotdev/vrl?rev=v0.3.0#113005bcee6cd7b5ea0a53a7db2fc45ba4bc4125"
 dependencies = [
  "itertools",
  "once_cell",
@@ -3413,6 +3413,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f746c4065a8fa3fe23974dd82f15431cc8d40779821001404d10d2e79ca7d79"
 
 [[package]]
+name = "path"
+version = "0.1.0"
+source = "git+https://github.com/vectordotdev/vrl?rev=v0.3.0#113005bcee6cd7b5ea0a53a7db2fc45ba4bc4125"
+dependencies = [
+ "once_cell",
+ "regex",
+ "serde",
+ "snafu",
+]
+
+[[package]]
 name = "pem"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4436,7 +4447,7 @@ dependencies = [
  "tracing",
  "ulid",
  "utoipa",
- "value",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
  "vrl",
  "vrl-stdlib",
 ]
@@ -7344,6 +7355,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "value"
+version = "0.1.0"
+source = "git+https://github.com/vectordotdev/vrl?rev=v0.3.0#113005bcee6cd7b5ea0a53a7db2fc45ba4bc4125"
+dependencies = [
+ "bytes",
+ "chrono",
+ "once_cell",
+ "ordered-float 3.7.0",
+ "path",
+ "regex",
+ "serde",
+ "serde_json",
+ "snafu",
+ "tracing",
+]
+
+[[package]]
 name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7370,11 +7398,11 @@ dependencies = [
  "indoc",
  "lookup",
  "ordered-float 3.7.0",
- "value",
- "vrl-compiler",
- "vrl-core",
- "vrl-diagnostic",
- "vrl-parser",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
+ "vrl-compiler 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
+ "vrl-core 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
+ "vrl-diagnostic 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
+ "vrl-parser 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
 ]
 
 [[package]]
@@ -7394,10 +7422,36 @@ dependencies = [
  "regex",
  "serde",
  "thiserror",
- "value",
- "vrl-core",
- "vrl-diagnostic",
- "vrl-parser",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
+ "vrl-core 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
+ "vrl-diagnostic 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
+ "vrl-parser 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
+]
+
+[[package]]
+name = "vrl-compiler"
+version = "0.1.0"
+source = "git+https://github.com/vectordotdev/vrl?rev=v0.3.0#113005bcee6cd7b5ea0a53a7db2fc45ba4bc4125"
+dependencies = [
+ "anymap",
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "dyn-clone",
+ "getrandom 0.2.9",
+ "indoc",
+ "lalrpop-util",
+ "ordered-float 3.7.0",
+ "paste",
+ "path",
+ "regex",
+ "serde",
+ "snafu",
+ "thiserror",
+ "tracing",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.3.0)",
+ "vrl-diagnostic 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.3.0)",
+ "vrl-parser 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.3.0)",
 ]
 
 [[package]]
@@ -7416,14 +7470,42 @@ dependencies = [
  "serde_json",
  "snafu",
  "tracing",
- "value",
- "vrl-diagnostic",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
+ "vrl-diagnostic 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
+]
+
+[[package]]
+name = "vrl-core"
+version = "0.1.0"
+source = "git+https://github.com/vectordotdev/vrl?rev=v0.3.0#113005bcee6cd7b5ea0a53a7db2fc45ba4bc4125"
+dependencies = [
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "derivative",
+ "nom",
+ "ordered-float 3.7.0",
+ "path",
+ "serde",
+ "serde_json",
+ "snafu",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.3.0)",
+ "vrl-diagnostic 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.3.0)",
 ]
 
 [[package]]
 name = "vrl-diagnostic"
 version = "0.1.0"
 source = "git+https://github.com/vectordotdev/vrl?rev=v0.2.0#258cc611080c1bdb5ed6897e8a79b76ab2038fcb"
+dependencies = [
+ "codespan-reporting",
+ "termcolor",
+]
+
+[[package]]
+name = "vrl-diagnostic"
+version = "0.1.0"
+source = "git+https://github.com/vectordotdev/vrl?rev=v0.3.0#113005bcee6cd7b5ea0a53a7db2fc45ba4bc4125"
 dependencies = [
  "codespan-reporting",
  "termcolor",
@@ -7440,13 +7522,27 @@ dependencies = [
  "ordered-float 3.7.0",
  "paste",
  "thiserror",
- "vrl-diagnostic",
+ "vrl-diagnostic 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
+]
+
+[[package]]
+name = "vrl-parser"
+version = "0.1.0"
+source = "git+https://github.com/vectordotdev/vrl?rev=v0.3.0#113005bcee6cd7b5ea0a53a7db2fc45ba4bc4125"
+dependencies = [
+ "lalrpop",
+ "lalrpop-util",
+ "ordered-float 3.7.0",
+ "paste",
+ "path",
+ "thiserror",
+ "vrl-diagnostic 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.3.0)",
 ]
 
 [[package]]
 name = "vrl-stdlib"
 version = "0.1.0"
-source = "git+https://github.com/vectordotdev/vrl?rev=v0.2.0#258cc611080c1bdb5ed6897e8a79b76ab2038fcb"
+source = "git+https://github.com/vectordotdev/vrl?rev=v0.3.0#113005bcee6cd7b5ea0a53a7db2fc45ba4bc4125"
 dependencies = [
  "aes",
  "base16",
@@ -7468,11 +7564,13 @@ dependencies = [
  "hmac 0.12.1",
  "hostname",
  "indexmap",
- "lookup",
+ "indoc",
  "md-5 0.10.5",
  "nom",
  "ofb",
  "once_cell",
+ "ordered-float 3.7.0",
+ "path",
  "percent-encoding",
  "quoted_printable",
  "rand 0.8.5",
@@ -7492,10 +7590,10 @@ dependencies = [
  "url",
  "utf8-width",
  "uuid",
- "value",
- "vrl",
- "vrl-core",
- "vrl-diagnostic",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.3.0)",
+ "vrl-compiler 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.3.0)",
+ "vrl-core 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.3.0)",
+ "vrl-diagnostic 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.3.0)",
  "woothee",
  "zstd 0.12.3+zstd.1.5.2",
 ]
