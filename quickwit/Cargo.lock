@@ -3413,6 +3413,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f746c4065a8fa3fe23974dd82f15431cc8d40779821001404d10d2e79ca7d79"
 
 [[package]]
+name = "path"
+version = "0.1.0"
+source = "git+https://github.com/vectordotdev/vrl?rev=v0.3.0#113005bcee6cd7b5ea0a53a7db2fc45ba4bc4125"
+dependencies = [
+ "once_cell",
+ "regex",
+ "serde",
+ "snafu",
+]
+
+[[package]]
 name = "pem"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4436,7 +4447,7 @@ dependencies = [
  "tracing",
  "ulid",
  "utoipa",
- "value",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.3.0)",
  "vrl",
  "vrl-stdlib",
 ]
@@ -7344,6 +7355,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "value"
+version = "0.1.0"
+source = "git+https://github.com/vectordotdev/vrl?rev=v0.3.0#113005bcee6cd7b5ea0a53a7db2fc45ba4bc4125"
+dependencies = [
+ "bytes",
+ "chrono",
+ "once_cell",
+ "ordered-float 3.7.0",
+ "path",
+ "regex",
+ "snafu",
+ "tracing",
+]
+
+[[package]]
 name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7370,7 +7396,7 @@ dependencies = [
  "indoc",
  "lookup",
  "ordered-float 3.7.0",
- "value",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
  "vrl-compiler",
  "vrl-core",
  "vrl-diagnostic",
@@ -7394,7 +7420,7 @@ dependencies = [
  "regex",
  "serde",
  "thiserror",
- "value",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
  "vrl-core",
  "vrl-diagnostic",
  "vrl-parser",
@@ -7416,7 +7442,7 @@ dependencies = [
  "serde_json",
  "snafu",
  "tracing",
- "value",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
  "vrl-diagnostic",
 ]
 
@@ -7492,7 +7518,7 @@ dependencies = [
  "url",
  "utf8-width",
  "uuid",
- "value",
+ "value 0.1.0 (git+https://github.com/vectordotdev/vrl?rev=v0.2.0)",
  "vrl",
  "vrl-core",
  "vrl-diagnostic",
