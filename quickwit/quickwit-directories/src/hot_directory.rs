@@ -23,7 +23,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
+use anyhow::{bail, Context};
 use async_trait::async_trait;
+use quickwit_storage::VersionedComponent;
 use serde::{Deserialize, Serialize};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, FileSlice, OwnedBytes};
@@ -31,6 +33,56 @@ use tantivy::error::DataCorruption;
 use tantivy::{Directory, HasLen, Index, IndexReader, ReloadPolicy, TantivyError};
 
 use crate::{CachingDirectory, DebugProxyDirectory};
+
+#[derive(Clone, Copy, Default)]
+#[repr(u32)]
+pub enum HotDirectoryVersions {
+    #[default]
+    V1 = 1,
+}
+
+impl VersionedComponent for HotDirectoryVersions {
+    const MAGIC_NUMBER: u32 = 2_557_869_106u32;
+    type Component = HotDirectoryMeta;
+
+    fn to_version_code(self) -> u32 {
+        self as u32
+    }
+
+    fn try_from_version_code_impl(code: u32) -> Option<Self> {
+        match code {
+            1u32 => Some(Self::V1),
+            _ => None,
+        }
+    }
+
+    fn deserialize_impl(&self, bytes: &mut OwnedBytes) -> anyhow::Result<HotDirectoryMeta> {
+        match self {
+            Self::V1 => {
+                if bytes.len() < 4 {
+                    bail!("Data too short (len={}).", bytes.len());
+                }
+                let len = bytes.read_u32() as usize;
+                let hot_directory_meta = postcard::from_bytes(&bytes.as_slice()[..len])
+                    .context("Failed to deserialize Hot Directory Meta")?;
+                bytes.advance(len);
+                Ok(hot_directory_meta)
+            }
+        }
+    }
+
+    fn serialize_impl(component: &Self::Component, output: &mut Vec<u8>) {
+        let buf = postcard::to_stdvec(component).unwrap();
+        output.extend_from_slice(&(buf.len() as u32).to_le_bytes());
+        output.extend_from_slice(&buf[..]);
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct HotDirectoryMeta {
+    file_lengths: HashMap<PathBuf, u64>,
+    slice_offsets: Vec<(PathBuf, u64)>,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct SliceCacheIndexEntry {
@@ -97,13 +149,6 @@ impl StaticDirectoryCacheBuilder {
 
     /// Flush needs to be called afterwards.
     pub fn write(self, wrt: &mut dyn io::Write) -> tantivy::Result<()> {
-        // Write format version
-        wrt.write_all(b"\x00")?;
-
-        let file_lengths_bytes = postcard::to_allocvec(&self.file_lengths).unwrap();
-        wrt.write_all(&(file_lengths_bytes.len() as u64).to_le_bytes())?;
-        wrt.write_all(&file_lengths_bytes[..])?;
-
         let mut data_buffer = Vec::new();
         let mut data_idx: Vec<(PathBuf, u64)> = Vec::new();
         let mut offset = 0u64;
@@ -113,21 +158,15 @@ impl StaticDirectoryCacheBuilder {
             offset += buf.len() as u64;
             data_buffer.extend_from_slice(&buf);
         }
-        let idx_bytes = postcard::to_allocvec(&data_idx).unwrap();
-        wrt.write_all(&(idx_bytes.len() as u64).to_le_bytes())?;
-        wrt.write_all(&idx_bytes[..])?;
-        wrt.write_all(&data_buffer[..])?;
-
+        let hot_directory_metas = HotDirectoryMeta {
+            file_lengths: self.file_lengths,
+            slice_offsets: data_idx,
+        };
+        let buffer = HotDirectoryVersions::serialize(&hot_directory_metas);
+        wrt.write_all(&buffer)?;
+        wrt.write_all(&data_buffer)?;
         Ok(())
     }
-}
-
-fn deserialize_postcard<T>(bytes: &mut OwnedBytes) -> postcard::Result<T>
-where T: serde::de::DeserializeOwned {
-    let len = bytes.read_u64();
-    let value = postcard::from_bytes(&bytes.as_slice()[..len as usize]);
-    bytes.advance(len as usize);
-    value
 }
 
 #[derive(Debug)]
@@ -137,22 +176,12 @@ struct StaticDirectoryCache {
 }
 
 impl StaticDirectoryCache {
-    pub fn open(mut bytes: OwnedBytes) -> tantivy::Result<StaticDirectoryCache> {
-        let format_version = bytes.read_u8();
-
-        if format_version != 0 {
-            return Err(tantivy::TantivyError::DataCorruption(
-                DataCorruption::comment_only(format!(
-                    "Format version not supported: `{format_version}`"
-                )),
-            ));
-        }
-
-        let file_lengths: HashMap<PathBuf, u64> = deserialize_postcard(&mut bytes).unwrap();
-
-        let mut slice_offsets: Vec<(PathBuf, u64)> = deserialize_postcard(&mut bytes).unwrap();
+    pub fn open(mut bytes: OwnedBytes) -> anyhow::Result<StaticDirectoryCache> {
+        let HotDirectoryMeta {
+            mut slice_offsets,
+            file_lengths,
+        } = HotDirectoryVersions::try_read_component(&mut bytes)?;
         slice_offsets.push((PathBuf::default(), bytes.len() as u64));
-
         let slices = slice_offsets
             .windows(2)
             .map(|slice_offsets_window| {
@@ -162,7 +191,6 @@ impl StaticDirectoryCache {
                 StaticSliceCache::open(bytes.slice(start..end)).map(|s| (path, Arc::new(s)))
             })
             .collect::<tantivy::Result<_>>()?;
-
         Ok(StaticDirectoryCache {
             file_lengths,
             slices,
@@ -339,7 +367,7 @@ impl HotDirectory {
     pub fn open<D: Directory>(
         underlying: D,
         hot_cache_bytes: OwnedBytes,
-    ) -> tantivy::Result<HotDirectory> {
+    ) -> anyhow::Result<HotDirectory> {
         let static_cache = StaticDirectoryCache::open(hot_cache_bytes)?;
         Ok(HotDirectory {
             inner: Arc::new(InnerHotDirectory {
@@ -351,7 +379,7 @@ impl HotDirectory {
     /// Get files and their cached sizes.
     pub fn get_stats_per_file(
         hot_cache_bytes: OwnedBytes,
-    ) -> tantivy::Result<Vec<(PathBuf, usize)>> {
+    ) -> anyhow::Result<Vec<(PathBuf, usize)>> {
         let static_cache = StaticDirectoryCache::open(hot_cache_bytes)?;
         Ok(static_cache.get_stats())
     }
@@ -524,7 +552,6 @@ pub fn write_hotcache<D: Directory>(
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]
@@ -653,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn test_slice_directory_cache() -> tantivy::Result<()> {
+    fn test_slice_directory_cache() {
         let one_path = Path::new("one.txt");
         let two_path = Path::new("two.txt");
         let three_path = Path::new("three.txt");
@@ -669,8 +696,8 @@ mod tests {
         directory_cache_builder.add_file(three_path, 300);
 
         let mut buffer = Vec::new();
-        directory_cache_builder.write(&mut buffer)?;
-        let directory_cache = StaticDirectoryCache::open(OwnedBytes::new(buffer))?;
+        directory_cache_builder.write(&mut buffer).unwrap();
+        let directory_cache = StaticDirectoryCache::open(OwnedBytes::new(buffer)).unwrap();
 
         assert_eq!(directory_cache.get_file_length(one_path), Some(100));
         assert_eq!(directory_cache.get_file_length(two_path), Some(200));
@@ -698,7 +725,5 @@ mod tests {
                 .as_ref(),
             b"name"
         );
-
-        Ok(())
     }
 }

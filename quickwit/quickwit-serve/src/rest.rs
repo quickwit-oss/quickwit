@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use futures::Future;
 use hyper::http::HeaderValue;
@@ -52,7 +53,7 @@ const MINIMUM_RESPONSE_COMPRESSION_SIZE: u16 = 10 << 10;
 /// Starts REST services.
 pub(crate) async fn start_rest_server<F>(
     rest_listen_addr: SocketAddr,
-    quickwit_services: &QuickwitServices,
+    quickwit_services: Arc<QuickwitServices>,
     shutdown_signal: F,
 ) -> anyhow::Result<()>
 where

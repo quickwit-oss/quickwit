@@ -23,7 +23,6 @@ use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
 use quickwit_common::FileEntry;
-use quickwit_config::TestableForRegression;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -174,7 +173,7 @@ impl From<&SplitMetadata> for FileEntry {
 }
 
 #[cfg(any(test, feature = "testsuite"))]
-impl TestableForRegression for SplitMetadata {
+impl quickwit_config::TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
         SplitMetadata {
             split_id: "split".to_string(),

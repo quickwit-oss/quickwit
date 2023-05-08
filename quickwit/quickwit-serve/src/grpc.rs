@@ -19,6 +19,7 @@
 
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use futures::Future;
 use quickwit_config::service::QuickwitService;
@@ -47,7 +48,7 @@ use crate::QuickwitServices;
 /// Starts gRPC services given a gRPC address.
 pub(crate) async fn start_grpc_server<F>(
     grpc_listen_addr: SocketAddr,
-    services: &QuickwitServices,
+    services: Arc<QuickwitServices>,
     shutdown_signal: F,
 ) -> anyhow::Result<()>
 where

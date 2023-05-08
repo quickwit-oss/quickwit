@@ -272,7 +272,7 @@ impl ClusterSandbox {
     }
 
     // Waits for the needed number of indexing pipeline to start.
-    pub async fn wait_for_published_splits(
+    pub async fn wait_for_splits(
         &self,
         index_id: &str,
         split_states: Option<Vec<SplitState>>,
@@ -294,7 +294,7 @@ impl ClusterSandbox {
                         Ok(result) => {
                             if result.len() != required_splits_num {
                                 debug!(
-                                    "wait_for_published_splits expected {} splits, got {}",
+                                    "wait_for_splits expected {} splits, got {}",
                                     required_splits_num,
                                     result.len()
                                 );
@@ -304,7 +304,7 @@ impl ClusterSandbox {
                             }
                         }
                         Err(err) => {
-                            debug!("wait_for_cluster_num_ready_nodes error {err}");
+                            debug!("wait_for_splits error {err}");
                             false
                         }
                     }
