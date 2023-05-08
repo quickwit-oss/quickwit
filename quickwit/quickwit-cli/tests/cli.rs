@@ -257,6 +257,58 @@ async fn test_ingest_docs_cli() {
     ));
 }
 
+/// Helper function to compare a json payload.
+///
+/// It will serialize and deserialize the value in order
+/// to make sure floating points are the exact value obtained via
+/// JSON deserialization.
+#[track_caller]
+fn assert_flexible_json_eq(value_json: &serde_json::Value, expected_json: &serde_json::Value) {
+    match (value_json, expected_json) {
+        (Value::Array(left_arr), Value::Array(right_arr)) => {
+            assert_eq!(
+                left_arr.len(),
+                right_arr.len(),
+                "left: {:?} right: {:?}",
+                left_arr,
+                right_arr
+            );
+            for i in 0..left_arr.len() {
+                assert_flexible_json_eq(&left_arr[i], &right_arr[i]);
+            }
+        }
+        (Value::Object(left_obj), Value::Object(right_obj)) => {
+            assert_eq!(
+                left_obj.len(),
+                right_obj.len(),
+                "left: {:?} right: {:?}",
+                left_obj,
+                right_obj
+            );
+            for (k, v) in left_obj {
+                if let Some(right_value) = right_obj.get(k) {
+                    assert_flexible_json_eq(v, right_value);
+                } else {
+                    panic!("Missing key `{k}`");
+                }
+            }
+        }
+        (Value::Number(left_num), Value::Number(right_num)) => {
+            let left = left_num.as_f64().unwrap();
+            let right = right_num.as_f64().unwrap();
+            assert!(
+                (left - right).abs() / (1e-32 + left + right).abs() < 1e-4,
+                "left: {:?} right: {:?}",
+                left,
+                right
+            );
+        }
+        (left, right) => {
+            assert_eq!(left, right);
+        }
+    }
+}
+
 #[tokio::test]
 async fn test_cmd_search_aggregation() {
     quickwit_common::setup_logging_for_tests();
@@ -275,10 +327,10 @@ async fn test_cmd_search_aggregation() {
         "range": {
           "field": "ts",
           "ranges": [
-            { "to": 72057597000000f64 },
-            { "from": 72057597000000f64, "to": 72057600000000f64 },
-            { "from": 72057600000000f64, "to": 72057604000000f64 },
-            { "from": 72057604000000f64 },
+            { "to": 72057597000000000f64 },
+            { "from": 72057597000000000f64, "to": 72057600000000000f64 },
+            { "from": 72057600000000000f64, "to": 72057604000000000f64 },
+            { "from": 72057604000000000f64 },
           ]
         },
         "aggs": {
@@ -306,56 +358,53 @@ async fn test_cmd_search_aggregation() {
     let search_response = search_index(args).await.unwrap();
 
     let aggregation_res = search_response.aggregations.unwrap();
-
-    assert_eq!(
-        aggregation_res,
-        json!({
-          "range_buckets": {
+    let expected_json = serde_json::json!({
+        "range_buckets": {
             "buckets": [
-              {
-                "key": "*-1972-04-13T23:59:57Z",
-                "doc_count": 0,
-                "average_ts": {
-                    "value": null,
+                {
+                    "average_ts": {
+                        "value": null
+                    },
+                    "doc_count": 0,
+                    "key": "*-1972-04-13T23:59:57Z",
+                    "to": 72057597000000000f64,
+                    "to_as_string": "1972-04-13T23:59:57Z"
                 },
-                "to": 72057597000000f64,
-                "to_as_string": "1972-04-13T23:59:57Z"
-              },
-              {
-                "key": "1972-04-13T23:59:57Z-1972-04-14T00:00:00Z",
-                "doc_count": 2,
-                "average_ts": {
-                  "value": 72057597500000f64,
+                {
+                    "average_ts": {
+                        "value": 72057597500000000f64
+                    },
+                    "doc_count": 2,
+                    "from": 72057597000000000f64,
+                    "from_as_string": "1972-04-13T23:59:57Z",
+                    "key": "1972-04-13T23:59:57Z-1972-04-14T00:00:00Z",
+                    "to": 72057600000000000f64,
+                    "to_as_string": "1972-04-14T00:00:00Z"
                 },
-                "from": 72057597000000f64,
-                "to": 72057600000000f64,
-                "from_as_string": "1972-04-13T23:59:57Z",
-                "to_as_string": "1972-04-14T00:00:00Z"
-              },
-              {
-                "key": "1972-04-14T00:00:00Z-1972-04-14T00:00:04Z",
-                "doc_count": 0,
-                "average_ts": {
-                  "value": null,
+                {
+                    "average_ts": {
+                        "value": null
+                    },
+                    "doc_count": 0,
+                    "from": 72057600000000000f64,
+                    "from_as_string": "1972-04-14T00:00:00Z",
+                    "key": "1972-04-14T00:00:00Z-1972-04-14T00:00:04Z",
+                    "to": 72057604000000000f64,
+                    "to_as_string": "1972-04-14T00:00:04Z"
                 },
-                "from": 72057600000000f64,
-                "to": 72057604000000f64,
-                "from_as_string": "1972-04-14T00:00:00Z",
-                "to_as_string": "1972-04-14T00:00:04Z"
-              },
-              {
-                "key": "1972-04-14T00:00:04Z-*",
-                "doc_count": 3,
-                "average_ts": {
-                  "value": 72057606333333.33f64,
-                },
-                "from": 72057604000000f64,
-                "from_as_string": "1972-04-14T00:00:04Z"
-              }
+                {
+                    "average_ts": {
+                        "value": 72057606333333330f64
+                    },
+                    "doc_count": 3,
+                    "from": 72057604000000000f64,
+                    "from_as_string": "1972-04-14T00:00:04Z",
+                    "key": "1972-04-14T00:00:04Z-*"
+                }
             ]
-          }
-        })
-    );
+        }
+    });
+    assert_flexible_json_eq(&aggregation_res, &expected_json);
 }
 
 #[tokio::test]
