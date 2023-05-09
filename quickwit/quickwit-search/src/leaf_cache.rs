@@ -17,11 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use prost::Message;
 use quickwit_proto::{LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets};
-use quickwit_storage::MemorySizedCache;
+use quickwit_storage::{MemorySizedCache, OwnedBytes};
 
+/// A cache to memoize `leaf_search_single_split` results.
 pub struct LeafSearchCache {
-    content: MemorySizedCache<CacheKey, LeafSearchResponse>,
+    content: MemorySizedCache<CacheKey>,
 }
 
 impl LeafSearchCache {
@@ -39,7 +41,9 @@ impl LeafSearchCache {
         search_request: SearchRequest,
     ) -> Option<LeafSearchResponse> {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
-        self.content.get(&key)
+        let encoded_result = self.content.get(&key)?;
+        // this should never fail
+        LeafSearchResponse::decode(&*encoded_result).ok()
     }
 
     pub fn put(
@@ -50,14 +54,20 @@ impl LeafSearchCache {
     ) {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
 
-        self.content.put(key, result);
+        let encoded_result = result.encode_to_vec();
+        self.content.put(key, OwnedBytes::new(encoded_result));
     }
 }
 
+/// A key inside a [`LeafSearchCache`].
 #[derive(Debug, Hash, PartialEq, Eq)]
 struct CacheKey {
+    /// The split this entry refers to
     split_id: String,
+    /// The request this matches. The timerange of the request was removed.
     request: SearchRequest,
+    /// The effective time range of the request, that is, the intersection of the timerange
+    /// requested, and the timerange covered by the split.
     request_time_range: Range,
 }
 

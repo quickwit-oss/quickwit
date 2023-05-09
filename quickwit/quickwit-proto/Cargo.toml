@@ -19,7 +19,6 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tantivy = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
 

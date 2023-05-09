@@ -17,25 +17,27 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use tantivy::HasLen;
+use tantivy::directory::OwnedBytes;
 use tokio::time::Instant;
 
 /// It is a bit overkill to put this in its own module, but I
 /// wanted to ensure that no one would access payload without updating `last_access_time`.
-pub(super) struct StoredItem<T> {
+pub(super) struct StoredItem {
     last_access_time: Instant,
-    payload: T,
+    payload: OwnedBytes,
 }
 
-impl<T: Clone + HasLen> StoredItem<T> {
-    pub fn new(payload: T, now: Instant) -> Self {
+impl StoredItem {
+    pub fn new(payload: OwnedBytes, now: Instant) -> Self {
         StoredItem {
             last_access_time: now,
             payload,
         }
     }
+}
 
-    pub fn payload(&mut self) -> T {
+impl StoredItem {
+    pub fn payload(&mut self) -> OwnedBytes {
         self.last_access_time = Instant::now();
         self.payload.clone()
     }

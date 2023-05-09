@@ -25,7 +25,6 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use lru::LruCache;
-use tantivy::HasLen;
 use tokio::time::Instant;
 use tracing::{error, warn};
 
@@ -65,15 +64,15 @@ impl Capacity {
     }
 }
 
-struct NeedMutMemorySizedCache<K: Hash + Eq, V> {
-    lru_cache: LruCache<K, StoredItem<V>>,
+struct NeedMutMemorySizedCache<K: Hash + Eq> {
+    lru_cache: LruCache<K, StoredItem>,
     num_items: usize,
     num_bytes: u64,
     capacity: Capacity,
     cache_counters: &'static CacheMetrics,
 }
 
-impl<K: Hash + Eq, V> Drop for NeedMutMemorySizedCache<K, V> {
+impl<K: Hash + Eq> Drop for NeedMutMemorySizedCache<K> {
     fn drop(&mut self) {
         self.cache_counters
             .in_cache_count
@@ -84,7 +83,7 @@ impl<K: Hash + Eq, V> Drop for NeedMutMemorySizedCache<K, V> {
     }
 }
 
-impl<K: Hash + Eq, V: HasLen + Clone> NeedMutMemorySizedCache<K, V> {
+impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     /// Creates a new NeedMutSliceCache with the given capacity.
     fn with_capacity(capacity: Capacity, cache_counters: &'static CacheMetrics) -> Self {
         NeedMutMemorySizedCache {
@@ -113,7 +112,7 @@ impl<K: Hash + Eq, V: HasLen + Clone> NeedMutMemorySizedCache<K, V> {
         self.cache_counters.in_cache_num_bytes.sub(num_bytes as i64);
     }
 
-    pub fn get<Q>(&mut self, cache_key: &Q) -> Option<V>
+    pub fn get<Q>(&mut self, cache_key: &Q) -> Option<OwnedBytes>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -132,7 +131,7 @@ impl<K: Hash + Eq, V: HasLen + Clone> NeedMutMemorySizedCache<K, V> {
     /// Attempt to put the given amount of data in the cache.
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
-    fn put(&mut self, key: K, bytes: V) {
+    fn put(&mut self, key: K, bytes: OwnedBytes) {
         if self.capacity.exceeds_capacity(bytes.len()) {
             // The value does not fit in the cache. We simply don't store it.
             if self.capacity != Capacity::InBytes(0) {
@@ -180,11 +179,11 @@ impl<K: Hash + Eq, V: HasLen + Clone> NeedMutMemorySizedCache<K, V> {
 }
 
 /// A simple in-resident memory slice cache.
-pub struct MemorySizedCache<K: Hash + Eq = SliceAddress, V = OwnedBytes> {
-    inner: Mutex<NeedMutMemorySizedCache<K, V>>,
+pub struct MemorySizedCache<K: Hash + Eq = SliceAddress> {
+    inner: Mutex<NeedMutMemorySizedCache<K>>,
 }
 
-impl<K: Hash + Eq, V: HasLen + Clone> MemorySizedCache<K, V> {
+impl<K: Hash + Eq> MemorySizedCache<K> {
     /// Creates an slice cache with the given capacity.
     pub fn with_capacity_in_bytes(
         capacity_in_bytes: usize,
@@ -209,7 +208,7 @@ impl<K: Hash + Eq, V: HasLen + Clone> MemorySizedCache<K, V> {
     }
 
     /// If available, returns the cached view of the slice.
-    pub fn get<Q>(&self, cache_key: &Q) -> Option<V>
+    pub fn get<Q>(&self, cache_key: &Q) -> Option<OwnedBytes>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -220,7 +219,7 @@ impl<K: Hash + Eq, V: HasLen + Clone> MemorySizedCache<K, V> {
     /// Attempt to put the given amount of data in the cache.
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
-    pub fn put(&self, val: K, bytes: V) {
+    pub fn put(&self, val: K, bytes: OwnedBytes) {
         self.inner.lock().unwrap().put(val, bytes);
     }
 }
