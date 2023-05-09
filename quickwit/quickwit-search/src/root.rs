@@ -116,8 +116,11 @@ impl From<FetchDocsJob> for SplitIdAndFooterOffsets {
 
 pub(crate) fn validate_request(search_request: &SearchRequest) -> crate::Result<()> {
     if let Some(agg) = search_request.aggregation_request.as_ref() {
-        let _aggs: QuickwitAggregations = serde_json::from_str(agg)
-            .map_err(|err| SearchError::InvalidAggregationRequest(err.to_string()))?;
+        let _aggs: QuickwitAggregations = serde_json::from_str(agg).map_err(|_err| {
+            let err = serde_json::from_str::<tantivy::aggregation::agg_req::Aggregations>(agg)
+                .unwrap_err();
+            SearchError::InvalidAggregationRequest(err.to_string())
+        })?;
     };
 
     if search_request.start_offset > 10_000 {
@@ -1518,8 +1521,8 @@ mod tests {
         assert!(search_response.is_err());
         assert_eq!(
             search_response.unwrap_err().to_string(),
-            "Invalid aggregation request: data did not match any variant of untagged enum \
-             QuickwitAggregations",
+            "Invalid aggregation request: no variant of enum AggregationVariants found in \
+             flattened data at line 17 column 17"
         );
         Ok(())
     }
