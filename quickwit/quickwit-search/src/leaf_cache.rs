@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::ops::Bound;
+
 use prost::Message;
 use quickwit_proto::{LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets};
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
@@ -68,7 +70,7 @@ struct CacheKey {
     request: SearchRequest,
     /// The effective time range of the request, that is, the intersection of the timerange
     /// requested, and the timerange covered by the split.
-    request_time_range: Range,
+    merged_time_range: Range,
 }
 
 impl CacheKey {
@@ -76,15 +78,9 @@ impl CacheKey {
         split_info: SplitIdAndFooterOffsets,
         mut search_request: SearchRequest,
     ) -> Self {
-        let split_time_range = Range {
-            start: split_info.timestamp_start,
-            end: split_info.timestamp_end,
-        };
-        let request_time_range = Range {
-            start: search_request.start_timestamp,
-            end: search_request.end_timestamp,
-        }
-        .crop(&split_time_range);
+        let split_time_range = Range::from_bounds(split_info.time_range());
+        let request_time_range = Range::from_bounds(search_request.time_range());
+        let merged_time_range = request_time_range.intersect(&split_time_range).normalize();
 
         search_request.start_timestamp = None;
         search_request.end_timestamp = None;
@@ -92,11 +88,12 @@ impl CacheKey {
         CacheKey {
             split_id: split_info.split_id,
             request: search_request,
-            request_time_range,
+            merged_time_range,
         }
     }
 }
 
+/// A (half-open) range bounded inclusively below and exclusively above (start..end).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Range {
     start: Option<i64>,
@@ -104,7 +101,51 @@ struct Range {
 }
 
 impl Range {
-    fn crop(&self, other: &Range) -> Range {
+    /// Create a Range from bounds.
+    fn from_bounds(range: impl std::ops::RangeBounds<i64>) -> Self {
+        let empty_range = Range {
+            start: Some(0),
+            end: Some(0),
+        };
+
+        let start = match range.start_bound() {
+            Bound::Included(start) => Some(*start),
+            Bound::Excluded(start) => {
+                // if we exclude i64::MAX from the start bound, the range is necessarily empty
+                if let Some(start) = start.checked_add(1) {
+                    Some(start)
+                } else {
+                    return empty_range;
+                }
+            }
+            Bound::Unbounded => None,
+        };
+        let end = match range.end_bound() {
+            // if we include i64::MAX at the end bound, this is essentially boundless
+            Bound::Included(end) => end.checked_add(1),
+            Bound::Excluded(end) => Some(*end),
+            Bound::Unbounded => None,
+        };
+
+        Range { start, end }
+    }
+
+    /// Normalize empty ranges to be 0..0
+    fn normalize(self) -> Range {
+        match self {
+            Range {
+                start: Some(start),
+                end: Some(end),
+            } if start >= end => Range {
+                start: Some(0),
+                end: Some(0),
+            },
+            any => any,
+        }
+    }
+
+    /// Return the intersection of self and other.
+    fn intersect(&self, other: &Range) -> Range {
         let start = match (self.start, other.start) {
             (Some(this), Some(other)) => Some(this.max(other)),
             (Some(this), None) => Some(this),
@@ -117,6 +158,18 @@ impl Range {
             (None, other) => other,
         };
         Range { start, end }
+    }
+}
+
+impl std::ops::RangeBounds<i64> for Range {
+    fn start_bound(&self) -> Bound<&i64> {
+        self.start
+            .as_ref()
+            .map_or(Bound::Unbounded, Bound::Included)
+    }
+
+    fn end_bound(&self) -> Bound<&i64> {
+        self.end.as_ref().map_or(Bound::Unbounded, Bound::Excluded)
     }
 }
 
@@ -198,21 +251,21 @@ mod tests {
             split_footer_start: 0,
             split_footer_end: 100,
             timestamp_start: Some(100),
-            timestamp_end: Some(200),
+            timestamp_end: Some(199),
         };
         let split_2 = SplitIdAndFooterOffsets {
             split_id: "split_2".to_string(),
             split_footer_start: 0,
             split_footer_end: 100,
             timestamp_start: Some(150),
-            timestamp_end: Some(250),
+            timestamp_end: Some(249),
         };
         let split_3 = SplitIdAndFooterOffsets {
             split_id: "split_3".to_string(),
             split_footer_start: 0,
             split_footer_end: 100,
             timestamp_start: Some(150),
-            timestamp_end: Some(250),
+            timestamp_end: Some(249),
         };
 
         let query_1 = SearchRequest {
