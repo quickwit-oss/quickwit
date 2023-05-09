@@ -222,7 +222,7 @@ quickwit-serve = { version = "0.5.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.5.0", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.5.0", path = "./quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c599bf3", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "45ff0e3", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
@@ -237,7 +237,7 @@ encoding_rs = "=0.8.29"
 value = { git = "https://github.com/vectordotdev/vrl", rev = "v0.2.0" }
 vrl = { git = "https://github.com/vectordotdev/vrl", rev = "v0.2.0" }
 # opt out of vrl-stdlib parse-grok* default features
-vrl-stdlib = { git = "https://github.com/vectordotdev/vrl", rev = "v0.2.0", default-features = false, features = [ 
+vrl-stdlib = { git = "https://github.com/vectordotdev/vrl", rev = "v0.2.0", default-features = false, features = [
     "abs",
     "append",
     "array",
@@ -391,7 +391,7 @@ vrl-stdlib = { git = "https://github.com/vectordotdev/vrl", rev = "v0.2.0", defa
     "upcase",
     "uuid_v4",
     "values"
-]} 
+]}
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921" }
