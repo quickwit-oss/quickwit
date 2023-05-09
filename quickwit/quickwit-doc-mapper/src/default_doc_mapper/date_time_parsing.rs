@@ -121,7 +121,7 @@ fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
             Ok(TantivyDateTime::from_timestamp_micros(timestamp))
         }
         MIN_TIMESTAMP_NANOS..=MAX_TIMESTAMP_NANOS => {
-            Ok(TantivyDateTime::from_timestamp_micros(timestamp / 1_000))
+            Ok(TantivyDateTime::from_timestamp_nanos(timestamp))
         }
         _ => Err(format!(
             "Failed to parse unix timestamp `{timestamp}`. Quickwit only support timestamp values \
@@ -190,7 +190,7 @@ mod tests {
             let parser = StrptimeParser::from_str(fmt).unwrap();
             let result = parser.parse_date_time(date_time_str);
             if let Err(error) = &result {
-                println!("Failed to parse: {date_time_str} {fmt} {error}")
+                panic!("Failed to parse: {date_time_str} {fmt} {error}")
             }
             assert_eq!(result.unwrap(), expected);
         }
@@ -328,7 +328,7 @@ mod tests {
         {
             let unix_ts_nanos = now.unix_timestamp_nanos() as i64;
             let date_time = parse_timestamp(unix_ts_nanos).unwrap();
-            assert_eq!(date_time.into_timestamp_micros(), unix_ts_nanos / 1_000);
+            assert_eq!(date_time.into_timestamp_nanos(), unix_ts_nanos);
         }
         {
             let min_supported_date =
