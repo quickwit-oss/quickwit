@@ -26,7 +26,6 @@ mod serialize;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use itertools::Itertools;
 use quickwit_common::PrettySample;
 use quickwit_config::SourceConfig;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
@@ -209,7 +208,7 @@ impl FileBackedIndex {
         deletable_states: &[SplitState],
         return_error_on_splits_not_found: bool,
     ) -> MetastoreResult<bool> {
-        let mut is_modified = false;
+        let mut mutation_occurred = false;
         let mut split_not_found_ids = Vec::new();
         let mut non_deletable_split_ids = Vec::new();
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
@@ -234,7 +233,7 @@ impl FileBackedIndex {
 
             metadata.split_state = SplitState::MarkedForDeletion;
             metadata.update_timestamp = now_timestamp;
-            is_modified = true;
+            mutation_occurred = true;
         }
         if !split_not_found_ids.is_empty() {
             if return_error_on_splits_not_found {
@@ -255,7 +254,7 @@ impl FileBackedIndex {
                 split_ids: non_deletable_split_ids,
             });
         }
-        Ok(is_modified)
+        Ok(mutation_occurred)
     }
 
     /// Helper to mark a list of splits as published.
@@ -440,7 +439,7 @@ impl FileBackedIndex {
             .iter()
             .filter(|delete_task| delete_task.opstamp > opstamp_start)
             .cloned()
-            .collect_vec();
+            .collect();
         Ok(delete_tasks)
     }
 }

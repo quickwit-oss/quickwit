@@ -511,8 +511,8 @@ mod test {
             Vec::new(),
             None,
             TestExpectation::Ok(
-                "RangeQuery { field: \"ip\", value_type: IpAddr, left_bound: Included([0, 0, 0, \
-                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), right_bound: Included([0, 0, 0, \
+                "RangeQuery { field: \"ip\", value_type: IpAddr, lower_bound: Included([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), upper_bound: Included([0, 0, 0, \
                  0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 1, 1, 1])",
             ),
         );
@@ -521,8 +521,8 @@ mod test {
             Vec::new(),
             None,
             TestExpectation::Ok(
-                "RangeQuery { field: \"ip\", value_type: IpAddr, left_bound: Excluded([0, 0, 0, \
-                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), right_bound: Unbounded",
+                "RangeQuery { field: \"ip\", value_type: IpAddr, lower_bound: Excluded([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), upper_bound: Unbounded",
             ),
         );
     }
@@ -582,8 +582,8 @@ mod test {
             Vec::new(),
             None,
             TestExpectation::Ok(
-                "RangeQuery { field: \"ips\", value_type: IpAddr, left_bound: Included([0, 0, 0, \
-                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), right_bound: Included([0, 0, 0, \
+                "RangeQuery { field: \"ips\", value_type: IpAddr, lower_bound: Included([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), upper_bound: Included([0, 0, 0, \
                  0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 1, 1, 1])",
             ),
         );

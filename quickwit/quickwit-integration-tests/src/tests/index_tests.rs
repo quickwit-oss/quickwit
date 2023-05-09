@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::Duration;
+
 use bytes::Bytes;
 use quickwit_metastore::SplitState;
 use quickwit_rest_client::rest_client::CommitType;
@@ -157,7 +159,7 @@ async fn test_restarting_standalone_server() {
     // Wait for splits to merge, since we created 3 splits and merge factor is 3,
     // we should get 1 published split with no staged splits eventually.
     sandbox
-        .wait_for_published_splits(
+        .wait_for_splits(
             index_id,
             Some(vec![SplitState::Published, SplitState::Staged]),
             1,
@@ -165,5 +167,142 @@ async fn test_restarting_standalone_server() {
         .await
         .unwrap();
 
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_commit_modes() {
+    quickwit_common::setup_logging_for_tests();
+    let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
+    let index_id = "test_commit_modes_index";
+
+    // Create index
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(
+            r#"
+            version: 0.5
+            index_id: test_commit_modes_index
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+              merge_policy:
+                type: stable_log
+                merge_factor: 4
+                max_merge_factor: 4
+
+            "#
+            .into(),
+            quickwit_config::ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    // Test force commit
+    ingest_with_retry(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "force"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        sandbox
+            .searcher_rest_client
+            .search(
+                index_id,
+                SearchRequestQueryString {
+                    query: "body:force".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .num_hits,
+        1
+    );
+
+    // Test wait_for commit
+    sandbox
+        .indexer_rest_client
+        .ingest(
+            index_id,
+            ingest_json!({"body": "wait"}),
+            None,
+            CommitType::WaitFor,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        sandbox
+            .searcher_rest_client
+            .search(
+                index_id,
+                SearchRequestQueryString {
+                    query: "body:wait".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .num_hits,
+        1
+    );
+
+    // Test auto commit
+    sandbox
+        .indexer_rest_client
+        .ingest(
+            index_id,
+            ingest_json!({"body": "auto"}),
+            None,
+            CommitType::Auto,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        sandbox
+            .searcher_rest_client
+            .search(
+                index_id,
+                SearchRequestQueryString {
+                    query: "body:auto".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .num_hits,
+        0
+    );
+
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    assert_eq!(
+        sandbox
+            .searcher_rest_client
+            .search(
+                index_id,
+                SearchRequestQueryString {
+                    query: "body:auto".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .num_hits,
+        1
+    );
+
+    // Clean up
     sandbox.shutdown().await.unwrap();
 }
