@@ -5226,6 +5226,7 @@ dependencies = [
  "quickwit-query",
  "quickwit-search",
  "quickwit-storage",
+ "quickwit-telemetry",
  "rand 0.8.5",
  "regex",
  "rust-embed",

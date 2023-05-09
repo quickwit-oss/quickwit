@@ -34,6 +34,10 @@ use crate::sink::{HttpClient, Sink};
 /// At most 1 Request per minutes.
 const TELEMETRY_PUSH_COOLDOWN: Duration = Duration::from_secs(60);
 
+/// Interval at which to send telemetry uptime event.
+const TELEMETRY_UPTIME_INTERVAL: Duration =
+    Duration::from_secs(if cfg!(test) { 3 } else { 60 * 60 * 12 }); // 12h
+
 /// Upon termination of the program, we send one last telemetry request with pending events.
 /// This duration is the amount of time we wait for at most to send that last telemetry request.
 const LAST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
@@ -251,6 +255,7 @@ impl TelemetrySender {
 
         let inner = self.inner.clone();
         let join_handle = tokio::task::spawn(async move {
+            start_uptime_monitor_task(inner.clone());
             // This channel is used to send the command to terminate telemetry.
             loop {
                 let quit_loop = tokio::select! {
@@ -277,6 +282,18 @@ impl TelemetrySender {
 /// Check to see if telemetry is enabled.
 pub fn is_telemetry_enabled() -> bool {
     std::env::var_os(crate::DISABLE_TELEMETRY_ENV_KEY).is_none()
+}
+
+fn start_uptime_monitor_task(telemetry_sender: Arc<Inner>) {
+    let mut clock = tokio::time::interval(TELEMETRY_UPTIME_INTERVAL);
+    tokio::spawn(async move {
+        // Drop the first immediate tick.
+        clock.tick().await;
+        loop {
+            clock.tick().await;
+            telemetry_sender.send(TelemetryEvent::UptimeCheckIn).await;
+        }
+    });
 }
 
 fn create_http_client() -> Option<HttpClient> {
@@ -348,6 +365,27 @@ mod tests {
         {
             let payload = rx.recv().await.unwrap();
             assert_eq!(payload.events.len(), 1);
+        }
+        loop_handler.terminate_telemetry().await;
+    }
+
+    #[tokio::test]
+    async fn test_telemetry_uptime_events() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (clock_btn, clock) = Clock::manual().await;
+        let telemetry_sender = TelemetrySender::new(Some(tx), clock);
+        let loop_handler = telemetry_sender.start_loop();
+        telemetry_sender.send(TelemetryEvent::Create).await;
+        {
+            let payload = rx.recv().await.unwrap();
+            assert_eq!(payload.events.len(), 1);
+        }
+        clock_btn.tick().await;
+        tokio::time::sleep(TELEMETRY_UPTIME_INTERVAL + Duration::from_secs(1)).await;
+        {
+            let payload = rx.recv().await.unwrap();
+            assert_eq!(payload.events.len(), 1);
+            assert_eq!(payload.events[0].event, TelemetryEvent::UptimeCheckIn);
         }
         loop_handler.terminate_telemetry().await;
     }

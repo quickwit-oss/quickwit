@@ -283,7 +283,6 @@ impl ToolCliCommand {
 pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<()> {
     debug!(args=?args, "local-ingest-docs");
     println!("❯ Ingesting documents locally...");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
 
     let config = load_quickwit_config(&args.config_uri).await?;
 

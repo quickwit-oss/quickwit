@@ -62,7 +62,7 @@ impl From<TelemetryEvent> for EventWithTimestamp {
 }
 
 /// Represents a Telemetry Event send to Quickwit's server for usage information.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TelemetryEvent {
     /// Create command is called.
     Create,
@@ -76,6 +76,10 @@ pub enum TelemetryEvent {
     RunService(String),
     /// EndCommand (with the return code)
     EndCommand { return_code: i32 },
+    /// Uptime timer has elapsed.
+    UptimeCheckIn,
+    /// UI home page was loaded.
+    UiVisited,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
