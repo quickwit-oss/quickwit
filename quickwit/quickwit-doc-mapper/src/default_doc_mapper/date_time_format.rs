@@ -133,12 +133,9 @@ const STRFTIME_FORMAT_MARKERS: [&str; 36] = [
 
 // Checks if a format contains `strftime` special characters.
 fn is_strftime_formatting(format_str: &str) -> bool {
-    for marker in STRFTIME_FORMAT_MARKERS.iter() {
-        if format_str.contains(marker) {
-            return true;
-        }
-    }
-    false
+    STRFTIME_FORMAT_MARKERS
+        .iter()
+        .any(|marker| format_str.contains(marker))
 }
 
 /// Specifies the datetime and unix timestamp formats to use when parsing date strings.
@@ -220,6 +217,7 @@ pub enum DateTimeOutputFormat {
     TimestampSecs,
     TimestampMillis,
     TimestampMicros,
+    TimestampNanos,
 }
 
 impl DateTimeOutputFormat {
@@ -232,6 +230,7 @@ impl DateTimeOutputFormat {
             DateTimeOutputFormat::TimestampSecs => "unix_timestamp_secs",
             DateTimeOutputFormat::TimestampMillis => "unix_timestamp_millis",
             DateTimeOutputFormat::TimestampMicros => "unix_timestamp_micros",
+            DateTimeOutputFormat::TimestampNanos => "unix_timestamp_nanos",
         }
     }
 }
@@ -253,6 +252,7 @@ impl FromStr for DateTimeOutputFormat {
             "unix_timestamp_secs" => DateTimeOutputFormat::TimestampSecs,
             "unix_timestamp_millis" => DateTimeOutputFormat::TimestampMillis,
             "unix_timestamp_micros" => DateTimeOutputFormat::TimestampMicros,
+            "unix_timestamp_nanos" => DateTimeOutputFormat::TimestampNanos,
             _ => {
                 if !is_strftime_formatting(date_time_format_str) {
                     return Err(format!(
@@ -332,6 +332,7 @@ mod tests {
             DateTimeOutputFormat::TimestampSecs,
             DateTimeOutputFormat::TimestampMillis,
             DateTimeOutputFormat::TimestampMicros,
+            DateTimeOutputFormat::TimestampNanos,
         ])
         .unwrap();
 
@@ -342,6 +343,7 @@ mod tests {
             "unix_timestamp_secs",
             "unix_timestamp_millis",
             "unix_timestamp_micros",
+            "unix_timestamp_nanos",
         ]);
         assert_eq!(date_time_formats_json, expected_date_time_formats);
     }
@@ -355,7 +357,8 @@ mod tests {
                 "rfc3339",
                 "unix_timestamp_secs",
                 "unix_timestamp_millis",
-                "unix_timestamp_micros"
+                "unix_timestamp_micros",
+                "unix_timestamp_nanos"
             ]
             "#;
         let date_time_formats: Vec<DateTimeOutputFormat> =
@@ -367,6 +370,7 @@ mod tests {
             DateTimeOutputFormat::TimestampSecs,
             DateTimeOutputFormat::TimestampMillis,
             DateTimeOutputFormat::TimestampMicros,
+            DateTimeOutputFormat::TimestampNanos,
         ];
         assert_eq!(date_time_formats, &expected_date_time_formats);
     }
