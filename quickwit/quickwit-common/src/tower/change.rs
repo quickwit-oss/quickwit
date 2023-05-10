@@ -17,24 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::net::SocketAddr;
-
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-
-/// Cluster error kinds.
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum ClusterError {
-    /// Port binding error.
-    #[error(
-        "Failed to bind to UDP socket addr `{listen_addr}` for the gossip membership protocol: \
-         `{cause}`"
-    )]
-    UDPPortBindingError {
-        /// Port number.
-        listen_addr: SocketAddr,
-        /// Underlying error message.
-        cause: String,
-    },
+/// A change enum similar to `tower::discover::Change` but cloneable.
+// TODO: Remove when the next version of tower (0.4.14?) is released.
+#[derive(Debug, Clone)]
+pub enum Change<K, V> {
+    Insert(K, V),
+    Remove(K),
 }
-pub type ClusterResult<T> = Result<T, ClusterError>;

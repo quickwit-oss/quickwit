@@ -96,12 +96,12 @@ impl<T: ServiceClient> ServiceClientPool<T> {
     /// When the pool is created, the thread that monitors cluster members
     /// is started at the same time.
     pub async fn create_and_update_members(
-        mut members_watch_channel: WatchStream<Vec<ClusterMember>>,
+        mut ready_members_watcher: WatchStream<Vec<ClusterMember>>,
     ) -> anyhow::Result<Self> {
         let pool = ServiceClientPool::default();
         let pool_clone = pool.clone();
         tokio::spawn(async move {
-            while let Some(new_members) = members_watch_channel.next().await {
+            while let Some(new_members) = ready_members_watcher.next().await {
                 let mut new_clients = pool_clone.all();
                 update_client_map::<T>(&new_members, &mut new_clients).await;
                 pool_clone.set(new_clients).await;
@@ -220,15 +220,17 @@ mod tests {
         let searcher_2_grpc_addr: SocketAddr = ([127, 0, 0, 1], 12).into();
         let metastore_service_member = ClusterMember::new(
             "0".to_string(),
-            0,
+            0.into(),
+            true,
             HashSet::from([QuickwitService::Metastore]),
             metastore_grpc_addr,
             metastore_grpc_addr,
             Vec::new(),
         );
         let searcher_1_member = ClusterMember::new(
-            "2".to_string(),
-            0,
+            "1".to_string(),
+            0.into(),
+            true,
             HashSet::from([QuickwitService::Searcher]),
             searcher_1_grpc_addr,
             searcher_1_grpc_addr,
@@ -236,7 +238,8 @@ mod tests {
         );
         let searcher_2_member = ClusterMember::new(
             "2".to_string(),
-            0,
+            0.into(),
+            true,
             HashSet::from([QuickwitService::Searcher]),
             searcher_2_grpc_addr,
             searcher_2_grpc_addr,

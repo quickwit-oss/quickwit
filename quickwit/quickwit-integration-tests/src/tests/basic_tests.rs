@@ -153,7 +153,7 @@ async fn test_multi_nodes_cluster() {
     let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
         .await
         .unwrap();
-    sandbox.wait_for_cluster_num_ready_nodes(4).await.unwrap();
+    sandbox.wait_for_cluster_num_ready_nodes(5).await.unwrap();
 
     {
         // Wait for indexer to fully start.

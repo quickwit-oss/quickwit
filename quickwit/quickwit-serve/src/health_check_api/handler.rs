@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
-
 use quickwit_actors::{Healthz, Mailbox};
 use quickwit_cluster::Cluster;
 use quickwit_indexing::IndexingService;
@@ -36,7 +34,7 @@ pub struct HealthCheckApi;
 
 /// Health check handlers.
 pub(crate) fn health_check_handlers(
-    cluster: Arc<Cluster>,
+    cluster: Cluster,
     indexer_service_opt: Option<Mailbox<IndexingService>>,
     janitor_service_opt: Option<Mailbox<JanitorService>>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -55,7 +53,7 @@ fn liveness_handler(
 }
 
 fn readiness_handler(
-    cluster: Arc<Cluster>,
+    cluster: Cluster,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("health" / "readyz")
         .and(warp::get())
@@ -109,7 +107,7 @@ async fn get_liveness(
     ),
 )]
 /// Get Node Readiness
-async fn get_readiness(cluster: Arc<Cluster>) -> impl warp::Reply {
+async fn get_readiness(cluster: Cluster) -> impl warp::Reply {
     let is_ready = cluster.is_self_node_ready().await;
     let status_code = if is_ready {
         StatusCode::OK
@@ -121,7 +119,6 @@ async fn get_readiness(cluster: Arc<Cluster>) -> impl warp::Reply {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use chitchat::transport::ChannelTransport;
     use quickwit_cluster::create_cluster_for_test;
@@ -129,11 +126,9 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_api_health_checks() {
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &[], &transport, false)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
         let health_check_handler = super::health_check_handlers(cluster.clone(), None, None);
         let resp = warp::test::request()
             .path("/health/livez")
@@ -145,7 +140,7 @@ mod tests {
             .reply(&health_check_handler)
             .await;
         assert_eq!(resp.status(), 503);
-        cluster.set_self_node_ready(true).await;
+        cluster.set_self_node_readiness(true).await;
         let resp = warp::test::request()
             .path("/health/readyz")
             .reply(&health_check_handler)

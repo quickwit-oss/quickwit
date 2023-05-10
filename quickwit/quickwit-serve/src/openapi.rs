@@ -161,11 +161,11 @@ mod openapi_schema_tests {
     #[test]
     fn ensure_schemas_resolve() {
         let docs = build_docs();
-        resolve_openapi_schemas(&docs).expect("All schemas should be resolved");
+        resolve_openapi_schemas(&docs).expect("All schemas should be resolved.");
     }
 
     fn resolve_openapi_schemas(openapi: &utoipa::openapi::OpenApi) -> anyhow::Result<()> {
-        let schemas_lookup = if let Some(ref components) = openapi.components {
+        let schemas_lookup = if let Some(components) = &openapi.components {
             resolve_component_schemas(components)?
         } else {
             BTreeSet::new()

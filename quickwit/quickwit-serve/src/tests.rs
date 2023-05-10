@@ -55,11 +55,9 @@ async fn test_check_cluster_configuration() {
 #[tokio::test]
 async fn test_readiness_updates() {
     let transport = ChannelTransport::default();
-    let cluster = Arc::new(
-        create_cluster_for_test(Vec::new(), &[], &transport, false)
-            .await
-            .unwrap(),
-    );
+    let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+        .await
+        .unwrap();
     let (metastore_readiness_tx, metastore_readiness_rx) = watch::channel(false);
     let mut metastore = MockMetastore::new();
     metastore.expect_check_connectivity().returning(move || {

@@ -210,16 +210,16 @@ impl ClusterSandbox {
 
     pub async fn wait_for_cluster_num_ready_nodes(
         &self,
-        expected_num_alive_nodes: usize,
+        expected_num_ready_nodes: usize,
     ) -> anyhow::Result<()> {
         wait_until_predicate(
             || async move {
                 match self.indexer_rest_client.cluster().snapshot().await {
                     Ok(result) => {
-                        if result.live_nodes.len() != expected_num_alive_nodes {
+                        if result.ready_nodes.len() != expected_num_ready_nodes {
                             debug!(
-                                "wait_for_cluster_num_ready_nodes expected {} alive nodes, got {}",
-                                expected_num_alive_nodes,
+                                "wait_for_cluster_num_ready_nodes expected {} ready nodes, got {}",
+                                expected_num_ready_nodes,
                                 result.live_nodes.len()
                             );
                             false

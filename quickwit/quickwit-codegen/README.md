@@ -13,6 +13,8 @@
 async-trait = { workspace = true }
 bytes = { workspace = true }
 dyn-clone = { workspace = true }
+http = { workspace = true }
+hyper = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }

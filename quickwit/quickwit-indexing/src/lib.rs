@@ -67,7 +67,7 @@ pub fn new_split_id() -> String {
 pub async fn start_indexing_service(
     universe: &Universe,
     config: &QuickwitConfig,
-    cluster: Arc<Cluster>,
+    cluster: Cluster,
     metastore: Arc<dyn Metastore>,
     ingest_api_service: Mailbox<IngestApiService>,
     storage_resolver: StorageUriResolver,

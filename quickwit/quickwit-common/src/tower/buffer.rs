@@ -25,9 +25,9 @@ use std::{error, fmt};
 use futures::TryFutureExt;
 use tower::buffer::error::{Closed, ServiceError};
 use tower::buffer::Buffer as TowerBuffer;
-use tower::{BoxError, Layer, Service};
+use tower::{Layer, Service};
 
-use super::box_service::BoxFuture;
+use super::{BoxError, BoxFuture};
 
 #[derive(Debug, thiserror::Error)]
 pub enum BufferError {

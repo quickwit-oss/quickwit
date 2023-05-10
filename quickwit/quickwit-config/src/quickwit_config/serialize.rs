@@ -642,7 +642,7 @@ mod tests {
     async fn test_quickwwit_config_default_values_storage() {
         let config_yaml = r#"
             version: 0.5
-            node_id: "node1"
+            node_id: "node-1"
             metastore_uri: postgres://username:password@host:port/db
         "#;
         let config = load_quickwit_config_with_env(
@@ -653,7 +653,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
-        assert_eq!(config.node_id, "node1");
+        assert_eq!(config.node_id, "node-1");
         assert_eq!(
             config.metastore_uri,
             "postgres://username:password@host:port/db"
