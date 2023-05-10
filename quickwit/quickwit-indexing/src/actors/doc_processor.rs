@@ -32,13 +32,13 @@ use tantivy::schema::{Field, Value};
 use tantivy::{DateTime, Document};
 use tokio::runtime::Handle;
 use tracing::warn;
-use vrl::{Program, Runtime, TargetValueRef, Terminate, TimeZone};
+use vrl::compiler::runtime::{Runtime, Terminate};
+use vrl::compiler::state::RuntimeState;
+use vrl::compiler::{Program, TargetValueRef, TimeZone};
+use vrl::value::{Secrets as VrlSecrets, Value as VrlValue};
 
 use crate::actors::Indexer;
 use crate::models::{NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, RawDocBatch};
-
-type VrlValue = ::value::Value;
-type VrlSecrets = ::value::Secrets;
 
 #[derive(Debug)]
 pub enum PrepareDocumentError {
@@ -402,7 +402,7 @@ impl VrlProgram {
 
     fn try_from_transform_config(transform_config: TransformConfig) -> anyhow::Result<Self> {
         let (program, timezone) = transform_config.compile_vrl_script()?;
-        let state = vrl::state::Runtime::default();
+        let state = RuntimeState::default();
         let runtime = Runtime::new(state);
 
         Ok(VrlProgram {

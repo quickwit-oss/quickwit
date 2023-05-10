@@ -48,14 +48,14 @@ use std::time::Duration;
 use anyhow::anyhow;
 use byte_unit::n_mib_bytes;
 use format::BodyFormat;
-use futures::Future;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::tower::{
-    BufferLayer, ConstantRate, EstimateRateLayer, Rate, RateLimitLayer, SmaRateEstimator,
+    BoxFutureInfaillible, BufferLayer, ConstantRate, EstimateRateLayer, Rate, RateLimitLayer,
+    SmaRateEstimator,
 };
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, QuickwitConfig};
@@ -79,7 +79,7 @@ use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tower::ServiceBuilder;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
 pub use crate::index_api::ListSplitsQueryParams;
@@ -125,7 +125,7 @@ fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
 
 pub async fn serve_quickwit(
     config: QuickwitConfig,
-    shutdown_signal: impl Future<Output = ()> + Send + 'static,
+    shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
     let universe = Universe::new();
     let event_broker = EventBroker::default();
@@ -317,28 +317,63 @@ pub async fn serve_quickwit(
         index_service,
         services,
     });
-    let (grpc_shutdown_trigger, grpc_shutdown_signal) = oneshot::channel::<()>();
-    let grpc_server =
-        grpc::start_grpc_server(grpc_listen_addr, quickwit_services.clone(), async move {
-            grpc_shutdown_signal
-                .await
-                .expect("Failure to shutdown grpc sevice");
-        });
-    let (rest_shutdown_trigger, rest_shutdown_signal) = oneshot::channel::<()>();
-    let rest_server = rest::start_rest_server(rest_listen_addr, quickwit_services, async move {
-        rest_shutdown_signal
-            .await
-            .expect("Failure to shutdown rest service");
+    // Setup and start gRPC server.
+    let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();
+    let grpc_readiness_trigger = Box::pin(async move {
+        if grpc_readiness_trigger_tx.send(()).is_err() {
+            debug!("gRPC server readiness signal receiver was dropped.");
+        }
     });
+    let (grpc_shutdown_trigger_tx, grpc_shutdown_signal_rx) = oneshot::channel::<()>();
+    let grpc_shutdown_signal = Box::pin(async move {
+        if grpc_shutdown_signal_rx.await.is_err() {
+            debug!("gRPC server shutdown trigger sender was dropped.");
+        }
+    });
+    let grpc_server = grpc::start_grpc_server(
+        grpc_listen_addr,
+        quickwit_services.clone(),
+        grpc_readiness_trigger,
+        grpc_shutdown_signal,
+    );
+    // Setup and start REST server.
+    let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel::<()>();
+    let rest_readiness_trigger = Box::pin(async move {
+        if rest_readiness_trigger_tx.send(()).is_err() {
+            debug!("REST server readiness signal receiver was dropped.");
+        }
+    });
+    let (rest_shutdown_trigger_tx, rest_shutdown_signal_rx) = oneshot::channel::<()>();
+    let rest_shutdown_signal = Box::pin(async move {
+        if rest_shutdown_signal_rx.await.is_err() {
+            debug!("REST server shutdown trigger sender was dropped.");
+        }
+    });
+    let rest_server = rest::start_rest_server(
+        rest_listen_addr,
+        quickwit_services,
+        rest_readiness_trigger,
+        rest_shutdown_signal,
+    );
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
-    tokio::spawn(node_readiness_reporting_task(cluster, metastore));
+    tokio::spawn(node_readiness_reporting_task(
+        cluster,
+        metastore,
+        grpc_readiness_signal_rx,
+        rest_readiness_signal_rx,
+    ));
 
     let shutdown_handle = tokio::spawn(async move {
         shutdown_signal.await;
-        let _ = grpc_shutdown_trigger.send(());
-        let _ = rest_shutdown_trigger.send(());
+
+        if grpc_shutdown_trigger_tx.send(()).is_err() {
+            debug!("gRPC server shutdown signal receiver was dropped.");
+        }
+        if rest_shutdown_trigger_tx.send(()).is_err() {
+            debug!("REST server shutdown signal receiver was dropped.");
+        }
         universe.quit().await
     });
 
@@ -346,7 +381,7 @@ pub async fn serve_quickwit(
     let rest_join_handle = tokio::spawn(rest_server);
 
     let (grpc_res, rest_res) = tokio::try_join!(grpc_join_handle, rest_join_handle)
-        .expect("Task waiting for gRPC and REST servers tasks panicked or was cancelled.");
+        .expect("The tasks running the gRPC and REST servers should not panic or be cancelled.");
 
     if let Err(grpc_err) = grpc_res {
         error!("gRPC server failed: {:?}", grpc_err);
@@ -354,8 +389,8 @@ pub async fn serve_quickwit(
     if let Err(rest_err) = rest_res {
         error!("REST server failed: {:?}", rest_err);
     }
-    let result = shutdown_handle.await?;
-    Ok(result)
+    let actor_exit_statuses = shutdown_handle.await?;
+    Ok(actor_exit_statuses)
 }
 
 #[derive(Clone)]
@@ -439,17 +474,36 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 }
 
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
-async fn node_readiness_reporting_task(cluster: Arc<Cluster>, metastore: Arc<dyn Metastore>) {
+async fn node_readiness_reporting_task(
+    cluster: Arc<Cluster>,
+    metastore: Arc<dyn Metastore>,
+    grpc_readiness_signal_rx: oneshot::Receiver<()>,
+    rest_readiness_signal_rx: oneshot::Receiver<()>,
+) {
+    if grpc_readiness_signal_rx.await.is_err() {
+        // the gRPC server failed.
+        return;
+    };
+    info!("gRPC server is ready.");
+
+    if rest_readiness_signal_rx.await.is_err() {
+        // the REST server failed.
+        return;
+    };
+    info!("REST server is ready.");
+
     let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
+
     loop {
         interval.tick().await;
+
         let node_ready = match metastore.check_connectivity().await {
             Ok(()) => {
-                debug!(metastore_uri=?metastore.uri(), "Metastore is available.");
+                debug!(metastore_uri=%metastore.uri(), "Metastore service is available.");
                 true
             }
-            Err(err) => {
-                warn!(metastore_uri=?metastore.uri(), err=?err, "Metastore is not available.");
+            Err(error) => {
+                warn!(metastore_uri=%metastore.uri(), error=?error, "Metastore service is unavailable.");
                 false
             }
         };

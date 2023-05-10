@@ -585,7 +585,7 @@ impl OtlpGrpcTraceService {
         if num_spans == num_parse_errors {
             return Err(tonic::Status::internal(error_message));
         }
-        let num_bytes = doc_batch.concat_docs.len() as u64;
+        let num_bytes = doc_batch.num_bytes() as u64;
         self.store_spans(doc_batch).await?;
 
         OTLP_SERVICE_METRICS
@@ -655,7 +655,7 @@ impl OtlpGrpcTraceService {
         Ok(parsed_spans)
     }
 
-    #[instrument(skip_all, fields(num_bytes = doc_batch.concat_docs.len()))]
+    #[instrument(skip_all, fields(num_bytes = doc_batch.num_bytes()))]
     async fn store_spans(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],

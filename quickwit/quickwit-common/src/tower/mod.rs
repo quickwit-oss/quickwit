@@ -26,14 +26,21 @@ mod rate;
 mod rate_estimator;
 mod rate_limit;
 
+use std::pin::Pin;
+
 pub use box_layer::BoxLayer;
 pub use box_service::BoxService;
 pub use buffer::{Buffer, BufferError, BufferLayer};
 pub use estimate_rate::{EstimateRate, EstimateRateLayer};
+use futures::Future;
 pub use metrics::{PrometheusMetrics, PrometheusMetricsLayer};
 pub use rate::{ConstantRate, Rate};
 pub use rate_estimator::{RateEstimator, SmaRateEstimator};
 pub use rate_limit::{RateLimit, RateLimitLayer};
+
+pub type BoxFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'static>>;
+
+pub type BoxFutureInfaillible<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
 pub trait Cost {
     fn cost(&self) -> u64;

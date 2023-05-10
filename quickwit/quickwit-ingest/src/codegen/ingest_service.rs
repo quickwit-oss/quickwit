@@ -70,9 +70,9 @@ pub struct DocBatch {
     pub index_id: ::prost::alloc::string::String,
     #[prost(bytes = "bytes", tag = "2")]
     #[schema(value_type = String, format = Binary)]
-    pub concat_docs: ::prost::bytes::Bytes,
-    #[prost(uint64, repeated, tag = "3")]
-    pub doc_lens: ::prost::alloc::vec::Vec<u64>,
+    pub doc_buffer: ::prost::bytes::Bytes,
+    #[prost(uint32, repeated, tag = "3")]
+    pub doc_lengths: ::prost::alloc::vec::Vec<u32>,
 }
 /// / Suggest to truncate the queue.
 /// /
