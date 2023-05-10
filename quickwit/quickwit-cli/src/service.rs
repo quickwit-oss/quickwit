@@ -72,6 +72,7 @@ impl RunCliCommand {
     pub async fn execute(&self) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
         let mut config = load_quickwit_config(&self.config_uri).await?;
+        crate::busy_detector::set_enabled(true);
 
         if let Some(services) = &self.services {
             tracing::info!(services = %services.iter().join(", "), "Setting services from override.");
