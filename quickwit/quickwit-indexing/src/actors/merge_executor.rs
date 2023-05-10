@@ -37,7 +37,7 @@ use quickwit_proto::metastore_api::DeleteTask;
 use quickwit_query::get_quickwit_tokenizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
-use tantivy::{DateTime, Directory, Index, IndexMeta, SegmentId, SegmentReader};
+use tantivy::{Advice, DateTime, Directory, Index, IndexMeta, SegmentId, SegmentReader};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
 
@@ -438,7 +438,10 @@ impl MergeExecutor {
 
         // This directory is here to receive the merged split, as well as the final meta.json file.
         let output_directory = ControlledDirectory::new(
-            Box::new(MmapDirectory::open(output_path)?),
+            Box::new(MmapDirectory::open_with_madvice(
+                output_path,
+                Advice::Sequential,
+            )?),
             self.io_controls
                 .clone()
                 .set_kill_switch(ctx.kill_switch().clone())
