@@ -42,7 +42,7 @@ impl Codegen {
                 "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]",
             )
             .field_attribute(
-                "DocBatch.concat_docs",
+                "DocBatch.doc_buffer",
                 "#[schema(value_type = String, format = Binary)]",
             )
             .bytes(bytes)

@@ -19,16 +19,15 @@
 
 use std::collections::HashMap;
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestService,
     IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::Deserialize;
-use serde_json::Value as JsonValue;
 use thiserror::Error;
-use warp::{reject, Filter, Rejection};
+use warp::{Filter, Rejection};
 
 use crate::format::{extract_format_from_qs, make_response};
 use crate::{with_arg, BodyFormat};
@@ -85,8 +84,8 @@ enum BulkAction {
 impl BulkAction {
     fn into_index(self) -> String {
         match self {
-            BulkAction::Index(meta) => meta.index,
-            BulkAction::Create(meta) => meta.index,
+            BulkAction::Index(meta) => meta.index_id,
+            BulkAction::Create(meta) => meta.index_id,
         }
     }
 }
@@ -94,16 +93,17 @@ impl BulkAction {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 struct BulkActionMeta {
     #[serde(alias = "_index")]
-    index: String,
+    index_id: String,
     #[serde(alias = "_id")]
     #[serde(default)]
-    id: Option<String>,
+    doc_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 struct IngestOptions {
+    #[serde(alias = "commit")]
     #[serde(default)]
-    commit: CommitType,
+    commit_type: CommitType,
 }
 
 pub(crate) fn ingest_api_handlers(
@@ -115,17 +115,11 @@ pub(crate) fn ingest_api_handlers(
 }
 
 fn ingest_filter(
-) -> impl Filter<Extract = (String, String, IngestOptions), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (String, Bytes, IngestOptions), Error = Rejection> + Clone {
     warp::path!(String / "ingest")
         .and(warp::post())
         .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
-        .and(warp::body::bytes().and_then(|body: Bytes| async move {
-            if let Ok(body_str) = std::str::from_utf8(&body) {
-                Ok(body_str.to_string())
-            } else {
-                Err(reject::custom(InvalidUtf8))
-            }
-        }))
+        .and(warp::body::bytes())
         .and(serde_qs::warp::query::<IngestOptions>(
             serde_qs::Config::default(),
         ))
@@ -138,16 +132,6 @@ fn ingest_handler(
         .and(with_arg(ingest_service))
         .then(ingest)
         .map(|result| BodyFormat::default().make_rest_reply(result))
-}
-
-fn lines(body: &str) -> impl Iterator<Item = &str> {
-    body.lines().filter_map(|line| {
-        let line_trimmed = line.trim();
-        if line_trimmed.is_empty() {
-            return None;
-        }
-        Some(line_trimmed)
-    })
 }
 
 #[utoipa::path(
@@ -166,17 +150,20 @@ fn lines(body: &str) -> impl Iterator<Item = &str> {
 /// Ingest documents
 async fn ingest(
     index_id: String,
-    payload: String,
+    body: Bytes,
     ingest_options: IngestOptions,
     mut ingest_service: IngestServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
-    let mut doc_batch = DocBatchBuilder::new(index_id);
-    for doc_payload in lines(&payload) {
-        doc_batch.ingest_doc(doc_payload.as_bytes());
+    // The size of the body should be an upper bound of the size of the batch. The removal of the
+    // end of line character for each doc compensates the addition of the `DocCommand` header.
+    let mut doc_batch_builder = DocBatchBuilder::with_capacity(index_id, body.remaining());
+
+    for line in lines(&body) {
+        doc_batch_builder.ingest_doc(line);
     }
     let ingest_req = IngestRequest {
-        doc_batches: vec![doc_batch.build()],
-        commit: ingest_options.commit as u32,
+        doc_batches: vec![doc_batch_builder.build()],
+        commit: ingest_options.commit_type as u32,
     };
     let ingest_response = ingest_service.ingest(ingest_req).await?;
     Ok(ingest_response)
@@ -253,17 +240,11 @@ struct ElasticIngestOptions {
 }
 
 fn elastic_bulk_filter(
-) -> impl Filter<Extract = (String, ElasticIngestOptions), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (Bytes, ElasticIngestOptions), Error = Rejection> + Clone {
     warp::path!("_bulk")
         .and(warp::post())
         .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
-        .and(warp::body::bytes().and_then(|body: Bytes| async move {
-            if let Ok(body_str) = std::str::from_utf8(&body) {
-                Ok(body_str.to_string())
-            } else {
-                Err(reject::custom(InvalidUtf8))
-            }
-        }))
+        .and(warp::body::bytes())
         .and(serde_qs::warp::query::<ElasticIngestOptions>(
             serde_qs::Config::default(),
         ))
@@ -293,43 +274,42 @@ pub fn elastic_bulk_handler(
 )]
 /// Elasticsearch-compatible Bulk Ingest
 async fn elastic_ingest(
-    payload: String,
+    body: Bytes,
     ingest_options: ElasticIngestOptions,
     mut ingest_service: IngestServiceClient,
 ) -> Result<IngestResponse, IngestRestApiError> {
-    let mut batches = HashMap::new();
-    let mut payload_lines = lines(&payload);
+    let mut doc_batch_builders = HashMap::new();
+    let mut lines = lines(&body);
 
-    while let Some(json_str) = payload_lines.next() {
-        let action = serde_json::from_str::<BulkAction>(json_str)
-            .map_err(|e| IngestRestApiError::BulkInvalidAction(e.to_string()))?;
-        let source = payload_lines
-            .next()
-            .ok_or_else(|| {
-                IngestRestApiError::BulkInvalidSource("Expected source for the action.".to_string())
-            })
-            .and_then(|source| {
-                serde_json::from_str::<JsonValue>(source)
-                    .map_err(|err| IngestRestApiError::BulkInvalidSource(err.to_string()))
-            })?;
-
+    while let Some(line) = lines.next() {
+        let action = serde_json::from_slice::<BulkAction>(line)
+            .map_err(|error| IngestRestApiError::BulkInvalidAction(error.to_string()))?;
+        let source = lines.next().ok_or_else(|| {
+            IngestRestApiError::BulkInvalidSource("Expected source for the action.".to_string())
+        })?;
         let index_id = action.into_index();
-        let doc_batch = batches
+        let doc_batch_builder = doc_batch_builders
             .entry(index_id.clone())
             .or_insert(DocBatchBuilder::new(index_id));
 
-        doc_batch.ingest_doc(source.to_string().as_bytes());
+        doc_batch_builder.ingest_doc(source);
     }
-
+    let doc_batches = doc_batch_builders
+        .into_values()
+        .map(|builder| builder.build())
+        .collect();
+    let commit_type: CommitType = ingest_options.refresh.into();
     let ingest_request = IngestRequest {
-        doc_batches: batches
-            .into_values()
-            .map(|builder| builder.build())
-            .collect(),
-        commit: Into::<CommitType>::into(ingest_options.refresh) as u32,
+        doc_batches,
+        commit: commit_type as u32,
     };
     let ingest_response = ingest_service.ingest(ingest_request).await?;
     Ok(ingest_response)
+}
+
+fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
+    body.split(|byte| byte == &b'\n')
+        .filter(|line| !line.is_empty())
 }
 
 #[cfg(test)]
@@ -361,8 +341,8 @@ mod tests {
             assert_eq!(
                 bulk_action,
                 BulkAction::Create(BulkActionMeta {
-                    index: "test".to_string(),
-                    id: Some("2".to_string()),
+                    index_id: "test".to_string(),
+                    doc_id: Some("2".to_string()),
                 })
             );
         }
@@ -376,8 +356,8 @@ mod tests {
             assert_eq!(
                 bulk_action,
                 BulkAction::Create(BulkActionMeta {
-                    index: "test".to_string(),
-                    id: None,
+                    index_id: "test".to_string(),
+                    doc_id: None,
                 })
             );
         }
@@ -445,10 +425,10 @@ mod tests {
         let fetch_response: FetchResponse = serde_json::from_slice(resp.body()).unwrap();
         let doc_batch = fetch_response.doc_batch.unwrap();
         assert_eq!(doc_batch.index_id, "my-index");
-        assert_eq!(doc_batch.doc_lens.len(), 1);
+        assert_eq!(doc_batch.num_docs(), 1);
         assert_eq!(
-            doc_batch.doc_lens.iter().sum::<u64>() as usize,
-            doc_batch.concat_docs.len()
+            doc_batch.doc_lengths.iter().sum::<u32>() as usize,
+            doc_batch.doc_buffer.len()
         );
 
         universe.assert_quit().await;
@@ -462,8 +442,7 @@ mod tests {
         let payload = r#"
             {"id": 1, "message": "push"}
             {"id": 2, "message": "push"}
-            {"id": 3, "message": "push"}
-        "#;
+            {"id": 3, "message": "push"}"#;
         let resp = warp::test::request()
             .path("/my-index/ingest")
             .method("POST")
@@ -486,8 +465,7 @@ mod tests {
             { "create" : { "_index" : "my-index", "_id" : "1"} }
             {"id": 1, "message": "push"}
             { "create" : { "_index" : "index-2", "_id" : "1" } }
-            {"id": 1, "message": "push"}
-        "#;
+            {"id": 1, "message": "push"}"#;
         let resp = warp::test::request()
             .path("/_bulk")
             .method("POST")
@@ -495,25 +473,6 @@ mod tests {
             .reply(&ingest_api_handlers)
             .await;
         assert_eq!(resp.status(), 404);
-        universe.assert_quit().await;
-    }
-
-    #[tokio::test]
-    async fn test_ingest_api_bulk_request_returns_400_if_malformed_source() {
-        let (universe, _temp_dir, ingest_service, _) =
-            setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
-        let ingest_api_handlers = ingest_api_handlers(ingest_service);
-        let payload = r#"
-            { "create" : { "_index" : "my-index", "_id" : "1" } }
-            {"id": 1, "message": "bad json}
-        "#;
-        let resp = warp::test::request()
-            .path("/_bulk")
-            .method("POST")
-            .body(payload)
-            .reply(&ingest_api_handlers)
-            .await;
-        assert_eq!(resp.status(), 400);
         universe.assert_quit().await;
     }
 
@@ -528,8 +487,7 @@ mod tests {
             { "create" : { "_index" : "my-index-2", "_id" : "1"} }
             {"id": 1, "message": "push"}
             { "create" : { "_index" : "my-index-1" } }
-            {"id": 2, "message": "push"}
-        "#;
+            {"id": 2, "message": "push"}"#;
         let resp = warp::test::request()
             .path("/_bulk")
             .method("POST")
@@ -695,8 +653,7 @@ mod tests {
             { "create" : { "_index" : "my-index-2", "_id" : "1"} }
             {"id": 1, "message": "push"}
             { "create" : { "_index" : "my-index-1" } }
-            {"id": 2, "message": "push"}
-        "#;
+            {"id": 2, "message": "push"}"#;
         let handle = tokio::spawn(async move {
             let resp = warp::test::request()
                 .path("/_bulk?refresh=wait_for")
@@ -771,8 +728,7 @@ mod tests {
             { "create" : { "_index" : "my-index-2", "_id" : "1"} }
             {"id": 1, "message": "push"}
             { "create" : { "_index" : "my-index-1" } }
-            {"id": 2, "message": "push"}
-        "#;
+            {"id": 2, "message": "push"}"#;
         let handle = tokio::spawn(async move {
             let resp = warp::test::request()
                 .path("/_bulk?refresh")
@@ -833,5 +789,21 @@ mod tests {
             .unwrap();
         handle.await.unwrap();
         universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_bulk_ingest_request_returns_400_if_action_is_malformed() {
+        let ingest_service = IngestServiceClient::new(IngestServiceClient::mock());
+        let ingest_api_handlers = ingest_api_handlers(ingest_service);
+        let payload = r#"
+            {"create": {"_index": "my-index", "_id": "1"},}
+            {"id": 1, "message": "my-doc"}"#;
+        let resp = warp::test::request()
+            .path("/_bulk")
+            .method("POST")
+            .body(payload)
+            .reply(&ingest_api_handlers)
+            .await;
+        assert_eq!(resp.status(), 400);
     }
 }
