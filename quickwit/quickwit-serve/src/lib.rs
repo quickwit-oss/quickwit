@@ -41,6 +41,7 @@ mod ui_handler;
 
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -48,20 +49,20 @@ use std::time::Duration;
 use anyhow::anyhow;
 use byte_unit::n_mib_bytes;
 use format::BodyFormat;
+use futures::StreamExt;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
-use quickwit_cluster::{Cluster, ClusterMember};
+use quickwit_cluster::{Cluster, ClusterChange, ClusterMember};
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::tower::{
-    BoxFutureInfaillible, BufferLayer, ConstantRate, EstimateRateLayer, Rate, RateLimitLayer,
-    SmaRateEstimator,
+    BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
+    Rate, RateLimitLayer, SmaRateEstimator,
 };
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, QuickwitConfig};
 use quickwit_control_plane::{start_control_plane_service, ControlPlaneServiceClient};
 use quickwit_core::{IndexService, IndexServiceError};
-use quickwit_grpc_clients::create_balance_channel_from_watched_members;
 use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
@@ -97,7 +98,7 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 struct QuickwitServices {
     pub config: Arc<QuickwitConfig>,
     pub build_info: &'static QuickwitBuildInfo,
-    pub cluster: Arc<Cluster>,
+    pub cluster: Cluster,
     pub metastore: Arc<dyn Metastore>,
     pub control_plane_service: Option<ControlPlaneServiceClient>,
     /// The control plane listens to metastore events.
@@ -121,6 +122,25 @@ fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
             .enabled_services
             .contains(&QuickwitService::Metastore)
     })
+}
+
+async fn balance_channel_for_service(
+    cluster: &Cluster,
+    service: QuickwitService,
+) -> BalanceChannel<SocketAddr> {
+    let cluster_change_stream = cluster.ready_nodes_change_stream().await;
+    let service_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
+        Box::pin(async move {
+            match cluster_change {
+                ClusterChange::Add(node) if node.enabled_services().contains(&service) => {
+                    Some(Change::Insert(node.grpc_advertise_addr(), node.channel()))
+                }
+                ClusterChange::Remove(node) => Some(Change::Remove(node.grpc_advertise_addr())),
+                _ => None,
+            }
+        })
+    });
+    BalanceChannel::from_stream(service_change_stream)
 }
 
 pub async fn serve_quickwit(
@@ -149,7 +169,7 @@ pub async fn serve_quickwit(
     } else {
         // Wait 10 seconds for nodes running a `Metastore` service.
         cluster
-            .wait_for_members(has_node_with_metastore_service, Duration::from_secs(10))
+            .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(10))
             .await
             .map_err(|_| {
                 error!("No metastore service found among cluster members, stopping server.");
@@ -159,11 +179,10 @@ pub async fn serve_quickwit(
                      run --service metastore`."
                 )
             })?;
-        let grpc_metastore_client = MetastoreGrpcClient::create_and_update_from_members(
-            1,
-            cluster.ready_member_change_watcher(),
-        )
-        .await?;
+        let balance_channel =
+            balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
+        let grpc_metastore_client =
+            MetastoreGrpcClient::from_balance_channel(balance_channel).await?;
         let metastore_client = RetryingMetastore::new(Box::new(grpc_metastore_client));
         Arc::new(metastore_client)
     };
@@ -197,12 +216,9 @@ pub async fn serve_quickwit(
         .enabled_services
         .contains(&QuickwitService::Metastore)
     {
-        let (channel, _) = create_balance_channel_from_watched_members(
-            cluster.ready_member_change_watcher(),
-            QuickwitService::ControlPlane,
-        )
-        .await?;
-        Some(ControlPlaneServiceClient::from_channel(channel))
+        let balance_channel =
+            balance_channel_for_service(&cluster, QuickwitService::ControlPlane).await;
+        Some(ControlPlaneServiceClient::from_channel(balance_channel))
     } else {
         None
     };
@@ -265,17 +281,14 @@ pub async fn serve_quickwit(
             .build_from_mailbox(ingest_api_service);
         (ingest_service, Some(indexing_service))
     } else {
-        let (channel, _) = create_balance_channel_from_watched_members(
-            cluster.ready_member_change_watcher(),
-            QuickwitService::Indexer,
-        )
-        .await?;
-        let ingest_service = IngestServiceClient::from_channel(channel);
+        let balance_channel = balance_channel_for_service(&cluster, QuickwitService::Indexer).await;
+        let ingest_service = IngestServiceClient::from_channel(balance_channel);
         (ingest_service, None)
     };
 
+    let ready_members_watcher = cluster.ready_members_watcher().await;
     let search_job_placer = SearchJobPlacer::new(
-        ServiceClientPool::create_and_update_members(cluster.ready_member_change_watcher()).await?,
+        ServiceClientPool::create_and_update_members(ready_members_watcher).await?,
     );
 
     let janitor_service = if config.enabled_services.contains(&QuickwitService::Janitor) {
@@ -475,7 +488,7 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
 async fn node_readiness_reporting_task(
-    cluster: Arc<Cluster>,
+    cluster: Cluster,
     metastore: Arc<dyn Metastore>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
@@ -507,7 +520,7 @@ async fn node_readiness_reporting_task(
                 false
             }
         };
-        cluster.set_self_node_ready(node_ready).await;
+        cluster.set_self_node_readiness(node_ready).await;
     }
 }
 

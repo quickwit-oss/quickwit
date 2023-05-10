@@ -20,7 +20,7 @@
 pub mod balance_channel;
 pub mod service_client_pool;
 
-pub use balance_channel::create_balance_channel_from_watched_members;
+pub use balance_channel::create_balance_channel_from_cluster_change_stream;
 use tonic::transport::{Channel, Endpoint, Uri};
 use tower::service_fn;
 

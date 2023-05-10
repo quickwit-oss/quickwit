@@ -24,6 +24,7 @@ async-trait = { workspace = true }
 atty = { workspace = true }
 bytes = { workspace = true }
 byte-unit = { workspace = true }
+chitchat = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
 console-subscriber = { workspace = true, optional = true }

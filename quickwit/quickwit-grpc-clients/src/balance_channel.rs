@@ -17,22 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
-use std::net::SocketAddr;
-use std::ops::Sub;
 use std::time::Duration;
 
-use quickwit_cluster::ClusterMember;
+use futures::Stream;
+use quickwit_cluster::ClusterChange;
 use quickwit_config::service::QuickwitService;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::watch;
-use tokio::sync::watch::Receiver;
-use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tonic::transport::{Channel, Endpoint, Uri};
 use tower::discover::Change;
 use tower::timeout::Timeout;
-use tracing::{error, info};
+use tracing::info;
 
 const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(100)
@@ -40,111 +34,42 @@ const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(any(test, feature = "testsuite
     Duration::from_secs(5)
 };
 
-/// Create a balance [`Channel`] with endpoints dynamically updated from cluster
-/// members and for a given [`QuickwitService`].
-/// Returns the balance channel along with a watcher containing the
-/// number of registered endpoints in the channel.
-/// A timeout wraps the balance channel as a channel with no endpoint will hang.
-/// This avoids a request to block indefinitely
-// TODO: ideally, we want to implement our own `Channel::balance_channel` to
-// properly raise a timeout error.
-pub async fn create_balance_channel_from_watched_members(
-    mut members_watch_channel: WatchStream<Vec<ClusterMember>>,
+pub async fn create_balance_channel_from_cluster_change_stream(
     service: QuickwitService,
-) -> anyhow::Result<(Timeout<Channel>, Receiver<usize>)> {
-    // Create a balance channel whose endpoint can be updated thanks to a sender.
-    let (channel, channel_tx) = Channel::balance_channel(10);
-
+    mut ready_nodes_change_stream: impl Stream<Item = ClusterChange> + Send + Unpin + 'static,
+) -> Timeout<Channel> {
+    let (channel, channel_tx) = Channel::balance_channel(100);
     let timeout_channel = Timeout::new(channel, CLIENT_TIMEOUT_DURATION);
-    let (pool_size_tx, pool_size_rx) = watch::channel(0);
-
-    // Watch for cluster members changes and dynamically update channel endpoint.
-    tokio::spawn({
-        let mut current_grpc_address_pool = HashSet::new();
-        async move {
-            while let Some(new_members) = members_watch_channel.next().await {
-                let new_grpc_address_pool = filter_grpc_addresses(&new_members, &service);
-                if let Err(error) = update_channel_endpoints(
-                    &new_grpc_address_pool,
-                    &current_grpc_address_pool,
-                    &channel_tx,
-                    &service,
-                )
-                .await
-                {
-                    // If it fails, just log an error and stop the loop.
-                    error!("Failed to update balance channel endpoints: {error:?}");
-                    break;
-                };
-                current_grpc_address_pool = new_grpc_address_pool;
-                // TODO: Expose number of metastore servers in the pool as a Prometheus metric.
-                // The pool size channel can be closed if it's not used. Just ignore the send error.
-                let _ = pool_size_tx.send(current_grpc_address_pool.len());
+    let future = async move {
+        while let Some(cluster_change) = ready_nodes_change_stream.next().await {
+            match cluster_change {
+                ClusterChange::Add(node) if node.enabled_services().contains(&service) => {
+                    let grpc_addr = node.grpc_advertise_addr();
+                    let uri = Uri::builder()
+                        .scheme("http")
+                        .authority(grpc_addr.to_string())
+                        .path_and_query("/")
+                        .build()
+                        .expect("");
+                    let endpoint = Endpoint::from(uri).connect_timeout(Duration::from_secs(5));
+                    let change = Change::Insert(grpc_addr, endpoint);
+                    info!(node_id=%node.node_id(), grpc_addr=?grpc_addr, "Adding node to {} pool.", service);
+                    if channel_tx.send(change).await.is_err() {
+                        break;
+                    }
+                }
+                ClusterChange::Remove(node) if node.enabled_services().contains(&service) => {
+                    let grpc_addr = node.grpc_advertise_addr();
+                    let change = Change::Remove(grpc_addr);
+                    info!(node_id=%node.node_id(), grpc_addr=?grpc_addr, "Removing node from {} pool.", service);
+                    if channel_tx.send(change).await.is_err() {
+                        break;
+                    }
+                }
+                _ => {}
             }
-            Result::<_, anyhow::Error>::Ok(())
         }
-    });
-
-    Ok((timeout_channel, pool_size_rx))
-}
-
-fn filter_grpc_addresses(
-    members: &[ClusterMember],
-    quickwit_service: &QuickwitService,
-) -> HashSet<SocketAddr> {
-    members
-        .iter()
-        .filter(|member| member.enabled_services.contains(quickwit_service))
-        .map(|member| member.grpc_advertise_addr)
-        .collect()
-}
-
-/// Updates channel endpoints by:
-/// - Sending `Change::Insert` grpc addresses not already present in `grpc_addresses_in_use`.
-/// - Sending `Change::Remove` event on grpc addresses present in `grpc_addresses_in_use` but not in
-///   `updated_members`.
-async fn update_channel_endpoints(
-    new_grpc_address_pool: &HashSet<SocketAddr>,
-    current_grpc_address_pool: &HashSet<SocketAddr>,
-    channel_endpoint_tx: &Sender<Change<SocketAddr, Endpoint>>,
-    quickwit_service: &QuickwitService,
-) -> anyhow::Result<()> {
-    if new_grpc_address_pool.is_empty() {
-        info!("No node with service `{quickwit_service}` available in the cluster.");
-    }
-    let leaving_grpc_addresses = current_grpc_address_pool.sub(new_grpc_address_pool);
-    if !leaving_grpc_addresses.is_empty() {
-        info!(
-            // TODO: Log node IDs along with the addresses.
-            server_addresses=?leaving_grpc_addresses,
-            "Removing `{quickwit_service}` nodes from client pool.",
-        );
-        for leaving_grpc_address in leaving_grpc_addresses {
-            channel_endpoint_tx
-                .send(Change::Remove(leaving_grpc_address))
-                .await?;
-        }
-    }
-    let new_grpc_addresses = new_grpc_address_pool.sub(current_grpc_address_pool);
-    if !new_grpc_addresses.is_empty() {
-        info!(
-            // TODO: Log node IDs along with the addresses.
-            server_addresses=?new_grpc_addresses,
-            "Adding `{quickwit_service}` servers to client pool.",
-        );
-        for new_grpc_address in new_grpc_addresses {
-            let new_grpc_uri = Uri::builder()
-                .scheme("http")
-                .authority(new_grpc_address.to_string())
-                .path_and_query("/")
-                .build()
-                .expect("Failed to build URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-            let new_grpc_endpoint =
-                Endpoint::from(new_grpc_uri).connect_timeout(Duration::from_secs(5));
-            channel_endpoint_tx
-                .send(Change::Insert(new_grpc_address, new_grpc_endpoint))
-                .await?;
-        }
-    }
-    Ok(())
+    };
+    tokio::spawn(future);
+    timeout_channel
 }
