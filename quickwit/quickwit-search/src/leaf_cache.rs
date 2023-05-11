@@ -80,7 +80,7 @@ impl CacheKey {
     ) -> Self {
         let split_time_range = Range::from_bounds(split_info.time_range());
         let request_time_range = Range::from_bounds(search_request.time_range());
-        let merged_time_range = request_time_range.intersect(&split_time_range).normalize();
+        let merged_time_range = request_time_range.intersect(&split_time_range);
 
         search_request.start_timestamp = None;
         search_request.end_timestamp = None;
@@ -93,7 +93,7 @@ impl CacheKey {
     }
 }
 
-/// A (half-open) range bounded inclusively below and exclusively above (start..end).
+/// A (half-open) range bounded inclusively below and exclusively above [start..end).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Range {
     start: Option<i64>,
@@ -157,7 +157,7 @@ impl Range {
             (Some(this), None) => Some(this),
             (None, other) => other,
         };
-        Range { start, end }
+        Range { start, end }.normalize()
     }
 }
 
