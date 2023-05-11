@@ -379,7 +379,7 @@ pub async fn root_search(
     let aggregation: Option<String> = finalize_aggregation(
         leaf_search_response.intermediate_aggregation_result,
         aggregations,
-        &searcher_context,
+        searcher_context,
     )?;
 
     Ok(SearchResponse {
