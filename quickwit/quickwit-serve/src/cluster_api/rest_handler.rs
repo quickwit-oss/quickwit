@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::convert::Infallible;
-use std::sync::Arc;
 
 use quickwit_cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 use warp::{Filter, Rejection};
@@ -34,7 +33,7 @@ pub struct ClusterApi;
 
 /// Cluster handler.
 pub fn cluster_handler(
-    cluster: Arc<Cluster>,
+    cluster: Cluster,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("cluster")
         .and(warp::path::end())
@@ -55,7 +54,7 @@ pub fn cluster_handler(
 )]
 
 /// Get cluster information.
-async fn get_cluster(cluster: Arc<Cluster>) -> Result<ClusterSnapshot, Infallible> {
+async fn get_cluster(cluster: Cluster) -> Result<ClusterSnapshot, Infallible> {
     let snapshot = cluster.snapshot().await;
     Ok(snapshot)
 }

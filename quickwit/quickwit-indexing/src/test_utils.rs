@@ -74,11 +74,9 @@ impl TestSandbox {
     ) -> anyhow::Result<Self> {
         let node_id = append_random_suffix("test-node");
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let index_uri = index_uri(index_id);
         let mut index_config = IndexConfig::for_test(index_id, index_uri.as_str());
         index_config.doc_mapping = ConfigFormat::Yaml.parse(doc_mapping_yaml.as_bytes())?;

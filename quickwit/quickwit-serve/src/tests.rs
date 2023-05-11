@@ -26,6 +26,7 @@ use quickwit_cluster::create_cluster_for_test;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_metastore::{IndexMetadata, MockMetastore};
+use tokio::sync::{oneshot, watch};
 
 use crate::{check_cluster_configuration, node_readiness_reporting_task};
 
@@ -52,33 +53,39 @@ async fn test_check_cluster_configuration() {
 }
 
 #[tokio::test]
-async fn test_readiness_updates() -> anyhow::Result<()> {
+async fn test_readiness_updates() {
     let transport = ChannelTransport::default();
-    let cluster = Arc::new(
-        create_cluster_for_test(Vec::new(), &[], &transport, false)
-            .await
-            .unwrap(),
-    );
-    cluster.set_self_node_ready(true).await;
-    let mut counter = 2;
+    let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+        .await
+        .unwrap();
+    let (metastore_readiness_tx, metastore_readiness_rx) = watch::channel(false);
     let mut metastore = MockMetastore::new();
-    metastore
-        .expect_check_connectivity()
-        .times(4)
-        .returning(move || {
-            counter -= 1;
-            if counter == 1 {
-                anyhow::bail!("error")
-            }
+    metastore.expect_check_connectivity().returning(move || {
+        if *metastore_readiness_rx.borrow() {
             Ok(())
-        });
+        } else {
+            Err(anyhow::anyhow!("Metastore not ready"))
+        }
+    });
+    let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
+    let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
     tokio::spawn(node_readiness_reporting_task(
         cluster.clone(),
         Arc::new(metastore),
+        grpc_readiness_signal_rx,
+        rest_readiness_signal_rx,
     ));
-    tokio::time::sleep(Duration::from_millis(25)).await;
     assert!(!cluster.is_self_node_ready().await);
+
+    grpc_readiness_trigger_tx.send(()).unwrap();
+    rest_readiness_trigger_tx.send(()).unwrap();
+    assert!(!cluster.is_self_node_ready().await);
+
+    metastore_readiness_tx.send(true).unwrap();
     tokio::time::sleep(Duration::from_millis(25)).await;
     assert!(cluster.is_self_node_ready().await);
-    Ok(())
+
+    metastore_readiness_tx.send(false).unwrap();
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    assert!(!cluster.is_self_node_ready().await);
 }

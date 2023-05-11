@@ -201,8 +201,7 @@ mod tests {
 
         let query_1 = SearchRequest {
             index_id: "test-idx".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
+            query_ast: "test".to_string(),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
@@ -212,8 +211,7 @@ mod tests {
 
         let query_2 = SearchRequest {
             index_id: "test-idx".to_string(),
-            query: "test2".to_string(),
-            search_fields: vec!["body".to_string()],
+            query_ast: "test2".to_string(),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
@@ -270,8 +268,7 @@ mod tests {
 
         let query_1 = SearchRequest {
             index_id: "test-idx".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
+            query_ast: "test".to_string(),
             start_timestamp: Some(100),
             end_timestamp: Some(250),
             max_hits: 10,
@@ -280,8 +277,7 @@ mod tests {
         };
         let query_1bis = SearchRequest {
             index_id: "test-idx".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
+            query_ast: "test".to_string(),
             start_timestamp: Some(150),
             end_timestamp: Some(300),
             max_hits: 10,
@@ -291,8 +287,7 @@ mod tests {
 
         let query_2 = SearchRequest {
             index_id: "test-idx".to_string(),
-            query: "test2".to_string(),
-            search_fields: vec!["body".to_string()],
+            query_ast: "test2".to_string(),
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
@@ -301,8 +296,7 @@ mod tests {
         };
         let query_2bis = SearchRequest {
             index_id: "test-idx".to_string(),
-            query: "test2".to_string(),
-            search_fields: vec!["body".to_string()],
+            query_ast: "test2".to_string(),
             start_timestamp: Some(50),
             end_timestamp: Some(200),
             max_hits: 10,

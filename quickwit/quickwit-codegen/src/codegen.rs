@@ -42,7 +42,7 @@ impl Codegen {
                 "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]",
             )
             .field_attribute(
-                "DocBatch.concat_docs",
+                "DocBatch.doc_buffer",
                 "#[schema(value_type = String, format = Binary)]",
             )
             .bytes(bytes)
@@ -275,14 +275,25 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
         impl #client_name {
             pub fn new<T>(instance: T) -> Self
             where
-                T: #service_name
+                T: #service_name,
             {
                 Self {
                     inner: Box::new(instance),
                 }
             }
 
-            pub fn from_channel(channel: tower::timeout::Timeout<tonic::transport::Channel>) -> Self {
+            pub fn from_channel<C>(channel: C) -> Self
+            where
+                C: tower::Service<
+                        http::Request<tonic::body::BoxBody>,
+                        Response = http::Response<hyper::Body>,
+                        Error = quickwit_common::tower::BoxError,
+                    > + std::fmt::Debug + Clone + Send + Sync + 'static,
+                <C as tower::Service<http::Request<tonic::body::BoxBody>>>::Future:
+                    std::future::Future<
+                        Output = Result<http::Response<hyper::Body>, quickwit_common::tower::BoxError>,
+                    > + Send + 'static,
+            {
                 #client_name::new(#grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(channel)))
             }
 
@@ -516,8 +527,8 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
         let response_type = syn_method.response_type.to_token_stream();
 
         let layer_method_bound = quote! {
-            L::Service: Service<#request_type, Response = #response_type, Error = #error_type> + Clone + Send + Sync + 'static,
-            <L::Service as Service<#request_type>>::Future: Send + 'static,
+            L::Service: tower::Service<#request_type, Response = #response_type, Error = #error_type> + Clone + Send + Sync + 'static,
+            <L::Service as tower::Service<#request_type>>::Future: Send + 'static,
         };
 
         let layer_method_statement = if i == context.methods.len() - 1 {
@@ -579,7 +590,17 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
                 self.build_from_boxed(Box::new(instance))
             }
 
-            pub fn build_from_channel<T>(self, channel: tower::timeout::Timeout<tonic::transport::Channel>) -> #client_name
+            pub fn build_from_channel<T, C>(self, channel: C) -> #client_name
+            where
+                C: tower::Service<
+                        http::Request<tonic::body::BoxBody>,
+                        Response = http::Response<hyper::Body>,
+                        Error = quickwit_common::tower::BoxError,
+                    > + std::fmt::Debug + Clone + Send + Sync + 'static,
+                <C as tower::Service<http::Request<tonic::body::BoxBody>>>::Future:
+                    std::future::Future<
+                        Output = Result<http::Response<hyper::Body>, quickwit_common::tower::BoxError>,
+                    > + Send + 'static,
             {
                 self.build_from_boxed(Box::new(#client_name::from_channel(channel)))
             }
@@ -751,12 +772,7 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
         #[async_trait::async_trait]
         impl<T> #service_name for #grpc_client_adapter_name<#grpc_client_package_name::#grpc_client_name<T>>
         where
-            T: tonic::client::GrpcService<tonic::body::BoxBody>
-                + std::fmt::Debug
-                + Clone
-                + Send
-                + Sync
-                + 'static,
+            T: tonic::client::GrpcService<tonic::body::BoxBody> + std::fmt::Debug + Clone + Send + Sync + 'static,
             T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
             <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send,
             T::Future: Send

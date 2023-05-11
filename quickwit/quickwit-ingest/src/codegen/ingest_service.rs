@@ -70,9 +70,9 @@ pub struct DocBatch {
     pub index_id: ::prost::alloc::string::String,
     #[prost(bytes = "bytes", tag = "2")]
     #[schema(value_type = String, format = Binary)]
-    pub concat_docs: ::prost::bytes::Bytes,
-    #[prost(uint64, repeated, tag = "3")]
-    pub doc_lens: ::prost::alloc::vec::Vec<u64>,
+    pub doc_buffer: ::prost::bytes::Bytes,
+    #[prost(uint32, repeated, tag = "3")]
+    pub doc_lengths: ::prost::alloc::vec::Vec<u32>,
 }
 /// / Suggest to truncate the queue.
 /// /
@@ -140,9 +140,22 @@ impl IngestServiceClient {
     {
         Self { inner: Box::new(instance) }
     }
-    pub fn from_channel(
-        channel: tower::timeout::Timeout<tonic::transport::Channel>,
-    ) -> Self {
+    pub fn from_channel<C>(channel: C) -> Self
+    where
+        C: tower::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<hyper::Body>,
+                Error = quickwit_common::tower::BoxError,
+            > + std::fmt::Debug + Clone + Send + Sync + 'static,
+        <C as tower::Service<
+            http::Request<tonic::body::BoxBody>,
+        >>::Future: std::future::Future<
+                Output = Result<
+                    http::Response<hyper::Body>,
+                    quickwit_common::tower::BoxError,
+                >,
+            > + Send + 'static,
+    {
         IngestServiceClient::new(
             IngestServiceGrpcClientAdapter::new(
                 ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
@@ -304,24 +317,24 @@ impl IngestServiceTowerBlockBuilder {
     pub fn shared_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Clone + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 IngestRequest,
                 Response = IngestResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<IngestRequest>>::Future: Send + 'static,
-        L::Service: Service<
+        <L::Service as tower::Service<IngestRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
                 FetchRequest,
                 Response = FetchResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<FetchRequest>>::Future: Send + 'static,
-        L::Service: Service<
+        <L::Service as tower::Service<FetchRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
                 TailRequest,
                 Response = FetchResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<TailRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<TailRequest>>::Future: Send + 'static,
     {
         self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.fetch_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -331,12 +344,12 @@ impl IngestServiceTowerBlockBuilder {
     pub fn ingest_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 IngestRequest,
                 Response = IngestResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<IngestRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<IngestRequest>>::Future: Send + 'static,
     {
         self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
@@ -344,12 +357,12 @@ impl IngestServiceTowerBlockBuilder {
     pub fn fetch_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 FetchRequest,
                 Response = FetchResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<FetchRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<FetchRequest>>::Future: Send + 'static,
     {
         self.fetch_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
@@ -357,12 +370,12 @@ impl IngestServiceTowerBlockBuilder {
     pub fn tail_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn IngestService>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 TailRequest,
                 Response = FetchResponse,
                 Error = crate::IngestServiceError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<TailRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<TailRequest>>::Future: Send + 'static,
     {
         self.tail_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
@@ -373,10 +386,22 @@ impl IngestServiceTowerBlockBuilder {
     {
         self.build_from_boxed(Box::new(instance))
     }
-    pub fn build_from_channel<T>(
-        self,
-        channel: tower::timeout::Timeout<tonic::transport::Channel>,
-    ) -> IngestServiceClient {
+    pub fn build_from_channel<T, C>(self, channel: C) -> IngestServiceClient
+    where
+        C: tower::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<hyper::Body>,
+                Error = quickwit_common::tower::BoxError,
+            > + std::fmt::Debug + Clone + Send + Sync + 'static,
+        <C as tower::Service<
+            http::Request<tonic::body::BoxBody>,
+        >>::Future: std::future::Future<
+                Output = Result<
+                    http::Response<hyper::Body>,
+                    quickwit_common::tower::BoxError,
+                >,
+            > + Send + 'static,
+    {
         self.build_from_boxed(Box::new(IngestServiceClient::from_channel(channel)))
     }
     pub fn build_from_mailbox<A>(

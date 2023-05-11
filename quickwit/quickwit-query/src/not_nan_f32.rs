@@ -17,11 +17,32 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_doc_mapper::DocMapper;
+use serde::{Deserialize, Serialize};
 
-pub trait BuildTantivyQuery {
-    fn build_tantivy_query(
-        &self,
-        doc_mapper: &dyn DocMapper,
-    ) -> anyhow::Result<Box<dyn crate::TantivyQuery>>;
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq)]
+#[serde(into = "f32", try_from = "f32")]
+pub struct NotNaNf32(f32);
+
+impl NotNaNf32 {
+    pub const ZERO: Self = NotNaNf32(0.0f32);
+    pub const ONE: Self = NotNaNf32(1.0f32);
 }
+
+impl From<NotNaNf32> for f32 {
+    fn from(not_nan_f32: NotNaNf32) -> f32 {
+        not_nan_f32.0
+    }
+}
+
+impl TryFrom<f32> for NotNaNf32 {
+    type Error = &'static str;
+
+    fn try_from(possibly_nan: f32) -> Result<NotNaNf32, &'static str> {
+        if possibly_nan.is_nan() {
+            return Err("NaN is not supported as a boost value.");
+        }
+        Ok(NotNaNf32(possibly_nan))
+    }
+}
+
+impl Eq for NotNaNf32 {}

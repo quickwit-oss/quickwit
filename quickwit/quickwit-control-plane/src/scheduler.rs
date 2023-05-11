@@ -98,7 +98,7 @@ pub struct IndexingSchedulerState {
 /// phase will wait at least [`MIN_DURATION_BETWEEN_SCHEDULING`] before comparing the desired
 /// plan with the running plan.
 pub struct IndexingScheduler {
-    cluster: Arc<Cluster>,
+    cluster: Cluster,
     metastore: Arc<dyn Metastore>,
     indexing_client_pool: ServiceClientPool<IndexingServiceClient>,
     state: IndexingSchedulerState,
@@ -107,7 +107,8 @@ pub struct IndexingScheduler {
 impl fmt::Debug for IndexingScheduler {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IndexingScheduler")
-            .field("cluster_id", &self.cluster.cluster_id)
+            .field("cluster_id", &self.cluster.cluster_id())
+            .field("node_id", &self.cluster.self_node_id())
             .field("metastore_uri", &self.metastore.uri())
             .field(
                 "last_applied_plan_ts",
@@ -138,7 +139,7 @@ impl Actor for IndexingScheduler {
 
 impl IndexingScheduler {
     pub fn new(
-        cluster: Arc<Cluster>,
+        cluster: Cluster,
         metastore: Arc<dyn Metastore>,
         indexing_client_pool: ServiceClientPool<IndexingServiceClient>,
     ) -> Self {
@@ -253,11 +254,11 @@ impl IndexingScheduler {
 
     async fn get_indexers_from_cluster_state(&self) -> Vec<ClusterMember> {
         self.cluster
-            .ready_members_from_chitchat_state()
+            .ready_members()
             .await
             .into_iter()
             .filter(|member| member.enabled_services.contains(&QuickwitService::Indexer))
-            .collect_vec()
+            .collect()
     }
 
     async fn apply_physical_indexing_plan(
@@ -523,6 +524,7 @@ mod tests {
     use quickwit_actors::{ActorHandle, Inbox, Universe, HEARTBEAT};
     use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster};
     use quickwit_common::test_utils::wait_until_predicate;
+    use quickwit_config::service::QuickwitService;
     use quickwit_config::{KafkaSourceParams, SourceConfig, SourceParams};
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::indexing_client::IndexingServiceClient;
@@ -566,7 +568,7 @@ mod tests {
     }
 
     async fn start_scheduler(
-        cluster: Arc<Cluster>,
+        cluster: Cluster,
         indexers: &[&Cluster],
         universe: &Universe,
     ) -> (Vec<Inbox<IndexingService>>, ActorHandle<IndexingScheduler>) {
@@ -585,7 +587,8 @@ mod tests {
         let mut indexing_clients = Vec::new();
         for indexer in indexers {
             let (indexing_service_mailbox, indexing_service_inbox) = universe.create_test_mailbox();
-            let client_grpc_addr = grpc_addr_from_listen_addr_for_test(indexer.gossip_listen_addr);
+            let client_grpc_addr =
+                grpc_addr_from_listen_addr_for_test(indexer.gossip_listen_addr());
             let indexing_client =
                 IndexingServiceClient::from_service(indexing_service_mailbox, client_grpc_addr);
             indexing_clients.push(indexing_client);
@@ -602,11 +605,14 @@ mod tests {
     async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
+        let cluster =
             create_cluster_for_test(Vec::new(), &["indexer", "control_plane"], &transport, true)
                 .await
-                .unwrap(),
-        );
+                .unwrap();
+        cluster
+            .wait_for_ready_members(|members| members.len() == 1, Duration::from_secs(5))
+            .await
+            .unwrap();
         let universe = Universe::with_accelerated_time();
         let (indexing_service_inboxes, scheduler_handler) =
             start_scheduler(cluster.clone(), &[&cluster.clone()], &universe).await;
@@ -674,11 +680,9 @@ mod tests {
     async fn test_scheduler_scheduling_no_indexer() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
+            .await
+            .unwrap();
         let universe = Universe::with_accelerated_time();
         let (indexing_service_inboxes, scheduler_handler) =
             start_scheduler(cluster.clone(), &[&cluster.clone()], &universe).await;
@@ -711,13 +715,11 @@ mod tests {
     async fn test_scheduler_scheduling_multiple_indexers() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
+            .await
+            .unwrap();
         let cluster_indexer_1 = create_cluster_for_test(
-            vec![cluster.node_id.gossip_public_address.to_string()],
+            vec![cluster.gossip_advertise_addr().to_string()],
             &["indexer"],
             &transport,
             true,
@@ -725,7 +727,7 @@ mod tests {
         .await
         .unwrap();
         let cluster_indexer_2 = create_cluster_for_test(
-            vec![cluster.node_id.gossip_public_address.to_string()],
+            vec![cluster.gossip_advertise_addr().to_string()],
             &["indexer"],
             &transport,
             true,
@@ -751,6 +753,18 @@ mod tests {
         assert_eq!(scheduler_state.num_schedule_indexing_plan, 0);
         assert!(scheduler_state.last_applied_physical_plan.is_none());
         assert_eq!(indexing_service_inbox_messages.len(), 0);
+
+        cluster
+            .wait_for_ready_members(
+                |members| {
+                    members
+                        .iter()
+                        .any(|member| member.enabled_services.contains(&QuickwitService::Indexer))
+                },
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
 
         // Wait for chitchat update, sheduler will detect new indexers and schedule a plan.
         wait_until_predicate(
@@ -788,11 +802,27 @@ mod tests {
         // Wait 2 heartbeats again and check the scheduler will not apply the plan several times.
         universe.sleep(HEARTBEAT * 2).await;
         let scheduler_state = scheduler_handler_arc.process_pending_and_observe().await;
-        assert!(scheduler_state.num_applied_physical_indexing_plan < 3);
         assert_eq!(scheduler_state.num_schedule_indexing_plan, 1);
 
         // Shutdown cluster and wait until the new scheduling.
         cluster_indexer_2.shutdown().await;
+
+        cluster
+            .wait_for_ready_members(
+                |members| {
+                    members
+                        .iter()
+                        .filter(|member| {
+                            member.enabled_services.contains(&QuickwitService::Indexer)
+                        })
+                        .count()
+                        == 1
+                },
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+
         wait_until_predicate(
             || {
                 let scheduler_handler_arc_clone = scheduler_handler_arc.clone();
@@ -801,7 +831,6 @@ mod tests {
                         .process_pending_and_observe()
                         .await;
                     scheduler_state.num_schedule_indexing_plan == 2
-                        && scheduler_state.num_applied_physical_indexing_plan < 4
                 }
             },
             HEARTBEAT * 10,

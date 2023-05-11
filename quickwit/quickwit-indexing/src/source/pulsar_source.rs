@@ -999,7 +999,6 @@ mod pulsar_broker_tests {
         assert!(!messages.is_empty());
 
         let batch = merge_doc_batches(messages);
-        dbg!(&batch.docs, &combined_messages);
         assert_eq!(batch.docs, combined_messages);
         assert_eq!(
             batch.checkpoint_delta,

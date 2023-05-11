@@ -17,24 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::net::SocketAddr;
+mod search_body;
+mod search_query_params;
 
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-
-/// Cluster error kinds.
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum ClusterError {
-    /// Port binding error.
-    #[error(
-        "Failed to bind to UDP socket addr `{listen_addr}` for the gossip membership protocol: \
-         `{cause}`"
-    )]
-    UDPPortBindingError {
-        /// Port number.
-        listen_addr: SocketAddr,
-        /// Underlying error message.
-        cause: String,
-    },
-}
-pub type ClusterResult<T> = Result<T, ClusterError>;
+pub use search_body::SearchBody;
+pub use search_query_params::SearchQueryParams;

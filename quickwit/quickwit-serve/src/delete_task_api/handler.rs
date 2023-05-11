@@ -23,7 +23,8 @@ use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_janitor::error::JanitorError;
 use quickwit_metastore::{Metastore, MetastoreError};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
-use quickwit_proto::SearchRequest;
+use quickwit_proto::{query_ast_from_user_text, SearchRequest};
+use quickwit_query::query_ast::QueryAst;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
@@ -130,12 +131,17 @@ pub async fn post_delete_request(
     delete_request: DeleteQueryRequest,
     metastore: Arc<dyn Metastore>,
 ) -> Result<DeleteTask, JanitorError> {
+    let query_ast = query_ast_from_user_text(&delete_request.query, Some(Vec::new()))
+        .parse_user_query(&[])
+        .map_err(|err| JanitorError::InvalidDeleteQuery(err.to_string()))?;
+    let query_ast_json = serde_json::to_string(&query_ast).map_err(|_err| {
+        JanitorError::InternalError("Failed to serialized delete query ast".to_string())
+    })?;
     let delete_query = DeleteQuery {
         index_id: index_id.clone(),
         start_timestamp: delete_request.start_timestamp,
         end_timestamp: delete_request.end_timestamp,
-        query: delete_request.query,
-        search_fields: delete_request.search_fields,
+        query_ast: query_ast_json,
     };
     let index_config: IndexConfig = metastore
         .index_metadata(&delete_query.index_id)
@@ -144,10 +150,14 @@ pub async fn post_delete_request(
     // TODO should it be something else than a JanitorError?
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|error| JanitorError::InternalError(error.to_string()))?;
-    let delete_search_request = SearchRequest::from(delete_query.clone());
-    // Validate the delete query.
+    let delete_search_request = SearchRequest::try_from(delete_query.clone())
+        .map_err(|error| JanitorError::InvalidDeleteQuery(error.to_string()))?;
+
+    // Validate the delete query against the current doc mapping configuration.
+    let query_ast: QueryAst = serde_json::from_str(&delete_search_request.query_ast)
+        .map_err(|err| JanitorError::InvalidDeleteQuery(err.to_string()))?;
     doc_mapper
-        .query(doc_mapper.schema(), &delete_search_request)
+        .query(doc_mapper.schema(), &query_ast, true)
         .map_err(|error| JanitorError::InvalidDeleteQuery(error.to_string()))?;
     let delete_task = metastore.create_delete_task(delete_query).await?;
     Ok(delete_task)
@@ -183,7 +193,7 @@ mod tests {
             .path("/test-delete-task-rest/delete-tasks")
             .method("POST")
             .json(&true)
-            .body(r#"{"query": "term", "start_timestamp": 1, "end_timestamp": 10}"#)
+            .body(r#"{"query": "body:term", "start_timestamp": 1, "end_timestamp": 10}"#)
             .reply(&delete_query_api_handlers)
             .await;
         assert_eq!(resp.status(), 200);
@@ -191,7 +201,10 @@ mod tests {
         assert_eq!(created_delete_task.opstamp, 1);
         let created_delete_query = created_delete_task.delete_query.unwrap();
         assert_eq!(created_delete_query.index_id, index_id);
-        assert_eq!(created_delete_query.query, "term");
+        assert_eq!(
+            created_delete_query.query_ast,
+            r#"{"type":"Phrase","field":"body","phrase":"term"}"#
+        );
         assert_eq!(created_delete_query.start_timestamp, Some(1));
         assert_eq!(created_delete_query.end_timestamp, Some(10));
 

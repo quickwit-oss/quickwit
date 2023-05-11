@@ -43,7 +43,7 @@ impl Cost for IngestRequest {
     fn cost(&self) -> u64 {
         self.doc_batches
             .iter()
-            .map(|doc_batch| doc_batch.concat_docs.len())
+            .map(|doc_batch| doc_batch.num_bytes())
             .sum::<usize>() as u64
     }
 }
@@ -420,13 +420,13 @@ mod tests {
             doc_batches: vec![
                 DocBatch {
                     index_id: "index-1".to_string(),
-                    concat_docs: Bytes::from_static(&[0, 1, 2]),
-                    doc_lens: vec![1, 2],
+                    doc_buffer: Bytes::from_static(&[0, 1, 2]),
+                    doc_lengths: vec![1, 2],
                 },
                 DocBatch {
                     index_id: "index-2".to_string(),
-                    concat_docs: Bytes::from_static(&[3, 4, 5, 6, 7, 8]),
-                    doc_lens: vec![1, 3, 2],
+                    doc_buffer: Bytes::from_static(&[3, 4, 5, 6, 7, 8]),
+                    doc_lengths: vec![1, 3, 2],
                 },
             ],
             commit: CommitType::Auto as u32,

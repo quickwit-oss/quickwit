@@ -20,10 +20,10 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use futures::Future;
 use hyper::http::HeaderValue;
 use hyper::{http, Method};
 use quickwit_common::metrics;
+use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_proto::ServiceErrorCode;
 use tower::make::Shared;
 use tower::ServiceBuilder;
@@ -50,20 +50,26 @@ use crate::{BodyFormat, QuickwitServices};
 /// be automatically compressed with gzip.
 const MINIMUM_RESPONSE_COMPRESSION_SIZE: u16 = 10 << 10;
 
+#[derive(Debug)]
+pub(crate) struct InvalidJsonRequest(pub serde_json::Error);
+
+impl warp::reject::Reject for InvalidJsonRequest {}
+
+#[derive(Debug)]
+pub(crate) struct InvalidArgument(pub String);
+
+impl warp::reject::Reject for InvalidArgument {}
+
 /// Starts REST services.
-pub(crate) async fn start_rest_server<F>(
+pub(crate) async fn start_rest_server(
     rest_listen_addr: SocketAddr,
     quickwit_services: Arc<QuickwitServices>,
-    shutdown_signal: F,
-) -> anyhow::Result<()>
-where
-    F: Future<Output = ()>,
-{
-    info!(rest_listen_addr = %rest_listen_addr, "Starting REST server.");
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()> {
     let request_counter = warp::log::custom(|_| {
         crate::SERVE_METRICS.http_requests_total.inc();
     });
-
     // Docs routes
     let api_doc = warp::path("openapi.json")
         .and(warp::get())
@@ -142,12 +148,16 @@ where
         .layer(cors)
         .service(warp_service);
 
-    info!("Searcher ready to accept requests at http://{rest_listen_addr}/");
-
-    hyper::Server::bind(&rest_listen_addr)
+    info!(
+        rest_listen_addr=?rest_listen_addr,
+        "Starting REST server listening on {rest_listen_addr}."
+    );
+    let serve_fut = hyper::Server::bind(&rest_listen_addr)
         .serve(Shared::new(service))
-        .with_graceful_shutdown(shutdown_signal)
-        .await?;
+        .with_graceful_shutdown(shutdown_signal);
+
+    let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
+    serve_res?;
     Ok(())
 }
 
@@ -182,6 +192,12 @@ fn get_status_with_error(rejection: Rejection) -> ApiError {
         ApiError {
             code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<InvalidJsonRequest>() {
+        // Happens when the request body could not be deserialized correctly.
+        ApiError {
+            code: ServiceErrorCode::BadRequest,
+            message: error.0.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::filters::body::BodyDeserializeError>() {
         // Happens when the request body could not be deserialized correctly.
