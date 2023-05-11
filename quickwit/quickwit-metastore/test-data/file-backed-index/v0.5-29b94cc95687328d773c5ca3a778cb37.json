@@ -4,8 +4,7 @@
       "create_timestamp": 0,
       "delete_query": {
         "index_id": "index",
-        "query": "Harry Potter",
-        "search_fields": []
+        "query_ast": "{\"type\":\"UserText\",\"user_text\":\"Harry Potter\",\"default_fields\":[\"body\"],\"default_operator\":\"Or\"}"
       },
       "opstamp": 10
     }
@@ -17,7 +16,6 @@
       }
     },
     "create_timestamp": 1789,
-    "incarnation_id": "00000000000000000000000000",
     "index_config": {
       "doc_mapping": {
         "field_mappings": [

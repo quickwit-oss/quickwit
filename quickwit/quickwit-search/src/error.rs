@@ -40,7 +40,7 @@ pub enum SearchError {
     InvalidAggregationRequest(String),
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
-    #[error("Invalid query: {0}")]
+    #[error("{0}")]
     InvalidQuery(String),
 }
 

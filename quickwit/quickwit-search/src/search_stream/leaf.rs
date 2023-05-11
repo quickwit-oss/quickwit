@@ -142,8 +142,10 @@ async fn leaf_search_stream_single_split(
         ));
     }
 
-    let search_request = Arc::new(SearchRequest::from(stream_request.clone()));
-    let (query, mut warmup_info) = doc_mapper.query(split_schema.clone(), &search_request)?;
+    let search_request = Arc::new(SearchRequest::try_from(stream_request.clone())?);
+    let query_ast = serde_json::from_str(&search_request.query_ast)
+        .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
+    let (query, mut warmup_info) = doc_mapper.query(split_schema.clone(), &query_ast, false)?;
     let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
@@ -214,7 +216,7 @@ async fn leaf_search_stream_single_split(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
                     &searcher,
-                    query.as_ref(),
+                    &query,
                 )?;
                 // It may seem overkill and expensive considering DateTime is just a wrapper
                 // over the i64, but the compiler is smarter than it looks and the code
@@ -443,6 +445,7 @@ mod tests {
     use itertools::Itertools;
     use quickwit_config::SearcherConfig;
     use quickwit_indexing::TestSandbox;
+    use quickwit_proto::qast_helper;
     use serde_json::json;
     use tantivy::time::{Duration, OffsetDateTime};
 
@@ -478,8 +481,7 @@ mod tests {
 
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
-            query: "info".to_string(),
-            search_fields: Vec::new(),
+            query_ast: qast_helper("info", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: Some(end_timestamp),
@@ -556,8 +558,7 @@ mod tests {
             .unix_timestamp();
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
-            query: "info".to_string(),
-            search_fields: Vec::new(),
+            query_ast: qast_helper("info", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: Some(end_timestamp),
@@ -613,8 +614,7 @@ mod tests {
 
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
-            query: "info".to_string(),
-            search_fields: Vec::new(),
+            query_ast: qast_helper("info", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
@@ -641,11 +641,8 @@ mod tests {
         )
         .await;
         let res = single_node_stream.next().await.expect("no leaf result");
-        assert!(res
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("Search stream does not support fast field of type `Str`"),);
+        let error_message = res.unwrap_err().to_string();
+        assert!(error_message.contains("Search stream does not support fast field of type `Str`"),);
         test_sandbox.assert_quit().await;
         Ok(())
     }
@@ -706,8 +703,7 @@ mod tests {
 
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
-            query: "info".to_string(),
-            search_fields: Vec::new(),
+            query_ast: qast_helper("info", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: Some(end_timestamp),

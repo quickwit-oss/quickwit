@@ -30,7 +30,6 @@ mod doc_mapper;
 mod error;
 mod query_builder;
 mod routing_expression;
-mod tokenizers;
 
 /// Pruning tags manipulation.
 pub mod tag_pruning;
@@ -43,7 +42,6 @@ use default_doc_mapper::{
 };
 pub use doc_mapper::{DocMapper, NamedField, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
-pub use tokenizers::QUICKWIT_TOKENIZER_MANAGER;
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";

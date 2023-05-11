@@ -246,8 +246,7 @@ mod tests {
             index_id: index_id.to_string(),
             start_timestamp: None,
             end_timestamp: None,
-            query: "*".to_string(),
-            search_fields: Vec::new(),
+            query_ast: r#"{"type": "MatchAll"}"#.to_string(),
         };
         metastore.create_delete_task(delete_query).await.unwrap();
         // Just test creation of delete query.

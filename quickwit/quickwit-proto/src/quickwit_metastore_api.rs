@@ -186,11 +186,9 @@ pub struct DeleteQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_timestamp: ::core::option::Option<i64>,
     /// Query text. The query language is that of tantivy.
-    #[prost(string, tag = "4")]
-    pub query: ::prost::alloc::string::String,
-    /// Search fields.
-    #[prost(string, repeated, tag = "5")]
-    pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Query AST serialized in JSON
+    #[prost(string, tag = "6")]
+    pub query_ast: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

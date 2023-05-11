@@ -19,11 +19,14 @@
 
 use std::str::FromStr;
 
-/// This file is auto-generated, any change can be overridden.
+use quickwit_proto::SortOrder;
+use quickwit_query::DefaultOperator;
+use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};
-use warp::{Filter, Rejection};
 
-use super::{from_simple_list, to_simple_list, SimpleList, TrackTotalHits};
+use super::super::TrackTotalHits;
+use crate::simple_list::{from_simple_list, to_simple_list};
+
 #[serde_with::skip_serializing_none]
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct SearchQueryParams {
@@ -48,7 +51,7 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub analyzer: Option<String>,
     #[serde(default)]
-    pub batched_reduce_size: Option<i64>,
+    pub batched_reduce_size: Option<u64>,
     #[serde(default)]
     pub ccs_minimize_roundtrips: Option<bool>,
     #[serde(default)]
@@ -74,7 +77,7 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub force_synthetic_source: Option<bool>,
     #[serde(default)]
-    pub from: Option<i64>,
+    pub from: Option<u64>,
     #[serde(default)]
     pub human: Option<bool>,
     #[serde(default)]
@@ -84,11 +87,11 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub lenient: Option<bool>,
     #[serde(default)]
-    pub max_concurrent_shard_requests: Option<i64>,
+    pub max_concurrent_shard_requests: Option<u64>,
     #[serde(default)]
     pub min_compatible_shard_node: Option<String>,
     #[serde(default)]
-    pub pre_filter_shard_size: Option<i64>,
+    pub pre_filter_shard_size: Option<u64>,
     #[serde(default)]
     pub preference: Option<String>,
     #[serde(default)]
@@ -106,15 +109,13 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub scroll: Option<String>,
     #[serde(default)]
-    pub search_type: Option<SearchType>,
-    #[serde(default)]
     pub seq_no_primary_term: Option<bool>,
     #[serde(default)]
-    pub size: Option<i64>,
+    pub size: Option<u64>,
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    pub sort: Option<Vec<String>>,
+    sort: Option<Vec<String>>,
     #[serde(default)]
     pub source: Option<String>,
     #[serde(serialize_with = "to_simple_list")]
@@ -130,11 +131,11 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub suggest_mode: Option<SuggestMode>,
     #[serde(default)]
-    pub suggest_size: Option<i64>,
+    pub suggest_size: Option<u64>,
     #[serde(default)]
     pub suggest_text: Option<String>,
     #[serde(default)]
-    pub terminate_after: Option<i64>,
+    pub terminate_after: Option<u64>,
     #[serde(default)]
     pub timeout: Option<String>,
     #[serde(default)]
@@ -146,46 +147,54 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub version: Option<bool>,
 }
-#[doc = "The default operator for query string query (AND or OR)"]
-#[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
-pub enum DefaultOperator {
-    #[serde(rename = "AND")]
-    And,
-    #[serde(rename = "OR")]
-    Or,
-}
-impl FromStr for DefaultOperator {
-    type Err = &'static str;
-    fn from_str(value_str: &str) -> Result<Self, Self::Err> {
-        match value_str {
-            "AND" => Ok(Self::And),
-            "OR" => Ok(Self::Or),
-            _ => Err("unknown enum variant"),
-        }
+
+// Parse a single sort field parameter from ES sort query string parameter.
+fn parse_sort_field_str(sort_field_str: &str) -> Result<(String, Option<SortOrder>), SearchError> {
+    if let Some((field, order_str)) = sort_field_str.split_once(':') {
+        let sort_order = SortOrder::from_str_name(order_str).ok_or_else(|| {
+            SearchError::InvalidArgument(format!(
+                "Invalid sort order `{}`. Expected `asc` or `desc`",
+                field
+            ))
+        })?;
+        Ok((field.to_string(), Some(sort_order)))
+    } else {
+        Ok((sort_field_str.to_string(), None))
     }
 }
-impl ToString for DefaultOperator {
-    fn to_string(&self) -> String {
-        match &self {
-            Self::And => "AND".to_string(),
-            Self::Or => "OR".to_string(),
+
+impl SearchQueryParams {
+    /// Accessor for the list of sort fields passed in the sort query string parameter.
+    ///
+    /// Returns an error if the sort query string are not in the expected format
+    /// (`field:order,field2:order2,...`). Returns `Ok(None)` if the sort query string parameter
+    /// is not present.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn sort_fields(
+        &self,
+    ) -> Result<Option<Vec<(String, Option<SortOrder>)>>, SearchError> {
+        let Some(sort_fields_str) = self.sort.as_ref() else {
+            return Ok(None);
+        };
+        let mut sort_fields = Vec::with_capacity(sort_fields_str.len());
+        for sort_field_str in sort_fields_str {
+            sort_fields.push(parse_sort_field_str(sort_field_str)?);
         }
+        Ok(Some(sort_fields))
     }
 }
+
 #[doc = "Whether to expand wildcard expression to concrete indices that are open, closed or both."]
 #[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
 pub enum ExpandWildcards {
-    #[serde(rename = "open")]
     Open,
-    #[serde(rename = "closed")]
     Closed,
-    #[serde(rename = "hidden")]
     Hidden,
-    #[serde(rename = "none")]
     None,
-    #[serde(rename = "all")]
     All,
 }
+
 impl FromStr for ExpandWildcards {
     type Err = &'static str;
     fn from_str(value_str: &str) -> Result<Self, Self::Err> {
@@ -210,42 +219,16 @@ impl ToString for ExpandWildcards {
         }
     }
 }
-#[doc = "Search operation type"]
+
+/// Specify suggest mode
 #[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
-pub enum SearchType {
-    #[serde(rename = "query_then_fetch")]
-    QueryThenFetch,
-    #[serde(rename = "dfs_query_then_fetch")]
-    DfsQueryThenFetch,
-}
-impl FromStr for SearchType {
-    type Err = &'static str;
-    fn from_str(value_str: &str) -> Result<Self, Self::Err> {
-        match value_str {
-            "query_then_fetch" => Ok(Self::QueryThenFetch),
-            "dfs_query_then_fetch" => Ok(Self::DfsQueryThenFetch),
-            _ => Err("unknown enum variant"),
-        }
-    }
-}
-impl ToString for SearchType {
-    fn to_string(&self) -> String {
-        match &self {
-            Self::QueryThenFetch => "query_then_fetch".to_string(),
-            Self::DfsQueryThenFetch => "dfs_query_then_fetch".to_string(),
-        }
-    }
-}
-#[doc = "Specify suggest mode"]
-#[derive(Debug, PartialEq, Deserialize, Serialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
 pub enum SuggestMode {
-    #[serde(rename = "missing")]
     Missing,
-    #[serde(rename = "popular")]
     Popular,
-    #[serde(rename = "always")]
     Always,
 }
+
 impl FromStr for SuggestMode {
     type Err = &'static str;
     fn from_str(value_str: &str) -> Result<Self, Self::Err> {
@@ -265,19 +248,4 @@ impl ToString for SuggestMode {
             Self::Always => "always".to_string(),
         }
     }
-}
-#[utoipa::path(get, tag = "Search", path = "/_search")]
-pub(crate) fn elastic_search_filter(
-) -> impl Filter<Extract = (SearchQueryParams,), Error = Rejection> + Clone {
-    warp::path!("_elastic" / "_search")
-        .and(warp::get().or(warp::post()).unify())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
-}
-
-#[utoipa::path(get, tag = "Search", path = "/{index}/_search")]
-pub(crate) fn elastic_index_search_filter(
-) -> impl Filter<Extract = (SimpleList, SearchQueryParams), Error = Rejection> + Clone {
-    warp::path!("_elastic" / SimpleList / "_search")
-        .and(warp::get().or(warp::post()).unify())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
 }

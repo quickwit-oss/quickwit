@@ -26,11 +26,12 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::{DocMapper, WarmupInfo, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_doc_mapper::{DocMapper, WarmupInfo};
 use quickwit_proto::{
     LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, SearchRequest,
     SplitIdAndFooterOffsets, SplitSearchError,
 };
+use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::{
     wrap_storage_with_long_term_cache, BundleStorage, MemorySizedCache, OwnedBytes, Storage,
 };
@@ -120,7 +121,7 @@ pub(crate) async fn open_index_with_caches(
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
     };
     let mut index = Index::open(hot_directory)?;
-    index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+    index.set_tokenizers(quickwit_query::get_quickwit_tokenizer_manager().clone());
     Ok(index)
 }
 
@@ -141,6 +142,7 @@ pub(crate) async fn open_index_with_caches(
 /// to be hit.
 #[instrument(skip(searcher))]
 pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> anyhow::Result<()> {
+    debug!(warmup_info=?warmup_info, "warmup");
     let warm_up_terms_future = warm_up_terms(searcher, &warmup_info.terms_grouped_by_field)
         .instrument(debug_span!("warm_up_terms"));
     let warm_up_term_dict_future =
@@ -327,7 +329,9 @@ async fn leaf_search_single_split(
         search_request,
         agg_limits,
     )?;
-    let (query, mut warmup_info) = doc_mapper.query(split_schema, search_request)?;
+    let query_ast: QueryAst = serde_json::from_str(search_request.query_ast.as_str())
+        .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
+    let (query, mut warmup_info) = doc_mapper.query(split_schema, &query_ast, false)?;
     let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
@@ -338,7 +342,7 @@ async fn leaf_search_single_split(
     warmup_info.merge(collector_warmup_info);
 
     warmup(&searcher, &warmup_info).await?;
-    let span = info_span!( "tantivy_search", split_id = %split.split_id);
+    let span = info_span!("tantivy_search", split_id = %split.split_id);
     let leaf_search_response = crate::run_cpu_intensive(move || {
         let _span_guard = span.enter();
         searcher.search(&query, &quickwit_collector)

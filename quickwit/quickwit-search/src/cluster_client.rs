@@ -233,7 +233,8 @@ mod tests {
 
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_proto::{
-        PartialHit, SearchRequest, SearchStreamRequest, SplitIdAndFooterOffsets, SplitSearchError,
+        qast_helper, PartialHit, SearchRequest, SearchStreamRequest, SplitIdAndFooterOffsets,
+        SplitSearchError,
     };
 
     use super::*;
@@ -266,12 +267,8 @@ mod tests {
     fn mock_leaf_search_request() -> LeafSearchRequest {
         let search_request = SearchRequest {
             index_id: "test-idx".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
-            start_offset: 0,
             ..Default::default()
         };
         LeafSearchRequest {
@@ -296,8 +293,7 @@ mod tests {
     fn mock_leaf_search_stream_request() -> LeafSearchStreamRequest {
         let search_request = SearchStreamRequest {
             index_id: "test-idx".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
+            query_ast: qast_helper("text", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
