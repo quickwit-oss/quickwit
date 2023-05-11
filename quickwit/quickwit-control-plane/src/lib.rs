@@ -82,11 +82,12 @@ impl From<AskError<ControlPlaneError>> for ControlPlaneError {
 /// Starts the Control Plane.
 pub async fn start_control_plane_service(
     universe: &Universe,
-    cluster: Arc<Cluster>,
+    cluster: Cluster,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<IndexingScheduler>> {
+    let ready_members_watcher = cluster.ready_members_watcher().await;
     let indexing_service_client_pool =
-        ServiceClientPool::create_and_update_members(cluster.ready_member_change_watcher()).await?;
+        ServiceClientPool::create_and_update_members(ready_members_watcher).await?;
     let scheduler = IndexingScheduler::new(cluster, metastore, indexing_service_client_pool);
     let (scheduler_mailbox, _) = universe.spawn_builder().spawn(scheduler);
     Ok(scheduler_mailbox)

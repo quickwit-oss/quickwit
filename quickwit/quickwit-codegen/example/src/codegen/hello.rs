@@ -57,9 +57,22 @@ impl HelloClient {
     {
         Self { inner: Box::new(instance) }
     }
-    pub fn from_channel(
-        channel: tower::timeout::Timeout<tonic::transport::Channel>,
-    ) -> Self {
+    pub fn from_channel<C>(channel: C) -> Self
+    where
+        C: tower::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<hyper::Body>,
+                Error = quickwit_common::tower::BoxError,
+            > + std::fmt::Debug + Clone + Send + Sync + 'static,
+        <C as tower::Service<
+            http::Request<tonic::body::BoxBody>,
+        >>::Future: std::future::Future<
+                Output = Result<
+                    http::Response<hyper::Body>,
+                    quickwit_common::tower::BoxError,
+                >,
+            > + Send + 'static,
+    {
         HelloClient::new(
             HelloGrpcClientAdapter::new(hello_grpc_client::HelloGrpcClient::new(channel)),
         )
@@ -195,18 +208,18 @@ impl HelloTowerBlockBuilder {
     pub fn shared_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn Hello>> + Clone + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 HelloRequest,
                 Response = HelloResponse,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<HelloRequest>>::Future: Send + 'static,
-        L::Service: Service<
+        <L::Service as tower::Service<HelloRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
                 GoodbyeRequest,
                 Response = GoodbyeResponse,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<GoodbyeRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<GoodbyeRequest>>::Future: Send + 'static,
     {
         self.hello_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.goodbye_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
@@ -215,12 +228,12 @@ impl HelloTowerBlockBuilder {
     pub fn hello_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn Hello>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 HelloRequest,
                 Response = HelloResponse,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<HelloRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<HelloRequest>>::Future: Send + 'static,
     {
         self.hello_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
@@ -228,12 +241,12 @@ impl HelloTowerBlockBuilder {
     pub fn goodbye_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn Hello>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 GoodbyeRequest,
                 Response = GoodbyeResponse,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<GoodbyeRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<GoodbyeRequest>>::Future: Send + 'static,
     {
         self.goodbye_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
@@ -244,10 +257,22 @@ impl HelloTowerBlockBuilder {
     {
         self.build_from_boxed(Box::new(instance))
     }
-    pub fn build_from_channel<T>(
-        self,
-        channel: tower::timeout::Timeout<tonic::transport::Channel>,
-    ) -> HelloClient {
+    pub fn build_from_channel<T, C>(self, channel: C) -> HelloClient
+    where
+        C: tower::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<hyper::Body>,
+                Error = quickwit_common::tower::BoxError,
+            > + std::fmt::Debug + Clone + Send + Sync + 'static,
+        <C as tower::Service<
+            http::Request<tonic::body::BoxBody>,
+        >>::Future: std::future::Future<
+                Output = Result<
+                    http::Response<hyper::Body>,
+                    quickwit_common::tower::BoxError,
+                >,
+            > + Send + 'static,
+    {
         self.build_from_boxed(Box::new(HelloClient::from_channel(channel)))
     }
     pub fn build_from_mailbox<A>(

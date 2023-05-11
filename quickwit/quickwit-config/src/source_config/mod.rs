@@ -34,8 +34,8 @@ pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
 use tracing::warn;
+use vrl::compiler::{CompilationResult, Program, TimeZone};
 use vrl::diagnostic::Formatter;
-use vrl::{CompilationResult, Program, TimeZone};
 
 use crate::TestableForRegression;
 
@@ -417,7 +417,7 @@ impl TransformConfig {
         let vrl_script = self.vrl_script.clone() + "\n.";
         let functions = vrl_stdlib::all();
 
-        let compilation_res = match vrl::compile(&vrl_script, &functions) {
+        let compilation_res = match vrl::compiler::compile(&vrl_script, &functions) {
             Ok(compilation_res) => compilation_res,
             Err(diagnostics) => {
                 let mut formatter = Formatter::new(&vrl_script, diagnostics);

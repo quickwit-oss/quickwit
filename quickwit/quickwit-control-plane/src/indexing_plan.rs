@@ -353,7 +353,8 @@ mod tests {
             let addr: SocketAddr = ([127, 0, 0, 1], 10).into();
             members.push(ClusterMember::new(
                 (1 + idx).to_string(),
-                0,
+                0.into(),
+                true,
                 HashSet::from_iter([quickwit_service].into_iter()),
                 addr,
                 addr,

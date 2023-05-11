@@ -197,6 +197,84 @@ fn prompt_confirmation(prompt: &str, default: bool) -> bool {
     }
 }
 
+pub mod busy_detector {
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::time::Instant;
+
+    use once_cell::sync::Lazy;
+    use tracing::warn;
+
+    // we need that time reference to use an atomic and not a mutex for LAST_UNPARK
+    static TIME_REF: Lazy<Instant> = Lazy::new(Instant::now);
+    static ENABLED: AtomicBool = AtomicBool::new(false);
+
+    const ALLOWED_DELAY_MICROS: u64 = 5000;
+    const WARN_SUPPRESSION_MICROS: u64 = 30_000_000;
+
+    // LAST_UNPARK_TIMESTAMP and NEXT_WARN_TIMESTAMP are semantically micro-second
+    // precision timestamps, but we use atomics to allow accessing them without locks.
+    thread_local!(static LAST_UNPARK_TIMESTAMP: AtomicU64 = AtomicU64::new(0));
+    static NEXT_WARN_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
+    static SUPPRESSED_WARN_COUNT: AtomicU64 = AtomicU64::new(0);
+
+    pub fn set_enabled(enabled: bool) {
+        ENABLED.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn thread_unpark() {
+        LAST_UNPARK_TIMESTAMP.with(|time| {
+            let now = Instant::now()
+                .checked_duration_since(*TIME_REF)
+                .unwrap_or_default();
+            time.store(now.as_micros() as u64, Ordering::Relaxed);
+        })
+    }
+
+    pub fn thread_park() {
+        if !ENABLED.load(Ordering::Relaxed) {
+            return;
+        }
+
+        LAST_UNPARK_TIMESTAMP.with(|time| {
+            let now = Instant::now()
+                .checked_duration_since(*TIME_REF)
+                .unwrap_or_default();
+            let now = now.as_micros() as u64;
+            let delta = now - time.load(Ordering::Relaxed);
+            if delta > ALLOWED_DELAY_MICROS {
+                emit_warn(delta, now);
+            }
+        })
+    }
+
+    fn emit_warn(delta: u64, now: u64) {
+        if NEXT_WARN_TIMESTAMP
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next_warn| {
+                if next_warn < now {
+                    Some(now + WARN_SUPPRESSION_MICROS)
+                } else {
+                    None
+                }
+            })
+            .is_err()
+        {
+            // a warn was emited recently, don't emit log for this one
+            SUPPRESSED_WARN_COUNT.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+
+        let suppressed = SUPPRESSED_WARN_COUNT.swap(0, Ordering::Relaxed);
+        if suppressed == 0 {
+            warn!("Thread wasn't parked for {delta}µs, is the runtime too busy?");
+        } else {
+            warn!(
+                "Thread wasn't parked for {delta}µs, is the runtime too busy? ({suppressed} \
+                 similar messages suppressed)"
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
