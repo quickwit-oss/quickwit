@@ -40,9 +40,7 @@ use quickwit_proto::metastore_api::{
 };
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::Status;
-use quickwit_proto::SpanContextInterceptor;
-use tokio::sync::watch;
-use tokio_stream::wrappers::WatchStream;
+use quickwit_proto::{IndexUid, SpanContextInterceptor};
 use tower::timeout::error::Elapsed;
 
 use crate::checkpoint::IndexCheckpointDelta;
