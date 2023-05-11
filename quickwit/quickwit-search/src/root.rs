@@ -35,14 +35,15 @@ use quickwit_proto::{
 use quickwit_query::query_ast::QueryAst;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
-use tantivy::aggregation::AggregationLimits;
 use tantivy::collector::Collector;
 use tantivy::schema::{FieldType, Schema};
 use tantivy::TantivyError;
 use tracing::{debug, error, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
-use crate::collector::{make_merge_collector, QuickwitAggregations};
+use crate::collector::{
+    aggregation_limits_from_searcher_context, make_merge_collector, QuickwitAggregations,
+};
 use crate::find_trace_ids_collector::Span;
 use crate::search_job_placer::Job;
 use crate::service::SearcherContext;
@@ -380,6 +381,7 @@ pub async fn root_search(
     let aggregation = finalize_aggregation(
         leaf_search_response.intermediate_aggregation_result,
         aggregations,
+        &searcher_context,
     )?;
 
     Ok(SearchResponse {
@@ -394,6 +396,7 @@ pub async fn root_search(
 pub fn finalize_aggregation(
     intermediate_aggregation_result: Option<Vec<u8>>,
     aggregations: Option<QuickwitAggregations>,
+    searcher_context: &Arc<SearcherContext>,
 ) -> crate::Result<Option<String>> {
     let aggregation = if let Some(intermediate_aggregation_result) = intermediate_aggregation_result
     {
@@ -410,8 +413,9 @@ pub fn finalize_aggregation(
             QuickwitAggregations::TantivyAggregations(aggregations) => {
                 let res: IntermediateAggregationResults =
                     postcard::from_bytes(intermediate_aggregation_result.as_slice())?;
+                let aggregation_limits = aggregation_limits_from_searcher_context(searcher_context);
                 let res: AggregationResults =
-                    res.into_final_result(aggregations, &AggregationLimits::default())?;
+                    res.into_final_result(aggregations, &aggregation_limits)?;
                 Some(serde_json::to_string(&res)?)
             }
         }
