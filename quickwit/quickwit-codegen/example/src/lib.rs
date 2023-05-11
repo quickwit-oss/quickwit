@@ -99,12 +99,14 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
+    use quickwit_common::tower::{BalanceChannel, Change};
     use tonic::transport::{Endpoint, Server};
     use tower::timeout::Timeout;
 
     use super::*;
     use crate::hello::hello_grpc_server::HelloGrpcServer;
     use crate::hello::MockHello;
+    use crate::hello_grpc_client::HelloGrpcClient;
     use crate::{CounterLayer, GoodbyeRequest, GoodbyeResponse, HelloError};
 
     #[tokio::test]
@@ -170,9 +172,7 @@ mod tests {
             }
         });
         let channel = Timeout::new(
-            Endpoint::from_static("http://127.0.0.1:6666")
-                .connect_timeout(Duration::from_secs(1))
-                .connect_lazy(),
+            Endpoint::from_static("http://127.0.0.1:6666").connect_lazy(),
             Duration::from_secs(1),
         );
         let mut grpc_client = HelloClient::from_channel(channel);
@@ -325,5 +325,44 @@ mod tests {
             .unwrap();
 
         assert_eq!(layer.counter.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn test_balance_channel() {
+        let hello = HelloImpl;
+        let grpc_server_adapter = HelloGrpcServerAdapter::new(hello);
+        let grpc_server = HelloGrpcServer::new(grpc_server_adapter);
+        let addr: SocketAddr = "127.0.0.1:7777".parse().unwrap();
+
+        tokio::spawn({
+            async move {
+                Server::builder()
+                    .add_service(grpc_server)
+                    .serve(addr)
+                    .await
+                    .unwrap();
+            }
+        });
+        let (balance_channel, balance_channel_tx) = BalanceChannel::new();
+        let channel = Endpoint::from_static("http://127.0.0.1:7777").connect_lazy();
+        balance_channel_tx
+            .send(Change::Insert("foo", channel))
+            .unwrap();
+
+        let mut grpc_client = HelloGrpcClient::new(balance_channel.clone());
+
+        assert_eq!(
+            grpc_client
+                .hello(HelloRequest {
+                    name: "Client".to_string()
+                })
+                .await
+                .unwrap()
+                .into_inner(),
+            HelloResponse {
+                message: "Hello, Client!".to_string()
+            }
+        );
+        assert_eq!(balance_channel.num_connections(), 1);
     }
 }

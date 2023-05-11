@@ -662,44 +662,45 @@ fn build_aggregations_query(num_traces: usize) -> String {
     query
 }
 
-fn qw_span_to_jaeger_span(qw_span: &str) -> Result<JaegerSpan, Status> {
-    let mut span: QwSpan = json_deserialize(qw_span, "span")?;
-    let trace_id = span.trace_id.to_vec();
-    let span_id = base64_decode(span.span_id.as_bytes(), "span ID")?;
+fn qw_span_to_jaeger_span(qw_span_json: &str) -> Result<JaegerSpan, Status> {
+    let mut qw_span: QwSpan = json_deserialize(qw_span_json, "span")?;
+    let trace_id = qw_span.trace_id.to_vec();
+    let span_id = base64_decode(qw_span.span_id.as_bytes(), "span ID")?;
 
-    let start_time = Some(to_well_known_timestamp(span.span_start_timestamp_nanos));
+    let start_time = Some(to_well_known_timestamp(qw_span.span_start_timestamp_nanos));
     let duration = Some(to_well_known_duration(
-        span.span_start_timestamp_nanos,
-        span.span_end_timestamp_nanos,
+        qw_span.span_start_timestamp_nanos,
+        qw_span.span_end_timestamp_nanos,
     ));
-    span.resource_attributes.remove("service.name");
+    qw_span.resource_attributes.remove("service.name");
     let process = Some(JaegerProcess {
-        service_name: span.service_name,
-        tags: otlp_attributes_to_jaeger_tags(span.resource_attributes)?,
+        service_name: qw_span.service_name,
+        tags: otlp_attributes_to_jaeger_tags(qw_span.resource_attributes)?,
     });
-    let logs: Vec<JaegerLog> = span
+    let logs: Vec<JaegerLog> = qw_span
         .events
         .into_iter()
         .map(qw_event_to_jaeger_log)
         .collect::<Result<_, _>>()?;
 
     // From <https://opentelemetry.io/docs/reference/specification/trace/sdk_exporters/jaeger/#spankind>
-    let mut tags = otlp_attributes_to_jaeger_tags(span.span_attributes)?;
+    let mut tags = otlp_attributes_to_jaeger_tags(qw_span.span_attributes)?;
     inject_dropped_count_tags(
         &mut tags,
-        span.span_dropped_attributes_count,
-        span.span_dropped_events_count,
-        span.span_dropped_links_count,
+        qw_span.span_dropped_attributes_count,
+        qw_span.span_dropped_events_count,
+        qw_span.span_dropped_links_count,
     );
-    inject_span_kind_tag(&mut tags, span.span_kind);
-    inject_span_status_tags(&mut tags, span.span_status);
+    inject_span_kind_tag(&mut tags, qw_span.span_kind);
+    inject_span_status_tags(&mut tags, qw_span.span_status);
 
-    let references = otlp_links_to_jaeger_references(&trace_id, span.parent_span_id, span.links)?;
+    let references =
+        otlp_links_to_jaeger_references(&trace_id, qw_span.parent_span_id, qw_span.links)?;
 
     let span = JaegerSpan {
         trace_id,
         span_id,
-        operation_name: span.span_name,
+        operation_name: qw_span.span_name,
         references,
         flags: 0, // TODO
         start_time,
@@ -975,7 +976,9 @@ where T: Deserialize<'a> {
         Ok(deserialized) => Ok(deserialized),
         Err(error) => {
             error!("Failed to deserialize {label}: {error:?}");
-            Err(Status::internal(format!("Failed to deserialize {json}.")))
+            Err(Status::internal(format!(
+                "Failed to deserialize {label}: {error:?}."
+            )))
         }
     }
 }
@@ -1691,6 +1694,256 @@ mod tests {
     }
 
     #[test]
+    fn test_qw_span_to_jaeger_span() {
+        let qw_span = QwSpan {
+            trace_id: TraceId::new([1; 16]),
+            trace_state: Some("key1=value1,key2=value2".to_string()),
+            service_name: "quickwit".to_string(),
+            resource_attributes: HashMap::from_iter([(
+                "resource_key".to_string(),
+                json!("resource_value"),
+            )]),
+            resource_dropped_attributes_count: 1,
+            scope_name: Some("vector.dev".to_string()),
+            scope_version: Some("1.0.0".to_string()),
+            scope_attributes: HashMap::from_iter([("scope_key".to_string(), json!("scope_value"))]),
+            scope_dropped_attributes_count: 2,
+            span_id: BASE64_STANDARD.encode([2; 8]),
+            span_kind: 2,
+            span_name: "publish_split".to_string(),
+            span_fingerprint: Some(SpanFingerprint::new("quickwit", 2.into(), "publish_split")),
+            span_start_timestamp_nanos: 1_000_000_001,
+            span_end_timestamp_nanos: 2_000_000_002,
+            span_start_timestamp_secs: Some(1),
+            span_duration_millis: Some(1_001),
+            span_attributes: HashMap::from_iter([("span_key".to_string(), json!("span_value"))]),
+            span_dropped_attributes_count: 3,
+            span_dropped_events_count: 4,
+            span_dropped_links_count: 5,
+            span_status: Some(QwSpanStatus {
+                code: 2,
+                message: Some("An error occurred.".to_string()),
+            }),
+            parent_span_id: Some(BASE64_STANDARD.encode([3; 8])),
+            events: vec![QwEvent {
+                event_timestamp_nanos: 1000500003,
+                event_name: "event_name".to_string(),
+                event_attributes: HashMap::from_iter([(
+                    "event_key".to_string(),
+                    json!("event_value"),
+                )]),
+                event_dropped_attributes_count: 6,
+            }],
+            event_names: vec!["event_name".to_string()],
+            links: vec![QwLink {
+                link_trace_id: TraceId::new([4; 16]),
+                link_trace_state: "link_key1=link_value1,link_key2=link_value2".to_string(),
+                link_span_id: BASE64_STANDARD.encode([5; 8]),
+                link_attributes: HashMap::from_iter([(
+                    "link_key".to_string(),
+                    json!("link_value"),
+                )]),
+                link_dropped_attributes_count: 7,
+            }],
+        };
+        let qw_span_json = serde_json::to_string(&qw_span).unwrap();
+        let jaeger_span = qw_span_to_jaeger_span(&qw_span_json).unwrap();
+        assert_eq!(jaeger_span.trace_id, [1; 16]);
+        assert_eq!(jaeger_span.span_id, [2; 8]);
+        assert_eq!(jaeger_span.operation_name, "publish_split");
+        assert_eq!(
+            jaeger_span.references,
+            vec![
+                JaegerSpanRef {
+                    trace_id: vec![1; 16],
+                    span_id: vec![3; 8],
+                    ref_type: 0,
+                },
+                JaegerSpanRef {
+                    trace_id: vec![4; 16],
+                    span_id: vec![5; 8],
+                    ref_type: 1,
+                }
+            ]
+        );
+        assert_eq!(jaeger_span.flags, 0);
+        assert_eq!(
+            jaeger_span.start_time.unwrap(),
+            WellKnownTimestamp {
+                seconds: 1,
+                nanos: 1,
+            }
+        );
+        assert_eq!(
+            jaeger_span.duration.unwrap(),
+            WellKnownDuration {
+                seconds: 1,
+                nanos: 1,
+            }
+        );
+        assert_eq!(
+            jaeger_span.tags,
+            vec![
+                JaegerKeyValue {
+                    key: "span_key".to_string(),
+                    v_type: 0,
+                    v_str: "span_value".to_string(),
+                    v_bool: false,
+                    v_int64: 0,
+                    v_float64: 0.0,
+                    v_binary: Vec::new()
+                },
+                JaegerKeyValue {
+                    key: "otel.dropped_attributes_count".to_string(),
+                    v_type: 2,
+                    v_str: String::new(),
+                    v_bool: false,
+                    v_int64: 3,
+                    v_float64: 0.0,
+                    v_binary: Vec::new()
+                },
+                JaegerKeyValue {
+                    key: "otel.dropped_events_count".to_string(),
+                    v_type: 2,
+                    v_str: String::new(),
+                    v_bool: false,
+                    v_int64: 4,
+                    v_float64: 0.0,
+                    v_binary: Vec::new()
+                },
+                JaegerKeyValue {
+                    key: "otel.dropped_links_count".to_string(),
+                    v_type: 2,
+                    v_str: String::new(),
+                    v_bool: false,
+                    v_int64: 5,
+                    v_float64: 0.0,
+                    v_binary: Vec::new()
+                },
+                JaegerKeyValue {
+                    key: "span.kind".to_string(),
+                    v_type: 0,
+                    v_str: "server".to_string(),
+                    v_bool: false,
+                    v_int64: 0,
+                    v_float64: 0.0,
+                    v_binary: Vec::new()
+                },
+                JaegerKeyValue {
+                    key: "otel.status_description".to_string(),
+                    v_type: 0,
+                    v_str: "An error occurred.".to_string(),
+                    v_bool: false,
+                    v_int64: 0,
+                    v_float64: 0.0,
+                    v_binary: Vec::new()
+                },
+                JaegerKeyValue {
+                    key: "otel.status_code".to_string(),
+                    v_type: 0,
+                    v_str: "ERROR".to_string(),
+                    v_bool: false,
+                    v_int64: 0,
+                    v_float64: 0.0,
+                    v_binary: Vec::new()
+                },
+                JaegerKeyValue {
+                    key: "error".to_string(),
+                    v_type: 1,
+                    v_str: String::new(),
+                    v_bool: true,
+                    v_int64: 0,
+                    v_float64: 0.0,
+                    v_binary: Vec::new()
+                },
+            ]
+        );
+        assert_eq!(
+            jaeger_span.logs,
+            vec![JaegerLog {
+                timestamp: Some(WellKnownTimestamp {
+                    seconds: 1,
+                    nanos: 500003,
+                }),
+                fields: vec![
+                    JaegerKeyValue {
+                        key: "event_key".to_string(),
+                        v_type: 0,
+                        v_str: "event_value".to_string(),
+                        v_bool: false,
+                        v_int64: 0,
+                        v_float64: 0.0,
+                        v_binary: Vec::new()
+                    },
+                    JaegerKeyValue {
+                        key: "event".to_string(),
+                        v_type: 0,
+                        v_str: "event_name".to_string(),
+                        v_bool: false,
+                        v_int64: 0,
+                        v_float64: 0.0,
+                        v_binary: Vec::new()
+                    },
+                    JaegerKeyValue {
+                        key: "otel.dropped_attributes_count".to_string(),
+                        v_type: 2,
+                        v_str: String::new(),
+                        v_bool: false,
+                        v_int64: 6,
+                        v_float64: 0.0,
+                        v_binary: Vec::new()
+                    },
+                ],
+            }]
+        );
+        assert_eq!(
+            jaeger_span.process.unwrap(),
+            JaegerProcess {
+                service_name: "quickwit".to_string(),
+                tags: vec![JaegerKeyValue {
+                    key: "resource_key".to_string(),
+                    v_type: 0,
+                    v_str: "resource_value".to_string(),
+                    v_bool: false,
+                    v_int64: 0,
+                    v_float64: 0.0,
+                    v_binary: Vec::new()
+                }]
+            }
+        );
+        assert!(jaeger_span.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_otlp_links_to_jaeger_references() {
+        let parent_span_id = BASE64_STANDARD.encode([3; 8]);
+        let links = vec![QwLink {
+            link_trace_id: TraceId::new([4; 16]),
+            link_trace_state: "link_key1=link_value1,link_key2=link_value2".to_string(),
+            link_span_id: BASE64_STANDARD.encode([5; 8]),
+            link_attributes: HashMap::from_iter([("link_key".to_string(), json!("link_value"))]),
+            link_dropped_attributes_count: 7,
+        }];
+        let jaeger_references =
+            otlp_links_to_jaeger_references(&[1; 16], Some(parent_span_id), links).unwrap();
+        assert_eq!(
+            jaeger_references,
+            vec![
+                JaegerSpanRef {
+                    trace_id: vec![1; 16],
+                    span_id: vec![3; 8],
+                    ref_type: 0,
+                },
+                JaegerSpanRef {
+                    trace_id: vec![4; 16],
+                    span_id: vec![5; 8],
+                    ref_type: 1,
+                }
+            ]
+        );
+    }
+
+    #[test]
     fn test_collect_trace_ids() {
         {
             let agg_result_json = r#"[]"#;
@@ -1751,7 +2004,7 @@ mod tests {
         let service = Arc::new(service);
         let jaeger = JaegerService::new(JaegerConfig::default(), service);
 
-        let request = tonic::Request::new(crate::GetServicesRequest {});
+        let request = tonic::Request::new(GetServicesRequest {});
         let response = jaeger.get_services(request).await.unwrap().into_inner();
         assert_eq!(response.services, &["service1", "service2", "service3"]);
     }

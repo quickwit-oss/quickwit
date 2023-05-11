@@ -97,17 +97,27 @@ where T: Buf + Default
 /// Builds DocBatch from individual commands
 pub struct DocBatchBuilder {
     index_id: String,
-    concat_docs: BytesMut,
-    doc_lens: Vec<u64>,
+    doc_buffer: BytesMut,
+    doc_lengths: Vec<u32>,
 }
 
 impl DocBatchBuilder {
-    /// Creates a new batch builder with the given index name
+    /// Creates a new batch builder for the given index name.
     pub fn new(index_id: String) -> Self {
         Self {
             index_id,
-            concat_docs: BytesMut::new(),
-            doc_lens: Vec::new(),
+            doc_buffer: BytesMut::new(),
+            doc_lengths: Vec::new(),
+        }
+    }
+
+    /// Creates a new batch builder for the given index name with some pre-allocated capacity for
+    /// the internal doc buffer.
+    pub fn with_capacity(index_id: String, capacity: usize) -> Self {
+        Self {
+            index_id,
+            doc_buffer: BytesMut::with_capacity(capacity),
+            doc_lengths: Vec::new(),
         }
     }
 
@@ -126,16 +136,16 @@ impl DocBatchBuilder {
     /// Adds a parsed command to the batch
     pub fn command<T>(&mut self, command: DocCommand<T>) -> usize
     where T: Buf + Default {
-        let len = command.write(&mut self.concat_docs);
-        self.doc_lens.push(len as u64);
+        let len = command.write(&mut self.doc_buffer);
+        self.doc_lengths.push(len as u32);
         len
     }
 
     /// Adds a list of bytes representing a command to the batch
     pub fn command_from_buf(&mut self, raw: impl Buf) -> usize {
         let len = raw.remaining();
-        self.concat_docs.put(raw);
-        self.doc_lens.push(len as u64);
+        self.doc_buffer.put(raw);
+        self.doc_lengths.push(len as u32);
         len
     }
 
@@ -143,8 +153,8 @@ impl DocBatchBuilder {
     pub fn json_writer(self) -> JsonDocBatchBuilder {
         JsonDocBatchBuilder {
             index_id: self.index_id,
-            concat_docs: self.concat_docs.writer(),
-            doc_lens: self.doc_lens,
+            doc_buffer: self.doc_buffer.writer(),
+            doc_lengths: self.doc_lengths,
         }
     }
 
@@ -152,8 +162,8 @@ impl DocBatchBuilder {
     pub fn build(self) -> DocBatch {
         DocBatch {
             index_id: self.index_id,
-            concat_docs: self.concat_docs.freeze(),
-            doc_lens: self.doc_lens,
+            doc_buffer: self.doc_buffer.freeze(),
+            doc_lengths: self.doc_lengths,
         }
     }
 }
@@ -162,24 +172,24 @@ impl DocBatchBuilder {
 
 pub struct JsonDocBatchBuilder {
     index_id: String,
-    concat_docs: Writer<BytesMut>,
-    doc_lens: Vec<u64>,
+    doc_buffer: Writer<BytesMut>,
+    doc_lengths: Vec<u32>,
 }
 
 impl JsonDocBatchBuilder {
     /// Adds an ingest command to the batch for a Serialize struct
     pub fn ingest_doc(&mut self, payload: impl Serialize) -> serde_json::Result<usize> {
-        let old_len = self.concat_docs.get_ref().len();
-        self.concat_docs
+        let old_len = self.doc_buffer.get_ref().len();
+        self.doc_buffer
             .get_mut()
             .put_u8(DocCommandCode::IngestV1 as u8);
-        let res = serde_json::to_writer(&mut self.concat_docs, &payload);
-        let new_len = self.concat_docs.get_ref().len();
+        let res = serde_json::to_writer(&mut self.doc_buffer, &payload);
+        let new_len = self.doc_buffer.get_ref().len();
         if let Err(err) = res {
             Err(err)
         } else {
             let len = new_len - old_len;
-            self.doc_lens.push(len as u64);
+            self.doc_lengths.push(len as u32);
             Ok(len)
         }
     }
@@ -188,8 +198,8 @@ impl JsonDocBatchBuilder {
     pub fn into_inner(self) -> DocBatchBuilder {
         DocBatchBuilder {
             index_id: self.index_id,
-            concat_docs: self.concat_docs.into_inner(),
-            doc_lens: self.doc_lens,
+            doc_buffer: self.doc_buffer.into_inner(),
+            doc_lengths: self.doc_lengths,
         }
     }
 
@@ -207,30 +217,30 @@ impl DocBatch {
 
     /// Returns an iterator over the document payloads within a doc_batch.
     pub fn iter_raw(&self) -> impl Iterator<Item = Bytes> + '_ {
-        self.doc_lens
+        self.doc_lengths
             .iter()
             .cloned()
             .scan(0, |current_offset, doc_num_bytes| {
                 let start = *current_offset;
                 let end = start + doc_num_bytes as usize;
                 *current_offset = end;
-                Some(self.concat_docs.slice(start..end))
+                Some(self.doc_buffer.slice(start..end))
             })
     }
 
     /// Returns true if the batch is empty.
     pub fn is_empty(&self) -> bool {
-        self.doc_lens.is_empty()
+        self.doc_lengths.is_empty()
     }
 
     /// Returns the total number of bytes in the batch.
     pub fn num_bytes(&self) -> usize {
-        self.concat_docs.len()
+        self.doc_buffer.len()
     }
 
     /// Returns the number of documents in the batch.
     pub fn num_docs(&self) -> usize {
-        self.doc_lens.len()
+        self.doc_lengths.len()
     }
 }
 

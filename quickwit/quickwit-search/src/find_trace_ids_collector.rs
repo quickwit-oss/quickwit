@@ -274,7 +274,7 @@ impl SelectTraceIds {
             select_workbench: Vec::with_capacity(2 * num_traces),
             running_term_ord: None,
             running_span_timestamp: DateTime::default(),
-            span_timestamp_sentinel: DateTime::from_timestamp_micros(i64::MIN),
+            span_timestamp_sentinel: DateTime::from_timestamp_nanos(i64::MIN),
         }
     }
 
@@ -425,10 +425,8 @@ mod tests {
     fn test_select_trace_ids() {
         {
             let select_trace_ids = SelectTraceIds::new(0);
-
             let mut trace_ids = select_trace_ids.harvest();
             trace_ids.sort();
-
             assert_eq!(trace_ids, &[]);
         }
         {

@@ -29,7 +29,6 @@ rusoto_core = { workspace = true }
 rusoto_s3 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
 tantivy = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }

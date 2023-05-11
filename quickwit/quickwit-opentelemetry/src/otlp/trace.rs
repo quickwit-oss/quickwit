@@ -30,7 +30,9 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_se
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
     ExportTracePartialSuccess, ExportTraceServiceRequest, ExportTraceServiceResponse,
 };
-use quickwit_proto::opentelemetry::proto::trace::v1::Status as OtlpStatus;
+use quickwit_proto::opentelemetry::proto::common::v1::InstrumentationScope;
+use quickwit_proto::opentelemetry::proto::resource::v1::Resource as OtlpResource;
+use quickwit_proto::opentelemetry::proto::trace::v1::{Span as OtlpSpan, Status as OtlpStatus};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tonic::{Request, Response, Status};
@@ -190,6 +192,93 @@ pub struct Span {
     pub links: Vec<Link>,
 }
 
+impl Span {
+    fn from_otlp(span: OtlpSpan, resource: &Resource, scope: &Scope) -> Result<Self, Status> {
+        let trace_id = TraceId::try_from(span.trace_id)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        let span_id = BASE64_STANDARD.encode(span.span_id);
+        let parent_span_id = if !span.parent_span_id.is_empty() {
+            Some(BASE64_STANDARD.encode(span.parent_span_id))
+        } else {
+            None
+        };
+        let span_name = if !span.name.is_empty() {
+            span.name
+        } else {
+            "unknown".to_string()
+        };
+        let span_fingerprint =
+            SpanFingerprint::new(&resource.service_name, span.kind.into(), &span_name);
+        let span_start_timestamp_secs = Some(span.start_time_unix_nano / 1_000_000_000);
+        let span_duration_nanos = span.end_time_unix_nano - span.start_time_unix_nano;
+        let span_duration_millis = Some(span_duration_nanos / 1_000_000);
+        let span_attributes = extract_attributes(span.attributes);
+
+        let events: Vec<Event> = span
+            .events
+            .into_iter()
+            .map(|event| Event {
+                event_timestamp_nanos: event.time_unix_nano,
+                event_name: event.name,
+                event_attributes: extract_attributes(event.attributes),
+                event_dropped_attributes_count: event.dropped_attributes_count,
+            })
+            .collect();
+        let event_names: Vec<String> = events
+            .iter()
+            .map(|event| event.event_name.clone())
+            .collect();
+        let links: Vec<Link> = span
+            .links
+            .into_iter()
+            .map(|link| {
+                TraceId::try_from(link.trace_id).map(|link_trace_id| Link {
+                    link_trace_id,
+                    link_trace_state: link.trace_state,
+                    link_span_id: BASE64_STANDARD.encode(link.span_id),
+                    link_attributes: extract_attributes(link.attributes),
+                    link_dropped_attributes_count: link.dropped_attributes_count,
+                })
+            })
+            .collect::<Result<_, _>>()
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        let trace_state = if span.trace_state.is_empty() {
+            None
+        } else {
+            Some(span.trace_state)
+        };
+        let span = Span {
+            trace_id,
+            trace_state,
+            service_name: resource.service_name.clone(),
+            resource_attributes: resource.attributes.clone(),
+            resource_dropped_attributes_count: resource.dropped_attributes_count,
+            scope_name: scope.name.clone(),
+            scope_version: scope.version.clone(),
+            scope_attributes: scope.attributes.clone(),
+            scope_dropped_attributes_count: scope.dropped_attributes_count,
+            span_id,
+            span_kind: span.kind as u64,
+            span_name,
+            span_fingerprint: Some(span_fingerprint),
+            span_start_timestamp_nanos: span.start_time_unix_nano,
+            span_end_timestamp_nanos: span.end_time_unix_nano,
+            span_start_timestamp_secs,
+            span_duration_millis,
+            span_attributes,
+            span_dropped_attributes_count: span.dropped_attributes_count,
+            span_dropped_events_count: span.dropped_events_count,
+            span_dropped_links_count: span.dropped_links_count,
+            span_status: span.status.map(|status| status.into()),
+            parent_span_id,
+            events,
+            event_names,
+            links,
+        };
+        Ok(span)
+    }
+}
+
 /// A wrapper around `Span` that implements `Ord` to allow insertion of spans into a `BTreeSet`.
 #[derive(Debug)]
 struct OrdSpan(Span);
@@ -300,7 +389,7 @@ impl FromStr for SpanKind {
 const SPAN_FINGERPRINT_SEPARATOR: char = '\0';
 
 /// Concatenation of the service name, span kind, and span name.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SpanFingerprint(String);
 
 impl SpanFingerprint {
@@ -362,7 +451,7 @@ impl SpanFingerprint {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SpanStatus {
     pub code: i32,
     pub message: Option<String>,
@@ -382,7 +471,64 @@ impl From<OtlpStatus> for SpanStatus {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+const UNKNOWN_SERVICE: &str = "unknown_service";
+
+const SERVICE_NAME_KEY: &str = "service.name";
+
+struct Resource {
+    service_name: String,
+    attributes: HashMap<String, JsonValue>,
+    dropped_attributes_count: u32,
+}
+
+impl Default for Resource {
+    fn default() -> Self {
+        Self {
+            service_name: UNKNOWN_SERVICE.to_string(),
+            attributes: HashMap::new(),
+            dropped_attributes_count: 0,
+        }
+    }
+}
+
+impl Resource {
+    fn from_otlp(resource: OtlpResource) -> Self {
+        let mut attributes = extract_attributes(resource.attributes);
+        let service_name = match attributes.remove(SERVICE_NAME_KEY) {
+            Some(JsonValue::String(value)) => value,
+            _ => UNKNOWN_SERVICE.to_string(),
+        };
+        Self {
+            service_name,
+            attributes,
+            dropped_attributes_count: resource.dropped_attributes_count,
+        }
+    }
+}
+
+#[derive(Default)]
+struct Scope {
+    name: Option<String>,
+    version: Option<String>,
+    attributes: HashMap<String, JsonValue>,
+    dropped_attributes_count: u32,
+}
+
+impl Scope {
+    fn from_otlp(scope: InstrumentationScope) -> Self {
+        let name = Some(scope.name).filter(|name| !name.is_empty());
+        let version = Some(scope.version).filter(|version| !version.is_empty());
+        let attributes = extract_attributes(scope.attributes);
+        Self {
+            name,
+            version,
+            attributes,
+            dropped_attributes_count: scope.dropped_attributes_count,
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Event {
     pub event_timestamp_nanos: u64,
     pub event_name: String,
@@ -390,7 +536,7 @@ pub struct Event {
     pub event_dropped_attributes_count: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Link {
     pub link_trace_id: TraceId,
     pub link_trace_state: String,
@@ -439,7 +585,7 @@ impl OtlpGrpcTraceService {
         if num_spans == num_parse_errors {
             return Err(tonic::Status::internal(error_message));
         }
-        let num_bytes = doc_batch.concat_docs.len() as u64;
+        let num_bytes = doc_batch.num_bytes() as u64;
         self.store_spans(doc_batch).await?;
 
         OTLP_SERVICE_METRICS
@@ -466,149 +612,35 @@ impl OtlpGrpcTraceService {
         request: ExportTraceServiceRequest,
         parent_span: RuntimeSpan,
     ) -> Result<ParsedSpans, Status> {
-        let mut spans = BTreeSet::new();
+        let mut ordered_spans = BTreeSet::new();
         let mut num_spans = 0;
         let mut num_parse_errors = 0;
         let mut error_message = String::new();
 
-        for resource_span in request.resource_spans {
-            let resource_attributes = extract_attributes(
-                resource_span
-                    .resource
-                    .clone()
-                    .map(|rsrc| rsrc.attributes)
-                    .unwrap_or_else(Vec::new),
-            );
-            let resource_dropped_attributes_count = resource_span
+        for resource_spans in request.resource_spans {
+            let resource = resource_spans
                 .resource
-                .map(|rsrc| rsrc.dropped_attributes_count)
-                .unwrap_or(0);
-            // TODO: Pop service name rather than copy it.
-            let service_name = match resource_attributes.get("service.name") {
-                Some(JsonValue::String(value)) => value.to_string(),
-                _ => "unknown_service".to_string(),
-            };
-            for scope_span in resource_span.scope_spans {
-                let scope_name = scope_span
-                    .scope
-                    .as_ref()
-                    .map(|scope| &scope.name)
-                    .filter(|name| !name.is_empty());
-                let scope_version = scope_span
-                    .scope
-                    .as_ref()
-                    .map(|scope| &scope.version)
-                    .filter(|version| !version.is_empty());
-                let scope_attributes = extract_attributes(
-                    scope_span
-                        .scope
-                        .clone()
-                        .map(|scope| scope.attributes)
-                        .unwrap_or_else(Vec::new),
-                );
-                let scope_dropped_attributes_count = scope_span
-                    .scope
-                    .as_ref()
-                    .map(|scope| scope.dropped_attributes_count)
-                    .unwrap_or(0);
-
-                for span in scope_span.spans {
+                .map(Resource::from_otlp)
+                .unwrap_or_default();
+            for scope_spans in resource_spans.scope_spans {
+                let scope = scope_spans.scope.map(Scope::from_otlp).unwrap_or_default();
+                for span in scope_spans.spans {
                     num_spans += 1;
-
-                    let trace_id = TraceId::try_from(span.trace_id)
-                        .map_err(|error| Status::invalid_argument(error.to_string()))?;
-                    let span_id = BASE64_STANDARD.encode(span.span_id);
-                    let parent_span_id = if !span.parent_span_id.is_empty() {
-                        Some(BASE64_STANDARD.encode(span.parent_span_id))
-                    } else {
-                        None
-                    };
-                    let span_name = if !span.name.is_empty() {
-                        span.name
-                    } else {
-                        "unknown".to_string()
-                    };
-                    let span_fingerprint =
-                        SpanFingerprint::new(&service_name, span.kind.into(), &span_name);
-                    let span_start_timestamp_secs = Some(span.start_time_unix_nano / 1_000_000_000);
-                    let span_duration_nanos = span.end_time_unix_nano - span.start_time_unix_nano;
-                    let span_duration_millis = Some(span_duration_nanos / 1_000_000);
-                    let span_attributes = extract_attributes(span.attributes);
-
-                    let events: Vec<Event> = span
-                        .events
-                        .into_iter()
-                        .map(|event| Event {
-                            event_timestamp_nanos: event.time_unix_nano,
-                            event_name: event.name,
-                            event_attributes: extract_attributes(event.attributes),
-                            event_dropped_attributes_count: event.dropped_attributes_count,
-                        })
-                        .collect();
-                    let event_names: Vec<String> = events
-                        .iter()
-                        .map(|event| event.event_name.clone())
-                        .collect();
-                    let links: Vec<Link> = span
-                        .links
-                        .into_iter()
-                        .map(|link| {
-                            TraceId::try_from(link.trace_id).map(|link_trace_id| Link {
-                                link_trace_id,
-                                link_trace_state: link.trace_state,
-                                link_span_id: BASE64_STANDARD.encode(link.span_id),
-                                link_attributes: extract_attributes(link.attributes),
-                                link_dropped_attributes_count: link.dropped_attributes_count,
-                            })
-                        })
-                        .collect::<Result<_, _>>()
-                        .map_err(|error| Status::invalid_argument(error.to_string()))?;
-                    let trace_state = if span.trace_state.is_empty() {
-                        None
-                    } else {
-                        Some(span.trace_state)
-                    };
-                    let span = Span {
-                        trace_id,
-                        trace_state,
-                        service_name: service_name.clone(),
-                        resource_attributes: resource_attributes.clone(),
-                        resource_dropped_attributes_count,
-                        scope_name: scope_name.cloned(),
-                        scope_version: scope_version.cloned(),
-                        scope_attributes: scope_attributes.clone(),
-                        scope_dropped_attributes_count,
-                        span_id,
-                        span_kind: span.kind as u64,
-                        span_name,
-                        span_fingerprint: Some(span_fingerprint),
-                        span_start_timestamp_nanos: span.start_time_unix_nano,
-                        span_end_timestamp_nanos: span.end_time_unix_nano,
-                        span_start_timestamp_secs,
-                        span_duration_millis,
-                        span_attributes,
-                        span_dropped_attributes_count: span.dropped_attributes_count,
-                        span_dropped_events_count: span.dropped_events_count,
-                        span_dropped_links_count: span.dropped_links_count,
-                        span_status: span.status.map(|status| status.into()),
-                        parent_span_id,
-                        events,
-                        event_names,
-                        links,
-                    };
-                    spans.insert(OrdSpan(span));
+                    let span = Span::from_otlp(span, &resource, &scope)?;
+                    ordered_spans.insert(OrdSpan(span));
                 }
             }
         }
-        let mut doc_batch = DocBatchBuilder::new(OTEL_TRACE_INDEX_ID.to_string()).json_writer();
-        for span in spans {
-            if let Err(error) = doc_batch.ingest_doc(&span.0) {
+        let mut doc_batch_builder =
+            DocBatchBuilder::new(OTEL_TRACE_INDEX_ID.to_string()).json_writer();
+        for span in ordered_spans {
+            if let Err(error) = doc_batch_builder.ingest_doc(&span.0) {
                 error!(error=?error, "Failed to JSON serialize span.");
                 error_message = format!("Failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
             }
         }
-        let doc_batch = doc_batch.build();
+        let doc_batch = doc_batch_builder.build();
         let current_span = RuntimeSpan::current();
         current_span.record("num_spans", num_spans);
         current_span.record("num_bytes", doc_batch.num_bytes());
@@ -623,7 +655,7 @@ impl OtlpGrpcTraceService {
         Ok(parsed_spans)
     }
 
-    #[instrument(skip_all, fields(num_bytes = doc_batch.concat_docs.len()))]
+    #[instrument(skip_all, fields(num_bytes = doc_batch.num_bytes()))]
     async fn store_spans(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],
@@ -678,5 +710,270 @@ impl TraceService for OtlpGrpcTraceService {
             .export_instrumented(request)
             .await
             .map(Response::new)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
+    use quickwit_proto::opentelemetry::proto::common::v1::{
+        AnyValue as OtlpAnyValue, KeyValue as OtlpKeyValue,
+    };
+    use quickwit_proto::opentelemetry::proto::trace::v1::span::{
+        Event as OtlpEvent, Link as OtlpLink,
+    };
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn test_resource_from_otlp() {
+        let otlp_resource = OtlpResource {
+            attributes: vec![
+                OtlpKeyValue {
+                    key: "service.name".to_string(),
+                    value: Some(OtlpAnyValue {
+                        value: Some(OtlpAnyValueValue::StringValue("quickwit".to_string())),
+                    }),
+                },
+                OtlpKeyValue {
+                    key: "key".to_string(),
+                    value: Some(OtlpAnyValue {
+                        value: Some(OtlpAnyValueValue::StringValue("value".to_string())),
+                    }),
+                },
+            ],
+            dropped_attributes_count: 1,
+        };
+        let resource = Resource::from_otlp(otlp_resource);
+        assert_eq!(
+            resource.attributes,
+            HashMap::from_iter([("key".to_string(), json!("value"))])
+        );
+        assert_eq!(resource.service_name, "quickwit");
+        assert_eq!(resource.dropped_attributes_count, 1);
+    }
+
+    #[test]
+    fn test_scope_from_otlp() {
+        let otlp_scope = InstrumentationScope {
+            name: "vector.dev".to_string(),
+            version: "1.0.0".to_string(),
+            attributes: vec![OtlpKeyValue {
+                key: "key".to_string(),
+                value: Some(OtlpAnyValue {
+                    value: Some(OtlpAnyValueValue::StringValue("value".to_string())),
+                }),
+            }],
+            dropped_attributes_count: 1,
+        };
+        let scope = Scope::from_otlp(otlp_scope);
+        assert_eq!(scope.name.unwrap(), "vector.dev");
+        assert_eq!(scope.version.unwrap(), "1.0.0");
+        assert_eq!(
+            scope.attributes,
+            HashMap::from_iter([("key".to_string(), json!("value"))])
+        );
+        assert_eq!(scope.dropped_attributes_count, 1);
+    }
+
+    #[test]
+    fn test_span_from_otlp() {
+        // Test minimal span.
+        {
+            let otlp_span = OtlpSpan {
+                trace_id: vec![1; 16],
+                span_id: vec![2; 8],
+                parent_span_id: vec![3; 8],
+                trace_state: "".to_string(),
+                name: "publish_split".to_string(),
+                kind: 2, // Server
+                start_time_unix_nano: 1_000_000_001,
+                end_time_unix_nano: 1_001_000_002,
+                attributes: Vec::new(),
+                dropped_attributes_count: 3,
+                events: Vec::new(),
+                dropped_events_count: 4,
+                links: Vec::new(),
+                dropped_links_count: 5,
+                status: None,
+            };
+            let span = Span::from_otlp(otlp_span, &Resource::default(), &Scope::default()).unwrap();
+
+            assert_eq!(span.service_name, UNKNOWN_SERVICE);
+            assert!(span.resource_attributes.is_empty());
+            assert_eq!(span.resource_dropped_attributes_count, 0);
+
+            assert!(span.scope_name.is_none());
+            assert!(span.scope_version.is_none());
+            assert!(span.scope_attributes.is_empty());
+            assert_eq!(span.scope_dropped_attributes_count, 0);
+
+            assert_eq!(span.trace_id, TraceId([1; 16]));
+            assert!(span.trace_state.is_none());
+
+            assert_eq!(span.parent_span_id, Some(BASE64_STANDARD.encode([3; 8])));
+            assert_eq!(span.span_id, BASE64_STANDARD.encode([2; 8]));
+            assert_eq!(span.span_kind, 2);
+            assert_eq!(span.span_name, "publish_split");
+            assert_eq!(
+                span.span_fingerprint.unwrap(),
+                SpanFingerprint::new(UNKNOWN_SERVICE, SpanKind(2), "publish_split")
+            );
+            assert_eq!(span.span_start_timestamp_nanos, 1_000_000_001);
+            assert_eq!(span.span_start_timestamp_secs.unwrap(), 1);
+            assert_eq!(span.span_end_timestamp_nanos, 1_001_000_002);
+            assert_eq!(span.span_duration_millis.unwrap(), 1);
+            assert!(span.span_attributes.is_empty());
+            assert_eq!(span.span_dropped_attributes_count, 3);
+            assert!(span.span_status.is_none());
+
+            assert!(span.events.is_empty());
+            assert!(span.event_names.is_empty());
+            assert_eq!(span.span_dropped_events_count, 4);
+
+            assert!(span.links.is_empty());
+            assert_eq!(span.span_dropped_links_count, 5);
+        }
+        {
+            let resource = Resource {
+                service_name: "quickwit".to_string(),
+                attributes: HashMap::from_iter([(
+                    "resource_key".to_string(),
+                    json!("resource_value"),
+                )]),
+                dropped_attributes_count: 1,
+            };
+            let scope = Scope {
+                name: Some("vector.dev".to_string()),
+                version: Some("1.0.0".to_string()),
+                attributes: HashMap::from_iter([("scope_key".to_string(), json!("scope_value"))]),
+                dropped_attributes_count: 2,
+            };
+
+            let events = vec![OtlpEvent {
+                name: "event_name".to_string(),
+                time_unix_nano: 1_000_500_003,
+                attributes: vec![OtlpKeyValue {
+                    key: "event_key".to_string(),
+                    value: Some(OtlpAnyValue {
+                        value: Some(OtlpAnyValueValue::StringValue("event_value".to_string())),
+                    }),
+                }],
+                dropped_attributes_count: 6,
+            }];
+            let links = vec![OtlpLink {
+                trace_id: vec![4; 16],
+                span_id: vec![5; 8],
+                trace_state: "link_key1=link_value1,link_key2=link_value2".to_string(),
+                attributes: vec![OtlpKeyValue {
+                    key: "link_key".to_string(),
+                    value: Some(OtlpAnyValue {
+                        value: Some(OtlpAnyValueValue::StringValue("link_value".to_string())),
+                    }),
+                }],
+                dropped_attributes_count: 7,
+            }];
+            let attributes = vec![OtlpKeyValue {
+                key: "span_key".to_string(),
+                value: Some(OtlpAnyValue {
+                    value: Some(OtlpAnyValueValue::StringValue("span_value".to_string())),
+                }),
+            }];
+            let otlp_span = OtlpSpan {
+                trace_id: vec![1; 16],
+                span_id: vec![2; 8],
+                parent_span_id: vec![3; 8],
+                trace_state: "key1=value1,key2=value2".to_string(),
+                name: "publish_split".to_string(),
+                kind: 2, // Server
+                start_time_unix_nano: 1_000_000_001,
+                end_time_unix_nano: 1_001_000_002,
+                attributes,
+                dropped_attributes_count: 3,
+                events,
+                dropped_events_count: 4,
+                links,
+                dropped_links_count: 5,
+                status: Some(OtlpStatus {
+                    code: 2,
+                    message: "An error occurred.".to_string(),
+                }),
+            };
+            let span = Span::from_otlp(otlp_span, &resource, &scope).unwrap();
+
+            assert_eq!(span.service_name, "quickwit");
+            assert_eq!(
+                span.resource_attributes,
+                HashMap::from_iter([("resource_key".to_string(), json!("resource_value"))],)
+            );
+            assert_eq!(span.resource_dropped_attributes_count, 1);
+
+            assert_eq!(span.scope_name.unwrap(), "vector.dev");
+            assert_eq!(span.scope_version.unwrap(), "1.0.0");
+            assert_eq!(
+                span.scope_attributes,
+                HashMap::from_iter([("scope_key".to_string(), json!("scope_value"))])
+            );
+            assert_eq!(span.scope_dropped_attributes_count, 2);
+
+            assert_eq!(span.trace_id, TraceId([1; 16]));
+            assert_eq!(span.trace_state.unwrap(), "key1=value1,key2=value2");
+
+            assert_eq!(span.parent_span_id, Some(BASE64_STANDARD.encode([3; 8])));
+            assert_eq!(span.span_id, BASE64_STANDARD.encode([2; 8]));
+            assert_eq!(span.span_kind, 2);
+            assert_eq!(span.span_name, "publish_split");
+            assert_eq!(
+                span.span_fingerprint.unwrap(),
+                SpanFingerprint::new("quickwit", SpanKind(2), "publish_split")
+            );
+            assert_eq!(span.span_start_timestamp_nanos, 1_000_000_001);
+            assert_eq!(span.span_start_timestamp_secs.unwrap(), 1);
+            assert_eq!(span.span_end_timestamp_nanos, 1_001_000_002);
+            assert_eq!(span.span_duration_millis.unwrap(), 1);
+            assert_eq!(
+                span.span_attributes,
+                HashMap::from_iter([("span_key".to_string(), json!("span_value"))])
+            );
+            assert_eq!(span.span_dropped_attributes_count, 3);
+            assert_eq!(
+                span.span_status.unwrap(),
+                SpanStatus {
+                    code: 2,
+                    message: Some("An error occurred.".to_string()),
+                }
+            );
+            assert_eq!(
+                span.events,
+                vec![Event {
+                    event_name: "event_name".to_string(),
+                    event_timestamp_nanos: 1_000_500_003,
+                    event_attributes: HashMap::from_iter([(
+                        "event_key".to_string(),
+                        json!("event_value")
+                    )]),
+                    event_dropped_attributes_count: 6,
+                }]
+            );
+            assert_eq!(span.event_names, vec!["event_name".to_string()]);
+            assert_eq!(span.span_dropped_events_count, 4);
+
+            assert_eq!(
+                span.links,
+                vec![Link {
+                    link_trace_id: TraceId([4; 16]),
+                    link_span_id: BASE64_STANDARD.encode([5; 8]),
+                    link_trace_state: "link_key1=link_value1,link_key2=link_value2".to_string(),
+                    link_attributes: HashMap::from_iter([(
+                        "link_key".to_string(),
+                        json!("link_value")
+                    )]),
+                    link_dropped_attributes_count: 7,
+                }]
+            );
+            assert_eq!(span.span_dropped_links_count, 5);
+        }
     }
 }

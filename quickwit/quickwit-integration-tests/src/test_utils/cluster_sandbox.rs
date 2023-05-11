@@ -23,11 +23,12 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use futures_util::{future, Future};
+use futures_util::future;
 use itertools::Itertools;
 use quickwit_actors::ActorExitStatus;
 use quickwit_common::new_coolid;
 use quickwit_common::test_utils::{wait_for_server_ready, wait_until_predicate};
+use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
@@ -50,25 +51,25 @@ pub struct NodeConfig {
 }
 
 struct ClusterShutdownTrigger {
-    sender: Sender<bool>,
-    receiver: Receiver<bool>,
+    sender: Sender<()>,
+    receiver: Receiver<()>,
 }
 
 impl ClusterShutdownTrigger {
     fn new() -> Self {
-        let (sender, receiver) = watch::channel(false);
+        let (sender, receiver) = watch::channel(());
         Self { sender, receiver }
     }
 
-    fn shutdown_signal(&self) -> impl Future<Output = ()> {
-        let mut receiver = self.receiver.clone();
-        async move {
-            receiver.changed().await.unwrap();
-        }
+    fn shutdown_signal(&self) -> BoxFutureInfaillible<()> {
+        let receiver = self.receiver.clone();
+        Box::pin(async move {
+            receiver.clone().changed().await.unwrap();
+        })
     }
 
     fn shutdown(self) {
-        self.sender.send(true).unwrap();
+        self.sender.send(()).unwrap();
     }
 }
 
@@ -209,16 +210,16 @@ impl ClusterSandbox {
 
     pub async fn wait_for_cluster_num_ready_nodes(
         &self,
-        expected_num_alive_nodes: usize,
+        expected_num_ready_nodes: usize,
     ) -> anyhow::Result<()> {
         wait_until_predicate(
             || async move {
                 match self.indexer_rest_client.cluster().snapshot().await {
                     Ok(result) => {
-                        if result.live_nodes.len() != expected_num_alive_nodes {
+                        if result.ready_nodes.len() != expected_num_ready_nodes {
                             debug!(
-                                "wait_for_cluster_num_ready_nodes expected {} alive nodes, got {}",
-                                expected_num_alive_nodes,
+                                "wait_for_cluster_num_ready_nodes expected {} ready nodes, got {}",
+                                expected_num_ready_nodes,
                                 result.live_nodes.len()
                             );
                             false
@@ -272,7 +273,7 @@ impl ClusterSandbox {
     }
 
     // Waits for the needed number of indexing pipeline to start.
-    pub async fn wait_for_published_splits(
+    pub async fn wait_for_splits(
         &self,
         index_id: &str,
         split_states: Option<Vec<SplitState>>,
@@ -294,7 +295,7 @@ impl ClusterSandbox {
                         Ok(result) => {
                             if result.len() != required_splits_num {
                                 debug!(
-                                    "wait_for_published_splits expected {} splits, got {}",
+                                    "wait_for_splits expected {} splits, got {}",
                                     required_splits_num,
                                     result.len()
                                 );
@@ -304,7 +305,7 @@ impl ClusterSandbox {
                             }
                         }
                         Err(err) => {
-                            debug!("wait_for_cluster_num_ready_nodes error {err}");
+                            debug!("wait_for_splits error {err}");
                             false
                         }
                     }

@@ -130,7 +130,7 @@ struct MergePipelineHandle {
 pub struct IndexingService {
     node_id: String,
     data_dir_path: PathBuf,
-    cluster: Arc<Cluster>,
+    cluster: Cluster,
     metastore: Arc<dyn Metastore>,
     ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
     storage_resolver: StorageUriResolver,
@@ -147,7 +147,7 @@ impl IndexingService {
         node_id: String,
         data_dir_path: PathBuf,
         indexer_config: IndexerConfig,
-        cluster: Arc<Cluster>,
+        cluster: Cluster,
         metastore: Arc<dyn Metastore>,
         ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
         storage_resolver: StorageUriResolver,
@@ -830,7 +830,7 @@ mod tests {
     async fn spawn_indexing_service(
         universe: &Universe,
         metastore: Arc<dyn Metastore>,
-        cluster: Arc<Cluster>,
+        cluster: Cluster,
     ) -> (Mailbox<IndexingService>, ActorHandle<IndexingService>) {
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
@@ -859,11 +859,9 @@ mod tests {
     async fn test_indexing_service_spawn_observe_detach() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
@@ -957,11 +955,9 @@ mod tests {
     async fn test_indexing_service_supervise_pipelines() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
@@ -1015,11 +1011,9 @@ mod tests {
     async fn test_indexing_service_apply_plan() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
@@ -1127,7 +1121,20 @@ mod tests {
             4
         );
 
-        let self_member = &cluster.ready_members_from_chitchat_state().await[0];
+        cluster
+            .wait_for_ready_members(
+                |members| {
+                    members
+                        .iter()
+                        .any(|member| member.indexing_tasks.len() == indexing_tasks.len())
+                },
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+
+        let self_member = &cluster.ready_members().await[0];
+
         assert_eq!(
             HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
             HashSet::from_iter(indexing_tasks.iter())
@@ -1159,8 +1166,23 @@ mod tests {
         assert_eq!(indexing_service_obs.num_running_pipelines, 3);
         assert_eq!(indexing_service_obs.num_deleted_queues, 0);
         assert_eq!(indexing_service_obs.num_delete_queue_failures, 0);
+
         indexing_service_handle.process_pending_and_observe().await;
-        let self_member = &cluster.ready_members_from_chitchat_state().await[0];
+
+        cluster
+            .wait_for_ready_members(
+                |members| {
+                    members
+                        .iter()
+                        .any(|member| member.indexing_tasks.len() == indexing_tasks.len())
+                },
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+
+        let self_member = &cluster.ready_members().await[0];
+
         assert_eq!(
             HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
             HashSet::from_iter(indexing_tasks.iter())
@@ -1186,11 +1208,9 @@ mod tests {
     async fn test_indexing_service_shut_down_merge_pipeline_when_no_indexing_pipeline() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
@@ -1311,11 +1331,9 @@ mod tests {
     async fn test_indexing_service_does_not_shut_down_pipelines_on_indexing_pipeline_freeze() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let index_id = append_random_suffix("test-indexing-service-indexing-pipeline-timeout");
         let index_uri = format!("ram:///indexes/{index_id}");
         let mut index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
@@ -1378,11 +1396,9 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
