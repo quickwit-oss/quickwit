@@ -22,7 +22,7 @@ use std::path::Path;
 
 use quickwit_common::io::IoControls;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metastore::IndexUid;
+use quickwit_proto::IndexUid;
 use tantivy::directory::MmapDirectory;
 use tantivy::{IndexBuilder, TrackedObject};
 use tracing::{instrument, Span};
@@ -118,7 +118,7 @@ impl IndexedSplitBuilder {
     #[instrument(name="serialize_split",
         skip_all,
         fields(
-            index_id=%self.split_attrs.pipeline_id.index_uid.index_id,
+            index_id=%self.split_attrs.pipeline_id.index_uid.index_id(),
             source_id=%self.split_attrs.pipeline_id.source_id,
             node_id=%self.split_attrs.pipeline_id.node_id,
             pipeline_id=%self.split_attrs.pipeline_id.pipeline_ord,

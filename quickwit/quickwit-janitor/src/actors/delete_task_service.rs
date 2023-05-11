@@ -24,7 +24,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
 use quickwit_config::IndexConfig;
-use quickwit_metastore::{IndexUid, Metastore};
+use quickwit_metastore::Metastore;
+use quickwit_proto::IndexUid;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::StorageUriResolver;
 use serde::Serialize;
@@ -99,7 +100,7 @@ impl DeleteTaskService {
             .into_iter()
             .map(|index_metadata| {
                 (
-                    index_metadata.index_uid(),
+                    index_metadata.index_uid.clone(),
                     index_metadata.into_index_config(),
                 )
             })
@@ -111,7 +112,7 @@ impl DeleteTaskService {
         // Remove pipelines on deleted indexes.
         for deleted_index_uid in pipeline_index_uids.difference(&index_uids) {
             info!(
-                deleted_index_id = deleted_index_uid.index_id,
+                deleted_index_id = deleted_index_uid.index_id(),
                 "Remove deleted index from delete task pipelines."
             );
             let pipeline_handle = self
@@ -128,7 +129,10 @@ impl DeleteTaskService {
                 .remove(index_uid)
                 .expect("Index metadata must be present.");
             if self.spawn_pipeline(index_config, ctx).await.is_err() {
-                warn!("Failed to spawn delete pipeline for {}", index_uid.index_id);
+                warn!(
+                    "Failed to spawn delete pipeline for {}",
+                    index_uid.index_id()
+                );
             }
         }
 
@@ -148,7 +152,7 @@ impl DeleteTaskService {
             .index_metadata(index_config.index_id.as_str())
             .await?;
         let pipeline = DeleteTaskPipeline::new(
-            index_metadata.index_uid(),
+            index_metadata.index_uid.clone(),
             self.metastore.clone(),
             self.search_job_placer.clone(),
             index_config.indexing_settings,
@@ -158,7 +162,7 @@ impl DeleteTaskService {
         );
         let (_pipeline_mailbox, pipeline_handler) = ctx.spawn_actor().spawn(pipeline);
         self.pipeline_handles_by_index_uid
-            .insert(index_metadata.index_uid(), pipeline_handler);
+            .insert(index_metadata.index_uid, pipeline_handler);
         Ok(())
     }
 }
@@ -237,12 +241,11 @@ mod tests {
             .await;
         assert_eq!(state.num_running_pipelines, 1);
         let delete_query = DeleteQuery {
-            index_id: index_id.to_string(),
+            index_uid: index_uid.to_string(),
             start_timestamp: None,
             end_timestamp: None,
             query: "*".to_string(),
             search_fields: Vec::new(),
-            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         metastore.create_delete_task(delete_query).await.unwrap();
         // Just test creation of delete query.

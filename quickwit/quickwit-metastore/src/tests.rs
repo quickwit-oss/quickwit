@@ -31,6 +31,7 @@ pub mod test_suite {
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::metastore_api::DeleteQuery;
+    use quickwit_proto::IndexUid;
     use time::OffsetDateTime;
     use tokio::time::sleep;
     use tracing::{error, info};
@@ -38,9 +39,7 @@ pub mod test_suite {
     use crate::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
-    use crate::{
-        IndexUid, ListSplitsQuery, Metastore, MetastoreError, Split, SplitMetadata, SplitState,
-    };
+    use crate::{ListSplitsQuery, Metastore, MetastoreError, Split, SplitMetadata, SplitState};
 
     #[async_trait]
     pub trait DefaultForTest {
@@ -197,13 +196,13 @@ pub mod test_suite {
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let error = metastore
-            .delete_index(IndexUid::for_test("index-not-found"))
+            .delete_index(IndexUid::new("index-not-found"))
             .await
             .unwrap_err();
         assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
 
         let error = metastore
-            .delete_index(IndexUid::for_test("test-delete-index"))
+            .delete_index(IndexUid::new("test-delete-index"))
             .await
             .unwrap_err();
         assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
@@ -294,14 +293,14 @@ pub mod test_suite {
         ));
         assert!(matches!(
             metastore
-                .add_source(IndexUid::for_test("index-not-found"), source.clone())
+                .add_source(IndexUid::new("index-not-found"), source.clone())
                 .await
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
         ));
         assert!(matches!(
             metastore
-                .add_source(IndexUid::for_test(index_id), source)
+                .add_source(IndexUid::new(index_id), source)
                 .await
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
@@ -377,14 +376,14 @@ pub mod test_suite {
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
         assert!(matches!(
             metastore
-                .add_source(IndexUid::for_test("index-not-found"), source.clone())
+                .add_source(IndexUid::new("index-not-found"), source.clone())
                 .await
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
         ));
         assert!(matches!(
             metastore
-                .add_source(IndexUid::for_test(&index_id), source.clone())
+                .add_source(IndexUid::new(&index_id), source.clone())
                 .await
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
@@ -411,14 +410,14 @@ pub mod test_suite {
         ));
         assert!(matches!(
             metastore
-                .delete_source(IndexUid::for_test("index-not-found"), &source_id)
+                .delete_source(IndexUid::new("index-not-found"), &source_id)
                 .await
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
         ));
         assert!(matches!(
             metastore
-                .delete_source(IndexUid::for_test(index_id), &source_id)
+                .delete_source(IndexUid::new(index_id), &source_id)
                 .await
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
@@ -492,7 +491,7 @@ pub mod test_suite {
 
         assert!(matches!(
             metastore
-                .reset_source_checkpoint(IndexUid::for_test("index-not-found"), &source_ids[1])
+                .reset_source_checkpoint(IndexUid::new("index-not-found"), &source_ids[1])
                 .await
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
@@ -500,7 +499,7 @@ pub mod test_suite {
 
         assert!(matches!(
             metastore
-                .reset_source_checkpoint(IndexUid::for_test(&index_id), &source_ids[1])
+                .reset_source_checkpoint(IndexUid::new(&index_id), &source_ids[1])
                 .await
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
@@ -535,7 +534,7 @@ pub mod test_suite {
         {
             let error = metastore
                 .publish_splits(
-                    IndexUid::for_test("index-not-found"),
+                    IndexUid::new("index-not-found"),
                     &[],
                     &[],
                     {
@@ -591,7 +590,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = append_random_suffix("test-publish-splits");
-        let index_uid = IndexUid::for_test(index_id.clone());
+        let index_uid = IndexUid::new(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -619,7 +618,7 @@ pub mod test_suite {
         {
             let error = metastore
                 .publish_splits(
-                    IndexUid::for_test("index-not-found"),
+                    IndexUid::new("index-not-found"),
                     &["split-not-found"],
                     &[],
                     {
@@ -637,7 +636,7 @@ pub mod test_suite {
         {
             let error = metastore
                 .publish_splits(
-                    IndexUid::for_test(index_id),
+                    IndexUid::new(index_id),
                     &["split-not-found"],
                     &[],
                     {
@@ -1083,7 +1082,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = append_random_suffix("test-replace-splits");
-        let index_uid = IndexUid::for_test(index_id.clone());
+        let index_uid = IndexUid::new(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -1118,7 +1117,7 @@ pub mod test_suite {
         {
             let error = metastore
                 .publish_splits(
-                    IndexUid::for_test("index-not-found"),
+                    IndexUid::new("index-not-found"),
                     &["split-not-found-1"],
                     &["split-not-found-2"],
                     None,
@@ -1322,7 +1321,7 @@ pub mod test_suite {
         let index_uid = metastore.create_index(index_config).await.unwrap();
 
         let error = metastore
-            .mark_splits_for_deletion(IndexUid::for_test("index-not-found"), &[])
+            .mark_splits_for_deletion(IndexUid::new("index-not-found"), &[])
             .await
             .unwrap_err();
         assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
@@ -1443,14 +1442,14 @@ pub mod test_suite {
         let index_uid = metastore.create_index(index_config).await.unwrap();
 
         let error = metastore
-            .delete_splits(IndexUid::for_test("index-not-found"), &[])
+            .delete_splits(IndexUid::new("index-not-found"), &[])
             .await
             .unwrap_err();
 
         assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
 
         let error = metastore
-            .delete_splits(IndexUid::for_test(&index_id), &[])
+            .delete_splits(IndexUid::new(&index_id), &[])
             .await
             .unwrap_err();
 
@@ -1532,7 +1531,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = append_random_suffix("test-list-all-splits");
-        let index_uid = IndexUid::for_test(index_id.clone());
+        let index_uid = IndexUid::new(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -1574,7 +1573,7 @@ pub mod test_suite {
         };
 
         let error = metastore
-            .list_all_splits(IndexUid::for_test("index-not-found"))
+            .list_all_splits(IndexUid::new("index-not-found"))
             .await
             .unwrap_err();
         assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
@@ -1629,7 +1628,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = append_random_suffix("test-list-splits");
-        let index_uid = IndexUid::for_test(index_id.clone());
+        let index_uid = IndexUid::new(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -2059,7 +2058,7 @@ pub mod test_suite {
         let mut current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = append_random_suffix("split-update-timestamp");
-        let index_uid = IndexUid::for_test(index_id.clone());
+        let index_uid = IndexUid::new(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -2133,18 +2132,17 @@ pub mod test_suite {
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
         let delete_query = DeleteQuery {
-            index_id: index_id.clone(),
+            index_uid: index_uid.to_string(),
             query: "my_field:my_value".to_string(),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),
-            incarnation_id: index_uid.incarnation_id.to_string(),
         };
 
         // Create a delete task on non-existing index.
         let error = metastore
             .create_delete_task(DeleteQuery {
-                index_id: "does-not-exist".to_string(),
+                index_uid: IndexUid::new("does-not-exist:12345").to_string(),
                 ..delete_query.clone()
             })
             .await
@@ -2154,7 +2152,7 @@ pub mod test_suite {
         // Create a delete task on an index with wrong incarnation_id
         let error = metastore
             .create_delete_task(DeleteQuery {
-                incarnation_id: ulid::Ulid::new().to_string(),
+                index_uid: IndexUid::from_parts(index_id, "12345").to_string(),
                 ..delete_query.clone()
             })
             .await
@@ -2168,7 +2166,7 @@ pub mod test_suite {
             .unwrap();
         assert!(delete_task_1.opstamp > 0);
         let delete_query_1 = delete_task_1.delete_query.unwrap();
-        assert_eq!(delete_query_1.index_id, delete_query.index_id);
+        assert_eq!(delete_query_1.index_uid, delete_query.index_uid);
         assert_eq!(delete_query_1.start_timestamp, delete_query.start_timestamp);
         assert_eq!(delete_query_1.end_timestamp, delete_query.end_timestamp);
         let delete_task_2 = metastore
@@ -2198,20 +2196,18 @@ pub mod test_suite {
             .unwrap();
 
         let delete_query_index_1 = DeleteQuery {
-            index_id: index_id_1.to_string(),
+            index_uid: index_uid_1.to_string(),
             query: "my_field:my_value".to_string(),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),
-            incarnation_id: index_uid_1.incarnation_id.to_string(),
         };
         let delete_query_index_2 = DeleteQuery {
-            index_id: index_id_2.to_string(),
+            index_uid: index_uid_2.to_string(),
             query: "my_field:my_value".to_string(),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),
-            incarnation_id: index_uid_2.incarnation_id.to_string(),
         };
 
         let last_opstamp_index_1_with_no_task = metastore
@@ -2257,12 +2253,11 @@ pub mod test_suite {
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
         let delete_query = DeleteQuery {
-            index_id: index_id.clone(),
+            index_uid: index_uid.to_string(),
             query: "my_field:my_value".to_string(),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),
-            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         let _ = metastore
             .create_delete_task(delete_query.clone())
@@ -2293,20 +2288,18 @@ pub mod test_suite {
             .await
             .unwrap();
         let delete_query_index_1 = DeleteQuery {
-            index_id: index_id_1.to_string(),
+            index_uid: index_uid_1.to_string(),
             query: "my_field:my_value".to_string(),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),
-            incarnation_id: index_uid_1.incarnation_id.to_string(),
         };
         let delete_query_index_2 = DeleteQuery {
-            index_id: index_id_2.to_string(),
+            index_uid: index_uid_2.to_string(),
             query: "my_field:my_value".to_string(),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),
-            incarnation_id: index_uid_2.incarnation_id.to_string(),
         };
 
         // Create a delete task.
@@ -2346,7 +2339,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let index_id = append_random_suffix("test-list-stale-splits");
-        let index_uid = IndexUid::for_test(index_id.clone());
+        let index_uid = IndexUid::new(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -2384,7 +2377,7 @@ pub mod test_suite {
         };
 
         let error = metastore
-            .list_stale_splits(IndexUid::for_test("index-not-found"), 0, 10)
+            .list_stale_splits(IndexUid::new("index-not-found"), 0, 10)
             .await
             .unwrap_err();
         assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
@@ -2470,7 +2463,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let index_id = append_random_suffix("update-splits-delete-opstamp");
-        let index_uid = IndexUid::for_test(index_id.clone());
+        let index_uid = IndexUid::new(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -2502,11 +2495,7 @@ pub mod test_suite {
         {
             info!("Update splits delete opstamp on a non-existent index.");
             let metastore_err = metastore
-                .update_splits_delete_opstamp(
-                    IndexUid::for_test("index-not-found"),
-                    &[&split_id_1],
-                    10,
-                )
+                .update_splits_delete_opstamp(IndexUid::new("index-not-found"), &[&split_id_1], 10)
                 .await
                 .unwrap_err();
             error!(err=?metastore_err);
@@ -2569,7 +2558,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let index_id = append_random_suffix("test-stage-splits");
-        let index_uid = IndexUid::for_test(index_id.clone());
+        let index_uid = IndexUid::new(index_id.clone());
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
@@ -2593,7 +2582,7 @@ pub mod test_suite {
         // Stage a splits on a non-existent index
         let error = metastore
             .stage_splits(
-                IndexUid::for_test("index-not-found"),
+                IndexUid::new("index-not-found"),
                 vec![split_metadata_1.clone()],
             )
             .await

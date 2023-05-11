@@ -35,6 +35,7 @@ use futures::future::try_join_all;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::IndexUid;
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
@@ -47,7 +48,7 @@ use self::store_operations::{
 };
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, IndexUid, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
     SplitMetadata, SplitState,
 };
 
@@ -159,10 +160,11 @@ impl FileBackedMetastore {
         index_uid: IndexUid,
         mutate_fn: impl FnOnce(&mut FileBackedIndex) -> crate::MetastoreResult<MutationOccurred<T>>,
     ) -> MetastoreResult<T> {
-        let mut locked_index = self.get_locked_index(&index_uid.index_id).await?;
+        let index_id = index_uid.index_id();
+        let mut locked_index = self.get_locked_index(index_id).await?;
         if locked_index.index_uid() != index_uid {
             return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_uid.index_id,
+                index_id: index_id.to_string(),
             });
         }
         let mut index = locked_index.clone();
@@ -188,10 +190,10 @@ impl FileBackedMetastore {
 
                 // At this point, we hold both locks.
                 per_index_metastores_wlock.insert(
-                    index_uid.index_id.clone(),
+                    index_id.to_string(),
                     IndexState::Alive(LazyFileBackedIndex::new(
                         self.storage.clone(),
-                        index_uid.index_id.clone(),
+                        index_id.to_string(),
                         self.polling_interval_opt,
                         None,
                     )),
@@ -205,12 +207,13 @@ impl FileBackedMetastore {
 
     async fn read<T, F>(&self, index_uid: IndexUid, view: F) -> MetastoreResult<T>
     where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
-        let locked_index = self.get_locked_index(&index_uid.index_id).await?;
+        let index_id = index_uid.index_id();
+        let locked_index = self.get_locked_index(index_id).await?;
         if locked_index.index_uid() == index_uid {
             view(&locked_index)
         } else {
             Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_uid.index_id,
+                index_id: index_id.to_string(),
             })
         }
     }
@@ -341,7 +344,7 @@ impl Metastore for FileBackedMetastore {
 
         // Put index metadata on storage.
         let index_metadata = IndexMetadata::new(index_config);
-        let index_uid = index_metadata.index_uid();
+        let index_uid = index_metadata.index_uid.clone();
         let index = FileBackedIndex::from(index_metadata);
         put_index(&*self.storage, &index).await?;
 
@@ -368,40 +371,41 @@ impl Metastore for FileBackedMetastore {
         // We pick the outer lock here, so that we enter a critical section.
         let mut per_index_metastores_wlock = self.per_index_metastores.write().await;
 
+        let index_id = index_uid.index_id();
         // If index is neither in `per_index_metastores_wlock` nor on the storage, it does not
         // exist.
-        if !per_index_metastores_wlock.contains_key(&index_uid.index_id)
-            && !index_exists(&*self.storage, &index_uid.index_id).await?
+        if !per_index_metastores_wlock.contains_key(index_id)
+            && !index_exists(&*self.storage, index_id).await?
         {
             return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_uid.index_id,
+                index_id: index_id.to_string(),
             });
         }
 
         // Set state to `Deleting` and keep the previous state in memory in case we need to insert
         // if an error occurs.
         let index_state_opt =
-            per_index_metastores_wlock.insert(index_uid.index_id.clone(), IndexState::Deleting);
+            per_index_metastores_wlock.insert(index_id.to_string(), IndexState::Deleting);
         // On a put error, reinsert the previous state if any.
         if let Err(error) = put_indexes_states(&*self.storage, &per_index_metastores_wlock).await {
             if let Some(index_state) = index_state_opt {
-                per_index_metastores_wlock.insert(index_uid.index_id, index_state);
+                per_index_metastores_wlock.insert(index_id.to_string(), index_state);
             } else {
-                per_index_metastores_wlock.remove(&index_uid.index_id);
+                per_index_metastores_wlock.remove(index_id);
             }
             return Err(error);
         }
 
-        let delete_res = delete_index(&*self.storage, &index_uid.index_id).await;
+        let delete_res = delete_index(&*self.storage, index_id).await;
 
         match &delete_res {
             Ok(()) |
             // If the index file does not exist, we still need to return an error,
             // but it makes sense to ensure that the index state is removed.
             Err(MetastoreError::IndexDoesNotExist { .. }) => {
-                per_index_metastores_wlock.remove(&index_uid.index_id);
+                per_index_metastores_wlock.remove(index_id);
                 if let Err(error) = put_indexes_states(&*self.storage, &per_index_metastores_wlock).await {
-                    per_index_metastores_wlock.insert(index_uid.index_id, IndexState::Deleting);
+                    per_index_metastores_wlock.insert(index_id.to_string(), IndexState::Deleting);
                     return Err(error);
                 }
             },
@@ -610,10 +614,7 @@ impl Metastore for FileBackedMetastore {
     }
 
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
-        let index_uid = IndexUid::new(
-            delete_query.index_id.clone(),
-            delete_query.incarnation_id.clone(),
-        );
+        let index_uid: IndexUid = delete_query.index_uid.clone().into();
         let delete_task = self
             .mutate(index_uid, |index| {
                 index
@@ -710,8 +711,7 @@ mod tests {
     use super::*;
     use crate::tests::test_suite::DefaultForTest;
     use crate::{
-        IndexMetadata, IndexUid, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata,
-        SplitState,
+        IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
     };
 
     #[tokio::test]
@@ -772,7 +772,7 @@ mod tests {
 
         // Open a non-existent index.
         let metastore_error = metastore
-            .get_index(IndexUid::for_test("index-does-not-exist"))
+            .get_index(IndexUid::new("index-does-not-exist"))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -782,7 +782,7 @@ mod tests {
 
         // Open a index with a different incarnation_id.
         let metastore_error = metastore
-            .get_index(IndexUid::for_test(index_id))
+            .get_index(IndexUid::new(index_id))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -823,7 +823,7 @@ mod tests {
         });
         let metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
 
-        let index_uid = IndexUid::for_test("test-index");
+        let index_uid = IndexUid::new("test-index");
         let split_id = "split-one";
         let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
@@ -835,7 +835,7 @@ mod tests {
             ..Default::default()
         };
 
-        let index_config = IndexConfig::for_test(&index_uid.index_id, "ram:///indexes/test-index");
+        let index_config = IndexConfig::for_test(index_uid.index_id(), "ram:///indexes/test-index");
 
         // create index
         let index_uid = metastore.create_index(index_config).await.unwrap();
@@ -896,7 +896,7 @@ mod tests {
 
         // Getting index with inconsistent index ID should raise an error.
         let metastore_error = metastore
-            .get_index(IndexUid::for_test(index_id))
+            .get_index(IndexUid::new(index_id))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -991,9 +991,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn test_file_backed_metastore_race_condition() {
         let metastore = Arc::new(FileBackedMetastore::default_for_test().await);
-        let index_uid = IndexUid::for_test("test-index");
+        let index_uid = IndexUid::new("test-index");
 
-        let index_config = IndexConfig::for_test(&index_uid.index_id, "ram:///indexes/test-index");
+        let index_config = IndexConfig::for_test(index_uid.index_id(), "ram:///indexes/test-index");
 
         // Create index
         let index_uid = metastore.create_index(index_config).await.unwrap();
@@ -1051,9 +1051,9 @@ mod tests {
         let metastore = Arc::new(FileBackedMetastore::default_for_test().await);
         let mut index_uids = Vec::new();
         for idx in 0..10 {
-            let index_uid = IndexUid::for_test(format!("test-index-{idx}"));
+            let index_uid = IndexUid::new(format!("test-index-{idx}"));
             let index_config =
-                IndexConfig::for_test(&index_uid.index_id, "ram:///indexes/test-index");
+                IndexConfig::for_test(index_uid.index_id(), "ram:///indexes/test-index");
             let index_uid = metastore.create_index(index_config).await.unwrap();
             index_uids.push(index_uid);
         }
@@ -1114,7 +1114,7 @@ mod tests {
         ));
         // Try fetch the not created index.
         let created_index_error = metastore
-            .get_index(IndexUid::for_test(index_id))
+            .get_index(IndexUid::new(index_id))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -1130,7 +1130,7 @@ mod tests {
         let ram_storage_clone = ram_storage.clone();
         let ram_storage_clone_2 = ram_storage.clone();
         let index_id = "test-index";
-        let index_uid = IndexUid::for_test(index_id);
+        let index_uid = IndexUid::new(index_id);
 
         mock_storage // remove this if we end up changing the semantics of create.
             .expect_exists()
@@ -1234,7 +1234,7 @@ mod tests {
         // Let's fetch the index, we expect an internal error as the index state is in `Creating`
         // state.
         let created_index_error = metastore
-            .get_index(IndexUid::for_test(index_id))
+            .get_index(IndexUid::new(index_id))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -1249,11 +1249,11 @@ mod tests {
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
         let index_id = "test-index";
-        let index_uid = IndexUid::for_test(index_id);
+        let index_uid = IndexUid::new(index_id);
         let index_metadata =
-            IndexMetadata::for_test(&index_uid.index_id, "ram:///indexes/test-index");
+            IndexMetadata::for_test(index_uid.index_id(), "ram:///indexes/test-index");
         let index = FileBackedIndex::from(index_metadata);
-        put_index_given_index_id(&ram_storage, &index, &index_uid.index_id)
+        put_index_given_index_id(&ram_storage, &index, index_uid.index_id())
             .await
             .unwrap();
 
@@ -1296,11 +1296,11 @@ mod tests {
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
         let index_id = "test-index";
-        let index_uid = IndexUid::for_test(index_id);
+        let index_uid = IndexUid::new(index_id);
         let index_metadata =
-            IndexMetadata::for_test(&index_uid.index_id, "ram:///indexes/test-index");
+            IndexMetadata::for_test(index_uid.index_id(), "ram:///indexes/test-index");
         let index = FileBackedIndex::from(index_metadata);
-        put_index_given_index_id(&ram_storage, &index, &index_uid.index_id)
+        put_index_given_index_id(&ram_storage, &index, index_uid.index_id())
             .await
             .unwrap();
         let mut indexes_json_valid_put = 1;
@@ -1432,10 +1432,9 @@ mod tests {
         let delete_query = DeleteQuery {
             start_timestamp: None,
             end_timestamp: None,
-            index_id: index_id.to_string(),
+            index_uid: index_uid.to_string(),
             query: "harry potter".to_string(),
             search_fields: Vec::new(),
-            incarnation_id: index_uid.incarnation_id.to_string(),
         };
 
         let delete_task_1 = metastore
@@ -1469,10 +1468,9 @@ mod tests {
         let delete_query = DeleteQuery {
             start_timestamp: None,
             end_timestamp: None,
-            index_id: index_id_2.to_string(),
+            index_uid: index_uid.to_string(),
             query: "harry potter".to_string(),
             search_fields: Vec::new(),
-            incarnation_id: index_uid.incarnation_id.to_string(),
         };
         let delete_task_4 = metastore
             .create_delete_task(delete_query.clone())

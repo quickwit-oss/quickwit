@@ -761,7 +761,8 @@ mod kafka_broker_tests {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-    use quickwit_metastore::{metastore_for_test, IndexUid, Metastore, SplitMetadata};
+    use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
+    use quickwit_proto::IndexUid;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;

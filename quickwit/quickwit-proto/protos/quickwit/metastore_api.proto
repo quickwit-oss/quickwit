@@ -86,8 +86,7 @@ message CreateIndexRequest {
 }
 
 message CreateIndexResponse {
-  string index_id = 1;
-  string incarnation_id = 2;
+  string index_uid = 1;
 }
 
 message ListIndexesMetadatasRequest {}
@@ -97,8 +96,7 @@ message ListIndexesMetadatasResponse {
 }
 
 message DeleteIndexRequest {
-  string index_id = 1;
-  string incarnation_id = 2;
+  string index_uid = 1;
 }
 
 message DeleteTasksResponse {}
@@ -114,8 +112,7 @@ message IndexMetadataResponse {
 }
 
 message ListAllSplitsRequest {
-  string index_id = 1;
-  string incarnation_id = 2;
+  string index_uid = 1;
 }
 
 message ListSplitsRequest {
@@ -127,56 +124,48 @@ message ListSplitsResponse {
 }
 
 message StageSplitsRequest {
-  string index_id = 1;
+  string index_uid = 1;
   string split_metadata_list_serialized_json = 2;
-  string incarnation_id = 3;
 }
 
 message PublishSplitsRequest {
-  string index_id = 1;
+  string index_uid = 1;
   repeated string split_ids = 2;
   repeated string replaced_split_ids = 3;
   optional string index_checkpoint_delta_serialized_json = 4;
-  string incarnation_id = 5;
 }
 
 message MarkSplitsForDeletionRequest {
-  string index_id = 2;
+  string index_uid = 2;
   repeated string split_ids = 3;
-  string incarnation_id = 4;
 }
 
 message DeleteSplitsRequest {
-  string index_id = 2;
+  string index_uid = 2;
   repeated string split_ids = 3;
-  string incarnation_id = 4;
 }
 
 message SplitResponse {}
 
 message AddSourceRequest {
-  string index_id = 1;
+  string index_uid = 1;
   string source_config_serialized_json = 2;
-  string incarnation_id = 3;
 }
 
 message ToggleSourceRequest {
-  string index_id = 1;
+  string index_uid = 1;
   string source_id = 2;
   bool enable = 3;
-  string incarnation_id = 4;
 }
 
 message DeleteSourceRequest {
-  string index_id = 1;
+  string index_uid = 1;
   string source_id = 2;
-  string incarnation_id = 3;
 }
 
 message ResetSourceCheckpointRequest {
-  string index_id = 1;
+  string index_uid = 1;
   string source_id = 2;
-  string incarnation_id = 3;
 }
 
 message SourceResponse {}
@@ -193,7 +182,7 @@ message DeleteTask {
 
 message DeleteQuery {
   // Index ID.
-  string index_id = 1;
+  string index_uid = 1;
   // If set, restrict search to documents with a `timestamp >= start_timestamp`.
   optional int64 start_timestamp = 2;
   // If set, restrict search to documents with a `timestamp < end_timestamp``.
@@ -203,21 +192,18 @@ message DeleteQuery {
   // Search fields.
   repeated string search_fields = 5;
   /// Index incarnation id.
-  string incarnation_id = 6;
 }
 
 message UpdateSplitsDeleteOpstampRequest {
-  string index_id = 1;
+  string index_uid = 1;
   repeated string split_ids = 2;
   uint64 delete_opstamp = 3;
-  string incarnation_id = 4;
 }
 
 message UpdateSplitsDeleteOpstampResponse {}
 
 message LastDeleteOpstampRequest {
-  string index_id = 1;
-  string incarnation_id = 2;
+  string index_uid = 1;
 }
 
 message LastDeleteOpstampResponse {
@@ -225,16 +211,14 @@ message LastDeleteOpstampResponse {
 }
 
 message ListStaleSplitsRequest {
-  string index_id = 1;
+  string index_uid = 1;
   uint64 delete_opstamp = 2;
   uint64 num_splits = 3;
-  string incarnation_id = 4;
 }
 
 message ListDeleteTasksRequest {
-  string index_id = 1;
+  string index_uid = 1;
   uint64 opstamp_start = 2;
-  string incarnation_id = 3;
 }
 
 message ListDeleteTasksResponse {

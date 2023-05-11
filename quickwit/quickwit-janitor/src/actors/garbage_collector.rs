@@ -104,7 +104,7 @@ impl GarbageCollector {
             .filter_map(|index_metadata| {
                 let index_uri = index_metadata.index_uri();
                 match self.storage_resolver.resolve(index_uri) {
-                    Ok(storage) => Some((index_metadata.index_uid(), storage)),
+                    Ok(storage) => Some((index_metadata.index_uid, storage)),
                     Err(error) => {
                         self.counters.num_failed_storage_resolution += 1;
                         error!(index=%index_metadata.index_id(), error=?error, "Failed to resolve the index storage Uri.");
@@ -144,7 +144,7 @@ impl GarbageCollector {
                 }
                 Err(error) => {
                     self.counters.num_failed_gc_run_on_index += 1;
-                    error!(index_id=%index_uid.index_id, error=?error, "Failed to run garbage collection on index.");
+                    error!(index_id=%index_uid.index_id(), error=?error, "Failed to run garbage collection on index.");
                     continue;
                 }
             };
@@ -157,7 +157,7 @@ impl GarbageCollector {
                     .take(5)
                     .collect();
                 info!(
-                    index_id=%index_uid.index_id,
+                    index_id=%index_uid.index_id(),
                     num_deleted_splits=num_deleted_splits,
                     "Janitor deleted {:?} and {} other splits.",
                     deleted_files,
@@ -217,12 +217,11 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_metastore::{
-        IndexMetadata, IndexUid, ListSplitsQuery, MetastoreError, MockMetastore, Split,
-        SplitMetadata, SplitState,
+        IndexMetadata, ListSplitsQuery, MetastoreError, MockMetastore, Split, SplitMetadata,
+        SplitState,
     };
     use quickwit_storage::MockStorage;
     use time::OffsetDateTime;
-    use ulid::Ulid;
 
     use super::*;
 
@@ -266,10 +265,9 @@ mod tests {
             .expect_list_splits()
             .times(2)
             .returning(|query: ListSplitsQuery| {
-                assert_eq!(query.index_uid.index_id, "test-index");
                 assert_eq!(
-                    query.index_uid.incarnation_id.to_string(),
-                    "11111111111111111111111111"
+                    query.index_uid.to_string(),
+                    "test-index:11111111111111111111111111"
                 );
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
@@ -299,10 +297,9 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(1)
             .returning(|index_uid, split_ids| {
-                assert_eq!(index_uid.index_id, "test-index");
                 assert_eq!(
-                    index_uid.incarnation_id.to_string(),
-                    "11111111111111111111111111"
+                    index_uid.to_string(),
+                    "test-index:11111111111111111111111111"
                 );
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
@@ -311,12 +308,10 @@ mod tests {
             .expect_delete_splits()
             .times(1)
             .returning(|index_uid, split_ids| {
-                assert_eq!(index_uid.index_id, "test-index");
                 assert_eq!(
-                    index_uid.incarnation_id.to_string(),
-                    "11111111111111111111111111"
+                    index_uid.to_string(),
+                    "test-index:11111111111111111111111111"
                 );
-
                 let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b", "c"]);
                 assert_eq!(split_ids, expected_split_ids);
@@ -325,10 +320,7 @@ mod tests {
             });
 
         let result = run_garbage_collect(
-            IndexUid {
-                index_id: "test-index".to_string(),
-                incarnation_id: Ulid::from_string("11111111111111111111111111").unwrap(),
-            },
+            "test-index:11111111111111111111111111".to_string().into(),
             Arc::new(mock_storage),
             Arc::new(mock_metastore),
             STAGED_GRACE_PERIOD,
@@ -357,7 +349,7 @@ mod tests {
             .expect_list_splits()
             .times(2)
             .returning(|query| {
-                assert_eq!(query.index_uid.index_id, "test-index");
+                assert_eq!(query.index_uid.index_id(), "test-index");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -371,7 +363,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(1)
             .returning(|index_uid, split_ids| {
-                assert_eq!(index_uid.index_id, "test-index");
+                assert_eq!(index_uid.index_id(), "test-index");
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
@@ -379,7 +371,7 @@ mod tests {
             .expect_delete_splits()
             .times(1)
             .returning(|index_uid, split_ids| {
-                assert_eq!(index_uid.index_id, "test-index");
+                assert_eq!(index_uid.index_id(), "test-index");
 
                 let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b", "c"]);
@@ -418,7 +410,7 @@ mod tests {
             .expect_list_splits()
             .times(6)
             .returning(|query| {
-                assert_eq!(query.index_uid.index_id, "test-index");
+                assert_eq!(query.index_uid.index_id(), "test-index");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -432,7 +424,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(3)
             .returning(|index_uid, split_ids| {
-                assert_eq!(index_uid.index_id, "test-index");
+                assert_eq!(index_uid.index_id(), "test-index");
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
@@ -440,7 +432,7 @@ mod tests {
             .expect_delete_splits()
             .times(3)
             .returning(|index_uid, split_ids| {
-                assert_eq!(index_uid.index_id, "test-index");
+                assert_eq!(index_uid.index_id(), "test-index");
 
                 let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
@@ -565,11 +557,9 @@ mod tests {
             .expect_list_splits()
             .times(3)
             .returning(|query| {
-                assert!(
-                    ["test-index-1", "test-index-2"].contains(&query.index_uid.index_id.as_str())
-                );
+                assert!(["test-index-1", "test-index-2"].contains(&query.index_uid.index_id()));
 
-                if query.index_uid.index_id == "test-index-2" {
+                if query.index_uid.index_id() == "test-index-2" {
                     return Err(MetastoreError::DbError {
                         message: "fail to delete".to_string(),
                     });
@@ -588,7 +578,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .once()
             .returning(|index_uid, split_ids| {
-                assert!(["test-index-1", "test-index-2"].contains(&index_uid.index_id.as_str()));
+                assert!(["test-index-1", "test-index-2"].contains(&index_uid.index_id()));
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
@@ -636,9 +626,7 @@ mod tests {
             .expect_list_splits()
             .times(4)
             .returning(|query| {
-                assert!(
-                    ["test-index-1", "test-index-2"].contains(&query.index_uid.index_id.as_str())
-                );
+                assert!(["test-index-1", "test-index-2"].contains(&query.index_uid.index_id()));
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -652,7 +640,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(2)
             .returning(|index_uid, split_ids| {
-                assert!(["test-index-1", "test-index-2"].contains(&index_uid.index_id.as_str()));
+                assert!(["test-index-1", "test-index-2"].contains(&index_uid.index_id()));
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
@@ -668,7 +656,7 @@ mod tests {
                 // This should not cause the whole run to fail and return an error,
                 // instead this should simply get logged and return the list of splits
                 // which have successfully been deleted.
-                if index_uid.index_id == "test-index-2" {
+                if index_uid.index_id() == "test-index-2" {
                     Err(MetastoreError::DbError {
                         message: "fail to delete".to_string(),
                     })

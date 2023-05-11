@@ -188,8 +188,7 @@ impl IndexingScheduler {
                     .map(move |(source_id, source_config)| {
                         (
                             IndexSourceId {
-                                index_id: index_metadata.index_config.index_id.to_string(),
-                                incarnation_id: index_metadata.incarnation_id.to_string(),
+                                index_uid: index_metadata.index_uid.clone(),
                                 source_id,
                             },
                             source_config,
@@ -825,14 +824,12 @@ mod tests {
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
-                index_id: "index-1".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
-                incarnation_id: "11111111111111111111111111".to_string(),
             };
             let task_2 = IndexingTask {
-                index_id: "index-1".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
-                incarnation_id: "11111111111111111111111111".to_string(),
             };
             running_plan.insert(
                 "indexer-1".to_string(),
@@ -849,14 +846,12 @@ mod tests {
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
-                index_id: "index-1".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
-                incarnation_id: "11111111111111111111111111".to_string(),
             };
             let task_2 = IndexingTask {
-                index_id: "index-1".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
-                incarnation_id: "11111111111111111111111111".to_string(),
             };
             running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
             desired_plan.insert("indexer-1".to_string(), vec![task_2.clone()]);
@@ -879,14 +874,12 @@ mod tests {
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
-                index_id: "index-1".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
-                incarnation_id: "11111111111111111111111111".to_string(),
             };
             let task_2 = IndexingTask {
-                index_id: "index-2".to_string(),
+                index_uid: "index-2:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
-                incarnation_id: "11111111111111111111111111".to_string(),
             };
             running_plan.insert("indexer-2".to_string(), vec![task_2.clone()]);
             desired_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
@@ -917,9 +910,8 @@ mod tests {
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
-                index_id: "index-1".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
-                incarnation_id: "11111111111111111111111111".to_string(),
             };
             running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
             desired_plan.insert(
@@ -941,9 +933,8 @@ mod tests {
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
-                index_id: "index-1".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
-                incarnation_id: "11111111111111111111111111".to_string(),
             };
             running_plan.insert(
                 "indexer-1".to_string(),

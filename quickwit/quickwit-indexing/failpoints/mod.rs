@@ -48,7 +48,8 @@ use quickwit_indexing::actors::MergeExecutor;
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::{IndexingPipelineId, MergeScratch, ScratchDirectory};
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
-use quickwit_metastore::{IndexUid, ListSplitsQuery, Split, SplitMetadata, SplitState};
+use quickwit_metastore::{ListSplitsQuery, Split, SplitMetadata, SplitState};
+use quickwit_proto::IndexUid;
 use serde_json::Value as JsonValue;
 use tantivy::{Directory, Inventory};
 
@@ -286,7 +287,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         tantivy_dirs,
     };
     let pipeline_id = IndexingPipelineId {
-        index_uid: IndexUid::for_test(index_id.to_string()),
+        index_uid: IndexUid::new(index_id.to_string()),
         source_id: "test-source".to_string(),
         node_id: "test-node".to_string(),
         pipeline_ord: 0,

@@ -35,14 +35,13 @@ use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
 use quickwit_ingest::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUEUES_DIR_NAME};
-use quickwit_metastore::{IndexMetadata, IndexUid, Metastore, MetastoreError};
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
-use quickwit_proto::{ServiceError, ServiceErrorCode};
+use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
-use ulid::Ulid;
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
@@ -109,14 +108,14 @@ type SourceId = String;
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct MergePipelineId {
-    index_id: IndexUid,
+    index_uid: IndexUid,
     source_id: String,
 }
 
 impl<'a> From<&'a IndexingPipelineId> for MergePipelineId {
     fn from(pipeline_id: &'a IndexingPipelineId) -> Self {
         MergePipelineId {
-            index_id: pipeline_id.index_uid.clone(),
+            index_uid: pipeline_id.index_uid.clone(),
             source_id: pipeline_id.source_id.clone(),
         }
     }
@@ -183,7 +182,7 @@ impl IndexingService {
             .indexing_pipeline_handles
             .remove(pipeline_id)
             .ok_or_else(|| IndexingServiceError::MissingPipeline {
-                index_id: pipeline_id.index_uid.index_id.clone(),
+                index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id.clone(),
             })?;
         self.counters.num_running_pipelines -= 1;
@@ -198,7 +197,7 @@ impl IndexingService {
             .merge_pipeline_handles
             .remove(pipeline_id)
             .ok_or_else(|| IndexingServiceError::MissingPipeline {
-                index_id: pipeline_id.index_id.index_id.clone(),
+                index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id.clone(),
             })?;
         self.counters.num_running_merge_pipelines -= 1;
@@ -213,7 +212,7 @@ impl IndexingService {
             .indexing_pipeline_handles
             .get(pipeline_id)
             .ok_or_else(|| IndexingServiceError::MissingPipeline {
-                index_id: pipeline_id.index_uid.index_id.clone(),
+                index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id.clone(),
             })?;
         let observation = pipeline_handle.observe().await;
@@ -229,13 +228,13 @@ impl IndexingService {
     ) -> Result<IndexingPipelineId, IndexingServiceError> {
         let index_metadata = self.metastore.index_metadata(index_id.as_str()).await?;
         let pipeline_id = IndexingPipelineId {
-            index_uid: index_metadata.index_uid(),
+            index_uid: index_metadata.index_uid,
             source_id: source_config.source_id.clone(),
             node_id: self.node_id.clone(),
             pipeline_ord,
         };
         let index_config = self
-            .index_metadata(ctx, &pipeline_id.index_uid.index_id)
+            .index_metadata(ctx, pipeline_id.index_uid.index_id())
             .await?
             .into_index_config();
         self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config)
@@ -252,7 +251,7 @@ impl IndexingService {
     ) -> Result<(), IndexingServiceError> {
         if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
             return Err(IndexingServiceError::PipelineAlreadyExists {
-                index_id: pipeline_id.index_uid.index_id,
+                index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id,
                 pipeline_ord: pipeline_id.pipeline_ord,
             });
@@ -336,7 +335,7 @@ impl IndexingService {
                     ActorState::Idle | ActorState::Paused | ActorState::Processing => true,
                     ActorState::Success => {
                         info!(
-                            index_id=%pipeline_id.index_uid.index_id,
+                            index_id=%pipeline_id.index_uid.index_id(),
                             source_id=%pipeline_id.source_id,
                             pipeline_ord=%pipeline_id.pipeline_ord,
                             "Indexing pipeline exited successfully."
@@ -349,7 +348,7 @@ impl IndexingService {
                         // This should never happen: Indexing Pipelines are not supposed to fail,
                         // and are themselves in charge of supervising the pipeline actors.
                         error!(
-                            index_id=%pipeline_id.index_uid.index_id,
+                            index_id=%pipeline_id.index_uid.index_id(),
                             source_id=%pipeline_id.source_id,
                             pipeline_ord=%pipeline_id.pipeline_ord,
                             "Indexing pipeline exited with failure. This should never happen."
@@ -378,7 +377,7 @@ impl IndexingService {
                 // We kill the merge pipeline to avoid waiting a merge operation to finish as it can
                 // be long.
                 info!(
-                    index_id=%merge_pipeline_id_to_shut_down.index_id.index_id,
+                    index_id=%merge_pipeline_id_to_shut_down.index_uid.index_id(),
                     source_id=%merge_pipeline_id_to_shut_down.source_id,
                     "No more indexing pipeline on this index and source, killing merge pipeline."
                 );
@@ -409,8 +408,8 @@ impl IndexingService {
             return Ok(indexing_directory);
         }
         let indexing_directory_path = indexing_dir_path
-            .join(&pipeline_id.index_uid.index_id)
-            .join(pipeline_id.index_uid.incarnation_id.to_string())
+            .join(pipeline_id.index_uid.index_id())
+            .join(pipeline_id.index_uid.incarnation_id())
             .join(&pipeline_id.source_id);
         let indexing_directory = ScratchDirectory::create_in_dir(indexing_directory_path)
             .await
@@ -462,11 +461,7 @@ impl IndexingService {
             let pipeline_ord = pipeline_ordinals.entry(indexing_task).or_insert(0);
             let pipeline_id = IndexingPipelineId {
                 node_id: self.node_id.clone(),
-                index_uid: IndexUid {
-                    index_id: indexing_task.index_id.clone(),
-                    incarnation_id: Ulid::from_string(indexing_task.incarnation_id.as_str())
-                        .expect("Malformed incarnation_id"),
-                },
+                index_uid: IndexUid::from(indexing_task.index_uid.to_string()),
                 source_id: indexing_task.source_id.clone(),
                 pipeline_ord: *pipeline_ord,
             };
@@ -517,11 +512,11 @@ impl IndexingService {
             .iter()
             // No need to emit two request for the same `index_uid`
             .unique_by(|pipeline_id| pipeline_id.index_uid.clone())
-            .map(|pipeline_id| self.index_metadata(ctx, &pipeline_id.index_uid.index_id));
+            .map(|pipeline_id| self.index_metadata(ctx, pipeline_id.index_uid.index_id()));
         let indexes_metadata = try_join_all(indexes_metadata_futures).await?;
         let indexes_metadata_by_index_id: HashMap<IndexUid, IndexMetadata> = indexes_metadata
             .into_iter()
-            .map(|index_metadata| (index_metadata.index_uid(), index_metadata))
+            .map(|index_metadata| (index_metadata.index_uid.clone(), index_metadata))
             .collect();
 
         let mut failed_spawning_pipeline_ids: Vec<IndexingPipelineId> = Vec::new();
@@ -553,8 +548,8 @@ impl IndexingService {
                 }
             } else {
                 error!(
-                    "Failed to spawn pipeline: index {} with incarnation id {} no longer exists.",
-                    &new_pipeline_id.index_uid.index_id, &new_pipeline_id.index_uid.incarnation_id
+                    "Failed to spawn pipeline: index {} no longer exists.",
+                    &new_pipeline_id.index_uid.to_string()
                 );
                 failed_spawning_pipeline_ids.push(new_pipeline_id.clone());
             }
@@ -605,17 +600,12 @@ impl IndexingService {
             .indexing_pipeline_handles
             .keys()
             .map(|pipeline_id| IndexingTask {
-                index_id: pipeline_id.index_uid.index_id.clone(),
+                index_uid: pipeline_id.index_uid.to_string(),
                 source_id: pipeline_id.source_id.clone(),
-                incarnation_id: pipeline_id.index_uid.incarnation_id.to_string(),
             })
             // Sort indexing tasks so it's more readable for debugging purpose.
             .sorted_by(|left, right| {
-                (&left.index_id, &left.source_id, &left.incarnation_id).cmp(&(
-                    &right.index_id,
-                    &right.source_id,
-                    &right.incarnation_id,
-                ))
+                (&left.index_uid, &left.source_id).cmp(&(&right.index_uid, &right.source_id))
             })
             .collect_vec();
 
@@ -906,7 +896,7 @@ mod tests {
             .ask_for_res(spawn_pipeline_msg)
             .await
             .unwrap_err();
-        assert_eq!(pipeline_id.index_uid.index_id, index_id);
+        assert_eq!(pipeline_id.index_uid.index_id(), index_id);
         assert_eq!(pipeline_id.source_id, source_config_0.source_id);
         assert_eq!(pipeline_id.node_id, "test-node");
         assert_eq!(pipeline_id.pipeline_ord, 0);
@@ -1049,17 +1039,14 @@ mod tests {
             .await
             .unwrap();
         let metadata = metastore.index_metadata(index_id.as_str()).await.unwrap();
-        let incarnation_id = metadata.incarnation_id.to_string();
         let indexing_tasks = vec![
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
         ];
         indexing_service
@@ -1089,24 +1076,20 @@ mod tests {
 
         let indexing_tasks = vec![
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: source_config_2.source_id.clone(),
-                incarnation_id: incarnation_id.clone(),
             },
         ];
         indexing_service
@@ -1130,19 +1113,16 @@ mod tests {
         );
         let indexing_tasks = vec![
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: source_config_2.source_id.clone(),
-                incarnation_id: incarnation_id.clone(),
             },
         ];
         indexing_service

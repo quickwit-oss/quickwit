@@ -38,7 +38,7 @@ use quickwit_proto::tonic::{Request, Response, Status};
 use quickwit_proto::{set_parent_span_from_request_metadata, tonic};
 use tracing::instrument;
 
-use crate::{IndexUid, ListSplitsQuery, Metastore, MetastoreError};
+use crate::{ListSplitsQuery, Metastore, MetastoreError};
 
 #[allow(missing_docs)]
 #[derive(Clone)]
@@ -70,8 +70,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
                 .create_index(index_config)
                 .await
                 .map(|index_uid| CreateIndexResponse {
-                    index_id: index_uid.index_id,
-                    incarnation_id: index_uid.incarnation_id.to_string(),
+                    index_uid: index_uid.to_string(),
                 })?;
         Ok(tonic::Response::new(create_index_reply))
     }
@@ -127,10 +126,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let delete_request = request.into_inner();
         let delete_reply = self
             .0
-            .delete_index(IndexUid::new(
-                delete_request.index_id,
-                delete_request.incarnation_id,
-            ))
+            .delete_index(delete_request.index_uid.into())
             .await
             .map(|_| DeleteIndexResponse {})?;
         Ok(tonic::Response::new(delete_reply))
@@ -145,10 +141,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let list_all_splits_request = request.into_inner();
         let splits = self
             .0
-            .list_all_splits(IndexUid::new(
-                list_all_splits_request.index_id,
-                list_all_splits_request.incarnation_id,
-            ))
+            .list_all_splits(list_all_splits_request.index_uid.into())
             .await?;
         let list_all_splits_reply = serde_json::to_string(&splits)
             .map(|splits_serialized_json| ListSplitsResponse {
@@ -200,13 +193,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
                     message: error.to_string(),
                 })?;
         self.0
-            .stage_splits(
-                IndexUid::new(
-                    stage_split_request.index_id,
-                    stage_split_request.incarnation_id,
-                ),
-                split_metadata_list,
-            )
+            .stage_splits(stage_split_request.index_uid.into(), split_metadata_list)
             .await?;
         Ok(tonic::Response::new(SplitResponse {}))
     }
@@ -239,7 +226,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let publish_splits_reply = self
             .0
             .publish_splits(
-                IndexUid::new(publish_request.index_id, publish_request.incarnation_id),
+                publish_request.index_uid.into(),
                 &split_ids,
                 &replaced_split_ids,
                 checkpoint_delta_opt,
@@ -264,10 +251,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let mark_splits_for_deletion_reply = self
             .0
             .mark_splits_for_deletion(
-                IndexUid::new(
-                    mark_splits_for_deletion_request.index_id,
-                    mark_splits_for_deletion_request.incarnation_id,
-                ),
+                mark_splits_for_deletion_request.index_uid.into(),
                 &split_ids,
             )
             .await
@@ -289,13 +273,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             .collect_vec();
         let delete_splits_reply = self
             .0
-            .delete_splits(
-                IndexUid::new(
-                    delete_splits_request.index_id,
-                    delete_splits_request.incarnation_id,
-                ),
-                &split_ids,
-            )
+            .delete_splits(delete_splits_request.index_uid.into(), &split_ids)
             .await
             .map(|_| SplitResponse {})?;
         Ok(tonic::Response::new(delete_splits_reply))
@@ -315,13 +293,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             })?;
         let add_source_reply = self
             .0
-            .add_source(
-                IndexUid::new(
-                    add_source_request.index_id,
-                    add_source_request.incarnation_id,
-                ),
-                source_config,
-            )
+            .add_source(add_source_request.index_uid.into(), source_config)
             .await
             .map(|_| SourceResponse {})?;
         Ok(tonic::Response::new(add_source_reply))
@@ -337,10 +309,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let toggle_source_reply = self
             .0
             .toggle_source(
-                IndexUid::new(
-                    toggle_source_request.index_id,
-                    toggle_source_request.incarnation_id,
-                ),
+                toggle_source_request.index_uid.into(),
                 &toggle_source_request.source_id,
                 toggle_source_request.enable,
             )
@@ -359,10 +328,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let delete_source_reply = self
             .0
             .delete_source(
-                IndexUid::new(
-                    delete_source_request.index_id,
-                    delete_source_request.incarnation_id,
-                ),
+                delete_source_request.index_uid.into(),
                 &delete_source_request.source_id,
             )
             .await
@@ -379,10 +345,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let request = request.into_inner();
         let reply = self
             .0
-            .reset_source_checkpoint(
-                IndexUid::new(request.index_id, request.incarnation_id),
-                &request.source_id,
-            )
+            .reset_source_checkpoint(request.index_uid.into(), &request.source_id)
             .await
             .map(|_| SourceResponse {})?;
         Ok(tonic::Response::new(reply))
@@ -395,10 +358,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
     ) -> Result<tonic::Response<LastDeleteOpstampResponse>, tonic::Status> {
         set_parent_span_from_request_metadata(request.metadata());
         let request = request.into_inner();
-        let last_delete_opstamp = self
-            .0
-            .last_delete_opstamp(IndexUid::new(request.index_id, request.incarnation_id))
-            .await?;
+        let last_delete_opstamp = self.0.last_delete_opstamp(request.index_uid.into()).await?;
         let last_opstamp_reply = LastDeleteOpstampResponse {
             last_delete_opstamp,
         };
@@ -431,7 +391,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let reply = self
             .0
             .update_splits_delete_opstamp(
-                IndexUid::new(request.index_id, request.incarnation_id),
+                request.index_uid.into(),
                 &split_ids,
                 request.delete_opstamp,
             )
@@ -449,10 +409,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let request = request.into_inner();
         let delete_tasks = self
             .0
-            .list_delete_tasks(
-                IndexUid::new(request.index_id, request.incarnation_id),
-                request.opstamp_start,
-            )
+            .list_delete_tasks(request.index_uid.into(), request.opstamp_start)
             .await?
             .into_iter()
             .map(DeleteTask::from)
@@ -471,7 +428,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let splits = self
             .0
             .list_stale_splits(
-                IndexUid::new(request.index_id, request.incarnation_id),
+                request.index_uid.into(),
                 request.delete_opstamp,
                 request.num_splits as usize,
             )

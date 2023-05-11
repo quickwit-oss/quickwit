@@ -23,12 +23,13 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::IndexUid;
 
 use super::retry::RetryParams;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, IndexUid, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult,
-    RetryingMetastore, Split, SplitMetadata,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, RetryingMetastore,
+    Split, SplitMetadata,
 };
 
 struct RetryTestMetastore {
@@ -83,7 +84,7 @@ impl Metastore for RetryTestMetastore {
     async fn create_index(&self, _index_config: IndexConfig) -> MetastoreResult<IndexUid> {
         let result = self.try_success();
         match result {
-            Ok(_) => Ok(IndexUid::for_test("")),
+            Ok(_) => Ok(IndexUid::new("")),
             Err(err) => Err(err),
         }
     }

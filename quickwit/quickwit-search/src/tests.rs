@@ -696,7 +696,7 @@ async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Ve
         })
         .collect();
     let request = quickwit_proto::SearchRequest {
-        index_id: test_sandbox.index_uid().index_id,
+        index_id: test_sandbox.index_uid().index_id().to_string(),
         query: query.to_string(),
         max_hits: 100,
         ..Default::default()
@@ -1366,7 +1366,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
 
     {
         let request = quickwit_proto::ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id,
+            index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: None,
             end_key: None,
@@ -1387,7 +1387,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = quickwit_proto::ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id,
+            index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: None,
             end_key: None,
@@ -1408,7 +1408,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = quickwit_proto::ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id,
+            index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: Some("casper".as_bytes().to_vec()),
             end_key: None,
@@ -1429,7 +1429,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = quickwit_proto::ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id,
+            index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: None,
             end_key: Some("casper".as_bytes().to_vec()),

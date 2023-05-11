@@ -30,8 +30,9 @@ use quickwit_config::{
 };
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_metastore::{
-    IndexMetadata, IndexUid, ListSplitsQuery, Metastore, MetastoreError, Split, SplitState,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitState,
 };
+use quickwit_proto::IndexUid;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -176,7 +177,7 @@ async fn describe_index(
     metastore: Arc<dyn Metastore>,
 ) -> Result<IndexStats, MetastoreError> {
     let index_metadata = metastore.index_metadata(&index_id).await?;
-    let query = ListSplitsQuery::for_index(index_metadata.index_uid());
+    let query = ListSplitsQuery::for_index(index_metadata.index_uid.clone());
     let splits = metastore.list_splits(query).await?;
     let published_splits: Vec<Split> = splits
         .into_iter()
@@ -273,7 +274,7 @@ async fn list_splits(
     list_split_query: ListSplitsQueryParams,
     metastore: Arc<dyn Metastore>,
 ) -> Result<Vec<Split>, MetastoreError> {
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid();
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     info!(index_id = %index_id, list_split_query = ?list_split_query, "get-splits");
     let mut query = ListSplitsQuery::for_index(index_uid);
     if let Some(split_states) = list_split_query.split_states {
@@ -327,7 +328,7 @@ async fn mark_splits_for_deletion(
     splits_for_deletion: SplitsForDeletion,
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), MetastoreError> {
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid();
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     info!(index_id = %index_id, splits_ids = ?splits_for_deletion.split_ids, "mark-splits-for-deletion");
     let split_ids: Vec<&str> = splits_for_deletion
         .split_ids
@@ -549,7 +550,7 @@ async fn create_source(
         .metastore()
         .index_metadata(&index_id)
         .await?
-        .index_uid();
+        .index_uid;
     info!(index_id = %index_id, source_id = %source_config.source_id, "create-source");
     index_service.create_source(index_uid, source_config).await
 }
@@ -612,7 +613,7 @@ async fn reset_source_checkpoint(
     source_id: String,
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), MetastoreError> {
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid();
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     info!(index_id = %index_id, source_id = %source_id, "reset-checkpoint");
     metastore
         .reset_source_checkpoint(index_uid, &source_id)
@@ -658,7 +659,7 @@ async fn toggle_source(
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), IndexServiceError> {
     info!(index_id = %index_id, source_id = %source_id, enable = toggle_source.enable, "toggle-source");
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid();
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     if [CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
             "Source `{source_id}` is managed by Quickwit, you cannot enable or disable a source \
@@ -701,7 +702,7 @@ async fn delete_source(
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), IndexServiceError> {
     info!(index_id = %index_id, source_id = %source_id, "delete-source");
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid();
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     if [INGEST_API_SOURCE_ID, CLI_INGEST_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
             "Source `{source_id}` is managed by Quickwit, you cannot delete a source managed by \
@@ -810,7 +811,7 @@ mod tests {
         metastore
             .expect_list_splits()
             .returning(|list_split_query: ListSplitsQuery| {
-                if list_split_query.index_uid.index_id == "quickwit-demo-index"
+                if list_split_query.index_uid.index_id() == "quickwit-demo-index"
                     && list_split_query.split_states
                         == vec![SplitState::Published, SplitState::Staged]
                     && list_split_query.time_range.start == Bound::Included(10)
@@ -885,7 +886,7 @@ mod tests {
         metastore
             .expect_list_splits()
             .return_once(|list_split_query: ListSplitsQuery| {
-                if list_split_query.index_uid.index_id == "test-index" {
+                if list_split_query.index_uid.index_id() == "test-index" {
                     return Ok(vec![split_1, split_2]);
                 }
                 Err(MetastoreError::InternalError {
@@ -936,7 +937,7 @@ mod tests {
         metastore
             .expect_list_splits()
             .return_once(|list_split_query: ListSplitsQuery| {
-                if list_split_query.index_uid.index_id == "quickwit-demo-index"
+                if list_split_query.index_uid.index_id() == "quickwit-demo-index"
                     && list_split_query.split_states.is_empty()
                     && list_split_query.time_range.is_unbounded()
                     && list_split_query.create_timestamp.is_unbounded()
@@ -976,7 +977,7 @@ mod tests {
         metastore
             .expect_mark_splits_for_deletion()
             .returning(|index_uid: IndexUid, split_ids: &[&str]| {
-                if index_uid.index_id == "quickwit-demo-index"
+                if index_uid.index_id() == "quickwit-demo-index"
                     && split_ids == ["split-1", "split-2"]
                 {
                     return Ok(());
@@ -1517,7 +1518,7 @@ mod tests {
         metastore
             .expect_delete_source()
             .return_once(|index_uid, source_id| {
-                assert_eq!(index_uid.index_id, "quickwit-demo-index");
+                assert_eq!(index_uid.index_id(), "quickwit-demo-index");
                 Err(MetastoreError::SourceDoesNotExist {
                     source_id: source_id.to_string(),
                 })
@@ -1551,7 +1552,7 @@ mod tests {
         metastore
             .expect_reset_source_checkpoint()
             .returning(|index_uid: IndexUid, source_id: &str| {
-                if index_uid.index_id == "quickwit-demo-index" && source_id == "source-to-reset" {
+                if index_uid.index_id() == "quickwit-demo-index" && source_id == "source-to-reset" {
                     return Ok(());
                 }
                 Err(MetastoreError::InternalError {
@@ -1595,7 +1596,7 @@ mod tests {
             .times(3);
         metastore.expect_toggle_source().return_once(
             |index_uid: IndexUid, source_id: &str, enable: bool| {
-                if index_uid.index_id == "quickwit-demo-index"
+                if index_uid.index_id() == "quickwit-demo-index"
                     && source_id == "source-to-toggle"
                     && enable
                 {

@@ -23,11 +23,11 @@ use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
 use quickwit_common::FileEntry;
+use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::split_metadata_version::VersionedSplitMetadata;
-use crate::IndexUid;
 
 /// Carries split metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -177,7 +177,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
         SplitMetadata {
             split_id: "split".to_string(),
-            index_uid: IndexUid::for_test("my-index"),
+            index_uid: IndexUid::new("my-index"),
             source_id: "source".to_string(),
             node_id: "node".to_string(),
             delete_opstamp: 10,

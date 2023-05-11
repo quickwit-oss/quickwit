@@ -10,9 +10,7 @@ pub struct CreateIndexRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateIndexResponse {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub incarnation_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -30,9 +28,7 @@ pub struct ListIndexesMetadatasResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteIndexRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub incarnation_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -61,9 +57,7 @@ pub struct IndexMetadataResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAllSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub incarnation_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -84,18 +78,16 @@ pub struct ListSplitsResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StageSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub split_metadata_list_serialized_json: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublishSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "2")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, repeated, tag = "3")]
@@ -104,30 +96,24 @@ pub struct PublishSplitsRequest {
     pub index_checkpoint_delta_serialized_json: ::core::option::Option<
         ::prost::alloc::string::String,
     >,
-    #[prost(string, tag = "5")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MarkSplitsForDeletionRequest {
     #[prost(string, tag = "2")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, tag = "4")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSplitsRequest {
     #[prost(string, tag = "2")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, tag = "4")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -138,46 +124,38 @@ pub struct SplitResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddSourceRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_config_serialized_json: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ToggleSourceRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(bool, tag = "3")]
     pub enable: bool,
-    #[prost(string, tag = "4")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSourceRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetSourceCheckpointRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -201,7 +179,7 @@ pub struct DeleteTask {
 pub struct DeleteQuery {
     /// Index ID.
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     #[prost(int64, optional, tag = "2")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -214,24 +192,21 @@ pub struct DeleteQuery {
     #[prost(string, tag = "4")]
     pub query: ::prost::alloc::string::String,
     /// Search fields.
+    ///
+    /// / Index incarnation id.
     #[prost(string, repeated, tag = "5")]
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// / Index incarnation id.
-    #[prost(string, tag = "6")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSplitsDeleteOpstampRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "2")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(uint64, tag = "3")]
     pub delete_opstamp: u64,
-    #[prost(string, tag = "4")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -242,9 +217,7 @@ pub struct UpdateSplitsDeleteOpstampResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LastDeleteOpstampRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub incarnation_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -258,24 +231,20 @@ pub struct LastDeleteOpstampResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListStaleSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(uint64, tag = "2")]
     pub delete_opstamp: u64,
     #[prost(uint64, tag = "3")]
     pub num_splits: u64,
-    #[prost(string, tag = "4")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(uint64, tag = "2")]
     pub opstamp_start: u64,
-    #[prost(string, tag = "3")]
-    pub incarnation_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

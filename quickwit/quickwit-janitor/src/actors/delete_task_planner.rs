@@ -30,10 +30,10 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::actors::MergeSplitDownloader;
 use quickwit_indexing::merge_policy::{MergeOperation, MergePolicy};
 use quickwit_metastore::{
-    split_tag_filter, split_time_range_filter, IndexUid, Metastore, MetastoreResult, Split,
+    split_tag_filter, split_time_range_filter, Metastore, MetastoreResult, Split,
 };
 use quickwit_proto::metastore_api::DeleteTask;
-use quickwit_proto::SearchRequest;
+use quickwit_proto::{IndexUid, SearchRequest};
 use quickwit_search::{jobs_to_leaf_request, SearchJob, SearchJobPlacer};
 use serde::Serialize;
 use tantivy::Inventory;
@@ -152,7 +152,7 @@ impl DeleteTaskPlanner {
                 .await?;
             ctx.record_progress();
             info!(
-                index_id = self.index_uid.index_id,
+                index_id = self.index_uid.index_id(),
                 last_delete_opstamp = last_delete_opstamp,
                 num_stale_splits = stale_splits.len()
             );
@@ -198,7 +198,7 @@ impl DeleteTaskPlanner {
                 .await?;
                 JANITOR_METRICS
                     .ongoing_num_delete_operations_total
-                    .with_label_values([self.index_uid.index_id.as_str()])
+                    .with_label_values([self.index_uid.index_id()])
                     .set(self.ongoing_delete_operations_inventory.list().len() as i64);
             }
         }
@@ -292,7 +292,9 @@ impl DeleteTaskPlanner {
                 .as_ref()
                 .expect("Delete task must have a delete query.");
             let search_request = SearchRequest {
-                index_id: delete_query.index_id.clone(),
+                index_id: IndexUid::from(delete_query.index_uid.clone())
+                    .index_id()
+                    .to_string(),
                 query: delete_query.query.clone(),
                 start_timestamp: delete_query.start_timestamp,
                 end_timestamp: delete_query.end_timestamp,
@@ -331,7 +333,7 @@ impl DeleteTaskPlanner {
             ))
             .await?;
         debug!(
-            index_id = index_uid.index_id,
+            index_id = index_uid.index_id(),
             last_delete_opstamp = last_delete_opstamp,
             num_stale_splits_from_metastore = stale_splits.len()
         );
@@ -435,7 +437,7 @@ mod tests {
         }
         let metastore = test_sandbox.metastore();
         let index_metadata = metastore.index_metadata(index_id).await?;
-        let index_uid = index_metadata.index_uid();
+        let index_uid = index_metadata.index_uid.clone();
         let index_config = index_metadata.into_index_config();
         let split_metas: Vec<SplitMetadata> = metastore
             .list_all_splits(index_uid.clone())
@@ -453,22 +455,20 @@ mod tests {
 
         metastore
             .create_delete_task(DeleteQuery {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
                 query: "body:delete".to_string(),
                 search_fields: Vec::new(),
-                incarnation_id: index_uid.incarnation_id.to_string(),
             })
             .await?;
         metastore
             .create_delete_task(DeleteQuery {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
                 query: "MatchNothing".to_string(),
                 search_fields: Vec::new(),
-                incarnation_id: index_uid.incarnation_id.to_string(),
             })
             .await?;
         let mut mock_search_service = MockSearchService::new();

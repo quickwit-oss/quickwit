@@ -492,7 +492,6 @@ mod tests {
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_proto::indexing_api::IndexingTask;
     use rand::Rng;
-    use ulid::Ulid;
 
     use super::*;
 
@@ -555,9 +554,8 @@ mod tests {
         .await
         .unwrap();
         let indexing_task = IndexingTask {
-            index_id: "index-1".to_string(),
+            index_uid: "index-1:11111111111111111111111111".to_string(),
             source_id: "source-1".to_string(),
-            incarnation_id: Ulid::new().to_string(),
         };
         cluster2
             .set_key_value(GRPC_ADVERTISE_ADDR_KEY, "127.0.0.1:1001")
@@ -631,9 +629,8 @@ mod tests {
                 let index_id = random_generator.gen_range(0..=10_000);
                 let source_id = random_generator.gen_range(0..=100);
                 IndexingTask {
-                    index_id: format!("index-{index_id}"),
+                    index_uid: format!("index-{index_id}:11111111111111111111111111"),
                     source_id: format!("source-{source_id}"),
-                    incarnation_id: "11111111111111111111111111".to_string(),
                 }
             })
             .collect_vec();

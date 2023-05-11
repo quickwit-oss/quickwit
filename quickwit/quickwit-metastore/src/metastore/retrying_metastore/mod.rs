@@ -26,12 +26,11 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::IndexUid;
 
 use self::retry::{retry, RetryParams};
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    IndexMetadata, IndexUid, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata,
-};
+use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
 
 /// Retry layer for a [`Metastore`].
 /// This is a band-aid solution for now. This will be removed after retry can be usable on

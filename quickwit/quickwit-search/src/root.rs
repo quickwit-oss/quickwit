@@ -153,7 +153,7 @@ pub async fn root_search(
     let start_instant = tokio::time::Instant::now();
 
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let index_uid = index_metadata.index_uid();
+    let index_uid = index_metadata.index_uid.clone();
     let index_config = index_metadata.into_index_config();
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
@@ -359,7 +359,7 @@ pub async fn root_list_terms(
     let index_metadata = metastore
         .index_metadata(&list_terms_request.index_id)
         .await?;
-    let index_uid = index_metadata.index_uid();
+    let index_uid = index_metadata.index_uid.clone();
     let index_config: IndexConfig = index_metadata.into_index_config();
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)

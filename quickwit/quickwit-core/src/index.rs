@@ -31,10 +31,10 @@ use quickwit_janitor::{
     delete_splits_with_files, run_garbage_collect, SplitDeletionError, SplitRemovalInfo,
 };
 use quickwit_metastore::{
-    quickwit_metastore_uri_resolver, IndexMetadata, IndexUid, ListSplitsQuery, Metastore,
-    MetastoreError, SplitMetadata, SplitState,
+    quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Metastore, MetastoreError,
+    SplitMetadata, SplitState,
 };
-use quickwit_proto::{ServiceError, ServiceErrorCode};
+use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
 use quickwit_storage::{quickwit_storage_uri_resolver, StorageResolverError, StorageUriResolver};
 use thiserror::Error;
 use tracing::{error, info};
@@ -149,7 +149,7 @@ impl IndexService {
         dry_run: bool,
     ) -> Result<Vec<FileEntry>, IndexServiceError> {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
-        let index_uid = index_metadata.index_uid();
+        let index_uid = index_metadata.index_uid.clone();
         let index_uri = index_metadata.into_index_config().index_uri.clone();
         let storage = self.storage_resolver.resolve(&index_uri)?;
 
@@ -214,7 +214,7 @@ impl IndexService {
         dry_run: bool,
     ) -> anyhow::Result<SplitRemovalInfo> {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
-        let index_uid = index_metadata.index_uid();
+        let index_uid = index_metadata.index_uid.clone();
         let index_config = index_metadata.into_index_config();
         let storage = self.storage_resolver.resolve(&index_config.index_uri)?;
 
@@ -245,7 +245,7 @@ impl IndexService {
     /// * `storage_resolver` - A storage resolver object to access the storage.
     pub async fn clear_index(&self, index_id: &str) -> Result<(), IndexServiceError> {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
-        let index_uid = index_metadata.index_uid();
+        let index_uid = index_metadata.index_uid.clone();
         let storage = self.storage_resolver.resolve(index_metadata.index_uri())?;
         let splits = self.metastore.list_all_splits(index_uid.clone()).await?;
         let split_ids: Vec<&str> = splits.iter().map(|split| split.split_id()).collect();
@@ -297,11 +297,12 @@ impl IndexService {
             .await?;
         info!(
             "Source `{}` successfully created for index `{}`.",
-            source_id, &index_uid.index_id
+            source_id,
+            index_uid.index_id()
         );
         let source = self
             .metastore
-            .index_metadata(&index_uid.index_id)
+            .index_metadata(index_uid.index_id())
             .await?
             .sources
             .get(&source_id)

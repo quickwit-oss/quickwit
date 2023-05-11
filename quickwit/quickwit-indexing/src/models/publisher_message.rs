@@ -21,7 +21,8 @@ use std::fmt;
 
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metastore::{IndexUid, SplitMetadata};
+use quickwit_metastore::SplitMetadata;
+use quickwit_proto::IndexUid;
 use tantivy::TrackedObject;
 use tracing::Span;
 
@@ -50,7 +51,7 @@ impl fmt::Debug for SplitsUpdate {
             .map(|split| split.split_id())
             .join(",");
         f.debug_struct("SplitsUpdate")
-            .field("index_id", &self.index_uid.index_id)
+            .field("index_id", &self.index_uid.index_id())
             .field("new_splits", &new_split_ids)
             .field("checkpoint_delta", &self.checkpoint_delta_opt)
             .finish()

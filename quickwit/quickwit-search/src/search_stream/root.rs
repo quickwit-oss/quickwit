@@ -45,7 +45,7 @@ pub async fn root_search_stream(
 
     let search_request = SearchRequest::from(search_stream_request.clone());
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let index_uid = index_metadata.index_uid();
+    let index_uid = index_metadata.index_uid.clone();
     let index_config = index_metadata.into_index_config();
 
     let split_metadatas = list_relevant_splits(index_uid, &search_request, metastore).await?;

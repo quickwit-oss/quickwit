@@ -3,8 +3,7 @@
     {
       "create_timestamp": 0,
       "delete_query": {
-        "incarnation_id": "",
-        "index_id": "index",
+        "index_uid": "",
         "query": "Harry Potter",
         "search_fields": []
       },
@@ -18,7 +17,6 @@
       }
     },
     "create_timestamp": 1789,
-    "incarnation_id": "00000000000000000000000000",
     "index_config": {
       "doc_mapping": {
         "field_mappings": [
@@ -101,6 +99,7 @@
       },
       "version": "0.5"
     },
+    "index_uid": "my-index",
     "sources": [
       {
         "desired_num_pipelines": 2,

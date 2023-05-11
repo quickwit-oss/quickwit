@@ -128,7 +128,7 @@ impl EventSubscriber<MetastoreEvent> for ControlPlaneServiceClient {
 #[cfg(test)]
 mod tests {
     use quickwit_config::SourceConfig;
-    use quickwit_metastore::IndexUid;
+    use quickwit_proto::IndexUid;
 
     use super::*;
 
@@ -140,7 +140,7 @@ mod tests {
 
         let mut control_plane = ControlPlaneServiceClient::new(mock);
 
-        let index_uid = IndexUid::for_test("test-index");
+        let index_uid = IndexUid::new("test-index");
 
         let event = MetastoreEvent::AddSource {
             index_uid: index_uid.clone(),

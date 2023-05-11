@@ -20,11 +20,11 @@
 use std::collections::BTreeSet;
 use std::ops::{Range, RangeInclusive};
 
+use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
-use ulid::Ulid;
 
 use crate::split_metadata::utc_now_timestamp;
-use crate::{IndexUid, SplitMetadata};
+use crate::SplitMetadata;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub(crate) struct SplitMetadataV0_5 {
@@ -107,10 +107,7 @@ impl From<SplitMetadataV0_5> for SplitMetadata {
 
         SplitMetadata {
             split_id: v3.split_id,
-            index_uid: IndexUid {
-                index_id: v3.index_id,
-                incarnation_id: Ulid::default(),
-            },
+            index_uid: IndexUid::from(v3.index_id),
             partition_id: v3.partition_id,
             source_id,
             node_id,
@@ -130,7 +127,7 @@ impl From<SplitMetadata> for SplitMetadataV0_5 {
     fn from(split: SplitMetadata) -> Self {
         SplitMetadataV0_5 {
             split_id: split.split_id,
-            index_id: split.index_uid.index_id,
+            index_id: split.index_uid.index_id().to_string(),
             partition_id: split.partition_id,
             source_id: Some(split.source_id),
             node_id: Some(split.node_id),

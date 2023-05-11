@@ -30,7 +30,8 @@ use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metastore::{IndexUid, Metastore, SplitMetadata};
+use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_proto::IndexUid;
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
 use tantivy::TrackedObject;
@@ -458,7 +459,7 @@ mod tests {
 
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-    use quickwit_metastore::{IndexUid, MockMetastore};
+    use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;
@@ -470,7 +471,7 @@ mod tests {
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
         let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -482,7 +483,7 @@ mod tests {
             .expect_stage_splits()
             .withf(move |index_uid, metadata| -> bool {
                 let metadata = &metadata[0];
-                (index_uid.index_id == "test-index")
+                index_uid.index_id() == "test-index"
                     && metadata.split_id() == "test-split"
                     && metadata.time_range == Some(1628203589..=1628203640)
             })
@@ -555,7 +556,7 @@ mod tests {
             ..
         } = publisher_message;
 
-        assert_eq!(index_uid.index_id, "test-index");
+        assert_eq!(index_uid.index_id(), "test-index");
         assert_eq!(new_splits.len(), 1);
         assert_eq!(new_splits[0].split_id(), "test-split");
         let checkpoint_delta = checkpoint_delta_opt.unwrap();
@@ -575,7 +576,7 @@ mod tests {
     #[tokio::test]
     async fn test_uploader_with_sequencer_emits_replace() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -592,7 +593,7 @@ mod tests {
                         && metadata.time_range == Some(1628203589..=1628203640)
                 });
 
-                (index_uid.index_id == "test-index") && is_metadata_valid
+                index_uid.index_id() == "test-index" && is_metadata_valid
             })
             .times(1)
             .returning(|_, _| Ok(()));
@@ -686,7 +687,7 @@ mod tests {
             checkpoint_delta_opt,
             ..
         } = publisher_message;
-        assert_eq!(&index_uid.index_id, "test-index");
+        assert_eq!(index_uid.index_id(), "test-index");
         // Sort first to avoid test failing.
         replaced_split_ids.sort();
         assert_eq!(new_splits.len(), 2);
@@ -717,7 +718,7 @@ mod tests {
     #[tokio::test]
     async fn test_uploader_without_sequencer() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::for_test("test-index-no-sequencer"),
+            index_uid: IndexUid::new("test-index-no-sequencer"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -727,7 +728,9 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_splits()
-            .withf(move |index_uid, _| -> bool { index_uid.index_id == "test-index-no-sequencer" })
+            .withf(move |index_uid, _| -> bool {
+                index_uid.index_id() == "test-index-no-sequencer"
+            })
             .times(1)
             .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
@@ -782,7 +785,7 @@ mod tests {
             ..
         } = publisher_inbox.recv_typed_message().await.unwrap();
 
-        assert_eq!(index_uid.index_id, "test-index-no-sequencer");
+        assert_eq!(index_uid.index_id(), "test-index-no-sequencer");
         assert_eq!(new_splits.len(), 1);
         assert!(replaced_split_ids.is_empty());
         universe.assert_quit().await;
@@ -813,7 +816,7 @@ mod tests {
         };
         uploader_mailbox
             .send_message(EmptySplit {
-                index_uid: IndexUid::for_test("test-index"),
+                index_uid: IndexUid::new("test-index"),
                 batch_parent_span: Span::none(),
                 checkpoint_delta,
                 publish_lock: PublishLock::default(),
@@ -842,7 +845,7 @@ mod tests {
             ..
         } = publisher_message;
 
-        assert_eq!(index_uid.index_id, "test-index");
+        assert_eq!(index_uid.index_id(), "test-index");
         assert_eq!(new_splits.len(), 0);
         let checkpoint_delta = checkpoint_delta_opt.unwrap();
         assert_eq!(checkpoint_delta.source_id, "test-source");

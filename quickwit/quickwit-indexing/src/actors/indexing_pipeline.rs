@@ -240,7 +240,7 @@ impl IndexingPipeline {
         level="info",
         skip_all,
         fields(
-            index=%self.params.pipeline_id.index_uid.index_id,
+            index=%self.params.pipeline_id.index_uid.index_id(),
             gen=self.generation()
         ))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
@@ -249,7 +249,7 @@ impl IndexingPipeline {
             .await
             .expect("The semaphore should not be closed.");
         self.statistics.num_spawn_attempts += 1;
-        let index_id = self.params.pipeline_id.index_uid.index_id.as_str();
+        let index_id = self.params.pipeline_id.index_uid.index_id();
         let source_id = self.params.pipeline_id.source_id.as_str();
         self.kill_switch = ctx.kill_switch().child();
         info!(
@@ -373,7 +373,7 @@ impl IndexingPipeline {
             .protect_future(quickwit_supported_sources().load_source(
                 Arc::new(SourceExecutionContext {
                     metastore: self.params.metastore.clone(),
-                    index_id: self.params.pipeline_id.index_uid.index_id.clone(),
+                    index_id: self.params.pipeline_id.index_uid.index_id().to_string(),
                     queues_dir_path: self.params.queues_dir_path.clone(),
                     source_config: self.params.source_config.clone(),
                 }),
@@ -538,9 +538,9 @@ mod tests {
     use quickwit_actors::{Command, Universe};
     use quickwit_config::{IndexingSettings, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
-    use quickwit_metastore::{IndexMetadata, IndexUid, MetastoreError, MockMetastore};
+    use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
+    use quickwit_proto::IndexUid;
     use quickwit_storage::RamStorage;
-    use ulid::Ulid;
 
     use super::{IndexingPipeline, *};
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
@@ -579,7 +579,7 @@ mod tests {
         metastore
             .expect_last_delete_opstamp()
             .returning(move |index_uid| {
-                assert_eq!("test-index", index_uid.index_id);
+                assert_eq!("test-index", index_uid.index_id());
                 Ok(10)
             });
         metastore
@@ -588,8 +588,7 @@ mod tests {
         metastore
             .expect_stage_splits()
             .withf(|index_uid, _metadata| -> bool {
-                index_uid.index_id == "test-index"
-                    && index_uid.incarnation_id.to_string() == "11111111111111111111111111"
+                index_uid.to_string() == "test-index:11111111111111111111111111"
             })
             .returning(|_, _| Ok(()));
         metastore
@@ -597,8 +596,7 @@ mod tests {
             .withf(
                 |index_uid, splits, replaced_splits, checkpoint_delta_opt| -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_uid.index_id == "test-index"
-                        && index_uid.incarnation_id.to_string() == "11111111111111111111111111"
+                    index_uid.to_string() == "test-index:11111111111111111111111111"
                         && checkpoint_delta.source_id == "test-source"
                         && splits.len() == 1
                         && replaced_splits.is_empty()
@@ -610,10 +608,7 @@ mod tests {
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid {
-                index_id: "test-index".to_string(),
-                incarnation_id: Ulid::from_string("11111111111111111111111111").unwrap(),
-            },
+            index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -678,14 +673,13 @@ mod tests {
         metastore
             .expect_last_delete_opstamp()
             .returning(move |index_uid| {
-                assert_eq!("test-index", index_uid.index_id);
+                assert_eq!("test-index", index_uid.index_id());
                 Ok(10)
             });
         metastore
             .expect_stage_splits()
             .withf(|index_uid, _metadata| {
-                index_uid.index_id == "test-index"
-                    && index_uid.incarnation_id.to_string() == "11111111111111111111111111"
+                index_uid.to_string() == "test-index:11111111111111111111111111"
             })
             .returning(|_, _| Ok(()));
         metastore
@@ -693,8 +687,7 @@ mod tests {
             .withf(
                 |index_uid, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_uid.index_id == "test-index"
-                        && index_uid.incarnation_id.to_string() == "11111111111111111111111111"
+                    index_uid.to_string() == "test-index:11111111111111111111111111"
                         && splits.len() == 1
                         && replaced_split_ids.is_empty()
                         && checkpoint_delta.source_id == "test-source"
@@ -707,10 +700,7 @@ mod tests {
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid {
-                index_id: "test-index".to_string(),
-                incarnation_id: Ulid::from_string("11111111111111111111111111").unwrap(),
-            },
+            index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -769,7 +759,7 @@ mod tests {
         let metastore = Arc::new(metastore);
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -853,7 +843,7 @@ mod tests {
         metastore
             .expect_last_delete_opstamp()
             .returning(move |index_uid| {
-                assert_eq!("test-index", index_uid.index_id);
+                assert_eq!("test-index", index_uid.index_id());
                 Ok(10)
             });
         metastore
@@ -865,8 +855,7 @@ mod tests {
             .withf(
                 |index_uid, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_uid.index_id == "test-index"
-                        && index_uid.incarnation_id.to_string() == "11111111111111111111111111"
+                    index_uid.to_string() == "test-index:11111111111111111111111111"
                         && splits.is_empty()
                         && replaced_split_ids.is_empty()
                         && checkpoint_delta.source_id == "test-source"
@@ -879,10 +868,7 @@ mod tests {
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid {
-                index_id: "test-index".to_string(),
-                incarnation_id: Ulid::from_string("11111111111111111111111111").unwrap(),
-            },
+            index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,

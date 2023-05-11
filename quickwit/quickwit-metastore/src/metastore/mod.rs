@@ -31,11 +31,12 @@ pub mod retrying_metastore;
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
-pub use index_metadata::{IndexMetadata, IndexUid};
+pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::IndexUid;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
@@ -114,7 +115,7 @@ pub trait Metastore: Send + Sync + 'static {
 
     /// Returns index uid for the given index.
     async fn index_uid(&self, index_id: &str) -> MetastoreResult<IndexUid> {
-        let index_uid = self.index_metadata(index_id).await?.index_uid();
+        let index_uid = self.index_metadata(index_id).await?.index_uid;
         Ok(index_uid)
     }
 

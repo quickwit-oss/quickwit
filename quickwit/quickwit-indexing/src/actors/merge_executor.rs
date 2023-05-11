@@ -34,7 +34,7 @@ use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::metastore_api::DeleteTask;
-use quickwit_proto::SearchRequest;
+use quickwit_proto::{IndexUid, SearchRequest};
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::{DateTime, Directory, Index, IndexMeta, SegmentId, SegmentReader};
 use tokio::runtime::Handle;
@@ -464,7 +464,9 @@ impl MergeExecutor {
                     .delete_query
                     .expect("A delete task must have a delete query.");
                 let search_request = SearchRequest {
-                    index_id: delete_query.index_id,
+                    index_id: IndexUid::from(delete_query.index_uid)
+                        .index_id()
+                        .to_string(),
                     query: delete_query.query,
                     start_timestamp: delete_query.start_timestamp,
                     end_timestamp: delete_query.end_timestamp,
@@ -676,12 +678,11 @@ mod tests {
         let metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
                 query: delete_query.to_string(),
                 search_fields: Vec::new(),
-                incarnation_id: index_uid.incarnation_id.to_string(),
             })
             .await?;
         let split_metadata = metastore

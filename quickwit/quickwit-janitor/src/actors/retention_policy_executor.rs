@@ -25,7 +25,8 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_config::IndexConfig;
-use quickwit_metastore::{IndexUid, Metastore};
+use quickwit_metastore::Metastore;
+use quickwit_proto::IndexUid;
 use serde::Serialize;
 use tracing::{debug, error, info};
 
@@ -103,7 +104,7 @@ impl RetentionPolicyExecutor {
         }
 
         for index_metadata in index_metadatas {
-            let index_uid = index_metadata.index_uid();
+            let index_uid = index_metadata.index_uid.clone();
             let index_config = index_metadata.into_index_config();
             // We only care about indexes with a retention policy configured.
             let retention_policy = match &index_config.retention_policy {
@@ -183,13 +184,13 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         message: Execute,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        info!(index_id=%message.index_uid.index_id, "retention-policy-execute-operation");
+        info!(index_id=%message.index_uid.index_id(), "retention-policy-execute-operation");
         self.counters.num_execution_passes += 1;
 
-        let index_config = match self.index_configs.get(&message.index_uid.index_id) {
+        let index_config = match self.index_configs.get(message.index_uid.index_id()) {
             Some(config) => config,
             None => {
-                debug!(index_id=%message.index_uid.index_id, "The index might have been deleted.");
+                debug!(index_id=%message.index_uid.index_id(), "The index might have been deleted.");
                 return Ok(());
             }
         };
@@ -209,7 +210,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         match execution_result {
             Ok(splits) => self.counters.num_expired_splits += splits.len(),
             Err(error) => {
-                error!(index_id=%message.index_uid.index_id, error=?error, "Failed to execute the retention policy on the index.")
+                error!(index_id=%message.index_uid.index_id(), error=?error, "Failed to execute the retention policy on the index.")
             }
         }
 
@@ -220,8 +221,8 @@ impl Handler<Execute> for RetentionPolicyExecutor {
             // Since we have failed to schedule next execution for this index,
             // we remove it from the cache for it to be retried next time it gets
             // added back by the RetentionPolicyExecutor cache refresh loop.
-            self.index_configs.remove(&message.index_uid.index_id);
-            error!(index_id=%message.index_uid.index_id, "Couldn't extract the index next schedule interval.");
+            self.index_configs.remove(message.index_uid.index_id());
+            error!(index_id=%message.index_uid.index_id(), "Couldn't extract the index next schedule interval.");
         }
         Ok(())
     }
@@ -429,7 +430,7 @@ mod tests {
             .times(2..=4)
             .returning(|query| {
                 assert_eq!(query.split_states, &[SplitState::Published]);
-                let splits = match query.index_uid.index_id.as_str() {
+                let splits = match query.index_uid.index_id() {
                     "a" => {
                         vec![
                             make_split("split-1", Some(1000..=5000)),
@@ -447,7 +448,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(1..=3)
             .returning(|index_uid, split_ids| {
-                assert_eq!(index_uid.index_id, "a");
+                assert_eq!(index_uid.index_id(), "a");
                 assert_eq!(split_ids, ["split-1", "split-2"]);
                 Ok(())
             });

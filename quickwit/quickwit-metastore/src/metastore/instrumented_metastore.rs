@@ -21,11 +21,10 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::IndexUid;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    IndexMetadata, IndexUid, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata,
-};
+use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
 
 macro_rules! instrument {
     ($expr:expr, [$operation:ident, $($label:expr),*]) => {
@@ -117,7 +116,7 @@ impl Metastore for InstrumentedMetastore {
     async fn delete_index(&self, index_uid: IndexUid) -> MetastoreResult<()> {
         instrument!(
             self.underlying.delete_index(index_uid.clone()).await,
-            [delete_index, &index_uid.index_id]
+            [delete_index, index_uid.index_id()]
         );
     }
 
@@ -132,7 +131,7 @@ impl Metastore for InstrumentedMetastore {
             self.underlying
                 .stage_splits(index_uid.clone(), split_metadata_list)
                 .await,
-            [stage_splits, &index_uid.index_id]
+            [stage_splits, index_uid.index_id()]
         );
     }
 
@@ -152,21 +151,21 @@ impl Metastore for InstrumentedMetastore {
                     checkpoint_delta_opt,
                 )
                 .await,
-            [publish_splits, &index_uid.index_id]
+            [publish_splits, index_uid.index_id()]
         );
     }
 
     async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
         instrument!(
             self.underlying.list_splits(query.clone()).await,
-            [list_splits, &query.index_uid.index_id]
+            [list_splits, query.index_uid.index_id()]
         );
     }
 
     async fn list_all_splits(&self, index_uid: IndexUid) -> MetastoreResult<Vec<Split>> {
         instrument!(
             self.underlying.list_all_splits(index_uid.clone()).await,
-            [list_all_splits, &index_uid.index_id]
+            [list_all_splits, index_uid.index_id()]
         );
     }
 
@@ -179,7 +178,7 @@ impl Metastore for InstrumentedMetastore {
             self.underlying
                 .mark_splits_for_deletion(index_uid.clone(), split_ids)
                 .await,
-            [mark_splits_for_deletion, &index_uid.index_id]
+            [mark_splits_for_deletion, index_uid.index_id()]
         );
     }
 
@@ -192,7 +191,7 @@ impl Metastore for InstrumentedMetastore {
             self.underlying
                 .delete_splits(index_uid.clone(), split_ids)
                 .await,
-            [delete_splits, &index_uid.index_id]
+            [delete_splits, index_uid.index_id()]
         );
     }
 
@@ -201,7 +200,7 @@ impl Metastore for InstrumentedMetastore {
     async fn add_source(&self, index_uid: IndexUid, source: SourceConfig) -> MetastoreResult<()> {
         instrument!(
             self.underlying.add_source(index_uid.clone(), source).await,
-            [add_source, &index_uid.index_id]
+            [add_source, index_uid.index_id()]
         );
     }
 
@@ -215,7 +214,7 @@ impl Metastore for InstrumentedMetastore {
             self.underlying
                 .toggle_source(index_uid.clone(), source_id, enable)
                 .await,
-            [toggle_source, &index_uid.index_id]
+            [toggle_source, index_uid.index_id()]
         );
     }
 
@@ -228,7 +227,7 @@ impl Metastore for InstrumentedMetastore {
             self.underlying
                 .reset_source_checkpoint(index_uid.clone(), source_id)
                 .await,
-            [reset_source_checkpoint, &index_uid.index_id]
+            [reset_source_checkpoint, index_uid.index_id()]
         );
     }
 
@@ -237,16 +236,16 @@ impl Metastore for InstrumentedMetastore {
             self.underlying
                 .delete_source(index_uid.clone(), source_id)
                 .await,
-            [delete_source, &index_uid.index_id]
+            [delete_source, index_uid.index_id()]
         );
     }
 
     // Delete task API
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
-        let index_id = delete_query.index_id.clone();
+        let index_uid: IndexUid = delete_query.index_uid.clone().into();
         instrument!(
             self.underlying.create_delete_task(delete_query).await,
-            [create_delete_task, index_id.as_ref()]
+            [create_delete_task, index_uid.index_id()]
         );
     }
 
@@ -259,14 +258,14 @@ impl Metastore for InstrumentedMetastore {
             self.underlying
                 .list_delete_tasks(index_uid.clone(), opstamp_start)
                 .await,
-            [list_delete_tasks, &index_uid.index_id]
+            [list_delete_tasks, index_uid.index_id()]
         );
     }
 
     async fn last_delete_opstamp(&self, index_uid: IndexUid) -> MetastoreResult<u64> {
         instrument!(
             self.underlying.last_delete_opstamp(index_uid.clone()).await,
-            [last_delete_opstamp, &index_uid.index_id]
+            [last_delete_opstamp, index_uid.index_id()]
         );
     }
 
@@ -280,7 +279,7 @@ impl Metastore for InstrumentedMetastore {
             self.underlying
                 .update_splits_delete_opstamp(index_uid.clone(), split_ids, delete_opstamp)
                 .await,
-            [update_splits_delete_opstamp, &index_uid.index_id]
+            [update_splits_delete_opstamp, index_uid.index_id()]
         );
     }
 
@@ -294,7 +293,7 @@ impl Metastore for InstrumentedMetastore {
             self.underlying
                 .list_stale_splits(index_uid.clone(), delete_opstamp, num_splits)
                 .await,
-            [list_stale_splits, &index_uid.index_id]
+            [list_stale_splits, index_uid.index_id()]
         );
     }
 }

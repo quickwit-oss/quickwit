@@ -25,12 +25,11 @@ use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::IndexUid;
 use tracing::info;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    IndexMetadata, IndexUid, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata,
-};
+use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
 
 /// Metastore events dispatched to subscribers.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -189,7 +188,7 @@ impl Metastore for MetastoreEventPublisher {
             index_uid: index_uid.clone(),
             source_config: source.clone(),
         };
-        info!("add source {0}, {source:?}", index_uid.index_id);
+        info!("add source {0}, {source:?}", index_uid.index_id());
         self.underlying.add_source(index_uid, source).await?;
         self.event_broker.publish(event);
         Ok(())
@@ -314,16 +313,13 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
         let subscription = metastore.event_broker.subscribe(TxSubscriber(tx));
 
-        let index_uid = IndexUid::for_test("test-index");
+        let index_uid = IndexUid::new("test-index");
         let index_uri = "ram:///indexes/test-index";
         let source_id = "test-source";
         let source_config = SourceConfig::for_test(source_id, SourceParams::void());
 
         let index_uid = metastore
-            .create_index(IndexConfig::for_test(
-                index_uid.index_id.as_str(),
-                index_uri,
-            ))
+            .create_index(IndexConfig::for_test(index_uid.index_id(), index_uri))
             .await
             .unwrap();
 

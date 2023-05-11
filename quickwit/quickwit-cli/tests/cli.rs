@@ -209,7 +209,7 @@ async fn test_ingest_docs_cli() {
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
-    let index_uid = test_env.index_metadata().await.unwrap().index_uid();
+    let index_uid = test_env.index_metadata().await.unwrap().index_uid;
 
     let args = LocalIngestDocsArgs {
         config_uri: test_env.config_uri.clone(),
@@ -582,7 +582,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
-    let index_uid = test_env.index_metadata().await.unwrap().index_uid();
+    let index_uid = test_env.index_metadata().await.unwrap().index_uid;
     local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
@@ -677,7 +677,7 @@ async fn test_garbage_collect_index_cli() {
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
-    let index_uid = test_env.index_metadata().await.unwrap().index_uid();
+    let index_uid = test_env.index_metadata().await.unwrap().index_uid;
     local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();

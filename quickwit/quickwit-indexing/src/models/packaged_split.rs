@@ -21,7 +21,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metastore::IndexUid;
+use quickwit_proto::IndexUid;
 use tantivy::TrackedObject;
 use tracing::Span;
 

@@ -34,7 +34,8 @@ use quickwit_indexing::actors::{
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::models::{IndexingPipelineId, ScratchDirectory};
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
-use quickwit_metastore::{IndexUid, Metastore};
+use quickwit_metastore::Metastore;
+use quickwit_proto::IndexUid;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::Storage;
 use serde::Serialize;
@@ -137,19 +138,19 @@ impl DeleteTaskPipeline {
 
     pub async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         info!(
-            index_id=%self.index_uid.index_id,
+            index_id=%self.index_uid.index_id(),
             root_dir=%self.delete_service_dir_path.display(),
             "Spawning delete tasks pipeline.",
         );
         let index_metadata = self
             .metastore
-            .index_metadata(&self.index_uid.index_id)
+            .index_metadata(self.index_uid.index_id())
             .await?;
-        if index_metadata.incarnation_id != self.index_uid.incarnation_id {
+        if index_metadata.index_uid != self.index_uid {
             return Err(anyhow::anyhow!(
                 "Cannot start the delete pipeline for index {}. The index has been already \
                  deleted.",
-                &self.index_uid.index_id
+                &self.index_uid.index_id()
             ));
         }
         let index_config = index_metadata.into_index_config();
@@ -192,10 +193,10 @@ impl DeleteTaskPipeline {
             .unwrap_or(f64::INFINITY);
         let delete_executor_io_controls = IoControls::default()
             .set_throughput_limit(throughput_limit)
-            .set_index_and_component(self.index_uid.index_id.as_str(), "deleter");
+            .set_index_and_component(self.index_uid.index_id(), "deleter");
         let split_download_io_controls = delete_executor_io_controls
             .clone()
-            .set_index_and_component(self.index_uid.index_id.as_str(), "split_downloader_delete");
+            .set_index_and_component(self.index_uid.index_id(), "split_downloader_delete");
         let delete_executor = MergeExecutor::new(
             index_pipeline_id,
             self.metastore.clone(),
@@ -207,8 +208,8 @@ impl DeleteTaskPipeline {
             ctx.spawn_actor().supervise(delete_executor);
         let indexing_directory_path = self
             .delete_service_dir_path
-            .join(&self.index_uid.index_id)
-            .join(self.index_uid.incarnation_id.to_string());
+            .join(self.index_uid.index_id())
+            .join(self.index_uid.incarnation_id());
         let scratch_directory = ScratchDirectory::create_in_dir(indexing_directory_path).await?;
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory,
@@ -347,12 +348,11 @@ mod tests {
         let metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
                 query: "body:delete".to_string(),
                 search_fields: Vec::new(),
-                incarnation_id: index_uid.incarnation_id.to_string(),
             })
             .await
             .unwrap();

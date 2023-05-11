@@ -99,3 +99,5 @@ indexer:
 # -------------------------------- Jaeger settings --------------------------------
 jaeger:
   enable_endpoint: ${QW_ENABLE_JAEGER_ENDPOINT:-true}
+
+metastore_uri: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev

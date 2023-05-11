@@ -25,9 +25,8 @@ use std::time::Duration;
 use futures::Future;
 use quickwit_actors::ActorContext;
 use quickwit_common::{FileEntry, PrettySample};
-use quickwit_metastore::{
-    IndexUid, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
-};
+use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState};
+use quickwit_proto::IndexUid;
 use quickwit_storage::Storage;
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -215,7 +214,7 @@ async fn delete_splits_marked_for_deletion(
             }) => {
                 error!(
                     error=?error,
-                    index_id=%index_uid.index_id,
+                    index_id=%index_uid.index_id(),
                     split_ids=?PrettySample::new(&failed_split_ids_inner, 5),
                     "Failed to delete {} splits.",
                     failed_split_ids_inner.len()
@@ -296,7 +295,7 @@ pub async fn delete_splits_with_files(
 
             error!(
                 error = ?bulk_delete_error.error,
-                index_id = ?index_uid.index_id,
+                index_id = ?index_uid.index_id(),
                 num_failed_splits = num_failed_splits,
                 "Failed to delete {:?} and {} other splits.",
                 truncated_split_ids, num_failed_splits,
@@ -333,8 +332,9 @@ mod tests {
 
     use quickwit_config::IndexConfig;
     use quickwit_metastore::{
-        metastore_for_test, IndexUid, ListSplitsQuery, MockMetastore, SplitMetadata, SplitState,
+        metastore_for_test, ListSplitsQuery, MockMetastore, SplitMetadata, SplitState,
     };
+    use quickwit_proto::IndexUid;
     use quickwit_storage::storage_for_test;
 
     use crate::run_garbage_collect;
@@ -412,7 +412,7 @@ mod tests {
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
             split_id: split_id.to_string(),
-            index_uid: IndexUid::for_test(index_id),
+            index_uid: IndexUid::new(index_id),
             ..Default::default()
         };
         metastore
@@ -472,7 +472,7 @@ mod tests {
             .times(2)
             .returning(|_| Ok(Vec::new()));
         run_garbage_collect(
-            IndexUid::for_test("index-test-gc-deletes"),
+            IndexUid::new("index-test-gc-deletes"),
             storage.clone(),
             Arc::new(metastore),
             Duration::from_secs(30),

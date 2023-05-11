@@ -62,8 +62,10 @@ pub use find_trace_ids_collector::FindTraceIdsCollector;
 use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, QuickwitConfig, SearcherConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
-use quickwit_metastore::{IndexUid, ListSplitsQuery, Metastore, SplitMetadata, SplitState};
-use quickwit_proto::{Hit, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
+use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
+use quickwit_proto::{
+    Hit, IndexUid, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+};
 use quickwit_storage::StorageUriResolver;
 use tantivy::DocAddress;
 
@@ -166,7 +168,7 @@ pub async fn single_node_search(
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let index_uid = index_metadata.index_uid();
+    let index_uid = index_metadata.index_uid.clone();
     let index_config = index_metadata.into_index_config();
 
     // This should never happen.
