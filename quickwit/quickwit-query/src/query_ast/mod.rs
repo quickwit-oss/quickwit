@@ -23,6 +23,7 @@ use tantivy::schema::Schema as TantivySchema;
 
 mod bool_query;
 mod full_text_query;
+mod phrase_prefix_query;
 mod range_query;
 mod tantivy_query_ast;
 mod term_query;
@@ -33,6 +34,7 @@ mod visitor;
 
 pub use bool_query::BoolQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
+pub use phrase_prefix_query::PhrasePrefixQuery;
 pub use range_query::RangeQuery;
 use tantivy_query_ast::TantivyQueryAst;
 pub use term_query::TermQuery;
@@ -50,6 +52,7 @@ pub enum QueryAst {
     Term(TermQuery),
     TermSet(TermSetQuery),
     FullText(FullTextQuery),
+    PhrasePrefix(PhrasePrefixQuery),
     Range(RangeQuery),
     UserInput(UserInputQuery),
     MatchAll,
@@ -87,6 +90,7 @@ impl QueryAst {
             ast @ QueryAst::Term(_)
             | ast @ QueryAst::TermSet(_)
             | ast @ QueryAst::FullText(_)
+            | ast @ QueryAst::PhrasePrefix(_)
             | ast @ QueryAst::MatchAll
             | ast @ QueryAst::MatchNone
             | ast @ QueryAst::Range(_) => Ok(ast),
@@ -189,6 +193,9 @@ impl BuildTantivyAst for QueryAst {
             }
             QueryAst::FullText(full_text_query) => {
                 full_text_query.build_tantivy_ast_call(schema, search_fields, with_validation)
+            }
+            QueryAst::PhrasePrefix(phrase_prefix_query) => {
+                phrase_prefix_query.build_tantivy_ast_call(schema, search_fields, with_validation)
             }
             QueryAst::UserInput(user_text_query) => {
                 user_text_query.build_tantivy_ast_call(schema, search_fields, with_validation)
