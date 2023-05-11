@@ -357,7 +357,10 @@ async fn test_shutdown() {
         .await
         .unwrap();
 
-    // Clean up
+    // The error we are trying to catch here is that the sandbox is getting stuck in
+    // shutdown for 180 seconds if not all services exit cleanly, which in turn manifests
+    // itself with a very slow test that passes. This timeout ensures that the test fails
+    // if the sandbox gets stuck in shutdown.
     tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown())
         .await
         .unwrap()
