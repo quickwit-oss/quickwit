@@ -244,6 +244,7 @@ pub async fn single_node_search(
     let aggregation = finalize_aggregation(
         leaf_search_response.intermediate_aggregation_result,
         aggregations,
+        &searcher_context,
     )?;
     Ok(SearchResponse {
         aggregation,
