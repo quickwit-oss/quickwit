@@ -34,7 +34,8 @@ use crate::{
 pub struct Index {
     /// Index UID. The index UID identifies the index when querying the metastore from the
     /// application.
-    pub index_uid: String,
+    #[sqlx(try_from = "String")]
+    pub index_uid: IndexUid,
     /// Index ID. The index ID is used to resolve user queries.
     pub index_id: String,
     // A JSON string containing all of the IndexMetadata.
@@ -87,7 +88,8 @@ pub struct Split {
     // The split's metadata serialized as a JSON string.
     pub split_metadata_json: String,
     /// Index UID. It is used as a foreign key in the database.
-    pub index_uid: String,
+    #[sqlx(try_from = "String")]
+    pub index_uid: IndexUid,
     /// Delete opstamp.
     pub delete_opstamp: i64,
 }
@@ -96,7 +98,7 @@ impl Split {
     /// Deserializes and returns the split's metadata.
     fn split_metadata(&self) -> MetastoreResult<SplitMetadata> {
         serde_json::from_str::<SplitMetadata>(&self.split_metadata_json).map_err(|error| {
-            error!(index_id=%IndexUid::from(self.index_uid.clone()).index_id(), split_id=%self.split_id, error=?error, "Failed to deserialize split metadata.");
+            error!(index_id=%self.index_uid.index_id(), split_id=%self.split_id, error=?error, "Failed to deserialize split metadata.");
 
             MetastoreError::JsonDeserializeError {
                 struct_name: "SplitMetadata".to_string(),
@@ -108,7 +110,7 @@ impl Split {
     /// Deserializes and returns the split's state.
     fn split_state(&self) -> MetastoreResult<SplitState> {
         SplitState::from_str(&self.split_state).map_err(|error| {
-            error!(index_id=%IndexUid::from(self.index_uid.clone()).index_id(), split_id=%self.split_id, split_state=?self.split_state, error=?error, "Failed to deserialize split state.");
+            error!(index_id=%self.index_uid.index_id(), split_id=%self.split_id, split_state=?self.split_state, error=?error, "Failed to deserialize split state.");
 
             MetastoreError::JsonDeserializeError {
                 struct_name: "SplitState".to_string(),
@@ -131,7 +133,7 @@ impl TryInto<QuickwitSplit> for Split {
         let publish_timestamp = self
             .publish_timestamp
             .map(|publish_timestamp| publish_timestamp.assume_utc().unix_timestamp());
-        split_metadata.index_uid = IndexUid::from(self.index_uid);
+        split_metadata.index_uid = self.index_uid;
         split_metadata.delete_opstamp = self.delete_opstamp as u64;
         Ok(QuickwitSplit {
             split_metadata,
@@ -150,7 +152,8 @@ pub struct DeleteTask {
     /// Monotonic increasing unique opstamp.
     pub opstamp: i64,
     /// Index uid.
-    pub index_uid: String,
+    #[sqlx(try_from = "String")]
+    pub index_uid: IndexUid,
     /// Query serialized as a JSON string.
     pub delete_query_json: String,
 }
@@ -159,7 +162,7 @@ impl DeleteTask {
     /// Deserializes and returns the split's metadata.
     fn delete_query(&self) -> MetastoreResult<DeleteQuery> {
         serde_json::from_str::<DeleteQuery>(&self.delete_query_json).map_err(|error| {
-            error!(index_id=%IndexUid::from(self.index_uid.clone()).index_id(), opstamp=%self.opstamp, error=?error, "Failed to deserialize delete query.");
+            error!(index_id=%self.index_uid.index_id(), opstamp=%self.opstamp, error=?error, "Failed to deserialize delete query.");
 
             MetastoreError::JsonDeserializeError {
                 struct_name: "DeleteQuery".to_string(),

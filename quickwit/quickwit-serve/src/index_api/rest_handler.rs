@@ -818,10 +818,8 @@ mod tests {
                     && list_split_query.time_range.end == Bound::Excluded(20)
                     && list_split_query.create_timestamp.end == Bound::Excluded(2)
                 {
-                    println!("OK");
                     return Ok(vec![mock_split("split_1")]);
                 }
-                println!("Err");
                 Err(MetastoreError::InternalError {
                     message: "".to_string(),
                     cause: "".to_string(),

@@ -206,10 +206,15 @@ impl DeleteTaskPipeline {
         );
         let (delete_executor_mailbox, task_executor_supervisor_handler) =
             ctx.spawn_actor().supervise(delete_executor);
-        let indexing_directory_path = self
-            .delete_service_dir_path
-            .join(self.index_uid.index_id())
-            .join(self.index_uid.incarnation_id());
+        let incarnation_id = self.index_uid.incarnation_id();
+        let indexing_directory_path = if incarnation_id.is_empty() {
+            // Legacy path for 0.5 indices
+            self.delete_service_dir_path.join(self.index_uid.index_id())
+        } else {
+            self.delete_service_dir_path
+                .join(self.index_uid.index_id())
+                .join(incarnation_id)
+        };
         let scratch_directory = ScratchDirectory::create_in_dir(indexing_directory_path).await?;
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory,

@@ -115,7 +115,7 @@ impl PostgresqlMetastore {
     }
 }
 
-/// Returns an Index object given an index_id or None if it does not exists.
+/// Returns an Index object given an index_id or None if it does not exist.
 async fn index_opt<'a, E>(executor: E, index_id: &str) -> MetastoreResult<Option<PgIndex>>
 where E: sqlx::Executor<'a, Database = Postgres> {
     let index_opt: Option<PgIndex> = sqlx::query_as::<_, PgIndex>(
@@ -135,7 +135,7 @@ where E: sqlx::Executor<'a, Database = Postgres> {
     Ok(index_opt)
 }
 
-/// Returns an Index object given an index_uid or None if it does not exists.
+/// Returns an Index object given an index_uid or None if it does not exist.
 async fn index_opt_for_uid<'a, E>(
     executor: E,
     index_uid: IndexUid,
@@ -1030,7 +1030,6 @@ impl Metastore for PostgresqlMetastore {
         index_uid: IndexUid,
         opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>> {
-        println!("111111");
         let pg_delete_tasks: Vec<PgDeleteTask> = sqlx::query_as::<_, PgDeleteTask>(
             r#"
                 SELECT * FROM delete_tasks
@@ -1043,7 +1042,6 @@ impl Metastore for PostgresqlMetastore {
         .bind(opstamp_start as i64)
         .fetch_all(&self.connection_pool)
         .await?;
-        println!("222222");
         pg_delete_tasks
             .into_iter()
             .map(|pg_delete_task| pg_delete_task.try_into())

@@ -265,10 +265,7 @@ mod tests {
             .expect_list_splits()
             .times(2)
             .returning(|query: ListSplitsQuery| {
-                assert_eq!(
-                    query.index_uid.to_string(),
-                    "test-index:11111111111111111111111111"
-                );
+                assert_eq!(query.index_uid.to_string(), "test-index:1111111111111");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -297,10 +294,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(1)
             .returning(|index_uid, split_ids| {
-                assert_eq!(
-                    index_uid.to_string(),
-                    "test-index:11111111111111111111111111"
-                );
+                assert_eq!(index_uid.to_string(), "test-index:1111111111111");
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
@@ -308,10 +302,7 @@ mod tests {
             .expect_delete_splits()
             .times(1)
             .returning(|index_uid, split_ids| {
-                assert_eq!(
-                    index_uid.to_string(),
-                    "test-index:11111111111111111111111111"
-                );
+                assert_eq!(index_uid.to_string(), "test-index:1111111111111");
                 let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b", "c"]);
                 assert_eq!(split_ids, expected_split_ids);
@@ -320,7 +311,7 @@ mod tests {
             });
 
         let result = run_garbage_collect(
-            "test-index:11111111111111111111111111".to_string().into(),
+            "test-index:1111111111111".to_string().into(),
             Arc::new(mock_storage),
             Arc::new(mock_metastore),
             STAGED_GRACE_PERIOD,

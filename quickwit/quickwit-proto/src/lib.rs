@@ -200,8 +200,9 @@ impl From<SearchStreamRequest> for SearchRequest {
 
 impl From<DeleteQuery> for SearchRequest {
     fn from(delete_query: DeleteQuery) -> Self {
+        let index_uid: IndexUid = delete_query.index_uid.into(); 
         Self {
-            index_id: Into::<IndexUid>::into(delete_query.index_uid).index_id().to_string(),
+            index_id: index_uid.index_id().to_string(),
             query: delete_query.query,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,
@@ -304,14 +305,19 @@ pub struct IndexUid(String);
 
 impl IndexUid {
     /// Creates a new index uid form index_id and incarnation_id
-    pub fn new(index_id: impl ToString) -> Self {
-        Self::from_parts(index_id,  Ulid::new().to_string())
+    pub fn new(index_id: impl Into<String>) -> Self {
+        Self::from_parts(index_id,  &Ulid::new().to_string()[..13])
     }
 
-    pub fn from_parts(index_id: impl ToString, incarnation_id: impl ToString) -> Self {
-        Self (
-            format!("{}:{}", index_id.to_string(), incarnation_id.to_string())
-        )
+    pub fn from_parts(index_id: impl Into<String>, incarnation_id: impl Into<String>) -> Self {
+        let incarnation_id = incarnation_id.into();
+        if incarnation_id.is_empty() {
+            Self(index_id.into())
+        } else {
+            Self (
+                format!("{}:{}", index_id.into(), incarnation_id)
+            )                
+        }
     }
 
     pub fn index_id(&self) -> &str {
@@ -319,7 +325,11 @@ impl IndexUid {
     }
 
     pub fn incarnation_id(&self) -> &str {
-        self.0.rsplit(':').next().unwrap()
+        if let Some(incarnation_id) = self.0.split(':').nth(1) {
+            incarnation_id
+        } else {
+            ""
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -422,5 +432,57 @@ mod tests {
             "Invalid index task format, cannot find index_id in `foo`",
             IndexingTask::try_from("foo").unwrap_err().to_string()
         );
+    }
+
+    #[test]
+    fn test_index_uid_parsing() {
+        assert_eq!(
+            "foo",
+            IndexUid::from("foo".to_string()).index_id()
+        );
+        assert_eq!(
+            "foo",
+            IndexUid::from("foo:bar".to_string()).index_id()
+        );
+        assert_eq!(
+            "",
+            IndexUid::from("foo".to_string()).incarnation_id()
+        );
+        assert_eq!(
+            "bar",
+            IndexUid::from("foo:bar".to_string()).incarnation_id()
+        );
+    }
+
+    #[test]
+    fn test_index_uid_roundtrip() {
+        assert_eq!(
+            "foo",
+            IndexUid::from("foo".to_string()).to_string()
+        );
+        assert_eq!(
+            "foo:bar",
+            IndexUid::from("foo:bar".to_string()).to_string()
+        );
+    }
+
+    #[test]
+    fn test_index_uid_roundtrip_using_parts() {
+        assert_eq!(
+            "foo",
+            index_uid_roundtrip_using_parts("foo")
+        );
+        assert_eq!(
+            "foo:bar",
+            index_uid_roundtrip_using_parts("foo:bar")
+        );
+    }
+
+    fn index_uid_roundtrip_using_parts(index_uid: &str) -> String {
+        let index_uid = IndexUid::from(index_uid.to_string());
+        let index_id = index_uid.index_id();
+        let incarnation_id = index_uid.incarnation_id();
+        let index_uid_from_parts = IndexUid::from_parts(index_id, incarnation_id);
+        index_uid_from_parts.to_string()
     }
 }

@@ -407,10 +407,18 @@ impl IndexingService {
         {
             return Ok(indexing_directory);
         }
-        let indexing_directory_path = indexing_dir_path
-            .join(pipeline_id.index_uid.index_id())
-            .join(pipeline_id.index_uid.incarnation_id())
-            .join(&pipeline_id.source_id);
+        let incarnation_id = pipeline_id.index_uid.incarnation_id();
+        let indexing_directory_path = if incarnation_id.is_empty() {
+            // Legacy path for 0.5 indices
+            indexing_dir_path
+                .join(pipeline_id.index_uid.index_id())
+                .join(&pipeline_id.source_id)
+        } else {
+            indexing_dir_path
+                .join(pipeline_id.index_uid.index_id())
+                .join(incarnation_id)
+                .join(&pipeline_id.source_id)
+        };
         let indexing_directory = ScratchDirectory::create_in_dir(indexing_directory_path)
             .await
             .map_err(IndexingServiceError::InvalidParams)?;
