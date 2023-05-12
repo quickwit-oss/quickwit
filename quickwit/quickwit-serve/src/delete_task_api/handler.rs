@@ -23,7 +23,7 @@ use quickwit_config::build_doc_mapper;
 use quickwit_janitor::error::JanitorError;
 use quickwit_metastore::{Metastore, MetastoreError};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
-use quickwit_proto::{IndexUid, {query_ast_from_user_text, SearchRequest}};
+use quickwit_proto::{query_ast_from_user_text, IndexUid, SearchRequest};
 use quickwit_query::query_ast::QueryAst;
 use serde::Deserialize;
 use warp::{Filter, Rejection};

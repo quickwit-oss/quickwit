@@ -34,7 +34,6 @@ use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::metastore_api::DeleteTask;
-use quickwit_proto::{IndexUid, SearchRequest};
 use quickwit_query::get_quickwit_tokenizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};

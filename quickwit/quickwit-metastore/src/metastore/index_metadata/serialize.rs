@@ -71,7 +71,7 @@ impl From<IndexMetadata> for IndexMetadataV0_5 {
 pub(crate) struct IndexMetadataV0_5 {
     #[schema(value_type = String)]
     // Defaults to nil for backward compatibility.
-    #[serde(default)]
+    #[serde(default, alias = "index_id")]
     pub index_uid: IndexUid,
     #[schema(value_type = VersionedIndexConfig)]
     pub index_config: IndexConfig,

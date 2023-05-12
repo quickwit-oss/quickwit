@@ -31,8 +31,7 @@ pub mod test_suite {
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::metastore_api::DeleteQuery;
-    use quickwit_proto::IndexUid;
-    use quickwit_proto::qast_helper;
+    use quickwit_proto::{qast_helper, IndexUid};
     use time::OffsetDateTime;
     use tokio::time::sleep;
     use tracing::{error, info};

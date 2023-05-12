@@ -246,7 +246,7 @@ pub async fn root_search(
     })?;
 
     let split_metadatas: Vec<SplitMetadata> =
-        list_relevant_splits(&search_request, metastore).await?;
+        list_relevant_splits(index_uid, &search_request, metastore).await?;
 
     let split_offsets_map: HashMap<String, SplitIdAndFooterOffsets> = split_metadatas
         .iter()

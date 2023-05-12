@@ -3,8 +3,8 @@
     {
       "create_timestamp": 0,
       "delete_query": {
-        "index_id": "index",
-        "query_ast": "{\"type\":\"UserText\",\"user_text\":\"Harry Potter\",\"default_fields\":[\"body\"],\"default_operator\":\"Or\"}"
+        "index_uid": "index:1111111111111",
+        "query_ast": "{\"type\":\"Bool\",\"must\":[{\"type\":\"Phrase\",\"field\":\"body\",\"phrase\":\"Harry\"},{\"type\":\"Phrase\",\"field\":\"body\",\"phrase\":\"Potter\"}]}"
       },
       "opstamp": 10
     }
@@ -98,6 +98,7 @@
       },
       "version": "0.5"
     },
+    "index_uid": "test:1111111111111",
     "sources": [
       {
         "desired_num_pipelines": 2,
@@ -125,7 +126,7 @@
         "end": 2000,
         "start": 1000
       },
-      "index_id": "my-index",
+      "index_uid": "my-index:1111111111111",
       "node_id": "node",
       "num_docs": 12303,
       "num_merge_ops": 3,
