@@ -580,7 +580,11 @@ fn build_search_query(
                 query.push_str(value);
                 query.push('\"');
             } else {
-                query.push_str("(span_attributes.");
+                query.push_str("(resource_attributes.");
+                query.push_str(key);
+                query.push_str(":\"");
+                query.push_str(value);
+                query.push_str("\" OR span_attributes.");
                 query.push_str(key);
                 query.push_str(":\"");
                 query.push_str(value);
@@ -1126,7 +1130,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"(span_attributes.foo:"bar baz" OR events.event_attributes.foo:"bar baz")"#
+                r#"(resource_attributes.foo:"bar baz" OR span_attributes.foo:"bar baz" OR events.event_attributes.foo:"bar baz")"#
             );
         }
         {
@@ -1175,7 +1179,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"events.event_name:"Failed to ..." AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                r#"events.event_name:"Failed to ..." AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
             );
         }
         {
@@ -1201,7 +1205,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"(span_attributes.baz:"qux" OR events.event_attributes.baz:"qux") AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                r#"(resource_attributes.baz:"qux" OR span_attributes.baz:"qux" OR events.event_attributes.baz:"qux") AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
             );
         }
         {
@@ -1362,7 +1366,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"service_name:"quickwit" AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                r#"service_name:"quickwit" AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
             );
         }
         {
@@ -1385,7 +1389,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"service_name:"quickwit" AND span_kind:3 AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                r#"service_name:"quickwit" AND span_kind:3 AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
             );
         }
         {
@@ -1408,7 +1412,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"service_name:"quickwit" AND span_kind:3 AND span_name:"leaf_search" AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                r#"service_name:"quickwit" AND span_kind:3 AND span_name:"leaf_search" AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
             );
         }
         {
@@ -1431,7 +1435,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"service_name:"quickwit" AND span_kind:3 AND span_name:"leaf_search" AND (span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_start_timestamp_secs:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z] AND span_duration_millis:[7 TO 77]"#
+                r#"service_name:"quickwit" AND span_kind:3 AND span_name:"leaf_search" AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_start_timestamp_secs:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z] AND span_duration_millis:[7 TO 77]"#
             );
         }
     }
