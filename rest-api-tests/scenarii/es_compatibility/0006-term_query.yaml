@@ -1,0 +1,19 @@
+# case_insensitive not supported.
+engines: ["elasticsearch"]
+method: [GET, POST]
+params:
+  # this overrides the query sent in body apparently
+  size: 3
+json:
+  query:
+    term:
+      type:
+        value: "PushEvent"
+        case_insensitive: true
+expected:
+  hits:
+    total:
+      value: 60
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 3"

@@ -1,0 +1,29 @@
+# disabled due to the previous lack of fast field specific tokenizer.
+engines: ["elasticsearch"]
+method: [GET, POST]
+params:
+  size: 0
+json:
+  aggs:
+    mytypeagg:
+      terms: {field: "type"}
+expected:
+  hits:
+    total:
+      value: 100
+    hits:
+      $expect: "len(val) == 0"
+  aggregations:
+    mytypeagg:
+      doc_count_error_upper_bound: 0
+      sum_other_doc_count: 0
+      buckets:
+        - { "key": "pushevent", "doc_count": 60 }
+        - { "key": "createevent", "doc_count" : 12 }
+        - { "key": "issuecommentevent", "doc_count" : 8 }
+        - { "key": "watchevent", "doc_count" : 6 }
+        - { "key": "pullrequestevent", "doc_count" : 5 }
+        - { "key": "forkevent", "doc_count" : 4 }
+        - { "key": "issuesevent", "doc_count" : 3 }
+        - { "key": "commitcommentevent", "doc_count" : 1 }
+        - { "key": "publicevent", "doc_count" : 1 }

@@ -1,0 +1,26 @@
+# match not supported yet.
+engines: ["elasticsearch"]
+method: [GET, POST]
+json:
+  query:
+    match:
+      type: PushEvent
+expected:
+  hits:
+    total:
+      value: 60
+---
+engines: ["elasticsearch"]
+method: [GET, POST]
+params:
+  size: 2
+json:
+  query:
+    match:
+      type: PushEvent
+expected:
+  hits:
+    total:
+      value: 60
+    hits:
+      $expect: "len(val) == 2"

@@ -1,0 +1,96 @@
+method: [GET]
+json:
+  query:
+    range:
+      actor.id:
+        gte: 10791466
+expected:
+  hits:
+    total:
+      value: 2
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    range:
+      actor.id:
+        gt: 10791466
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    range:
+      actor.id:
+        lt: 10791466
+expected:
+  hits:
+    total:
+      value: 98
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    range:
+      actor.id:
+        lte: 10791466
+expected:
+  hits:
+    total:
+      value: 99
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    range:
+      actor.id:
+        gt: 467872
+expected:
+  hits:
+    total:
+      value: 84
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    range:
+      actor.id:
+        gte: 467872
+expected:
+  hits:
+    total:
+      value: 85
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    range:
+      actor.id:
+        lte: 467872
+expected:
+  hits:
+    total:
+      value: 16
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    range:
+      actor.id:
+        gt: 467872
+        lt: 10791466
+expected:
+  hits:
+    total:
+      value: 82
+      relation: "eq"
