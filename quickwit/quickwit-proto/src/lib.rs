@@ -204,7 +204,7 @@ impl TryFrom<DeleteQuery> for SearchRequest {
     type Error = anyhow::Error;
 
     fn try_from(delete_query: DeleteQuery) -> anyhow::Result<Self> {
-        let index_uid: IndexUid = delete_query.index_uid.into(); 
+        let index_uid: IndexUid = delete_query.index_uid.into();
         Ok(Self {
             index_id: index_uid.index_id().to_string(),
             query_ast: delete_query.query_ast,
@@ -339,7 +339,7 @@ impl IndexUid {
         } else {
             Self (
                 format!("{}:{}", index_id.into(), incarnation_id)
-            )                
+            )
         }
     }
 
@@ -366,9 +366,9 @@ impl From<IndexUid> for String {
     }
 }
 
-impl ToString for IndexUid {
-    fn to_string(&self) -> String {
-        self.0.clone()
+impl fmt::Display for IndexUid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -408,12 +408,12 @@ impl TryFrom<&str> for IndexingTask {
             Ok(IndexingTask {
                 index_uid: format!("{}:{}", part2, part1),
                 source_id: source_id.to_string(),
-            }) 
+            })
         } else {
             Ok(IndexingTask {
                 index_uid: part1.to_string(),
                 source_id: source_id.to_string(),
-            }) 
+            })
         }
     }
 }
