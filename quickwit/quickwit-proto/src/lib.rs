@@ -116,6 +116,7 @@ use tonic::service::Interceptor;
 use tonic::Status;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use quickwit_query::query_ast::QueryAst;
 
 /// This enum serves as a Rosetta stone of
 /// gRPC and Http status code.
@@ -130,6 +131,7 @@ pub enum ServiceErrorCode {
     RateLimited,
     Unavailable,
     UnsupportedMediaType,
+    NotSupportedYet, //< Used for API that is available in elasticsearch but is not yet available in Quickwit.
 }
 
 impl ServiceErrorCode {
@@ -142,6 +144,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::RateLimited => tonic::Code::ResourceExhausted,
             ServiceErrorCode::Unavailable => tonic::Code::Unavailable,
             ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
+            ServiceErrorCode::NotSupportedYet => tonic::Code::Unimplemented,
         }
     }
     pub fn to_http_status_code(self) -> http::StatusCode {
@@ -153,6 +156,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::RateLimited => http::StatusCode::TOO_MANY_REQUESTS,
             ServiceErrorCode::Unavailable => http::StatusCode::SERVICE_UNAVAILABLE,
             ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ServiceErrorCode::NotSupportedYet => http::StatusCode::NOT_IMPLEMENTED,
         }
     }
 }
@@ -180,35 +184,34 @@ pub fn convert_to_grpc_result<T, E: ServiceError>(
         .map_err(|error| error.grpc_error())
 }
 
-impl From<SearchStreamRequest> for SearchRequest {
-    fn from(item: SearchStreamRequest) -> Self {
-        Self {
-            index_id: item.index_id,
-            query: item.query,
-            search_fields: item.search_fields,
-            snippet_fields: item.snippet_fields,
-            start_timestamp: item.start_timestamp,
-            end_timestamp: item.end_timestamp,
-            max_hits: 0,
-            start_offset: 0,
-            sort_by_field: None,
-            sort_order: None,
-            aggregation_request: None,
-        }
+impl TryFrom<SearchStreamRequest> for SearchRequest {
+
+    type Error = anyhow::Error;
+
+    fn try_from(search_stream_req: SearchStreamRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            index_id: search_stream_req.index_id,
+            query_ast: search_stream_req.query_ast,
+            snippet_fields: search_stream_req.snippet_fields,
+            start_timestamp: search_stream_req.start_timestamp,
+            end_timestamp: search_stream_req.end_timestamp,
+            .. Default::default()
+        })
     }
 }
 
-impl From<DeleteQuery> for SearchRequest {
-    fn from(delete_query: DeleteQuery) -> Self {
+impl TryFrom<DeleteQuery> for SearchRequest {
+    type Error = anyhow::Error;
+
+    fn try_from(delete_query: DeleteQuery) -> anyhow::Result<Self> {
         let index_uid: IndexUid = delete_query.index_uid.into(); 
-        Self {
+        Ok(Self {
             index_id: index_uid.index_id().to_string(),
-            query: delete_query.query,
+            query_ast: delete_query.query_ast,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,
-            search_fields: delete_query.search_fields,
             ..Default::default()
-        }
+        })
     }
 }
 
@@ -395,6 +398,51 @@ impl TryFrom<&str> for IndexingTask {
     }
 }
 
+
+/// Creates a query ast json by parsing a user query.
+///
+/// The resulting query does not include `UserInputQuery` nodes.
+/// The resolution assumes that there are no default search fields
+/// in the doc mapper.
+///
+/// # Panics
+///
+/// Panics if the user text is invalid.
+pub fn qast_helper(
+    user_text: &str,
+    default_fields: &[&'static str]
+) -> String {
+    let default_fields: Vec<String> = default_fields.iter().map(|default_field| default_field.to_string()).collect();
+    let ast: QueryAst = query_ast_from_user_text(user_text, Some(default_fields))
+        .parse_user_query(&[])
+        .expect("Invalid user query");
+    serde_json::to_string(&ast).expect("Failed to serialize ast")
+}
+
+/// Creates a QueryAST with a single UserInputQuery node.
+///
+/// Disclaimer:
+/// At this point the query has not been parsed.
+///
+/// The actual parsing is meant to happen on a root node,
+/// `default_fields` can be passed to decide which field should be search
+/// if not specified specifically in the user query (e.g. hello as opposed to "body:hello").
+///
+/// If it is not supplied, the docmapper search fields are meant to be used.
+///
+/// If no boolean operator is specified, the default is `AND` (contrary to the Elasticsearch default).
+pub fn query_ast_from_user_text(
+    user_text: &str,
+    default_fields: Option<Vec<String>>,
+) -> QueryAst {
+    quickwit_query::query_ast::UserInputQuery {
+        user_text: user_text.to_string(),
+        default_fields,
+        default_operator: quickwit_query::DefaultOperator::And,
+    }
+    .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,5 +532,12 @@ mod tests {
         let incarnation_id = index_uid.incarnation_id();
         let index_uid_from_parts = IndexUid::from_parts(index_id, incarnation_id);
         index_uid_from_parts.to_string()
+    }
+
+    #[test]
+    fn test_query_ast_from_user_text_default_as_and() {
+        let ast = query_ast_from_user_text("hello you", None);
+        let QueryAst::UserInput(input_query) = ast else { panic!() };
+        assert_eq!(input_query.default_operator, quickwit_query::DefaultOperator::And);
     }
 }

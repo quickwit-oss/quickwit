@@ -24,6 +24,7 @@ mod metrics;
 
 mod grpc;
 mod rest;
+pub(crate) mod simple_list;
 
 mod cluster_api;
 mod delete_task_api;

@@ -87,8 +87,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
                 index_uid: "index:1111111111111".to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: "Harry Potter".to_string(),
-                search_fields: Vec::new(),
+                query_ast: quickwit_proto::qast_helper("Harry Potter", &["body"]),
             }),
         };
         FileBackedIndex::new(index_metadata, splits, vec![delete_task])

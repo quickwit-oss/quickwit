@@ -163,6 +163,7 @@ impl DeleteTaskPlanner {
 
             let (splits_with_deletes, splits_without_deletes) =
                 self.partition_splits_by_deletes(&stale_splits, ctx).await?;
+
             info!(
                 "{} splits with deletes, {} splits without deletes.",
                 splits_with_deletes.len(),
@@ -237,8 +238,9 @@ impl DeleteTaskPlanner {
                         delete_query.end_timestamp,
                     );
                     // TODO: validate the query at the beginning and return an appropriate error.
-                    let tags_filter = extract_tags_from_query(&delete_query.query)
-                        .expect("Delete query must have been validated upfront.");
+                    let delete_query_ast = serde_json::from_str(&delete_query.query_ast)
+                        .expect("Failed to deserialize query_ast json");
+                    let tags_filter = extract_tags_from_query(delete_query_ast);
                     split_time_range_filter(stale_split, time_range.as_ref())
                         && split_tag_filter(stale_split, tags_filter.as_ref())
                 })
@@ -295,11 +297,9 @@ impl DeleteTaskPlanner {
                 index_id: IndexUid::from(delete_query.index_uid.clone())
                     .index_id()
                     .to_string(),
-                query: delete_query.query.clone(),
+                query_ast: delete_query.query_ast.clone(),
                 start_timestamp: delete_query.start_timestamp,
                 end_timestamp: delete_query.end_timestamp,
-                search_fields: delete_query.search_fields.clone(),
-                max_hits: 0,
                 ..Default::default()
             };
             let leaf_search_request = jobs_to_leaf_request(
@@ -453,13 +453,14 @@ mod tests {
         // Creates 2 delete tasks, one that will match 1 document,
         // the other that will match no document.
 
+        let body_delete_ast = quickwit_proto::qast_helper("body:delete", &[]);
+        let match_nothing_ast = quickwit_proto::qast_helper("body:matchnothing", &[]);
         metastore
             .create_delete_task(DeleteQuery {
                 index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: "body:delete".to_string(),
-                search_fields: Vec::new(),
+                query_ast: body_delete_ast.clone(),
             })
             .await?;
         metastore
@@ -467,8 +468,7 @@ mod tests {
                 index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: "MatchNothing".to_string(),
-                search_fields: Vec::new(),
+                query_ast: match_nothing_ast,
             })
             .await?;
         let mut mock_search_service = MockSearchService::new();
@@ -481,7 +481,7 @@ mod tests {
                 // Search on body:delete should return one hit only on the last split
                 // that should contains the doc.
                 if request.split_offsets[0].split_id == split_id_with_doc_to_delete
-                    && request.search_request.as_ref().unwrap().query == "body:delete"
+                    && request.search_request.as_ref().unwrap().query_ast == body_delete_ast
                 {
                     return Ok(LeafSearchResponse {
                         num_hits: 1,

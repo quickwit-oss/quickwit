@@ -19,7 +19,6 @@
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
-use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_doc_mapper::{DocMapper, WarmupInfo};
@@ -36,7 +35,6 @@ use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 use crate::filters::{create_timestamp_filter_builder, TimestampFilter, TimestampFilterBuilder};
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector};
 use crate::partial_hit_sorting_key;
-use crate::service::SearcherContext;
 
 #[derive(Clone, Debug)]
 pub(crate) enum SortBy {
@@ -588,27 +586,13 @@ pub(crate) fn make_collector_for_split(
     })
 }
 
-pub fn aggregation_limits_from_searcher_context(
-    searcher_context: &Arc<SearcherContext>,
-) -> AggregationLimits {
-    AggregationLimits::new(
-        Some(
-            searcher_context
-                .searcher_config
-                .aggregation_memory_limit
-                .get_bytes(),
-        ),
-        Some(searcher_context.searcher_config.aggregation_bucket_limit),
-    )
-}
-
 /// Builds a QuickwitCollector that's only useful for merging fruits.
 ///
 /// This collector only needs `start_offset` & `max_hit` so the other attributes
 /// can be set to default.
 pub(crate) fn make_merge_collector(
     search_request: &SearchRequest,
-    searcher_context: &Arc<SearcherContext>,
+    aggregation_limits: &AggregationLimits,
 ) -> crate::Result<QuickwitCollector> {
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
@@ -621,7 +605,7 @@ pub(crate) fn make_merge_collector(
         sort_by: SortBy::DocId,
         timestamp_filter_builder_opt: None,
         aggregation,
-        aggregation_limits: aggregation_limits_from_searcher_context(searcher_context),
+        aggregation_limits: aggregation_limits.clone(),
     })
 }
 

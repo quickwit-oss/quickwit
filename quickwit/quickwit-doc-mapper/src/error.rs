@@ -17,18 +17,25 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_query::InvalidQuery;
 use tantivy::schema::DocParsingError as TantivyDocParsingError;
 use thiserror::Error;
 
 /// Failed to parse query.
 #[derive(Error, Debug)]
-#[error("{0}")]
-pub struct QueryParserError(#[from] anyhow::Error);
-
-impl From<tantivy::query::QueryParserError> for QueryParserError {
-    fn from(tantivy_error: tantivy::query::QueryParserError) -> Self {
-        QueryParserError(From::from(tantivy_error))
-    }
+#[allow(missing_docs)]
+pub enum QueryParserError {
+    #[error("Invalid json: {0}")]
+    InvalidJson(#[from] serde_json::Error),
+    #[error("Invalid query: {0}")]
+    InvalidQuery(#[from] InvalidQuery),
+    #[error("Invalid default search field: `{field_name}` {cause}")]
+    InvalidDefaultField {
+        cause: &'static str,
+        field_name: String,
+    },
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
 }
 
 /// Error that may happen when parsing

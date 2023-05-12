@@ -19,22 +19,23 @@
 
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, IndexConfig};
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafListTermsRequest, LeafListTermsResponse,
     LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
     SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
+use quickwit_query::query_ast::QueryAst;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
-use tantivy::aggregation::AggregationLimits;
 use tantivy::collector::Collector;
+use tantivy::schema::{FieldType, Schema};
 use tantivy::TantivyError;
 use tracing::{debug, error, info_span, instrument};
 
@@ -114,7 +115,70 @@ impl From<FetchDocsJob> for SplitIdAndFooterOffsets {
     }
 }
 
-pub(crate) fn validate_request(search_request: &SearchRequest) -> crate::Result<()> {
+fn validate_requested_snippet_fields(
+    schema: &Schema,
+    snippet_fields: &[String],
+) -> anyhow::Result<()> {
+    for field_name in snippet_fields {
+        let field_entry = schema
+            .get_field(field_name)
+            .map(|field| schema.get_field_entry(field))?;
+        match field_entry.field_type() {
+            FieldType::Str(text_options) => {
+                if !text_options.is_stored() {
+                    return Err(anyhow::anyhow!(
+                        "The snippet field `{}` must be stored.",
+                        field_name
+                    ));
+                }
+            }
+            other => {
+                return Err(anyhow::anyhow!(
+                    "The snippet field `{}` must be of type `Str`, got `{}`.",
+                    field_name,
+                    other.value_type().name()
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_sort_by_field(field_name: &str, schema: &Schema) -> crate::Result<()> {
+    if field_name == "_score" {
+        return Ok(());
+    }
+    let sort_by_field = schema.get_field(field_name).map_err(|_| {
+        SearchError::InvalidArgument(format!("Unknown sort by field: `{field_name}`"))
+    })?;
+    let sort_by_field_entry = schema.get_field_entry(sort_by_field);
+
+    if matches!(sort_by_field_entry.field_type(), FieldType::Str(_)) {
+        return Err(SearchError::InvalidArgument(format!(
+            "Sort by field on type text is currently not supported `{field_name}`."
+        )));
+    }
+    if !sort_by_field_entry.is_fast() {
+        return Err(SearchError::InvalidArgument(format!(
+            "Sort by field must be a fast field, please add the fast property to your field \
+             `{field_name}`.",
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_request(
+    doc_mapper: &dyn DocMapper,
+    search_request: &SearchRequest,
+) -> crate::Result<()> {
+    let schema = doc_mapper.schema();
+
+    validate_requested_snippet_fields(&schema, &search_request.snippet_fields)?;
+
+    if let Some(sort_by_field) = &search_request.sort_by_field {
+        validate_sort_by_field(sort_by_field, &schema)?;
+    }
+
     if let Some(agg) = search_request.aggregation_request.as_ref() {
         let _aggs: QuickwitAggregations = serde_json::from_str(agg).map_err(|_err| {
             let err = serde_json::from_str::<tantivy::aggregation::agg_req::Aggregations>(agg)
@@ -147,8 +211,8 @@ pub(crate) fn validate_request(search_request: &SearchRequest) -> crate::Result<
 /// 4. Builds the response with docs and returns.
 #[instrument(skip(search_request, cluster_client, search_job_placer, metastore))]
 pub async fn root_search(
-    searcher_context: Arc<SearcherContext>,
-    search_request: &SearchRequest,
+    searcher_context: &SearcherContext,
+    mut search_request: SearchRequest,
     metastore: &dyn Metastore,
     cluster_client: &ClusterClient,
     search_job_placer: &SearchJobPlacer,
@@ -164,17 +228,25 @@ pub async fn root_search(
             SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
-    validate_request(search_request)?;
+    validate_request(&*doc_mapper, &search_request)?;
+
+    let query_ast: QueryAst = serde_json::from_str(&search_request.query_ast)
+        .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
+    let query_ast_resolved = query_ast.parse_user_query(doc_mapper.default_search_fields())?;
 
     // Validates the query by effectively building it against the current schema.
-    doc_mapper.query(doc_mapper.schema(), search_request)?;
+    doc_mapper.query(doc_mapper.schema(), &query_ast_resolved, true)?;
+
+    search_request.query_ast = serde_json::to_string(&query_ast_resolved).map_err(|err| {
+        SearchError::InternalError(format!("Failed to serialize query ast: Cause {err}"))
+    })?;
 
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
     })?;
 
     let split_metadatas: Vec<SplitMetadata> =
-        list_relevant_splits(index_uid, search_request, metastore).await?;
+        list_relevant_splits(&search_request, metastore).await?;
 
     let split_offsets_map: HashMap<String, SplitIdAndFooterOffsets> = split_metadatas
         .iter()
@@ -189,6 +261,7 @@ pub async fn root_search(
     let index_uri = &index_config.index_uri;
 
     let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+
     let assigned_leaf_search_jobs = search_job_placer.assign_jobs(jobs, &HashSet::default())?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
     let leaf_search_responses: Vec<LeafSearchResponse> = try_join_all(
@@ -196,7 +269,7 @@ pub async fn root_search(
             .into_iter()
             .map(|(client, client_jobs)| {
                 let leaf_request = jobs_to_leaf_request(
-                    search_request,
+                    &search_request,
                     &doc_mapper_str,
                     index_uri.as_ref(),
                     client_jobs,
@@ -207,7 +280,8 @@ pub async fn root_search(
     .await?;
 
     // Creates a collector which merges responses into one
-    let merge_collector = make_merge_collector(search_request, &searcher_context)?;
+    let merge_collector =
+        make_merge_collector(&search_request, &searcher_context.aggregation_limits)?;
     let aggregations = merge_collector.aggregation.clone();
 
     // Merging is a cpu-bound task.
@@ -301,9 +375,10 @@ pub async fn root_search(
 
     let elapsed = start_instant.elapsed();
 
-    let aggregation = finalize_aggregation(
+    let aggregation: Option<String> = finalize_aggregation(
         leaf_search_response.intermediate_aggregation_result,
         aggregations,
+        searcher_context,
     )?;
 
     Ok(SearchResponse {
@@ -318,6 +393,7 @@ pub async fn root_search(
 pub fn finalize_aggregation(
     intermediate_aggregation_result: Option<Vec<u8>>,
     aggregations: Option<QuickwitAggregations>,
+    searcher_context: &SearcherContext,
 ) -> crate::Result<Option<String>> {
     let aggregation = if let Some(intermediate_aggregation_result) = intermediate_aggregation_result
     {
@@ -335,7 +411,7 @@ pub fn finalize_aggregation(
                 let res: IntermediateAggregationResults =
                     postcard::from_bytes(intermediate_aggregation_result.as_slice())?;
                 let res: AggregationResults =
-                    res.into_final_result(aggregations, &AggregationLimits::default())?;
+                    res.into_final_result(aggregations, &searcher_context.aggregation_limits)?;
                 Some(serde_json::to_string(&res)?)
             }
         }
@@ -533,10 +609,44 @@ mod tests {
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::SplitSearchError;
+    use quickwit_proto::{qast_helper, SplitSearchError};
+    use tantivy::schema::{FAST, STORED, TEXT};
 
     use super::*;
     use crate::MockSearchService;
+
+    #[track_caller]
+    fn check_snippet_fields_validation(snippet_fields: &[String]) -> anyhow::Result<()> {
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_text_field("title", TEXT);
+        schema_builder.add_text_field("desc", TEXT | STORED);
+        schema_builder.add_ip_addr_field("ip", FAST | STORED);
+        let schema = schema_builder.build();
+        validate_requested_snippet_fields(&schema, snippet_fields)
+    }
+
+    #[test]
+    fn test_validate_requested_snippet_fields() {
+        check_snippet_fields_validation(&["desc".to_string()]).unwrap();
+        let field_not_stored_err =
+            check_snippet_fields_validation(&["title".to_string()]).unwrap_err();
+        assert_eq!(
+            field_not_stored_err.to_string(),
+            "The snippet field `title` must be stored."
+        );
+        let field_doesnotexist_err =
+            check_snippet_fields_validation(&["doesnotexist".to_string()]).unwrap_err();
+        assert_eq!(
+            field_doesnotexist_err.to_string(),
+            "The field does not exist: 'doesnotexist'"
+        );
+        let field_is_not_text_err =
+            check_snippet_fields_validation(&["ip".to_string()]).unwrap_err();
+        assert_eq!(
+            field_is_not_text_err.to_string(),
+            "The snippet field `ip` must be of type `Str`, got `IpAddr`."
+        );
+    }
 
     fn mock_partial_hit(
         split_id: &str,
@@ -574,10 +684,7 @@ mod tests {
     async fn test_root_search_offset_out_of_bounds_1085() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
             start_offset: 10,
             ..Default::default()
@@ -652,8 +759,8 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &Arc::new(SearcherContext::new(SearcherConfig::default())),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,
@@ -668,12 +775,8 @@ mod tests {
     async fn test_root_search_single_split() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
-            start_offset: 0,
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
@@ -719,8 +822,8 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,
@@ -735,12 +838,8 @@ mod tests {
     async fn test_root_search_multiple_splits() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
-            start_offset: 0,
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
@@ -809,8 +908,8 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,
@@ -825,12 +924,8 @@ mod tests {
     async fn test_root_search_multiple_splits_retry_on_other_node() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
-            start_offset: 0,
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
@@ -926,8 +1021,8 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,
@@ -942,12 +1037,8 @@ mod tests {
     async fn test_root_search_multiple_splits_retry_on_all_nodes() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
-            start_offset: 0,
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
@@ -1060,8 +1151,8 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,
@@ -1076,12 +1167,8 @@ mod tests {
     async fn test_root_search_single_split_retry_single_node() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
-            start_offset: 0,
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
@@ -1141,8 +1228,8 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,
@@ -1157,12 +1244,8 @@ mod tests {
     async fn test_root_search_single_split_retry_single_node_fails() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
-            start_offset: 0,
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
@@ -1208,8 +1291,8 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,
@@ -1224,12 +1307,8 @@ mod tests {
     ) -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
-            start_offset: 0,
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
@@ -1300,8 +1379,8 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,
@@ -1317,12 +1396,8 @@ mod tests {
     ) -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
-            start_offset: 0,
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
@@ -1383,8 +1458,8 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,
@@ -1419,15 +1494,11 @@ mod tests {
         let cluster_client = ClusterClient::new(search_job_placer.clone());
 
         assert!(root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &quickwit_proto::SearchRequest {
+            &SearcherContext::new(SearcherConfig::default()),
+            quickwit_proto::SearchRequest {
                 index_id: "test-index".to_string(),
-                query: r#"invalid_field:"test""#.to_string(),
-                search_fields: vec!["body".to_string()],
-                start_timestamp: None,
-                end_timestamp: None,
+                query_ast: qast_helper("invalid_field:\"test\"", &["body"]),
                 max_hits: 10,
-                start_offset: 0,
                 ..Default::default()
             },
             &metastore,
@@ -1438,15 +1509,11 @@ mod tests {
         .is_err());
 
         assert!(root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &quickwit_proto::SearchRequest {
+            &SearcherContext::new(SearcherConfig::default()),
+            quickwit_proto::SearchRequest {
                 index_id: "test-index".to_string(),
-                query: "test".to_string(),
-                search_fields: vec!["invalid_field".to_string()],
-                start_timestamp: None,
-                end_timestamp: None,
+                query_ast: qast_helper("test", &["invalid_field"]),
                 max_hits: 10,
-                start_offset: 0,
                 ..Default::default()
             },
             &metastore,
@@ -1482,12 +1549,8 @@ mod tests {
 
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
-            start_offset: 0,
             aggregation_request: Some(agg_req.to_string()),
             ..Default::default()
         };
@@ -1511,8 +1574,8 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,
@@ -1531,10 +1594,7 @@ mod tests {
     async fn test_root_search_invalid_request() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
             start_offset: 20_000,
             ..Default::default()
@@ -1559,8 +1619,8 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,
@@ -1574,17 +1634,14 @@ mod tests {
 
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 20_000,
             ..Default::default()
         };
 
         let search_response = root_search(
-            Arc::new(SearcherContext::new(SearcherConfig::default())),
-            &search_request,
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
             &metastore,
             &cluster_client,
             &search_job_placer,

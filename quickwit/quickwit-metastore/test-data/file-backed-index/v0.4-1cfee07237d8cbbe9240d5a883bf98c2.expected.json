@@ -3,9 +3,8 @@
     {
       "create_timestamp": 0,
       "delete_query": {
-        "index_uid": "",
-        "query": "Harry Potter",
-        "search_fields": []
+        "index_id": "index",
+        "query_ast": ""
       },
       "opstamp": 10
     }

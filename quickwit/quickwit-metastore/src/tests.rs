@@ -32,6 +32,7 @@ pub mod test_suite {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_proto::IndexUid;
+    use quickwit_proto::qast_helper;
     use time::OffsetDateTime;
     use tokio::time::sleep;
     use tracing::{error, info};
@@ -2133,10 +2134,9 @@ pub mod test_suite {
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
         let delete_query = DeleteQuery {
             index_uid: index_uid.to_string(),
-            query: "my_field:my_value".to_string(),
+            query_ast: qast_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
-            search_fields: Vec::new(),
         };
 
         // Create a delete task on non-existing index.
@@ -2197,17 +2197,15 @@ pub mod test_suite {
 
         let delete_query_index_1 = DeleteQuery {
             index_uid: index_uid_1.to_string(),
-            query: "my_field:my_value".to_string(),
+            query_ast: qast_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
-            search_fields: Vec::new(),
         };
         let delete_query_index_2 = DeleteQuery {
             index_uid: index_uid_2.to_string(),
-            query: "my_field:my_value".to_string(),
+            query_ast: qast_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
-            search_fields: Vec::new(),
         };
 
         let last_opstamp_index_1_with_no_task = metastore
@@ -2254,10 +2252,9 @@ pub mod test_suite {
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
         let delete_query = DeleteQuery {
             index_uid: index_uid.to_string(),
-            query: "my_field:my_value".to_string(),
+            query_ast: qast_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
-            search_fields: Vec::new(),
         };
         let _ = metastore
             .create_delete_task(delete_query.clone())
@@ -2289,17 +2286,15 @@ pub mod test_suite {
             .unwrap();
         let delete_query_index_1 = DeleteQuery {
             index_uid: index_uid_1.to_string(),
-            query: "my_field:my_value".to_string(),
+            query_ast: qast_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
-            search_fields: Vec::new(),
         };
         let delete_query_index_2 = DeleteQuery {
             index_uid: index_uid_2.to_string(),
-            query: "my_field:my_value".to_string(),
+            query_ast: qast_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
-            search_fields: Vec::new(),
         };
 
         // Create a delete task.

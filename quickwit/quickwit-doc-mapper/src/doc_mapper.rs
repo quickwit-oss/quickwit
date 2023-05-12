@@ -23,7 +23,7 @@ use std::num::NonZeroU32;
 
 use anyhow::Context;
 use dyn_clone::{clone_trait_object, DynClone};
-use quickwit_proto::SearchRequest;
+use quickwit_query::query_ast::QueryAst;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, Schema, Value};
@@ -38,14 +38,13 @@ use crate::{DocParsingError, QueryParserError};
 /// The `DocMapper` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
 ///
-/// The `DocMapper` trait is in charge of implementing :
-///
-/// - a way to build a tantivy [`Document`] from a JSON payload
-/// - a way to build a tantivy [`Query`] from a [`SearchRequest`]
-/// - a way to build a tantivy [`Schema`] from a
+/// The `DocMapper` trait is in charge of :
+/// - building a tantivy [`Document`] from a JSON payload
+/// - building a tantivy [`Query`] from a [`QueryAst`]
+/// - supplying a tantivy [`Schema`]
 #[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
-    /// Transforms a JSON object ([`JsonObject`]) into a tantivy [`Document`] according to the rules
+    /// Transforms a JSON object into a tantivy [`Document`] according to the rules
     /// defined for the `DocMapper`.
     fn doc_from_json_obj(
         &self,
@@ -103,13 +102,18 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     fn query(
         &self,
         split_schema: Schema,
-        request: &SearchRequest,
+        query_ast: &QueryAst,
+        with_validation: bool,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError>;
 
     /// Returns the timestamp field name.
     fn timestamp_field_name(&self) -> Option<&str> {
         None
     }
+
+    /// Returns the list of search fields to search into, when no field is specified.
+    /// (See `UserInputQuery`).
+    fn default_search_fields(&self) -> &[String];
 
     /// Returns the tag field names
     fn tag_field_names(&self) -> BTreeSet<String> {
@@ -195,15 +199,15 @@ impl WarmupInfo {
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use quickwit_proto::SearchRequest;
+    use quickwit_proto::query_ast_from_user_text;
+    use quickwit_query::query_ast::UserInputQuery;
+    use quickwit_query::DefaultOperator;
     use tantivy::schema::{Field, FieldType, Term};
 
-    use crate::default_doc_mapper::{
-        FastFieldOptions, FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions,
-    };
+    use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
     use crate::{
-        Cardinality, DefaultDocMapperBuilder, DocMapper, DocParsingError, FieldMappingEntry,
-        WarmupInfo, DYNAMIC_FIELD_NAME,
+        Cardinality, DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, DocParsingError,
+        FieldMappingEntry, ModeType, WarmupInfo, DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -311,20 +315,14 @@ mod tests {
         });
         let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
-        let search_request = SearchRequest {
-            index_id: "quickwit-index".to_string(),
-            query: "json_field.toto.titi:hello".to_string(),
-            search_fields: Vec::new(),
-            snippet_fields: Vec::new(),
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 10,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-        };
-        let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
+        let query_ast = UserInputQuery {
+            user_text: "json_field.toto.titi:hello".to_string(),
+            default_fields: None,
+            default_operator: DefaultOperator::And,
+        }
+        .parse_user_query(&[])
+        .unwrap();
+        let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
             r#"TermQuery(Term(field=0, type=Json, path=toto.titi, type=Str, "hello"))"#
@@ -332,71 +330,18 @@ mod tests {
     }
 
     #[test]
-    fn test_doc_mapper_query_with_invalid_sort_field() {
-        let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
-        let text_opt = QuickwitTextOptions {
-            fast: FastFieldOptions::IsEnabled(true),
-            ..Default::default()
-        };
-
-        doc_mapper_builder.field_mappings.push(FieldMappingEntry {
-            name: "text_field".to_string(),
-            mapping_type: FieldMappingType::Text(text_opt, Cardinality::SingleValue),
-        });
-        doc_mapper_builder
-            .default_search_fields
-            .push("text_field".to_string());
-        let doc_mapper = doc_mapper_builder.try_build().unwrap();
-        let schema = doc_mapper.schema();
-        let search_request = SearchRequest {
-            index_id: "quickwit-index".to_string(),
-            query: "text_field:hello".to_string(),
-            search_fields: Vec::new(),
-            snippet_fields: Vec::new(),
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 10,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: Some("text_field".to_string()),
-            aggregation_request: None,
-        };
-        let query = doc_mapper.query(schema, &search_request).unwrap_err();
-        assert_eq!(
-            format!("{query:?}"),
-            "QueryParserError(Sort by field on type text is currently not supported `text_field`.)"
-        );
-    }
-
-    #[test]
     fn test_doc_mapper_query_with_json_field_default_search_fields() {
-        let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
-        doc_mapper_builder.field_mappings.push(FieldMappingEntry {
-            name: "json_field".to_string(),
-            mapping_type: FieldMappingType::Json(
-                QuickwitJsonOptions::default(),
-                Cardinality::SingleValue,
-            ),
-        });
-        doc_mapper_builder
-            .default_search_fields
-            .push("json_field".to_string());
-        let doc_mapper = doc_mapper_builder.try_build().unwrap();
+        let doc_mapper: DefaultDocMapper = DefaultDocMapperBuilder {
+            mode: ModeType::Dynamic,
+            ..Default::default()
+        }
+        .try_build()
+        .unwrap();
         let schema = doc_mapper.schema();
-        let search_request = SearchRequest {
-            index_id: "quickwit-index".to_string(),
-            query: "toto.titi:hello".to_string(),
-            search_fields: Vec::new(),
-            snippet_fields: Vec::new(),
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 10,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-        };
-        let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
+        let query_ast = query_ast_from_user_text("toto.titi:hello", None)
+            .parse_user_query(doc_mapper.default_search_fields())
+            .unwrap();
+        let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
             r#"TermQuery(Term(field=0, type=Json, path=toto.titi, type=Str, "hello"))"#
@@ -405,33 +350,17 @@ mod tests {
 
     #[test]
     fn test_doc_mapper_query_with_json_field_ambiguous_term() {
-        let doc_mapper_builder = DefaultDocMapperBuilder {
-            field_mappings: vec![FieldMappingEntry {
-                name: "json_field".to_string(),
-                mapping_type: FieldMappingType::Json(
-                    QuickwitJsonOptions::default(),
-                    Cardinality::SingleValue,
-                ),
-            }],
-            default_search_fields: vec!["json_field".to_string()],
+        let doc_mapper: DefaultDocMapper = DefaultDocMapperBuilder {
+            mode: ModeType::Dynamic,
             ..Default::default()
-        };
-        let doc_mapper = doc_mapper_builder.try_build().unwrap();
+        }
+        .try_build()
+        .unwrap();
         let schema = doc_mapper.schema();
-        let search_request = SearchRequest {
-            index_id: "quickwit-index".to_string(),
-            query: "toto:5".to_string(),
-            search_fields: Vec::new(),
-            snippet_fields: Vec::new(),
-            start_timestamp: None,
-            end_timestamp: None,
-            max_hits: 10,
-            start_offset: 0,
-            sort_order: None,
-            sort_by_field: None,
-            aggregation_request: None,
-        };
-        let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
+        let query_ast = query_ast_from_user_text("toto:5", None)
+            .parse_user_query(&[])
+            .unwrap();
+        let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
             r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=0, type=Json, path=toto, type=U64, 5))), (Should, TermQuery(Term(field=0, type=Json, path=toto, type=Str, "5")))] }"#

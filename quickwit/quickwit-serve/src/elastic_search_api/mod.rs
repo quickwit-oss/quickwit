@@ -17,12 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod api_specs;
+mod filter;
+mod model;
 mod rest_handler;
 
 use std::sync::Arc;
 
-pub(crate) use quickwit_common::simple_list::{from_simple_list, to_simple_list, SimpleList};
 use quickwit_search::SearchService;
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};

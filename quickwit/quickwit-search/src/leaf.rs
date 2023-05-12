@@ -26,15 +26,15 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::{DocMapper, WarmupInfo, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_doc_mapper::{DocMapper, WarmupInfo};
 use quickwit_proto::{
     LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, SearchRequest,
     SplitIdAndFooterOffsets, SplitSearchError,
 };
+use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::{
     wrap_storage_with_long_term_cache, BundleStorage, MemorySizedCache, OwnedBytes, Storage,
 };
-use tantivy::aggregation::AggregationLimits;
 use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
@@ -42,9 +42,7 @@ use tantivy::schema::{Field, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tracing::*;
 
-use crate::collector::{
-    aggregation_limits_from_searcher_context, make_collector_for_split, make_merge_collector,
-};
+use crate::collector::{make_collector_for_split, make_merge_collector};
 use crate::service::SearcherContext;
 use crate::SearchError;
 
@@ -90,7 +88,7 @@ async fn get_split_footer_from_cache_or_fetch(
 /// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
 #[instrument(skip(searcher_context, index_storage))]
 pub(crate) async fn open_index_with_caches(
-    searcher_context: &Arc<SearcherContext>,
+    searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     ephemeral_unbounded_cache: bool,
@@ -120,7 +118,7 @@ pub(crate) async fn open_index_with_caches(
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
     };
     let mut index = Index::open(hot_directory)?;
-    index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+    index.set_tokenizers(quickwit_query::get_quickwit_tokenizer_manager().clone());
     Ok(index)
 }
 
@@ -141,6 +139,7 @@ pub(crate) async fn open_index_with_caches(
 /// to be hit.
 #[instrument(skip(searcher))]
 pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> anyhow::Result<()> {
+    debug!(warmup_info=?warmup_info, "warmup");
     let warm_up_terms_future = warm_up_terms(searcher, &warmup_info.terms_grouped_by_field)
         .instrument(debug_span!("warm_up_terms"));
     let warm_up_term_dict_future =
@@ -302,21 +301,13 @@ async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyh
 }
 
 /// Apply a leaf search on a single split.
-#[instrument(skip(
-    searcher_context,
-    search_request,
-    storage,
-    split,
-    doc_mapper,
-    agg_limits
-))]
+#[instrument(skip(searcher_context, search_request, storage, split, doc_mapper,))]
 async fn leaf_search_single_split(
-    searcher_context: &Arc<SearcherContext>,
+    searcher_context: &SearcherContext,
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
-    agg_limits: AggregationLimits,
 ) -> crate::Result<LeafSearchResponse> {
     let split_id = split.split_id.to_string();
     let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
@@ -325,9 +316,11 @@ async fn leaf_search_single_split(
         split_id.clone(),
         doc_mapper.as_ref(),
         search_request,
-        agg_limits,
+        searcher_context.aggregation_limits.clone(),
     )?;
-    let (query, mut warmup_info) = doc_mapper.query(split_schema, search_request)?;
+    let query_ast: QueryAst = serde_json::from_str(search_request.query_ast.as_str())
+        .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
+    let (query, mut warmup_info) = doc_mapper.query(split_schema, &query_ast, false)?;
     let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
@@ -338,7 +331,7 @@ async fn leaf_search_single_split(
     warmup_info.merge(collector_warmup_info);
 
     warmup(&searcher, &warmup_info).await?;
-    let span = info_span!( "tantivy_search", split_id = %split.split_id);
+    let span = info_span!("tantivy_search", split_id = %split.split_id);
     let leaf_search_response = crate::run_cpu_intensive(move || {
         let _span_guard = span.enter();
         searcher.search(&query, &quickwit_collector)
@@ -364,13 +357,11 @@ pub async fn leaf_search(
     splits: &[SplitIdAndFooterOffsets],
     doc_mapper: Arc<dyn DocMapper>,
 ) -> Result<LeafSearchResponse, SearchError> {
-    let agg_limits = aggregation_limits_from_searcher_context(&searcher_context);
     let request = Arc::new(request.clone());
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
         .map(|split| {
             let split = split.clone();
-            let agg_limits = agg_limits.clone();
             let doc_mapper_clone = doc_mapper.clone();
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
@@ -391,7 +382,6 @@ pub async fn leaf_search(
                     index_storage_clone,
                     split.clone(),
                     doc_mapper_clone,
-                    agg_limits,
                 )
                 .await;
                 timer.observe_duration();
@@ -418,7 +408,7 @@ pub async fn leaf_search(
         });
 
     // Creates a collector which merges responses into one
-    let merge_collector = make_merge_collector(&request, &searcher_context)?;
+    let merge_collector = make_merge_collector(&request, &searcher_context.aggregation_limits)?;
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
@@ -443,7 +433,7 @@ pub async fn leaf_search(
 /// Apply a leaf list terms on a single split.
 #[instrument(skip(searcher_context, search_request, storage, split))]
 async fn leaf_list_terms_single_split(
-    searcher_context: &Arc<SearcherContext>,
+    searcher_context: &SearcherContext,
     search_request: &ListTermsRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
