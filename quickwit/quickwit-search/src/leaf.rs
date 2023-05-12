@@ -26,7 +26,7 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::{DocMapper, WarmupInfo};
+use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::{
     LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, SearchRequest,
     SplitIdAndFooterOffsets, SplitSearchError,
@@ -142,6 +142,9 @@ pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> any
     debug!(warmup_info=?warmup_info, "warmup");
     let warm_up_terms_future = warm_up_terms(searcher, &warmup_info.terms_grouped_by_field)
         .instrument(debug_span!("warm_up_terms"));
+    let warm_up_term_ranges_future =
+        warm_up_term_ranges(searcher, &warmup_info.term_ranges_grouped_by_field)
+            .instrument(debug_span!("warm_up_term_ranges"));
     let warm_up_term_dict_future =
         warm_up_term_dict_fields(searcher, &warmup_info.term_dict_field_names)
             .instrument(debug_span!("warm_up_term_dicts"));
@@ -151,24 +154,16 @@ pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> any
         .instrument(debug_span!("warm_up_fieldnorms"));
     let warm_up_postings_future = warm_up_postings(searcher, &warmup_info.posting_field_names)
         .instrument(debug_span!("warm_up_postings"));
-    let (
-        warm_up_terms_res,
-        warm_up_fastfields_res,
-        warm_up_term_dict_res,
-        warm_up_fieldnorms_res,
-        warm_up_postings_res,
-    ) = tokio::join!(
+
+    tokio::try_join!(
         warm_up_terms_future,
+        warm_up_term_ranges_future,
         warm_up_fastfields_future,
         warm_up_term_dict_future,
         warm_up_fieldnorms_future,
         warm_up_postings_future,
-    );
-    warm_up_terms_res?;
-    warm_up_fastfields_res?;
-    warm_up_term_dict_res?;
-    warm_up_fieldnorms_res?;
-    warm_up_postings_res?;
+    )?;
+
     Ok(())
 }
 
@@ -275,6 +270,29 @@ async fn warm_up_terms(
                 let inv_idx_clone = inv_idx.clone();
                 warm_up_futures
                     .push(async move { inv_idx_clone.warm_postings(term, *position_needed).await });
+            }
+        }
+    }
+    try_join_all(warm_up_futures).await?;
+    Ok(())
+}
+
+async fn warm_up_term_ranges(
+    searcher: &Searcher,
+    terms_grouped_by_field: &HashMap<Field, HashMap<TermRange, bool>>,
+) -> anyhow::Result<()> {
+    let mut warm_up_futures = Vec::new();
+    for (field, terms) in terms_grouped_by_field {
+        for segment_reader in searcher.segment_readers() {
+            let inv_idx = segment_reader.inverted_index(*field)?;
+            for (term_range, position_needed) in terms.iter() {
+                let inv_idx_clone = inv_idx.clone();
+                let range = (term_range.start.as_ref(), term_range.end.as_ref());
+                warm_up_futures.push(async move {
+                    inv_idx_clone
+                        .warm_postings_range(range, term_range.limit, *position_needed)
+                        .await
+                });
             }
         }
     }

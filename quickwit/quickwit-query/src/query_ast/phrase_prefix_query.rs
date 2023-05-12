@@ -19,7 +19,8 @@
 
 use serde::{Deserialize, Serialize};
 use tantivy::query::PhrasePrefixQuery as TantivyPhrasePrefixQuery;
-use tantivy::schema::{FieldType, Schema as TantivySchema};
+use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
+use tantivy::Term;
 
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{BuildTantivyAst, FullTextParams, QueryAst};
@@ -38,19 +39,11 @@ pub struct PhrasePrefixQuery {
     pub analyzer: FullTextParams,
 }
 
-impl From<PhrasePrefixQuery> for QueryAst {
-    fn from(phrase_query: PhrasePrefixQuery) -> Self {
-        QueryAst::PhrasePrefix(phrase_query)
-    }
-}
-
-impl BuildTantivyAst for PhrasePrefixQuery {
-    fn build_tantivy_ast_impl(
+impl PhrasePrefixQuery {
+    pub fn get_terms(
         &self,
         schema: &TantivySchema,
-        _search_fields: &[String],
-        _with_validation: bool,
-    ) -> Result<TantivyQueryAst, InvalidQuery> {
+    ) -> Result<(Field, Vec<(usize, Term)>), InvalidQuery> {
         let (field, field_entry, _path) = find_field_or_hit_dynamic(&self.field, schema)?;
         let field_type = field_entry.field_type();
 
@@ -76,13 +69,7 @@ impl BuildTantivyAst for PhrasePrefixQuery {
                     &self.phrase,
                     text_field_indexing,
                 )?;
-                if terms.is_empty() {
-                    Ok(TantivyQueryAst::match_none())
-                } else {
-                    let mut phrase_prefix_query = TantivyPhrasePrefixQuery::new_with_offset(terms);
-                    phrase_prefix_query.set_max_expansions(self.max_expansions);
-                    Ok(phrase_prefix_query.into())
-                }
+                Ok((field, terms))
             }
             FieldType::JsonObject(_json_options) => {
                 // It should be possible to implement this by first tokenizing the text, prefixing
@@ -93,6 +80,31 @@ impl BuildTantivyAst for PhrasePrefixQuery {
             _ => Err(InvalidQuery::SchemaError(
                 "Trying to run a PhrasePrefix query on a non-text field.".to_string(),
             )),
+        }
+    }
+}
+
+impl From<PhrasePrefixQuery> for QueryAst {
+    fn from(phrase_query: PhrasePrefixQuery) -> Self {
+        QueryAst::PhrasePrefix(phrase_query)
+    }
+}
+
+impl BuildTantivyAst for PhrasePrefixQuery {
+    fn build_tantivy_ast_impl(
+        &self,
+        schema: &TantivySchema,
+        _search_fields: &[String],
+        _with_validation: bool,
+    ) -> Result<TantivyQueryAst, InvalidQuery> {
+        let (_, terms) = self.get_terms(schema)?;
+
+        if terms.is_empty() {
+            Ok(TantivyQueryAst::match_none())
+        } else {
+            let mut phrase_prefix_query = TantivyPhrasePrefixQuery::new_with_offset(terms);
+            phrase_prefix_query.set_max_expansions(self.max_expansions);
+            Ok(phrase_prefix_query.into())
         }
     }
 }

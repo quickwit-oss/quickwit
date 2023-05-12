@@ -76,7 +76,7 @@ impl ConvertableToQueryAst for MatchPhrasePrefix {
 
 #[cfg(test)]
 mod tests {
-    use super::{MatchPhrasePrefix, PhrasePrefixValue};
+    use super::{MatchAllOrNone, MatchPhrasePrefix, PhrasePrefixValue};
 
     #[test]
     fn test_term_query_simple() {
@@ -89,10 +89,10 @@ mod tests {
                 analyzer: None,
                 max_expansions: 50,
                 slop: 0,
-                zero_terms_query: None,
+                zero_terms_query: MatchAllOrNone::MatchNone,
             },
         };
 
-        assert_eq!(&phrase_prefix, &expected,);
+        assert_eq!(&phrase_prefix, &expected);
     }
 }
