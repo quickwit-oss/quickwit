@@ -22,14 +22,22 @@ use std::time::Instant;
 
 use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticSearchResponse};
 use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
+use futures::StreamExt;
+use hyper::header::CONTENT_TYPE;
+use hyper::StatusCode;
 use quickwit_proto::{SearchResponse, ServiceErrorCode, SortOrder};
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::DefaultOperator;
 use quickwit_search::{SearchError, SearchService};
-use warp::{Filter, Rejection};
+use serde_json::json;
+use tracing::info;
+use warp::reply::{WithHeader, WithStatus};
+use warp::{reply, Filter, Rejection};
 
-use super::model::{SearchBody, SearchQueryParams};
+use super::filter::elastic_multi_search_filter;
+use super::model::{ElasticSearchError, MultiSearchQueryParams, SearchBody, SearchQueryParams};
 use crate::elastic_search_api::filter::elastic_index_search_filter;
+use crate::elastic_search_api::model::{RequestBody, RequestHeader};
 use crate::format::{ApiError, BodyFormat};
 use crate::with_arg;
 
@@ -55,14 +63,14 @@ pub fn es_compat_index_search_handler(
     elastic_index_search_filter()
         .and(with_arg(search_service))
         .then(es_compat_index_search)
-        .map(|resp| BodyFormat::Json.make_rest_reply(resp))
+        .map(make_rest_reply)
 }
 
 fn build_request_for_es_api(
     index_id: String,
     search_params: SearchQueryParams,
     search_body: SearchBody,
-) -> Result<quickwit_proto::SearchRequest, SearchError> {
+) -> Result<quickwit_proto::SearchRequest, ElasticSearchError> {
     let default_operator = search_params
         .default_operator
         .unwrap_or(DefaultOperator::Or);
@@ -78,7 +86,7 @@ fn build_request_for_es_api(
     } else if let Some(query_dsl) = search_body.query {
         query_dsl
             .try_into()
-            .map_err(|err: anyhow::Error| SearchError::InvalidQuery(err.to_string()))?
+            .map_err(|err: anyhow::Error| ElasticSearchError::new(400, err))?
     } else {
         QueryAst::MatchAll
     };
@@ -104,9 +112,11 @@ fn build_request_for_es_api(
         .unwrap_or_default();
 
     if sort_fields.len() >= 2 {
-        return Err(SearchError::InvalidArgument(format!(
-            "Only one search field is supported at the moment. Got {:?}",
-            sort_fields
+        return Err(ElasticSearchError::from(SearchError::InvalidArgument(
+            format!(
+                "Only one search field is supported at the moment. Got {:?}",
+                sort_fields
+            ),
         )));
     }
 
@@ -134,7 +144,7 @@ async fn es_compat_index_search(
     search_params: SearchQueryParams,
     search_body: SearchBody,
     search_service: Arc<dyn SearchService>,
-) -> Result<ElasticSearchResponse, SearchError> {
+) -> Result<ElasticSearchResponse, ElasticSearchError> {
     let start_instant = Instant::now();
     let search_request = build_request_for_es_api(index_id, search_params, search_body)?;
     let search_response: SearchResponse = search_service.root_search(search_request).await?;
@@ -184,4 +194,156 @@ fn convert_to_es_search_response(resp: SearchResponse) -> ElasticSearchResponse 
         aggregations,
         ..Default::default()
     }
+}
+
+/// POST _elastic/_msearch
+pub fn es_compat_index_multi_search_handler(
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_multi_search_filter()
+        .and(with_arg(search_service))
+        .then(es_compat_index_multi_search)
+        .map(make_rest_reply)
+}
+
+async fn es_compat_index_multi_search(
+    payload: String,
+    multi_search_params: MultiSearchQueryParams,
+    search_service: Arc<dyn SearchService>,
+) -> Result<serde_json::Value, ElasticSearchError> {
+    let mut search_requests = Vec::new();
+    let mut payload_lines = lines(&payload);
+
+    while let Some(json_str) = payload_lines.next() {
+        let request_header = serde_json::from_str::<RequestHeader>(json_str)
+            .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
+        let index_ids = request_header
+            .index
+            .ok_or_else(|| SearchError::InvalidQuery("Index must be present".to_string()))?;
+        if index_ids.len() != 1 {
+            return Err(ElasticSearchError::from(SearchError::InvalidQuery(
+                "Search on only one index is supported".to_string(),
+            )));
+        }
+        let index_id = index_ids.into_iter().next().unwrap();
+        let request_body = payload_lines
+            .next()
+            .ok_or_else(|| {
+                SearchError::InvalidQuery("Expect request body after request header".to_string())
+            })
+            .and_then(|source| {
+                serde_json::from_str::<RequestBody>(source)
+                    .map_err(|err| SearchError::InvalidQuery(err.to_string()))
+            })?;
+        let search_query_params = SearchQueryParams {
+            allow_no_indices: request_header.allow_no_indices,
+            expand_wildcards: request_header.expand_wildcards,
+            ignore_unavailable: request_header.ignore_unavailable,
+            routing: request_header.routing,
+            // FIXME: add sort
+            ..Default::default()
+        };
+        info!("sort {:?}", request_body.sort);
+        let search_body = SearchBody {
+            query: request_body.query,
+            aggs: request_body.aggs,
+            from: request_body.from,
+            size: request_body.size,
+            sort: request_body.sort,
+            ..Default::default()
+        };
+        let es_request = build_request_for_es_api(index_id, search_query_params, search_body)?;
+        search_requests.push(es_request);
+    }
+
+    let futures = search_requests.into_iter().map(|search_request| async {
+        let start_instant = Instant::now();
+        let search_response: SearchResponse =
+            search_service.clone().root_search(search_request).await?;
+        let elapsed = start_instant.elapsed();
+        let mut search_response_rest: ElasticSearchResponse =
+            convert_to_es_search_response(search_response);
+        search_response_rest.took = elapsed.as_millis() as u32;
+        Ok::<_, ElasticSearchError>(search_response_rest)
+    });
+
+    let max_concurrent_searches =
+        multi_search_params.max_concurrent_searches.unwrap_or(10) as usize;
+    let search_responses = futures::stream::iter(futures)
+        .buffer_unordered(max_concurrent_searches)
+        .collect::<Vec<_>>()
+        .await;
+
+    let json_responses = search_responses
+        .into_iter()
+        .map(|search_response| {
+            let value = match search_response {
+                Ok(search_response) => {
+                    let mut json_response =
+                        serde_json::to_value(&search_response).map_err(|err| {
+                            ElasticSearchError::new(500, anyhow::anyhow!(err.to_string()))
+                        })?;
+                    json_response
+                        .as_object_mut()
+                        .unwrap()
+                        .insert("status".to_string(), json!(200));
+                    Ok::<_, ElasticSearchError>(json_response)
+                }
+                Err(error) => {
+                    info!(error = ?error, "Search error");
+                    Ok(serde_json::to_value(&error).expect("msg"))
+                }
+            };
+            value
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let responses = serde_json::Value::Array(json_responses);
+    let mut root = serde_json::Map::new();
+    root.insert("responses".to_string(), responses);
+    Ok(serde_json::Value::Object(root))
+}
+
+fn lines(body: &str) -> impl Iterator<Item = &str> {
+    body.lines().filter_map(|line| {
+        let line_trimmed = line.trim();
+        if line_trimmed.is_empty() {
+            return None;
+        }
+        Some(line_trimmed)
+    })
+}
+
+// TODO: add a config variable to set this header
+// let reply_with_header = reply::with_header(body_json, "x-elastic-product", "Elasticsearch");
+fn make_rest_reply<T: serde::Serialize>(
+    result: Result<T, ElasticSearchError>,
+) -> WithStatus<WithHeader<String>> {
+    match result {
+        Ok(success) => {
+            let body_json_res = serde_json::to_string(&success);
+            match body_json_res {
+                Ok(body_json) => {
+                    let reply_with_header =
+                        reply::with_header(body_json, CONTENT_TYPE, "application/json");
+                    reply::with_status(reply_with_header, StatusCode::OK)
+                }
+                Err(err) => {
+                    tracing::error!("Error: the response serialization failed.");
+                    let es_error = ElasticSearchError::new(500, anyhow::anyhow!(err));
+                    make_rest_error_reply(es_error)
+                }
+            }
+        }
+        Err(err) => make_rest_error_reply(err),
+    }
+}
+
+fn make_rest_error_reply(err: ElasticSearchError) -> WithStatus<WithHeader<String>> {
+    let body_json =
+        serde_json::to_string(&err).expect("ElasticSearchError serialization should never fail.");
+    let reply_with_header = reply::with_header(body_json, CONTENT_TYPE, "application/json");
+    reply::with_status(
+        reply_with_header,
+        StatusCode::from_u16(err.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+    )
 }

@@ -17,8 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod error_body;
+mod multi_search_query_params;
 mod search_body;
 mod search_query_params;
 
+pub use error_body::ElasticSearchError;
+pub use multi_search_query_params::{MultiSearchQueryParams, RequestBody, RequestHeader};
 pub use search_body::SearchBody;
 pub use search_query_params::SearchQueryParams;

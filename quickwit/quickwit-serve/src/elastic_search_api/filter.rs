@@ -20,12 +20,14 @@
 use byte_unit::Byte;
 use bytes::Bytes;
 use serde::de::DeserializeOwned;
+use thiserror::Error;
 use warp::reject::LengthRequired;
 use warp::{Filter, Rejection};
 
 use crate::elastic_search_api::model::{SearchBody, SearchQueryParams};
 
 const BODY_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(1_000_000);
+use super::model::MultiSearchQueryParams;
 
 #[utoipa::path(get, tag = "Search", path = "/_search")]
 pub(crate) fn elastic_search_filter(
@@ -80,4 +82,26 @@ pub(crate) fn elastic_index_search_filter(
         .and(warp::get().or(warp::post()).unify())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(json_or_empty())
+}
+
+const CONTENT_LENGTH_LIMIT: u64 = 10 * 1024 * 1024; // 10MiB
+
+#[derive(Debug, Error)]
+#[error("Body is not utf-8.")]
+struct InvalidUtf8;
+impl warp::reject::Reject for InvalidUtf8 {}
+
+#[utoipa::path(get, tag = "Search", path = "/_msearch")]
+pub(crate) fn elastic_multi_search_filter(
+) -> impl Filter<Extract = (String, MultiSearchQueryParams), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_msearch")
+        .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
+        .and(warp::body::bytes().and_then(|body: Bytes| async move {
+            if let Ok(body_str) = std::str::from_utf8(&body) {
+                Ok(body_str.to_string())
+            } else {
+                Err(warp::reject::custom(InvalidUtf8))
+            }
+        }))
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
 }

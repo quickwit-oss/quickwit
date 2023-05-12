@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
 use crate::elastic_search_api::rest_handler::{
-    es_compat_index_search_handler, es_compat_search_handler,
+    es_compat_index_multi_search_handler, es_compat_index_search_handler, es_compat_search_handler,
 };
 
 /// Setup Elasticsearch API handlers
@@ -40,6 +40,7 @@ pub fn elastic_api_handlers(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     es_compat_search_handler(search_service.clone())
         .or(es_compat_index_search_handler(search_service.clone()))
+        .or(es_compat_index_multi_search_handler(search_service.clone()))
     // Register newly created handlers here.
 }
 

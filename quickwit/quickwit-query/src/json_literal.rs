@@ -119,7 +119,11 @@ impl<'a> InterpretUserInput<'a> for Ipv6Addr {
 impl<'a> InterpretUserInput<'a> for tantivy::DateTime {
     fn interpret(user_input: &JsonLiteral) -> Option<tantivy::DateTime> {
         match user_input {
-            JsonLiteral::Number(_) => None,
+            JsonLiteral::Number(number) => {
+                let dt =
+                    OffsetDateTime::from_unix_timestamp_nanos(number.as_i64()? as i128).ok()?;
+                Some(tantivy::DateTime::from_utc(dt))
+            }
             JsonLiteral::String(text) => {
                 let dt = OffsetDateTime::parse(text, &Rfc3339).ok()?;
                 Some(tantivy::DateTime::from_utc(dt))
