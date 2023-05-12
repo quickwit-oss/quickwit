@@ -469,7 +469,7 @@ mod pulsar_broker_tests {
     use futures::future::join_all;
     use quickwit_actors::{ActorHandle, Inbox, Universe, HEARTBEAT};
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
+    use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpointDelta,
     };
@@ -565,6 +565,7 @@ mod pulsar_broker_tests {
                 authentication: None,
             }),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         (source_id, source_config)
     }

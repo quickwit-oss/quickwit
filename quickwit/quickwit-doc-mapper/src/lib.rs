@@ -40,7 +40,7 @@ pub use default_doc_mapper::{
 use default_doc_mapper::{
     FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
 };
-pub use doc_mapper::{DocMapper, NamedField, WarmupInfo};
+pub use doc_mapper::{DocMapper, JsonObject, NamedField, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
 
 /// Field name reserved for storing the source document.

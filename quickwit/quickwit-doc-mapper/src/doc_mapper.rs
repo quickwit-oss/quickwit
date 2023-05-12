@@ -31,6 +31,7 @@ use tantivy::{Document, Term};
 
 pub type Partition = u64;
 
+/// An alias for serde_json's object type.
 pub type JsonObject = serde_json::Map<String, JsonValue>;
 
 use crate::{DocParsingError, QueryParserError};
@@ -59,7 +60,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
         let json_obj: JsonObject = serde_json::from_slice(json_doc).map_err(|_| {
             let json_doc_sample: String = std::str::from_utf8(json_doc)
                 .map(|doc_str| doc_str.chars().take(20).chain("...".chars()).collect())
-                .unwrap_or_else(|_| "Doc contains some invalid UTF-8 characters.".to_string());
+                .unwrap_or_else(|_| "Document contains some invalid UTF-8 characters.".to_string());
             DocParsingError::NotJsonObject(json_doc_sample)
         })?;
         self.doc_from_json_obj(json_obj)

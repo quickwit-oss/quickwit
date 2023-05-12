@@ -222,7 +222,9 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, INGEST_API_SOURCE_ID};
+    use quickwit_config::{
+        IngestApiConfig, SourceConfig, SourceInputFormat, SourceParams, INGEST_API_SOURCE_ID,
+    };
     use quickwit_ingest::{init_ingest_api, CommitType, DocBatchBuilder, IngestRequest};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
@@ -263,6 +265,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         }
     }
 

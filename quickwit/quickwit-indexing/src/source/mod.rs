@@ -374,7 +374,7 @@ mod tests {
 
     use std::num::NonZeroUsize;
 
-    use quickwit_config::VecSourceParams;
+    use quickwit_config::{SourceInputFormat, VecSourceParams};
 
     use super::*;
 
@@ -388,6 +388,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::void(),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             };
             check_source_connectivity(&source_config).await?;
         }
@@ -399,6 +400,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             };
             check_source_connectivity(&source_config).await?;
         }
@@ -410,6 +412,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::file("file-does-not-exist.json"),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             };
             assert!(check_source_connectivity(&source_config).await.is_err());
         }
@@ -421,6 +424,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::file("data/test_corpus.json"),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             };
             assert!(check_source_connectivity(&source_config).await.is_ok());
         }

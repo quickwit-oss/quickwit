@@ -29,7 +29,7 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{
     build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, IngestApiConfig, SourceConfig,
-    SourceParams, VecSourceParams,
+    SourceInputFormat, SourceParams, VecSourceParams,
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::{init_ingest_api, QUEUES_DIR_NAME};
@@ -157,6 +157,7 @@ impl TestSandbox {
                 partition: format!("add-docs-{add_docs_id}"),
             }),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let pipeline_id = self
             .indexing_service

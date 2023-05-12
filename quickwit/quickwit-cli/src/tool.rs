@@ -37,8 +37,8 @@ use quickwit_common::uri::Uri;
 use quickwit_common::{GREEN_COLOR, RED_COLOR};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    IndexerConfig, QuickwitConfig, SourceConfig, SourceParams, TransformConfig, VecSourceParams,
-    CLI_INGEST_SOURCE_ID,
+    IndexerConfig, QuickwitConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
+    VecSourceParams, CLI_INGEST_SOURCE_ID,
 };
 use quickwit_core::{clear_cache_directory, IndexService};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
@@ -303,6 +303,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         enabled: true,
         source_params,
         transform_config,
+        input_format: SourceInputFormat::Json,
     };
     run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source_config)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
@@ -436,6 +437,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
             pipeline_ord: 0,
         })

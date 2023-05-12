@@ -573,7 +573,7 @@ mod tests {
     use std::num::NonZeroUsize;
     use std::str::FromStr;
 
-    use quickwit_config::SourceParams;
+    use quickwit_config::{SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{PartitionId, Position};
     use serde_json::json;
 
@@ -763,6 +763,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::file("path/to/file"),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         }];
         let expected_source = vec![SourceRow {
             source_id: "foo-source".to_string(),
@@ -823,6 +824,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::stdin(),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
             SourceConfig {
                 source_id: "bar-source".to_string(),
@@ -831,6 +833,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::stdin(),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
         ];
         let expected_sources = [

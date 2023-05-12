@@ -175,7 +175,7 @@ mod tests {
     use std::path::PathBuf;
 
     use quickwit_actors::{Command, Universe};
-    use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
 
@@ -201,6 +201,7 @@ mod tests {
                     enabled: true,
                     source_params: SourceParams::File(params.clone()),
                     transform_config: None,
+                    input_format: SourceInputFormat::Json,
                 },
             ),
             params,
@@ -266,6 +267,7 @@ mod tests {
                     enabled: true,
                     source_params: SourceParams::File(params.clone()),
                     transform_config: None,
+                    input_format: SourceInputFormat::Json,
                 },
             ),
             params,
@@ -355,6 +357,7 @@ mod tests {
                     enabled: true,
                     source_params: SourceParams::File(params.clone()),
                     transform_config: None,
+                    input_format: SourceInputFormat::Json,
                 },
             ),
             params,
