@@ -44,12 +44,11 @@ impl PhrasePrefixQuery {
         &self,
         schema: &TantivySchema,
     ) -> Result<(Field, Vec<(usize, Term)>), InvalidQuery> {
-        let (field, field_entry, _path) = find_field_or_hit_dynamic(&self.field, schema)?;
+        let (field, field_entry, json_path) = find_field_or_hit_dynamic(&self.field, schema)?;
         let field_type = field_entry.field_type();
 
         match field_type {
             FieldType::Str(ref text_options) => {
-                // TODO support custom slop and zero_terms_query
                 let text_field_indexing = text_options.get_indexing_options().ok_or_else(|| {
                     InvalidQuery::SchemaError(format!(
                         "Field {} is not full-text searchable",
@@ -71,11 +70,28 @@ impl PhrasePrefixQuery {
                 )?;
                 Ok((field, terms))
             }
-            FieldType::JsonObject(_json_options) => {
-                // It should be possible to implement this by first tokenizing the text, prefixing
-                // each token by the path, and passing that to a normal PhrasePrefixQuery, however
-                // this is not implemented yet.
-                todo!()
+            FieldType::JsonObject(json_options) => {
+                let text_field_indexing =
+                    json_options.get_text_indexing_options().ok_or_else(|| {
+                        InvalidQuery::SchemaError(format!(
+                            "Field {} is not full-text searchable",
+                            field_entry.name()
+                        ))
+                    })?;
+                if !text_field_indexing.index_option().has_positions() {
+                    return Err(InvalidQuery::SchemaError(
+                        "Trying to run a PhrasePrefix query on a field which does not have \
+                         positions indexed."
+                            .to_string(),
+                    ));
+                }
+                let terms = self.analyzer.tokenize_text_into_terms_json(
+                    field,
+                    json_path,
+                    &self.phrase,
+                    json_options,
+                )?;
+                Ok((field, terms))
             }
             _ => Err(InvalidQuery::SchemaError(
                 "Trying to run a PhrasePrefix query on a non-text field.".to_string(),
@@ -100,7 +116,11 @@ impl BuildTantivyAst for PhrasePrefixQuery {
         let (_, terms) = self.get_terms(schema)?;
 
         if terms.is_empty() {
-            Ok(TantivyQueryAst::match_none())
+            if self.analyzer.zero_terms_query.is_none() {
+                Ok(TantivyQueryAst::match_none())
+            } else {
+                Ok(TantivyQueryAst::match_all())
+            }
         } else {
             let mut phrase_prefix_query = TantivyPhrasePrefixQuery::new_with_offset(terms);
             phrase_prefix_query.set_max_expansions(self.max_expansions);
