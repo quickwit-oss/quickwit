@@ -24,7 +24,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
 use quickwit_config::IndexConfig;
-use quickwit_metastore::{IndexConfigId, Metastore};
+use quickwit_metastore::Metastore;
+use quickwit_proto::IndexUid;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::StorageUriResolver;
 use serde::Serialize;
@@ -44,7 +45,7 @@ pub struct DeleteTaskService {
     search_job_placer: SearchJobPlacer,
     storage_resolver: StorageUriResolver,
     data_dir_path: PathBuf,
-    pipeline_handles_by_index_config_id: HashMap<IndexConfigId, ActorHandle<DeleteTaskPipeline>>,
+    pipeline_handles_by_index_uid: HashMap<IndexUid, ActorHandle<DeleteTaskPipeline>>,
     max_concurrent_split_uploads: usize,
 }
 
@@ -61,7 +62,7 @@ impl DeleteTaskService {
             search_job_placer,
             storage_resolver,
             data_dir_path,
-            pipeline_handles_by_index_config_id: Default::default(),
+            pipeline_handles_by_index_uid: Default::default(),
             max_concurrent_split_uploads,
         }
     }
@@ -73,7 +74,7 @@ impl Actor for DeleteTaskService {
 
     fn observable_state(&self) -> Self::ObservableState {
         DeleteTaskServiceState {
-            num_running_pipelines: self.pipeline_handles_by_index_config_id.len(),
+            num_running_pipelines: self.pipeline_handles_by_index_uid.len(),
         }
     }
 
@@ -92,49 +93,45 @@ impl DeleteTaskService {
         &mut self,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
-        let mut index_config_by_index_id: HashMap<IndexConfigId, IndexConfig> = self
+        let mut index_config_by_index_id: HashMap<IndexUid, IndexConfig> = self
             .metastore
             .list_indexes_metadatas()
             .await?
             .into_iter()
             .map(|index_metadata| {
                 (
-                    index_metadata.index_config_id(),
+                    index_metadata.index_uid.clone(),
                     index_metadata.into_index_config(),
                 )
             })
             .collect();
-        let index_config_ids: HashSet<IndexConfigId> =
-            index_config_by_index_id.keys().cloned().collect();
-        let pipeline_index_config_ids: HashSet<IndexConfigId> = self
-            .pipeline_handles_by_index_config_id
-            .keys()
-            .cloned()
-            .collect();
+        let index_uids: HashSet<IndexUid> = index_config_by_index_id.keys().cloned().collect();
+        let pipeline_index_uids: HashSet<IndexUid> =
+            self.pipeline_handles_by_index_uid.keys().cloned().collect();
 
         // Remove pipelines on deleted indexes.
-        for deleted_index_config_id in pipeline_index_config_ids.difference(&index_config_ids) {
+        for deleted_index_uid in pipeline_index_uids.difference(&index_uids) {
             info!(
-                deleted_index_id = deleted_index_config_id.index_id,
+                deleted_index_id = deleted_index_uid.index_id(),
                 "Remove deleted index from delete task pipelines."
             );
             let pipeline_handle = self
-                .pipeline_handles_by_index_config_id
-                .remove(deleted_index_config_id)
+                .pipeline_handles_by_index_uid
+                .remove(deleted_index_uid)
                 .expect("Handle must be present.");
             // Kill the pipeline, this avoids to wait a long time for a delete operation to finish.
             pipeline_handle.kill().await;
         }
 
         // Start new pipelines and add them to the handles hashmap.
-        for index_config_id in index_config_ids.difference(&pipeline_index_config_ids) {
+        for index_uid in index_uids.difference(&pipeline_index_uids) {
             let index_config = index_config_by_index_id
-                .remove(index_config_id)
+                .remove(index_uid)
                 .expect("Index metadata must be present.");
             if self.spawn_pipeline(index_config, ctx).await.is_err() {
                 warn!(
                     "Failed to spawn delete pipeline for {}",
-                    index_config_id.index_id
+                    index_uid.index_id()
                 );
             }
         }
@@ -155,7 +152,7 @@ impl DeleteTaskService {
             .index_metadata(index_config.index_id.as_str())
             .await?;
         let pipeline = DeleteTaskPipeline::new(
-            index_metadata.index_config_id(),
+            index_metadata.index_uid.clone(),
             self.metastore.clone(),
             self.search_job_placer.clone(),
             index_config.indexing_settings,
@@ -164,8 +161,8 @@ impl DeleteTaskService {
             self.max_concurrent_split_uploads,
         );
         let (_pipeline_mailbox, pipeline_handler) = ctx.spawn_actor().spawn(pipeline);
-        self.pipeline_handles_by_index_config_id
-            .insert(index_metadata.index_config_id(), pipeline_handler);
+        self.pipeline_handles_by_index_uid
+            .insert(index_metadata.index_uid, pipeline_handler);
         Ok(())
     }
 }
@@ -217,6 +214,7 @@ mod tests {
                 fast: true
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+        let index_uid = test_sandbox.index_uid();
         let metastore = test_sandbox.metastore();
         let mock_search_service = MockSearchService::new();
         let client_pool =
@@ -243,7 +241,7 @@ mod tests {
             .await;
         assert_eq!(state.num_running_pipelines, 1);
         let delete_query = DeleteQuery {
-            index_id: index_id.to_string(),
+            index_uid: index_uid.to_string(),
             start_timestamp: None,
             end_timestamp: None,
             query_ast: r#"{"type": "MatchAll"}"#.to_string(),
@@ -252,13 +250,13 @@ mod tests {
         // Just test creation of delete query.
         assert_eq!(
             metastore
-                .list_delete_tasks(index_id, 0)
+                .list_delete_tasks(index_uid.clone(), 0)
                 .await
                 .unwrap()
                 .len(),
             1
         );
-        metastore.delete_index(index_id).await.unwrap();
+        metastore.delete_index(index_uid.clone()).await.unwrap();
         test_sandbox.universe().sleep(HEARTBEAT * 2).await;
         let state_after_deletion = delete_task_service_handler
             .process_pending_and_observe()

@@ -31,11 +31,12 @@ pub mod retrying_metastore;
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
-pub use index_metadata::{IndexConfigId, IndexMetadata};
+pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::IndexUid;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
@@ -101,7 +102,7 @@ pub trait Metastore: Send + Sync + 'static {
     ///
     /// This API creates a new index in the metastore.
     /// An error will occur if an index that already exists in the storage is specified.
-    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()>;
+    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<IndexUid>;
 
     /// Returns whether the index `index_id` exists in the metastore.
     async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
@@ -110,6 +111,12 @@ pub trait Metastore: Send + Sync + 'static {
             Err(MetastoreError::IndexDoesNotExist { .. }) => Ok(false),
             Err(error) => Err(error),
         }
+    }
+
+    /// Returns index uid for the given index.
+    async fn index_uid(&self, index_id: &str) -> MetastoreResult<IndexUid> {
+        let index_uid = self.index_metadata(index_id).await?.index_uid;
+        Ok(index_uid)
     }
 
     /// Returns the [`IndexMetadata`] for a given index.
@@ -127,7 +134,7 @@ pub trait Metastore: Send + Sync + 'static {
     /// This API removes the specified  from the metastore, but does not remove the index from the
     /// storage. An error will occur if an index that does not exist in the storage is
     /// specified.
-    async fn delete_index(&self, index_id: &str) -> MetastoreResult<()>;
+    async fn delete_index(&self, index_uid: IndexUid) -> MetastoreResult<()>;
 
     // Split API
 
@@ -142,7 +149,7 @@ pub trait Metastore: Send + Sync + 'static {
     /// An error will occur if an index that does not exist in the storage is specified.
     async fn stage_splits(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_metadata_list: Vec<SplitMetadata>,
     ) -> MetastoreResult<()>;
 
@@ -158,7 +165,7 @@ pub trait Metastore: Send + Sync + 'static {
     /// `staged_split_ids`.
     async fn publish_splits<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         staged_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
@@ -169,26 +176,26 @@ pub trait Metastore: Send + Sync + 'static {
     /// Returns a list of splits that intersects the given `time_range`, `split_state`, and `tag`.
     /// Regardless of the time range filter, if a split has no timestamp it is always returned.
     /// An error will occur if an index that does not exist in the storage is specified.
-    async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>>;
+    async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>>;
 
     /// Lists all the splits without filtering.
     ///
     /// Returns a list of all splits currently known to the metastore regardless of their state.
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
-        let query = ListSplitsQuery::for_index(index_id);
+    async fn list_all_splits(&self, index_uid: IndexUid) -> MetastoreResult<Vec<Split>> {
+        let query = ListSplitsQuery::for_index(index_uid);
         self.list_splits(query).await
     }
 
-    /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+    /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_uid`.
     /// These splits are called "stale" as they have an `delete_opstamp` strictly inferior
     /// to the given `delete_opstamp`.
     async fn list_stale_splits(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
-        let query = ListSplitsQuery::for_index(index_id)
+        let query = ListSplitsQuery::for_index(index_uid)
             .with_delete_opstamp_lt(delete_opstamp)
             .with_split_state(SplitState::Published);
 
@@ -215,7 +222,7 @@ pub trait Metastore: Send + Sync + 'static {
     /// error will occur if you specify an index or split that does not exist in the storage.
     async fn mark_splits_for_deletion<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()>;
 
@@ -225,8 +232,11 @@ pub trait Metastore: Send + Sync + 'static {
     /// [`SplitState::MarkedForDeletion`] state. This removes the split metadata from the
     /// metastore, but does not remove the split from storage. An error will occur if you
     /// specify an index or split that does not exist in the storage.
-    async fn delete_splits<'a>(&self, index_id: &str, split_ids: &[&'a str])
-        -> MetastoreResult<()>;
+    async fn delete_splits<'a>(
+        &self,
+        index_uid: IndexUid,
+        split_ids: &[&'a str],
+    ) -> MetastoreResult<()>;
 
     // Source API
 
@@ -235,20 +245,23 @@ pub trait Metastore: Send + Sync + 'static {
     /// same ID is already defined for the index.
     ///
     /// If a checkpoint is already registered for the source, it is kept.
-    async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()>;
+    async fn add_source(&self, index_uid: IndexUid, source: SourceConfig) -> MetastoreResult<()>;
 
     /// Enables or Disables a source.
     /// Fails with `SourceDoesNotExist` error if the specified source doesn't exist.
     async fn toggle_source(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         source_id: &str,
         enable: bool,
     ) -> MetastoreResult<()>;
 
-    /// Resets the checkpoint of a source identified by `index_id` and `source_id`.
-    async fn reset_source_checkpoint(&self, index_id: &str, source_id: &str)
-        -> MetastoreResult<()>;
+    /// Resets the checkpoint of a source identified by `index_uid` and `source_id`.
+    async fn reset_source_checkpoint(
+        &self,
+        index_uid: IndexUid,
+        source_id: &str,
+    ) -> MetastoreResult<()>;
 
     /// Deletes a source. Fails with
     /// [`SourceDoesNotExist`](crate::MetastoreError::SourceDoesNotExist) if the specified source
@@ -256,20 +269,20 @@ pub trait Metastore: Send + Sync + 'static {
     ///
     /// The checkpoint associated to the source is deleted as well.
     /// If the checkpoint is missing, this does not trigger an error.
-    async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()>;
+    async fn delete_source(&self, index_uid: IndexUid, source_id: &str) -> MetastoreResult<()>;
 
     // Delete tasks API
 
     /// Creates a new [`DeleteTask`] from a [`DeleteQuery`].
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask>;
 
-    /// Retrieves the last delete opstamp for a given `index_id`.
-    async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64>;
+    /// Retrieves the last delete opstamp for a given `index_uid`.
+    async fn last_delete_opstamp(&self, index_uid: IndexUid) -> MetastoreResult<u64>;
 
     /// Updates splits `split_metadata.delete_opstamp` to the value `delete_opstamp`.
     async fn update_splits_delete_opstamp<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
         delete_opstamp: u64,
     ) -> MetastoreResult<()>;
@@ -277,16 +290,16 @@ pub trait Metastore: Send + Sync + 'static {
     /// Lists [`DeleteTask`] with `delete_task.opstamp` > `opstamp_start` for a given `index_id`.
     async fn list_delete_tasks(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>>;
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 /// A query builder for listing splits within the metastore.
-pub struct ListSplitsQuery<'a> {
+pub struct ListSplitsQuery {
     /// The index to get splits from.
-    pub index_id: &'a str,
+    pub index_uid: IndexUid,
 
     /// The maximum number of splits to retrieve.
     pub limit: Option<usize>,
@@ -314,11 +327,11 @@ pub struct ListSplitsQuery<'a> {
 }
 
 #[allow(unused_attributes)]
-impl<'a> ListSplitsQuery<'a> {
+impl ListSplitsQuery {
     /// Creates a new [ListSplitsQuery] for a specific index.
-    pub fn for_index(index_id: &'a str) -> Self {
+    pub fn for_index(index_uid: IndexUid) -> Self {
         Self {
-            index_id,
+            index_uid,
             limit: None,
             offset: None,
             split_states: Vec::new(),

@@ -31,6 +31,7 @@ use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitState,
 };
+use quickwit_proto::IndexUid;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -176,7 +177,7 @@ async fn describe_index(
     metastore: Arc<dyn Metastore>,
 ) -> Result<IndexStats, MetastoreError> {
     let index_metadata = metastore.index_metadata(&index_id).await?;
-    let query = ListSplitsQuery::for_index(&index_id);
+    let query = ListSplitsQuery::for_index(index_metadata.index_uid.clone());
     let splits = metastore.list_splits(query).await?;
     let published_splits: Vec<Split> = splits
         .into_iter()
@@ -273,8 +274,9 @@ async fn list_splits(
     list_split_query: ListSplitsQueryParams,
     metastore: Arc<dyn Metastore>,
 ) -> Result<Vec<Split>, MetastoreError> {
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     info!(index_id = %index_id, list_split_query = ?list_split_query, "get-splits");
-    let mut query = ListSplitsQuery::for_index(&index_id);
+    let mut query = ListSplitsQuery::for_index(index_uid);
     if let Some(split_states) = list_split_query.split_states {
         query = query.with_split_states(split_states);
     }
@@ -326,6 +328,7 @@ async fn mark_splits_for_deletion(
     splits_for_deletion: SplitsForDeletion,
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), MetastoreError> {
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     info!(index_id = %index_id, splits_ids = ?splits_for_deletion.split_ids, "mark-splits-for-deletion");
     let split_ids: Vec<&str> = splits_for_deletion
         .split_ids
@@ -333,7 +336,7 @@ async fn mark_splits_for_deletion(
         .map(|split_id| split_id.as_ref())
         .collect();
     metastore
-        .mark_splits_for_deletion(&index_id, &split_ids)
+        .mark_splits_for_deletion(index_uid, &split_ids)
         .await
 }
 
@@ -543,8 +546,13 @@ async fn create_source(
                 .to_string(),
         ));
     }
+    let index_uid: IndexUid = index_service
+        .metastore()
+        .index_metadata(&index_id)
+        .await?
+        .index_uid;
     info!(index_id = %index_id, source_id = %source_config.source_id, "create-source");
-    index_service.create_source(&index_id, source_config).await
+    index_service.create_source(index_uid, source_config).await
 }
 
 fn get_source_handler(
@@ -605,9 +613,10 @@ async fn reset_source_checkpoint(
     source_id: String,
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), MetastoreError> {
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     info!(index_id = %index_id, source_id = %source_id, "reset-checkpoint");
     metastore
-        .reset_source_checkpoint(&index_id, &source_id)
+        .reset_source_checkpoint(index_uid, &source_id)
         .await
 }
 
@@ -650,7 +659,7 @@ async fn toggle_source(
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), IndexServiceError> {
     info!(index_id = %index_id, source_id = %source_id, enable = toggle_source.enable, "toggle-source");
-    metastore.index_exists(&index_id).await?;
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     if [CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
             "Source `{source_id}` is managed by Quickwit, you cannot enable or disable a source \
@@ -658,7 +667,7 @@ async fn toggle_source(
         )));
     }
     metastore
-        .toggle_source(&index_id, &source_id, toggle_source.enable)
+        .toggle_source(index_uid, &source_id, toggle_source.enable)
         .await?;
     Ok(())
 }
@@ -693,14 +702,14 @@ async fn delete_source(
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), IndexServiceError> {
     info!(index_id = %index_id, source_id = %source_id, "delete-source");
-    metastore.index_exists(&index_id).await?;
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     if [INGEST_API_SOURCE_ID, CLI_INGEST_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
             "Source `{source_id}` is managed by Quickwit, you cannot delete a source managed by \
              Quickwit."
         )));
     }
-    metastore.delete_source(&index_id, &source_id).await?;
+    metastore.delete_source(index_uid, &source_id).await?;
     Ok(())
 }
 
@@ -791,9 +800,18 @@ mod tests {
     async fn test_get_splits() {
         let mut metastore = MockMetastore::new();
         metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "quickwit-demo-index",
+                    "ram:///indexes/quickwit-demo-index",
+                ))
+            })
+            .times(2);
+        metastore
             .expect_list_splits()
             .returning(|list_split_query: ListSplitsQuery| {
-                if list_split_query.index_id == "quickwit-demo-index"
+                if list_split_query.index_uid.index_id() == "quickwit-demo-index"
                     && list_split_query.split_states
                         == vec![SplitState::Published, SplitState::Staged]
                     && list_split_query.time_range.start == Bound::Included(10)
@@ -866,7 +884,7 @@ mod tests {
         metastore
             .expect_list_splits()
             .return_once(|list_split_query: ListSplitsQuery| {
-                if list_split_query.index_id == "test-index" {
+                if list_split_query.index_uid.index_id() == "test-index" {
                     return Ok(vec![split_1, split_2]);
                 }
                 Err(MetastoreError::InternalError {
@@ -907,9 +925,17 @@ mod tests {
     async fn test_get_all_splits() {
         let mut metastore = MockMetastore::new();
         metastore
+            .expect_index_metadata()
+            .return_once(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "quickwit-demo-index",
+                    "ram:///indexes/quickwit-demo-index",
+                ))
+            });
+        metastore
             .expect_list_splits()
             .return_once(|list_split_query: ListSplitsQuery| {
-                if list_split_query.index_id == "quickwit-demo-index"
+                if list_split_query.index_uid.index_id() == "quickwit-demo-index"
                     && list_split_query.split_states.is_empty()
                     && list_split_query.time_range.is_unbounded()
                     && list_split_query.create_timestamp.is_unbounded()
@@ -938,9 +964,20 @@ mod tests {
     async fn test_mark_splits_for_deletion() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::new();
         metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "quickwit-demo-index",
+                    "ram:///indexes/quickwit-demo-index",
+                ))
+            })
+            .times(2);
+        metastore
             .expect_mark_splits_for_deletion()
-            .returning(|index_id: &str, split_ids: &[&str]| {
-                if index_id == "quickwit-demo-index" && split_ids == ["split-1", "split-2"] {
+            .returning(|index_uid: IndexUid, split_ids: &[&str]| {
+                if index_uid.index_id() == "quickwit-demo-index"
+                    && split_ids == ["split-1", "split-2"]
+                {
                     return Ok(());
                 }
                 Err(MetastoreError::InternalError {
@@ -1025,13 +1062,13 @@ mod tests {
             .return_once(|_| Ok(vec![mock_split("split_1")]));
         metastore
             .expect_mark_splits_for_deletion()
-            .return_once(|_index_id: &str, _splits: &[&str]| Ok(()));
+            .return_once(|_index_id: IndexUid, _splits: &[&str]| Ok(()));
         metastore
             .expect_delete_splits()
-            .return_once(|_index_id: &str, _splits: &[&str]| Ok(()));
+            .return_once(|_index_id: IndexUid, _splits: &[&str]| Ok(()));
         metastore
             .expect_reset_source_checkpoint()
-            .return_once(|_index_id: &str, _source_id: &str| Ok(()));
+            .return_once(|_index_id: IndexUid, _source_id: &str| Ok(()));
         let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
@@ -1068,13 +1105,13 @@ mod tests {
             .times(2);
         metastore
             .expect_mark_splits_for_deletion()
-            .return_once(|_index_id: &str, _splits: &[&str]| Ok(()));
+            .return_once(|_index_uid: IndexUid, _splits: &[&str]| Ok(()));
         metastore
             .expect_delete_splits()
-            .return_once(|_index_id: &str, _splits: &[&str]| Ok(()));
+            .return_once(|_index_uid: IndexUid, _splits: &[&str]| Ok(()));
         metastore
             .expect_delete_index()
-            .return_once(|_index_id: &str| Ok(()));
+            .return_once(|_index_uid: IndexUid| Ok(()));
         let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
@@ -1478,8 +1515,8 @@ mod tests {
             .return_once(|index_id: &str| Ok(index_id == "quickwit-demo-index"));
         metastore
             .expect_delete_source()
-            .return_once(|index_id, source_id| {
-                assert_eq!(index_id, "quickwit-demo-index");
+            .return_once(|index_uid, source_id| {
+                assert_eq!(index_uid.index_id(), "quickwit-demo-index");
                 Err(MetastoreError::SourceDoesNotExist {
                     source_id: source_id.to_string(),
                 })
@@ -1502,9 +1539,18 @@ mod tests {
     async fn test_source_reset_checkpoint() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::new();
         metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "quickwit-demo-index",
+                    "file:///path/to/index/quickwit-demo-index",
+                ))
+            })
+            .times(2);
+        metastore
             .expect_reset_source_checkpoint()
-            .returning(|index_id: &str, source_id: &str| {
-                if index_id == "quickwit-demo-index" && source_id == "source-to-reset" {
+            .returning(|index_uid: IndexUid, source_id: &str| {
+                if index_uid.index_id() == "quickwit-demo-index" && source_id == "source-to-reset" {
                     return Ok(());
                 }
                 Err(MetastoreError::InternalError {
@@ -1538,12 +1584,20 @@ mod tests {
     async fn test_source_toggle() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::new();
         metastore
-            .expect_index_exists()
-            .returning(|index_id| Ok(index_id == "quickwit-demo-index"))
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "quickwit-demo-index",
+                    "file:///path/to/index/quickwit-demo-index",
+                ))
+            })
             .times(3);
         metastore.expect_toggle_source().return_once(
-            |index_id: &str, source_id: &str, enable: bool| {
-                if index_id == "quickwit-demo-index" && source_id == "source-to-toggle" && enable {
+            |index_uid: IndexUid, source_id: &str, enable: bool| {
+                if index_uid.index_id() == "quickwit-demo-index"
+                    && source_id == "source-to-toggle"
+                    && enable
+                {
                     return Ok(());
                 }
                 Err(MetastoreError::InternalError {

@@ -762,6 +762,7 @@ mod kafka_broker_tests {
     use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
+    use quickwit_proto::IndexUid;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
@@ -895,18 +896,18 @@ mod kafka_broker_tests {
         index_id: &str,
         source_id: &str,
         partition_deltas: &[(u64, i64, i64)],
-    ) {
+    ) -> IndexUid {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(index_id, &index_uri);
-        metastore.create_index(index_config).await.unwrap();
+        let index_uid = metastore.create_index(index_config).await.unwrap();
 
         if partition_deltas.is_empty() {
-            return;
+            return index_uid;
         }
         let split_id = new_split_id();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
         metastore
-            .stage_splits(index_id, vec![split_metadata])
+            .stage_splits(index_uid.clone(), vec![split_metadata])
             .await
             .unwrap();
 
@@ -931,9 +932,10 @@ mod kafka_broker_tests {
             source_delta,
         };
         metastore
-            .publish_splits(index_id, &[&split_id], &[], Some(index_delta))
+            .publish_splits(index_uid.clone(), &[&split_id], &[], Some(index_delta))
             .await
             .unwrap();
+        index_uid
     }
 
     #[tokio::test]

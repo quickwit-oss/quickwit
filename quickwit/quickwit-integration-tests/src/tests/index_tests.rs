@@ -67,13 +67,13 @@ async fn test_restarting_standalone_server() {
     // TODO: there should be a better way to do this.
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
 
-    let old_incarnation_id = sandbox
+    let old_uid = sandbox
         .indexer_rest_client
         .indexes()
         .get(index_id)
         .await
         .unwrap()
-        .incarnation_id;
+        .index_uid;
 
     // Index one record.
     ingest_with_retry(
@@ -103,14 +103,14 @@ async fn test_restarting_standalone_server() {
 
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
 
-    let new_incarnation_id = sandbox
+    let new_uid = sandbox
         .indexer_rest_client
         .indexes()
         .get(index_id)
         .await
         .unwrap()
-        .incarnation_id;
-    assert_ne!(old_incarnation_id, new_incarnation_id);
+        .index_uid;
+    assert_ne!(old_uid.incarnation_id(), new_uid.incarnation_id());
 
     // Index a couple of records to create 2 additional splits.
     ingest_with_retry(

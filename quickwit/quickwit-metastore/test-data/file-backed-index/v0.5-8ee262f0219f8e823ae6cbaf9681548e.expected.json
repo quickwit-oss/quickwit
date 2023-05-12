@@ -3,8 +3,8 @@
     {
       "create_timestamp": 0,
       "delete_query": {
-        "index_id": "index",
-        "query_ast": "{\"type\":\"Bool\",\"should\":[{\"type\":\"Phrase\",\"field\":\"body\",\"phrase\":\"Harry\"},{\"type\":\"Phrase\",\"field\":\"body\",\"phrase\":\"Potter\"}]}"
+        "index_uid": "index",
+        "query_ast": ""
       },
       "opstamp": 10
     }
@@ -16,7 +16,6 @@
       }
     },
     "create_timestamp": 1789,
-    "incarnation_id": "11111111111111111111111111",
     "index_config": {
       "doc_mapping": {
         "field_mappings": [
@@ -99,6 +98,7 @@
       },
       "version": "0.5"
     },
+    "index_uid": "my-index",
     "sources": [
       {
         "desired_num_pipelines": 2,
@@ -126,7 +126,7 @@
         "end": 2000,
         "start": 1000
       },
-      "index_id": "my-index",
+      "index_uid": "my-index",
       "node_id": "node",
       "num_docs": 12303,
       "num_merge_ops": 3,

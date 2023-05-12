@@ -24,36 +24,15 @@ use std::collections::{BTreeMap, HashMap};
 
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig, TestableForRegression};
+use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use serialize::VersionedIndexMetadata;
 use time::OffsetDateTime;
-use ulid::Ulid;
 
 use crate::checkpoint::{
     IndexCheckpoint, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
 use crate::{MetastoreError, MetastoreResult};
-
-/// Index identifiers that uniquely identify not only the index, but also
-/// its incarnation allowing to distinguish between deleted and recreated indexes.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct IndexConfigId {
-    /// Name of the index
-    pub index_id: String,
-    /// Internal index id
-    pub incarnation_id: Ulid,
-}
-
-impl IndexConfigId {
-    /// Creates a new index config id for testing purposes
-    #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test(index_id: impl Into<String>) -> Self {
-        Self {
-            index_id: index_id.into(),
-            incarnation_id: Ulid::new(),
-        }
-    }
-}
 
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -61,7 +40,7 @@ impl IndexConfigId {
 #[serde(try_from = "VersionedIndexMetadata")]
 pub struct IndexMetadata {
     /// Index incarnation id
-    pub incarnation_id: Ulid,
+    pub index_uid: IndexUid,
     /// Index configuration
     pub index_config: IndexConfig,
     /// Per-source map of checkpoint for the given index.
@@ -76,7 +55,7 @@ impl IndexMetadata {
     /// Panics if `index_config` is missing `index_uri`.
     pub fn new(index_config: IndexConfig) -> Self {
         IndexMetadata {
-            incarnation_id: Ulid::new(),
+            index_uid: IndexUid::new(index_config.index_id.clone()),
             index_config,
             checkpoint: Default::default(),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
@@ -103,14 +82,6 @@ impl IndexMetadata {
     /// Accessor to the index config's index id for convenience.
     pub fn index_id(&self) -> &str {
         &self.index_config.index_id
-    }
-
-    /// Returns the index incarnation id
-    pub fn index_config_id(&self) -> IndexConfigId {
-        IndexConfigId {
-            index_id: self.index_config.index_id.clone(),
-            incarnation_id: self.incarnation_id,
-        }
     }
 
     /// Accessor to the index config's index uri for convenience.
@@ -172,7 +143,7 @@ impl TestableForRegression for IndexMetadata {
         let checkpoint = IndexCheckpoint::from(per_source_checkpoint);
         let index_config = IndexConfig::sample_for_regression();
         let mut index_metadata = IndexMetadata {
-            incarnation_id: Ulid::from_string("11111111111111111111111111").unwrap(),
+            index_uid: IndexUid::from_parts("test", "1111111111111"),
             index_config,
             checkpoint,
             create_timestamp: 1789,
