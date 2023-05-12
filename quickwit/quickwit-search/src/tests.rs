@@ -764,11 +764,7 @@ async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Ve
         .unwrap();
     let splits_offsets: Vec<_> = splits
         .into_iter()
-        .map(|split_meta| SplitIdAndFooterOffsets {
-            split_id: split_meta.split_id().to_string(),
-            split_footer_start: split_meta.split_metadata.footer_offsets.start,
-            split_footer_end: split_meta.split_metadata.footer_offsets.end,
-        })
+        .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
         .collect();
     let request = quickwit_proto::SearchRequest {
         index_id: test_sandbox.index_uid().index_id().to_string(),
@@ -1402,11 +1398,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         .unwrap();
     let splits_offsets: Vec<_> = splits
         .into_iter()
-        .map(|split_meta| SplitIdAndFooterOffsets {
-            split_id: split_meta.split_id().to_string(),
-            split_footer_start: split_meta.split_metadata.footer_offsets.start,
-            split_footer_end: split_meta.split_metadata.footer_offsets.end,
-        })
+        .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
         .collect();
     let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
 

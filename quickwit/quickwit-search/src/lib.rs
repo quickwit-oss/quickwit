@@ -30,6 +30,7 @@ mod fetch_docs;
 mod filters;
 mod find_trace_ids_collector;
 mod leaf;
+mod leaf_cache;
 mod retry;
 mod root;
 mod search_job_placer;
@@ -112,6 +113,14 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
         split_id: split_metadata.split_id.clone(),
         split_footer_start: split_metadata.footer_offsets.start,
         split_footer_end: split_metadata.footer_offsets.end,
+        timestamp_start: split_metadata
+            .time_range
+            .as_ref()
+            .map(|time_range| *time_range.start()),
+        timestamp_end: split_metadata
+            .time_range
+            .as_ref()
+            .map(|time_range| *time_range.end()),
     }
 }
 

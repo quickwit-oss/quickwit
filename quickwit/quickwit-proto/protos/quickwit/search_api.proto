@@ -173,7 +173,10 @@ message SplitIdAndFooterOffsets {
   uint64 split_footer_start = 2;
   // The offset of the end of the footer in split bundle. The footer contains the file bundle metadata and the hotcache.
   uint64 split_footer_end = 3;
-
+  // The lowest timestamp appearing in the split
+  optional int64 timestamp_start = 4;
+  // The highest timestamp appearing in the split
+  optional int64 timestamp_end = 5;
 }
 
 /// Hits returned by a FetchDocRequest.

@@ -215,6 +215,26 @@ impl TryFrom<DeleteQuery> for SearchRequest {
     }
 }
 
+impl SearchRequest {
+    pub fn time_range(&self) -> impl std::ops::RangeBounds<i64> {
+        use std::ops::Bound;
+        (
+            self.start_timestamp.map_or(Bound::Unbounded, Bound::Included),
+            self.end_timestamp.map_or(Bound::Unbounded, Bound::Excluded),
+        )
+    }
+}
+
+impl SplitIdAndFooterOffsets {
+    pub fn time_range(&self) -> impl std::ops::RangeBounds<i64> {
+        use std::ops::Bound;
+        (
+            self.timestamp_start.map_or(Bound::Unbounded, Bound::Included),
+            self.timestamp_end.map_or(Bound::Unbounded, Bound::Included),
+        )
+    }
+}
+
 impl fmt::Display for SplitSearchError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "({}, split_id: {})", self.error, self.split_id)

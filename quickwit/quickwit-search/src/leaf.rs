@@ -309,6 +309,13 @@ async fn leaf_search_single_split(
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
 ) -> crate::Result<LeafSearchResponse> {
+    if let Some(cached_answer) = searcher_context
+        .leaf_search_cache
+        .get(split.clone(), search_request.clone())
+    {
+        return Ok(cached_answer);
+    }
+
     let split_id = split.split_id.to_string();
     let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
     let split_schema = index.schema();
@@ -341,6 +348,11 @@ async fn leaf_search_single_split(
         crate::SearchError::InternalError(format!("Leaf search panicked. split={split_id}"))
     })??;
 
+    searcher_context.leaf_search_cache.put(
+        split,
+        search_request.clone(),
+        leaf_search_response.clone(),
+    );
     Ok(leaf_search_response)
 }
 

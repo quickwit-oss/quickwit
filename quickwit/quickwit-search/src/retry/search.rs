@@ -78,11 +78,15 @@ mod tests {
                     split_id: "split_1".to_string(),
                     split_footer_end: 100,
                     split_footer_start: 0,
+                    timestamp_start: None,
+                    timestamp_end: None,
                 },
                 SplitIdAndFooterOffsets {
                     split_id: "split_2".to_string(),
                     split_footer_end: 100,
                     split_footer_start: 0,
+                    timestamp_start: None,
+                    timestamp_end: None,
                 },
             ],
         }
