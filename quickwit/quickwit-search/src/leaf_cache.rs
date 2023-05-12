@@ -96,7 +96,7 @@ impl CacheKey {
 /// A (half-open) range bounded inclusively below and exclusively above [start..end).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Range {
-    start: Option<i64>,
+    start: i64,
     end: Option<i64>,
 }
 
@@ -104,21 +104,21 @@ impl Range {
     /// Create a Range from bounds.
     fn from_bounds(range: impl std::ops::RangeBounds<i64>) -> Self {
         let empty_range = Range {
-            start: Some(0),
+            start: 0,
             end: Some(0),
         };
 
         let start = match range.start_bound() {
-            Bound::Included(start) => Some(*start),
+            Bound::Included(start) => *start,
             Bound::Excluded(start) => {
                 // if we exclude i64::MAX from the start bound, the range is necessarily empty
                 if let Some(start) = start.checked_add(1) {
-                    Some(start)
+                    start
                 } else {
                     return empty_range;
                 }
             }
-            Bound::Unbounded => None,
+            Bound::Unbounded => i64::MIN,
         };
         let end = match range.end_bound() {
             // if we include i64::MAX at the end bound, this is essentially boundless
@@ -132,25 +132,22 @@ impl Range {
 
     /// Normalize empty ranges to be 0..0
     fn normalize(self) -> Range {
+        let empty_range = Range {
+            start: 0,
+            end: Some(0),
+        };
         match self {
             Range {
-                start: Some(start),
+                start,
                 end: Some(end),
-            } if start >= end => Range {
-                start: Some(0),
-                end: Some(0),
-            },
+            } if start >= end => empty_range,
             any => any,
         }
     }
 
     /// Return the intersection of self and other.
     fn intersect(&self, other: &Range) -> Range {
-        let start = match (self.start, other.start) {
-            (Some(this), Some(other)) => Some(this.max(other)),
-            (Some(this), None) => Some(this),
-            (None, other) => other,
-        };
+        let start = self.start.max(other.start);
 
         let end = match (self.end, other.end) {
             (Some(this), Some(other)) => Some(this.min(other)),
@@ -163,9 +160,7 @@ impl Range {
 
 impl std::ops::RangeBounds<i64> for Range {
     fn start_bound(&self) -> Bound<&i64> {
-        self.start
-            .as_ref()
-            .map_or(Bound::Unbounded, Bound::Included)
+        Bound::Included(&self.start)
     }
 
     fn end_bound(&self) -> Bound<&i64> {
