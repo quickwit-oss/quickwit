@@ -25,6 +25,7 @@ use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::IndexUid;
 use tracing::info;
 
 use crate::checkpoint::IndexCheckpointDelta;
@@ -36,19 +37,19 @@ pub enum MetastoreEvent {
     /// Delete index event.
     DeleteIndex {
         /// Index ID of the deleted index.
-        index_id: String,
+        index_uid: IndexUid,
     },
     /// Add source event.
     AddSource {
         /// Index ID of the added source.
-        index_id: String,
+        index_uid: IndexUid,
         /// Source config of the added source.
         source_config: SourceConfig,
     },
     /// Toggle source events.
     ToggleSource {
         /// Index ID of the toggled source.
-        index_id: String,
+        index_uid: IndexUid,
         /// Source ID of the toggled source.
         source_id: String,
         /// Whether the source was enabled or not.
@@ -57,7 +58,7 @@ pub enum MetastoreEvent {
     /// Delete source event.
     DeleteSource {
         /// Index ID of the deleted source.
-        index_id: String,
+        index_uid: IndexUid,
         /// Source ID of the deleted source.
         source_id: String,
     },
@@ -100,7 +101,7 @@ impl Metastore for MetastoreEventPublisher {
     }
 
     // Index API
-    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()> {
+    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<IndexUid> {
         self.underlying.create_index(index_config).await
     }
 
@@ -116,11 +117,11 @@ impl Metastore for MetastoreEventPublisher {
         self.underlying.list_indexes_metadatas().await
     }
 
-    async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
+    async fn delete_index(&self, index_uid: IndexUid) -> MetastoreResult<()> {
         let event = MetastoreEvent::DeleteIndex {
-            index_id: index_id.to_string(),
+            index_uid: index_uid.clone(),
         };
-        self.underlying.delete_index(index_id).await?;
+        self.underlying.delete_index(index_uid).await?;
         self.event_broker.publish(event);
         Ok(())
     }
@@ -129,24 +130,24 @@ impl Metastore for MetastoreEventPublisher {
 
     async fn stage_splits(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_metadata_list: Vec<SplitMetadata>,
     ) -> MetastoreResult<()> {
         self.underlying
-            .stage_splits(index_id, split_metadata_list)
+            .stage_splits(index_uid, split_metadata_list)
             .await
     }
 
     async fn publish_splits<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     ) -> MetastoreResult<()> {
         self.underlying
             .publish_splits(
-                index_id,
+                index_uid,
                 split_ids,
                 replaced_split_ids,
                 checkpoint_delta_opt,
@@ -154,58 +155,58 @@ impl Metastore for MetastoreEventPublisher {
             .await
     }
 
-    async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
+    async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
         self.underlying.list_splits(query).await
     }
 
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
-        self.underlying.list_all_splits(index_id).await
+    async fn list_all_splits(&self, index_uid: IndexUid) -> MetastoreResult<Vec<Split>> {
+        self.underlying.list_all_splits(index_uid).await
     }
 
     async fn mark_splits_for_deletion<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
         self.underlying
-            .mark_splits_for_deletion(index_id, split_ids)
+            .mark_splits_for_deletion(index_uid, split_ids)
             .await
     }
 
     async fn delete_splits<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        self.underlying.delete_splits(index_id, split_ids).await
+        self.underlying.delete_splits(index_uid, split_ids).await
     }
 
     // Source API
 
-    async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
+    async fn add_source(&self, index_uid: IndexUid, source: SourceConfig) -> MetastoreResult<()> {
         let event = MetastoreEvent::AddSource {
-            index_id: index_id.to_string(),
+            index_uid: index_uid.clone(),
             source_config: source.clone(),
         };
-        info!("add source {index_id}, {source:?}");
-        self.underlying.add_source(index_id, source).await?;
+        info!("add source {0}, {source:?}", index_uid.index_id());
+        self.underlying.add_source(index_uid, source).await?;
         self.event_broker.publish(event);
         Ok(())
     }
 
     async fn toggle_source(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         source_id: &str,
         enable: bool,
     ) -> MetastoreResult<()> {
         let event = MetastoreEvent::ToggleSource {
-            index_id: index_id.to_string(),
+            index_uid: index_uid.clone(),
             source_id: source_id.to_string(),
             enabled: enable,
         };
         self.underlying
-            .toggle_source(index_id, source_id, enable)
+            .toggle_source(index_uid, source_id, enable)
             .await?;
         self.event_broker.publish(event);
         Ok(())
@@ -213,20 +214,20 @@ impl Metastore for MetastoreEventPublisher {
 
     async fn reset_source_checkpoint(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         source_id: &str,
     ) -> MetastoreResult<()> {
         self.underlying
-            .reset_source_checkpoint(index_id, source_id)
+            .reset_source_checkpoint(index_uid, source_id)
             .await
     }
 
-    async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
+    async fn delete_source(&self, index_uid: IndexUid, source_id: &str) -> MetastoreResult<()> {
         let event = MetastoreEvent::DeleteSource {
-            index_id: index_id.to_string(),
+            index_uid: index_uid.clone(),
             source_id: source_id.to_string(),
         };
-        self.underlying.delete_source(index_id, source_id).await?;
+        self.underlying.delete_source(index_uid, source_id).await?;
         self.event_broker.publish(event);
         Ok(())
     }
@@ -238,37 +239,37 @@ impl Metastore for MetastoreEventPublisher {
 
     async fn list_delete_tasks(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>> {
         self.underlying
-            .list_delete_tasks(index_id, opstamp_start)
+            .list_delete_tasks(index_uid, opstamp_start)
             .await
     }
 
-    async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64> {
-        self.underlying.last_delete_opstamp(index_id).await
+    async fn last_delete_opstamp(&self, index_uid: IndexUid) -> MetastoreResult<u64> {
+        self.underlying.last_delete_opstamp(index_uid).await
     }
 
     async fn update_splits_delete_opstamp<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
         delete_opstamp: u64,
     ) -> MetastoreResult<()> {
         self.underlying
-            .update_splits_delete_opstamp(index_id, split_ids, delete_opstamp)
+            .update_splits_delete_opstamp(index_uid, split_ids, delete_opstamp)
             .await
     }
 
     async fn list_stale_splits(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
         self.underlying
-            .list_stale_splits(index_id, delete_opstamp, num_splits)
+            .list_stale_splits(index_uid, delete_opstamp, num_splits)
             .await
     }
 }
@@ -312,41 +313,44 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
         let subscription = metastore.event_broker.subscribe(TxSubscriber(tx));
 
-        let index_id = "test-index";
+        let index_uid = IndexUid::new("test-index");
         let index_uri = "ram:///indexes/test-index";
         let source_id = "test-source";
         let source_config = SourceConfig::for_test(source_id, SourceParams::void());
 
-        metastore
-            .create_index(IndexConfig::for_test(index_id, index_uri))
+        let index_uid = metastore
+            .create_index(IndexConfig::for_test(index_uid.index_id(), index_uri))
             .await
             .unwrap();
 
         metastore
             .add_source(
-                index_id,
+                index_uid.clone(),
                 SourceConfig::for_test(source_id, SourceParams::void()),
             )
             .await
             .unwrap();
         metastore
-            .toggle_source(index_id, source_id, false)
+            .toggle_source(index_uid.clone(), source_id, false)
             .await
             .unwrap();
-        metastore.delete_source(index_id, source_id).await.unwrap();
-        metastore.delete_index(index_id).await.unwrap();
+        metastore
+            .delete_source(index_uid.clone(), source_id)
+            .await
+            .unwrap();
+        metastore.delete_index(index_uid.clone()).await.unwrap();
 
         assert_eq!(
             rx.recv().await.unwrap(),
             MetastoreEvent::AddSource {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.clone(),
                 source_config,
             }
         );
         assert_eq!(
             rx.recv().await.unwrap(),
             MetastoreEvent::ToggleSource {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.clone(),
                 source_id: source_id.to_string(),
                 enabled: false,
             }
@@ -354,15 +358,13 @@ mod tests {
         assert_eq!(
             rx.recv().await.unwrap(),
             MetastoreEvent::DeleteSource {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.clone(),
                 source_id: source_id.to_string(),
             }
         );
         assert_eq!(
             rx.recv().await.unwrap(),
-            MetastoreEvent::DeleteIndex {
-                index_id: index_id.to_string(),
-            }
+            MetastoreEvent::DeleteIndex { index_uid }
         );
         subscription.cancel();
     }

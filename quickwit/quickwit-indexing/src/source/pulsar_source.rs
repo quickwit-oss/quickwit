@@ -516,7 +516,7 @@ mod pulsar_broker_tests {
     ) {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(index_id, &index_uri);
-        metastore.create_index(index_config).await.unwrap();
+        let index_uid = metastore.create_index(index_config).await.unwrap();
 
         if partition_deltas.is_empty() {
             return;
@@ -524,7 +524,7 @@ mod pulsar_broker_tests {
         let split_id = new_split_id();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
         metastore
-            .stage_splits(index_id, vec![split_metadata])
+            .stage_splits(index_uid.clone(), vec![split_metadata])
             .await
             .unwrap();
 
@@ -543,7 +543,7 @@ mod pulsar_broker_tests {
             source_delta,
         };
         metastore
-            .publish_splits(index_id, &[&split_id], &[], Some(index_delta))
+            .publish_splits(index_uid, &[&split_id], &[], Some(index_delta))
             .await
             .unwrap();
     }

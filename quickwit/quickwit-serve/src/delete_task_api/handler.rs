@@ -19,11 +19,11 @@
 
 use std::sync::Arc;
 
-use quickwit_config::{build_doc_mapper, IndexConfig};
+use quickwit_config::build_doc_mapper;
 use quickwit_janitor::error::JanitorError;
 use quickwit_metastore::{Metastore, MetastoreError};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
-use quickwit_proto::{query_ast_from_user_text, SearchRequest};
+use quickwit_proto::{query_ast_from_user_text, IndexUid, SearchRequest};
 use quickwit_query::query_ast::QueryAst;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
@@ -94,7 +94,8 @@ pub async fn get_delete_tasks(
     index_id: String,
     metastore: Arc<dyn Metastore>,
 ) -> Result<Vec<DeleteTask>, MetastoreError> {
-    let delete_tasks = metastore.list_delete_tasks(&index_id, 0).await?;
+    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
+    let delete_tasks = metastore.list_delete_tasks(index_uid, 0).await?;
     Ok(delete_tasks)
 }
 
@@ -131,6 +132,8 @@ pub async fn post_delete_request(
     delete_request: DeleteQueryRequest,
     metastore: Arc<dyn Metastore>,
 ) -> Result<DeleteTask, JanitorError> {
+    let metadata = metastore.index_metadata(&index_id).await?;
+    let index_uid: IndexUid = metadata.index_uid.clone();
     let query_ast = query_ast_from_user_text(&delete_request.query, Some(Vec::new()))
         .parse_user_query(&[])
         .map_err(|err| JanitorError::InvalidDeleteQuery(err.to_string()))?;
@@ -138,15 +141,12 @@ pub async fn post_delete_request(
         JanitorError::InternalError("Failed to serialized delete query ast".to_string())
     })?;
     let delete_query = DeleteQuery {
-        index_id: index_id.clone(),
+        index_uid: index_uid.to_string(),
         start_timestamp: delete_request.start_timestamp,
         end_timestamp: delete_request.end_timestamp,
         query_ast: query_ast_json,
     };
-    let index_config: IndexConfig = metastore
-        .index_metadata(&delete_query.index_id)
-        .await?
-        .into_index_config();
+    let index_config = metadata.into_index_config();
     // TODO should it be something else than a JanitorError?
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|error| JanitorError::InternalError(error.to_string()))?;
@@ -200,7 +200,10 @@ mod tests {
         let created_delete_task: DeleteTask = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(created_delete_task.opstamp, 1);
         let created_delete_query = created_delete_task.delete_query.unwrap();
-        assert_eq!(created_delete_query.index_id, index_id);
+        assert_eq!(
+            created_delete_query.index_uid,
+            test_sandbox.index_uid().to_string()
+        );
         assert_eq!(
             created_delete_query.query_ast,
             r#"{"type":"Phrase","field":"body","phrase":"term"}"#

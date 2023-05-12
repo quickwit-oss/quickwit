@@ -209,6 +209,7 @@ async fn test_ingest_docs_cli() {
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
+    let index_uid = test_env.index_metadata().await.unwrap().index_uid;
 
     let args = LocalIngestDocsArgs {
         config_uri: test_env.config_uri.clone(),
@@ -225,7 +226,7 @@ async fn test_ingest_docs_cli() {
         .metastore()
         .await
         .unwrap()
-        .list_all_splits(&index_id)
+        .list_all_splits(index_uid)
         .await
         .unwrap();
 
@@ -581,6 +582,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
+    let index_uid = test_env.index_metadata().await.unwrap().index_uid;
     local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
@@ -607,7 +609,7 @@ async fn test_garbage_collect_cli_no_grace() {
         dry_run,
     };
 
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     assert_eq!(splits.len(), 1);
 
     let args = create_gc_args(false);
@@ -621,7 +623,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let split_ids = [splits[0].split_id()];
     let metastore = refresh_metastore(metastore).await.unwrap();
     metastore
-        .mark_splits_for_deletion(&test_env.index_id, &split_ids)
+        .mark_splits_for_deletion(index_uid.clone(), &split_ids)
         .await
         .unwrap();
 
@@ -650,7 +652,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let metastore = refresh_metastore(metastore).await.unwrap();
     assert_eq!(
         metastore
-            .list_all_splits(&test_env.index_id)
+            .list_all_splits(index_uid.clone())
             .await
             .unwrap()
             .len(),
@@ -675,6 +677,7 @@ async fn test_garbage_collect_index_cli() {
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
+    let index_uid = test_env.index_metadata().await.unwrap().index_uid;
     local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
@@ -701,7 +704,7 @@ async fn test_garbage_collect_index_cli() {
         .await
         .unwrap();
 
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     assert_eq!(splits.len(), 1);
 
     let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
@@ -715,7 +718,7 @@ async fn test_garbage_collect_index_cli() {
 
     // Split should still exists within grace period.
     let metastore = refresh_metastore(metastore).await.unwrap();
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     assert_eq!(splits.len(), 1);
 
     // The following steps help turn an existing published split into a staged one
@@ -723,21 +726,21 @@ async fn test_garbage_collect_index_cli() {
     let split = splits[0].clone();
     let split_ids = [split.split_metadata.split_id.as_str()];
     metastore
-        .mark_splits_for_deletion(&test_env.index_id, &split_ids)
+        .mark_splits_for_deletion(index_uid.clone(), &split_ids)
         .await
         .unwrap();
     metastore
-        .delete_splits(&test_env.index_id, &split_ids)
+        .delete_splits(index_uid.clone(), &split_ids)
         .await
         .unwrap();
     metastore
-        .stage_splits(&test_env.index_id, vec![split.split_metadata])
+        .stage_splits(index_uid.clone(), vec![split.split_metadata])
         .await
         .unwrap();
     assert_eq!(split_path.try_exists().unwrap(), true);
 
     let metastore = refresh_metastore(metastore).await.unwrap();
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     assert_eq!(splits[0].split_state, SplitState::Staged);
 
     let args = create_gc_args(3600);
@@ -747,7 +750,7 @@ async fn test_garbage_collect_index_cli() {
     assert_eq!(split_path.try_exists().unwrap(), true);
     // Staged splits should still exist within grace period.
     let metastore = refresh_metastore(metastore).await.unwrap();
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     assert_eq!(splits.len(), 1);
     assert_eq!(splits[0].split_state, SplitState::Staged);
 
@@ -760,7 +763,7 @@ async fn test_garbage_collect_index_cli() {
     garbage_collect_index_cli(args).await.unwrap();
 
     let metastore = refresh_metastore(metastore).await.unwrap();
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     // Splits should be deleted from both metastore and file system.
     assert_eq!(splits.len(), 0);
     assert_eq!(split_path.try_exists().unwrap(), false);

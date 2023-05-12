@@ -329,7 +329,7 @@ impl MergeExecutor {
         let delete_tasks = ctx
             .protect_future(
                 self.metastore
-                    .list_delete_tasks(&split.index_config_id.index_id, split.delete_opstamp),
+                    .list_delete_tasks(split.index_uid.clone(), split.delete_opstamp),
             )
             .await?;
         if delete_tasks.is_empty() {
@@ -380,7 +380,7 @@ impl MergeExecutor {
                     split.split_id()
                 );
                 self.metastore
-                    .mark_splits_for_deletion(&split.index_config_id.index_id, &[split.split_id()])
+                    .mark_splits_for_deletion(split.index_uid.clone(), &[split.split_id()])
                     .await?;
                 return Ok(None);
             };
@@ -401,7 +401,7 @@ impl MergeExecutor {
         };
 
         let index_pipeline_id = IndexingPipelineId {
-            index_config_id: split.index_config_id.clone(),
+            index_uid: split.index_uid,
             node_id: split.node_id.clone(),
             pipeline_ord: 0,
             source_id: split.source_id.clone(),
@@ -516,7 +516,7 @@ fn open_index<T: Into<Box<dyn Directory>>>(directory: T) -> tantivy::Result<Inde
 mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::split_file;
-    use quickwit_metastore::{IndexConfigId, SplitMetadata};
+    use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
     use serde_json::Value as JsonValue;
     use tantivy::{Inventory, ReloadPolicy};
@@ -528,12 +528,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
-        let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
         let doc_mapping_yaml = r#"
             field_mappings:
               - name: body
@@ -545,13 +539,15 @@ mod tests {
                 fast: true
             timestamp_field: ts
         "#;
-        let test_sandbox = TestSandbox::create(
-            &pipeline_id.index_config_id.index_id,
-            doc_mapping_yaml,
-            "",
-            &["body"],
-        )
-        .await?;
+        let test_sandbox =
+            TestSandbox::create("test-index", doc_mapping_yaml, "", &["body"]).await?;
+        let index_uid = test_sandbox.index_uid();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         for split_id in 0..4 {
             let single_doc = std::iter::once(
                 serde_json::json!({"body ": format!("split{split_id}"), "ts": 1631072713u64 + split_id }),
@@ -560,7 +556,7 @@ mod tests {
         }
         let metastore = test_sandbox.metastore();
         let split_metas: Vec<SplitMetadata> = metastore
-            .list_all_splits(&pipeline_id.index_config_id.index_id)
+            .list_all_splits(index_uid)
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
@@ -657,12 +653,6 @@ mod tests {
     ) -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test(index_id),
-            node_id: "unknown".to_string(),
-            pipeline_ord: 0,
-            source_id: "unknown".to_string(),
-        };
         let doc_mapping_yaml = r#"
             field_mappings:
               - name: body
@@ -675,18 +665,25 @@ mod tests {
             timestamp_field: ts
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
+        let index_uid = test_sandbox.index_uid();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: index_uid.clone(),
+            node_id: "unknown".to_string(),
+            pipeline_ord: 0,
+            source_id: "unknown".to_string(),
+        };
         test_sandbox.add_documents(docs).await?;
         let metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
                 query_ast: quickwit_proto::qast_helper(delete_query, &["body"]),
             })
             .await?;
         let split_metadata = metastore
-            .list_all_splits(&pipeline_id.index_config_id.index_id)
+            .list_all_splits(index_uid.clone())
             .await?
             .into_iter()
             .next()
@@ -697,12 +694,12 @@ mod tests {
         new_split_metadata.split_id = new_split_id();
         new_split_metadata.num_merge_ops = 1;
         metastore
-            .stage_splits(index_id, vec![new_split_metadata.clone()])
+            .stage_splits(index_uid.clone(), vec![new_split_metadata.clone()])
             .await
             .unwrap();
         metastore
             .publish_splits(
-                index_id,
+                index_uid.clone(),
                 &[new_split_metadata.split_id()],
                 &[split_metadata.split_id()],
                 None,
@@ -793,7 +790,7 @@ mod tests {
             assert!(packager_msgs.is_empty());
             let metastore = test_sandbox.metastore();
             assert!(metastore
-                .list_all_splits(index_id)
+                .list_all_splits(index_uid)
                 .await?
                 .into_iter()
                 .all(

@@ -219,10 +219,9 @@ pub async fn root_search(
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
 
-    let index_config: IndexConfig = metastore
-        .index_metadata(&search_request.index_id)
-        .await?
-        .into_index_config();
+    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+    let index_uid = index_metadata.index_uid.clone();
+    let index_config = index_metadata.into_index_config();
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
@@ -247,7 +246,7 @@ pub async fn root_search(
     })?;
 
     let split_metadatas: Vec<SplitMetadata> =
-        list_relevant_splits(&search_request, metastore).await?;
+        list_relevant_splits(index_uid, &search_request, metastore).await?;
 
     let split_offsets_map: HashMap<String, SplitIdAndFooterOffsets> = split_metadatas
         .iter()
@@ -436,10 +435,11 @@ pub async fn root_list_terms(
 ) -> crate::Result<ListTermsResponse> {
     let start_instant = tokio::time::Instant::now();
 
-    let index_config: IndexConfig = metastore
+    let index_metadata = metastore
         .index_metadata(&list_terms_request.index_id)
-        .await?
-        .into_index_config();
+        .await?;
+    let index_uid = index_metadata.index_uid.clone();
+    let index_config: IndexConfig = index_metadata.into_index_config();
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
@@ -461,7 +461,7 @@ pub async fn root_list_terms(
         ));
     }
 
-    let mut query = quickwit_metastore::ListSplitsQuery::for_index(&list_terms_request.index_id)
+    let mut query = quickwit_metastore::ListSplitsQuery::for_index(index_uid)
         .with_split_state(quickwit_metastore::SplitState::Published);
 
     if let Some(start_ts) = list_terms_request.start_timestamp {

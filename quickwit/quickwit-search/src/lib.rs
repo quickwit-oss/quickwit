@@ -63,7 +63,9 @@ use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, QuickwitConfig, SearcherConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
-use quickwit_proto::{Hit, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
+use quickwit_proto::{
+    Hit, IndexUid, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+};
 use quickwit_storage::StorageUriResolver;
 use tantivy::DocAddress;
 
@@ -115,11 +117,12 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
 
 /// Extract the list of relevant splits for a given search request.
 async fn list_relevant_splits(
+    // TODO: switch search request to index_uid and remove this.
+    index_uid: IndexUid,
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
 ) -> crate::Result<Vec<SplitMetadata>> {
-    let mut query = ListSplitsQuery::for_index(&search_request.index_id)
-        .with_split_state(SplitState::Published);
+    let mut query = ListSplitsQuery::for_index(index_uid).with_split_state(SplitState::Published);
 
     if let Some(start_ts) = search_request.start_timestamp {
         query = query.with_time_range_start_gte(start_ts);
@@ -170,10 +173,9 @@ pub async fn single_node_search(
     storage_resolver: StorageUriResolver,
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
-    let index_config = metastore
-        .index_metadata(&search_request.index_id)
-        .await?
-        .into_index_config();
+    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+    let index_uid = index_metadata.index_uid.clone();
+    let index_config = index_metadata.into_index_config();
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
@@ -186,7 +188,7 @@ pub async fn single_node_search(
     search_request.query_ast = serde_json::to_string(&query_ast_resolved)?;
 
     let index_storage = storage_resolver.resolve(&index_config.index_uri)?;
-    let metas = list_relevant_splits(&search_request, metastore).await?;
+    let metas = list_relevant_splits(index_uid, &search_request, metastore).await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
     validate_request(&*doc_mapper, &search_request)?;
