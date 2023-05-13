@@ -15,8 +15,5 @@
       "expand_dots": true,
       "fast": true
     }
-  },
-  "indexing_settings": {
-    "commit_timeout_secs": 1
   }
 }
