@@ -23,16 +23,16 @@ use std::str::FromStr;
 use base64::engine::DecodePaddingMode;
 use base64::Engine;
 use tantivy::json_utils::{convert_to_fast_value_and_get_term, JsonTermWriter};
-use tantivy::query::{PhraseQuery as TantivyPhraseQuery, TermQuery as TantivyTermQuery};
+use tantivy::query::TermQuery as TantivyTermQuery;
 use tantivy::schema::{
     Field, FieldEntry, FieldType, IndexRecordOption, IntoIpv6Addr, JsonObjectOptions,
-    Schema as TantivySchema, TextOptions, Type,
+    Schema as TantivySchema, Type,
 };
 use tantivy::time::format_description::well_known::Rfc3339;
 use tantivy::time::OffsetDateTime;
-use tantivy::tokenizer::TextAnalyzer;
 use tantivy::{DateTime as TantivyDateTime, Term};
 
+use crate::query_ast::full_text_query::FullTextParams;
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::InvalidQuery;
 
@@ -45,18 +45,6 @@ pub const LENIENT_BASE64_ENGINE: base64::engine::GeneralPurpose =
         base64::engine::GeneralPurposeConfig::new()
             .with_decode_padding_mode(DecodePaddingMode::Indifferent),
     );
-
-fn get_tokenizer(text_options: &TextOptions) -> Option<TextAnalyzer> {
-    let text_field_indexing = text_options.get_indexing_options()?;
-    let tokenizer_name = text_field_indexing.tokenizer();
-    crate::tokenizers::get_quickwit_tokenizer_manager().get(tokenizer_name)
-}
-
-fn get_tokenizer_from_json_option(json_options: &JsonObjectOptions) -> Option<TextAnalyzer> {
-    let text_field_indexing = json_options.get_text_indexing_options()?;
-    let tokenizer_name = text_field_indexing.tokenizer();
-    crate::tokenizers::get_quickwit_tokenizer_manager().get(tokenizer_name)
-}
 
 fn make_term_query(term: Term) -> TantivyQueryAst {
     TantivyTermQuery::new(term, IndexRecordOption::WithFreqs).into()
@@ -99,12 +87,11 @@ pub fn find_field_or_hit_dynamic<'a>(
 pub(crate) fn full_text_query(
     full_path: &str,
     text_query: &str,
-    slop: u32,
-    tokenize: bool,
+    full_text_params: &FullTextParams,
     schema: &TantivySchema,
 ) -> Result<TantivyQueryAst, InvalidQuery> {
     let (field, field_entry, path) = find_field_or_hit_dynamic(full_path, schema)?;
-    compute_query_with_field(field, field_entry, path, text_query, slop, tokenize)
+    compute_query_with_field(field, field_entry, path, text_query, full_text_params)
 }
 
 fn parse_val<T: FromStr>(value: &str, field_name: &str) -> Result<T, InvalidQuery> {
@@ -120,8 +107,7 @@ fn compute_query_with_field(
     field_entry: &FieldEntry,
     json_path: &str,
     value: &str,
-    slop: u32,
-    tokenize: bool,
+    full_text_params: &FullTextParams,
 ) -> Result<TantivyQueryAst, InvalidQuery> {
     let field_type = field_entry.field_type();
     match field_type {
@@ -158,31 +144,15 @@ fn compute_query_with_field(
             Ok(make_term_query(term))
         }
         FieldType::Str(text_options) => {
-            let text_analyzer_opt: Option<tantivy::tokenizer::TextAnalyzer> = if tokenize {
-                get_tokenizer(text_options)
-            } else {
-                None
-            };
-            if let Some(text_analyzer) = text_analyzer_opt {
-                let mut terms: Vec<(usize, Term)> = Vec::new();
-                let mut token_stream = text_analyzer.token_stream(value);
-                token_stream.process(&mut |token| {
-                    terms.push((token.position, Term::from_field_text(field, &token.text)));
-                });
-                if terms.is_empty() {
-                    Ok(TantivyQueryAst::match_none())
-                } else if terms.len() == 1 {
-                    let term = terms.pop().unwrap().1;
-                    Ok(make_term_query(term))
-                } else {
-                    let mut phrase_query = TantivyPhraseQuery::new_with_offset(terms);
-                    phrase_query.set_slop(slop);
-                    Ok(phrase_query.into())
-                }
-            } else {
-                let term = Term::from_field_text(field, value);
-                Ok(make_term_query(term))
-            }
+            let text_field_indexing = text_options.get_indexing_options().ok_or_else(|| {
+                InvalidQuery::SchemaError(format!(
+                    "Field {} is not full-text searchable",
+                    field_entry.name()
+                ))
+            })?;
+            let terms =
+                full_text_params.tokenize_text_into_terms(field, value, text_field_indexing)?;
+            full_text_params.make_query(terms)
         }
         FieldType::IpAddr(_) => {
             let ip_addr = IpAddr::from_str(value).map_err(|_| InvalidQuery::InvalidSearchTerm {
@@ -194,13 +164,13 @@ fn compute_query_with_field(
             let term = Term::from_field_ip_addr(field, ip_v6);
             Ok(make_term_query(term))
         }
-        FieldType::JsonObject(ref json_options) => Ok(compute_tantivy_ast_query_for_json(
+        FieldType::JsonObject(ref json_options) => compute_tantivy_ast_query_for_json(
             field,
             json_path,
             value,
-            tokenize,
+            full_text_params,
             json_options,
-        )),
+        ),
         FieldType::Facet(_) => Err(InvalidQuery::SchemaError(
             "Facets are not supported in Quickwit.".to_string(),
         )),
@@ -223,9 +193,9 @@ fn compute_tantivy_ast_query_for_json(
     field: Field,
     json_path: &str,
     text: &str,
-    tokenize: bool,
+    full_text_params: &FullTextParams,
     json_options: &JsonObjectOptions,
-) -> TantivyQueryAst {
+) -> Result<TantivyQueryAst, InvalidQuery> {
     let mut bool_query = TantivyBoolQuery::default();
     let mut term = Term::with_capacity(100);
     let mut json_term_writer = JsonTermWriter::from_field_and_json_path(
@@ -239,34 +209,10 @@ fn compute_tantivy_ast_query_for_json(
             .should
             .push(TantivyTermQuery::new(term, IndexRecordOption::Basic).into());
     }
-    let text_analyzer_opt: Option<tantivy::tokenizer::TextAnalyzer> = if tokenize {
-        get_tokenizer_from_json_option(json_options)
-    } else {
-        None
-    };
-    if let Some(text_analyzer) = text_analyzer_opt {
-        let mut terms: Vec<(usize, Term)> = Vec::new();
-        let mut token_stream = text_analyzer.token_stream(text);
-        token_stream.process(&mut |token| {
-            json_term_writer.set_str(&token.text);
-            terms.push((token.position, json_term_writer.term().clone()));
-        });
-        if terms.is_empty() {
-            return TantivyQueryAst::match_none();
-        } else if terms.len() == 1 {
-            let term = terms.pop().unwrap().1;
-            bool_query.should.push(make_term_query(term));
-        } else {
-            bool_query
-                .should
-                .push(TantivyPhraseQuery::new_with_offset(terms).into());
-        }
-    } else {
-        json_term_writer.set_str(text);
-        let term = json_term_writer.term().clone();
-        bool_query
-            .should
-            .push(TantivyTermQuery::new(term, IndexRecordOption::Basic).into());
-    }
-    TantivyQueryAst::Bool(bool_query)
+    let position_terms: Vec<(usize, Term)> =
+        full_text_params.tokenize_text_into_terms_json(field, json_path, text, json_options)?;
+    bool_query
+        .should
+        .push(full_text_params.make_query(position_terms)?);
+    Ok(bool_query.into())
 }

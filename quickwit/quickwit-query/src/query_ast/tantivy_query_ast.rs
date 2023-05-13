@@ -23,13 +23,7 @@ use tantivy::query::{
 };
 use tantivy::query_grammar::Occur;
 
-use crate::TantivyQuery;
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub(crate) enum MatchAllOrNone {
-    MatchAll,
-    MatchNone,
-}
+use crate::{BooleanOperand, MatchAllOrNone, TantivyQuery};
 
 /// This AST point, is only to make it easier to simplify the generated Tantivy query.
 /// when we convert a QueryAst into a TantivyQueryAst.
@@ -40,6 +34,12 @@ pub(crate) enum TantivyQueryAst {
     Bool(TantivyBoolQuery),
     Leaf(Box<dyn TantivyQuery>),
     ConstPredicate(MatchAllOrNone),
+}
+
+impl From<MatchAllOrNone> for TantivyQueryAst {
+    fn from(match_all_or_none: MatchAllOrNone) -> Self {
+        TantivyQueryAst::ConstPredicate(match_all_or_none)
+    }
 }
 
 impl PartialEq for TantivyQueryAst {
@@ -132,6 +132,19 @@ fn simplify_asts(asts: Vec<TantivyQueryAst>) -> Vec<TantivyQueryAst> {
 }
 
 impl TantivyBoolQuery {
+    pub fn build_clause(operator: BooleanOperand, children: Vec<TantivyQueryAst>) -> Self {
+        match operator {
+            BooleanOperand::And => Self {
+                must: children,
+                ..Default::default()
+            },
+            BooleanOperand::Or => Self {
+                should: children,
+                ..Default::default()
+            },
+        }
+    }
+
     pub fn simplify(mut self) -> TantivyQueryAst {
         self.must = simplify_asts(self.must);
         self.should = simplify_asts(self.should);

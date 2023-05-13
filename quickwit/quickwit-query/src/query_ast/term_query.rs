@@ -23,9 +23,11 @@ use serde::{Deserialize, Serialize};
 use tantivy::schema::Schema as TantivySchema;
 
 use super::{BuildTantivyAst, QueryAst};
-use crate::query_ast::TantivyQueryAst;
-use crate::InvalidQuery;
+use crate::query_ast::{FullTextParams, TantivyQueryAst};
+use crate::{BooleanOperand, InvalidQuery};
 
+/// The TermQuery acts exactly like a FullTextQuery with
+/// a raw tokenizer.
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
 pub struct TermQuery {
     pub field: String,
@@ -55,7 +57,18 @@ impl BuildTantivyAst for TermQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        crate::query_ast::utils::full_text_query(&self.field, &self.value, 0, false, schema)
+        let full_text_params = FullTextParams {
+            tokenizer: Some("raw".to_string()),
+            // The parameter below won't matter, since we will have only one term
+            mode: BooleanOperand::Or.into(),
+            zero_terms_query: Default::default(),
+        };
+        crate::query_ast::utils::full_text_query(
+            &self.field,
+            &self.value,
+            &full_text_params,
+            schema,
+        )
     }
 }
 
