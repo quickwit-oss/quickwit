@@ -220,7 +220,8 @@ pub enum ElasticRefresh {
     // but if it is present without a value like this: ?refresh, it should be the same as
     // ?refresh=true
     #[serde(alias = "")]
-    /// The request forces an immediate commit after the last document in the batch and waits for it to finish.
+    /// The request forces an immediate commit after the last document in the batch and waits for
+    /// it to finish.
     True,
     /// The request will wait for the next scheduled commit to finish.
     WaitFor,

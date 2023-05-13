@@ -125,7 +125,8 @@ pub enum CommitType {
     Auto = 0,
     /// The request waits for the next scheduled commit to finish.
     WaitFor = 1,
-    /// The request forces an immediate commit after the last document in the batch and waits for it to finish.
+    /// The request forces an immediate commit after the last document in the batch and waits for
+    /// it to finish.
     Force = 2,
 }
 
