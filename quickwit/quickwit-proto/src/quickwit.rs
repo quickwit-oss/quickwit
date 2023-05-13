@@ -1,4 +1,5 @@
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Eq, Hash)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchRequest {
@@ -111,6 +112,12 @@ pub struct SplitIdAndFooterOffsets {
     /// The offset of the end of the footer in split bundle. The footer contains the file bundle metadata and the hotcache.
     #[prost(uint64, tag = "3")]
     pub split_footer_end: u64,
+    /// The lowest timestamp appearing in the split
+    #[prost(int64, optional, tag = "4")]
+    pub timestamp_start: ::core::option::Option<i64>,
+    /// The highest timestamp appearing in the split
+    #[prost(int64, optional, tag = "5")]
+    pub timestamp_end: ::core::option::Option<i64>,
 }
 /// / Hits returned by a FetchDocRequest.
 /// /

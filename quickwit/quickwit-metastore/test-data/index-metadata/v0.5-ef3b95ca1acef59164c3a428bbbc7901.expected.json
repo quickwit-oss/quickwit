@@ -5,7 +5,6 @@
     }
   },
   "create_timestamp": 1789,
-  "incarnation_id": "11111111111111111111111111",
   "index_config": {
     "doc_mapping": {
       "field_mappings": [
@@ -88,6 +87,7 @@
     },
     "version": "0.5"
   },
+  "index_uid": "test:1111111111111",
   "sources": [
     {
       "desired_num_pipelines": 2,

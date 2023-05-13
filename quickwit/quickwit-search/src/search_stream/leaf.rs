@@ -450,6 +450,7 @@ mod tests {
     use tantivy::time::{Duration, OffsetDateTime};
 
     use super::*;
+    use crate::extract_split_and_footer_offsets;
 
     #[tokio::test]
     async fn test_leaf_search_stream_to_csv_output_with_filtering() -> anyhow::Result<()> {
@@ -489,14 +490,13 @@ mod tests {
             output_format: 0,
             partition_by_field: None,
         };
-        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits = test_sandbox
+            .metastore()
+            .list_all_splits(test_sandbox.index_uid())
+            .await?;
         let splits_offsets = splits
             .into_iter()
-            .map(|split_meta| SplitIdAndFooterOffsets {
-                split_id: split_meta.split_id().to_string(),
-                split_footer_start: split_meta.split_metadata.footer_offsets.start,
-                split_footer_end: split_meta.split_metadata.footer_offsets.end,
-            })
+            .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
             .collect();
         let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
         let mut single_node_stream = leaf_search_stream(
@@ -566,14 +566,13 @@ mod tests {
             output_format: 0,
             partition_by_field: None,
         };
-        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits = test_sandbox
+            .metastore()
+            .list_all_splits(test_sandbox.index_uid())
+            .await?;
         let splits_offsets = splits
             .into_iter()
-            .map(|split_meta| SplitIdAndFooterOffsets {
-                split_id: split_meta.split_id().to_string(),
-                split_footer_start: split_meta.split_metadata.footer_offsets.start,
-                split_footer_end: split_meta.split_metadata.footer_offsets.end,
-            })
+            .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
             .collect();
         let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
         let mut single_node_stream = leaf_search_stream(
@@ -622,14 +621,13 @@ mod tests {
             output_format: 0,
             partition_by_field: None,
         };
-        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits = test_sandbox
+            .metastore()
+            .list_all_splits(test_sandbox.index_uid())
+            .await?;
         let splits_offsets = splits
             .into_iter()
-            .map(|split_meta| SplitIdAndFooterOffsets {
-                split_id: split_meta.split_id().to_string(),
-                split_footer_start: split_meta.split_metadata.footer_offsets.start,
-                split_footer_end: split_meta.split_metadata.footer_offsets.end,
-            })
+            .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
             .collect();
         let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
         let mut single_node_stream = leaf_search_stream(
@@ -711,14 +709,13 @@ mod tests {
             output_format: 1,
             partition_by_field: Some(String::from("partition_by_fast_field")),
         };
-        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits = test_sandbox
+            .metastore()
+            .list_all_splits(test_sandbox.index_uid())
+            .await?;
         let splits_offsets = splits
             .into_iter()
-            .map(|split_meta| SplitIdAndFooterOffsets {
-                split_id: split_meta.split_id().to_string(),
-                split_footer_start: split_meta.split_metadata.footer_offsets.start,
-                split_footer_end: split_meta.split_metadata.footer_offsets.end,
-            })
+            .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
             .collect();
         let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
         let mut single_node_stream = leaf_search_stream(

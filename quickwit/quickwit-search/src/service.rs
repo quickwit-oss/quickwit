@@ -37,6 +37,7 @@ use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
+use crate::leaf_cache::LeafSearchCache;
 use crate::search_stream::{leaf_search_stream, root_search_stream};
 use crate::{
     fetch_docs, leaf_list_terms, leaf_search, root_list_terms, root_search, ClusterClient,
@@ -298,6 +299,8 @@ pub struct SearcherContext {
     pub split_footer_cache: MemorySizedCache<String>,
     /// Counting semaphore to limit concurrent split stream requests.
     pub split_stream_semaphore: Semaphore,
+    /// Recent sub-query cache.
+    pub leaf_search_cache: LeafSearchCache,
 }
 
 impl std::fmt::Debug for SearcherContext {
@@ -331,6 +334,9 @@ impl SearcherContext {
             Some(searcher_config.aggregation_memory_limit.get_bytes()),
             Some(searcher_config.aggregation_bucket_limit),
         );
+        let leaf_search_cache = LeafSearchCache::new(
+            searcher_config.partial_request_cache_capacity.get_bytes() as usize,
+        );
         Self {
             searcher_config,
             aggregation_limits,
@@ -338,6 +344,7 @@ impl SearcherContext {
             leaf_search_split_semaphore,
             split_footer_cache: global_split_footer_cache,
             split_stream_semaphore,
+            leaf_search_cache,
         }
     }
 }

@@ -4671,6 +4671,7 @@ dependencies = [
  "opentelemetry",
  "postcard",
  "proptest",
+ "prost",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",

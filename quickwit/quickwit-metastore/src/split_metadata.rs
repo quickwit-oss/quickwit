@@ -23,11 +23,11 @@ use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
 use quickwit_common::FileEntry;
+use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::split_metadata_version::VersionedSplitMetadata;
-use crate::IndexConfigId;
 
 /// Carries split metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -68,7 +68,7 @@ pub struct SplitMetadata {
     pub split_id: String,
 
     /// Id of the index this split belongs to.
-    pub index_config_id: IndexConfigId,
+    pub index_uid: IndexUid,
 
     /// Partition to which the split belongs to.
     ///
@@ -132,14 +132,14 @@ impl SplitMetadata {
     /// Creates a new instance of split metadata.
     pub fn new(
         split_id: String,
-        index_config_id: IndexConfigId,
+        index_uid: IndexUid,
         partition_id: u64,
         source_id: String,
         node_id: String,
     ) -> Self {
         Self {
             split_id,
-            index_config_id,
+            index_uid,
             partition_id,
             source_id,
             node_id,
@@ -177,7 +177,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
         SplitMetadata {
             split_id: "split".to_string(),
-            index_config_id: IndexConfigId::for_test("my-index"),
+            index_uid: IndexUid::from_parts("my-index", "1111111111111"),
             source_id: "source".to_string(),
             node_id: "node".to_string(),
             delete_opstamp: 10,

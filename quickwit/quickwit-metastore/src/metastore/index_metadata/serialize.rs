@@ -20,8 +20,8 @@
 use std::collections::HashMap;
 
 use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_proto::IndexUid;
 use serde::{self, Deserialize, Serialize};
-use ulid::Ulid;
 
 use crate::checkpoint::IndexCheckpoint;
 use crate::split_metadata::utc_now_timestamp;
@@ -58,7 +58,7 @@ impl From<IndexMetadata> for IndexMetadataV0_5 {
     fn from(index_metadata: IndexMetadata) -> Self {
         let sources: Vec<SourceConfig> = index_metadata.sources.values().cloned().collect();
         Self {
-            incarnation_id: index_metadata.incarnation_id,
+            index_uid: index_metadata.index_uid,
             index_config: index_metadata.index_config,
             checkpoint: index_metadata.checkpoint,
             create_timestamp: index_metadata.create_timestamp,
@@ -71,8 +71,8 @@ impl From<IndexMetadata> for IndexMetadataV0_5 {
 pub(crate) struct IndexMetadataV0_5 {
     #[schema(value_type = String)]
     // Defaults to nil for backward compatibility.
-    #[serde(default)]
-    pub incarnation_id: Ulid,
+    #[serde(default, alias = "index_id")]
+    pub index_uid: IndexUid,
     #[schema(value_type = VersionedIndexConfig)]
     pub index_config: IndexConfig,
     #[schema(value_type = Object)]
@@ -95,7 +95,11 @@ impl TryFrom<IndexMetadataV0_5> for IndexMetadata {
             sources.insert(source.source_id.clone(), source);
         }
         Ok(Self {
-            incarnation_id: v0_5.incarnation_id,
+            index_uid: if v0_5.index_uid.is_empty() {
+                v0_5.index_config.index_id.clone().into()
+            } else {
+                v0_5.index_uid
+            },
             index_config: v0_5.index_config,
             checkpoint: v0_5.checkpoint,
             create_timestamp: v0_5.create_timestamp,
