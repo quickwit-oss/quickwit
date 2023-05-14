@@ -215,11 +215,15 @@ async fn tail_endpoint(
 pub enum ElasticRefresh {
     // if the refresh parameter is not present it is false
     #[default]
+    /// The request doesn't wait for commit
     False,
     // but if it is present without a value like this: ?refresh, it should be the same as
     // ?refresh=true
     #[serde(alias = "")]
+    /// The request forces an immediate commit after the last document in the batch and waits for
+    /// it to finish.
     True,
+    /// The request will wait for the next scheduled commit to finish.
     WaitFor,
 }
 
@@ -639,6 +643,12 @@ mod tests {
                 .unwrap()
                 .refresh,
             ElasticRefresh::True
+        );
+        assert_eq!(
+            serde_qs::from_str::<ElasticIngestOptions>("refresh=wait")
+                .unwrap_err()
+                .to_string(),
+            "unknown variant `wait`, expected one of `false`, `true`, `wait_for`"
         );
     }
 

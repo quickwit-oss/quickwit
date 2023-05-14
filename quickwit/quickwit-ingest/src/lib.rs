@@ -114,14 +114,19 @@ pub async fn start_ingest_api_service(
     init_ingest_api(universe, &queues_dir_path, config).await
 }
 
+/// Specifies if the ingest request should block waiting for the records to be committed.
 #[repr(u32)]
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all(deserialize = "snake_case"))]
 #[derive(Default)]
 pub enum CommitType {
     #[default]
+    /// The request doesn't wait for commit
     Auto = 0,
+    /// The request waits for the next scheduled commit to finish.
     WaitFor = 1,
+    /// The request forces an immediate commit after the last document in the batch and waits for
+    /// it to finish.
     Force = 2,
 }
 
