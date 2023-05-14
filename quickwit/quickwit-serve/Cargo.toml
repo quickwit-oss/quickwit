@@ -17,6 +17,7 @@ byte-unit = { workspace = true }
 elasticsearch-dsl = "0.4"
 futures = { workspace = true }
 futures-util = { workspace = true }
+http-serde = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }

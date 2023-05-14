@@ -38,7 +38,8 @@ use thiserror::Error;
 use tracing::info;
 use warp::{Filter, Rejection};
 
-use crate::format::{extract_format_from_qs, make_response};
+use crate::format::extract_format_from_qs;
+use crate::json_api_response::make_json_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
 use crate::with_arg;
 
@@ -123,7 +124,7 @@ fn get_index_metadata_handler(
         .and(with_arg(metastore))
         .then(get_index_metadata)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 async fn get_index_metadata(
@@ -142,7 +143,7 @@ fn get_indexes_metadatas_handler(
         .and(with_arg(metastore))
         .then(get_indexes_metadatas)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 /// Describes an index with its main information and statistics.
@@ -225,7 +226,7 @@ fn describe_index_handler(
         .and(with_arg(metastore))
         .then(describe_index)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 /// This struct represents the QueryString passed to
@@ -301,7 +302,7 @@ fn list_splits_handler(
         .and(with_arg(metastore))
         .then(list_splits)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -349,7 +350,7 @@ fn mark_splits_for_deletion_handler(
         .and(with_arg(metastore))
         .then(mark_splits_for_deletion)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(
@@ -390,7 +391,7 @@ fn create_index_handler(
         .and(with_arg(quickwit_config))
         .then(create_index)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(
@@ -434,7 +435,7 @@ fn clear_index_handler(
         .and(with_arg(index_service))
         .then(clear_index)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(
@@ -474,7 +475,7 @@ fn delete_index_handler(
         .and(with_arg(index_service))
         .then(delete_index)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(
@@ -513,7 +514,7 @@ fn create_source_handler(
         .and(with_arg(index_service))
         .then(create_source)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(
@@ -563,7 +564,7 @@ fn get_source_handler(
         .and(with_arg(metastore))
         .then(get_source)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 async fn get_source(
@@ -592,7 +593,7 @@ fn reset_source_checkpoint_handler(
         .and(with_arg(metastore))
         .then(reset_source_checkpoint)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(
@@ -629,7 +630,7 @@ fn toggle_source_handler(
         .and(with_arg(metastore))
         .then(toggle_source)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -680,7 +681,7 @@ fn delete_source_handler(
         .and(with_arg(metastore))
         .then(delete_source)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(
