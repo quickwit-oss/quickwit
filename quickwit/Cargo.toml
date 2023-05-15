@@ -106,7 +106,7 @@ openssl-probe = "0.1.5"
 opentelemetry = { version = "0.18", features = ["rt-tokio"] }
 opentelemetry-jaeger = { version = "0.17", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.11.0"
-pin-project = "1.0.12"
+pin-project = "1.1.0"
 pnet = { version = "0.31.0", features = ["std"] }
 postcard = { version = "1.0.4", features = ["use-std"], default-features = false}
 predicates = "2"
