@@ -164,7 +164,7 @@ impl IngestServiceClient {
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
-        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IngestServiceMailbox<A>: IngestService,
     {
         IngestServiceClient::new(IngestServiceMailbox::new(mailbox))
@@ -409,7 +409,7 @@ impl IngestServiceTowerBlockBuilder {
         mailbox: quickwit_actors::Mailbox<A>,
     ) -> IngestServiceClient
     where
-        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IngestServiceMailbox<A>: IngestService,
     {
         self.build_from_boxed(Box::new(IngestServiceClient::from_mailbox(mailbox)))
@@ -481,11 +481,11 @@ use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for IngestServiceMailbox<A>
 where
     A: quickwit_actors::Actor
-        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync
+        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send
         + 'static,
     M: std::fmt::Debug + Send + Sync + 'static,
-    T: Send + Sync + 'static,
-    E: std::fmt::Debug + Send + Sync + 'static,
+    T: Send + 'static,
+    E: std::fmt::Debug + Send + 'static,
     crate::IngestServiceError: From<quickwit_actors::AskError<E>>,
 {
     type Response = T;

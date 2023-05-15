@@ -79,7 +79,7 @@ impl HelloClient {
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
-        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         HelloMailbox<A>: Hello,
     {
         HelloClient::new(HelloMailbox::new(mailbox))
@@ -280,7 +280,7 @@ impl HelloTowerBlockBuilder {
         mailbox: quickwit_actors::Mailbox<A>,
     ) -> HelloClient
     where
-        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         HelloMailbox<A>: Hello,
     {
         self.build_from_boxed(Box::new(HelloClient::from_mailbox(mailbox)))
@@ -343,11 +343,11 @@ use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for HelloMailbox<A>
 where
     A: quickwit_actors::Actor
-        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync
+        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send
         + 'static,
     M: std::fmt::Debug + Send + Sync + 'static,
-    T: Send + Sync + 'static,
-    E: std::fmt::Debug + Send + Sync + 'static,
+    T: Send + 'static,
+    E: std::fmt::Debug + Send + 'static,
     crate::HelloError: From<quickwit_actors::AskError<E>>,
 {
     type Response = T;

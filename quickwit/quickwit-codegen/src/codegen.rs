@@ -303,7 +303,7 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
 
             pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
             where
-                A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+                A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
                 #mailbox_name<A>: #service_name,
             {
                 #client_name::new(#mailbox_name::new(mailbox))
@@ -611,7 +611,7 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
 
             pub fn build_from_mailbox<A>(self, mailbox: quickwit_actors::Mailbox<A>) -> #client_name
             where
-                A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+                A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
                 #mailbox_name<A>: #service_name,
             {
                 self.build_from_boxed(Box::new(#client_name::from_mailbox(mailbox)))
@@ -683,10 +683,10 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
 
         impl<A, M, T, E> tower::Service<M> for #mailbox_name<A>
         where
-            A: quickwit_actors::Actor + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync + 'static,
+            A: quickwit_actors::Actor + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + 'static,
             M: std::fmt::Debug + Send + Sync + 'static,
-            T: Send + Sync + 'static,
-            E: std::fmt::Debug + Send + Sync + 'static,
+            T: Send + 'static,
+            E: std::fmt::Debug + Send + 'static,
             #error_type: From<quickwit_actors::AskError<E>>,
         {
             type Response = T;
