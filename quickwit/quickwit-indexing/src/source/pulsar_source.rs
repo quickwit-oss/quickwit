@@ -36,6 +36,7 @@ use quickwit_config::{PulsarSourceAuth, PulsarSourceParams};
 use quickwit_metastore::checkpoint::{
     PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
+use quickwit_proto::IndexUid;
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::Mutex;
 use tokio::time;
@@ -106,9 +107,9 @@ impl PulsarSource {
         params: PulsarSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
-        let subscription_name = subscription_name(&ctx.index_id, &ctx.source_config.source_id);
+        let subscription_name = subscription_name(&ctx.index_uid, &ctx.source_config.source_id);
         info!(
-            index_id=%ctx.index_id,
+            index_id=%ctx.index_uid.index_id(),
             source_id=%ctx.source_config.source_id,
             topics=?params.topics,
             subscription_name=%subscription_name,
@@ -285,7 +286,7 @@ impl Source for PulsarSource {
 
     fn observable_state(&self) -> JsonValue {
         json!({
-            "index_id": self.ctx.index_id,
+            "index_id": self.ctx.index_uid.index_id(),
             "source_id": self.ctx.source_config.source_id,
             "topics": self.params.topics,
             "subscription_name": self.subscription_name,
@@ -453,8 +454,8 @@ pub(crate) async fn check_connectivity(params: &PulsarSourceParams) -> anyhow::R
     Ok(())
 }
 
-fn subscription_name(index_id: &str, source_id: &str) -> String {
-    format!("quickwit-{index_id}-{source_id}")
+fn subscription_name(index_uid: &IndexUid, source_id: &str) -> String {
+    format!("quickwit-{index_uid}-{source_id}")
 }
 
 #[cfg(all(test, feature = "pulsar-broker-tests"))]
@@ -906,6 +907,7 @@ mod pulsar_broker_tests {
         let topic = append_random_suffix("test-pulsar-source--topic-ingestion--topic");
 
         let index_id = append_random_suffix("test-pulsar-source--topic-ingestion--index");
+        let index_uid = IndexUid::new(&index_id);
         let (source_id, source_config) = get_source_config([&topic]);
 
         setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
@@ -946,7 +948,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription_name": subscription_name(&index_id, &source_id),
+            "subscription_name": subscription_name(&index_uid, &source_id),
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
@@ -963,6 +965,7 @@ mod pulsar_broker_tests {
         let topic2 = append_random_suffix("test-pulsar-source--topic-ingestion--topic");
 
         let index_id = append_random_suffix("test-pulsar-source--topic-ingestion--index");
+        let index_uid = IndexUid::new(&index_id);
         let (source_id, source_config) = get_source_config([&topic1, &topic2]);
 
         setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
@@ -1013,7 +1016,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic1, topic2],
-            "subscription_name": subscription_name(&index_id, &source_id),
+            "subscription_name": subscription_name(&index_uid, &source_id),
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 20,
@@ -1030,6 +1033,7 @@ mod pulsar_broker_tests {
 
         let index_id =
             append_random_suffix("test-pulsar-source--partitioned-single-consumer--index");
+        let index_uid = IndexUid::new(&index_id);
         let (source_id, source_config) = get_source_config([&topic]);
 
         create_partitioned_topic(&topic, 2).await;
@@ -1067,7 +1071,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription_name": subscription_name(&index_id, &source_id),
+            "subscription_name": subscription_name(&index_uid, &source_id),
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
@@ -1084,6 +1088,7 @@ mod pulsar_broker_tests {
 
         let index_id =
             append_random_suffix("test-pulsar-source--partitioned-multi-consumer--index");
+        let index_uid = IndexUid::new(&index_id);
         let (source_id, source_config) = get_source_config([&topic]);
 
         create_partitioned_topic(&topic, 2).await;
@@ -1150,7 +1155,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription_name": subscription_name(&index_id, &source_id),
+            "subscription_name": subscription_name(&index_uid, &source_id),
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,

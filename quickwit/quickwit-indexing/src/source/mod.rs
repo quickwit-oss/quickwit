@@ -88,6 +88,7 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::Metastore;
+use quickwit_proto::IndexUid;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 use tokio::runtime::Handle;
@@ -101,7 +102,7 @@ use crate::source::ingest_api_source::IngestApiSourceFactory;
 /// Runtime configuration used during execution of a source actor.
 pub struct SourceExecutionContext {
     pub metastore: Arc<dyn Metastore>,
-    pub index_id: String,
+    pub index_uid: IndexUid,
     // Ingest API queues directory path.
     pub queues_dir_path: PathBuf,
     pub source_config: SourceConfig,
@@ -117,7 +118,7 @@ impl SourceExecutionContext {
     ) -> Arc<SourceExecutionContext> {
         Arc::new(Self {
             metastore,
-            index_id: index_id.to_string(),
+            index_uid: IndexUid::new(index_id),
             queues_dir_path,
             source_config,
         })

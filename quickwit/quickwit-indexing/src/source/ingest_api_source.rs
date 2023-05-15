@@ -80,7 +80,7 @@ impl IngestApiSource {
 
         // Ensure a queue for this index exists.
         let create_queue_req = CreateQueueIfNotExistsRequest {
-            queue_id: ctx.index_id.clone(),
+            queue_id: ctx.index_uid.index_id().to_string(),
         };
         ingest_api_service.ask_for_res(create_queue_req).await?;
 
@@ -121,7 +121,7 @@ impl Source for IngestApiSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let fetch_req = FetchRequest {
-            index_id: self.ctx.index_id.clone(),
+            index_id: self.ctx.index_uid.index_id().to_string(),
             start_after: self.counters.current_offset,
             num_bytes_limit: None,
         };
@@ -180,7 +180,7 @@ impl Source for IngestApiSource {
         {
             let up_to_position_included = offset_str.parse::<u64>()?;
             let suggest_truncate_req = SuggestTruncateRequest {
-                index_id: self.ctx.index_id.clone(),
+                index_id: self.ctx.index_uid.index_id().to_string(),
                 up_to_position_included,
             };
             ctx.ask_for_res(&self.ingest_api_service, suggest_truncate_req)

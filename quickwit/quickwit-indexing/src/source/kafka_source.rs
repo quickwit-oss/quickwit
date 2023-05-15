@@ -32,6 +32,7 @@ use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{
     PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
+use quickwit_proto::IndexUid;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
     BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
@@ -228,7 +229,7 @@ impl fmt::Debug for KafkaSource {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("KafkaSource")
-            .field("index_id", &self.ctx.index_id)
+            .field("index_id", &self.ctx.index_uid.index_id())
             .field("source_id", &self.ctx.source_config.source_id)
             .field("topic", &self.topic)
             .finish()
@@ -247,7 +248,7 @@ impl KafkaSource {
 
         let (events_tx, events_rx) = mpsc::channel(100);
         let (client_config, consumer) = create_consumer(
-            &ctx.index_id,
+            &ctx.index_uid,
             &ctx.source_config.source_id,
             params,
             events_tx.clone(),
@@ -265,7 +266,7 @@ impl KafkaSource {
         let publish_lock = PublishLock::default();
 
         info!(
-            index_id=%ctx.index_id,
+            index_id=%ctx.index_uid.index_id(),
             source_id=%ctx.source_config.source_id,
             topic=%topic,
             group_id=%group_id,
@@ -345,12 +346,16 @@ impl KafkaSource {
         assignment_tx: oneshot::Sender<Vec<(i32, Offset)>>,
     ) -> anyhow::Result<()> {
         let index_metadata = ctx
-            .protect_future(self.ctx.metastore.index_metadata(&self.ctx.index_id))
+            .protect_future(
+                self.ctx
+                    .metastore
+                    .index_metadata_strict(&self.ctx.index_uid),
+            )
             .await
             .with_context(|| {
                 format!(
                     "Failed to fetch index metadata for index `{}`.",
-                    self.ctx.index_id
+                    self.ctx.index_uid.index_id()
                 )
             })?;
         let checkpoint = index_metadata
@@ -387,7 +392,7 @@ impl KafkaSource {
             next_offsets.push((partition, next_offset));
         }
         info!(
-            index_id=%self.ctx.index_id,
+            index_id=%self.ctx.index_uid.index_id(),
             source_id=%self.ctx.source_config.source_id,
             topic=%self.topic,
             partitions=?partitions,
@@ -557,7 +562,7 @@ impl Source for KafkaSource {
             .sorted()
             .collect();
         json!({
-            "index_id": self.ctx.index_id,
+            "index_id": self.ctx.index_uid.index_id(),
             "source_id": self.ctx.source_config.source_id,
             "topic": self.topic,
             "assigned_partitions": assigned_partitions,
@@ -657,7 +662,7 @@ pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Res
 
 /// Creates a new `KafkaSourceConsumer`.
 fn create_consumer(
-    index_id: &str,
+    index_uid: &IndexUid,
     source_id: &str,
     params: KafkaSourceParams,
     events_tx: mpsc::Sender<KafkaEvent>,
@@ -665,7 +670,7 @@ fn create_consumer(
     let mut client_config = parse_client_params(params.client_params)?;
 
     // Group ID is limited to 255 characters.
-    let mut group_id = format!("quickwit-{index_id}-{source_id}");
+    let mut group_id = format!("quickwit-{index_uid}-{source_id}");
     group_id.truncate(255);
 
     let log_level = parse_client_log_level(params.client_log_level)?;
@@ -1071,19 +1076,19 @@ mod kafka_broker_tests {
         let index_id = append_random_suffix("test-kafka-source--process-assign-partitions--index");
         let (source_id, source_config) = get_source_config(&topic);
 
-        setup_index(metastore.clone(), &index_id, &source_id, &[(2, -1, 42)]).await;
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[(2, -1, 42)]).await;
 
         let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
             params
         } else {
             unreachable!()
         };
-        let ctx = SourceExecutionContext::for_test(
+        let ctx = Arc::new(SourceExecutionContext {
             metastore,
-            &index_id,
-            PathBuf::from("./queues"),
+            index_uid,
+            queues_dir_path: PathBuf::from("./queues"),
             source_config,
-        );
+        });
         let ignored_checkpoint = SourceCheckpoint::default();
         let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
             .await
@@ -1228,22 +1233,19 @@ mod kafka_broker_tests {
         {
             let metastore = metastore_for_test();
             let index_id = append_random_suffix("test-kafka-source--index");
-
             let (source_id, source_config) = get_source_config(&topic);
+            let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
             let source = source_loader
                 .load_source(
-                    SourceExecutionContext::for_test(
-                        metastore.clone(),
-                        &index_id,
-                        PathBuf::from("./queues"),
-                        source_config.clone(),
-                    ),
+                    Arc::new(SourceExecutionContext {
+                        metastore,
+                        index_uid,
+                        queues_dir_path: PathBuf::from("./queues"),
+                        source_config,
+                    }),
                     SourceCheckpoint::default(),
                 )
                 .await?;
-
-            setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
-
             let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
                 source,
@@ -1290,22 +1292,19 @@ mod kafka_broker_tests {
         {
             let metastore = metastore_for_test();
             let index_id = append_random_suffix("test-kafka-source--index");
-
             let (source_id, source_config) = get_source_config(&topic);
+            let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
             let source = source_loader
                 .load_source(
-                    SourceExecutionContext::for_test(
-                        metastore.clone(),
-                        &index_id,
-                        PathBuf::from("./queues"),
-                        source_config.clone(),
-                    ),
+                    Arc::new(SourceExecutionContext {
+                        metastore,
+                        index_uid,
+                        queues_dir_path: PathBuf::from("./queues"),
+                        source_config,
+                    }),
                     SourceCheckpoint::default(),
                 )
                 .await?;
-
-            setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
-
             let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
                 source,
@@ -1356,27 +1355,25 @@ mod kafka_broker_tests {
         {
             let metastore = metastore_for_test();
             let index_id = append_random_suffix("test-kafka-source--index");
-
             let (source_id, source_config) = get_source_config(&topic);
-            let source = source_loader
-                .load_source(
-                    SourceExecutionContext::for_test(
-                        metastore.clone(),
-                        &index_id,
-                        PathBuf::from("./queues"),
-                        source_config.clone(),
-                    ),
-                    SourceCheckpoint::default(),
-                )
-                .await?;
-
-            setup_index(
+            let index_uid = setup_index(
                 metastore.clone(),
                 &index_id,
                 &source_id,
                 &[(0, -1, 0), (1, -1, 2)],
             )
             .await;
+            let source = source_loader
+                .load_source(
+                    Arc::new(SourceExecutionContext {
+                        metastore,
+                        index_uid,
+                        queues_dir_path: PathBuf::from("./queues"),
+                        source_config,
+                    }),
+                    SourceCheckpoint::default(),
+                )
+                .await?;
 
             let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
