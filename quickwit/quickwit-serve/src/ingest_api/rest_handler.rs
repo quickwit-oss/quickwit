@@ -29,7 +29,8 @@ use serde::Deserialize;
 use thiserror::Error;
 use warp::{Filter, Rejection};
 
-use crate::format::{extract_format_from_qs, make_response};
+use crate::format::extract_format_from_qs;
+use crate::json_api_response::make_json_api_response;
 use crate::{with_arg, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
@@ -131,7 +132,7 @@ fn ingest_handler(
     ingest_filter()
         .and(with_arg(ingest_service))
         .then(ingest)
-        .map(|result| BodyFormat::default().make_rest_reply(result))
+        .map(|result| make_json_api_response(result, BodyFormat::default()))
 }
 
 #[utoipa::path(
@@ -176,7 +177,7 @@ pub fn tail_handler(
         .and(with_arg(ingest_service))
         .then(tail_endpoint)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
@@ -261,7 +262,7 @@ pub fn elastic_bulk_handler(
         .and(with_arg(ingest_service))
         .then(elastic_ingest)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(
