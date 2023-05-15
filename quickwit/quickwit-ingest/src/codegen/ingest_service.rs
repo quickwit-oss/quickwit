@@ -164,7 +164,7 @@ impl IngestServiceClient {
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
-        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IngestServiceMailbox<A>: IngestService,
     {
         IngestServiceClient::new(IngestServiceMailbox::new(mailbox))
@@ -288,6 +288,7 @@ impl IngestService for IngestServiceTowerBlock {
 }
 #[derive(Debug, Default)]
 pub struct IngestServiceTowerBlockBuilder {
+    #[allow(clippy::type_complexity)]
     ingest_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn IngestService>,
@@ -296,6 +297,7 @@ pub struct IngestServiceTowerBlockBuilder {
             crate::IngestServiceError,
         >,
     >,
+    #[allow(clippy::type_complexity)]
     fetch_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn IngestService>,
@@ -304,6 +306,7 @@ pub struct IngestServiceTowerBlockBuilder {
             crate::IngestServiceError,
         >,
     >,
+    #[allow(clippy::type_complexity)]
     tail_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn IngestService>,
@@ -409,7 +412,7 @@ impl IngestServiceTowerBlockBuilder {
         mailbox: quickwit_actors::Mailbox<A>,
     ) -> IngestServiceClient
     where
-        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IngestServiceMailbox<A>: IngestService,
     {
         self.build_from_boxed(Box::new(IngestServiceClient::from_mailbox(mailbox)))
@@ -481,11 +484,11 @@ use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for IngestServiceMailbox<A>
 where
     A: quickwit_actors::Actor
-        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync
+        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send
         + 'static,
     M: std::fmt::Debug + Send + Sync + 'static,
-    T: Send + Sync + 'static,
-    E: std::fmt::Debug + Send + Sync + 'static,
+    T: Send + 'static,
+    E: std::fmt::Debug + Send + 'static,
     crate::IngestServiceError: From<quickwit_actors::AskError<E>>,
 {
     type Response = T;
@@ -610,7 +613,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .ingest(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(Into::into)
+            .map_err(|error| error.into())
     }
     async fn fetch(
         &self,
@@ -621,7 +624,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .fetch(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(Into::into)
+            .map_err(|error| error.into())
     }
     async fn tail(
         &self,
@@ -632,7 +635,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .tail(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(Into::into)
+            .map_err(|error| error.into())
     }
 }
 /// Generated client implementations.

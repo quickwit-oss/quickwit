@@ -4085,6 +4085,7 @@ name = "quickwit-codegen"
 version = "0.5.0"
 dependencies = [
  "anyhow",
+ "heck 0.4.1",
  "prettyplease 0.2.4",
  "proc-macro2",
  "prost",
@@ -4111,6 +4112,7 @@ dependencies = [
  "serde",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic 0.8.3",
  "tower",
  "utoipa",

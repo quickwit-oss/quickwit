@@ -18,6 +18,7 @@ prost = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 utoipa = { workspace = true }
