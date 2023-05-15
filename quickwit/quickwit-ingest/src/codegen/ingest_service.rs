@@ -288,6 +288,7 @@ impl IngestService for IngestServiceTowerBlock {
 }
 #[derive(Debug, Default)]
 pub struct IngestServiceTowerBlockBuilder {
+    #[allow(clippy::type_complexity)]
     ingest_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn IngestService>,
@@ -296,6 +297,7 @@ pub struct IngestServiceTowerBlockBuilder {
             crate::IngestServiceError,
         >,
     >,
+    #[allow(clippy::type_complexity)]
     fetch_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn IngestService>,
@@ -304,6 +306,7 @@ pub struct IngestServiceTowerBlockBuilder {
             crate::IngestServiceError,
         >,
     >,
+    #[allow(clippy::type_complexity)]
     tail_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn IngestService>,
@@ -610,7 +613,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .ingest(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(Into::into)
+            .map_err(|error| error.into())
     }
     async fn fetch(
         &self,
@@ -621,7 +624,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .fetch(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(Into::into)
+            .map_err(|error| error.into())
     }
     async fn tail(
         &self,
@@ -632,7 +635,7 @@ impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAd
             .tail(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(Into::into)
+            .map_err(|error| error.into())
     }
 }
 /// Generated client implementations.

@@ -4112,6 +4112,7 @@ dependencies = [
  "serde",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic 0.8.3",
  "tower",
  "utoipa",

@@ -133,6 +133,7 @@ impl ControlPlaneService for ControlPlaneServiceTowerBlock {
 }
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerBlockBuilder {
+    #[allow(clippy::type_complexity)]
     notify_index_change_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn ControlPlaneService>,
@@ -369,7 +370,7 @@ for ControlPlaneServiceGrpcServerAdapter {
             .notify_index_change(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(Into::into)
+            .map_err(|error| error.into())
     }
 }
 /// Generated client implementations.

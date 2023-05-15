@@ -37,7 +37,16 @@ message GoodbyeResponse {
     string message = 1;
 }
 
+message PingRequest {
+    string name = 1;
+}
+
+message PingResponse {
+    string message = 1;
+}
+
 service Hello {
     rpc Hello(HelloRequest) returns (HelloResponse);
     rpc Goodbye(GoodbyeRequest) returns (GoodbyeResponse);
+    rpc Ping(PingRequest) returns (stream PingResponse);
 }
