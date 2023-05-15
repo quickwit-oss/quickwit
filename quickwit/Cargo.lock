@@ -4085,6 +4085,7 @@ name = "quickwit-codegen"
 version = "0.5.0"
 dependencies = [
  "anyhow",
+ "heck 0.4.1",
  "prettyplease 0.2.4",
  "proc-macro2",
  "prost",

@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use heck::ToSnakeCase;
 use proc_macro2::TokenStream;
 use prost_build::{Method, Service, ServiceGenerator};
 use quote::{quote, ToTokens};
@@ -130,11 +131,13 @@ impl CodegenContext {
         let tower_block_builder_name = quote::format_ident!("{}TowerBlockBuilder", service.name);
         let mailbox_name = quote::format_ident!("{}Mailbox", service.name);
 
-        let grpc_client_package_name = quote::format_ident!("{}_grpc_client", service.package);
+        let grpc_client_package_name =
+            quote::format_ident!("{}_grpc_client", service.name.to_snake_case());
         let grpc_client_name = quote::format_ident!("{}GrpcClient", service.name);
         let grpc_client_adapter_name = quote::format_ident!("{}GrpcClientAdapter", service.name);
 
-        let grpc_server_package_name = quote::format_ident!("{}_grpc_server", service.package);
+        let grpc_server_package_name =
+            quote::format_ident!("{}_grpc_server", service.name.to_snake_case());
         let grpc_service_name = quote::format_ident!("{}Grpc", service.name);
         let grpc_server_adapter_name = quote::format_ident!("{}GrpcServerAdapter", service.name);
 
