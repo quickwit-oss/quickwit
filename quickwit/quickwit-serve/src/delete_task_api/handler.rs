@@ -28,7 +28,8 @@ use quickwit_query::query_ast::QueryAst;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
-use crate::format::{extract_format_from_qs, make_response};
+use crate::format::extract_format_from_qs;
+use crate::json_api_response::make_json_api_response;
 use crate::with_arg;
 
 #[derive(utoipa::OpenApi)]
@@ -69,7 +70,7 @@ pub fn get_delete_tasks_handler(
         .and(with_arg(metastore))
         .then(get_delete_tasks)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(
@@ -108,7 +109,7 @@ pub fn post_delete_tasks_handler(
         .and(with_arg(metastore))
         .then(post_delete_request)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(

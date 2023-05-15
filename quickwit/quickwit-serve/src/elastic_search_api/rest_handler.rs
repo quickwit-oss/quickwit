@@ -22,15 +22,17 @@ use std::time::Instant;
 
 use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticSearchResponse};
 use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
+use hyper::StatusCode;
 use quickwit_proto::{SearchResponse, ServiceErrorCode, SortOrder};
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::DefaultOperator;
 use quickwit_search::{SearchError, SearchService};
 use warp::{Filter, Rejection};
 
-use super::model::{SearchBody, SearchQueryParams};
+use super::model::{ElasticSearchError, SearchBody, SearchQueryParams};
 use crate::elastic_search_api::filter::elastic_index_search_filter;
-use crate::format::{ApiError, BodyFormat};
+use crate::format::BodyFormat;
+use crate::json_api_response::{make_json_api_response, ApiError, JsonApiResponse};
 use crate::with_arg;
 
 /// GET or POST _elastic/_search
@@ -39,12 +41,13 @@ pub fn es_compat_search_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     super::filter::elastic_search_filter().then(|_params: SearchQueryParams| async move {
         // TODO
-        BodyFormat::Json.make_reply_for_err(ApiError {
-            code: ServiceErrorCode::NotSupportedYet,
+        let api_error = ApiError {
+            service_code: ServiceErrorCode::NotSupportedYet,
             message: "_elastic/_search is not supported yet. Please try the index search endpoint \
                       (_elastic/{index}/search)"
                 .to_string(),
-        })
+        };
+        make_json_api_response::<(), _>(Err(api_error), BodyFormat::default())
     })
 }
 
@@ -55,14 +58,14 @@ pub fn es_compat_index_search_handler(
     elastic_index_search_filter()
         .and(with_arg(search_service))
         .then(es_compat_index_search)
-        .map(|resp| BodyFormat::Json.make_rest_reply(resp))
+        .map(make_elastic_api_response)
 }
 
 fn build_request_for_es_api(
     index_id: String,
     search_params: SearchQueryParams,
     search_body: SearchBody,
-) -> Result<quickwit_proto::SearchRequest, SearchError> {
+) -> Result<quickwit_proto::SearchRequest, ElasticSearchError> {
     let default_operator = search_params
         .default_operator
         .unwrap_or(DefaultOperator::Or);
@@ -104,9 +107,11 @@ fn build_request_for_es_api(
         .unwrap_or_default();
 
     if sort_fields.len() >= 2 {
-        return Err(SearchError::InvalidArgument(format!(
-            "Only one search field is supported at the moment. Got {:?}",
-            sort_fields
+        return Err(ElasticSearchError::from(SearchError::InvalidArgument(
+            format!(
+                "Only one search field is supported at the moment. Got {:?}",
+                sort_fields
+            ),
         )));
     }
 
@@ -134,7 +139,7 @@ async fn es_compat_index_search(
     search_params: SearchQueryParams,
     search_body: SearchBody,
     search_service: Arc<dyn SearchService>,
-) -> Result<ElasticSearchResponse, SearchError> {
+) -> Result<ElasticSearchResponse, ElasticSearchError> {
     let start_instant = Instant::now();
     let search_request = build_request_for_es_api(index_id, search_params, search_body)?;
     let search_response: SearchResponse = search_service.root_search(search_request).await?;
@@ -184,4 +189,14 @@ fn convert_to_es_search_response(resp: SearchResponse) -> ElasticSearchResponse 
         aggregations,
         ..Default::default()
     }
+}
+
+fn make_elastic_api_response(
+    elasticsearch_result: Result<ElasticSearchResponse, ElasticSearchError>,
+) -> JsonApiResponse {
+    let status_code = match &elasticsearch_result {
+        Ok(_) => StatusCode::OK,
+        Err(err) => err.status,
+    };
+    JsonApiResponse::new(&elasticsearch_result, status_code, &BodyFormat::default())
 }

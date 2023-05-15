@@ -73,6 +73,7 @@ heck = "0.4.1"
 home = "0.5.4"
 hostname = "0.3"
 http = "0.2.9"
+http-serde = "1.1.2"
 humansize = "2.1.3"
 humantime = "2.1.0"
 hyper = { version = "0.14", features = [
