@@ -78,6 +78,7 @@ mod tests {
     use quickwit_config::{SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use quickwit_metastore::metastore_for_test;
+    use quickwit_proto::IndexUid;
     use serde_json::json;
 
     use super::*;
@@ -97,7 +98,7 @@ mod tests {
         let metastore = metastore_for_test();
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            "test-index",
+            IndexUid::new("test-index"),
             PathBuf::from("./queues"),
             source_config,
         );
@@ -115,7 +116,7 @@ mod tests {
         let void_source = VoidSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                "test-index",
+                IndexUid::new("test-index"),
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-void-source".to_string(),

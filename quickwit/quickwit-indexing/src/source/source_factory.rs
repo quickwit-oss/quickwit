@@ -124,6 +124,7 @@ mod tests {
 
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::metastore_for_test;
+    use quickwit_proto::IndexUid;
 
     use super::*;
     use crate::source::quickwit_supported_sources;
@@ -145,7 +146,7 @@ mod tests {
             .load_source(
                 SourceExecutionContext::for_test(
                     metastore,
-                    "test-index",
+                    IndexUid::new("test-index"),
                     PathBuf::from("./queues"),
                     source_config,
                 ),

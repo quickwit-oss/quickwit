@@ -178,6 +178,7 @@ mod tests {
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
+    use quickwit_proto::IndexUid;
 
     use super::*;
     use crate::source::SourceActor;
@@ -192,7 +193,7 @@ mod tests {
         let file_source = FileSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                "test-index",
+                IndexUid::new("test-index"),
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
@@ -258,7 +259,7 @@ mod tests {
         let source = FileSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                "test-index",
+                IndexUid::new("test-index"),
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
@@ -348,7 +349,7 @@ mod tests {
         let source = FileSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                "test-index",
+                IndexUid::new("test-index"),
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
