@@ -112,13 +112,13 @@ impl SourceExecutionContext {
     #[cfg(test)]
     fn for_test(
         metastore: Arc<dyn Metastore>,
-        index_id: &str,
+        index_uid: IndexUid,
         queues_dir_path: PathBuf,
         source_config: SourceConfig,
     ) -> Arc<SourceExecutionContext> {
         Arc::new(Self {
             metastore,
-            index_uid: IndexUid::new(index_id),
+            index_uid,
             queues_dir_path,
             source_config,
         })

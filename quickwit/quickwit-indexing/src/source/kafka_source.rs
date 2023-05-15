@@ -952,6 +952,7 @@ mod kafka_broker_tests {
 
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-message--index");
+        let index_uid = IndexUid::new(&index_id);
         let (_source_id, source_config) = get_source_config(&topic);
         let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
             params
@@ -960,7 +961,7 @@ mod kafka_broker_tests {
         };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            &index_id,
+            index_uid,
             PathBuf::from("./queues"),
             source_config,
         );
@@ -1138,6 +1139,7 @@ mod kafka_broker_tests {
 
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-revoke--partitions--index");
+        let index_uid = IndexUid::new(&index_id);
         let (_source_id, source_config) = get_source_config(&topic);
         let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
             params
@@ -1146,7 +1148,7 @@ mod kafka_broker_tests {
         };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            &index_id,
+            index_uid,
             PathBuf::from("./queues"),
             source_config,
         );
@@ -1194,6 +1196,7 @@ mod kafka_broker_tests {
 
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-partition-eof--index");
+        let index_uid = IndexUid::new(&index_id);
         let (_source_id, source_config) = get_source_config(&topic);
         let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
             params
@@ -1202,7 +1205,7 @@ mod kafka_broker_tests {
         };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            &index_id,
+            index_uid,
             PathBuf::from("./queues"),
             source_config,
         );
@@ -1238,12 +1241,12 @@ mod kafka_broker_tests {
             let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
             let source = source_loader
                 .load_source(
-                    Arc::new(SourceExecutionContext {
+                    SourceExecutionContext::for_test(
                         metastore,
                         index_uid,
-                        queues_dir_path: PathBuf::from("./queues"),
+                        PathBuf::from("./queues"),
                         source_config,
-                    }),
+                    ),
                     SourceCheckpoint::default(),
                 )
                 .await?;
