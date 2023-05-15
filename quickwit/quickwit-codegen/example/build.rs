@@ -21,10 +21,11 @@ use quickwit_codegen::Codegen;
 
 fn main() {
     Codegen::run(
-        "src/hello.proto",
+        &["src/hello.proto"],
         "src/codegen/",
         "crate::HelloResult",
         "crate::HelloError",
+        &[],
         &[],
     )
     .unwrap();

@@ -21,10 +21,11 @@ use quickwit_codegen::Codegen;
 
 fn main() {
     Codegen::run(
-        "src/control_plane.proto",
+        &["src/control_plane.proto"],
         "src/codegen/",
         "crate::Result",
         "crate::ControlPlaneError",
+        &[],
         &[],
     )
     .unwrap();
