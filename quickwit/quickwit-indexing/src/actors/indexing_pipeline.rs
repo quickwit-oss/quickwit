@@ -349,6 +349,7 @@ impl IndexingPipeline {
             self.params.doc_mapper.clone(),
             indexer_mailbox,
             self.params.source_config.transform_config.clone(),
+            self.params.source_config.input_format.clone(),
         )?;
         let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
@@ -536,7 +537,7 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{Command, Universe};
-    use quickwit_config::{IndexingSettings, SourceParams, VoidSourceParams};
+    use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
     use quickwit_proto::IndexUid;
@@ -620,6 +621,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
@@ -710,6 +712,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
@@ -769,6 +772,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::Void(VoidSourceParams),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
@@ -878,6 +882,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());

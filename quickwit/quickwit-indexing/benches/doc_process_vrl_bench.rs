@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use quickwit_actors::{ActorHandle, Mailbox, Universe};
-use quickwit_config::TransformConfig;
+use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::actors::DocProcessor;
 use quickwit_indexing::models::RawDocBatch;
@@ -132,6 +132,7 @@ fn create_doc_processor(
         doc_mapper,
         indexer_mailbox,
         transform_config_opt,
+        SourceInputFormat::Json,
     )
     .unwrap();
     let (mailbox, handle) = universe.spawn_builder().spawn(doc_processor);

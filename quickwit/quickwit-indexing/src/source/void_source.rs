@@ -75,7 +75,7 @@ mod tests {
     use std::path::PathBuf;
 
     use quickwit_actors::{Health, Supervisable, Universe};
-    use quickwit_config::SourceParams;
+    use quickwit_config::{SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use quickwit_metastore::metastore_for_test;
     use serde_json::json;
@@ -92,6 +92,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let metastore = metastore_for_test();
         let ctx = SourceExecutionContext::for_test(
@@ -123,6 +124,7 @@ mod tests {
                     enabled: true,
                     source_params: SourceParams::void(),
                     transform_config: None,
+                    input_format: SourceInputFormat::Json,
                 },
             ),
             VoidSourceParams,

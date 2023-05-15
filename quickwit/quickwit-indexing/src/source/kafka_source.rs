@@ -764,7 +764,7 @@ mod kafka_broker_tests {
 
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
+    use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
     use quickwit_proto::IndexUid;
@@ -880,6 +880,7 @@ mod kafka_broker_tests {
                 enable_backfill_mode: true,
             }),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         (source_id, source_config)
     }

@@ -28,7 +28,7 @@ pub mod test_suite {
     use futures::future::try_join_all;
     use itertools::Itertools;
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
+    use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_proto::{qast_helper, IndexUid};
@@ -255,6 +255,7 @@ pub mod test_suite {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
 
         assert_eq!(
@@ -325,6 +326,7 @@ pub mod test_suite {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         metastore
             .add_source(index_uid.clone(), source.clone())
@@ -369,6 +371,7 @@ pub mod test_suite {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
 
         let index_config = IndexConfig::for_test(&index_id, index_uri.as_str());
@@ -446,6 +449,7 @@ pub mod test_suite {
                 enabled: true,
                 source_params: SourceParams::void(),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             };
             metastore
                 .add_source(index_uid.clone(), source.clone())

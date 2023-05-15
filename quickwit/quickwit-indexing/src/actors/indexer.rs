@@ -47,7 +47,7 @@ use ulid::Ulid;
 use crate::actors::IndexSerializer;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingPipelineId,
-    NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, ScratchDirectory,
+    NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, ScratchDirectory,
 };
 
 // Random partition id used to gather partitions exceeding the maximum number of partitions.
@@ -216,7 +216,7 @@ impl IndexerState {
 
     async fn index_batch(
         &self,
-        batch: PreparedDocBatch,
+        batch: ProcessedDocBatch,
         indexing_workbench_opt: &mut Option<IndexingWorkbench>,
         counters: &mut IndexerCounters,
         ctx: &ActorContext<Indexer>,
@@ -241,7 +241,7 @@ impl IndexerState {
             .context("Batch delta does not follow indexer checkpoint")?;
         let mut memory_usage_delta: u64 = 0;
         for doc in batch.docs {
-            let PreparedDoc {
+            let ProcessedDoc {
                 doc,
                 timestamp_opt,
                 partition,
@@ -377,12 +377,12 @@ impl Handler<CommitTimeout> for Indexer {
 }
 
 #[async_trait]
-impl Handler<PreparedDocBatch> for Indexer {
+impl Handler<ProcessedDocBatch> for Indexer {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        doc_batch: PreparedDocBatch,
+        doc_batch: ProcessedDocBatch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.index_batch(doc_batch, ctx).await
@@ -452,7 +452,7 @@ impl Indexer {
 
     async fn index_batch(
         &mut self,
-        batch: PreparedDocBatch,
+        batch: ProcessedDocBatch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("indexer:batch:before");
@@ -628,9 +628,9 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
+            .send_message(ProcessedDocBatch {
                 docs: vec![
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"this is a test document",
                             timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -639,7 +639,7 @@ mod tests {
                         partition: 1,
                         num_bytes: 30,
                     },
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 2",
                             timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -654,9 +654,9 @@ mod tests {
             })
             .await?;
         indexer_mailbox
-            .send_message(PreparedDocBatch {
+            .send_message(ProcessedDocBatch {
                 docs: vec![
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 3",
                             timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435i64)
@@ -665,7 +665,7 @@ mod tests {
                         partition: 1,
                         num_bytes: 30,
                     },
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 4",
                             timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -680,8 +680,8 @@ mod tests {
             })
             .await?;
         indexer_mailbox
-            .send_message(PreparedDocBatch {
-                docs: vec![PreparedDoc {
+            .send_message(ProcessedDocBatch {
+                docs: vec![ProcessedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
                         timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -766,7 +766,7 @@ mod tests {
                 write!(&mut body, "{val} ").unwrap();
             }
             let num_bytes = body.len() * 2;
-            PreparedDoc {
+            ProcessedDoc {
                 doc: doc!(body_field=>body),
                 timestamp_opt: None,
                 partition: 0,
@@ -775,7 +775,7 @@ mod tests {
         };
         for i in 0..10_000 {
             indexer_mailbox
-                .send_message(PreparedDocBatch {
+                .send_message(ProcessedDocBatch {
                     docs: vec![make_doc(i)],
                     checkpoint_delta: SourceCheckpointDelta::from_range(i..i + 1),
                     force_commit: false,
@@ -835,8 +835,8 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
-                docs: vec![PreparedDoc {
+            .send_message(ProcessedDocBatch {
+                docs: vec![ProcessedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
                         timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -922,8 +922,8 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
-                docs: vec![PreparedDoc {
+            .send_message(ProcessedDocBatch {
+                docs: vec![ProcessedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
                         timestamp_field=> DateTime::from_timestamp_secs(1_662_529_435)
@@ -1004,9 +1004,9 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
+            .send_message(ProcessedDocBatch {
                 docs: vec![
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"doc 2",
                             tenant_field=>"tenant_1",
@@ -1015,7 +1015,7 @@ mod tests {
                         partition: 1,
                         num_bytes: 30,
                     },
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"doc 2",
                             tenant_field=>"tenant_2",
@@ -1099,8 +1099,8 @@ mod tests {
 
         for partition in 0..100 {
             indexer_mailbox
-                .send_message(PreparedDocBatch {
-                    docs: vec![PreparedDoc {
+                .send_message(ProcessedDocBatch {
+                    docs: vec![ProcessedDoc {
                         doc: doc!(body_field=>"doc {i}"),
                         timestamp_opt: None,
                         partition,
@@ -1179,8 +1179,8 @@ mod tests {
                 .await
                 .unwrap();
             indexer_mailbox
-                .send_message(PreparedDocBatch {
-                    docs: vec![PreparedDoc {
+                .send_message(ProcessedDocBatch {
+                    docs: vec![ProcessedDoc {
                         doc: doc!(body_field=>"doc 1"),
                         timestamp_opt: None,
                         partition: 0,
@@ -1252,8 +1252,8 @@ mod tests {
         indexer_handle.process_pending_and_observe().await;
         publish_lock.kill().await;
         indexer_mailbox
-            .send_message(PreparedDocBatch {
-                docs: vec![PreparedDoc {
+            .send_message(ProcessedDocBatch {
+                docs: vec![ProcessedDoc {
                     doc: doc!(body_field=>"doc 1"),
                     timestamp_opt: None,
                     partition: 0,
@@ -1310,8 +1310,8 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
-                docs: vec![PreparedDoc {
+            .send_message(ProcessedDocBatch {
+                docs: vec![ProcessedDoc {
                     doc: doc!(body_field=>"doc 1"),
                     timestamp_opt: None,
                     partition: 0,
@@ -1378,14 +1378,14 @@ mod tests {
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
+            .send_message(ProcessedDocBatch {
                 docs: Vec::new(),
                 checkpoint_delta: SourceCheckpointDelta::from_range(4..6),
                 force_commit: false,
             })
             .await?;
         indexer_mailbox
-            .send_message(PreparedDocBatch {
+            .send_message(ProcessedDocBatch {
                 docs: Vec::new(),
                 checkpoint_delta: SourceCheckpointDelta::from_range(6..8),
                 force_commit: false,

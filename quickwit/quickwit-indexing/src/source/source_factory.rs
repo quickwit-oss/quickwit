@@ -122,7 +122,7 @@ mod tests {
     use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
-    use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::metastore_for_test;
 
     use super::*;
@@ -139,6 +139,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         source_loader
             .load_source(

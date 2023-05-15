@@ -92,6 +92,7 @@
     {
       "desired_num_pipelines": 2,
       "enabled": true,
+      "input_format": "json",
       "max_num_pipelines_per_indexer": 2,
       "params": {
         "client_params": {},
