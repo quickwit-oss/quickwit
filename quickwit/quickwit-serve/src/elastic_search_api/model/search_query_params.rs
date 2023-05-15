@@ -115,7 +115,7 @@ pub struct SearchQueryParams {
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    sort: Option<Vec<String>>,
+    pub sort: Option<Vec<String>>,
     #[serde(default)]
     pub source: Option<String>,
     #[serde(serialize_with = "to_simple_list")]

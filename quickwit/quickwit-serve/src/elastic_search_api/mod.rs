@@ -27,7 +27,9 @@ use std::sync::Arc;
 use bulk::{es_compat_bulk_handler, es_compat_index_bulk_handler};
 use quickwit_ingest::IngestServiceClient;
 use quickwit_search::SearchService;
-use rest_handler::{es_compat_index_search_handler, es_compat_search_handler};
+use rest_handler::{
+    es_compat_index_multi_search_handler, es_compat_index_search_handler, es_compat_search_handler,
+};
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
@@ -40,7 +42,8 @@ pub fn elastic_api_handlers(
     ingest_service: IngestServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     es_compat_search_handler(search_service.clone())
-        .or(es_compat_index_search_handler(search_service))
+        .or(es_compat_index_search_handler(search_service.clone()))
+        .or(es_compat_index_multi_search_handler(search_service))
         .or(es_compat_bulk_handler(ingest_service.clone()))
         .or(es_compat_index_bulk_handler(ingest_service))
     // Register newly created handlers here.
