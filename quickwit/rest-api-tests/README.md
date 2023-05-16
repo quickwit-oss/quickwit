@@ -14,7 +14,7 @@ running in DEBUG mode is fine.
 
 ```./rest_api_test.py --engine quickwit```
 
-When targetting elasticsearch, the script expects elastic to run on
+When targetting elasticsearch, the script expects elastic to be running on
 `http://localhost:9200`.
 
 In both case, the test will take care of setting up, ingesting and tearing down the
@@ -58,10 +58,10 @@ A test will just run a REST HTTP call, and check that the resulting JSON matches
 some expectation.
 
 
-- **method**: attribute gives the list of HTTP method to test. If there is more than one, they will be all tested.
+- **method**: gives the list of HTTP methods to test. If there is more than one, they will be all tested.
 - **params**: describes the parameters that should be sent as query strings.
 - **json**: describes the JSON body, sent with the query
-- **expected**: describes the expectation. The below
+- **expected**: describes the expectation.
 
 # Expectations
 
