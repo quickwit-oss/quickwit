@@ -3,9 +3,8 @@
     {
       "create_timestamp": 0,
       "delete_query": {
-        "index_id": "index",
-        "query": "Harry Potter",
-        "search_fields": []
+        "index_uid": "index:1111111111111",
+        "query_ast": "{\"type\":\"Bool\",\"must\":[{\"type\":\"Phrase\",\"field\":\"body\",\"phrase\":\"Harry\"},{\"type\":\"Phrase\",\"field\":\"body\",\"phrase\":\"Potter\"}]}"
       },
       "opstamp": 10
     }
@@ -97,12 +96,14 @@
           "message"
         ]
       },
-      "version": "0.4"
+      "version": "0.6"
     },
+    "index_uid": "test:1111111111111",
     "sources": [
       {
         "desired_num_pipelines": 2,
         "enabled": true,
+        "input_format": "json",
         "max_num_pipelines_per_indexer": 2,
         "params": {
           "client_params": {},
@@ -113,10 +114,10 @@
         "transform": {
           "script": ".message = downcase(string!(.message))"
         },
-        "version": "0.4"
+        "version": "0.6"
       }
     ],
-    "version": "0.4"
+    "version": "0.6"
   },
   "splits": [
     {
@@ -126,7 +127,7 @@
         "end": 2000,
         "start": 1000
       },
-      "index_id": "my-index",
+      "index_uid": "my-index:1111111111111",
       "node_id": "node",
       "num_docs": 12303,
       "num_merge_ops": 3,
@@ -145,8 +146,8 @@
       },
       "uncompressed_docs_size_in_bytes": 234234,
       "update_timestamp": 1789,
-      "version": "0.4"
+      "version": "0.6"
     }
   ],
-  "version": "0.4"
+  "version": "0.6"
 }

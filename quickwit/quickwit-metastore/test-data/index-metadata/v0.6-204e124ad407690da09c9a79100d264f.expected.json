@@ -85,12 +85,14 @@
         "message"
       ]
     },
-    "version": "0.4"
+    "version": "0.6"
   },
+  "index_uid": "test:1111111111111",
   "sources": [
     {
       "desired_num_pipelines": 2,
       "enabled": true,
+      "input_format": "json",
       "max_num_pipelines_per_indexer": 2,
       "params": {
         "client_params": {},
@@ -98,8 +100,11 @@
       },
       "source_id": "kafka-source",
       "source_type": "kafka",
-      "version": "0.4"
+      "transform": {
+        "script": ".message = downcase(string!(.message))"
+      },
+      "version": "0.6"
     }
   ],
-  "version": "0.4"
+  "version": "0.6"
 }

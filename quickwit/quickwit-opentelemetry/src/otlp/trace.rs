@@ -45,7 +45,7 @@ use crate::otlp::{extract_attributes, TraceId};
 pub const OTEL_TRACE_INDEX_ID: &str = "otel-trace-v0";
 
 pub const OTEL_TRACE_INDEX_CONFIG: &str = r#"
-version: 0.5
+version: 0.6
 
 index_id: otel-trace-v0
 

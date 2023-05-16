@@ -110,7 +110,7 @@ export QW_LISTEN_ADDRESS=0.0.0.0
 
 ```yaml
 # config.yaml
-version: 0.5
+version: 0.6
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: ${QW_LISTEN_ADDRESS}
@@ -120,7 +120,7 @@ rest_listen_port: ${QW_LISTEN_PORT:-1111}
 Will be interpreted by Quickwit as:
 
 ```yaml
-version: 0.5
+version: 0.6
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: 0.0.0.0
@@ -135,7 +135,7 @@ by default no origins are allowed.
 A wildcard, single origin or multiple origins can be specified as part of the `rest_cors_allow_origins` parameter:
 
 ```yaml
-version: 0.5
+version: 0.6
 index_id: hdfs
 
 rest_cors_allow_origins: '*'                                 # Allow all origins

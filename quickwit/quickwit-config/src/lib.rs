@@ -39,7 +39,7 @@ mod templating;
 
 // We export that one for backward compatibility.
 // See #2048
-use index_config::serialize::{IndexConfigV0_5, VersionedIndexConfig};
+use index_config::serialize::{IndexConfigV0_6, VersionedIndexConfig};
 pub use index_config::{
     build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig,
     IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
@@ -62,7 +62,7 @@ pub use crate::quickwit_config::{
     IndexerConfig, IngestApiConfig, JaegerConfig, QuickwitConfig, SearcherConfig,
     DEFAULT_QW_CONFIG_PATH,
 };
-use crate::source_config::serialize::{SourceConfigV0_5, VersionedSourceConfig};
+use crate::source_config::serialize::{SourceConfigV0_6, VersionedSourceConfig};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(
@@ -73,9 +73,9 @@ use crate::source_config::serialize::{SourceConfigV0_5, VersionedSourceConfig};
     MergePolicyConfig,
     DocMapping,
     VersionedSourceConfig,
-    SourceConfigV0_5,
+    SourceConfigV0_6,
     VersionedIndexConfig,
-    IndexConfigV0_5,
+    IndexConfigV0_6,
     SourceInputFormat,
     SourceParams,
     FileSourceParams,
