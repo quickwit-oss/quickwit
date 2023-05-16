@@ -42,7 +42,9 @@ pub fn es_compat_bulk_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_bulk_filter()
         .and(with_arg(ingest_service))
-        .then(elastic_ingest)
+        .then(|body, ingest_option, ingest_service| {
+            elastic_ingest_bulk(None, body, ingest_option, ingest_service)
+        })
         .and(extract_format_from_qs())
         .map(make_json_api_response)
 }
@@ -53,12 +55,15 @@ pub fn es_compat_index_bulk_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_index_bulk_filter()
         .and(with_arg(ingest_service))
-        .then(elastic_ingest_bulk)
+        .then(|index, body, ingest_option, ingest_service| {
+            elastic_ingest_bulk(Some(index), body, ingest_option, ingest_service)
+        })
         .and(extract_format_from_qs())
         .map(make_json_api_response)
 }
 
-async fn elastic_ingest(
+async fn elastic_ingest_bulk(
+    index: Option<String>,
     body: Bytes,
     ingest_options: ElasticIngestOptions,
     mut ingest_service: IngestServiceClient,
@@ -72,7 +77,17 @@ async fn elastic_ingest(
         let source = lines.next().ok_or_else(|| {
             IngestRestApiError::BulkInvalidSource("Expected source for the action.".to_string())
         })?;
-        let index_id = action.into_index();
+        // when ingesting on /my-index/_bulk, if _index: is set to something else than my-index,
+        // ES honors it and create the doc in the requested index. That is, `my-index` is a default
+        // value in case _index: is missing, but not a constraint on each sub-action.
+        let index_id = action
+            .into_index()
+            .or_else(|| index.clone())
+            .ok_or_else(|| {
+                IngestRestApiError::BulkInvalidAction(
+                    "missing required field: `_index`".to_string(),
+                )
+            })?;
         let doc_batch_builder = doc_batch_builders
             .entry(index_id.clone())
             .or_insert(DocBatchBuilder::new(index_id));
@@ -90,15 +105,6 @@ async fn elastic_ingest(
     };
     let ingest_response = ingest_service.ingest(ingest_request).await?;
     Ok(ingest_response)
-}
-
-async fn elastic_ingest_bulk(
-    _index: String,
-    _body: Bytes,
-    _ingest_options: ElasticIngestOptions,
-    _ingest_service: IngestServiceClient,
-) -> Result<IngestResponse, IngestRestApiError> {
-    todo!()
 }
 
 #[cfg(test)]
@@ -151,6 +157,31 @@ mod tests {
             {"id": 2, "message": "push"}"#;
         let resp = warp::test::request()
             .path("/_elastic/_bulk")
+            .method("POST")
+            .body(payload)
+            .reply(&elastic_api_handlers)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
+        assert_eq!(ingest_response.num_docs_for_processing, 3);
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_bulk_index_api_returns_200() {
+        let search_service = Arc::new(MockSearchService::new());
+        let (universe, _temp_dir, ingest_service, _) =
+            setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
+        let elastic_api_handlers = elastic_api_handlers(search_service, ingest_service);
+        let payload = r#"
+            { "create" : { "_index" : "my-index-1", "_id" : "1"} }
+            {"id": 1, "message": "push"}
+            { "create" : { "_index" : "my-index-2", "_id" : "1"} }
+            {"id": 1, "message": "push"}
+            { "create" : {} }
+            {"id": 2, "message": "push"}"#;
+        let resp = warp::test::request()
+            .path("/_elastic/my-index-1/_bulk")
             .method("POST")
             .body(payload)
             .reply(&elastic_api_handlers)

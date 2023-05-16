@@ -8,7 +8,7 @@ pub enum BulkAction {
 }
 
 impl BulkAction {
-    pub fn into_index(self) -> String {
+    pub fn into_index(self) -> Option<String> {
         match self {
             BulkAction::Index(meta) => meta.index_id,
             BulkAction::Create(meta) => meta.index_id,
@@ -19,7 +19,8 @@ impl BulkAction {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct BulkActionMeta {
     #[serde(alias = "_index")]
-    pub index_id: String,
+    #[serde(default)]
+    pub index_id: Option<String>,
     #[serde(alias = "_id")]
     #[serde(default)]
     pub doc_id: Option<String>,
@@ -42,7 +43,7 @@ mod tests {
             assert_eq!(
                 bulk_action,
                 BulkAction::Create(BulkActionMeta {
-                    index_id: "test".to_string(),
+                    index_id: Some("test".to_string()),
                     doc_id: Some("2".to_string()),
                 })
             );
@@ -57,8 +58,23 @@ mod tests {
             assert_eq!(
                 bulk_action,
                 BulkAction::Create(BulkActionMeta {
-                    index_id: "test".to_string(),
+                    index_id: Some("test".to_string()),
                     doc_id: None,
+                })
+            );
+        }
+        {
+            let bulk_action_json = r#"{
+                "create": {
+                    "_id": "3"
+                }
+            }"#;
+            let bulk_action = serde_json::from_str::<BulkAction>(bulk_action_json).unwrap();
+            assert_eq!(
+                bulk_action,
+                BulkAction::Create(BulkActionMeta {
+                    index_id: None,
+                    doc_id: Some("3".to_string()),
                 })
             );
         }
