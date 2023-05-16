@@ -119,6 +119,29 @@ impl From<TantivyQueryAst> for Box<dyn TantivyQuery> {
     }
 }
 
+// Remove the occurence of trivial AST in the given list of asts.
+//
+// If `stop_before_empty` is true, then we will make sure to stop removing asts if it is
+// the last element.
+// This function may change the order of asts.
+fn remove_with_guard(
+    asts: &mut Vec<TantivyQueryAst>,
+    to_remove: MatchAllOrNone,
+    stop_before_empty: bool,
+) {
+    let mut i = 0;
+    while i < asts.len() {
+        if stop_before_empty && asts.len() == 1 {
+            break;
+        }
+        if asts[i].const_predicate() == Some(to_remove) {
+            asts.swap_remove(i);
+        } else {
+            i += 1;
+        }
+    }
+}
+
 #[derive(Default, Debug, Eq, PartialEq)]
 pub(crate) struct TantivyBoolQuery {
     pub must: Vec<TantivyQueryAst>,
@@ -157,12 +180,40 @@ impl TantivyBoolQuery {
                 }
             }
         }
-        self.must
-            .retain(|ast| ast.const_predicate() != Some(MatchAllOrNone::MatchAll));
-        self.filter
-            .retain(|ast| ast.const_predicate() != Some(MatchAllOrNone::MatchAll));
-        self.must_not
-            .retain(|child| child.const_predicate() != Some(MatchAllOrNone::MatchNone));
+        if self.should.is_empty()
+            && self.must.is_empty()
+            && self.filter.is_empty()
+            && self.must_not.is_empty()
+        {
+            // This is just a convention mimicking Elastic/Commonsearch's behavior.
+            return TantivyQueryAst::match_all();
+        }
+        remove_with_guard(&mut self.must, MatchAllOrNone::MatchAll, true);
+        let mut has_no_positive_ast_so_far = self.must.is_empty();
+        remove_with_guard(
+            &mut self.filter,
+            MatchAllOrNone::MatchAll,
+            has_no_positive_ast_so_far,
+        );
+        has_no_positive_ast_so_far &= self.filter.is_empty();
+        remove_with_guard(
+            &mut self.should,
+            MatchAllOrNone::MatchNone,
+            has_no_positive_ast_so_far,
+        );
+        has_no_positive_ast_so_far &= self.should.is_empty();
+        remove_with_guard(
+            &mut self.must_not,
+            MatchAllOrNone::MatchNone,
+            has_no_positive_ast_so_far,
+        );
+        if self.must.is_empty()
+            && self.should.is_empty()
+            && self.must_not.is_empty()
+            && self.filter.is_empty()
+        {
+            return TantivyQueryAst::match_none();
+        }
         for must_child in self.must.iter().chain(self.filter.iter()) {
             if must_child.const_predicate() == Some(MatchAllOrNone::MatchNone) {
                 return TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchNone);
@@ -173,13 +224,8 @@ impl TantivyBoolQuery {
                 return TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchNone);
             }
         }
-        self.should
-            .retain(|child| child.const_predicate() != Some(MatchAllOrNone::MatchNone));
         let num_children =
             self.must.len() + self.should.len() + self.must_not.len() + self.filter.len();
-        if num_children == 0 {
-            return TantivyQueryAst::match_all();
-        }
         if num_children == 1 {
             if let Some(child) = self.must.pop() {
                 return child;
@@ -188,6 +234,9 @@ impl TantivyBoolQuery {
                 return child;
             }
             if self.must_not.len() == 1 {
+                if self.must_not[0].const_predicate() == Some(MatchAllOrNone::MatchNone) {
+                    return MatchAllOrNone::MatchAll.into();
+                }
                 self.must.push(TantivyQueryAst::match_all());
             }
         }
@@ -235,12 +284,56 @@ mod tests {
     use tantivy::query::EmptyQuery;
 
     use super::TantivyBoolQuery;
-    use crate::query_ast::tantivy_query_ast::{MatchAllOrNone, TantivyQueryAst};
+    use crate::query_ast::tantivy_query_ast::{remove_with_guard, MatchAllOrNone, TantivyQueryAst};
 
     #[test]
     fn test_simplify_bool_query_with_no_clauses() {
         let bool_query = TantivyBoolQuery::default();
         assert_eq!(bool_query.simplify(), TantivyQueryAst::match_all());
+    }
+
+    #[test]
+    fn test_remove_with_guard() {
+        {
+            let mut asts = Vec::new();
+            // we are just checking for panics
+            remove_with_guard(&mut asts, MatchAllOrNone::MatchAll, true);
+            remove_with_guard(&mut asts, MatchAllOrNone::MatchAll, false);
+        }
+        {
+            let mut asts = vec![
+                MatchAllOrNone::MatchAll.into(),
+                MatchAllOrNone::MatchAll.into(),
+            ];
+            remove_with_guard(&mut asts, MatchAllOrNone::MatchAll, true);
+            assert_eq!(asts.len(), 1);
+        }
+        {
+            let mut asts = vec![
+                MatchAllOrNone::MatchAll.into(),
+                MatchAllOrNone::MatchAll.into(),
+            ];
+            remove_with_guard(&mut asts, MatchAllOrNone::MatchAll, false);
+            assert!(asts.is_empty());
+        }
+        {
+            let mut asts = vec![
+                MatchAllOrNone::MatchAll.into(),
+                MatchAllOrNone::MatchNone.into(),
+                MatchAllOrNone::MatchAll.into(),
+            ];
+            remove_with_guard(&mut asts, MatchAllOrNone::MatchAll, true);
+            assert_eq!(asts.len(), 1);
+        }
+        {
+            let mut asts = vec![
+                MatchAllOrNone::MatchAll.into(),
+                MatchAllOrNone::MatchNone.into(),
+                MatchAllOrNone::MatchAll.into(),
+            ];
+            remove_with_guard(&mut asts, MatchAllOrNone::MatchAll, false);
+            assert_eq!(asts.len(), 1);
+        }
     }
 
     #[test]
@@ -329,6 +422,25 @@ mod tests {
         assert_eq!(
             bool_query.const_predicate(),
             Some(MatchAllOrNone::MatchNone)
+        );
+    }
+
+    #[test]
+    fn test_simplify_bool_query_with_match_none_no_positive_clauses() {
+        let bool_query = TantivyBoolQuery {
+            must_not: vec![TantivyQueryAst::match_none()],
+            ..Default::default()
+        }
+        .simplify();
+        assert_eq!(bool_query.const_predicate(), Some(MatchAllOrNone::MatchAll));
+    }
+
+    #[test]
+    fn test_simplify_empty_bool_query_matches_all() {
+        let empty_bool_query = TantivyBoolQuery::default().simplify();
+        assert_eq!(
+            empty_bool_query.const_predicate(),
+            Some(MatchAllOrNone::MatchAll)
         );
     }
 }
