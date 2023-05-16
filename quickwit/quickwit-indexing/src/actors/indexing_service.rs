@@ -814,7 +814,9 @@ mod tests {
     use quickwit_cluster::create_cluster_for_test;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, VecSourceParams};
+    use quickwit_config::{
+        IngestApiConfig, SourceConfig, SourceInputFormat, SourceParams, VecSourceParams,
+    };
     use quickwit_ingest::{init_ingest_api, CreateQueueIfNotExistsRequest};
     use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore};
     use quickwit_proto::indexing_api::IndexingTask;
@@ -888,6 +890,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let spawn_pipeline_msg = SpawnPipeline {
             index_id: index_id.clone(),
@@ -980,6 +983,7 @@ mod tests {
                 partition: "0".to_string(),
             }),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         indexing_service
             .ask_for_res(SpawnPipeline {
@@ -1035,6 +1039,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         metastore
             .add_source(index_uid.clone(), source_config_1.clone())
@@ -1070,6 +1075,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         metastore
             .add_source(index_uid.clone(), source_config_2.clone())
@@ -1212,6 +1218,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let index_uid = metastore.create_index(index_config).await.unwrap();
         metastore
@@ -1328,6 +1335,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         index_metadata
             .sources

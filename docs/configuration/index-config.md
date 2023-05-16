@@ -568,7 +568,7 @@ This section describes search settings for a given index.
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `search_default_fields`      | Default list of fields that will be used for search.   | `None` |
+| `default_search_fields`      | Default list of fields that will be used for search.   | `None` |
 
 ## Retention policy
 

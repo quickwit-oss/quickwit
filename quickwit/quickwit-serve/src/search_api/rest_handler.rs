@@ -32,6 +32,7 @@ use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
+use crate::json_api_response::make_json_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
 use crate::{with_arg, BodyFormat};
 
@@ -231,9 +232,9 @@ async fn search(
     search_service: Arc<dyn SearchService>,
 ) -> impl warp::Reply {
     info!(index_id = %index_id, request =? search_request, "search");
-    search_request
-        .format
-        .make_rest_reply(search_endpoint(index_id, search_request, &*search_service).await)
+    let body_format = search_request.format;
+    let result = search_endpoint(index_id, search_request, &*search_service).await;
+    make_json_api_response(result, body_format)
 }
 
 #[utoipa::path(

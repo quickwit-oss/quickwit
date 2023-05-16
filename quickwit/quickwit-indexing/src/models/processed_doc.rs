@@ -22,16 +22,16 @@ use std::fmt;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 use tantivy::{DateTime, Document};
 
-pub struct PreparedDoc {
+pub struct ProcessedDoc {
     pub doc: Document,
     pub timestamp_opt: Option<DateTime>,
     pub partition: u64,
     pub num_bytes: usize,
 }
 
-impl fmt::Debug for PreparedDoc {
+impl fmt::Debug for ProcessedDoc {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PreparedDoc")
+        f.debug_struct("ProcessedDoc")
             .field("timestamp_opt", &self.timestamp_opt)
             .field("partition", &self.partition)
             .field("num_bytes", &self.num_bytes)
@@ -39,15 +39,15 @@ impl fmt::Debug for PreparedDoc {
     }
 }
 
-pub struct PreparedDocBatch {
-    pub docs: Vec<PreparedDoc>,
+pub struct ProcessedDocBatch {
+    pub docs: Vec<ProcessedDoc>,
     pub checkpoint_delta: SourceCheckpointDelta,
     pub force_commit: bool,
 }
 
-impl fmt::Debug for PreparedDocBatch {
+impl fmt::Debug for ProcessedDocBatch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PreparedDocBatch")
+        f.debug_struct("ProcessedDocBatch")
             .field("num_docs", &self.docs.len())
             .field("checkpoint_delta", &self.checkpoint_delta)
             .field("force_commit", &self.force_commit)

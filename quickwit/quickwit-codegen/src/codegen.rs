@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use heck::ToSnakeCase;
 use proc_macro2::TokenStream;
 use prost_build::{Method, Service, ServiceGenerator};
 use quote::{quote, ToTokens};
@@ -26,13 +27,17 @@ pub struct Codegen;
 
 impl Codegen {
     pub fn run(
-        proto: &str,
+        protos: &[&str],
         out_dir: &str,
         result_type_path: &str,
         error_type_path: &str,
         bytes: &[&str],
+        includes: &[&str],
     ) -> anyhow::Result<()> {
-        println!("cargo:rerun-if-changed={proto}");
+        let service_generator = Box::new(QuickwitServiceGenerator::new(
+            result_type_path,
+            error_type_path,
+        ));
 
         let mut prost_config = prost_build::Config::default();
         prost_config
@@ -46,16 +51,13 @@ impl Codegen {
                 "#[schema(value_type = String, format = Binary)]",
             )
             .bytes(bytes)
+            .service_generator(service_generator)
             .out_dir(out_dir);
 
-        let service_generator = Box::new(QuickwitServiceGenerator::new(
-            result_type_path,
-            error_type_path,
-        ));
-
-        prost_config
-            .service_generator(service_generator)
-            .compile_protos(&[proto], &["protos"])?;
+        for proto in protos {
+            println!("cargo:rerun-if-changed={proto}");
+            prost_config.compile_protos(&[proto], includes)?;
+        }
         Ok(())
     }
 }
@@ -99,6 +101,8 @@ struct CodegenContext {
     service_name: Ident,
     result_type: syn::Path,
     error_type: syn::Path,
+    stream_type: Ident,
+    stream_type_alias: TokenStream,
     methods: Vec<SynMethod>,
     client_name: Ident,
     tower_block_name: Ident,
@@ -122,6 +126,15 @@ impl CodegenContext {
             .expect("Result path should be a valid result path such as `crate::HelloResult`.");
         let error_type = syn::parse_str::<syn::Path>(error_type_path)
             .expect("Error path should be a valid result path such as `crate::error::HelloError`.");
+        let stream_type = quote::format_ident!("{}Stream", service.name);
+        let stream_type_alias = if service.methods.iter().any(|method| method.server_streaming) {
+            quote! {
+                type #stream_type<T> = quickwit_common::ServiceStream<T, #error_type>;
+            }
+        } else {
+            TokenStream::new()
+        };
+
         let methods = parse_methods(&service.methods);
 
         let client_name = quote::format_ident!("{}Client", service.name);
@@ -129,11 +142,13 @@ impl CodegenContext {
         let tower_block_builder_name = quote::format_ident!("{}TowerBlockBuilder", service.name);
         let mailbox_name = quote::format_ident!("{}Mailbox", service.name);
 
-        let grpc_client_package_name = quote::format_ident!("{}_grpc_client", service.package);
+        let grpc_client_package_name =
+            quote::format_ident!("{}_grpc_client", service.name.to_snake_case());
         let grpc_client_name = quote::format_ident!("{}GrpcClient", service.name);
         let grpc_client_adapter_name = quote::format_ident!("{}GrpcClientAdapter", service.name);
 
-        let grpc_server_package_name = quote::format_ident!("{}_grpc_server", service.package);
+        let grpc_server_package_name =
+            quote::format_ident!("{}_grpc_server", service.name.to_snake_case());
         let grpc_service_name = quote::format_ident!("{}Grpc", service.name);
         let grpc_server_adapter_name = quote::format_ident!("{}GrpcServerAdapter", service.name);
 
@@ -141,6 +156,8 @@ impl CodegenContext {
             service_name,
             result_type,
             error_type,
+            stream_type,
+            stream_type_alias,
             methods,
             client_name,
             tower_block_name,
@@ -159,6 +176,7 @@ impl CodegenContext {
 
 fn generate_all(service: &Service, result_type_path: &str, error_type_path: &str) -> TokenStream {
     let context = CodegenContext::from_service(service, result_type_path, error_type_path);
+    let stream_type_alias = &context.stream_type_alias;
     let service_trait = generate_service_trait(&context);
     let client = generate_client(&context);
     let tower_services = generate_tower_services(&context);
@@ -171,6 +189,8 @@ fn generate_all(service: &Service, result_type_path: &str, error_type_path: &str
     quote! {
         // The line below is necessary to opt out of the license header check.
         /// BEGIN quickwit-codegen
+        #stream_type_alias
+
         #service_trait
 
         #client
@@ -192,23 +212,31 @@ fn generate_all(service: &Service, result_type_path: &str, error_type_path: &str
 }
 
 struct SynMethod {
-    method_name: Ident,
+    name: Ident,
+    proto_name: Ident,
     request_type: syn::Path,
     response_type: syn::Path,
+    server_streaming: bool,
 }
 
 fn parse_methods(methods: &[Method]) -> Vec<SynMethod> {
     let mut syn_methods = Vec::with_capacity(methods.len());
 
     for method in methods {
-        let method_name = quote::format_ident!("{}", method.name);
+        let name = quote::format_ident!("{}", method.name);
+        let proto_name = quote::format_ident!("{}", method.proto_name);
         let request_type = syn::parse_str::<syn::Path>(&method.input_type).unwrap();
         let response_type = syn::parse_str::<syn::Path>(&method.output_type).unwrap();
 
+        if method.client_streaming && method.server_streaming {
+            panic!("Client-side or bidirectional streaming RPCs are not supported.");
+        }
         let syn_method = SynMethod {
-            method_name,
+            name,
+            proto_name,
             request_type,
             response_type,
+            server_streaming: method.server_streaming,
         };
         syn_methods.push(syn_method);
     }
@@ -240,13 +268,19 @@ fn generate_service_trait(context: &CodegenContext) -> TokenStream {
 
 fn generate_service_trait_methods(context: &CodegenContext) -> TokenStream {
     let result_type = &context.result_type;
+    let stream_type = &context.stream_type;
+
     let mut stream = TokenStream::new();
 
     for syn_method in &context.methods {
-        let method_name = syn_method.method_name.to_token_stream();
+        let method_name = syn_method.name.to_token_stream();
         let request_type = syn_method.request_type.to_token_stream();
-        let response_type = syn_method.response_type.to_token_stream();
-
+        let response_type = if syn_method.server_streaming {
+            let response_type = &syn_method.response_type;
+            quote! { #stream_type<#response_type> }
+        } else {
+            syn_method.response_type.to_token_stream()
+        };
         let method = quote! {
             async fn #method_name(&mut self, request: #request_type) -> #result_type<#response_type>;
         };
@@ -299,7 +333,7 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
 
             pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
             where
-                A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+                A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
                 #mailbox_name<A>: #service_name,
             {
                 #client_name::new(#mailbox_name::new(mailbox))
@@ -331,14 +365,20 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
 
 fn generate_client_methods(context: &CodegenContext) -> TokenStream {
     let result_type = &context.result_type;
+    let stream_type = &context.stream_type;
 
     let mut stream = TokenStream::new();
 
     for syn_method in &context.methods {
-        let method_name = syn_method.method_name.to_token_stream();
+        let method_name = syn_method.name.to_token_stream();
         let request_type = syn_method.request_type.to_token_stream();
-        let response_type = syn_method.response_type.to_token_stream();
 
+        let response_type = if syn_method.server_streaming {
+            let response_type = &syn_method.response_type;
+            quote! { #stream_type<#response_type> }
+        } else {
+            syn_method.response_type.to_token_stream()
+        };
         let method = quote! {
             async fn #method_name(&mut self, request: #request_type) -> #result_type<#response_type> {
                 self.inner.#method_name(request).await
@@ -352,13 +392,20 @@ fn generate_client_methods(context: &CodegenContext) -> TokenStream {
 fn generate_tower_services(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let error_type = &context.error_type;
+    let stream_type = &context.stream_type;
 
     let mut stream = TokenStream::new();
 
     for syn_method in &context.methods {
-        let method_name = syn_method.method_name.to_token_stream();
+        let method_name = syn_method.name.to_token_stream();
         let request_type = syn_method.request_type.to_token_stream();
-        let response_type = syn_method.response_type.to_token_stream();
+
+        let response_type = if syn_method.server_streaming {
+            let response_type = &syn_method.response_type;
+            quote! { #stream_type<#response_type> }
+        } else {
+            syn_method.response_type.to_token_stream()
+        };
 
         let service = quote! {
             impl tower::Service<#request_type> for Box<dyn #service_name> {
@@ -406,13 +453,20 @@ fn generate_tower_block(context: &CodegenContext) -> TokenStream {
 
 fn generate_tower_block_attributes(context: &CodegenContext) -> TokenStream {
     let error_type = &context.error_type;
+    let stream_type = &context.stream_type;
 
     let mut stream = TokenStream::new();
 
     for syn_method in &context.methods {
-        let attribute_name = quote::format_ident!("{}_svc", syn_method.method_name);
+        let attribute_name = quote::format_ident!("{}_svc", syn_method.name);
         let request_type = syn_method.request_type.to_token_stream();
-        let response_type = syn_method.response_type.to_token_stream();
+
+        let response_type = if syn_method.server_streaming {
+            let response_type = &syn_method.response_type;
+            quote! { #stream_type<#response_type> }
+        } else {
+            syn_method.response_type.to_token_stream()
+        };
         let attribute = quote! {
             #attribute_name: quickwit_common::tower::BoxService<#request_type, #response_type, #error_type>,
         };
@@ -427,7 +481,7 @@ fn generate_tower_block_clone_impl(context: &CodegenContext) -> TokenStream {
     let mut cloned_attributes = TokenStream::new();
 
     for syn_method in &context.methods {
-        let attribute_name = quote::format_ident!("{}_svc", syn_method.method_name);
+        let attribute_name = quote::format_ident!("{}_svc", syn_method.name);
         let attribute = quote! {
             #attribute_name: self.#attribute_name.clone(),
         };
@@ -448,15 +502,23 @@ fn generate_tower_block_clone_impl(context: &CodegenContext) -> TokenStream {
 fn generate_tower_block_service_impl(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let tower_block_name = &context.tower_block_name;
+
     let result_type = &context.result_type;
+    let stream_type = &context.stream_type;
 
     let mut methods = TokenStream::new();
 
     for syn_method in &context.methods {
-        let attribute_name = quote::format_ident!("{}_svc", syn_method.method_name);
-        let method_name = syn_method.method_name.to_token_stream();
+        let attribute_name = quote::format_ident!("{}_svc", syn_method.name);
+        let method_name = syn_method.name.to_token_stream();
         let request_type = syn_method.request_type.to_token_stream();
-        let response_type = syn_method.response_type.to_token_stream();
+
+        let response_type = if syn_method.server_streaming {
+            let response_type = &syn_method.response_type;
+            quote! { #stream_type<#response_type> }
+        } else {
+            syn_method.response_type.to_token_stream()
+        };
         let attribute = quote! {
             async fn #method_name(&mut self, request: #request_type) -> #result_type<#response_type> {
                 self.#attribute_name.ready().await?.call(request).await
@@ -491,14 +553,22 @@ fn generate_tower_block_builder(context: &CodegenContext) -> TokenStream {
 fn generate_tower_block_builder_attributes(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let error_type = &context.error_type;
+    let stream_type = &context.stream_type;
 
     let mut stream = TokenStream::new();
 
     for syn_method in &context.methods {
-        let attribute_name = quote::format_ident!("{}_layer", syn_method.method_name);
+        let attribute_name = quote::format_ident!("{}_layer", syn_method.name);
         let request_type = syn_method.request_type.to_token_stream();
-        let response_type = syn_method.response_type.to_token_stream();
+
+        let response_type = if syn_method.server_streaming {
+            let response_type = &syn_method.response_type;
+            quote! { #stream_type<#response_type> }
+        } else {
+            syn_method.response_type.to_token_stream()
+        };
         let attribute = quote! {
+            #[allow(clippy::type_complexity)]
             #attribute_name: Option<quickwit_common::tower::BoxLayer<Box<dyn #service_name>, #request_type, #response_type, #error_type>>,
         };
         stream.extend(attribute);
@@ -513,6 +583,7 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
     let tower_block_name = &context.tower_block_name;
     let tower_block_builder_name = &context.tower_block_builder_name;
     let error_type = &context.error_type;
+    let stream_type = &context.stream_type;
 
     let mut layer_method_bounds = TokenStream::new();
     let mut layer_method_statements = TokenStream::new();
@@ -521,10 +592,16 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
     let mut svc_attribute_idents = Vec::with_capacity(context.methods.len());
 
     for (i, syn_method) in context.methods.iter().enumerate() {
-        let layer_attribute_name = quote::format_ident!("{}_layer", syn_method.method_name);
-        let svc_attribute_name = quote::format_ident!("{}_svc", syn_method.method_name);
+        let layer_attribute_name = quote::format_ident!("{}_layer", syn_method.name);
+        let svc_attribute_name = quote::format_ident!("{}_svc", syn_method.name);
         let request_type = syn_method.request_type.to_token_stream();
-        let response_type = syn_method.response_type.to_token_stream();
+
+        let response_type = if syn_method.server_streaming {
+            let response_type = &syn_method.response_type;
+            quote! { #stream_type<#response_type> }
+        } else {
+            syn_method.response_type.to_token_stream()
+        };
 
         let layer_method_bound = quote! {
             L::Service: tower::Service<#request_type, Response = #response_type, Error = #error_type> + Clone + Send + Sync + 'static,
@@ -607,7 +684,7 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
 
             pub fn build_from_mailbox<A>(self, mailbox: quickwit_actors::Mailbox<A>) -> #client_name
             where
-                A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+                A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
                 #mailbox_name<A>: #service_name,
             {
                 self.build_from_boxed(Box::new(#client_name::from_mailbox(mailbox)))
@@ -679,10 +756,10 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
 
         impl<A, M, T, E> tower::Service<M> for #mailbox_name<A>
         where
-            A: quickwit_actors::Actor + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync + 'static,
+            A: quickwit_actors::Actor + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + 'static,
             M: std::fmt::Debug + Send + Sync + 'static,
-            T: Send + Sync + 'static,
-            E: std::fmt::Debug + Send + Sync + 'static,
+            T: Send + 'static,
+            E: std::fmt::Debug + Send + 'static,
             #error_type: From<quickwit_actors::AskError<E>>,
         {
             type Response = T;
@@ -724,15 +801,21 @@ fn generate_mailbox_bounds_and_methods(
 ) -> (Vec<TokenStream>, TokenStream) {
     let result_type = &context.result_type;
     let error_type = &context.error_type;
+    let stream_type = &context.stream_type;
 
     let mut bounds = Vec::with_capacity(context.methods.len());
     let mut methods = TokenStream::new();
 
     for syn_method in &context.methods {
-        let method_name = syn_method.method_name.to_token_stream();
+        let method_name = syn_method.name.to_token_stream();
         let request_type = syn_method.request_type.to_token_stream();
-        let response_type = syn_method.response_type.to_token_stream();
 
+        let response_type = if syn_method.server_streaming {
+            let response_type = &syn_method.response_type;
+            quote! { #stream_type<#response_type> }
+        } else {
+            syn_method.response_type.to_token_stream()
+        };
         let bound = quote! {
             tower::Service<#request_type, Response = #response_type, Error = #error_type, Future = BoxFuture<#response_type, #error_type>>
         };
@@ -784,19 +867,37 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
 
 fn generate_grpc_client_adapter_methods(context: &CodegenContext) -> TokenStream {
     let result_type = &context.result_type;
+    let stream_type = &context.stream_type;
+
     let mut stream = TokenStream::new();
 
     for syn_method in &context.methods {
-        let method_name = syn_method.method_name.to_token_stream();
+        let method_name = syn_method.name.to_token_stream();
         let request_type = syn_method.request_type.to_token_stream();
-        let response_type = syn_method.response_type.to_token_stream();
 
+        let response_type = if syn_method.server_streaming {
+            let response_type = &syn_method.response_type;
+            quote! { #stream_type<#response_type> }
+        } else {
+            syn_method.response_type.to_token_stream()
+        };
+        let into_response_type = if syn_method.server_streaming {
+            quote! { |response|
+                {
+                    let stream = response.into_inner();
+                    let service_stream = quickwit_common::ServiceStream::from(stream);
+                    service_stream.map_err(|error| error.into())
+                }
+            }
+        } else {
+            quote! { |response| response.into_inner() }
+        };
         let method = quote! {
             async fn #method_name(&mut self, request: #request_type) -> #result_type<#response_type> {
                 self.inner
                     .#method_name(request)
                     .await
-                    .map(|response| response.into_inner())
+                    .map(#into_response_type)
                     .map_err(|error| error.into())
             }
         };
@@ -838,18 +939,39 @@ fn generate_grpc_server_adapter_methods(context: &CodegenContext) -> TokenStream
     let mut stream = TokenStream::new();
 
     for syn_method in &context.methods {
-        let method_name = syn_method.method_name.to_token_stream();
+        let method_name = syn_method.name.to_token_stream();
         let request_type = syn_method.request_type.to_token_stream();
-        let response_type = syn_method.response_type.to_token_stream();
 
+        let response_type = if syn_method.server_streaming {
+            let associated_type_name = quote::format_ident!("{}Stream", syn_method.proto_name);
+            quote! { Self::#associated_type_name }
+        } else {
+            syn_method.response_type.to_token_stream()
+        };
+        let associated_type = if syn_method.server_streaming {
+            let associated_type_name = quote::format_ident!("{}Stream", syn_method.proto_name);
+            let response_type = &syn_method.response_type;
+            quote! { type #associated_type_name = quickwit_common::ServiceStream<#response_type, tonic::Status>; }
+        } else {
+            TokenStream::new()
+        };
+        let into_response_type = if syn_method.server_streaming {
+            quote! {
+                |stream| tonic::Response::new(stream.map_err(|error| error.into()))
+            }
+        } else {
+            quote! { tonic::Response::new }
+        };
         let method = quote! {
+            #associated_type
+
             async fn #method_name(&self, request: tonic::Request<#request_type>) -> Result<tonic::Response<#response_type>, tonic::Status> {
                 self.inner
                     .clone()
                     .#method_name(request.into_inner())
                     .await
-                    .map(tonic::Response::new)
-                    .map_err(Into::into)
+                    .map(#into_response_type)
+                    .map_err(|error| error.into())
             }
         };
         stream.extend(method);

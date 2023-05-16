@@ -21,11 +21,12 @@ use quickwit_codegen::Codegen;
 
 fn main() {
     Codegen::run(
-        "src/ingest_service.proto",
+        &["src/ingest_service.proto"],
         "src/codegen/",
         "crate::Result",
         "crate::IngestServiceError",
         &["DocBatch.doc_buffer"],
+        &[],
     )
     .unwrap();
 }

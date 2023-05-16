@@ -74,8 +74,8 @@ services:
       retries: 100
 
   pulsar-broker:
-    # The oldest supported version. EOL January 10, 2024
-    image: apachepulsar/pulsar:${PULSAR_VERSION:-2.11.1}
+    # The oldest version with arm64 docker images. EOL May 2 2025
+    image: apachepulsar/pulsar:${PULSAR_VERSION:-3.0.0}
     container_name: pulsar-broker
     command: bin/pulsar standalone
     ports:

@@ -22,7 +22,8 @@ use std::convert::Infallible;
 use quickwit_cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 use warp::{Filter, Rejection};
 
-use crate::format::{extract_format_from_qs, make_response};
+use crate::format::extract_format_from_qs;
+use crate::json_api_response::make_json_api_response;
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
@@ -41,7 +42,7 @@ pub fn cluster_handler(
         .and(warp::path::end().map(move || cluster.clone()))
         .then(get_cluster)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(

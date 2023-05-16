@@ -119,9 +119,21 @@ pub trait Metastore: Send + Sync + 'static {
         Ok(index_uid)
     }
 
-    /// Returns the [`IndexMetadata`] for a given index.
+    /// Returns the [`IndexMetadata`] of an index identified by its ID.
     /// TODO consider merging with list_splits to remove one round-trip
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata>;
+
+    /// Returns the [`IndexMetadata`] of an index identified by its UID.
+    async fn index_metadata_strict(&self, index_uid: &IndexUid) -> MetastoreResult<IndexMetadata> {
+        let index_metadata = self.index_metadata(index_uid.index_id()).await?;
+
+        if index_metadata.index_uid != *index_uid {
+            return Err(MetastoreError::IndexDoesNotExist {
+                index_id: index_uid.index_id().to_string(),
+            });
+        }
+        Ok(index_metadata)
+    }
 
     /// Lists the indexes.
     ///

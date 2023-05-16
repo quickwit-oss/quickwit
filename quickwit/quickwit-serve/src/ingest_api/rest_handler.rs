@@ -29,7 +29,8 @@ use serde::Deserialize;
 use thiserror::Error;
 use warp::{Filter, Rejection};
 
-use crate::format::{extract_format_from_qs, make_response};
+use crate::format::extract_format_from_qs;
+use crate::json_api_response::make_json_api_response;
 use crate::{with_arg, BodyFormat};
 
 #[derive(utoipa::OpenApi)]
@@ -131,7 +132,7 @@ fn ingest_handler(
     ingest_filter()
         .and(with_arg(ingest_service))
         .then(ingest)
-        .map(|result| BodyFormat::default().make_rest_reply(result))
+        .map(|result| make_json_api_response(result, BodyFormat::default()))
 }
 
 #[utoipa::path(
@@ -176,7 +177,7 @@ pub fn tail_handler(
         .and(with_arg(ingest_service))
         .then(tail_endpoint)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
@@ -215,11 +216,15 @@ async fn tail_endpoint(
 pub enum ElasticRefresh {
     // if the refresh parameter is not present it is false
     #[default]
+    /// The request doesn't wait for commit
     False,
     // but if it is present without a value like this: ?refresh, it should be the same as
     // ?refresh=true
     #[serde(alias = "")]
+    /// The request forces an immediate commit after the last document in the batch and waits for
+    /// it to finish.
     True,
+    /// The request will wait for the next scheduled commit to finish.
     WaitFor,
 }
 
@@ -257,7 +262,7 @@ pub fn elastic_bulk_handler(
         .and(with_arg(ingest_service))
         .then(elastic_ingest)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }
 
 #[utoipa::path(
@@ -639,6 +644,12 @@ mod tests {
                 .unwrap()
                 .refresh,
             ElasticRefresh::True
+        );
+        assert_eq!(
+            serde_qs::from_str::<ElasticIngestOptions>("refresh=wait")
+                .unwrap_err()
+                .to_string(),
+            "unknown variant `wait`, expected one of `false`, `true`, `wait_for`"
         );
     }
 

@@ -524,7 +524,7 @@ mod tests {
     use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster};
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::service::QuickwitService;
-    use quickwit_config::{KafkaSourceParams, SourceConfig, SourceParams};
+    use quickwit_config::{KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::indexing_client::IndexingServiceClient;
     use quickwit_indexing::IndexingService;
@@ -559,6 +559,7 @@ mod tests {
                 enable_backfill_mode: true,
             }),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         index_metadata
             .sources

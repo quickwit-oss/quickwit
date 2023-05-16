@@ -322,8 +322,8 @@ mod tests {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::service::QuickwitService;
     use quickwit_config::{
-        FileSourceParams, KafkaSourceParams, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
-        INGEST_API_SOURCE_ID,
+        FileSourceParams, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
+        CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
     };
     use quickwit_proto::indexing_api::IndexingTask;
     use quickwit_proto::IndexUid;
@@ -396,6 +396,7 @@ mod tests {
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
         );
 
@@ -430,6 +431,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::IngestApi,
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
         );
 
@@ -472,6 +474,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::File(FileSourceParams { filepath: None }),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
         );
         source_configs_map.insert(
@@ -483,6 +486,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::IngestCli,
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
         );
         source_configs_map.insert(
@@ -494,6 +498,7 @@ mod tests {
                 enabled: false,
                 source_params: kafka_source_params_for_test(),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
         );
         let indexing_tasks = build_indexing_plan(&indexers, &source_configs_map);
@@ -528,6 +533,7 @@ mod tests {
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
         );
         source_configs_map.insert(
@@ -539,6 +545,7 @@ mod tests {
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
         );
         let mut indexing_tasks = Vec::new();
@@ -608,6 +615,7 @@ mod tests {
                 enabled: true,
                 source_params: kafka_source_params_for_test(),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
         );
         let indexing_tasks = vec![
@@ -669,6 +677,7 @@ mod tests {
               enabled: true,
               source_params: kafka_source_params_for_test(),
               transform_config: None,
+              input_format: SourceInputFormat::Json,
           })
       }
     }

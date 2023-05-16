@@ -144,15 +144,8 @@ impl DeleteTaskPipeline {
         );
         let index_metadata = self
             .metastore
-            .index_metadata(self.index_uid.index_id())
+            .index_metadata_strict(&self.index_uid)
             .await?;
-        if index_metadata.index_uid != self.index_uid {
-            return Err(anyhow::anyhow!(
-                "Cannot start the delete pipeline for index {}. The index has been already \
-                 deleted.",
-                &self.index_uid.index_id()
-            ));
-        }
         let index_config = index_metadata.into_index_config();
         let publisher = Publisher::new(
             PublisherType::MergePublisher,

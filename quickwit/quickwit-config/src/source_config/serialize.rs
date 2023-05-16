@@ -24,8 +24,8 @@ use serde::{Deserialize, Serialize};
 
 use super::TransformConfig;
 use crate::{
-    validate_identifier, ConfigFormat, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
-    INGEST_API_SOURCE_ID,
+    validate_identifier, ConfigFormat, SourceConfig, SourceInputFormat, SourceParams,
+    CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 
 type SourceConfigForSerialization = SourceConfigV0_5;
@@ -116,6 +116,7 @@ impl SourceConfigForSerialization {
             enabled: self.enabled,
             source_params: self.source_params,
             transform_config: self.transform,
+            input_format: self.input_format,
         })
     }
 }
@@ -129,6 +130,7 @@ impl From<SourceConfig> for SourceConfigV0_5 {
             enabled: source_config.enabled,
             source_params: source_config.source_params,
             transform: source_config.transform_config,
+            input_format: source_config.input_format,
         }
     }
 }
@@ -182,4 +184,8 @@ pub struct SourceConfigV0_5 {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transform: Option<TransformConfig>,
+
+    // Denotes the input data format.
+    #[serde(default)]
+    pub input_format: SourceInputFormat,
 }

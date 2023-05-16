@@ -152,6 +152,8 @@ POST api/v1/<index id>/ingest -d \
 
 Ingest a batch of documents to make them searchable in a given `<index id>`. Currently, NDJSON is the only accepted payload format. This endpoint is only available on a node that is running an indexer service.
 
+#### Controlling when the indexed documents will be available for search
+
 Newly added documents will not appear in the search results until they are added to a split and that split is committed. This process is automatic and is controlled by `split_num_docs_target` and `commit_timeout_secs` parameters. By default, the ingest command exits as soon as the records are added to the indexing queue, which means that the new documents will not appear in the search results at this moment. This behavior can be changed by adding `commit=wait_for` or `commit=force` parameters to the query. The `wait_for` parameter will cause the command to wait for the documents to be committed according to the standard time or number of documents rules. The `force` parameter will trigger a commit after all documents in the request are processed. It will also wait for this commit to finish before returning. Please note that the `force` option may have a significant performance cost especially if it is used on small batches.
 
 ```
@@ -170,6 +172,12 @@ The payload size is limited to 10MB as this endpoint is intended to receive docu
 | Variable      | Description   |
 | ------------- | ------------- |
 | `index id`  | The index id  |
+
+#### Query parameters
+
+| Variable            | Type       | Description                                        | Default value |
+|---------------------|------------|----------------------------------------------------|---------------|
+| `commit`            | `String`   | The commit behavior: `auto`, `wait_for` or `force` | `auto`        |
 
 #### Response
 
@@ -191,7 +199,10 @@ POST api/v1/_bulk -d \
 {"url":"https://en.wikipedia.org/wiki?id=3","title":"baz","body":"baz"}'
 ```
 
-Ingest a batch of documents to make them searchable using the [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elasticsearch for indexing. Currently, only the `create` action of the bulk API is supported, all other actions such as `delete` or `update` are ignored. The [`refresh`](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-refresh.html) parameter is also supported.
+Ingest a batch of documents to make them searchable using the [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elasticsearch for indexing. Currently, only the `create` action of the bulk API is supported, all other actions such as `delete` or `update` are ignored.
+
+The [`refresh`](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-refresh.html) parameter is supported.
+
 :::caution
 The quickwit API will not report errors, you need to check the server logs.
 
@@ -202,6 +213,12 @@ Quickwit does not have any notion of document id and does not support this featu
 :::info
 The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
 :::
+
+#### Query parameter
+
+| Variable      | Type       | Description                                                      | Default value |
+|---------------|------------|------------------------------------------------------------------|---------------|
+| `refresh`     | `String`   | The commit behavior: blank string, `true`, `wait_for` or `false` | `false`       |
 
 #### Response
 

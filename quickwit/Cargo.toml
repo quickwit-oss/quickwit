@@ -73,6 +73,7 @@ heck = "0.4.1"
 home = "0.5.4"
 hostname = "0.3"
 http = "0.2.9"
+http-serde = "1.1.2"
 humansize = "2.1.3"
 humantime = "2.1.0"
 hyper = { version = "0.14", features = [
@@ -105,7 +106,7 @@ openssl-probe = "0.1.5"
 opentelemetry = { version = "0.18", features = ["rt-tokio"] }
 opentelemetry-jaeger = { version = "0.17", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.11.0"
-pin-project = "1.0.12"
+pin-project = "1.1.0"
 pnet = { version = "0.31.0", features = ["std"] }
 postcard = { version = "1.0.4", features = ["use-std"], default-features = false}
 predicates = "2"
@@ -256,8 +257,8 @@ vrl-stdlib = { git = "https://github.com/vectordotdev/vrl", rev = "v0.3.0", defa
   "decode_base16",
   "decode_base64",
   "decode_gzip",
-  "decode_percent",
   "decode_mime_q",
+  "decode_percent",
   "decode_zlib",
   "decode_zstd",
   "decrypt",
@@ -292,10 +293,10 @@ vrl-stdlib = { git = "https://github.com/vectordotdev/vrl", rev = "v0.3.0", defa
   "integer",
   "ip_aton",
   "ip_cidr_contains",
-  "ip_subnet",
   "ip_ntoa",
   "ip_ntop",
   "ip_pton",
+  "ip_subnet",
   "ip_to_ipv6",
   "ipv6_to_ipv4",
   "is_array",
@@ -326,10 +327,10 @@ vrl-stdlib = { git = "https://github.com/vectordotdev/vrl", rev = "v0.3.0", defa
   "mod",
   "now",
   "object",
+  "parse_apache_log",
   "parse_aws_alb_log",
   "parse_aws_cloudwatch_log_subscription_message",
   "parse_aws_vpc_flow_log",
-  "parse_apache_log",
   "parse_cef",
   "parse_common_log",
   "parse_csv",
@@ -374,15 +375,15 @@ vrl-stdlib = { git = "https://github.com/vectordotdev/vrl", rev = "v0.3.0", defa
   "strip_ansi_escape_codes",
   "strip_whitespace",
   "strlen",
+  "tag_types_externally",
   "tally",
   "tally_value",
-  "tag_types_externally",
   "timestamp",
   "to_bool",
   "to_float",
   "to_int",
-  "to_string",
   "to_regex",
+  "to_string",
   "to_syslog_facility",
   "to_syslog_level",
   "to_syslog_severity",

@@ -20,7 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 
-use quickwit_query::query_ast::{QueryAst, QueryAstVisitor, RangeQuery};
+use quickwit_query::query_ast::{QueryAst, QueryAstVisitor, RangeQuery, TermSetQuery};
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 
@@ -86,11 +86,9 @@ struct ExtractTermSetFields {
 impl<'a> QueryAstVisitor<'a> for ExtractTermSetFields {
     type Err = anyhow::Error;
 
-    fn visit(&mut self, query_ast: &'a QueryAst) -> Result<(), Self::Err> {
-        if let QueryAst::TermSet(term_set) = query_ast {
-            for field in term_set.terms_per_field.keys() {
-                self.term_dict_fields_to_warm_up.insert(field.to_string());
-            }
+    fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> anyhow::Result<()> {
+        for field in term_set_query.terms_per_field.keys() {
+            self.term_dict_fields_to_warm_up.insert(field.to_string());
         }
         Ok(())
     }
