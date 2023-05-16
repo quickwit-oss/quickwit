@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -26,6 +27,7 @@ use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
+use quickwit_common::truncate_str;
 use quickwit_proto::{SearchResponse, ServiceErrorCode, SortOrder};
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
@@ -34,12 +36,11 @@ use warp::{Filter, Rejection};
 
 use super::filter::elastic_multi_search_filter;
 use super::model::{
-    ElasticSearchError, MultiSearchBody, MultiSearchHeader, MultiSearchQueryParams,
-    MultiSearchResponse, MultiSearchSingleResponse, SearchBody, SearchQueryParams,
+    ElasticSearchError, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
+    MultiSearchSingleResponse, SearchBody, SearchQueryParams,
 };
 use crate::elastic_search_api::filter::elastic_index_search_filter;
 use crate::format::BodyFormat;
-use crate::ingest_api::lines;
 use crate::json_api_response::{make_json_api_response, ApiError, JsonApiResponse};
 use crate::with_arg;
 
@@ -197,15 +198,21 @@ async fn es_compat_index_multi_search(
     search_service: Arc<dyn SearchService>,
 ) -> Result<MultiSearchResponse, ElasticSearchError> {
     let mut search_requests = Vec::new();
-    let mut payload_lines = lines(&payload);
+    let str_payload = from_utf8(&payload)
+        .map_err(|err| SearchError::InvalidQuery(format!("Invalid UTF-8: {}", err)))?;
+    let mut payload_lines = str_lines(str_payload);
 
-    while let Some(json_bytes) = payload_lines.next() {
-        let request_header = serde_json::from_slice::<MultiSearchHeader>(json_bytes)
-            .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
+    while let Some(line) = payload_lines.next() {
+        let request_header = serde_json::from_str::<MultiSearchHeader>(line).map_err(|err| {
+            SearchError::InvalidArgument(format!(
+                "Failed to parse request header `{}...`: {}",
+                truncate_str(line, 20),
+                err
+            ))
+        })?;
         if request_header.index.len() != 1 {
             let message = if request_header.index.is_empty() {
-                "`_msearch` must have an `index` defined in the request header. Got none."
-                    .to_string()
+                "`_msearch` must define one `index` in the request header. Got none.".to_string()
             } else {
                 format!(
                     "Searching only one index is supported for now. Got {:?}",
@@ -217,30 +224,21 @@ async fn es_compat_index_multi_search(
             )));
         }
         let index_id = request_header.index[0].clone();
-        let request_body = payload_lines
+        let search_body = payload_lines
             .next()
             .ok_or_else(|| {
-                SearchError::InvalidQuery("Expect request body after request header".to_string())
+                SearchError::InvalidArgument("Expect request body after request header".to_string())
             })
-            .and_then(|source: &[u8]| {
-                serde_json::from_slice::<MultiSearchBody>(source)
-                    .map_err(|err| SearchError::InvalidArgument(err.to_string()))
+            .and_then(|line| {
+                serde_json::from_str::<SearchBody>(line).map_err(|err| {
+                    SearchError::InvalidArgument(format!(
+                        "Failed to parse request body `{}...`: {}",
+                        truncate_str(line, 20),
+                        err
+                    ))
+                })
             })?;
-        let search_query_params = SearchQueryParams {
-            allow_no_indices: request_header.allow_no_indices,
-            expand_wildcards: request_header.expand_wildcards,
-            ignore_unavailable: request_header.ignore_unavailable,
-            routing: request_header.routing,
-            ..Default::default()
-        };
-        let search_body = SearchBody {
-            query: request_body.query,
-            aggs: request_body.aggs,
-            from: request_body.from,
-            size: request_body.size,
-            sort: request_body.sort,
-            ..Default::default()
-        };
+        let search_query_params = SearchQueryParams::from(request_header);
         let es_request = build_request_for_es_api(index_id, search_query_params, search_body)?;
         search_requests.push(es_request);
     }
@@ -301,4 +299,10 @@ fn make_elastic_api_response(
         Err(err) => err.status,
     };
     JsonApiResponse::new(&elasticsearch_result, status_code, &BodyFormat::default())
+}
+
+pub(crate) fn str_lines(body: &str) -> impl Iterator<Item = &str> {
+    body.lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
 }

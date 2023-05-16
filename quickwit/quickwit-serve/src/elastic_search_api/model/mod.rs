@@ -28,8 +28,7 @@ pub use bulk_body::{BulkAction, BulkActionMeta};
 pub use bulk_query_params::{ElasticIngestOptions, ElasticRefresh};
 pub use error::ElasticSearchError;
 pub use multi_search::{
-    MultiSearchBody, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
-    MultiSearchSingleResponse,
+    MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,
 };
 pub use search_body::SearchBody;
 pub use search_query_params::SearchQueryParams;

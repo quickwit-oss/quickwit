@@ -20,12 +20,10 @@
 use elasticsearch_dsl::search::SearchResponse as ElasticSearchResponse;
 use elasticsearch_dsl::ErrorCause;
 use hyper::StatusCode;
-use quickwit_query::ElasticQueryDsl;
 use serde::{Deserialize, Serialize};
 use serde_with::formats::PreferMany;
 use serde_with::{serde_as, OneOrMany};
 
-use super::search_body::FieldSort;
 use super::search_query_params::ExpandWildcards;
 use super::ElasticSearchError;
 use crate::simple_list::{from_simple_list, to_simple_list};
@@ -82,36 +80,22 @@ pub struct MultiSearchHeader {
     pub routing: Option<Vec<String>>,
 }
 
-#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
-pub struct MultiSearchBody {
-    #[serde(default)]
-    pub from: Option<u64>,
-    #[serde(default)]
-    pub size: Option<u64>,
-    #[serde(default)]
-    pub query: Option<ElasticQueryDsl>,
-    #[serde(alias = "aggregations")]
-    #[serde(default)]
-    pub aggs: serde_json::Map<String, serde_json::Value>,
-    #[serde(default)]
-    pub sort: Option<Vec<FieldSort>>,
-}
-
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MultiSearchResponse {
     pub responses: Vec<MultiSearchSingleResponse>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct MultiSearchSingleResponse {
     #[serde(with = "http_serde::status_code")]
-    status: StatusCode,
+    pub status: StatusCode,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    response: Option<ElasticSearchResponse>,
+    pub response: Option<ElasticSearchResponse>,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(flatten)]
-    error: Option<ErrorCause>,
+    pub error: Option<ErrorCause>,
 }
 
 impl From<ElasticSearchResponse> for MultiSearchSingleResponse {
