@@ -55,7 +55,7 @@ impl ServiceError for IngestRestApiError {
     }
 }
 
-/// POST _elastic/_bulk
+/// POST `_elastic/_bulk`
 pub fn es_compat_bulk_handler(
     ingest_service: IngestServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -68,7 +68,7 @@ pub fn es_compat_bulk_handler(
         .map(make_json_api_response)
 }
 
-/// POST _elastic/<index>/_bulk
+/// POST `_elastic/<index>/_bulk`
 pub fn es_compat_index_bulk_handler(
     ingest_service: IngestServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
