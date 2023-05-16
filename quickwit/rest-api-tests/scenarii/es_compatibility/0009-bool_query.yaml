@@ -1,0 +1,52 @@
+# Motivated by #3249
+method: [GET]
+json:
+  query:
+      query_string:
+        query: "*"
+expected:
+  hits:
+    total:
+      value: 100
+---
+method: [GET]
+json:
+  query:
+      bool:
+        filter:
+          - {"query_string":{"query":"*"}}
+expected:
+  hits:
+    total:
+      value: 100
+---
+method: [GET]
+json:
+  query:
+      bool: {}
+expected:
+  hits:
+    total:
+      value: 100
+---
+method: [GET]
+json:
+  query:
+      bool:
+        must_not:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 100
+---
+method: [GET]
+json:
+  query:
+      bool:
+        must_not:
+          - {"query_string": {"query": "type:PushEvent AND actor.login:jadonk"}}
+expected:
+  hits:
+    total:
+      value: 98
