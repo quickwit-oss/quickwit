@@ -43,7 +43,7 @@ pub struct MatchQuery {
 struct MatchQueryParams {
     query: String,
     #[serde(default)]
-    default_operator: BooleanOperand,
+    operator: BooleanOperand,
     #[serde(default)]
     zero_terms_query: MatchAllOrNone,
 }
@@ -52,7 +52,7 @@ impl ConvertableToQueryAst for MatchQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
         let full_text_params = FullTextParams {
             tokenizer: None,
-            mode: self.params.default_operator.into(),
+            mode: self.params.operator.into(),
             zero_terms_query: self.params.zero_terms_query,
         };
         return Ok(QueryAst::FullText(FullTextQuery {
@@ -115,7 +115,7 @@ impl<'de> Visitor<'de> for MatchQueryParamsStringOrStructVisitor {
         Ok(MatchQueryParams {
             query: query.to_string(),
             zero_terms_query: Default::default(),
-            default_operator: Default::default(),
+            operator: Default::default(),
         })
     }
 
@@ -144,7 +144,7 @@ mod tests {
         let match_query: MatchQuery = serde_json::from_str(r#"{"my_field": "my_query"}"#).unwrap();
         assert_eq!(match_query.field, "my_field");
         assert_eq!(&match_query.params.query, "my_query");
-        assert_eq!(match_query.params.default_operator, BooleanOperand::Or);
+        assert_eq!(match_query.params.operator, BooleanOperand::Or);
     }
 
     #[test]
@@ -156,7 +156,7 @@ mod tests {
         .unwrap();
         assert_eq!(match_query.field, "my_field");
         assert_eq!(&match_query.params.query, "my_query");
-        assert_eq!(match_query.params.default_operator, BooleanOperand::And);
+        assert_eq!(match_query.params.operator, BooleanOperand::And);
     }
 
     #[test]
@@ -176,7 +176,7 @@ mod tests {
             field: "body".to_string(),
             params: MatchQueryParams {
                 query: "hello".to_string(),
-                default_operator: BooleanOperand::And,
+                operator: BooleanOperand::And,
                 zero_terms_query: crate::MatchAllOrNone::MatchAll,
             },
         };

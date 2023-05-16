@@ -56,7 +56,7 @@ json:
   query:
       bool:
         should:
-          - {"match_none": {}}
+          - match_none: {}
 expected:
   hits:
     total:
@@ -68,9 +68,9 @@ json:
   query:
       bool:
         should:
-          - {"match_none": {}}
+          - match_none: {}
         must_not:
-          - {"match_none": {}}
+          - match_none: {}
 expected:
   hits:
     total:
@@ -82,7 +82,7 @@ json:
   query:
       bool:
         must_not:
-          - {"match_none": {}}
+          - match_none: {}
 expected:
   hits:
     total:
@@ -94,9 +94,9 @@ json:
   query:
       bool:
         must:
-          - {"match_all": {}}
+          - match_all: {}
         should:
-          - {"match_none": {}}
+          - match_none: {}
 expected:
   hits:
     total:
@@ -108,9 +108,9 @@ json:
   query:
       bool:
         filter:
-          - {"match_all": {}}
+          - match_all: {}
         should:
-          - {"match_none": {}}
+          - match_none: {}
 expected:
   hits:
     total:
