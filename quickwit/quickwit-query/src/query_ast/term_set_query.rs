@@ -40,7 +40,13 @@ impl TermSetQuery {
         let mut terms: HashSet<Term> = HashSet::default();
         for (full_path, values) in &self.terms_per_field {
             for value in values {
-                // We simplify the logic by calling compute_query, and extract the resulting terms.
+                // Mapping a text (field, value) is non-trival:
+                // It depends on the schema of course, and can actually  result in a disjunction of
+                // multiple terms if the query targets a dynamic field (due to the
+                // different types).
+                //
+                // Here, we ensure the logic is the same as for a TermQuery, by creating the term
+                // query and extracting the terms from the resulting `TermQuery`.
                 let term_query = TermQuery {
                     field: full_path.to_string(),
                     value: value.to_string(),

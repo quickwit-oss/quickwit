@@ -50,8 +50,6 @@ struct MatchQueryParams {
 
 impl ConvertableToQueryAst for MatchQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
-        // TODO fix this.
-        // This is not exactly what we want. This will interpret boolean operators for instance.
         let full_text_params = FullTextParams {
             tokenizer: None,
             mode: self.params.default_operator.into(),

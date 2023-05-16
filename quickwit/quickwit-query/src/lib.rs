@@ -65,10 +65,6 @@ pub enum MatchAllOrNone {
 
 impl MatchAllOrNone {
     pub fn is_none(&self) -> bool {
-        if let MatchAllOrNone::MatchNone = self {
-            true
-        } else {
-            false
-        }
+        self == &MatchAllOrNone::MatchNone
     }
 }

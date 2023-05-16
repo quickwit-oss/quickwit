@@ -293,7 +293,7 @@ mod tests {
         let QueryAst::FullText(phrase_query) = ast else { panic!() };
         assert_eq!(&phrase_query.field, "defaultfield");
         assert_eq!(&phrase_query.text, "hello");
-        assert!(matches!(phrase_query.params.mode, FullTextMode::Phrase { slop } if slop == 0));
+        assert_eq!(phrase_query.params.mode, FullTextMode::Phrase { slop: 0 });
     }
 
     #[test]
@@ -308,7 +308,7 @@ mod tests {
         let QueryAst::FullText(phrase_query) = ast else { panic!() };
         assert_eq!(&phrase_query.field, "defaultfield");
         assert_eq!(&phrase_query.text, "hello");
-        assert!(matches!(phrase_query.params.mode, FullTextMode::Phrase { slop } if slop == 0));
+        assert_eq!(phrase_query.params.mode, FullTextMode::Phrase { slop: 0 });
     }
 
     #[test]
@@ -336,6 +336,6 @@ mod tests {
         let QueryAst::FullText(phrase_query) = ast else { panic!() };
         assert_eq!(&phrase_query.field, "myfield");
         assert_eq!(&phrase_query.text, "hello");
-        assert!(matches!(phrase_query.params.mode, FullTextMode::Phrase { slop } if slop == 0));
+        assert_eq!(phrase_query.params.mode, FullTextMode::Phrase { slop: 0 });
     }
 }
