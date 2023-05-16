@@ -47,8 +47,8 @@ impl PartialEq for TantivyQueryAst {
         match (self, other) {
             (Self::Bool(left), Self::Bool(right)) => left == right,
             (Self::Leaf(left), Self::Leaf(right)) => {
-                let left_str: String = format!("{:?}", left);
-                let right_str: String = format!("{:?}", right);
+                let left_str: String = format!("{left:?}");
+                let right_str: String = format!("{right:?}");
                 left_str == right_str
             }
             (Self::ConstPredicate(left), Self::ConstPredicate(right)) => left == right,

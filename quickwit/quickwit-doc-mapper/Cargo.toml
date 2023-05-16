@@ -35,6 +35,7 @@ utoipa = { workspace = true }
 proptest = { workspace = true }
 criterion = { workspace = true }
 matches = { workspace = true }
+quickwit-proto = { workspace = true }
 time = { workspace = true }
 
 [features]

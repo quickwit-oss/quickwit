@@ -294,9 +294,7 @@ fn assert_flexible_json_eq(value_json: &serde_json::Value, expected_json: &serde
             assert_eq!(
                 left_arr.len(),
                 right_arr.len(),
-                "left: {:?} right: {:?}",
-                left_arr,
-                right_arr
+                "left: {left_arr:?} right: {right_arr:?}"
             );
             for i in 0..left_arr.len() {
                 assert_flexible_json_eq(&left_arr[i], &right_arr[i]);
@@ -306,9 +304,7 @@ fn assert_flexible_json_eq(value_json: &serde_json::Value, expected_json: &serde
             assert_eq!(
                 left_obj.len(),
                 right_obj.len(),
-                "left: {:?} right: {:?}",
-                left_obj,
-                right_obj
+                "left: {left_obj:?} right: {right_obj:?}"
             );
             for (k, v) in left_obj {
                 if let Some(right_value) = right_obj.get(k) {
@@ -323,9 +319,7 @@ fn assert_flexible_json_eq(value_json: &serde_json::Value, expected_json: &serde
             let right = right_num.as_f64().unwrap();
             assert!(
                 (left - right).abs() / (1e-32 + left + right).abs() < 1e-4,
-                "left: {:?} right: {:?}",
-                left,
-                right
+                "left: {left:?} right: {right:?}"
             );
         }
         (left, right) => {
