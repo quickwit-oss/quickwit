@@ -28,7 +28,7 @@ Sub-second search & analytics engine on cloud storage
 
 <b> Quickwit 0.6 is around the corner and is set to redefine your search experience on multi-terabyte datasets with a host of powerful features! </b>
 
-A sneak peek Features:
+Sneak peek af 0.6 release:
 - Explore the 16TB of GitHub Archive dataset ~ 5.2 billions documents sitting on S3 with just one server ([link](https://twitter.com/fulmicoton/status/1657923007443263489))
 - [Grafana plugin](https://github.com/quickwit-oss/quickwit-datasource) with support of Explore, Dashboards and Alerts.
 - Schemaless analytics with a new columnar storage allowing you to run aggregations without predefined schemas.
