@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use futures::{stream, StreamExt};
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 use quickwit_aws::error::RusotoErrorWrapper;
 use quickwit_aws::get_http_client;
 use quickwit_aws::region::sniff_aws_region_and_cache;
@@ -53,7 +53,12 @@ use crate::{
     STORAGE_METRICS,
 };
 
-static REQUEST_SEMAPHORE: Semaphore = Semaphore::const_new(200);
+static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
+    let permit_count =
+        std::env::var("QW_S3_MAX_CONCURRENCY").unwrap_or_else(|_| "10000".to_string());
+    let permit_count = permit_count.parse().expect("invalid QW_S3_MAX_CONCURRENCY");
+    Semaphore::new(permit_count)
+});
 
 /// S3 Compatible object storage implementation.
 pub struct S3CompatibleObjectStorage {
