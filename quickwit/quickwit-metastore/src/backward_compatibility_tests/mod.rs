@@ -144,8 +144,7 @@ where for<'a> T: Serialize {
         .expect("version should be a string");
     let mut sample_json = serde_json::to_string_pretty(&sample_json_value)?;
     sample_json.push('\n');
-    let md5_digest = md5::compute(&sample_json);
-    let test_name = format!("v{version}-{md5_digest:x}");
+    let test_name = format!("v{version}");
     let file_regression_test_path = format!("{}/{}.json", test_dir.display(), test_name);
     let file_regression_expected_path =
         format!("{}/{}.expected.json", test_dir.display(), test_name);
