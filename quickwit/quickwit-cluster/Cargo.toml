@@ -13,13 +13,17 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chitchat = { workspace = true }
+futures = { workspace = true }
 itertools = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
+tonic = { workspace = true }
 tracing = { workspace = true }
+ulid = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-common = { workspace = true }
@@ -30,6 +34,7 @@ quickwit-proto = { workspace = true }
 testsuite = []
 
 [dev-dependencies]
+chitchat = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 
 rand = { workspace = true }

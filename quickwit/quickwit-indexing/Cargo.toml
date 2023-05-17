@@ -27,6 +27,7 @@ once_cell = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
 pulsar = { workspace = true, optional = true }
+quickwit-query = { workspace = true }
 rdkafka = { workspace = true, optional = true }
 rusoto_core = { workspace = true, optional = true }
 rusoto_kinesis = { workspace = true, optional = true }
@@ -41,7 +42,6 @@ tokio-stream = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
-value = { workspace = true }
 vrl = { workspace = true }
 vrl-stdlib = { workspace = true }
 
@@ -67,7 +67,7 @@ kinesis = ["rusoto_core", "rusoto_kinesis", "quickwit-aws/kinesis"]
 kinesis-localstack-tests = []
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
-testsuite = ["quickwit-actors/testsuite"]
+testsuite = ["quickwit-actors/testsuite", "quickwit-cluster/testsuite"]
 
 [dev-dependencies]
 bytes = { workspace = true }

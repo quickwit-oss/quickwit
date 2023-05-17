@@ -80,7 +80,7 @@ impl IngestApiSource {
 
         // Ensure a queue for this index exists.
         let create_queue_req = CreateQueueIfNotExistsRequest {
-            queue_id: ctx.index_id.clone(),
+            queue_id: ctx.index_uid.index_id().to_string(),
         };
         ingest_api_service.ask_for_res(create_queue_req).await?;
 
@@ -121,7 +121,7 @@ impl Source for IngestApiSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let fetch_req = FetchRequest {
-            index_id: self.ctx.index_id.clone(),
+            index_id: self.ctx.index_uid.index_id().to_string(),
             start_after: self.counters.current_offset,
             num_bytes_limit: None,
         };
@@ -180,7 +180,7 @@ impl Source for IngestApiSource {
         {
             let up_to_position_included = offset_str.parse::<u64>()?;
             let suggest_truncate_req = SuggestTruncateRequest {
-                index_id: self.ctx.index_id.clone(),
+                index_id: self.ctx.index_uid.index_id().to_string(),
                 up_to_position_included,
             };
             ctx.ask_for_res(&self.ingest_api_service, suggest_truncate_req)
@@ -222,10 +222,13 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, INGEST_API_SOURCE_ID};
+    use quickwit_config::{
+        IngestApiConfig, SourceConfig, SourceInputFormat, SourceParams, INGEST_API_SOURCE_ID,
+    };
     use quickwit_ingest::{init_ingest_api, CommitType, DocBatchBuilder, IngestRequest};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
+    use quickwit_proto::IndexUid;
 
     use super::*;
     use crate::source::SourceActor;
@@ -263,6 +266,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         }
     }
 
@@ -271,6 +275,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
+        let index_uid = IndexUid::new(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
@@ -280,7 +285,7 @@ mod tests {
         let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            &index_id,
+            index_uid,
             queues_dir_path.to_path_buf(),
             source_config,
         );
@@ -359,6 +364,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
+        let index_uid = IndexUid::new(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
         let ingest_api_service =
@@ -378,7 +384,7 @@ mod tests {
         let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            &index_id,
+            index_uid,
             queues_dir_path.to_path_buf(),
             source_config,
         );
@@ -428,6 +434,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
+        let index_uid = IndexUid::new(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
         let ingest_api_service =
@@ -437,7 +444,7 @@ mod tests {
         let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            &index_id,
+            index_uid,
             queues_dir_path.to_path_buf(),
             source_config,
         );
@@ -481,6 +488,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
+        let index_uid = IndexUid::new(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
@@ -490,7 +498,7 @@ mod tests {
         let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            &index_id,
+            index_uid,
             queues_dir_path.to_path_buf(),
             source_config,
         );
@@ -547,6 +555,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
+        let index_uid = IndexUid::new(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
@@ -556,7 +565,7 @@ mod tests {
         let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            &index_id,
+            index_uid,
             queues_dir_path.to_path_buf(),
             source_config,
         );

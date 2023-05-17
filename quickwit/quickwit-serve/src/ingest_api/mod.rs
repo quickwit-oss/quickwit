@@ -19,5 +19,7 @@
 
 mod rest_handler;
 
-pub(crate) use rest_handler::ingest_api_handlers;
+#[cfg(test)]
+pub(crate) use rest_handler::tests::setup_ingest_service;
+pub(crate) use rest_handler::{ingest_api_handlers, lines};
 pub use rest_handler::{IngestApi, IngestApiSchemas};

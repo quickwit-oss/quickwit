@@ -256,7 +256,7 @@ impl MergePlanner {
 
 /// We can merge splits from the same (index_id, source_id, node_id).
 fn belongs_to_pipeline(pipeline_id: &IndexingPipelineId, split: &SplitMetadata) -> bool {
-    pipeline_id.index_id == split.index_id
+    pipeline_id.index_uid == split.index_uid
         && pipeline_id.source_id == split.source_id
         && pipeline_id.node_id == split.node_id
 }
@@ -279,7 +279,7 @@ impl Handler<RefreshMetric> for MergePlanner {
         INDEXER_METRICS
             .ongoing_merge_operations
             .with_label_values([
-                self.pipeline_id.index_id.as_str(),
+                self.pipeline_id.index_uid.index_id(),
                 self.pipeline_id.source_id.as_str(),
             ])
             .set(self.ongoing_merge_operations_inventory.list().len() as i64);
@@ -306,6 +306,7 @@ mod tests {
     };
     use quickwit_config::IndexingSettings;
     use quickwit_metastore::SplitMetadata;
+    use quickwit_proto::IndexUid;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
 
@@ -323,7 +324,7 @@ mod tests {
     ) -> SplitMetadata {
         SplitMetadata {
             split_id: split_id.to_string(),
-            index_id: "test-index".to_string(),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             num_docs,
@@ -340,7 +341,7 @@ mod tests {
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
             universe.create_test_mailbox();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -425,7 +426,7 @@ mod tests {
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
             universe.create_test_mailbox();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -476,7 +477,7 @@ mod tests {
             .spawn_ctx()
             .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,

@@ -14,6 +14,8 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 chitchat = { workspace = true }
 dyn-clone = { workspace = true }
+http = { workspace = true }
+hyper = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 prost = { workspace = true }

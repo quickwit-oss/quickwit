@@ -1,5 +1,22 @@
 version: "3.9"
 
+# By default, this docker compose script maps all services to localhost only.
+# If you need to make services available outside of your machine, add
+# appropriate service mappings to the .env file. See .env.example file for
+# configuration example.
+#
+# Notes on image versions:
+#  - For the key services such as postgres and pulsar we are trying to run
+#    against the oldest supported version
+#  - For the zookeeper and kafka we are trying to use the oldest supported
+#    version that has arm64 images
+#  - For everything else we are trying to run against the latest version.
+#
+# To run against the latest image versions update .env file. See .env.example
+# file for configuration examples. You might need to remove the old images
+# first if they are already tagged latest and volumes if their content is
+# incompatible with the latest version, as in case of postgres.
+
 networks:
   default:
     name: quickwit-network
@@ -10,24 +27,24 @@ networks:
 
 services:
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack:${LOCALSTACK_VERSION:-2.0.2}
     container_name: localstack
     ports:
-      - "4566:4566"
-      - "4571:4571"
-      - "8080:8080"
+      - "${MAP_HOST_LOCALSTACK:-127.0.0.1}:4566:4566"
+      - "${MAP_HOST_LOCALSTACK:-127.0.0.1}:4571:4571"
+      - "${MAP_HOST_LOCALSTACK:-127.0.0.1}:8080:8080"
     profiles:
       - all
       - localstack
     environment:
-      DATA_DIR: /tmp/localstack/data
       # `kinesalite` provides a more accurate implementation than
       # the default Kinesis provider (`kinesis-mock`).
       KINESIS_PROVIDER: kinesalite
       SERVICES: kinesis,s3
+      PERSISTENCE: 1
     volumes:
-      - ".localstack:/etc/localstack/init/ready.d"
-      - "${TMPDIR:-/tmp}/quickwit/services/localstack:/var/lib/localstack"
+      - .localstack:/etc/localstack/init/ready.d
+      - localstack_data:/var/lib/localstack
     healthcheck:
       test: ["CMD", "curl", "-k", "-f", "https://localhost:4566/quickwit-integration-tests"]
       interval: 1s
@@ -35,10 +52,11 @@ services:
       retries: 100
 
   postgres:
-    image: postgres:9.6.20 # Oldest version we support.
+    # The oldest supported version. EOL November 9, 2023
+    image: postgres:${POSTGRES_VERSION:-11.19-alpine} 
     container_name: postgres
     ports:
-      - "5432:5432"
+      - "${MAP_HOST_POSTGRESS:-127.0.0.1}:5432:5432"
     profiles:
       - all
       - postgres
@@ -48,17 +66,21 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quickwit-dev}
       POSTGRES_DB: ${POSTGRES_DB:-quickwit-metastore-dev}
     volumes:
-      - "${TMPDIR:-/tmp}/quickwit/services/postgres:/var/lib/postgresql/data/pgdata"
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready"]
+      interval: 1s
+      timeout: 5s
+      retries: 100
 
   pulsar-broker:
-    image: apachepulsar/pulsar:2.11.0
+    # The oldest version with arm64 docker images. EOL May 2 2025
+    image: apachepulsar/pulsar:${PULSAR_VERSION:-3.0.0}
     container_name: pulsar-broker
     command: bin/pulsar standalone
     ports:
-      - "6650:6650"
-      - "8081:8080"
+      - "${MAP_HOST_PULSAR:-127.0.0.1}:6650:6650"
+      - "${MAP_HOST_PULSAR:-127.0.0.1}:8081:8080"
     environment:
       PULSAR_MEM: " -Xms512m -Xmx512m -XX:MaxDirectMemorySize=2g"
     profiles:
@@ -66,13 +88,14 @@ services:
       - pulsar
 
   kafka-broker:
-    image: confluentinc/cp-kafka:7.2.1
+    # The oldest supported version with arm64 docker images. EOL October 27, 2023 
+    image: confluentinc/cp-kafka:${CP_VERSION:-7.0.9} 
     container_name: kafka-broker
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"
-      - "9101:9101"
+      - "${MAP_HOST_KAFKA:-127.0.0.1}:9092:9092"
+      - "${MAP_HOST_KAFKA:-127.0.0.1}:9101:9101"
     profiles:
       - all
       - kafka
@@ -88,13 +111,18 @@ services:
       KAFKA_JMX_PORT: 9101
       KAFKA_JMX_HOSTNAME: localhost
     healthcheck:
-      test: ["CMD", "cub", "kafka-ready", "-b", "localhost:9092", "1", "30"]
+      test: ["CMD", "cub", "kafka-ready", "-b", "localhost:9092", "1", "5"]
+      start_period: 5s
+      interval: 5s
+      timeout: 10s
+      retries: 100
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.2.1
+    # The oldest supported version with arm64 images. EOL October 27, 2023 
+    image: confluentinc/cp-zookeeper:${CP_VERSION:-7.0.9}
     container_name: zookeeper
     ports:
-      - "2181:2181"
+      - "${MAP_HOST_ZOOKEEPER:-127.0.0.1}:2181:2181"
     profiles:
       - all
       - kafka
@@ -102,25 +130,29 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     healthcheck:
-      test: ["CMD", "cub", "zk-ready", "localhost:2181", "30"]
+      test: ["CMD", "cub", "zk-ready", "localhost:2181", "5"]
+      start_period: 5s
+      interval: 5s
+      timeout: 10s
+      retries: 100
 
   azurite:
-    image: mcr.microsoft.com/azure-storage/azurite:latest
+    image: mcr.microsoft.com/azure-storage/azurite:${AZURITE_VERSION:-3.23.0}
     container_name: azurite
     ports:
-        - "10000:10000" # Blob store port
+        - "${MAP_HOST_AZURITE:-127.0.0.1}:10000:10000" # Blob store port
     profiles:
       - all
       - azurite
     volumes:
-        - "${TMPDIR:-/tmp}/quickwit/services/azurite:/data"
+        - azurite_data:/data
     command: azurite --blobHost 0.0.0.0 --loose
 
   grafana:
-    image: grafana/grafana-oss:latest
+    image: grafana/grafana-oss:${GRAFANA_VERSION:-9.4.7}
     container_name: grafana
     ports:
-      - "3000:3000"
+      - "${MAP_HOST_GRAFANA:-127.0.0.1}:3000:3000"
     profiles:
       - grafana
       - monitoring
@@ -133,31 +165,31 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
 
   jaeger:
-    image: jaegertracing/all-in-one:latest
+    image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.20.0}
     container_name: jaeger
     ports:
-      - "5775:5775/udp"
-      - "5778:5778"
-      - "6831:6831/udp"
-      - "6832:6832/udp"
-      - "14250:14250"
-      - "14268:14268"
-      - "16686:16686"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:5775:5775/udp"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:5778:5778"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:6831:6831/udp"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:6832:6832/udp"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:14250:14250"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:14268:14268"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:16686:16686"
     profiles:
       - jaeger
       - monitoring
 
   otel-collector:
-    image: otel/opentelemetry-collector
+    image: otel/opentelemetry-collector:${OTEL_VERSION:-0.75.0}
     container_name: otel-collector
     ports:
-      - "1888:1888"   # pprof extension
-      - "8888:8888"   # Prometheus metrics exposed by the collector
-      - "8889:8889"   # Prometheus exporter metrics
-      - "13133:13133" # health_check extension
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP http receiver
-      - "55679:55679" # zpages extension
+      - "${MAP_HOST_OTEL:-127.0.0.1}:1888:1888"   # pprof extension
+      - "${MAP_HOST_OTEL:-127.0.0.1}:8888:8888"   # Prometheus metrics exposed by the collector
+      - "${MAP_HOST_OTEL:-127.0.0.1}:8889:8889"   # Prometheus exporter metrics
+      - "${MAP_HOST_OTEL:-127.0.0.1}:13133:13133" # health_check extension
+      - "${MAP_HOST_OTEL:-127.0.0.1}:4317:4317"   # OTLP gRPC receiver
+      - "${MAP_HOST_OTEL:-127.0.0.1}:4318:4318"   # OTLP http receiver
+      - "${MAP_HOST_OTEL:-127.0.0.1}:55679:55679" # zpages extension
     profiles:
       - otel
       - monitoring
@@ -166,10 +198,10 @@ services:
     command: ["--config=/etc/otel-collector-config.yaml"]
 
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v2.43.0}
     container_name: prometheus
     ports:
-      - "9090:9090"
+      - "${MAP_HOST_PROMETHEUS:-127.0.0.1}:9090:9090"
     profiles:
       - prometheus
       - monitoring
@@ -177,3 +209,8 @@ services:
       - ./monitoring/prometheus.yaml:/etc/prometheus/prometheus.yml
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+volumes:
+  localstack_data:
+  postgres_data:
+  azurite_data:

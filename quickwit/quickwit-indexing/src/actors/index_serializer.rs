@@ -85,7 +85,7 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
                     .set_progress(ctx.progress().clone())
                     .set_kill_switch(ctx.kill_switch().clone())
                     .set_index_and_component(
-                        &split_builder.split_attrs.pipeline_id.index_id,
+                        split_builder.split_attrs.pipeline_id.index_uid.index_id(),
                         "index_serializer",
                     );
                 controlled_directory.set_io_controls(io_controls);

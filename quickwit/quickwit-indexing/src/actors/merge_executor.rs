@@ -31,12 +31,13 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::io::IoControls;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_directories::UnionDirectory;
-use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::metastore_api::DeleteTask;
-use quickwit_proto::SearchRequest;
+use quickwit_query::get_quickwit_tokenizer_manager;
+use quickwit_query::query_ast::QueryAst;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
-use tantivy::{DateTime, Directory, Index, IndexMeta, SegmentId, SegmentReader};
+use tantivy::{Advice, DateTime, Directory, Index, IndexMeta, SegmentId, SegmentReader};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
 
@@ -328,7 +329,7 @@ impl MergeExecutor {
         let delete_tasks = ctx
             .protect_future(
                 self.metastore
-                    .list_delete_tasks(&split.index_id, split.delete_opstamp),
+                    .list_delete_tasks(split.index_uid.clone(), split.delete_opstamp),
             )
             .await?;
         if delete_tasks.is_empty() {
@@ -365,7 +366,7 @@ impl MergeExecutor {
         // This will have the side effect of deleting the directory containing the downloaded split.
         let mut merged_index = Index::open(controlled_directory.clone())?;
         ctx.record_progress();
-        merged_index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+        merged_index.set_tokenizers(get_quickwit_tokenizer_manager().clone());
 
         ctx.record_progress();
 
@@ -379,7 +380,7 @@ impl MergeExecutor {
                     split.split_id()
                 );
                 self.metastore
-                    .mark_splits_for_deletion(&split.index_id, &[split.split_id()])
+                    .mark_splits_for_deletion(split.index_uid.clone(), &[split.split_id()])
                     .await?;
                 return Ok(None);
             };
@@ -400,7 +401,7 @@ impl MergeExecutor {
         };
 
         let index_pipeline_id = IndexingPipelineId {
-            index_id: split.index_id.clone(),
+            index_uid: split.index_uid,
             node_id: split.node_id.clone(),
             pipeline_ord: 0,
             source_id: split.source_id.clone(),
@@ -437,7 +438,10 @@ impl MergeExecutor {
 
         // This directory is here to receive the merged split, as well as the final meta.json file.
         let output_directory = ControlledDirectory::new(
-            Box::new(MmapDirectory::open(output_path)?),
+            Box::new(MmapDirectory::open_with_madvice(
+                output_path,
+                Advice::Sequential,
+            )?),
             self.io_controls
                 .clone()
                 .set_kill_switch(ctx.kill_switch().clone())
@@ -463,19 +467,18 @@ impl MergeExecutor {
                 let delete_query = delete_task
                     .delete_query
                     .expect("A delete task must have a delete query.");
-                let search_request = SearchRequest {
-                    index_id: delete_query.index_id,
-                    query: delete_query.query,
-                    start_timestamp: delete_query.start_timestamp,
-                    end_timestamp: delete_query.end_timestamp,
-                    search_fields: delete_query.search_fields,
-                    ..Default::default()
-                };
+                let query_ast: QueryAst = serde_json::from_str(&delete_query.query_ast)
+                    .context("Invalid query_ast json")?;
+                // We ignore the docmapper default fields when we consider delete query.
+                // We reparse the query here defensivley, but actually, it should already have been
+                // done in the delete task rest handler.
+                let parsed_query_ast = query_ast.parse_user_query(&[]).context("Invalid query")?;
                 debug!(
                     "Delete all documents matched by query `{:?}`",
-                    search_request
+                    parsed_query_ast
                 );
-                let (query, _) = doc_mapper.query(union_index.schema(), &search_request)?;
+                let (query, _) =
+                    doc_mapper.query(union_index.schema(), &parsed_query_ast, false)?;
                 index_writer.delete_query(query)?;
             }
             debug!("commit-delete-operations");
@@ -508,7 +511,7 @@ impl MergeExecutor {
 
 fn open_index<T: Into<Box<dyn Directory>>>(directory: T) -> tantivy::Result<Index> {
     let mut index = Index::open(directory)?;
-    index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+    index.set_tokenizers(get_quickwit_tokenizer_manager().clone());
     Ok(index)
 }
 
@@ -528,12 +531,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
-        let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
-            pipeline_ord: 0,
-        };
         let doc_mapping_yaml = r#"
             field_mappings:
               - name: body
@@ -546,7 +543,14 @@ mod tests {
             timestamp_field: ts
         "#;
         let test_sandbox =
-            TestSandbox::create(&pipeline_id.index_id, doc_mapping_yaml, "", &["body"]).await?;
+            TestSandbox::create("test-index", doc_mapping_yaml, "", &["body"]).await?;
+        let index_uid = test_sandbox.index_uid();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         for split_id in 0..4 {
             let single_doc = std::iter::once(
                 serde_json::json!({"body ": format!("split{split_id}"), "ts": 1631072713u64 + split_id }),
@@ -555,7 +559,7 @@ mod tests {
         }
         let metastore = test_sandbox.metastore();
         let split_metas: Vec<SplitMetadata> = metastore
-            .list_all_splits(&pipeline_id.index_id)
+            .list_all_splits(index_uid)
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
@@ -652,12 +656,6 @@ mod tests {
     ) -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_id: index_id.to_string(),
-            node_id: "unknown".to_string(),
-            pipeline_ord: 0,
-            source_id: "unknown".to_string(),
-        };
         let doc_mapping_yaml = r#"
             field_mappings:
               - name: body
@@ -670,19 +668,25 @@ mod tests {
             timestamp_field: ts
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
+        let index_uid = test_sandbox.index_uid();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: index_uid.clone(),
+            node_id: "unknown".to_string(),
+            pipeline_ord: 0,
+            source_id: "unknown".to_string(),
+        };
         test_sandbox.add_documents(docs).await?;
         let metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: delete_query.to_string(),
-                search_fields: Vec::new(),
+                query_ast: quickwit_proto::qast_helper(delete_query, &["body"]),
             })
             .await?;
         let split_metadata = metastore
-            .list_all_splits(&pipeline_id.index_id)
+            .list_all_splits(index_uid.clone())
             .await?
             .into_iter()
             .next()
@@ -693,12 +697,12 @@ mod tests {
         new_split_metadata.split_id = new_split_id();
         new_split_metadata.num_merge_ops = 1;
         metastore
-            .stage_splits(index_id, vec![new_split_metadata.clone()])
+            .stage_splits(index_uid.clone(), vec![new_split_metadata.clone()])
             .await
             .unwrap();
         metastore
             .publish_splits(
-                index_id,
+                index_uid.clone(),
                 &[new_split_metadata.split_id()],
                 &[split_metadata.split_id()],
                 None,
@@ -780,7 +784,7 @@ mod tests {
 
             assert_eq!(documents_left.len(), result_docs.len());
             for doc in &documents_left {
-                assert!(result_docs.contains(dbg!(doc)));
+                assert!(result_docs.contains(doc));
             }
             for doc in &result_docs {
                 assert!(documents_left.contains(doc));
@@ -789,7 +793,7 @@ mod tests {
             assert!(packager_msgs.is_empty());
             let metastore = test_sandbox.metastore();
             assert!(metastore
-                .list_all_splits(index_id)
+                .list_all_splits(index_uid)
                 .await?
                 .into_iter()
                 .all(

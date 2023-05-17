@@ -24,12 +24,12 @@ async-trait = { workspace = true }
 atty = { workspace = true }
 bytes = { workspace = true }
 byte-unit = { workspace = true }
+chitchat = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
 console-subscriber = { workspace = true, optional = true }
 dialoguer = { workspace = true }
 futures = { workspace = true }
-humansize = { workspace = true }
 humantime = { workspace = true }
 indicatif = { workspace = true }
 itertools = { workspace = true }
@@ -74,7 +74,6 @@ quickwit-telemetry = { workspace = true }
 [dev-dependencies]
 predicates = { workspace = true }
 reqwest = { workspace = true }
-serial_test = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }

@@ -1,1 +1,1 @@
-See internal-docs/backward-compatibility.md.
+See docs/internals/backward-compatibility.md.

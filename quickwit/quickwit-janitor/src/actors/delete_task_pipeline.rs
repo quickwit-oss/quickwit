@@ -35,6 +35,7 @@ use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::models::{IndexingPipelineId, ScratchDirectory};
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::Metastore;
+use quickwit_proto::IndexUid;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::Storage;
 use serde::Serialize;
@@ -64,7 +65,7 @@ pub struct DeleteTaskPipelineState {
 }
 
 pub struct DeleteTaskPipeline {
-    index_id: String,
+    index_uid: IndexUid,
     metastore: Arc<dyn Metastore>,
     search_job_placer: SearchJobPlacer,
     indexing_settings: IndexingSettings,
@@ -114,7 +115,7 @@ impl Actor for DeleteTaskPipeline {
 
 impl DeleteTaskPipeline {
     pub fn new(
-        index_id: String,
+        index_uid: IndexUid,
         metastore: Arc<dyn Metastore>,
         search_job_placer: SearchJobPlacer,
         indexing_settings: IndexingSettings,
@@ -123,7 +124,7 @@ impl DeleteTaskPipeline {
         max_concurrent_split_uploads: usize,
     ) -> Self {
         Self {
-            index_id,
+            index_uid,
             metastore,
             search_job_placer,
             indexing_settings,
@@ -137,15 +138,15 @@ impl DeleteTaskPipeline {
 
     pub async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         info!(
-            index_id=%self.index_id,
+            index_id=%self.index_uid.index_id(),
             root_dir=%self.delete_service_dir_path.display(),
             "Spawning delete tasks pipeline.",
         );
-        let index_config = self
+        let index_metadata = self
             .metastore
-            .index_metadata(&self.index_id)
-            .await?
-            .into_index_config();
+            .index_metadata_strict(&self.index_uid)
+            .await?;
+        let index_config = index_metadata.into_index_config();
         let publisher = Publisher::new(
             PublisherType::MergePublisher,
             self.metastore.clone(),
@@ -171,7 +172,7 @@ impl DeleteTaskPipeline {
         let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_supervisor_handler) = ctx.spawn_actor().supervise(packager);
         let index_pipeline_id = IndexingPipelineId {
-            index_id: self.index_id.to_string(),
+            index_uid: self.index_uid.clone(),
             node_id: "unknown".to_string(),
             pipeline_ord: 0,
             source_id: "unknown".to_string(),
@@ -185,10 +186,10 @@ impl DeleteTaskPipeline {
             .unwrap_or(f64::INFINITY);
         let delete_executor_io_controls = IoControls::default()
             .set_throughput_limit(throughput_limit)
-            .set_index_and_component(self.index_id.as_str(), "deleter");
+            .set_index_and_component(self.index_uid.index_id(), "deleter");
         let split_download_io_controls = delete_executor_io_controls
             .clone()
-            .set_index_and_component(self.index_id.as_str(), "split_downloader_delete");
+            .set_index_and_component(self.index_uid.index_id(), "split_downloader_delete");
         let delete_executor = MergeExecutor::new(
             index_pipeline_id,
             self.metastore.clone(),
@@ -198,7 +199,15 @@ impl DeleteTaskPipeline {
         );
         let (delete_executor_mailbox, task_executor_supervisor_handler) =
             ctx.spawn_actor().supervise(delete_executor);
-        let indexing_directory_path = self.delete_service_dir_path.join(&self.index_id);
+        let incarnation_id = self.index_uid.incarnation_id();
+        let indexing_directory_path = if incarnation_id.is_empty() {
+            // Legacy path for 0.5 indices
+            self.delete_service_dir_path.join(self.index_uid.index_id())
+        } else {
+            self.delete_service_dir_path
+                .join(self.index_uid.index_id())
+                .join(incarnation_id)
+        };
         let scratch_directory = ScratchDirectory::create_in_dir(indexing_directory_path).await?;
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory,
@@ -212,7 +221,7 @@ impl DeleteTaskPipeline {
         let doc_mapper_str = serde_json::to_string(&doc_mapper)?;
         let index_uri: &Uri = &index_config.index_uri;
         let task_planner = DeleteTaskPlanner::new(
-            self.index_id.clone(),
+            self.index_uid.clone(),
             index_uri.clone(),
             doc_mapper_str,
             self.metastore.clone(),
@@ -327,6 +336,7 @@ mod tests {
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
             .await
             .unwrap();
+        let index_uid = test_sandbox.index_uid();
         let docs = vec![
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "info", "ts": 0 }),
@@ -336,11 +346,10 @@ mod tests {
         let metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: "body:delete".to_string(),
-                search_fields: Vec::new(),
+                query_ast: quickwit_proto::qast_helper("body:delete", &[]),
             })
             .await
             .unwrap();
@@ -374,7 +383,7 @@ mod tests {
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.merge_policy = MergePolicyConfig::Nop;
         let pipeline = DeleteTaskPipeline::new(
-            index_id.to_string(),
+            test_sandbox.index_uid(),
             metastore.clone(),
             search_job_placer,
             indexing_settings,
@@ -399,7 +408,7 @@ mod tests {
         assert_eq!(pipeline_state.publisher.num_errors, 0);
         let _ = pipeline_mailbox.ask(GracefulShutdown).await;
 
-        let splits = metastore.list_all_splits(index_id).await?;
+        let splits = metastore.list_all_splits(index_uid).await?;
         assert_eq!(splits.len(), 2);
         let published_split = splits
             .iter()
@@ -449,7 +458,7 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexing_settings = IndexingSettings::for_test();
         let pipeline = DeleteTaskPipeline::new(
-            index_id.to_string(),
+            test_sandbox.index_uid(),
             metastore.clone(),
             search_job_placer,
             indexing_settings,

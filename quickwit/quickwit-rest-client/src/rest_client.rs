@@ -176,6 +176,9 @@ impl QuickwitClient {
                 BatchLineReader::from_file(&filepath, INGEST_CONTENT_LENGTH_LIMIT).await?
             }
             IngestSource::Stdin => BatchLineReader::from_stdin(INGEST_CONTENT_LENGTH_LIMIT),
+            IngestSource::Bytes(bytes) => {
+                BatchLineReader::from_bytes(bytes, INGEST_CONTENT_LENGTH_LIMIT)
+            }
         };
         while let Some(batch) = batch_reader.next_batch().await? {
             loop {

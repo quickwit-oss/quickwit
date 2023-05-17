@@ -67,11 +67,14 @@ message SearchRequest {
   // Index ID
   string index_id = 1;
 
-  // Query
-  string query = 2;
+  // deprecated `query``
+  reserved 2;
 
-  // Fields to search on
-  repeated string  search_fields = 3;
+  // Json object representing Quickwit's QueryAst.
+  string query_ast = 13;
+
+  // deprecated `search_fields``
+  reserved 3;
 
   // Time filter, expressed in seconds since epoch.
   // That filter is to be interpreted as the semi-open interval:
@@ -96,6 +99,10 @@ message SearchRequest {
   optional SortOrder sort_order = 9;
 
   // Sort by fast field. If unset sort by docid
+  // sort_by_field can be:
+  // - a field name
+  // - _score
+  // - None, in which case the hits will be sorted by (SplitId, doc_id).
   optional string sort_by_field = 10;
 
   // json serialized aggregation_request
@@ -166,7 +173,10 @@ message SplitIdAndFooterOffsets {
   uint64 split_footer_start = 2;
   // The offset of the end of the footer in split bundle. The footer contains the file bundle metadata and the hotcache.
   uint64 split_footer_end = 3;
-
+  // The lowest timestamp appearing in the split
+  optional int64 timestamp_start = 4;
+  // The highest timestamp appearing in the split
+  optional int64 timestamp_end = 5;
 }
 
 /// Hits returned by a FetchDocRequest.
@@ -240,9 +250,11 @@ message LeafSearchResponse {
   // num_attempted_splits = num_successful_splits + num_failed_splits.
   uint64 num_attempted_splits = 4;
 
-  // json serialized intermediate aggregation_result.
-  optional string intermediate_aggregation_result = 5;
+  // Deprecated json serialized intermediate aggregation_result.
+  reserved 5;
 
+  // postcard serialized intermediate aggregation_result.
+  optional bytes intermediate_aggregation_result = 6;
 }
 
 message FetchDocsRequest {
@@ -349,11 +361,14 @@ message SearchStreamRequest {
   // Index ID
   string index_id = 1;
 
-  // Query
-  string query = 2;
+  // deprecated `query`.
+  reserved 2;
 
-  // Fields to search on
-  repeated string  search_fields = 3;
+  // Quickwit Query AST encoded in Json
+  string query_ast = 11;
+
+  // deprecated `search_fields`
+  reserved 3;
 
   // The time filter is interpreted as a semi-open interval. [start, end)
   optional int64 start_timestamp = 4;

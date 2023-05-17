@@ -14,10 +14,10 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 byte-unit = { workspace = true }
-clap = { workspace = true }
 elasticsearch-dsl = "0.4"
 futures = { workspace = true }
 futures-util = { workspace = true }
+http-serde = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
@@ -58,6 +58,7 @@ quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
+quickwit-query = { workspace = true }
 
 [build-dependencies]
 time = { workspace = true }

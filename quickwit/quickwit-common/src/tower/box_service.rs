@@ -18,13 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
-use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use futures::Future;
 use tower::{Service, ServiceExt};
 
-pub type BoxFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'static>>;
+use super::BoxFuture;
 
 trait CloneService<R, T, E>:
     Service<R, Response = T, Error = E, Future = BoxFuture<T, E>>

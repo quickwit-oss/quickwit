@@ -1,16 +1,14 @@
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Eq, Hash)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchRequest {
     /// Index ID
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    /// Query
-    #[prost(string, tag = "2")]
-    pub query: ::prost::alloc::string::String,
-    /// Fields to search on
-    #[prost(string, repeated, tag = "3")]
-    pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Json object representing Quickwit's QueryAst.
+    #[prost(string, tag = "13")]
+    pub query_ast: ::prost::alloc::string::String,
     /// Time filter, expressed in seconds since epoch.
     /// That filter is to be interpreted as the semi-open interval:
     /// [start_timestamp, end_timestamp).
@@ -32,6 +30,10 @@ pub struct SearchRequest {
     #[prost(enumeration = "SortOrder", optional, tag = "9")]
     pub sort_order: ::core::option::Option<i32>,
     /// Sort by fast field. If unset sort by docid
+    /// sort_by_field can be:
+    /// - a field name
+    /// - _score
+    /// - None, in which case the hits will be sorted by (SplitId, doc_id).
     #[prost(string, optional, tag = "10")]
     pub sort_by_field: ::core::option::Option<::prost::alloc::string::String>,
     /// json serialized aggregation_request
@@ -110,6 +112,12 @@ pub struct SplitIdAndFooterOffsets {
     /// The offset of the end of the footer in split bundle. The footer contains the file bundle metadata and the hotcache.
     #[prost(uint64, tag = "3")]
     pub split_footer_end: u64,
+    /// The lowest timestamp appearing in the split
+    #[prost(int64, optional, tag = "4")]
+    pub timestamp_start: ::core::option::Option<i64>,
+    /// The highest timestamp appearing in the split
+    #[prost(int64, optional, tag = "5")]
+    pub timestamp_end: ::core::option::Option<i64>,
 }
 /// / Hits returned by a FetchDocRequest.
 /// /
@@ -199,10 +207,10 @@ pub struct LeafSearchResponse {
     /// num_attempted_splits = num_successful_splits + num_failed_splits.
     #[prost(uint64, tag = "4")]
     pub num_attempted_splits: u64,
-    /// json serialized intermediate aggregation_result.
-    #[prost(string, optional, tag = "5")]
+    /// postcard serialized intermediate aggregation_result.
+    #[prost(bytes = "vec", optional, tag = "6")]
     pub intermediate_aggregation_result: ::core::option::Option<
-        ::prost::alloc::string::String,
+        ::prost::alloc::vec::Vec<u8>,
     >,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
@@ -323,12 +331,9 @@ pub struct SearchStreamRequest {
     /// Index ID
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    /// Query
-    #[prost(string, tag = "2")]
-    pub query: ::prost::alloc::string::String,
-    /// Fields to search on
-    #[prost(string, repeated, tag = "3")]
-    pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Quickwit Query AST encoded in Json
+    #[prost(string, tag = "11")]
+    pub query_ast: ::prost::alloc::string::String,
     /// The time filter is interpreted as a semi-open interval. [start, end)
     #[prost(int64, optional, tag = "4")]
     pub start_timestamp: ::core::option::Option<i64>,
@@ -379,6 +384,7 @@ pub struct LeafSearchStreamResponse {
     pub split_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SortOrder {

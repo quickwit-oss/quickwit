@@ -204,6 +204,9 @@ mod tests {
         transport: &dyn Transport,
     ) -> anyhow::Result<Arc<Cluster>> {
         let cluster = create_cluster_for_test(Vec::new(), &["searcher"], transport, true).await?;
+        cluster
+            .wait_for_ready_members(|members| members.len() == 1, Duration::from_secs(5))
+            .await?;
         Ok(Arc::new(cluster))
     }
 
@@ -211,8 +214,9 @@ mod tests {
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_simple_for_test(&transport).await?;
+        let ready_member_watcher = cluster.ready_members_watcher().await;
         let job_placer = SearchJobPlacer::new(
-            ServiceClientPool::create_and_update_members(cluster.ready_member_change_watcher())
+            ServiceClientPool::create_and_update_members(ready_member_watcher)
                 .await
                 .unwrap(),
         );
@@ -220,7 +224,7 @@ mod tests {
         let clients = job_placer.clients();
         let addrs: Vec<SocketAddr> = clients.into_keys().collect();
         let expected_addrs = vec![grpc_addr_from_listen_addr_for_test(
-            cluster.gossip_listen_addr,
+            cluster.gossip_listen_addr(),
         )];
         assert_eq!(addrs, expected_addrs);
         Ok(())
@@ -230,16 +234,16 @@ mod tests {
     async fn test_search_job_placer_multiple_nodes() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster1 = create_cluster_simple_for_test(&transport).await?;
-        let node_1 = cluster1.gossip_listen_addr.to_string();
+        let node_1 = cluster1.gossip_listen_addr().to_string();
         let cluster2 =
             create_cluster_for_test(vec![node_1], &["searcher"], &transport, true).await?;
 
         cluster1
-            .wait_for_members(|members| members.len() == 2, Duration::from_secs(5))
+            .wait_for_ready_members(|members| members.len() == 2, Duration::from_secs(5))
             .await?;
 
         let job_placer = SearchJobPlacer::new(
-            ServiceClientPool::create_and_update_members(cluster1.ready_member_change_watcher())
+            ServiceClientPool::create_and_update_members(cluster1.ready_members_watcher().await)
                 .await
                 .unwrap(),
         );
@@ -248,8 +252,8 @@ mod tests {
 
         let addrs: Vec<SocketAddr> = clients.into_keys().sorted().collect();
         let mut expected_addrs = vec![
-            grpc_addr_from_listen_addr_for_test(cluster1.gossip_listen_addr),
-            grpc_addr_from_listen_addr_for_test(cluster2.gossip_listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster1.gossip_listen_addr()),
+            grpc_addr_from_listen_addr_for_test(cluster2.gossip_listen_addr()),
         ];
         expected_addrs.sort();
         assert_eq!(addrs, expected_addrs);
@@ -260,8 +264,9 @@ mod tests {
     async fn test_search_job_placer_single_node_assign_jobs() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_simple_for_test(&transport).await?;
+        let ready_members_watcher = cluster.ready_members_watcher().await;
         let job_placer = SearchJobPlacer::new(
-            ServiceClientPool::create_and_update_members(cluster.ready_member_change_watcher())
+            ServiceClientPool::create_and_update_members(ready_members_watcher)
                 .await
                 .unwrap(),
         );
@@ -272,11 +277,10 @@ mod tests {
             SearchJob::for_test("split3", 3),
             SearchJob::for_test("split4", 4),
         ];
-
         let assigned_jobs = job_placer.assign_jobs(jobs, &HashSet::default())?;
         let expected_assigned_jobs = vec![(
             create_search_service_client(grpc_addr_from_listen_addr_for_test(
-                cluster.gossip_listen_addr,
+                cluster.gossip_listen_addr(),
             ))
             .await?,
             vec![

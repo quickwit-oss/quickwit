@@ -33,9 +33,22 @@ impl ControlPlaneServiceClient {
     {
         Self { inner: Box::new(instance) }
     }
-    pub fn from_channel(
-        channel: tower::timeout::Timeout<tonic::transport::Channel>,
-    ) -> Self {
+    pub fn from_channel<C>(channel: C) -> Self
+    where
+        C: tower::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<hyper::Body>,
+                Error = quickwit_common::tower::BoxError,
+            > + std::fmt::Debug + Clone + Send + Sync + 'static,
+        <C as tower::Service<
+            http::Request<tonic::body::BoxBody>,
+        >>::Future: std::future::Future<
+                Output = Result<
+                    http::Response<hyper::Body>,
+                    quickwit_common::tower::BoxError,
+                >,
+            > + Send + 'static,
+    {
         ControlPlaneServiceClient::new(
             ControlPlaneServiceGrpcClientAdapter::new(
                 control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
@@ -46,7 +59,7 @@ impl ControlPlaneServiceClient {
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
-        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         ControlPlaneServiceMailbox<A>: ControlPlaneService,
     {
         ControlPlaneServiceClient::new(ControlPlaneServiceMailbox::new(mailbox))
@@ -120,6 +133,7 @@ impl ControlPlaneService for ControlPlaneServiceTowerBlock {
 }
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerBlockBuilder {
+    #[allow(clippy::type_complexity)]
     notify_index_change_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn ControlPlaneService>,
@@ -133,12 +147,12 @@ impl ControlPlaneServiceTowerBlockBuilder {
     pub fn shared_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn ControlPlaneService>> + Clone + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 NotifyIndexChangeRequest,
                 Response = NotifyIndexChangeResponse,
                 Error = crate::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
     {
         self
             .notify_index_change_layer = Some(
@@ -149,12 +163,12 @@ impl ControlPlaneServiceTowerBlockBuilder {
     pub fn notify_index_change_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 NotifyIndexChangeRequest,
                 Response = NotifyIndexChangeResponse,
                 Error = crate::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
     {
         self
             .notify_index_change_layer = Some(
@@ -168,10 +182,22 @@ impl ControlPlaneServiceTowerBlockBuilder {
     {
         self.build_from_boxed(Box::new(instance))
     }
-    pub fn build_from_channel<T>(
-        self,
-        channel: tower::timeout::Timeout<tonic::transport::Channel>,
-    ) -> ControlPlaneServiceClient {
+    pub fn build_from_channel<T, C>(self, channel: C) -> ControlPlaneServiceClient
+    where
+        C: tower::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<hyper::Body>,
+                Error = quickwit_common::tower::BoxError,
+            > + std::fmt::Debug + Clone + Send + Sync + 'static,
+        <C as tower::Service<
+            http::Request<tonic::body::BoxBody>,
+        >>::Future: std::future::Future<
+                Output = Result<
+                    http::Response<hyper::Body>,
+                    quickwit_common::tower::BoxError,
+                >,
+            > + Send + 'static,
+    {
         self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_channel(channel)))
     }
     pub fn build_from_mailbox<A>(
@@ -179,7 +205,7 @@ impl ControlPlaneServiceTowerBlockBuilder {
         mailbox: quickwit_actors::Mailbox<A>,
     ) -> ControlPlaneServiceClient
     where
-        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         ControlPlaneServiceMailbox<A>: ControlPlaneService,
     {
         self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_mailbox(mailbox)))
@@ -240,11 +266,11 @@ use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for ControlPlaneServiceMailbox<A>
 where
     A: quickwit_actors::Actor
-        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync
+        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send
         + 'static,
     M: std::fmt::Debug + Send + Sync + 'static,
-    T: Send + Sync + 'static,
-    E: std::fmt::Debug + Send + Sync + 'static,
+    T: Send + 'static,
+    E: std::fmt::Debug + Send + 'static,
     crate::ControlPlaneError: From<quickwit_actors::AskError<E>>,
 {
     type Response = T;
@@ -344,7 +370,7 @@ for ControlPlaneServiceGrpcServerAdapter {
             .notify_index_change(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(Into::into)
+            .map_err(|error| error.into())
     }
 }
 /// Generated client implementations.
