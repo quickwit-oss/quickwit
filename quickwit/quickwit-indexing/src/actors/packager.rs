@@ -335,8 +335,8 @@ mod tests {
     use std::ops::RangeInclusive;
 
     use quickwit_actors::{ObservationType, Universe};
-    use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+    use quickwit_proto::IndexUid;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, Index};
     use tracing::Span;
@@ -363,7 +363,7 @@ mod tests {
             schema_builder.add_bool_field("tag_bool", NumericOptions::default().set_indexed());
         let schema = schema_builder.build();
         let mut index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
-        index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+        index.set_tokenizers(quickwit_query::get_quickwit_tokenizer_manager().clone());
         let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
         let mut timerange_opt: Option<RangeInclusive<DateTime>> = None;
         let mut num_docs = 0;
@@ -394,7 +394,7 @@ mod tests {
         }
         index_writer.commit()?;
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,

@@ -39,7 +39,7 @@ doc_mapping:
     - name: severity_text
       type: text
       tokenizer: raw
-      fast: 
+      fast:
         - tokenizer: lowercase
     - name: body
       type: text
@@ -184,23 +184,23 @@ When specifying multiple input formats, the corresponding parsers are attempted 
   - `%f` for milliseconds precision support.
   - `%z` timezone offsets can be specified as `(+|-)hhmm` or `(+|-)hh:mm`.
 
-- `unix_timestamp`: parse Unix timestamp values. Timestamp values can be provided in different precision, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is capable of inferring the precision from the value. Because of this feature, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
+- `unix_timestamp`: parse Unix timestamp values. Timestamps can be provided with different precisions, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is able to infer the precision from the value. Because internally, datetimes are stored as `i64`, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
 
-When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding which improves compression. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field.
-Truncation here means zeroing. Operations on the `datetime` fastfield, e.g. via aggregations, need to be done on the microseconds level.
+When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding, which improves compression (truncation here means zeroing). The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field. Finally, operations on `datetime` fastfields, e.g. via aggregations, need to be done at the nanosecond level.
 
 :::info
-Internally `datetime` is stored as `microseconds` in the fastfield and docstore, and as `seconds` in the term dictionary.
+Internally `datetime` is stored in `nanoseconds` in fast fields and in the docstore, and in `seconds` in the term dictionary.
 :::
 
 :::warning
 The timezone name format specifier (`%Z`) is not currently supported in `strptime` format.
 :::
 
-In addition, Quickwit support the `output_format` field option to specify how datetimes are represented in search result. This options supports the same value as input formats except for `Timestamp` which is replace by the following formats are for finer grained control:
+In addition, Quickwit supports the `output_format` field option to specify with which precision datetimes are deserialized. This options supports the same value as input formats except for `unix_timestamp` which is replaced by the following formats:
 - `unix_timestamp_secs`: displays timestamps in seconds.
 - `unix_timestamp_millis`: displays timestamps in milliseconds.
 - `unix_timestamp_micros`: displays timestamps in microseconds.
+- `unix_timestamp_nanos`: displays timestamps in nanoseconds.
 
 Example of a mapping for a datetime field:
 
@@ -228,7 +228,7 @@ precision: milliseconds
 | `stored`        | Whether the field values are stored in the document store | `true` |
 | `indexed`       | Whether the field values are indexed | `true` |
 | `fast`          | Whether the field values are stored in a fast field | `false` |
-| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values. | `seconds` |
+| `precision`     | The precision (`seconds`, `milliseconds`, `microseconds`, or `nanoseconds`) used to store the fast values. | `seconds` |
 
 #### `bool` type
 
@@ -321,6 +321,7 @@ expand_dots: false
 | `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
+| `fast`   | Whether value is fast | `false` |
 | `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `default` |
 | `record`    | **Only affects strings in the json object**. Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 | `expand_dots`    | If true, json keys containing a `.` should be expanded. For instance, if `expand_dots` is set to true, `{"k8s.node.id": "node-2"}` will be indexed as if it was `{"k8s": {"node": {"id": "node2"}}}`. The benefit is that escaping the `.` will not be required at query time. In other words, `k8s.node.id:node2` will match the document. This does not impact the way the document is stored.  | `true` |
@@ -379,21 +380,29 @@ Quickwit offers you three different modes:
 - `strict`: if a document contains a field that is not mapped, quickwit will dismiss it, and count it as an error.
 - `dynamic`: unmapped fields are gathered by Quickwit and handled as defined in the `dynamic_mapping` parameter.
 
+#### Dynamic Mapping
+
+`dynamic` mode makes it possible to operate Quickwit in a schemaless manner, or with a partial schema.
+The configuration of `dynamic` mode can be set via the `dynamic_mapping` parameter.
 `dynamic_mapping` offers the same configuration options as when configuring a `json` field. It defaults to:
 
 ```yaml
-- indexed: true
-- stored: true
-- tokenizer: default
-- record: basic
-- expand_dots: true
+version: 0.5
+index_id: my-dynamic-index
+doc_mapping:
+  mode: dynamic
+  dynamic_mapping:
+    indexed: true
+    stored: true
+    tokenizer: default
+    record: basic
+    expand_dots: true
+    fast: true
 ```
 
-The `dynamic` mode makes it possible to operate Quickwit in a schemaless manner, or with a partial schema.
-
-If the `dynamic_mapping` has been set as indexed (this is the default),
-fields that were mapped thanks to the dynamic mode can be searched, by
-targeting the path required to reach them from the root of the json object.
+When the `dynamic_mapping` is set as indexed (default), fields mapped through
+dynamic mode can be searched by targeting the path needed to access them from
+the root of the JSON object.
 
 For instance, in a entirely schemaless settings, a minimal index configuration could be:
 
@@ -559,7 +568,7 @@ This section describes search settings for a given index.
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `search_default_fields`      | Default list of fields that will be used for search.   | `None` |
+| `default_search_fields`      | Default list of fields that will be used for search.   | `None` |
 
 ## Retention policy
 

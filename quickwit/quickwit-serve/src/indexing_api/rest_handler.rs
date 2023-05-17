@@ -24,7 +24,8 @@ use quickwit_indexing::actors::{IndexingService, IndexingServiceCounters};
 use quickwit_indexing::models::Observe;
 use warp::{Filter, Rejection};
 
-use crate::format::{extract_format_from_qs, make_response};
+use crate::format::extract_format_from_qs;
+use crate::json_api_response::make_json_api_response;
 use crate::require;
 
 #[derive(utoipa::OpenApi)]
@@ -58,5 +59,5 @@ pub fn indexing_get_handler(
         .and(require(indexing_service_mailbox_opt))
         .then(indexing_endpoint)
         .and(extract_format_from_qs())
-        .map(make_response)
+        .map(make_json_api_response)
 }

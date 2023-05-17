@@ -12,10 +12,13 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 async-trait = { workspace = true }
 dyn-clone = { workspace = true }
+http = { workspace = true }
+hyper = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 utoipa = { workspace = true }

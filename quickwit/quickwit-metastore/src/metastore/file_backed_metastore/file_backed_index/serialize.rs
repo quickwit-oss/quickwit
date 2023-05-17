@@ -78,8 +78,8 @@ impl From<FileBackedIndexV0_5> for FileBackedIndex {
     fn from(mut index: FileBackedIndexV0_5) -> Self {
         // Override split index_id to support old SplitMetadata format.
         for split in index.splits.iter_mut() {
-            if split.split_metadata.index_id.is_empty() {
-                split.split_metadata.index_id = index.metadata.index_id().to_string();
+            if split.split_metadata.index_uid.to_string().is_empty() {
+                split.split_metadata.index_uid = index.metadata.index_uid.clone();
             }
         }
         Self::new(index.metadata, index.splits, index.delete_tasks)

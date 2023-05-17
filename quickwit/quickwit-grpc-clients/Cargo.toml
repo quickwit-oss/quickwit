@@ -12,6 +12,7 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+futures = { workspace = true }
 itertools = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }

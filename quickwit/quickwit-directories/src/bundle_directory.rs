@@ -78,9 +78,9 @@ pub async fn read_split_footer(
 
 /// Return two slices for given split: `[body and bundle meta data] [hotcache]`
 fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
-    let (body_and_footer_slice, footer_len_slice) = file_slice.split_from_end(8);
+    let (body_and_footer_slice, footer_len_slice) = file_slice.split_from_end(4);
     let footer_len_bytes = footer_len_slice.read_bytes()?;
-    let footer_len = u64::from_le_bytes(footer_len_bytes.as_slice().try_into().unwrap());
+    let footer_len = u32::from_le_bytes(footer_len_bytes.as_slice().try_into().unwrap());
     Ok(body_and_footer_slice.split_from_end(footer_len as usize))
 }
 
@@ -93,7 +93,7 @@ pub fn get_hotcache_from_split(data: OwnedBytes) -> io::Result<OwnedBytes> {
 
 impl BundleDirectory {
     /// Get files and their sizes in a split.
-    pub fn get_stats_split(data: OwnedBytes) -> io::Result<Vec<(PathBuf, u64)>> {
+    pub fn get_stats_split(data: OwnedBytes) -> anyhow::Result<Vec<(PathBuf, u64)>> {
         let split_file = FileSlice::new(Arc::new(data));
         let (body_and_bundle_metadata, hot_cache) = split_footer(split_file)?;
         let file_offsets = BundleStorageFileOffsets::open(body_and_bundle_metadata)?;
@@ -118,10 +118,11 @@ impl BundleDirectory {
         // First we remove the hotcache from our file slice.
         let (body_and_bundle_metadata, _hot_cache) = split_footer(split_file)?;
         BundleDirectory::open_bundle(body_and_bundle_metadata)
+            .map_err(|anyhow_err| io::Error::new(io::ErrorKind::Other, anyhow_err))
     }
 
     /// Opens a BundleDirectory, given a file containing the bundle data.
-    pub fn open_bundle(file: FileSlice) -> io::Result<BundleDirectory> {
+    pub fn open_bundle(file: FileSlice) -> anyhow::Result<BundleDirectory> {
         let file_offsets = BundleStorageFileOffsets::open(file.clone())?;
         Ok(BundleDirectory { file, file_offsets })
     }

@@ -10,14 +10,17 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
+anyhow = { workspace = true }
 opentelemetry = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
+quickwit-query = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+ulid = { workspace = true }
 utoipa = { workspace = true }
 
 

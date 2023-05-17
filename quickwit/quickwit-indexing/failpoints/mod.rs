@@ -49,6 +49,7 @@ use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::{IndexingPipelineId, MergeScratch, ScratchDirectory};
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
 use quickwit_metastore::{ListSplitsQuery, Split, SplitMetadata, SplitState};
+use quickwit_proto::IndexUid;
 use serde_json::Value as JsonValue;
 use tantivy::{Directory, Inventory};
 
@@ -179,7 +180,8 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
     ];
     test_index_builder.add_documents(batch_1).await?;
     test_index_builder.add_documents(batch_2).await?;
-    let query = ListSplitsQuery::for_index(&index_id).with_split_state(SplitState::Published);
+    let query = ListSplitsQuery::for_index(test_index_builder.index_uid())
+        .with_split_state(SplitState::Published);
     let mut splits = test_index_builder.metastore().list_splits(query).await?;
     splits.sort_by_key(|split| *split.split_metadata.time_range.clone().unwrap().start());
     assert_eq!(splits.len(), 2);
@@ -253,7 +255,9 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     tokio::time::sleep(Duration::from_millis(10)).await;
 
     let metastore = test_index_builder.metastore();
-    let splits: Vec<Split> = metastore.list_all_splits(index_id).await?;
+    let splits: Vec<Split> = metastore
+        .list_all_splits(test_index_builder.index_uid())
+        .await?;
     let split_metadatas: Vec<SplitMetadata> = splits
         .into_iter()
         .map(|split| split.split_metadata)
@@ -283,7 +287,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         tantivy_dirs,
     };
     let pipeline_id = IndexingPipelineId {
-        index_id: index_id.to_string(),
+        index_uid: IndexUid::new(index_id.to_string()),
         source_id: "test-source".to_string(),
         node_id: "test-node".to_string(),
         pipeline_ord: 0,

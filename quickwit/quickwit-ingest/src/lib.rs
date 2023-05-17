@@ -114,14 +114,19 @@ pub async fn start_ingest_api_service(
     init_ingest_api(universe, &queues_dir_path, config).await
 }
 
+/// Specifies if the ingest request should block waiting for the records to be committed.
 #[repr(u32)]
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all(deserialize = "snake_case"))]
 #[derive(Default)]
 pub enum CommitType {
     #[default]
+    /// The request doesn't wait for commit
     Auto = 0,
+    /// The request waits for the next scheduled commit to finish.
     WaitFor = 1,
+    /// The request forces an immediate commit after the last document in the batch and waits for
+    /// it to finish.
     Force = 2,
 }
 
@@ -209,13 +214,13 @@ mod tests {
             doc_batches: vec![
                 DocBatch {
                     index_id: "index-1".to_string(),
-                    concat_docs: vec![10, 11, 12].into(),
-                    doc_lens: vec![2],
+                    doc_buffer: vec![10, 11, 12].into(),
+                    doc_lengths: vec![2],
                 },
                 DocBatch {
                     index_id: "index-2".to_string(),
-                    concat_docs: vec![10, 11, 12].into(),
-                    doc_lens: vec![2],
+                    doc_buffer: vec![10, 11, 12].into(),
+                    doc_lengths: vec![2],
                 },
             ],
             commit: CommitType::Auto as u32,
@@ -260,8 +265,8 @@ mod tests {
         let ingest_request = IngestRequest {
             doc_batches: vec![DocBatch {
                 index_id: "test-queue".to_string(),
-                concat_docs: vec![1; 600].into(),
-                doc_lens: vec![30; 20],
+                doc_buffer: vec![1; 600].into(),
+                doc_lengths: vec![30; 20],
             }],
             commit: CommitType::Auto as u32,
         };

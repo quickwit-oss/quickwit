@@ -122,8 +122,9 @@ mod tests {
     use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
-    use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::metastore_for_test;
+    use quickwit_proto::IndexUid;
 
     use super::*;
     use crate::source::quickwit_supported_sources;
@@ -139,12 +140,13 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         source_loader
             .load_source(
                 SourceExecutionContext::for_test(
                     metastore,
-                    "test-index",
+                    IndexUid::new("test-index"),
                     PathBuf::from("./queues"),
                     source_config,
                 ),

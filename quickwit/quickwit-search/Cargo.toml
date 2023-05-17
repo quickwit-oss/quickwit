@@ -21,6 +21,8 @@ itertools = { workspace = true }
 lru = { workspace = true }
 mockall = { workspace = true }
 once_cell = { workspace = true }
+postcard = { workspace = true }
+prost = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -44,6 +46,7 @@ quickwit-grpc-clients = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true }
 quickwit-storage = { workspace = true }
 
 [dev-dependencies]

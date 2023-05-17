@@ -29,12 +29,13 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{
     build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, IngestApiConfig, SourceConfig,
-    SourceParams, VecSourceParams,
+    SourceInputFormat, SourceParams, VecSourceParams,
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::{init_ingest_api, QUEUES_DIR_NAME};
 use quickwit_metastore::file_backed_metastore::FileBackedMetastoreFactory;
 use quickwit_metastore::{Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState};
+use quickwit_proto::IndexUid;
 use quickwit_storage::{Storage, StorageUriResolver};
 use serde_json::Value as JsonValue;
 
@@ -47,7 +48,7 @@ use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
 /// The test index content is entirely in RAM and isolated,
 /// but the construction of the index involves temporary file directory.
 pub struct TestSandbox {
-    index_id: String,
+    index_uid: IndexUid,
     indexing_service: Mailbox<IndexingService>,
     doc_mapper: Arc<dyn DocMapper>,
     metastore: Arc<dyn Metastore>,
@@ -74,11 +75,9 @@ impl TestSandbox {
     ) -> anyhow::Result<Self> {
         let node_id = append_random_suffix("test-node");
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let index_uri = index_uri(index_id);
         let mut index_config = IndexConfig::for_test(index_id, index_uri.as_str());
         index_config.doc_mapping = ConfigFormat::Yaml.parse(doc_mapping_yaml.as_bytes())?;
@@ -102,7 +101,7 @@ impl TestSandbox {
         let metastore = metastore_uri_resolver
             .resolve(&Uri::from_well_formed(METASTORE_URI))
             .await?;
-        metastore.create_index(index_config.clone()).await?;
+        let index_uid = metastore.create_index(index_config.clone()).await?;
         let storage = storage_resolver.resolve(&index_uri)?;
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
@@ -121,7 +120,7 @@ impl TestSandbox {
         let (indexing_service, _indexing_service_handle) =
             universe.spawn_builder().spawn(indexing_service_actor);
         Ok(TestSandbox {
-            index_id: index_id.to_string(),
+            index_uid,
             indexing_service,
             doc_mapper,
             metastore,
@@ -148,7 +147,7 @@ impl TestSandbox {
             .collect();
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source_config = SourceConfig {
-            source_id: self.index_id.clone(),
+            source_id: self.index_uid.index_id().to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
             enabled: true,
@@ -158,11 +157,12 @@ impl TestSandbox {
                 partition: format!("add-docs-{add_docs_id}"),
             }),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let pipeline_id = self
             .indexing_service
             .ask_for_res(SpawnPipeline {
-                index_id: self.index_id.clone(),
+                index_id: self.index_uid.index_id().to_string(),
                 source_config,
                 pipeline_ord: 0,
             })
@@ -201,9 +201,9 @@ impl TestSandbox {
         self.doc_mapper.clone()
     }
 
-    /// Returns the index ID.
-    pub fn index_id(&self) -> &str {
-        &self.index_id
+    /// Returns the index UID.
+    pub fn index_uid(&self) -> IndexUid {
+        self.index_uid.clone()
     }
 
     /// Returns the underlying universe.
@@ -270,14 +270,14 @@ mod tests {
         assert_eq!(statistics.num_uploaded_splits, 1);
         let metastore = test_sandbox.metastore();
         {
-            let splits = metastore.list_all_splits("test_index").await?;
+            let splits = metastore.list_all_splits(test_sandbox.index_uid()).await?;
             assert_eq!(splits.len(), 1);
             test_sandbox.add_documents(vec![
             serde_json::json!({"title": "Byzantine-Ottoman wars", "body": "...", "url": "http://biz-ottoman"}),
         ]).await?;
         }
         {
-            let splits = metastore.list_all_splits("test_index").await?;
+            let splits = metastore.list_all_splits(test_sandbox.index_uid()).await?;
             assert_eq!(splits.len(), 2);
         }
         test_sandbox.assert_quit().await;

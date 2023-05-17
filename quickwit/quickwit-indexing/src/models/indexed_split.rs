@@ -22,6 +22,7 @@ use std::path::Path;
 
 use quickwit_common::io::IoControls;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+use quickwit_proto::IndexUid;
 use tantivy::directory::MmapDirectory;
 use tantivy::{IndexBuilder, TrackedObject};
 use tracing::{instrument, Span};
@@ -117,7 +118,7 @@ impl IndexedSplitBuilder {
     #[instrument(name="serialize_split",
         skip_all,
         fields(
-            index_id=%self.split_attrs.pipeline_id.index_id,
+            index_id=%self.split_attrs.pipeline_id.index_uid.index_id(),
             source_id=%self.split_attrs.pipeline_id.source_id,
             node_id=%self.split_attrs.pipeline_id.node_id,
             pipeline_id=%self.split_attrs.pipeline_id.pipeline_ord,
@@ -182,7 +183,7 @@ pub struct IndexedSplitBatchBuilder {
 /// Sends notifications to the Publisher that the last batch of splits was emtpy.
 #[derive(Debug)]
 pub struct EmptySplit {
-    pub index_id: String,
+    pub index_uid: IndexUid,
     pub batch_parent_span: Span,
     pub checkpoint_delta: IndexCheckpointDelta,
     pub publish_lock: PublishLock,

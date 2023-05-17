@@ -23,6 +23,7 @@ use quickwit_actors::ActorContext;
 use quickwit_common::PrettySample;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
+use quickwit_proto::IndexUid;
 use time::OffsetDateTime;
 use tracing::{info, warn};
 
@@ -37,7 +38,7 @@ use crate::actors::RetentionPolicyExecutor;
 /// * `retention_policy` - The retention policy to used to evaluate the splits.
 /// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
 pub async fn run_execute_retention_policy(
-    index_id: &str,
+    index_uid: IndexUid,
     metastore: Arc<dyn Metastore>,
     retention_policy: &RetentionPolicy,
     ctx: &ActorContext<RetentionPolicyExecutor>,
@@ -46,7 +47,7 @@ pub async fn run_execute_retention_policy(
     let retention_period = retention_policy.retention_period()?;
     let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
     let max_retention_timestamp = current_timestamp - retention_period.as_secs() as i64;
-    let query = ListSplitsQuery::for_index(index_id)
+    let query = ListSplitsQuery::for_index(index_uid.clone())
         .with_split_state(SplitState::Published)
         .with_time_range_end_lte(max_retention_timestamp);
 
@@ -63,7 +64,7 @@ pub async fn run_execute_retention_policy(
             .map(|split_metadata| split_metadata.split_id)
             .collect();
         warn!(
-            index_id=%index_id,
+            index_id=%index_uid.index_id(),
             split_ids=?PrettySample::new(&ignored_split_ids, 5),
             "Retention policy could not be applied to {} splits because they lack a timestamp range.",
             ignored_split_ids.len()
@@ -78,12 +79,12 @@ pub async fn run_execute_retention_policy(
         .map(|split_metadata| split_metadata.split_id())
         .collect();
     info!(
-        index_id=%index_id,
+        index_id=%index_uid.index_id(),
         split_ids=?PrettySample::new(&expired_split_ids, 5),
         "Marking {} splits for deletion based on retention policy.",
         expired_split_ids.len()
     );
-    ctx.protect_future(metastore.mark_splits_for_deletion(index_id, &expired_split_ids))
+    ctx.protect_future(metastore.mark_splits_for_deletion(index_uid, &expired_split_ids))
         .await?;
     Ok(expired_splits)
 }

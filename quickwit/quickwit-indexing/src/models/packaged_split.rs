@@ -21,6 +21,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+use quickwit_proto::IndexUid;
 use tantivy::TrackedObject;
 use tracing::Span;
 
@@ -81,7 +82,7 @@ impl PackagedSplitBatch {
         assert_eq!(
             splits
                 .iter()
-                .map(|split| split.split_attrs.pipeline_id.index_id.clone())
+                .map(|split| split.split_attrs.pipeline_id.index_uid.clone())
                 .collect::<HashSet<_>>()
                 .len(),
             1,
@@ -96,10 +97,10 @@ impl PackagedSplitBatch {
         }
     }
 
-    pub fn index_id(&self) -> String {
+    pub fn index_uid(&self) -> IndexUid {
         self.splits
             .get(0)
-            .map(|split| split.split_attrs.pipeline_id.index_id.clone())
+            .map(|split| split.split_attrs.pipeline_id.index_uid.clone())
             .unwrap()
     }
 

@@ -19,6 +19,8 @@ dyn-clone = { workspace = true }
 env_logger = { workspace = true }
 futures = { workspace = true }
 home = { workspace = true }
+hostname = { workspace = true }
+http = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 num_cpus = { workspace = true }
@@ -31,10 +33,12 @@ regex = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
-warp = { workspace = true }
 utoipa = { workspace = true }
+warp = { workspace = true }
 
 [features]
 testsuite = []

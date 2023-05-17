@@ -209,6 +209,7 @@ async fn test_ingest_docs_cli() {
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
+    let index_uid = test_env.index_metadata().await.unwrap().index_uid;
 
     let args = LocalIngestDocsArgs {
         config_uri: test_env.config_uri.clone(),
@@ -225,7 +226,7 @@ async fn test_ingest_docs_cli() {
         .metastore()
         .await
         .unwrap()
-        .list_all_splits(&index_id)
+        .list_all_splits(index_uid)
         .await
         .unwrap();
 
@@ -257,6 +258,58 @@ async fn test_ingest_docs_cli() {
     ));
 }
 
+/// Helper function to compare a json payload.
+///
+/// It will serialize and deserialize the value in order
+/// to make sure floating points are the exact value obtained via
+/// JSON deserialization.
+#[track_caller]
+fn assert_flexible_json_eq(value_json: &serde_json::Value, expected_json: &serde_json::Value) {
+    match (value_json, expected_json) {
+        (Value::Array(left_arr), Value::Array(right_arr)) => {
+            assert_eq!(
+                left_arr.len(),
+                right_arr.len(),
+                "left: {:?} right: {:?}",
+                left_arr,
+                right_arr
+            );
+            for i in 0..left_arr.len() {
+                assert_flexible_json_eq(&left_arr[i], &right_arr[i]);
+            }
+        }
+        (Value::Object(left_obj), Value::Object(right_obj)) => {
+            assert_eq!(
+                left_obj.len(),
+                right_obj.len(),
+                "left: {:?} right: {:?}",
+                left_obj,
+                right_obj
+            );
+            for (k, v) in left_obj {
+                if let Some(right_value) = right_obj.get(k) {
+                    assert_flexible_json_eq(v, right_value);
+                } else {
+                    panic!("Missing key `{k}`");
+                }
+            }
+        }
+        (Value::Number(left_num), Value::Number(right_num)) => {
+            let left = left_num.as_f64().unwrap();
+            let right = right_num.as_f64().unwrap();
+            assert!(
+                (left - right).abs() / (1e-32 + left + right).abs() < 1e-4,
+                "left: {:?} right: {:?}",
+                left,
+                right
+            );
+        }
+        (left, right) => {
+            assert_eq!(left, right);
+        }
+    }
+}
+
 #[tokio::test]
 async fn test_cmd_search_aggregation() {
     quickwit_common::setup_logging_for_tests();
@@ -275,10 +328,10 @@ async fn test_cmd_search_aggregation() {
         "range": {
           "field": "ts",
           "ranges": [
-            { "to": 72057597000000f64 },
-            { "from": 72057597000000f64, "to": 72057600000000f64 },
-            { "from": 72057600000000f64, "to": 72057604000000f64 },
-            { "from": 72057604000000f64 },
+            { "to": 72057597000000000f64 },
+            { "from": 72057597000000000f64, "to": 72057600000000000f64 },
+            { "from": 72057600000000000f64, "to": 72057604000000000f64 },
+            { "from": 72057604000000000f64 },
           ]
         },
         "aggs": {
@@ -306,56 +359,53 @@ async fn test_cmd_search_aggregation() {
     let search_response = search_index(args).await.unwrap();
 
     let aggregation_res = search_response.aggregations.unwrap();
-
-    assert_eq!(
-        aggregation_res,
-        json!({
-          "range_buckets": {
+    let expected_json = serde_json::json!({
+        "range_buckets": {
             "buckets": [
-              {
-                "key": "*-1972-04-13T23:59:57Z",
-                "doc_count": 0,
-                "average_ts": {
-                    "value": null,
+                {
+                    "average_ts": {
+                        "value": null
+                    },
+                    "doc_count": 0,
+                    "key": "*-1972-04-13T23:59:57Z",
+                    "to": 72057597000000000f64,
+                    "to_as_string": "1972-04-13T23:59:57Z"
                 },
-                "to": 72057597000000f64,
-                "to_as_string": "1972-04-13T23:59:57Z"
-              },
-              {
-                "key": "1972-04-13T23:59:57Z-1972-04-14T00:00:00Z",
-                "doc_count": 2,
-                "average_ts": {
-                  "value": 72057597500000f64,
+                {
+                    "average_ts": {
+                        "value": 72057597500000000f64
+                    },
+                    "doc_count": 2,
+                    "from": 72057597000000000f64,
+                    "from_as_string": "1972-04-13T23:59:57Z",
+                    "key": "1972-04-13T23:59:57Z-1972-04-14T00:00:00Z",
+                    "to": 72057600000000000f64,
+                    "to_as_string": "1972-04-14T00:00:00Z"
                 },
-                "from": 72057597000000f64,
-                "to": 72057600000000f64,
-                "from_as_string": "1972-04-13T23:59:57Z",
-                "to_as_string": "1972-04-14T00:00:00Z"
-              },
-              {
-                "key": "1972-04-14T00:00:00Z-1972-04-14T00:00:04Z",
-                "doc_count": 0,
-                "average_ts": {
-                  "value": null,
+                {
+                    "average_ts": {
+                        "value": null
+                    },
+                    "doc_count": 0,
+                    "from": 72057600000000000f64,
+                    "from_as_string": "1972-04-14T00:00:00Z",
+                    "key": "1972-04-14T00:00:00Z-1972-04-14T00:00:04Z",
+                    "to": 72057604000000000f64,
+                    "to_as_string": "1972-04-14T00:00:04Z"
                 },
-                "from": 72057600000000f64,
-                "to": 72057604000000f64,
-                "from_as_string": "1972-04-14T00:00:00Z",
-                "to_as_string": "1972-04-14T00:00:04Z"
-              },
-              {
-                "key": "1972-04-14T00:00:04Z-*",
-                "doc_count": 3,
-                "average_ts": {
-                  "value": 72057606333333.33f64,
-                },
-                "from": 72057604000000f64,
-                "from_as_string": "1972-04-14T00:00:04Z"
-              }
+                {
+                    "average_ts": {
+                        "value": 72057606333333330f64
+                    },
+                    "doc_count": 3,
+                    "from": 72057604000000000f64,
+                    "from_as_string": "1972-04-14T00:00:04Z",
+                    "key": "1972-04-14T00:00:04Z-*"
+                }
             ]
-          }
-        })
-    );
+        }
+    });
+    assert_flexible_json_eq(&aggregation_res, &expected_json);
 }
 
 #[tokio::test]
@@ -532,6 +582,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
+    let index_uid = test_env.index_metadata().await.unwrap().index_uid;
     local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
@@ -558,7 +609,7 @@ async fn test_garbage_collect_cli_no_grace() {
         dry_run,
     };
 
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     assert_eq!(splits.len(), 1);
 
     let args = create_gc_args(false);
@@ -572,7 +623,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let split_ids = [splits[0].split_id()];
     let metastore = refresh_metastore(metastore).await.unwrap();
     metastore
-        .mark_splits_for_deletion(&test_env.index_id, &split_ids)
+        .mark_splits_for_deletion(index_uid.clone(), &split_ids)
         .await
         .unwrap();
 
@@ -601,7 +652,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let metastore = refresh_metastore(metastore).await.unwrap();
     assert_eq!(
         metastore
-            .list_all_splits(&test_env.index_id)
+            .list_all_splits(index_uid.clone())
             .await
             .unwrap()
             .len(),
@@ -626,6 +677,7 @@ async fn test_garbage_collect_index_cli() {
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
+    let index_uid = test_env.index_metadata().await.unwrap().index_uid;
     local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
         .await
         .unwrap();
@@ -652,7 +704,7 @@ async fn test_garbage_collect_index_cli() {
         .await
         .unwrap();
 
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     assert_eq!(splits.len(), 1);
 
     let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
@@ -666,7 +718,7 @@ async fn test_garbage_collect_index_cli() {
 
     // Split should still exists within grace period.
     let metastore = refresh_metastore(metastore).await.unwrap();
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     assert_eq!(splits.len(), 1);
 
     // The following steps help turn an existing published split into a staged one
@@ -674,21 +726,21 @@ async fn test_garbage_collect_index_cli() {
     let split = splits[0].clone();
     let split_ids = [split.split_metadata.split_id.as_str()];
     metastore
-        .mark_splits_for_deletion(&test_env.index_id, &split_ids)
+        .mark_splits_for_deletion(index_uid.clone(), &split_ids)
         .await
         .unwrap();
     metastore
-        .delete_splits(&test_env.index_id, &split_ids)
+        .delete_splits(index_uid.clone(), &split_ids)
         .await
         .unwrap();
     metastore
-        .stage_splits(&test_env.index_id, vec![split.split_metadata])
+        .stage_splits(index_uid.clone(), vec![split.split_metadata])
         .await
         .unwrap();
     assert_eq!(split_path.try_exists().unwrap(), true);
 
     let metastore = refresh_metastore(metastore).await.unwrap();
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     assert_eq!(splits[0].split_state, SplitState::Staged);
 
     let args = create_gc_args(3600);
@@ -698,7 +750,7 @@ async fn test_garbage_collect_index_cli() {
     assert_eq!(split_path.try_exists().unwrap(), true);
     // Staged splits should still exist within grace period.
     let metastore = refresh_metastore(metastore).await.unwrap();
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     assert_eq!(splits.len(), 1);
     assert_eq!(splits[0].split_state, SplitState::Staged);
 
@@ -711,7 +763,7 @@ async fn test_garbage_collect_index_cli() {
     garbage_collect_index_cli(args).await.unwrap();
 
     let metastore = refresh_metastore(metastore).await.unwrap();
-    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
     // Splits should be deleted from both metastore and file system.
     assert_eq!(splits.len(), 0);
     assert_eq!(split_path.try_exists().unwrap(), false);

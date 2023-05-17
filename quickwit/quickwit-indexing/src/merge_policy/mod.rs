@@ -164,6 +164,7 @@ pub mod tests {
 
     use proptest::prelude::*;
     use quickwit_actors::Universe;
+    use quickwit_proto::IndexUid;
     use rand::seq::SliceRandom;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
@@ -316,7 +317,7 @@ pub mod tests {
         let merged_split_id = new_split_id();
         let tags = merge_tags(splits);
         let pipeline_id = IndexingPipelineId {
-            index_id: "test_index".to_string(),
+            index_uid: IndexUid::new("test_index"),
             source_id: "test_source".to_string(),
             node_id: "test_node".to_string(),
             pipeline_ord: 0,
@@ -346,7 +347,7 @@ pub mod tests {
         let (merge_op_mailbox, merge_op_inbox) =
             universe.create_test_mailbox::<MergeSplitDownloader>();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -401,7 +402,7 @@ pub mod tests {
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
             tags: BTreeSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
             footer_offsets: 0..100,
-            index_id: "test-index".to_string(),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             ..Default::default()

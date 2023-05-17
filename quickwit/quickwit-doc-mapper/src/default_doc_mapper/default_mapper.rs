@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use anyhow::{bail, Context};
-use quickwit_proto::SearchRequest;
+use quickwit_query::query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
@@ -365,15 +365,19 @@ impl DocMapper for DefaultDocMapper {
     fn query(
         &self,
         split_schema: Schema,
-        request: &SearchRequest,
+        query_ast: &QueryAst,
+        with_validation: bool,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
-        let mut tantivy_default_search_field_names = self.default_search_field_names.clone();
-        if let Mode::Dynamic(default_mapping_options) = &self.mode {
-            if default_mapping_options.indexed {
-                tantivy_default_search_field_names.push(DYNAMIC_FIELD_NAME.to_string());
-            }
-        }
-        build_query(split_schema, request, &tantivy_default_search_field_names)
+        build_query(
+            query_ast,
+            split_schema,
+            &self.default_search_field_names[..],
+            with_validation,
+        )
+    }
+
+    fn default_search_fields(&self) -> &[String] {
+        &self.default_search_field_names
     }
 
     fn schema(&self) -> Schema {
@@ -397,7 +401,7 @@ impl DocMapper for DefaultDocMapper {
 mod tests {
     use std::collections::HashMap;
 
-    use quickwit_proto::SearchRequest;
+    use quickwit_proto::query_ast_from_user_text;
     use serde_json::{self, json, Value as JsonValue};
     use tantivy::schema::{FieldType, Type, Value as TantivyValue};
 
@@ -1048,12 +1052,11 @@ mod tests {
         doc_mapper: &dyn DocMapper,
         query: &str,
     ) -> Result<String, String> {
-        let search_request = SearchRequest {
-            query: query.to_string(),
-            ..Default::default()
-        };
+        let query_ast = query_ast_from_user_text(query, None)
+            .parse_user_query(doc_mapper.default_search_fields())
+            .map_err(|err| err.to_string())?;
         let (query, _) = doc_mapper
-            .query(doc_mapper.schema(), &search_request)
+            .query(doc_mapper.schema(), &query_ast, true)
             .map_err(|err| err.to_string())?;
         Ok(format!("{query:?}"))
     }
@@ -1069,7 +1072,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "body.wrong_field:hello").unwrap_err(),
-            "Field does not exist: 'body.wrong_field'"
+            "Invalid query: Field does not exist: `body.wrong_field`"
         );
     }
 
@@ -1085,7 +1088,7 @@ mod tests {
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "body.dynamic_field:hello"),
             Ok(
-                r#"TermQuery(Term(type=Json, field=0, path=dynamic_field, vtype=Str, "hello"))"#
+                r#"TermQuery(Term(field=0, type=Json, path=dynamic_field, type=Str, "hello"))"#
                     .to_string()
             )
         );
@@ -1108,11 +1111,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "identity.username:toto").unwrap(),
-            r#"TermQuery(Term(type=Str, field=0, "toto"))"#
+            r#"TermQuery(Term(field=0, type=Str, "toto"))"#
         );
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
-            r#"TermQuery(Term(type=Str, field=1, "toto"))"#
+            r#"TermQuery(Term(field=1, type=Str, "toto"))"#
         );
     }
 
@@ -1129,11 +1132,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "identity.username:toto").unwrap(),
-            r#"TermQuery(Term(type=Json, field=0, path=username, vtype=Str, "toto"))"#
+            r#"TermQuery(Term(field=0, type=Json, path=username, type=Str, "toto"))"#
         );
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
-            r#"TermQuery(Term(type=Str, field=1, "toto"))"#
+            r#"TermQuery(Term(field=1, type=Str, "toto"))"#
         );
     }
 }

@@ -22,22 +22,23 @@ use std::io::{stdout, Stdout, Write};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::bail;
+use chitchat::transport::ChannelTransport;
+use chitchat::FailureDetectorConfig;
 use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
-use quickwit_cluster::create_fake_cluster_for_cli;
+use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::uri::Uri;
 use quickwit_common::{GREEN_COLOR, RED_COLOR};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    IndexerConfig, SourceConfig, SourceParams, TransformConfig, VecSourceParams,
-    CLI_INGEST_SOURCE_ID,
+    IndexerConfig, QuickwitConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
+    VecSourceParams, CLI_INGEST_SOURCE_ID,
 };
 use quickwit_core::{clear_cache_directory, IndexService};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
@@ -305,6 +306,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         enabled: true,
         source_params,
         transform_config,
+        input_format: SourceInputFormat::Json,
     };
     run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source_config)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
@@ -319,7 +321,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     // The indexing service needs to update its cluster chitchat state so that the control plane is
     // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
     // and avoid impacting potential control plane running on the cluster.
-    let fake_cluster = create_fake_cluster_for_cli().await?;
+    let cluster = create_empty_cluster(&config).await?;
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
@@ -328,7 +330,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         config.node_id.clone(),
         config.data_dir_path.clone(),
         indexer_config,
-        Arc::new(fake_cluster),
+        cluster,
         metastore,
         None,
         quickwit_storage_uri_resolver().clone(),
@@ -408,7 +410,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     // The indexing service needs to update its cluster chitchat state so that the control plane is
     // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
     // and avoid impacting potential control plane running on the cluster.
-    let fake_cluster = create_fake_cluster_for_cli().await?;
+    let cluster = create_empty_cluster(&config).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&config.metastore_uri)
@@ -420,7 +422,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         config.node_id,
         config.data_dir_path,
         indexer_config,
-        Arc::new(fake_cluster),
+        cluster,
         metastore,
         None,
         storage_resolver,
@@ -438,6 +440,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             },
             pipeline_ord: 0,
         })
@@ -752,4 +755,26 @@ impl ThroughputCalculator {
     pub fn elapsed_time(&self) -> Duration {
         self.start_time.elapsed()
     }
+}
+
+async fn create_empty_cluster(config: &QuickwitConfig) -> anyhow::Result<Cluster> {
+    let self_node = ClusterMember::new(
+        config.node_id.clone(),
+        quickwit_cluster::GenerationId::now(),
+        false,
+        HashSet::new(),
+        config.gossip_advertise_addr,
+        config.grpc_advertise_addr,
+        Vec::new(),
+    );
+    let cluster = Cluster::join(
+        config.cluster_id.clone(),
+        self_node,
+        config.gossip_advertise_addr,
+        Vec::new(),
+        FailureDetectorConfig::default(),
+        &ChannelTransport::default(),
+    )
+    .await?;
+    Ok(cluster)
 }

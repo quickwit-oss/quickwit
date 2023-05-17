@@ -23,7 +23,7 @@ use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
 use quickwit_common::FileEntry;
-use quickwit_config::TestableForRegression;
+use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -68,7 +68,7 @@ pub struct SplitMetadata {
     pub split_id: String,
 
     /// Id of the index this split belongs to.
-    pub index_id: String,
+    pub index_uid: IndexUid,
 
     /// Partition to which the split belongs to.
     ///
@@ -132,14 +132,14 @@ impl SplitMetadata {
     /// Creates a new instance of split metadata.
     pub fn new(
         split_id: String,
-        index_id: String,
+        index_uid: IndexUid,
         partition_id: u64,
         source_id: String,
         node_id: String,
     ) -> Self {
         Self {
             split_id,
-            index_id,
+            index_uid,
             partition_id,
             source_id,
             node_id,
@@ -172,11 +172,12 @@ impl From<&SplitMetadata> for FileEntry {
     }
 }
 
-impl TestableForRegression for SplitMetadata {
+#[cfg(any(test, feature = "testsuite"))]
+impl quickwit_config::TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
         SplitMetadata {
             split_id: "split".to_string(),
-            index_id: "my-index".to_string(),
+            index_uid: IndexUid::from_parts("my-index", "1111111111111"),
             source_id: "source".to_string(),
             node_id: "node".to_string(),
             delete_opstamp: 10,

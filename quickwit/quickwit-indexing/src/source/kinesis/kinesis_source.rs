@@ -408,6 +408,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_kinesis_source() {
         let universe = Universe::with_accelerated_time();

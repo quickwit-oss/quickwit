@@ -3,9 +3,8 @@
     {
       "create_timestamp": 0,
       "delete_query": {
-        "index_id": "index",
-        "query": "Harry Potter",
-        "search_fields": []
+        "index_uid": "",
+        "query_ast": ""
       },
       "opstamp": 10
     }
@@ -99,10 +98,12 @@
       },
       "version": "0.5"
     },
+    "index_uid": "my-index",
     "sources": [
       {
         "desired_num_pipelines": 2,
         "enabled": true,
+        "input_format": "json",
         "max_num_pipelines_per_indexer": 2,
         "params": {
           "client_params": {},
@@ -123,7 +124,7 @@
         "end": 2000,
         "start": 1000
       },
-      "index_id": "my-index",
+      "index_uid": "my-index",
       "node_id": "node",
       "num_docs": 12303,
       "num_merge_ops": 3,

@@ -23,6 +23,7 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::IndexUid;
 
 use super::retry::RetryParams;
 use crate::checkpoint::IndexCheckpointDelta;
@@ -80,8 +81,12 @@ impl Metastore for RetryTestMetastore {
         self.try_success().map_err(anyhow::Error::from)
     }
 
-    async fn create_index(&self, _index_config: IndexConfig) -> MetastoreResult<()> {
-        self.try_success()
+    async fn create_index(&self, _index_config: IndexConfig) -> MetastoreResult<IndexUid> {
+        let result = self.try_success();
+        match result {
+            Ok(_) => Ok(IndexUid::new("")),
+            Err(err) => Err(err),
+        }
     }
 
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
@@ -100,13 +105,13 @@ impl Metastore for RetryTestMetastore {
         }
     }
 
-    async fn delete_index(&self, _index_id: &str) -> MetastoreResult<()> {
+    async fn delete_index(&self, _index_uid: IndexUid) -> MetastoreResult<()> {
         self.try_success()
     }
 
     async fn stage_splits(
         &self,
-        _index_id: &str,
+        _index_uid: IndexUid,
         _split_metadata_list: Vec<SplitMetadata>,
     ) -> MetastoreResult<()> {
         self.try_success()
@@ -114,7 +119,7 @@ impl Metastore for RetryTestMetastore {
 
     async fn publish_splits<'a>(
         &self,
-        _index_id: &str,
+        _index_uid: IndexUid,
         _split_ids: &[&'a str],
         _replaced_split_ids: &[&'a str],
         _checkpoint_delta_opt: Option<IndexCheckpointDelta>,
@@ -122,7 +127,7 @@ impl Metastore for RetryTestMetastore {
         self.try_success()
     }
 
-    async fn list_splits<'a>(&self, _query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
+    async fn list_splits(&self, _query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
         let result = self.try_success();
         match result {
             Ok(_) => Ok(Vec::new()),
@@ -132,7 +137,7 @@ impl Metastore for RetryTestMetastore {
 
     async fn mark_splits_for_deletion<'a>(
         &self,
-        _index_id: &str,
+        _index_uid: IndexUid,
         _split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
         self.try_success()
@@ -140,19 +145,19 @@ impl Metastore for RetryTestMetastore {
 
     async fn delete_splits<'a>(
         &self,
-        _index_id: &str,
+        _index_uid: IndexUid,
         _split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
         self.try_success()
     }
 
-    async fn add_source(&self, _index_id: &str, _source: SourceConfig) -> MetastoreResult<()> {
+    async fn add_source(&self, _index_uid: IndexUid, _source: SourceConfig) -> MetastoreResult<()> {
         self.try_success()
     }
 
     async fn toggle_source(
         &self,
-        _index_id: &str,
+        _index_uid: IndexUid,
         _source_id: &str,
         _enable: bool,
     ) -> MetastoreResult<()> {
@@ -161,13 +166,13 @@ impl Metastore for RetryTestMetastore {
 
     async fn reset_source_checkpoint(
         &self,
-        _index_id: &str,
+        _index_uid: IndexUid,
         _source_id: &str,
     ) -> MetastoreResult<()> {
         self.try_success()
     }
 
-    async fn delete_source(&self, _index_id: &str, _source_id: &str) -> MetastoreResult<()> {
+    async fn delete_source(&self, _index_uid: IndexUid, _source_id: &str) -> MetastoreResult<()> {
         self.try_success()
     }
 
@@ -183,7 +188,7 @@ impl Metastore for RetryTestMetastore {
         }
     }
 
-    async fn last_delete_opstamp(&self, _index_id: &str) -> MetastoreResult<u64> {
+    async fn last_delete_opstamp(&self, _index_uid: IndexUid) -> MetastoreResult<u64> {
         let result = self.try_success();
         match result {
             Ok(_) => Ok(0),
@@ -193,7 +198,7 @@ impl Metastore for RetryTestMetastore {
 
     async fn update_splits_delete_opstamp<'a>(
         &self,
-        _index_id: &str,
+        _index_uid: IndexUid,
         _split_ids: &[&'a str],
         _delete_opstamp: u64,
     ) -> MetastoreResult<()> {
@@ -202,7 +207,7 @@ impl Metastore for RetryTestMetastore {
 
     async fn list_delete_tasks(
         &self,
-        _index_id: &str,
+        _index_uid: IndexUid,
         _opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>> {
         let result = self.try_success();

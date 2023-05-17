@@ -19,54 +19,74 @@
 
 #![deny(clippy::disallowed_methods)]
 
+mod change;
 mod cluster;
-mod error;
 mod member;
+mod node;
 
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::QuickwitConfig as NodeConfig;
+use time::OffsetDateTime;
 
-pub use crate::cluster::{
-    create_cluster_for_test, create_fake_cluster_for_cli, grpc_addr_from_listen_addr_for_test,
-    Cluster, ClusterSnapshot, NodeIdSchema,
-};
-pub use crate::error::{ClusterError, ClusterResult};
+pub use crate::change::ClusterChange;
+#[cfg(any(test, feature = "testsuite"))]
+pub use crate::cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test};
+pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 pub use crate::member::ClusterMember;
+pub use crate::node::ClusterNode;
 
-fn unix_timestamp() -> u64 {
-    let duration_since_epoch = std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .expect("SystemTime before UNIX EPOCH!");
-    duration_since_epoch.as_secs()
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct GenerationId(u64);
+
+impl GenerationId {
+    pub fn as_u64(&self) -> u64 {
+        self.0
+    }
+
+    pub fn now() -> Self {
+        Self(OffsetDateTime::now_utc().unix_timestamp_nanos() as u64)
+    }
+}
+
+impl From<u64> for GenerationId {
+    fn from(generation_id: u64) -> Self {
+        Self(generation_id)
+    }
 }
 
 pub async fn start_cluster_service(
-    quickwit_config: &QuickwitConfig,
+    node_config: &NodeConfig,
     enabled_services: &HashSet<QuickwitService>,
-) -> anyhow::Result<Arc<Cluster>> {
-    let self_node = ClusterMember::new(
-        quickwit_config.node_id.clone(),
-        unix_timestamp(),
-        enabled_services.clone(),
-        quickwit_config.gossip_advertise_addr,
-        quickwit_config.grpc_advertise_addr,
-        Vec::new(),
-    );
+) -> anyhow::Result<Cluster> {
+    let cluster_id = node_config.cluster_id.clone();
+    let gossip_listen_addr = node_config.gossip_listen_addr;
+    let peer_seed_addrs = node_config.peer_seed_addrs().await?;
+    let indexing_tasks = Vec::new();
 
+    let node_id = node_config.node_id.clone();
+    let generation_id = GenerationId::now();
+    let is_ready = false;
+    let self_node = ClusterMember::new(
+        node_id,
+        generation_id,
+        is_ready,
+        enabled_services.clone(),
+        node_config.gossip_advertise_addr,
+        node_config.grpc_advertise_addr,
+        indexing_tasks,
+    );
     let cluster = Cluster::join(
+        cluster_id,
         self_node,
-        quickwit_config.gossip_listen_addr,
-        quickwit_config.cluster_id.clone(),
-        quickwit_config.peer_seed_addrs().await?,
+        gossip_listen_addr,
+        peer_seed_addrs,
         FailureDetectorConfig::default(),
         &UdpTransport,
     )
     .await?;
-
-    Ok(Arc::new(cluster))
+    Ok(cluster)
 }

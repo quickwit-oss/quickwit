@@ -24,6 +24,7 @@ time = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
+ulid = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
@@ -36,6 +37,7 @@ quickwit-grpc-clients = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
 

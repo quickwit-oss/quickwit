@@ -8,7 +8,10 @@ pub struct CreateIndexRequest {
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CreateIndexResponse {}
+pub struct CreateIndexResponse {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -25,7 +28,7 @@ pub struct ListIndexesMetadatasResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteIndexRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -54,7 +57,7 @@ pub struct IndexMetadataResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAllSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -75,7 +78,7 @@ pub struct ListSplitsResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StageSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub split_metadata_list_serialized_json: ::prost::alloc::string::String,
 }
@@ -84,7 +87,7 @@ pub struct StageSplitsRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublishSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "2")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, repeated, tag = "3")]
@@ -99,7 +102,7 @@ pub struct PublishSplitsRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MarkSplitsForDeletionRequest {
     #[prost(string, tag = "2")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -108,7 +111,7 @@ pub struct MarkSplitsForDeletionRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSplitsRequest {
     #[prost(string, tag = "2")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -121,7 +124,7 @@ pub struct SplitResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddSourceRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_config_serialized_json: ::prost::alloc::string::String,
 }
@@ -130,7 +133,7 @@ pub struct AddSourceRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ToggleSourceRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(bool, tag = "3")]
@@ -141,7 +144,7 @@ pub struct ToggleSourceRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSourceRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
 }
@@ -150,7 +153,7 @@ pub struct DeleteSourceRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetSourceCheckpointRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
 }
@@ -176,7 +179,7 @@ pub struct DeleteTask {
 pub struct DeleteQuery {
     /// Index ID.
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     #[prost(int64, optional, tag = "2")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -186,18 +189,16 @@ pub struct DeleteQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_timestamp: ::core::option::Option<i64>,
     /// Query text. The query language is that of tantivy.
-    #[prost(string, tag = "4")]
-    pub query: ::prost::alloc::string::String,
-    /// Search fields.
-    #[prost(string, repeated, tag = "5")]
-    pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Query AST serialized in JSON
+    #[prost(string, tag = "6")]
+    pub query_ast: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSplitsDeleteOpstampRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "2")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(uint64, tag = "3")]
@@ -212,7 +213,7 @@ pub struct UpdateSplitsDeleteOpstampResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LastDeleteOpstampRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -226,7 +227,7 @@ pub struct LastDeleteOpstampResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListStaleSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(uint64, tag = "2")]
     pub delete_opstamp: u64,
     #[prost(uint64, tag = "3")]
@@ -237,7 +238,7 @@ pub struct ListStaleSplitsRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(uint64, tag = "2")]
     pub opstamp_start: u64,
 }

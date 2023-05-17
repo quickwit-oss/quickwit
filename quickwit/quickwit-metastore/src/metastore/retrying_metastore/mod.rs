@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::IndexUid;
 
 use self::retry::{retry, RetryParams};
 use crate::checkpoint::IndexCheckpointDelta;
@@ -63,7 +64,7 @@ impl Metastore for RetryingMetastore {
         self.inner.check_connectivity().await
     }
 
-    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<()> {
+    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<IndexUid> {
         retry(&self.retry_params, || async {
             self.inner.create_index(index_config.clone()).await
         })
@@ -91,21 +92,21 @@ impl Metastore for RetryingMetastore {
         .await
     }
 
-    async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
+    async fn delete_index(&self, index_uid: IndexUid) -> MetastoreResult<()> {
         retry(&self.retry_params, || async {
-            self.inner.delete_index(index_id).await
+            self.inner.delete_index(index_uid.clone()).await
         })
         .await
     }
 
     async fn stage_splits(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_metadata_list: Vec<SplitMetadata>,
     ) -> MetastoreResult<()> {
         retry(&self.retry_params, || async {
             self.inner
-                .stage_splits(index_id, split_metadata_list.clone())
+                .stage_splits(index_uid.clone(), split_metadata_list.clone())
                 .await
         })
         .await
@@ -113,7 +114,7 @@ impl Metastore for RetryingMetastore {
 
     async fn publish_splits<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
@@ -121,7 +122,7 @@ impl Metastore for RetryingMetastore {
         retry(&self.retry_params, || async {
             self.inner
                 .publish_splits(
-                    index_id,
+                    index_uid.clone(),
                     split_ids,
                     replaced_split_ids,
                     checkpoint_delta_opt.clone(),
@@ -131,29 +132,29 @@ impl Metastore for RetryingMetastore {
         .await
     }
 
-    async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
+    async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
         retry(&self.retry_params, || async {
             self.inner.list_splits(query.clone()).await
         })
         .await
     }
 
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
+    async fn list_all_splits(&self, index_uid: IndexUid) -> MetastoreResult<Vec<Split>> {
         retry(&self.retry_params, || async {
-            self.inner.list_all_splits(index_id).await
+            self.inner.list_all_splits(index_uid.clone()).await
         })
         .await
     }
 
     async fn list_stale_splits(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
         retry(&self.retry_params, || async {
             self.inner
-                .list_stale_splits(index_id, delete_opstamp, num_splits)
+                .list_stale_splits(index_uid.clone(), delete_opstamp, num_splits)
                 .await
         })
         .await
@@ -161,12 +162,12 @@ impl Metastore for RetryingMetastore {
 
     async fn mark_splits_for_deletion<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
         retry(&self.retry_params, || async {
             self.inner
-                .mark_splits_for_deletion(index_id, split_ids)
+                .mark_splits_for_deletion(index_uid.clone(), split_ids)
                 .await
         })
         .await
@@ -174,50 +175,54 @@ impl Metastore for RetryingMetastore {
 
     async fn delete_splits<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
         retry(&self.retry_params, || async {
-            self.inner.delete_splits(index_id, split_ids).await
+            self.inner.delete_splits(index_uid.clone(), split_ids).await
         })
         .await
     }
 
-    async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
+    async fn add_source(&self, index_uid: IndexUid, source: SourceConfig) -> MetastoreResult<()> {
         retry(&self.retry_params, || async {
-            self.inner.add_source(index_id, source.clone()).await
+            self.inner
+                .add_source(index_uid.clone(), source.clone())
+                .await
         })
         .await
     }
 
     async fn toggle_source(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         source_id: &str,
         enable: bool,
     ) -> MetastoreResult<()> {
         retry(&self.retry_params, || async {
-            self.inner.toggle_source(index_id, source_id, enable).await
+            self.inner
+                .toggle_source(index_uid.clone(), source_id, enable)
+                .await
         })
         .await
     }
 
     async fn reset_source_checkpoint(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         source_id: &str,
     ) -> MetastoreResult<()> {
         retry(&self.retry_params, || async {
             self.inner
-                .reset_source_checkpoint(index_id, source_id)
+                .reset_source_checkpoint(index_uid.clone(), source_id)
                 .await
         })
         .await
     }
 
-    async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
+    async fn delete_source(&self, index_uid: IndexUid, source_id: &str) -> MetastoreResult<()> {
         retry(&self.retry_params, || async {
-            self.inner.delete_source(index_id, source_id).await
+            self.inner.delete_source(index_uid.clone(), source_id).await
         })
         .await
     }
@@ -229,22 +234,22 @@ impl Metastore for RetryingMetastore {
         .await
     }
 
-    async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64> {
+    async fn last_delete_opstamp(&self, index_uid: IndexUid) -> MetastoreResult<u64> {
         retry(&self.retry_params, || async {
-            self.inner.last_delete_opstamp(index_id).await
+            self.inner.last_delete_opstamp(index_uid.clone()).await
         })
         .await
     }
 
     async fn update_splits_delete_opstamp<'a>(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         split_ids: &[&'a str],
         delete_opstamp: u64,
     ) -> MetastoreResult<()> {
         retry(&self.retry_params, || async {
             self.inner
-                .update_splits_delete_opstamp(index_id, split_ids, delete_opstamp)
+                .update_splits_delete_opstamp(index_uid.clone(), split_ids, delete_opstamp)
                 .await
         })
         .await
@@ -252,11 +257,13 @@ impl Metastore for RetryingMetastore {
 
     async fn list_delete_tasks(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>> {
         retry(&self.retry_params, || async {
-            self.inner.list_delete_tasks(index_id, opstamp_start).await
+            self.inner
+                .list_delete_tasks(index_uid.clone(), opstamp_start)
+                .await
         })
         .await
     }

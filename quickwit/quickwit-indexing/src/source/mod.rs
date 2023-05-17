@@ -88,6 +88,7 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::Metastore;
+use quickwit_proto::IndexUid;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 use tokio::runtime::Handle;
@@ -101,7 +102,7 @@ use crate::source::ingest_api_source::IngestApiSourceFactory;
 /// Runtime configuration used during execution of a source actor.
 pub struct SourceExecutionContext {
     pub metastore: Arc<dyn Metastore>,
-    pub index_id: String,
+    pub index_uid: IndexUid,
     // Ingest API queues directory path.
     pub queues_dir_path: PathBuf,
     pub source_config: SourceConfig,
@@ -111,13 +112,13 @@ impl SourceExecutionContext {
     #[cfg(test)]
     fn for_test(
         metastore: Arc<dyn Metastore>,
-        index_id: &str,
+        index_uid: IndexUid,
         queues_dir_path: PathBuf,
         source_config: SourceConfig,
     ) -> Arc<SourceExecutionContext> {
         Arc::new(Self {
             metastore,
-            index_id: index_id.to_string(),
+            index_uid,
             queues_dir_path,
             source_config,
         })
@@ -373,7 +374,7 @@ mod tests {
 
     use std::num::NonZeroUsize;
 
-    use quickwit_config::VecSourceParams;
+    use quickwit_config::{SourceInputFormat, VecSourceParams};
 
     use super::*;
 
@@ -387,6 +388,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::void(),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             };
             check_source_connectivity(&source_config).await?;
         }
@@ -398,6 +400,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             };
             check_source_connectivity(&source_config).await?;
         }
@@ -409,6 +412,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::file("file-does-not-exist.json"),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             };
             assert!(check_source_connectivity(&source_config).await.is_err());
         }
@@ -420,6 +424,7 @@ mod tests {
                 enabled: true,
                 source_params: SourceParams::file("data/test_corpus.json"),
                 transform_config: None,
+                input_format: SourceInputFormat::Json,
             };
             assert!(check_source_connectivity(&source_config).await.is_ok());
         }

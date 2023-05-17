@@ -18,11 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use futures::Future;
 use hyper::http::HeaderValue;
 use hyper::{http, Method};
 use quickwit_common::metrics;
+use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_proto::ServiceErrorCode;
 use tower::make::Shared;
 use tower::ServiceBuilder;
@@ -35,11 +36,11 @@ use warp::{redirect, Filter, Rejection, Reply};
 use crate::cluster_api::cluster_handler;
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::elastic_search_api::elastic_api_handlers;
-use crate::format::ApiError;
 use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
+use crate::json_api_response::{ApiError, JsonApiResponse};
 use crate::node_info_handler::node_info_handler;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
@@ -49,20 +50,26 @@ use crate::{BodyFormat, QuickwitServices};
 /// be automatically compressed with gzip.
 const MINIMUM_RESPONSE_COMPRESSION_SIZE: u16 = 10 << 10;
 
+#[derive(Debug)]
+pub(crate) struct InvalidJsonRequest(pub serde_json::Error);
+
+impl warp::reject::Reject for InvalidJsonRequest {}
+
+#[derive(Debug)]
+pub(crate) struct InvalidArgument(pub String);
+
+impl warp::reject::Reject for InvalidArgument {}
+
 /// Starts REST services.
-pub(crate) async fn start_rest_server<F>(
+pub(crate) async fn start_rest_server(
     rest_listen_addr: SocketAddr,
-    quickwit_services: &QuickwitServices,
-    shutdown_signal: F,
-) -> anyhow::Result<()>
-where
-    F: Future<Output = ()>,
-{
-    info!(rest_listen_addr = %rest_listen_addr, "Starting REST server.");
+    quickwit_services: Arc<QuickwitServices>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()> {
     let request_counter = warp::log::custom(|_| {
         crate::SERVE_METRICS.http_requests_total.inc();
     });
-
     // Docs routes
     let api_doc = warp::path("openapi.json")
         .and(warp::get())
@@ -109,6 +116,7 @@ where
         ))
         .or(elastic_api_handlers(
             quickwit_services.search_service.clone(),
+            ingest_service.clone(),
         ));
 
     let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
@@ -141,12 +149,16 @@ where
         .layer(cors)
         .service(warp_service);
 
-    info!("Searcher ready to accept requests at http://{rest_listen_addr}/");
-
-    hyper::Server::bind(&rest_listen_addr)
+    info!(
+        rest_listen_addr=?rest_listen_addr,
+        "Starting REST server listening on {rest_listen_addr}."
+    );
+    let serve_fut = hyper::Server::bind(&rest_listen_addr)
         .serve(Shared::new(service))
-        .with_graceful_shutdown(shutdown_signal)
-        .await?;
+        .with_graceful_shutdown(shutdown_signal);
+
+    let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
+    serve_res?;
     Ok(())
 }
 
@@ -163,70 +175,81 @@ where
 // We may use this work on the PR is merged: https://github.com/seanmonstar/warp/pull/909.
 pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     let err = get_status_with_error(rejection);
-    Ok(BodyFormat::PrettyJson.make_reply_for_err(err))
+    let status_code = err.service_code.to_http_status_code();
+    Ok(JsonApiResponse::new::<(), _>(
+        &Err(err),
+        status_code,
+        &BodyFormat::default(),
+    ))
 }
 
 fn get_status_with_error(rejection: Rejection) -> ApiError {
     if let Some(error) = rejection.find::<crate::index_api::UnsupportedContentType>() {
         ApiError {
-            code: ServiceErrorCode::UnsupportedMediaType,
+            service_code: ServiceErrorCode::UnsupportedMediaType,
             message: error.to_string(),
         }
     } else if rejection.is_not_found() {
         ApiError {
-            code: ServiceErrorCode::NotFound,
+            service_code: ServiceErrorCode::NotFound,
             message: "Route not found".to_string(),
         }
     } else if let Some(error) = rejection.find::<serde_qs::Error>() {
         ApiError {
-            code: ServiceErrorCode::BadRequest,
+            service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<InvalidJsonRequest>() {
+        // Happens when the request body could not be deserialized correctly.
+        ApiError {
+            service_code: ServiceErrorCode::BadRequest,
+            message: error.0.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::filters::body::BodyDeserializeError>() {
         // Happens when the request body could not be deserialized correctly.
         ApiError {
-            code: ServiceErrorCode::BadRequest,
+            service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::UnsupportedMediaType>() {
         ApiError {
-            code: ServiceErrorCode::UnsupportedMediaType,
+            service_code: ServiceErrorCode::UnsupportedMediaType,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::InvalidQuery>() {
         ApiError {
-            code: ServiceErrorCode::BadRequest,
+            service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::LengthRequired>() {
         ApiError {
-            code: ServiceErrorCode::BadRequest,
+            service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::MissingHeader>() {
         ApiError {
-            code: ServiceErrorCode::BadRequest,
+            service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::InvalidHeader>() {
         ApiError {
-            code: ServiceErrorCode::BadRequest,
+            service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::MethodNotAllowed>() {
         ApiError {
-            code: ServiceErrorCode::MethodNotAllowed,
+            service_code: ServiceErrorCode::MethodNotAllowed,
             message: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::PayloadTooLarge>() {
         ApiError {
-            code: ServiceErrorCode::BadRequest,
+            service_code: ServiceErrorCode::BadRequest,
             message: error.to_string(),
         }
     } else {
         error!("REST server error: {:?}", rejection);
         ApiError {
-            code: ServiceErrorCode::Internal,
+            service_code: ServiceErrorCode::Internal,
             message: "Internal server error.".to_string(),
         }
     }
