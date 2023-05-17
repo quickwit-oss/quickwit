@@ -26,7 +26,7 @@ Sub-second search & analytics engine on cloud storage
 </h4>
 <br/>
 
-<b> Quickwit 0.6 is almost there and is set to redefine your search experience on multi terabyte dataset with a host of powerful features! </b>
+<b> Quickwit 0.6 is around the corner and is set to redefine your search experience on multi-terabyte datasets with a host of powerful features! </b>
 
 Key Upcomign Features:
 - [Play with](https://twitter.com/fulmicoton/status/1657923007443263489) the 16TB of GitHub Archive dataset ~ 5.2 billions documents sitting on S3 with just one server.
