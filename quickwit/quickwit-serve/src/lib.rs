@@ -60,9 +60,7 @@ use quickwit_common::tower::{
     Rate, RateLimitLayer, SmaRateEstimator,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{
-    load_index_config_from_user_config, ConfigFormat, QuickwitConfig, SearcherConfig,
-};
+use quickwit_config::{QuickwitConfig, SearcherConfig};
 use quickwit_control_plane::{start_control_plane_service, ControlPlaneServiceClient};
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
@@ -75,7 +73,7 @@ use quickwit_metastore::{
     quickwit_metastore_uri_resolver, Metastore, MetastoreError, MetastoreEvent,
     MetastoreEventPublisher, MetastoreGrpcClient, RetryingMetastore,
 };
-use quickwit_opentelemetry::otlp::{OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG};
+use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_search::{
     create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
     SearchServiceClient, SearcherPool,
@@ -239,12 +237,11 @@ pub async fn serve_quickwit(
             start_ingest_api_service(&universe, &config.data_dir_path, &config.ingest_api_config)
                 .await?;
         if config.indexer_config.enable_otlp_endpoint {
-            for index_config_content in [OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG] {
-                let index_config = load_index_config_from_user_config(
-                    ConfigFormat::Yaml,
-                    index_config_content.as_bytes(),
-                    &config.default_index_root_uri,
-                )?;
+            let otel_logs_index_config =
+                OtlpGrpcLogsService::index_config(&config.default_index_root_uri)?;
+            let otel_traces_index_config =
+                OtlpGrpcTracesService::index_config(&config.default_index_root_uri)?;
+            for index_config in [otel_logs_index_config, otel_traces_index_config] {
                 match index_service.create_index(index_config, false).await {
                     Ok(_)
                     | Err(IndexServiceError::MetastoreError(

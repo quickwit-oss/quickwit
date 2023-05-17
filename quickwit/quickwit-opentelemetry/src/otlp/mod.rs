@@ -32,12 +32,12 @@ use serde_json::{Number as JsonNumber, Value as JsonValue};
 
 mod logs;
 mod metrics;
-mod trace;
+mod traces;
 
-pub use logs::{OtlpGrpcLogsService, OTEL_LOGS_INDEX_CONFIG, OTEL_LOGS_INDEX_ID};
-pub use trace::{
-    Event, Link, OtlpGrpcTraceService, Span, SpanFingerprint, SpanKind, SpanStatus,
-    OTEL_TRACE_INDEX_CONFIG, OTEL_TRACE_INDEX_ID,
+pub use logs::{OtlpGrpcLogsService, OTEL_LOGS_INDEX_ID};
+pub use traces::{
+    Event, Link, OtlpGrpcTracesService, Span, SpanFingerprint, SpanKind, SpanStatus,
+    OTEL_TRACES_INDEX_ID,
 };
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
