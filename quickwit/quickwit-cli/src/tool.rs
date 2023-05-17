@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
-use anyhow::{bail, Context};
+use anyhow::bail;
 use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
@@ -56,7 +56,7 @@ use crate::{
     start_actor_runtimes, THROUGHPUT_WINDOW_SIZE,
 };
 
-pub fn build_tool_command<'a>() -> Command<'a> {
+pub fn build_tool_command() -> Command {
     Command::new("tool")
         .about("Performs utility operations. Requires a node config.")
         .arg(config_cli_arg())
@@ -158,40 +158,43 @@ pub enum ToolCliCommand {
 }
 
 impl ToolCliCommand {
-    pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    pub fn parse_cli_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
+        let submatches_clone = submatches.clone();
         match subcommand {
-            "gc" => Self::parse_garbage_collect_args(submatches),
-            "local-ingest" => Self::parse_local_ingest_args(submatches),
-            "merge" => Self::parse_merge_args(submatches),
-            "extract-split" => Self::parse_extract_split_args(submatches),
+            "gc" => Self::parse_garbage_collect_args(submatches_clone),
+            "local-ingest" => Self::parse_local_ingest_args(submatches_clone),
+            "merge" => Self::parse_merge_args(submatches_clone),
+            "extract-split" => Self::parse_extract_split_args(submatches_clone),
             _ => bail!("Tool subcommand `{}` is not implemented.", subcommand),
         }
     }
 
-    fn parse_local_ingest_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_local_ingest_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
-            .value_of("config")
+            .get_one::<String>("config")
+            .map(|s| s.as_str())
             .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .expect("`index` is a required arg.")
-            .to_string();
-        let input_path_opt = if let Some(input_path) = matches.value_of("input-path") {
-            Uri::from_str(input_path)?
-                .filepath()
-                .map(|path| path.to_path_buf())
-        } else {
-            None
-        };
-        let overwrite = matches.is_present("overwrite");
+            .get_one::<String>("index")
+            .map(|s| s.to_owned())
+            .expect("`index` is a required arg.");
+        let input_path_opt =
+            if let Some(input_path) = matches.get_one::<String>("input-path").map(|s| s.as_str()) {
+                Uri::from_str(input_path)?
+                    .filepath()
+                    .map(|path| path.to_path_buf())
+            } else {
+                None
+            };
+        let overwrite = matches.get_flag("overwrite");
         let vrl_script = matches
-            .value_of("transform-script")
-            .map(|source| source.to_string());
-        let clear_cache = !matches.is_present("keep-cache");
+            .get_one::<String>("transform-script")
+            .map(|source| source.to_owned());
+        let clear_cache = !matches.get_flag("keep-cache");
 
         Ok(Self::LocalIngest(LocalIngestDocsArgs {
             config_uri,
@@ -203,19 +206,19 @@ impl ToolCliCommand {
         }))
     }
 
-    fn parse_merge_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_merge_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
-            .value_of("config")
-            .map(Uri::from_str)
+            .get_one::<String>("config")
+            .map(|s| Uri::from_str(s.as_str()))
             .expect("`config` is a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .context("'index-id' is a required arg.")?
-            .to_string();
+            .get_one::<String>("index")
+            .map(|s| s.to_owned())
+            .expect("'index-id' is a required arg.");
         let source_id = matches
-            .value_of("source")
-            .context("'source-id' is a required arg.")?
-            .to_string();
+            .get_one::<String>("source")
+            .map(|s| s.to_owned())
+            .expect("'source-id' is a required arg.");
         Ok(Self::Merge(MergeArgs {
             index_id,
             source_id,
@@ -223,20 +226,20 @@ impl ToolCliCommand {
         }))
     }
 
-    fn parse_garbage_collect_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_garbage_collect_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
-            .value_of("config")
-            .map(Uri::from_str)
+            .get_one::<String>("config")
+            .map(|s| Uri::from_str(s.as_str()))
             .expect("`config` is a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .expect("`index` is a required arg.")
-            .to_string();
+            .get_one::<String>("index")
+            .map(|s| s.to_owned())
+            .expect("`index` is a required arg.");
         let grace_period = matches
-            .value_of("grace-period")
-            .map(parse_duration_with_unit)
+            .get_one::<String>("grace-period")
+            .map(|s| parse_duration_with_unit(s.as_str()))
             .expect("`grace-period` should have a default value.")?;
-        let dry_run = matches.is_present("dry-run");
+        let dry_run = matches.get_flag("dry-run");
         Ok(Self::GarbageCollect(GarbageCollectIndexArgs {
             index_id,
             grace_period,
@@ -245,23 +248,23 @@ impl ToolCliCommand {
         }))
     }
 
-    fn parse_extract_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_extract_split_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
-            .value_of("index")
-            .map(String::from)
+            .get_one::<String>("index")
+            .map(|s| s.to_owned())
             .expect("`index` is a required arg.");
         let split_id = matches
-            .value_of("split")
-            .map(String::from)
+            .get_one::<String>("split")
+            .map(|s| s.to_owned())
             .expect("`split` is a required arg.");
         let config_uri = matches
-            .value_of("config")
-            .map(Uri::from_str)
+            .get_one::<String>("config")
+            .map(|s| Uri::from_str(s))
             .expect("`config` is a required arg.")?;
         let target_dir = matches
-            .value_of("target-dir")
-            .map(PathBuf::from)
-            .expect("`target-dir` is a required arg.");
+            .get_one::<PathBuf>("target-dir")
+            //.map(PathBuf::from)
+            .expect("`target-dir` is a required arg.").to_path_buf();
         Ok(Self::ExtractSplit(ExtractSplitArgs {
             config_uri,
             index_id,

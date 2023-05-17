@@ -34,7 +34,7 @@ use tracing::debug;
 
 use crate::{cluster_endpoint_arg, make_table, prompt_confirmation};
 
-pub fn build_split_command<'a>() -> Command<'a> {
+pub fn build_split_command() -> Command {
     Command::new("split")
         .about("Manages splits: lists, describes, marks for deletion...")
         .arg(cluster_endpoint_arg())
@@ -49,7 +49,7 @@ pub fn build_split_command<'a>() -> Command<'a> {
                     arg!(--states <SPLIT_STATES> "Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`.")
                         .display_order(2)
                         .required(false)
-                        .use_value_delimiter(true),
+                        .value_delimiter(','),
                     arg!(--"create-date" <CREATE_DATE> "Selects the splits whose creation dates are before this date.")
                         .display_order(3)
                         .required(false),
@@ -92,7 +92,7 @@ pub fn build_split_command<'a>() -> Command<'a> {
                     arg!(--splits <SPLIT_IDS> "Comma-separated list of split IDs")
                         .display_order(2)
                         .required(true)
-                        .use_value_delimiter(true),
+                        .value_delimiter(','),
                     arg!(-y --"yes" "Assume \"yes\" as an answer to all prompts and run non-interactively.")
                         .required(false),
                 ])
@@ -159,46 +159,47 @@ pub enum SplitCliCommand {
 }
 
 impl SplitCliCommand {
-    pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    pub fn parse_cli_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
+        let submatches_clone = submatches.clone();
         match subcommand {
-            "describe" => Self::parse_describe_args(submatches),
-            "list" => Self::parse_list_args(submatches),
-            "mark-for-deletion" => Self::parse_mark_for_deletion_args(submatches),
+            "describe" => Self::parse_describe_args(submatches_clone),
+            "list" => Self::parse_list_args(submatches_clone),
+            "mark-for-deletion" => Self::parse_mark_for_deletion_args(submatches_clone),
             _ => bail!("Subcommand `{}` is not implemented.", subcommand),
         }
     }
 
-    fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_list_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
+            .get_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .value_of("index")
+            .get_one::<String>("index")
             .map(String::from)
             .expect("`index` is a required arg.");
         let split_states = matches
-            .values_of("states")
+            .get_many::<String>("states")
             .map(|values| {
                 values
                     .into_iter()
-                    .map(parse_split_state)
+                    .map(|s| parse_split_state(s.as_str()))
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
         let create_date = matches
-            .value_of("create-date")
+            .get_one::<String>("create-date")
             .map(|arg| parse_date(arg, "create"))
             .transpose()?;
         let start_date = matches
-            .value_of("start-date")
+            .get_one::<String>("start-date")
             .map(|arg| parse_date(arg, "start"))
             .transpose()?;
         let end_date = matches
-            .value_of("end-date")
+            .get_one::<String>("end-date")
             .map(|arg| parse_date(arg, "end"))
             .transpose()?;
         // let tags = matches.values_of("tags").map(|values| {
@@ -206,15 +207,15 @@ impl SplitCliCommand {
         //         values
         //             .into_iter()
         //             .map(|value| TagFilterAst::Tag {
-        //                 is_present: true,
+        //                 get_flag: true,
         //                 tag: value.to_string(),
         //             })
         //             .collect(),
         //     )
         // });
         let output_format = matches
-            .value_of("output-format")
-            .map(OutputFormat::from_str)
+            .get_one::<String>("output-format")
+            .map(|s| OutputFormat::from_str(s.as_str()))
             .transpose()?
             .unwrap_or(OutputFormat::Table);
 
@@ -230,21 +231,21 @@ impl SplitCliCommand {
         }))
     }
 
-    fn parse_mark_for_deletion_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_mark_for_deletion_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
+            .get_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
         let index_id = matches
-            .value_of("index")
+            .get_one::<String>("index")
             .map(String::from)
             .expect("`index` is a required arg.");
         let split_ids = matches
-            .values_of("splits")
+            .get_many::<String>("splits")
             .expect("`splits` is a required arg.")
             .map(String::from)
             .collect();
-        let assume_yes = matches.is_present("yes");
+        let assume_yes = matches.get_flag("yes");
         Ok(Self::MarkForDeletion(MarkForDeletionArgs {
             cluster_endpoint,
             index_id,
@@ -253,20 +254,20 @@ impl SplitCliCommand {
         }))
     }
 
-    fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_describe_args(matches: ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
-            .value_of("index")
+            .get_one::<String>("index")
             .map(String::from)
             .expect("`index` is a required arg.");
         let split_id = matches
-            .value_of("split")
+            .get_one::<String>("split")
             .map(String::from)
             .expect("`split` is a required arg.");
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
+            .get_one::<String>("endpoint")
+            .map(|s| Url::from_str(s.as_str()))
             .expect("`endpoint` is a required arg.")?;
-        let verbose = matches.is_present("verbose");
+        let verbose = matches.get_flag("verbose");
 
         Ok(Self::Describe(DescribeSplitArgs {
             cluster_endpoint,
@@ -512,7 +513,7 @@ mod tests {
             "--format",
             "json",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
 
         let expected_split_states = Some(vec![SplitState::Staged, SplitState::Published]);
         let expected_create_date = Some(datetime!(2020-12-24 00:00 UTC));
@@ -520,11 +521,11 @@ mod tests {
         let expected_end_date = Some(datetime!(2020-12-25 12:42 UTC));
         // let expected_tags = Some(TagFilterAst::And(vec![
         //     TagFilterAst::Tag {
-        //         is_present: true,
+        //         get_flag: true,
         //         tag: "tenant:a".to_string(),
         //     },
         //     TagFilterAst::Tag {
-        //         is_present: true,
+        //         get_flag: true,
         //         tag: "service:zk".to_string(),
         //     },
         // ]));
@@ -565,7 +566,7 @@ mod tests {
             "split1,split2",
             "--yes",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::MarkForDeletion(MarkForDeletionArgs {
@@ -592,7 +593,7 @@ mod tests {
             "--split",
             "ABC",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::Describe(DescribeSplitArgs {

@@ -20,7 +20,7 @@
 use std::collections::HashSet;
 use std::str::FromStr;
 
-use clap::{arg, ArgMatches, Command};
+use clap::{arg, ArgAction, ArgMatches, Command};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
@@ -31,14 +31,14 @@ use tracing::debug;
 
 use crate::{config_cli_arg, load_quickwit_config, start_actor_runtimes};
 
-pub fn build_run_command<'a>() -> Command<'a> {
+pub fn build_run_command() -> Command {
     Command::new("run")
         .about("Starts Quickwit server with all services by default (`indexer`, `searcher`...).")
         .long_about("Starts Quickwit server with all services by default: `indexer`, `searcher`, `metastore`, `control_plane` and `janitor`.")
         .arg(config_cli_arg())
         .args(&[
             arg!(--"service" <SERVICE> "Services (indexer|searcher|janitor|metastore|control_plane) to run. If unspecified, all the supported services are started.")
-                .multiple_occurrences(true)
+                .action(ArgAction::Append)
                 .required(false),
         ])
 }
@@ -50,16 +50,18 @@ pub struct RunCliCommand {
 }
 
 impl RunCliCommand {
-    pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
-            .value_of("config")
-            .map(Uri::from_str)
+            .remove_one::<String>("config")
+            .map(|s| Uri::from_str(s.as_str()))
             .expect("`config` is a required arg.")?;
         let services = matches
-            .values_of("service")
+            .get_many::<String>("service")
             .map(|values| {
-                let services: Result<HashSet<_>, _> =
-                    values.into_iter().map(QuickwitService::from_str).collect();
+                let services: Result<HashSet<_>, _> = values
+                    .into_iter()
+                    .map(|s| QuickwitService::from_str(s.as_str()))
+                    .collect();
                 services
             })
             .transpose()?;
@@ -101,7 +103,7 @@ mod tests {
     fn test_parse_service_run_args_all_services() -> anyhow::Result<()> {
         let command = build_cli().no_binary_name(true);
         let matches = command.try_get_matches_from(vec!["run", "--config", "/config.yaml"])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
@@ -125,7 +127,7 @@ mod tests {
             "--service",
             "indexer",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
@@ -151,7 +153,7 @@ mod tests {
             "--service",
             "metastore",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         let expected_services =
             HashSet::from_iter([QuickwitService::Metastore, QuickwitService::Searcher]);
@@ -177,7 +179,7 @@ mod tests {
             "--service",
             "indexer",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
