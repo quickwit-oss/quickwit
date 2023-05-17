@@ -17,19 +17,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod bulk;
 mod filter;
 mod model;
 mod rest_handler;
 
 use std::sync::Arc;
 
+use bulk::{es_compat_bulk_handler, es_compat_index_bulk_handler};
+use quickwit_ingest::IngestServiceClient;
 use quickwit_search::SearchService;
+use rest_handler::{es_compat_index_search_handler, es_compat_search_handler};
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
-
-use crate::elastic_search_api::rest_handler::{
-    es_compat_index_search_handler, es_compat_search_handler,
-};
 
 /// Setup Elasticsearch API handlers
 ///
@@ -37,9 +37,12 @@ use crate::elastic_search_api::rest_handler::{
 /// should be registered.
 pub fn elastic_api_handlers(
     search_service: Arc<dyn SearchService>,
+    ingest_service: IngestServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     es_compat_search_handler(search_service.clone())
-        .or(es_compat_index_search_handler(search_service.clone()))
+        .or(es_compat_index_search_handler(search_service))
+        .or(es_compat_bulk_handler(ingest_service.clone()))
+        .or(es_compat_index_bulk_handler(ingest_service))
     // Register newly created handlers here.
 }
 

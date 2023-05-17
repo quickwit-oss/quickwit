@@ -34,7 +34,6 @@ use quickwit_cli::{
 use quickwit_common::RED_COLOR;
 use quickwit_serve::{quickwit_build_info, QuickwitBuildInfo};
 use quickwit_telemetry::payload::TelemetryEvent;
-use tonic::metadata::MetadataMap;
 use tracing::Level;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
@@ -83,16 +82,11 @@ fn setup_logging_and_tracing(
             .try_init()
             .context("Failed to set up tracing.")?;
     } else if std::env::var_os(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY).is_some() {
-        let mut metadata_map = MetadataMap::with_capacity(2);
-        metadata_map.insert("version", build_info.version.parse()?);
-        metadata_map.insert("commit", build_info.commit_short_hash.parse()?);
-
-        let otlp_exporter = opentelemetry_otlp::new_exporter()
-            .tonic()
-            .with_env()
-            .with_metadata(metadata_map);
-        let trace_config = trace::config()
-            .with_resource(Resource::new([KeyValue::new("service.name", "quickwit")]));
+        let otlp_exporter = opentelemetry_otlp::new_exporter().tonic().with_env();
+        let trace_config = trace::config().with_resource(Resource::new([
+            KeyValue::new("service.name", "quickwit"),
+            KeyValue::new("service.version", build_info.version.clone()),
+        ]));
         let tracer = opentelemetry_otlp::new_pipeline()
             .tracing()
             .with_exporter(otlp_exporter)

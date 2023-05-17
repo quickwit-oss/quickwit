@@ -116,6 +116,7 @@ pub(crate) async fn start_rest_server(
         ))
         .or(elastic_api_handlers(
             quickwit_services.search_service.clone(),
+            ingest_service.clone(),
         ));
 
     let api_v1_root_route = api_v1_root_url.and(api_v1_routes);

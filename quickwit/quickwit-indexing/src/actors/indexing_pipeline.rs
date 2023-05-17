@@ -866,7 +866,7 @@ mod tests {
                 },
             )
             .returning(|_, _, _, _| Ok(()));
-        let universe = Universe::with_accelerated_time();
+        let universe = Universe::new();
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {

@@ -17,10 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod bulk_body;
+mod bulk_query_params;
 mod error;
 mod search_body;
 mod search_query_params;
 
+pub use bulk_body::{BulkAction, BulkActionMeta};
+pub use bulk_query_params::{ElasticIngestOptions, ElasticRefresh};
 pub use error::ElasticSearchError;
 pub use search_body::SearchBody;
 pub use search_query_params::SearchQueryParams;
