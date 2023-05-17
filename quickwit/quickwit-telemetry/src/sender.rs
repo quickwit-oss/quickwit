@@ -291,7 +291,7 @@ fn start_uptime_monitor_task(telemetry_sender: Arc<Inner>) {
         clock.tick().await;
         loop {
             clock.tick().await;
-            telemetry_sender.send(TelemetryEvent::UptimeCheckIn).await;
+            telemetry_sender.send(TelemetryEvent::Running).await;
         }
     });
 }
@@ -341,7 +341,7 @@ mod tests {
         let (_clock_btn, clock) = Clock::manual().await;
         let telemetry_sender = TelemetrySender::new(Some(tx), clock);
         let loop_handler = telemetry_sender.start_loop();
-        telemetry_sender.send(TelemetryEvent::Create).await;
+        telemetry_sender.send(TelemetryEvent::CreateIndex).await;
         let payload_opt = rx.recv().await;
         assert!(payload_opt.is_some());
         let payload = payload_opt.unwrap();
@@ -355,13 +355,13 @@ mod tests {
         let (clock_btn, clock) = Clock::manual().await;
         let telemetry_sender = TelemetrySender::new(Some(tx), clock);
         let loop_handler = telemetry_sender.start_loop();
-        telemetry_sender.send(TelemetryEvent::Create).await;
+        telemetry_sender.send(TelemetryEvent::CreateIndex).await;
         {
             let payload = rx.recv().await.unwrap();
             assert_eq!(payload.events.len(), 1);
         }
         clock_btn.tick().await;
-        telemetry_sender.send(TelemetryEvent::Create).await;
+        telemetry_sender.send(TelemetryEvent::CreateIndex).await;
         {
             let payload = rx.recv().await.unwrap();
             assert_eq!(payload.events.len(), 1);
@@ -375,7 +375,7 @@ mod tests {
         let (clock_btn, clock) = Clock::manual().await;
         let telemetry_sender = TelemetrySender::new(Some(tx), clock);
         let loop_handler = telemetry_sender.start_loop();
-        telemetry_sender.send(TelemetryEvent::Create).await;
+        telemetry_sender.send(TelemetryEvent::CreateIndex).await;
         {
             let payload = rx.recv().await.unwrap();
             assert_eq!(payload.events.len(), 1);
@@ -385,7 +385,7 @@ mod tests {
         {
             let payload = rx.recv().await.unwrap();
             assert_eq!(payload.events.len(), 1);
-            assert_eq!(payload.events[0].event, TelemetryEvent::UptimeCheckIn);
+            assert_eq!(payload.events[0].event, TelemetryEvent::Running);
         }
         loop_handler.terminate_telemetry().await;
     }
@@ -396,18 +396,18 @@ mod tests {
         let (clock_btn, clock) = Clock::manual().await;
         let telemetry_sender = TelemetrySender::new(Some(tx), clock);
         let loop_handler = telemetry_sender.start_loop();
-        telemetry_sender.send(TelemetryEvent::Create).await;
+        telemetry_sender.send(TelemetryEvent::CreateIndex).await;
         {
             let payload = rx.recv().await.unwrap();
             assert_eq!(payload.events.len(), 1);
         }
         tokio::task::yield_now().await;
-        telemetry_sender.send(TelemetryEvent::Create).await;
+        telemetry_sender.send(TelemetryEvent::CreateIndex).await;
 
         let timeout_res = tokio::time::timeout(Duration::from_millis(1), rx.recv()).await;
         assert!(timeout_res.is_err());
 
-        telemetry_sender.send(TelemetryEvent::Create).await;
+        telemetry_sender.send(TelemetryEvent::CreateIndex).await;
         clock_btn.tick().await;
         {
             let payload = rx.recv().await.unwrap();
@@ -422,7 +422,7 @@ mod tests {
         let (_clock_btn, clock) = Clock::manual().await;
         let telemetry_sender = TelemetrySender::new(Some(tx), clock);
         let loop_handler = telemetry_sender.start_loop();
-        telemetry_sender.send(TelemetryEvent::Create).await;
+        telemetry_sender.send(TelemetryEvent::CreateIndex).await;
         let payload = rx.recv().await.unwrap();
         assert_eq!(payload.events.len(), 1);
         telemetry_sender

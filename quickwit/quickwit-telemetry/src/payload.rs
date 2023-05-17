@@ -64,22 +64,20 @@ impl From<TelemetryEvent> for EventWithTimestamp {
 /// Represents a Telemetry Event send to Quickwit's server for usage information.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TelemetryEvent {
-    /// Create command is called.
-    Create,
-    /// Ingest command is called.
-    Ingest,
-    /// Delete command
-    Delete,
-    /// Garbage Collect command
+    /// Create index API endpoint is called.
+    CreateIndex,
+    /// Delete index API endpoint is called.
+    DeleteIndex,
+    /// Garbage collect command is called.
     GarbageCollect,
-    /// Serve command is called.
+    /// Run service command is called.
     RunService(String),
     /// EndCommand (with the return code)
     EndCommand { return_code: i32 },
-    /// Uptime timer has elapsed.
-    UptimeCheckIn,
-    /// UI home page was loaded.
-    UiVisited,
+    /// Sent every once in a while (used for deducing uptime).
+    Running,
+    /// Quickwit UI was requested.
+    UiRequest,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

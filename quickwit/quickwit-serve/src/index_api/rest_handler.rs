@@ -420,7 +420,7 @@ async fn create_index(
     index_service: Arc<IndexService>,
     quickwit_config: Arc<QuickwitConfig>,
 ) -> Result<IndexMetadata, IndexServiceError> {
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::CreateIndex).await;
     let index_config = quickwit_config::load_index_config_from_user_config(
         config_format,
         &index_config_bytes,
@@ -504,7 +504,7 @@ async fn delete_index(
     index_service: Arc<IndexService>,
 ) -> Result<Vec<FileEntry>, IndexServiceError> {
     info!(index_id = %index_id, dry_run = delete_index_query_param.dry_run, "delete-index");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::DeleteIndex).await;
     index_service
         .delete_index(&index_id, delete_index_query_param.dry_run)
         .await

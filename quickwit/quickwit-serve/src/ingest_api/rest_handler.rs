@@ -23,7 +23,6 @@ use quickwit_ingest::{
     IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use quickwit_telemetry::payload::TelemetryEvent;
 use serde::Deserialize;
 use thiserror::Error;
 use warp::{Filter, Rejection};
@@ -106,7 +105,6 @@ async fn ingest(
     ingest_options: IngestOptions,
     mut ingest_service: IngestServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
     // The size of the body should be an upper bound of the size of the batch. The removal of the
     // end of line character for each doc compensates the addition of the `DocCommand` header.
     let mut doc_batch_builder = DocBatchBuilder::with_capacity(index_id, body.remaining());
@@ -231,7 +229,6 @@ async fn elastic_ingest(
     ingest_options: ElasticIngestOptions,
     mut ingest_service: IngestServiceClient,
 ) -> Result<IngestResponse, IngestRestApiError> {
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
     let mut doc_batch_builders = HashMap::new();
     let mut lines = lines(&body);
 

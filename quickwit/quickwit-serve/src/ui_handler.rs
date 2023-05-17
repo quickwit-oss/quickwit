@@ -54,9 +54,9 @@ async fn serve_impl(path: &str) -> Result<impl warp::Reply, Rejection> {
         UI_INDEX_FILE_NAME
     };
 
-    // Only send event when loading the SPA index file.
+    // Only send event on `index.html` request.
     if path_to_file == UI_INDEX_FILE_NAME {
-        quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiVisited).await;
+        quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiRequest).await;
     }
 
     let asset = Asset::get(path_to_file).ok_or_else(warp::reject::not_found)?;
