@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use clap::{arg, Arg, ArgAction, ArgMatches, Command};
 use tracing::Level;
 
@@ -38,7 +38,7 @@ pub fn build_cli() -> Command {
                 )
                 .env("NO_COLOR")
                 .global(true)
-                .action(ArgAction::SetFalse),
+                .action(ArgAction::SetTrue),
         )
         .arg(arg!(-y --"yes" "Assume \"yes\" as an answer to all prompts and run non-interactively.")
             .global(true)
@@ -74,19 +74,17 @@ impl CliCommand {
         }
     }
 
-    pub fn parse_cli_args(matches: ArgMatches) -> anyhow::Result<Self> {
+    pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
-            .subcommand()
-            .ok_or_else(|| anyhow::anyhow!("Failed to parse command arguments."))?;
-        match subcommand {
-            "index" => IndexCliCommand::parse_cli_args(submatches.clone()).map(CliCommand::Index),
-            "run" => RunCliCommand::parse_cli_args(submatches.clone()).map(CliCommand::Run),
-            "source" => {
-                SourceCliCommand::parse_cli_args(submatches.clone()).map(CliCommand::Source)
-            }
-            "split" => SplitCliCommand::parse_cli_args(submatches.clone()).map(CliCommand::Split),
-            "tool" => ToolCliCommand::parse_cli_args(submatches.clone()).map(CliCommand::Tool),
-            _ => bail!("Subcommand `{}` is not implemented.", subcommand),
+            .remove_subcommand()
+            .context("Failed to parse command.")?;
+        match subcommand.as_str() {
+            "index" => IndexCliCommand::parse_cli_args(submatches).map(CliCommand::Index),
+            "run" => RunCliCommand::parse_cli_args(submatches).map(CliCommand::Run),
+            "source" => SourceCliCommand::parse_cli_args(submatches).map(CliCommand::Source),
+            "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
+            "tool" => ToolCliCommand::parse_cli_args(submatches).map(CliCommand::Tool),
+            _ => bail!("Unknown command `{subcommand}`."),
         }
     }
 

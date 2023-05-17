@@ -116,8 +116,6 @@ use tonic::service::Interceptor;
 use tonic::Status;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use ::opentelemetry::propagation::Injector;
-use ::opentelemetry::propagation::Extractor;
 use quickwit_query::query_ast::QueryAst;
 
 /// This enum serves as a Rosetta stone of

@@ -33,11 +33,11 @@ use crate::{config_cli_arg, load_quickwit_config, start_actor_runtimes};
 
 pub fn build_run_command() -> Command {
     Command::new("run")
-        .about("Starts Quickwit server with all services by default (`indexer`, `searcher`...).")
-        .long_about("Starts Quickwit server with all services by default: `indexer`, `searcher`, `metastore`, `control_plane` and `janitor`.")
+        .about("Starts a Quickwit node.")
+        .long_about("Starts a Quickwit node with all services enabled by default: `indexer`, `searcher`, `metastore`, `control-plane`, and `janitor`.")
         .arg(config_cli_arg())
         .args(&[
-            arg!(--"service" <SERVICE> "Services (indexer|searcher|janitor|metastore|control_plane) to run. If unspecified, all the supported services are started.")
+            arg!(--"service" <SERVICE> "Services (indexer|searcher|janitor|metastore|control-plane) to run. If unspecified, all the supported services are started.")
                 .action(ArgAction::Append)
                 .required(false),
         ])
@@ -53,14 +53,14 @@ impl RunCliCommand {
     pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .remove_one::<String>("config")
-            .map(|s| Uri::from_str(s.as_str()))
-            .expect("`config` is a required arg.")?;
+            .map(|uri_str| Uri::from_str(&uri_str))
+            .expect("`config` should be a required arg.")?;
         let services = matches
-            .get_many::<String>("service")
+            .remove_many::<String>("service")
             .map(|values| {
                 let services: Result<HashSet<_>, _> = values
                     .into_iter()
-                    .map(|s| QuickwitService::from_str(s.as_str()))
+                    .map(|service_str| QuickwitService::from_str(&service_str))
                     .collect();
                 services
             })

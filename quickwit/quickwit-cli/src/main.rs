@@ -131,8 +131,9 @@ async fn main_impl() -> anyhow::Result<()> {
 
     let app = build_cli().about(about_text).version(version_text);
     let matches = app.get_matches();
+    let ansi = !matches.get_flag("no-color");
 
-    let command = match CliCommand::parse_cli_args(matches.clone()) {
+    let command = match CliCommand::parse_cli_args(matches) {
         Ok(command) => command,
         Err(err) => {
             eprintln!("Failed to parse command arguments: {err:?}");
@@ -143,11 +144,7 @@ async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
-    setup_logging_and_tracing(
-        command.default_log_level(),
-        !matches.get_flag("no-color"),
-        build_info,
-    )?;
+    setup_logging_and_tracing(command.default_log_level(), ansi, build_info)?;
     let return_code: i32 = if let Err(err) = command.execute().await {
         eprintln!("{} Command failed: {:?}\n", "✘".color(RED_COLOR), err);
         1

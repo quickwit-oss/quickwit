@@ -70,7 +70,7 @@ impl FromStr for QuickwitService {
 
     fn from_str(service_str: &str) -> Result<Self, Self::Err> {
         match service_str {
-            "control_plane" => Ok(QuickwitService::ControlPlane),
+            "control-plane" | "control_plane" => Ok(QuickwitService::ControlPlane),
             "indexer" => Ok(QuickwitService::Indexer),
             "searcher" => Ok(QuickwitService::Searcher),
             "janitor" => Ok(QuickwitService::Janitor),
