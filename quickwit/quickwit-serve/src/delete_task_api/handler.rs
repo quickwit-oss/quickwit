@@ -194,7 +194,7 @@ mod tests {
             .path("/test-delete-task-rest/delete-tasks")
             .method("POST")
             .json(&true)
-            .body(r#"{"query": "body:term", "start_timestamp": 1, "end_timestamp": 10}"#)
+            .body(r#"{"query": "body:myterm", "start_timestamp": 1, "end_timestamp": 10}"#)
             .reply(&delete_query_api_handlers)
             .await;
         assert_eq!(resp.status(), 200);
@@ -207,7 +207,7 @@ mod tests {
         );
         assert_eq!(
             created_delete_query.query_ast,
-            r#"{"type":"Phrase","field":"body","phrase":"term"}"#
+            r#"{"type":"full_text","field":"body","text":"myterm","params":{"mode":{"type":"phrase"}}}"#
         );
         assert_eq!(created_delete_query.start_timestamp, Some(1));
         assert_eq!(created_delete_query.end_timestamp, Some(10));

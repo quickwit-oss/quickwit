@@ -20,11 +20,12 @@
 use std::str::FromStr;
 
 use quickwit_proto::SortOrder;
-use quickwit_query::DefaultOperator;
+use quickwit_query::BooleanOperand;
 use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};
 
 use super::super::TrackTotalHits;
+use super::MultiSearchHeader;
 use crate::simple_list::{from_simple_list, to_simple_list};
 
 #[serde_with::skip_serializing_none]
@@ -55,7 +56,7 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub ccs_minimize_roundtrips: Option<bool>,
     #[serde(default)]
-    pub default_operator: Option<DefaultOperator>,
+    pub default_operator: Option<BooleanOperand>,
     #[serde(default)]
     pub df: Option<String>,
     #[serde(serialize_with = "to_simple_list")]
@@ -115,7 +116,7 @@ pub struct SearchQueryParams {
     #[serde(serialize_with = "to_simple_list")]
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
-    sort: Option<Vec<String>>,
+    pub sort: Option<Vec<String>>,
     #[serde(default)]
     pub source: Option<String>,
     #[serde(serialize_with = "to_simple_list")]
@@ -216,6 +217,20 @@ impl ToString for ExpandWildcards {
             Self::Hidden => "hidden".to_string(),
             Self::None => "none".to_string(),
             Self::All => "all".to_string(),
+        }
+    }
+}
+
+impl From<MultiSearchHeader> for SearchQueryParams {
+    fn from(multi_search_header: MultiSearchHeader) -> Self {
+        SearchQueryParams {
+            allow_no_indices: multi_search_header.allow_no_indices,
+            expand_wildcards: multi_search_header.expand_wildcards,
+            ignore_unavailable: multi_search_header.ignore_unavailable,
+            routing: multi_search_header.routing,
+            request_cache: multi_search_header.request_cache,
+            preference: multi_search_header.preference,
+            ..Default::default()
         }
     }
 }

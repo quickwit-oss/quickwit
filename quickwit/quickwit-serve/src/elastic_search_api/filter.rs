@@ -23,6 +23,7 @@ use serde::de::DeserializeOwned;
 use warp::reject::LengthRequired;
 use warp::{Filter, Rejection};
 
+use super::model::MultiSearchQueryParams;
 use crate::elastic_search_api::model::{ElasticIngestOptions, SearchBody, SearchQueryParams};
 
 const BODY_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(1_000_000);
@@ -129,4 +130,16 @@ pub(crate) fn elastic_index_bulk_filter(
         .and(serde_qs::warp::query::<ElasticIngestOptions>(
             serde_qs::Config::default(),
         ))
+}
+
+#[utoipa::path(post, tag = "Search", path = "/_msearch")]
+pub(crate) fn elastic_multi_search_filter(
+) -> impl Filter<Extract = (Bytes, MultiSearchQueryParams), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_msearch")
+        .and(warp::body::content_length_limit(
+            BODY_LENGTH_LIMIT.get_bytes(),
+        ))
+        .and(warp::body::bytes())
+        .and(warp::post())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
 }

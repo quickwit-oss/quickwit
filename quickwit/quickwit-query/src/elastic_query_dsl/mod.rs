@@ -20,6 +20,7 @@
 use serde::{Deserialize, Serialize};
 
 mod bool_query;
+mod match_query;
 mod one_field_map;
 mod query_string_query;
 mod range_query;
@@ -31,6 +32,7 @@ pub(crate) use query_string_query::QueryStringQuery;
 use range_query::RangeQuery;
 use term_query::TermQuery;
 
+use crate::elastic_query_dsl::match_query::MatchQuery;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
 
@@ -50,6 +52,7 @@ enum ElasticQueryDslInner {
     Term(TermQuery),
     MatchAll(MatchAllQuery),
     MatchNone(MatchNoneQuery),
+    Match(MatchQuery),
     Range(RangeQuery),
 }
 
@@ -87,6 +90,7 @@ impl ConvertableToQueryAst for ElasticQueryDslInner {
             }
             Self::MatchNone(_) => Ok(QueryAst::MatchNone),
             Self::Range(range_query) => range_query.convert_to_query_ast(),
+            Self::Match(match_query) => match_query.convert_to_query_ast(),
         }
     }
 }

@@ -32,7 +32,7 @@ use quickwit_cli::{
     busy_detector, QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
 };
 use quickwit_common::RED_COLOR;
-use quickwit_serve::{quickwit_build_info, QuickwitBuildInfo};
+use quickwit_serve::BuildInfo;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::Level;
 use tracing_subscriber::fmt::time::UtcTime;
@@ -42,7 +42,7 @@ use tracing_subscriber::EnvFilter;
 fn setup_logging_and_tracing(
     level: Level,
     ansi: bool,
-    build_info: &QuickwitBuildInfo,
+    build_info: &BuildInfo,
 ) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
     {
@@ -123,7 +123,7 @@ async fn main_impl() -> anyhow::Result<()> {
 
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
-    let build_info = quickwit_build_info();
+    let build_info = BuildInfo::get();
     let version_text = format!(
         "{} ({} {})",
         build_info.version, build_info.commit_short_hash, build_info.build_date
