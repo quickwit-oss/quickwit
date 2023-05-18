@@ -88,13 +88,13 @@ fn extract_unsimplified_tags_filter_ast(query_ast: QueryAst) -> UnsimplifiedTagF
                 .collect();
             UnsimplifiedTagFilterAst::Or(children)
         }
-        QueryAst::FullText(phrase_query) => {
+        QueryAst::FullText(full_text_query) => {
             // TODO This is a bug in a sense.
             // A phrase is supposed to go through the tokenizer.
             UnsimplifiedTagFilterAst::Tag {
                 is_present: true,
-                field: phrase_query.field,
-                value: phrase_query.text,
+                field: full_text_query.field,
+                value: full_text_query.text,
             }
         }
         QueryAst::Boost { underlying, .. } => extract_unsimplified_tags_filter_ast(*underlying),

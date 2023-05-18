@@ -290,10 +290,13 @@ mod tests {
         }
         .parse_user_query(&["defaultfield".to_string()])
         .unwrap();
-        let QueryAst::FullText(phrase_query) = ast else { panic!() };
-        assert_eq!(&phrase_query.field, "defaultfield");
-        assert_eq!(&phrase_query.text, "hello");
-        assert_eq!(phrase_query.params.mode, FullTextMode::Phrase { slop: 0 });
+        let QueryAst::FullText(full_text_query) = ast else { panic!() };
+        assert_eq!(&full_text_query.field, "defaultfield");
+        assert_eq!(&full_text_query.text, "hello");
+        assert_eq!(
+            full_text_query.params.mode,
+            FullTextMode::Phrase { slop: 0 }
+        );
     }
 
     #[test]
@@ -305,10 +308,13 @@ mod tests {
         }
         .parse_user_query(&["defaultfieldweshouldignore".to_string()])
         .unwrap();
-        let QueryAst::FullText(phrase_query) = ast else { panic!() };
-        assert_eq!(&phrase_query.field, "defaultfield");
-        assert_eq!(&phrase_query.text, "hello");
-        assert_eq!(phrase_query.params.mode, FullTextMode::Phrase { slop: 0 });
+        let QueryAst::FullText(full_text_query) = ast else { panic!() };
+        assert_eq!(&full_text_query.field, "defaultfield");
+        assert_eq!(&full_text_query.text, "hello");
+        assert_eq!(
+            full_text_query.params.mode,
+            FullTextMode::Phrase { slop: 0 }
+        );
     }
 
     #[test]
@@ -333,9 +339,12 @@ mod tests {
         }
         .parse_user_query(&["fieldtoignore".to_string()])
         .unwrap();
-        let QueryAst::FullText(phrase_query) = ast else { panic!() };
-        assert_eq!(&phrase_query.field, "myfield");
-        assert_eq!(&phrase_query.text, "hello");
-        assert_eq!(phrase_query.params.mode, FullTextMode::Phrase { slop: 0 });
+        let QueryAst::FullText(full_text_query) = ast else { panic!() };
+        assert_eq!(&full_text_query.field, "myfield");
+        assert_eq!(&full_text_query.text, "hello");
+        assert_eq!(
+            full_text_query.params.mode,
+            FullTextMode::Phrase { slop: 0 }
+        );
     }
 }

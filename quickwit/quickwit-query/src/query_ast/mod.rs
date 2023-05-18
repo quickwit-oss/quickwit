@@ -187,8 +187,8 @@ impl BuildTantivyAst for QueryAst {
             QueryAst::TermSet(term_set) => {
                 term_set.build_tantivy_ast_call(schema, search_fields, with_validation)
             }
-            QueryAst::FullText(phrase_query) => {
-                phrase_query.build_tantivy_ast_call(schema, search_fields, with_validation)
+            QueryAst::FullText(full_text_query) => {
+                full_text_query.build_tantivy_ast_call(schema, search_fields, with_validation)
             }
             QueryAst::UserInput(user_text_query) => {
                 user_text_query.build_tantivy_ast_call(schema, search_fields, with_validation)

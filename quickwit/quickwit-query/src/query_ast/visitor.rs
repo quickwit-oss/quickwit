@@ -30,7 +30,7 @@ pub trait QueryAstVisitor<'a> {
             QueryAst::Bool(bool_query) => self.visit_bool(bool_query),
             QueryAst::Term(term_query) => self.visit_term(term_query),
             QueryAst::TermSet(term_set_query) => self.visit_term_set(term_set_query),
-            QueryAst::FullText(phrase_query) => self.visit_full_text(phrase_query),
+            QueryAst::FullText(full_text_query) => self.visit_full_text(full_text_query),
             QueryAst::Range(range_query) => self.visit_range(range_query),
             QueryAst::MatchAll => self.visit_match_all(),
             QueryAst::MatchNone => self.visit_match_none(),
@@ -60,7 +60,7 @@ pub trait QueryAstVisitor<'a> {
         Ok(())
     }
 
-    fn visit_full_text(&mut self, _phrase_query: &'a FullTextQuery) -> Result<(), Self::Err> {
+    fn visit_full_text(&mut self, _full_text: &'a FullTextQuery) -> Result<(), Self::Err> {
         Ok(())
     }
 
