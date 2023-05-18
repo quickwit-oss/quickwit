@@ -27,7 +27,7 @@ Below is the doc mapping of the `otel-trace-v0` index:
 
 ```yaml
 
-version: 0.5
+version: 0.6
 
 index_id: otel-trace-v0
 

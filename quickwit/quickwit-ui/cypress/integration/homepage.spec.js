@@ -30,6 +30,6 @@ describe('Home navigation', () => {
     cy.visit('http://127.0.0.1:7280/ui');
     cy.get('a').contains('Cluster').click();
     cy.get('p').should('contain.text', 'Cluster');
-    cy.get('span').should('contain.text', 'seed_addrs');
+    cy.get('span').should('contain.text', 'cluster_id');
   });
 })

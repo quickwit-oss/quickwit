@@ -32,7 +32,7 @@ First, let's create a new index. Here is the index config and doc mapping corres
 #
 # Index config file for gh-archive dataset.
 #
-version: 0.5
+version: 0.6
 
 index_id: gh-archive
 
@@ -116,7 +116,7 @@ aws kinesis put-records --cli-input-json file://records-{%}.json --cli-binary-fo
 #
 # Kinesis source config file.
 #
-version: 0.5
+version: 0.6
 source_id: kinesis-source
 source_type: kinesis
 params:
