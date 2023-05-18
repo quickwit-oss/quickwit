@@ -28,8 +28,11 @@ use super::search_query_params::ExpandWildcards;
 use super::ElasticSearchError;
 use crate::simple_list::{from_simple_list, to_simple_list};
 
+// Multi search doc: https://www.elastic.co/guide/en/elasticsearch/reference/current/search-multi-search.html
+
 #[serde_with::skip_serializing_none]
 #[derive(Default, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MultiSearchQueryParams {
     #[serde(default)]
     pub allow_no_indices: Option<bool>,
