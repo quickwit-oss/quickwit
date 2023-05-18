@@ -23,9 +23,13 @@ use serde::{Deserialize, Serialize};
 use tantivy::schema::Schema as TantivySchema;
 use tantivy::Term;
 
-use crate::query_ast::{utils, BuildTantivyAst, QueryAst, TantivyQueryAst};
+use crate::query_ast::{BuildTantivyAst, QueryAst, TantivyQueryAst, TermQuery};
 use crate::InvalidQuery;
 
+/// TermSetQuery matches the same document set as if it was a union of
+/// the equivalent set of TermQueries.
+///
+/// The text will be used as is, untokenized.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct TermSetQuery {
     pub terms_per_field: HashMap<String, HashSet<String>>,
@@ -36,8 +40,18 @@ impl TermSetQuery {
         let mut terms: HashSet<Term> = HashSet::default();
         for (full_path, values) in &self.terms_per_field {
             for value in values {
-                // We simplify the logic by calling compute_query, and extract the resulting terms.
-                let ast = utils::full_text_query(full_path, value, 0, false, schema)?;
+                // Mapping a text (field, value) is non-trival:
+                // It depends on the schema of course, and can actually result in a disjunction of
+                // multiple terms if the query targets a dynamic field (due to the
+                // different types).
+                //
+                // Here, we ensure the logic is the same as for a TermQuery, by creating the term
+                // query and extracting the terms from the resulting `TermQuery`.
+                let term_query = TermQuery {
+                    field: full_path.to_string(),
+                    value: value.to_string(),
+                };
+                let ast = term_query.build_tantivy_ast_call(schema, &[], false)?;
                 let tantivy_query: Box<dyn crate::TantivyQuery> = ast.simplify().into();
                 tantivy_query.query_terms(&mut |term, _| {
                     terms.insert(term.clone());

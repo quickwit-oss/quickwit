@@ -25,7 +25,7 @@ use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
 use hyper::StatusCode;
 use quickwit_proto::{SearchResponse, ServiceErrorCode, SortOrder};
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
-use quickwit_query::DefaultOperator;
+use quickwit_query::BooleanOperand;
 use quickwit_search::{SearchError, SearchService};
 use warp::{Filter, Rejection};
 
@@ -66,9 +66,7 @@ fn build_request_for_es_api(
     search_params: SearchQueryParams,
     search_body: SearchBody,
 ) -> Result<quickwit_proto::SearchRequest, ElasticSearchError> {
-    let default_operator = search_params
-        .default_operator
-        .unwrap_or(DefaultOperator::Or);
+    let default_operator = search_params.default_operator.unwrap_or(BooleanOperand::Or);
     // The query string, if present, takes priority over what can be in the request
     // body.
     let query_ast = if let Some(q) = &search_params.q {

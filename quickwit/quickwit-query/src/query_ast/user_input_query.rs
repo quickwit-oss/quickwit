@@ -29,8 +29,8 @@ use tantivy::schema::Schema as TantivySchema;
 
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
-use crate::query_ast::{self, BuildTantivyAst, QueryAst};
-use crate::{DefaultOperator, InvalidQuery, JsonLiteral};
+use crate::query_ast::{self, BuildTantivyAst, FullTextMode, FullTextParams, QueryAst};
+use crate::{BooleanOperand, InvalidQuery, JsonLiteral};
 
 /// A query expressed in the tantivy query grammar DSL.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -43,7 +43,7 @@ pub struct UserInputQuery {
     // will be used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_fields: Option<Vec<String>>,
-    pub default_operator: DefaultOperator,
+    pub default_operator: BooleanOperand,
 }
 
 impl UserInputQuery {
@@ -65,8 +65,8 @@ impl UserInputQuery {
         let user_input_ast = tantivy::query_grammar::parse_query(&self.user_text)
             .map_err(|_| anyhow::anyhow!("Failed to parse query: `{}`.", &self.user_text))?;
         let default_occur = match self.default_operator {
-            DefaultOperator::And => Occur::Must,
-            DefaultOperator::Or => Occur::Should,
+            BooleanOperand::And => Occur::Must,
+            BooleanOperand::Or => Occur::Should,
         };
         convert_user_input_ast_to_query_ast(user_input_ast, default_occur, search_fields)
     }
@@ -195,13 +195,18 @@ fn convert_user_input_literal(
     if field_names.is_empty() {
         anyhow::bail!("Query requires a default search field and none was supplied.");
     }
+    let full_text_params = FullTextParams {
+        tokenizer: None,
+        mode: FullTextMode::Phrase { slop },
+        zero_terms_query: crate::MatchAllOrNone::MatchNone,
+    };
     let mut phrase_queries: Vec<QueryAst> = field_names
         .into_iter()
         .map(|field_name| {
-            query_ast::PhraseQuery {
+            query_ast::FullTextQuery {
                 field: field_name,
-                phrase: phrase.clone(),
-                slop,
+                text: phrase.clone(),
+                params: full_text_params.clone(),
             }
             .into()
         })
@@ -221,15 +226,15 @@ fn convert_user_input_literal(
 
 #[cfg(test)]
 mod tests {
-    use crate::query_ast::{BoolQuery, BuildTantivyAst, QueryAst, UserInputQuery};
-    use crate::{DefaultOperator, InvalidQuery};
+    use crate::query_ast::{BoolQuery, BuildTantivyAst, FullTextMode, QueryAst, UserInputQuery};
+    use crate::{BooleanOperand, InvalidQuery};
 
     #[test]
     fn test_user_input_query_not_parsed_error() {
         let user_input_query = UserInputQuery {
             user_text: "hello".to_string(),
             default_fields: None,
-            default_operator: DefaultOperator::And,
+            default_operator: BooleanOperand::And,
         };
         let schema = tantivy::schema::Schema::builder().build();
         {
@@ -252,7 +257,7 @@ mod tests {
             let invalid_err = UserInputQuery {
                 user_text: "hello".to_string(),
                 default_fields: None,
-                default_operator: DefaultOperator::And,
+                default_operator: BooleanOperand::And,
             }
             .parse_user_query(&[])
             .unwrap_err();
@@ -265,7 +270,7 @@ mod tests {
             let invalid_err = UserInputQuery {
                 user_text: "hello".to_string(),
                 default_fields: Some(Vec::new()),
-                default_operator: DefaultOperator::And,
+                default_operator: BooleanOperand::And,
             }
             .parse_user_query(&[])
             .unwrap_err();
@@ -281,14 +286,17 @@ mod tests {
         let ast = UserInputQuery {
             user_text: "hello".to_string(),
             default_fields: None,
-            default_operator: DefaultOperator::And,
+            default_operator: BooleanOperand::And,
         }
         .parse_user_query(&["defaultfield".to_string()])
         .unwrap();
-        let QueryAst::Phrase(phrase_query) = ast else { panic!() };
-        assert_eq!(&phrase_query.field, "defaultfield");
-        assert_eq!(&phrase_query.phrase, "hello");
-        assert_eq!(phrase_query.slop, 0);
+        let QueryAst::FullText(full_text_query) = ast else { panic!() };
+        assert_eq!(&full_text_query.field, "defaultfield");
+        assert_eq!(&full_text_query.text, "hello");
+        assert_eq!(
+            full_text_query.params.mode,
+            FullTextMode::Phrase { slop: 0 }
+        );
     }
 
     #[test]
@@ -296,14 +304,17 @@ mod tests {
         let ast = UserInputQuery {
             user_text: "hello".to_string(),
             default_fields: Some(vec!["defaultfield".to_string()]),
-            default_operator: DefaultOperator::And,
+            default_operator: BooleanOperand::And,
         }
         .parse_user_query(&["defaultfieldweshouldignore".to_string()])
         .unwrap();
-        let QueryAst::Phrase(phrase_query) = ast else { panic!() };
-        assert_eq!(&phrase_query.field, "defaultfield");
-        assert_eq!(&phrase_query.phrase, "hello");
-        assert_eq!(phrase_query.slop, 0);
+        let QueryAst::FullText(full_text_query) = ast else { panic!() };
+        assert_eq!(&full_text_query.field, "defaultfield");
+        assert_eq!(&full_text_query.text, "hello");
+        assert_eq!(
+            full_text_query.params.mode,
+            FullTextMode::Phrase { slop: 0 }
+        );
     }
 
     #[test]
@@ -311,7 +322,7 @@ mod tests {
         let ast = UserInputQuery {
             user_text: "hello".to_string(),
             default_fields: Some(vec!["fielda".to_string(), "fieldb".to_string()]),
-            default_operator: DefaultOperator::And,
+            default_operator: BooleanOperand::And,
         }
         .parse_user_query(&["defaultfieldweshouldignore".to_string()])
         .unwrap();
@@ -324,13 +335,16 @@ mod tests {
         let ast = UserInputQuery {
             user_text: "myfield:hello".to_string(),
             default_fields: Some(vec!["fieldtoignore".to_string()]),
-            default_operator: DefaultOperator::And,
+            default_operator: BooleanOperand::And,
         }
         .parse_user_query(&["fieldtoignore".to_string()])
         .unwrap();
-        let QueryAst::Phrase(phrase_query) = ast else { panic!() };
-        assert_eq!(&phrase_query.field, "myfield");
-        assert_eq!(&phrase_query.phrase, "hello");
-        assert_eq!(phrase_query.slop, 0);
+        let QueryAst::FullText(full_text_query) = ast else { panic!() };
+        assert_eq!(&full_text_query.field, "myfield");
+        assert_eq!(&full_text_query.text, "hello");
+        assert_eq!(
+            full_text_query.params.mode,
+            FullTextMode::Phrase { slop: 0 }
+        );
     }
 }
