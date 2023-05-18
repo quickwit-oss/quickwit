@@ -128,14 +128,7 @@ async fn test_standalone_server() {
                 .num_hits,
             0
         );
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let counters = sandbox
-            .indexer_rest_client
-            .node_stats()
-            .indexing()
-            .await
-            .unwrap();
-        assert_eq!(counters.num_running_pipelines, 1);
+        sandbox.wait_for_indexing_pipelines(1).await.unwrap();
     }
     sandbox.shutdown().await.unwrap();
 }
@@ -197,14 +190,7 @@ async fn test_multi_nodes_cluster() {
         .unwrap());
 
     // Wait until indexing pipelines are started.
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let indexing_service_counters = sandbox
-        .indexer_rest_client
-        .node_stats()
-        .indexing()
-        .await
-        .unwrap();
-    assert_eq!(indexing_service_counters.num_running_pipelines, 1);
+    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
 
     // Check search is working.
     let search_response_empty = sandbox
