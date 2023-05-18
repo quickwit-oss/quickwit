@@ -51,11 +51,10 @@ impl FullTextParams {
     ) -> anyhow::Result<TextAnalyzer> {
         let tokenizer_name: &str = self
             .tokenizer
-            .as_ref()
-            .map(String::as_str)
+            .as_deref()
             .unwrap_or(text_field_indexing.tokenizer());
         get_quickwit_tokenizer_manager()
-            .get(&tokenizer_name)
+            .get(tokenizer_name)
             .with_context(|| format!("No tokenizer named `{}` is registered.", tokenizer_name))
     }
 

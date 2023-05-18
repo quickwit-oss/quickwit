@@ -27,7 +27,7 @@ use crate::query_ast::{FullTextParams, FullTextQuery, QueryAst};
 use crate::{BooleanOperand, MatchAllOrNone, OneFieldMap};
 
 /// `MatchQuery` as defined in
-/// https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query.html
+/// <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query.html>
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
 #[serde(
     from = "OneFieldMap<MatchQueryParamsForDeserialization>",
@@ -55,11 +55,11 @@ impl ConvertableToQueryAst for MatchQuery {
             mode: self.params.operator.into(),
             zero_terms_query: self.params.zero_terms_query,
         };
-        return Ok(QueryAst::FullText(FullTextQuery {
+        Ok(QueryAst::FullText(FullTextQuery {
             field: self.field,
             text: self.params.query,
             params: full_text_params,
-        }));
+        }))
     }
 }
 
@@ -82,11 +82,11 @@ struct MatchQueryParamsForDeserialization {
     inner: MatchQueryParams,
 }
 
-impl Into<OneFieldMap<MatchQueryParams>> for MatchQuery {
-    fn into(self) -> OneFieldMap<MatchQueryParams> {
+impl From<MatchQuery> for OneFieldMap<MatchQueryParams> {
+    fn from(match_query: MatchQuery) -> OneFieldMap<MatchQueryParams> {
         OneFieldMap {
-            field: self.field,
-            value: self.params,
+            field: match_query.field,
+            value: match_query.params,
         }
     }
 }
@@ -150,10 +150,9 @@ mod tests {
     #[test]
     fn test_deserialize_match_query_struct() {
         // We accept a struct too.
-        let match_query: MatchQuery = serde_json::from_str(
-            r#"{"my_field": {"query": "my_query", "default_operator": "AND"}}"#,
-        )
-        .unwrap();
+        let match_query: MatchQuery =
+            serde_json::from_str(r#"{"my_field": {"query": "my_query", "operator": "AND"}}"#)
+                .unwrap();
         assert_eq!(match_query.field, "my_field");
         assert_eq!(&match_query.params.query, "my_query");
         assert_eq!(match_query.params.operator, BooleanOperand::And);

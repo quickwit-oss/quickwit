@@ -279,7 +279,13 @@ mod tests {
             .build_tantivy_ast_call(&schema, &[], true)
             .unwrap();
         let tantivy_query_ast_simplified = tantivy_query_ast.simplify();
-        assert_eq!(&tantivy_query_ast_simplified, &TantivyQueryAst::match_all(),);
+        // This does not get more simplified than this, because we need the boost 0 score.
+        let tantivy_bool_query = tantivy_query_ast_simplified.as_bool_query().unwrap();
+        assert_eq!(tantivy_bool_query.must.len(), 0);
+        assert_eq!(tantivy_bool_query.should.len(), 0);
+        assert_eq!(tantivy_bool_query.must_not.len(), 0);
+        assert_eq!(tantivy_bool_query.filter.len(), 1);
+        assert_eq!(&tantivy_bool_query.filter[0], &TantivyQueryAst::match_all(),);
     }
 
     #[test]

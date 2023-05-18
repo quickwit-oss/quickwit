@@ -207,13 +207,6 @@ impl TantivyBoolQuery {
             MatchAllOrNone::MatchNone,
             has_no_positive_ast_so_far,
         );
-        // if self.must.is_empty()
-        //     && self.should.is_empty()
-        //     && self.must_not.is_empty()
-        //     && self.filter.is_empty()
-        // {
-        //     return TantivyQueryAst::match_none();
-        // }
         for must_child in self.must.iter().chain(self.filter.iter()) {
             if must_child.const_predicate() == Some(MatchAllOrNone::MatchNone) {
                 return TantivyQueryAst::ConstPredicate(MatchAllOrNone::MatchNone);
@@ -227,18 +220,16 @@ impl TantivyBoolQuery {
         let num_children =
             self.must.len() + self.should.len() + self.must_not.len() + self.filter.len();
         if num_children == 1 {
-            if let Some(child) = self.must.pop() {
-                return child;
-            }
-            if let Some(child) = self.should.pop() {
-                return child;
-            }
             if self.must_not.len() == 1 {
                 if self.must_not[0].const_predicate() == Some(MatchAllOrNone::MatchNone) {
                     return MatchAllOrNone::MatchAll.into();
                 }
                 self.must.push(TantivyQueryAst::match_all());
+            } else if let Some(ast) = self.must.pop().or(self.should.pop()) {
+                return ast;
             }
+            // We do not optimize a single filter clause for the moment.
+            // We do need a mechanism to make sure we keep the boost of 0.
         }
         TantivyQueryAst::Bool(self)
     }
