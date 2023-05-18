@@ -21,9 +21,9 @@ use elasticsearch_dsl::search::ErrorCause;
 use hyper::StatusCode;
 use quickwit_proto::ServiceError;
 use quickwit_search::SearchError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElasticSearchError {
     #[serde(with = "http_serde::status_code")]
     pub status: StatusCode,
