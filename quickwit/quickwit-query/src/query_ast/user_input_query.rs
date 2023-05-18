@@ -23,7 +23,7 @@ use std::ops::Bound;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use tantivy::query_grammar::{
-    Occur, UserInputAst, UserInputBound, UserInputLeaf, UserInputLiteral,
+    Occur, UserInputAst, UserInputBound, UserInputLeaf, UserInputLiteral, Delimiter,
 };
 use tantivy::schema::Schema as TantivySchema;
 
@@ -182,6 +182,7 @@ fn convert_user_input_literal(
     let UserInputLiteral {
         field_name,
         phrase,
+        delimiter,
         slop,
     } = user_input_literal;
     let field_names: Vec<String> = if let Some(field_name) = field_name {
@@ -195,9 +196,17 @@ fn convert_user_input_literal(
     if field_names.is_empty() {
         anyhow::bail!("Query requires a default search field and none was supplied.");
     }
+    let mode = match delimiter {
+        Delimiter::None =>
+            FullTextMode::PhraseFallbackToIntersection,
+        Delimiter::SingleQuotes =>
+            FullTextMode::Bool { operator: BooleanOperand::And },
+        Delimiter::DoubleQuotes =>
+            FullTextMode::Phrase { slop },
+    };
     let full_text_params = FullTextParams {
         tokenizer: None,
-        mode: FullTextMode::Phrase { slop },
+        mode,
         zero_terms_query: crate::MatchAllOrNone::MatchNone,
     };
     let mut phrase_queries: Vec<QueryAst> = field_names
@@ -226,7 +235,7 @@ fn convert_user_input_literal(
 
 #[cfg(test)]
 mod tests {
-    use crate::query_ast::{BoolQuery, BuildTantivyAst, FullTextMode, QueryAst, UserInputQuery};
+    use crate::query_ast::{BoolQuery, BuildTantivyAst, FullTextMode, QueryAst, UserInputQuery, FullTextQuery};
     use crate::{BooleanOperand, InvalidQuery};
 
     #[test]
@@ -290,13 +299,10 @@ mod tests {
         }
         .parse_user_query(&["defaultfield".to_string()])
         .unwrap();
-        let QueryAst::FullText(full_text_query) = ast else { panic!() };
-        assert_eq!(&full_text_query.field, "defaultfield");
-        assert_eq!(&full_text_query.text, "hello");
-        assert_eq!(
-            full_text_query.params.mode,
-            FullTextMode::Phrase { slop: 0 }
-        );
+        let QueryAst::FullText(phrase_query) = ast else { panic!() };
+        assert_eq!(&phrase_query.field, "defaultfield");
+        assert_eq!(&phrase_query.text, "hello");
+        assert_eq!(phrase_query.params.mode, FullTextMode::PhraseFallbackToIntersection);
     }
 
     #[test]
@@ -308,13 +314,10 @@ mod tests {
         }
         .parse_user_query(&["defaultfieldweshouldignore".to_string()])
         .unwrap();
-        let QueryAst::FullText(full_text_query) = ast else { panic!() };
-        assert_eq!(&full_text_query.field, "defaultfield");
-        assert_eq!(&full_text_query.text, "hello");
-        assert_eq!(
-            full_text_query.params.mode,
-            FullTextMode::Phrase { slop: 0 }
-        );
+        let QueryAst::FullText(phrase_query) = ast else { panic!() };
+        assert_eq!(&phrase_query.field, "defaultfield");
+        assert_eq!(&phrase_query.text, "hello");
+        assert_eq!(phrase_query.params.mode, FullTextMode::PhraseFallbackToIntersection);
     }
 
     #[test]
@@ -342,9 +345,46 @@ mod tests {
         let QueryAst::FullText(full_text_query) = ast else { panic!() };
         assert_eq!(&full_text_query.field, "myfield");
         assert_eq!(&full_text_query.text, "hello");
-        assert_eq!(
-            full_text_query.params.mode,
-            FullTextMode::Phrase { slop: 0 }
-        );
+        assert_eq!(full_text_query.params.mode, FullTextMode::PhraseFallbackToIntersection);
+    }
+
+
+    #[test]
+    fn test_user_input_query_different_delimiter() {
+        let parse_user_query_delimiter_util = |query: &str| {
+            let ast = UserInputQuery {
+                user_text: query.to_string(),
+                default_fields: None,
+                default_operator: BooleanOperand::Or,
+            }
+            .parse_user_query(&[])
+            .unwrap();
+            let QueryAst::FullText(full_text_query) = ast else { panic!() };
+            full_text_query
+        };
+        {
+            let double_quote_query: FullTextQuery = parse_user_query_delimiter_util("jobtitle:\"editor-in-chief\"");
+            assert_eq!(&double_quote_query.field, "jobtitle");
+            assert_eq!(&double_quote_query.text, "editor-in-chief");
+            assert_eq!(double_quote_query.params.mode, FullTextMode::Phrase { slop: 0 });
+        }
+        {
+            let double_quote_query: FullTextQuery = parse_user_query_delimiter_util("jobtitle:\"editor-in-chief\"~2");
+            assert_eq!(&double_quote_query.field, "jobtitle");
+            assert_eq!(&double_quote_query.text, "editor-in-chief");
+            assert_eq!(double_quote_query.params.mode, FullTextMode::Phrase { slop: 2 });
+        }
+        {
+            let double_quote_query: FullTextQuery = parse_user_query_delimiter_util("jobtitle:'editor-in-chief'");
+            assert_eq!(&double_quote_query.field, "jobtitle");
+            assert_eq!(&double_quote_query.text, "editor-in-chief");
+            assert_eq!(double_quote_query.params.mode, FullTextMode::Bool { operator: BooleanOperand::And });
+        }
+        {
+            let double_quote_query: FullTextQuery = parse_user_query_delimiter_util("jobtitle:editor-in-chief");
+            assert_eq!(&double_quote_query.field, "jobtitle");
+            assert_eq!(&double_quote_query.text, "editor-in-chief");
+            assert_eq!(double_quote_query.params.mode, FullTextMode::PhraseFallbackToIntersection);
+        }
     }
 }

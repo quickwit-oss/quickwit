@@ -104,6 +104,7 @@ impl FullTextParams {
     pub(crate) fn make_query(
         &self,
         mut terms: Vec<(usize, Term)>,
+        index_record_option: IndexRecordOption
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         if terms.is_empty() {
             return Ok(self.zero_terms_query.into());
@@ -117,7 +118,7 @@ impl FullTextParams {
                 let term_query: Vec<TantivyQueryAst> = terms
                     .into_iter()
                     .map(|(_, term)| {
-                        TantivyTermQuery::new(term, IndexRecordOption::WithFreqs).into()
+                        TantivyTermQuery::new(term, index_record_option).into()
                     })
                     .collect();
                 Ok(TantivyBoolQuery::build_clause(operator, term_query).into())
@@ -127,6 +128,19 @@ impl FullTextParams {
                 phrase_query.set_slop(slop);
                 Ok(phrase_query.into())
             }
+            FullTextMode::PhraseFallbackToIntersection => {
+                if index_record_option.has_positions() {
+                    Ok(TantivyPhraseQuery::new_with_offset(terms).into())
+                } else {
+                    let term_query: Vec<TantivyQueryAst> = terms
+                    .into_iter()
+                    .map(|(_, term)| {
+                        TantivyTermQuery::new(term, index_record_option).into()
+                    })
+                    .collect();
+                    Ok(TantivyBoolQuery::build_clause(BooleanOperand::And, term_query).into())
+                }
+            },
         }
     }
 }
@@ -144,6 +158,9 @@ pub enum FullTextMode {
     Bool {
         operator: BooleanOperand,
     },
+    // Act as Phrase with slop 0 if the field has positions,
+    // otherwise act as an intersection.
+    PhraseFallbackToIntersection,
     // After tokenization, the different tokens should be used to create
     // a phrase query.
     //
