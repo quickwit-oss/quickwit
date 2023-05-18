@@ -42,7 +42,7 @@ use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0";
 
 pub const OTEL_LOGS_INDEX_CONFIG: &str = r#"
-version: 0.5
+version: 0.6
 
 index_id: otel-logs-v0
 

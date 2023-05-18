@@ -27,7 +27,7 @@ use crate::split_metadata::utc_now_timestamp;
 use crate::SplitMetadata;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-pub(crate) struct SplitMetadataV0_5 {
+pub(crate) struct SplitMetadataV0_6 {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
     /// In reality, some information may be implicitly configured
@@ -88,8 +88,8 @@ pub(crate) struct SplitMetadataV0_5 {
     num_merge_ops: usize,
 }
 
-impl From<SplitMetadataV0_5> for SplitMetadata {
-    fn from(v3: SplitMetadataV0_5) -> Self {
+impl From<SplitMetadataV0_6> for SplitMetadata {
+    fn from(v3: SplitMetadataV0_6) -> Self {
         let source_id = v3.source_id.unwrap_or_else(|| "unknown".to_string());
 
         let node_id = if let Some(node_id) = v3.node_id {
@@ -124,9 +124,9 @@ impl From<SplitMetadataV0_5> for SplitMetadata {
     }
 }
 
-impl From<SplitMetadata> for SplitMetadataV0_5 {
+impl From<SplitMetadata> for SplitMetadataV0_6 {
     fn from(split: SplitMetadata) -> Self {
-        SplitMetadataV0_5 {
+        SplitMetadataV0_6 {
             split_id: split.split_id,
             index_uid: split.index_uid,
             partition_id: split.partition_id,
@@ -147,22 +147,23 @@ impl From<SplitMetadata> for SplitMetadataV0_5 {
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedSplitMetadata {
-    #[serde(rename = "0.5")]
-    // Retro compatibility with 0.4.
+    #[serde(rename = "0.6")]
+    // Retro compatibility.
+    #[serde(alias = "0.5")]
     #[serde(alias = "0.4")]
-    V0_5(SplitMetadataV0_5),
+    V0_6(SplitMetadataV0_6),
 }
 
 impl From<VersionedSplitMetadata> for SplitMetadata {
     fn from(versioned_helper: VersionedSplitMetadata) -> Self {
         match versioned_helper {
-            VersionedSplitMetadata::V0_5(v0_5) => v0_5.into(),
+            VersionedSplitMetadata::V0_6(v0_6) => v0_6.into(),
         }
     }
 }
 
 impl From<SplitMetadata> for VersionedSplitMetadata {
     fn from(split_metadata: SplitMetadata) -> Self {
-        VersionedSplitMetadata::V0_5(split_metadata.into())
+        VersionedSplitMetadata::V0_6(split_metadata.into())
     }
 }

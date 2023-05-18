@@ -85,7 +85,7 @@
         "message"
       ]
     },
-    "version": "0.5"
+    "version": "0.6"
   },
   "index_uid": "test:1111111111111",
   "sources": [
@@ -103,8 +103,8 @@
       "transform": {
         "script": ".message = downcase(string!(.message))"
       },
-      "version": "0.5"
+      "version": "0.6"
     }
   ],
-  "version": "0.5"
+  "version": "0.6"
 }
