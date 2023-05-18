@@ -85,7 +85,7 @@ export function IndexSummary({ index }: { index: Index }) {
             thousandSeparator={true}
           />
         </IndexRow>
-        <IndexRow title="Size of published documents:">
+        <IndexRow title="Size of published documents (uncompressed):">
           <NumberFormat
             value={total_uncompressed_num_bytes / 1000000}
             displayType={"text"}
