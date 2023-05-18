@@ -47,4 +47,6 @@ pub enum InvalidQuery {
     JsonFieldRootNotSearchable { full_path: String },
     #[error("User query should have been parsed")]
     UserQueryNotParsed,
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
 }

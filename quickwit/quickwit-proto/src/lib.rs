@@ -458,7 +458,7 @@ pub fn query_ast_from_user_text(
     quickwit_query::query_ast::UserInputQuery {
         user_text: user_text.to_string(),
         default_fields,
-        default_operator: quickwit_query::DefaultOperator::And,
+        default_operator: quickwit_query::BooleanOperand::And,
     }
     .into()
 }
@@ -558,6 +558,6 @@ mod tests {
     fn test_query_ast_from_user_text_default_as_and() {
         let ast = query_ast_from_user_text("hello you", None);
         let QueryAst::UserInput(input_query) = ast else { panic!() };
-        assert_eq!(input_query.default_operator, quickwit_query::DefaultOperator::And);
+        assert_eq!(input_query.default_operator, quickwit_query::BooleanOperand::And);
     }
 }

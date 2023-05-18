@@ -20,7 +20,7 @@
 use std::str::FromStr;
 
 use quickwit_proto::SortOrder;
-use quickwit_query::DefaultOperator;
+use quickwit_query::BooleanOperand;
 use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};
 
@@ -55,7 +55,7 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub ccs_minimize_roundtrips: Option<bool>,
     #[serde(default)]
-    pub default_operator: Option<DefaultOperator>,
+    pub default_operator: Option<BooleanOperand>,
     #[serde(default)]
     pub df: Option<String>,
     #[serde(serialize_with = "to_simple_list")]

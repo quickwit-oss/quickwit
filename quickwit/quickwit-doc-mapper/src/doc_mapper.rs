@@ -202,7 +202,7 @@ mod tests {
 
     use quickwit_proto::query_ast_from_user_text;
     use quickwit_query::query_ast::UserInputQuery;
-    use quickwit_query::DefaultOperator;
+    use quickwit_query::BooleanOperand;
     use tantivy::schema::{Field, FieldType, Term};
 
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
@@ -319,7 +319,7 @@ mod tests {
         let query_ast = UserInputQuery {
             user_text: "json_field.toto.titi:hello".to_string(),
             default_fields: None,
-            default_operator: DefaultOperator::And,
+            default_operator: BooleanOperand::And,
         }
         .parse_user_query(&[])
         .unwrap();

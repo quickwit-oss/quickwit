@@ -39,6 +39,7 @@ def run_request_step(method, step, root):
     r = method_req(url, **kvargs)
     expected_status_code = step.get("status_code", 200)
     if r.status_code != expected_status_code:
+        print("-----")
         print(r.text)
         raise Exception("Wrong status code. Got %s, expected %s" % (r.status_code, expected_status_code))
     expected_resp = step.get("expected", {})

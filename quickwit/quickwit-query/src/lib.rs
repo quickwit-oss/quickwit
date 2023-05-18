@@ -46,10 +46,25 @@ pub use tantivy::query::Query as TantivyQuery;
 pub use tokenizers::get_quickwit_tokenizer_manager;
 
 #[derive(Serialize, Deserialize, Debug, Default, Copy, Clone, Eq, PartialEq)]
-pub enum DefaultOperator {
+pub enum BooleanOperand {
     #[serde(alias = "AND")]
     And,
     #[default]
     #[serde(alias = "OR")]
     Or,
+}
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, Eq, PartialEq, Default)]
+pub enum MatchAllOrNone {
+    #[serde(rename = "none")]
+    #[default]
+    MatchNone,
+    #[serde(rename = "all")]
+    MatchAll,
+}
+
+impl MatchAllOrNone {
+    pub fn is_none(&self) -> bool {
+        self == &MatchAllOrNone::MatchNone
+    }
 }
