@@ -41,7 +41,7 @@ impl TermSetQuery {
         for (full_path, values) in &self.terms_per_field {
             for value in values {
                 // Mapping a text (field, value) is non-trival:
-                // It depends on the schema of course, and can actually  result in a disjunction of
+                // It depends on the schema of course, and can actually result in a disjunction of
                 // multiple terms if the query targets a dynamic field (due to the
                 // different types).
                 //
