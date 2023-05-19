@@ -159,7 +159,10 @@ where for<'a> T: Serialize {
     };
 
     if changes_detected || file_created {
-        std::fs::write(file_regression_test_path_str.clone(), sample_json.as_bytes())?;
+        std::fs::write(
+            file_regression_test_path_str.clone(),
+            sample_json.as_bytes(),
+        )?;
         std::fs::write(
             file_regression_expected_path_str.clone(),
             sample_json.as_bytes(),
