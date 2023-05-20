@@ -24,7 +24,7 @@ use std::str::FromStr;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpValue;
 use quickwit_proto::opentelemetry::proto::common::v1::{
-    AnyValue as OtlpAnyValue, KeyValue as OtlpKeyValue,
+    AnyValue as OtlpAnyValue, ArrayValue as OtlpArrayValue, KeyValue as OtlpKeyValue,
 };
 use serde;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -198,10 +198,22 @@ impl<'de> Deserialize<'de> for B64TraceId {
     }
 }
 
+// An `Attribute` is a key-value pair, which MUST have the following properties:
+// - The attribute key MUST be a non-null and non-empty string.
+// - The attribute value is either:
+//  - A primitive type: string, boolean, double precision floating point (IEEE 754-1985) or signed
+//    64 bit integer.
+//  - An array of primitive type values. The array MUST be homogeneous, i.e., it MUST NOT contain
+//    values of different types.
+//
+// <https://github.com/open-telemetry/opentelemetry-specification/tree/main/specification/common#attribute>
 pub(crate) fn extract_attributes(attributes: Vec<OtlpKeyValue>) -> HashMap<String, JsonValue> {
     let mut attrs = HashMap::with_capacity(attributes.len());
+
     for attribute in attributes {
-        // Filtering out empty attribute values is fine according to the OTel spec: <https://github.com/open-telemetry/opentelemetry-specification/tree/main/specification/common#attribute>
+        if attribute.key.is_empty() {
+            continue;
+        }
         if let Some(value) = attribute
             .value
             .and_then(|any_value| any_value.value)
@@ -211,6 +223,37 @@ pub(crate) fn extract_attributes(attributes: Vec<OtlpKeyValue>) -> HashMap<Strin
         }
     }
     attrs
+}
+
+fn to_json_value(value: OtlpValue) -> Option<JsonValue> {
+    match value {
+        OtlpValue::ArrayValue(OtlpArrayValue { values }) => Some(
+            values
+                .into_iter()
+                .flat_map(to_json_value_from_primitive_any_value)
+                .collect(),
+        ),
+        OtlpValue::BoolValue(value) => Some(JsonValue::Bool(value)),
+        OtlpValue::DoubleValue(value) => JsonNumber::from_f64(value).map(JsonValue::Number),
+        OtlpValue::IntValue(value) => Some(JsonValue::Number(JsonNumber::from(value))),
+        OtlpValue::StringValue(value) => Some(JsonValue::String(value)),
+        OtlpValue::BytesValue(_) | OtlpValue::KvlistValue(_) => {
+            // These attribute types are not supported for attributes according to the OpenTelemetry
+            // specification.
+            warn!(value=?value, "Skipping unsupported OTLP value type.");
+            None
+        }
+    }
+}
+
+fn to_json_value_from_primitive_any_value(any_value: OtlpAnyValue) -> Option<JsonValue> {
+    match any_value.value {
+        Some(OtlpValue::BoolValue(value)) => Some(JsonValue::Bool(value)),
+        Some(OtlpValue::DoubleValue(value)) => JsonNumber::from_f64(value).map(JsonValue::Number),
+        Some(OtlpValue::IntValue(value)) => Some(JsonValue::Number(JsonNumber::from(value))),
+        Some(OtlpValue::StringValue(value)) => Some(JsonValue::String(value)),
+        _ => None,
+    }
 }
 
 pub(crate) fn parse_log_record_body(body: OtlpAnyValue) -> Option<JsonValue> {
@@ -223,20 +266,6 @@ pub(crate) fn parse_log_record_body(body: OtlpAnyValue) -> Option<JsonValue> {
             value
         }
     })
-}
-
-pub(crate) fn to_json_value(value: OtlpValue) -> Option<JsonValue> {
-    match value {
-        OtlpValue::StringValue(value) => Some(JsonValue::String(value)),
-        OtlpValue::BoolValue(value) => Some(JsonValue::Bool(value)),
-        OtlpValue::IntValue(value) => Some(JsonValue::Number(JsonNumber::from(value))),
-        OtlpValue::DoubleValue(value) => JsonNumber::from_f64(value).map(JsonValue::Number),
-        OtlpValue::BytesValue(bytes) => Some(JsonValue::String(BASE64_STANDARD.encode(bytes))),
-        OtlpValue::ArrayValue(_) | OtlpValue::KvlistValue(_) => {
-            warn!(value=?value, "Skipping unsupported OTLP value type.");
-            None
-        }
-    }
 }
 
 #[cfg(test)]
