@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-rust-version = "1.68"
+rust-version = "1.69"
 members = [
   "quickwit-actors",
   "quickwit-aws",
@@ -35,7 +35,7 @@ members = [
 ]
 
 [profile.dev]
-debug = 0
+debug = false
 
 [workspace.dependencies]
 anyhow = "1"
