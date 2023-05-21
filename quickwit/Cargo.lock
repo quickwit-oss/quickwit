@@ -3022,9 +3022,9 @@ dependencies = [
 
 [[package]]
 name = "mrecordlog"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71c03f1830b1fd17ad46d5753053a6cb79520d2e631c994e31f6261611244e18"
+checksum = "37147ad590e077179550cb783db8610443bc6b885d2aba258c4eb75938000fbd"
 dependencies = [
  "async-trait",
  "bytes",
