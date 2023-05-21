@@ -142,7 +142,6 @@ impl ScratchDirectory {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::mem;
