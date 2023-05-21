@@ -38,7 +38,7 @@ flex-direction: row;
 &:nth-of-type(odd){ background: rgba(0,0,0,0.05) }
 `
 const RowKey = styled.div`
-width: 300px;
+width: 350px;
 `
 const IndexRow: FC<{ title: string; children: ReactNode }> = ({
   title,
