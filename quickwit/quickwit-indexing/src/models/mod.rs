@@ -51,7 +51,7 @@ pub use processed_doc::{ProcessedDoc, ProcessedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};
 pub use publisher_message::SplitsUpdate;
 pub use raw_doc_batch::RawDocBatch;
-pub use scratch_directory::{ScratchDirectory, WeakScratchDirectory};
+pub use scratch_directory::ScratchDirectory;
 pub use split_attrs::{create_split_metadata, SplitAttrs};
 
 #[derive(Clone, Copy, Debug)]
