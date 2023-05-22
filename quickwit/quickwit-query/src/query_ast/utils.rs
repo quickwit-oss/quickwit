@@ -152,7 +152,7 @@ fn compute_query_with_field(
             })?;
             let terms =
                 full_text_params.tokenize_text_into_terms(field, value, text_field_indexing)?;
-            full_text_params.make_query(terms)
+            full_text_params.make_query(terms, text_field_indexing.index_option())
         }
         FieldType::IpAddr(_) => {
             let ip_addr = IpAddr::from_str(value).map_err(|_| InvalidQuery::InvalidSearchTerm {
@@ -211,8 +211,12 @@ fn compute_tantivy_ast_query_for_json(
     }
     let position_terms: Vec<(usize, Term)> =
         full_text_params.tokenize_text_into_terms_json(field, json_path, text, json_options)?;
+    let index_record_option = json_options
+        .get_text_indexing_options()
+        .map(|text_indexing_options| text_indexing_options.index_option())
+        .unwrap_or(IndexRecordOption::Basic);
     bool_query
         .should
-        .push(full_text_params.make_query(position_terms)?);
+        .push(full_text_params.make_query(position_terms, index_record_option)?);
     Ok(bool_query.into())
 }
