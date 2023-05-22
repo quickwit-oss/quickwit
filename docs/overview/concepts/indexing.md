@@ -7,11 +7,11 @@ sidebar_position: 1
 
 Quickwit ingests JSON records and refers to them as "documents" or "docs". Each document must be a JSON object. When ingesting files, documents must be separated by a newline.
 
-As of version 0.2, Quickwit does not support file formats such as `Avro` or `CSV`. Compression formats such as `bzip2` or `gzip` are also not supported.
+Quickwit does not yet support file formats such as `Avro` or `CSV`. Compression formats such as `bzip2` or `gzip` are also not supported yet.
 
 ## Data model
 
-As of version 0.2, Quickwit only supports indexes with a fixed schema. The "document mapping" of an index, also commonly called "doc mapping", is a list of field names and types that declares the schema of an index. Additionally, a doc mapping specifies how documents are indexed (tokenizers) and stored (column- vs. row-oriented).
+Quickwit supports both schemaless indexes and fixed schemas. The "document mapping" of an index, also commonly called "doc mapping", is a list of field names and types that declares the schema of an index. For a schemaless or mixed fixed schema and schemaless indexing, follow our [guide on schemaless indexing](../../guides/schemaless.md). Additionally, a doc mapping specifies how documents are indexed (tokenizers) and stored (column-oriented vs. row-oriented).
 
 
 ## Merge process and merge policy
@@ -30,7 +30,7 @@ The disk space allocated to the split store is controlled by the config paramete
 
 ## Data sources
 
-A data source designates the location and set of parameters that allow to connect to and ingest data from an external data store, which can be a file, a stream, or a database. Often, Quickwit simply refers to data sources as "sources". The indexing engine supports file-based and stream-based sources. Finally, Quickwit can insert data into an index from one or multiple sources, defined in the index config.
+A data source designates the location and set of parameters that allow to connect to and ingest data from an external data store, which can be a file, a stream, or a database. Often, Quickwit simply refers to data sources as "sources". The indexing engine supports file-based and stream-based sources. Quickwit can insert data into an index from one or multiple sources, defined in the index config.
 
 
 ### File sources
