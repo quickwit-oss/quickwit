@@ -238,7 +238,7 @@ impl Storage for BundleStorage {
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
         let file_offsets = self.metadata.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::DoesNotExist
+            crate::StorageErrorKind::NotFound
                 .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
         })?;
         let new_range =
@@ -250,7 +250,7 @@ impl Storage for BundleStorage {
 
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
         let file_offsets = self.metadata.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::DoesNotExist
+            crate::StorageErrorKind::NotFound
                 .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
         })?;
         self.storage
@@ -279,7 +279,7 @@ impl Storage for BundleStorage {
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let file_range = self.metadata.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::DoesNotExist
+            crate::StorageErrorKind::NotFound
                 .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
         })?;
         Ok(file_range.end - file_range.start)
