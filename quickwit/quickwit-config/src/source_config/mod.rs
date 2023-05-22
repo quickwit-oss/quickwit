@@ -189,6 +189,18 @@ pub enum SourceInputFormat {
     PlainText,
 }
 
+impl FromStr for SourceInputFormat {
+    type Err = String;
+
+    fn from_str(format_str: &str) -> Result<Self, String> {
+        match format_str {
+            "json" => Ok(Self::Json),
+            "plain" => Ok(Self::PlainText),
+            unknown => Err(format!("Unknown source input format: `{unknown}`.")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "source_type", content = "params")]
 pub enum SourceParams {
