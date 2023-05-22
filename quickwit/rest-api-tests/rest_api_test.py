@@ -43,9 +43,12 @@ def run_request_step(method, step, root):
         print(r.text)
         raise Exception("Wrong status code. Got %s, expected %s" % (r.status_code, expected_status_code))
     expected_resp = step.get("expected", {})
-    if not check_result(r.json(), expected_resp):
-        return False
-    return True
+    try:
+        check_result(r.json(), expected_resp)
+    except Exception as e:
+        print(r.text)
+        raise e
+
 
 def check_result(result, expected, context_path = ""):
     if type(expected) == dict and "$expect" in expected:

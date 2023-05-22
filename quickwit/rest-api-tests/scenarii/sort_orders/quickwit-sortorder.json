@@ -1,0 +1,10 @@
+{
+    "version": "0.6",
+    "index_id": "sortorder",
+    "doc_mapping": {
+        "mode": "dynamic",
+        "dynamic_mapping": {
+            "fast": true
+        }
+    }
+}

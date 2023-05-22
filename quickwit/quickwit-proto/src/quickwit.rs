@@ -168,18 +168,6 @@ pub struct Hit {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {
-    /// Sorting field value. (e.g. timestamp)
-    ///
-    /// Quickwit only computes top-K of this sorting field.
-    /// If the user requested for a bottom-K of a given fast field, then quickwit simply
-    /// emits an decreasing mapping of this fast field.
-    ///
-    /// In case of a tie, quickwit uses the increasing order of
-    /// - the split_id,
-    /// - the segment_ord,
-    /// - the doc id.
-    #[prost(uint64, tag = "1")]
-    pub sorting_field_value: u64,
     #[prost(string, tag = "2")]
     pub split_id: ::prost::alloc::string::String,
     /// (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document
@@ -189,6 +177,45 @@ pub struct PartialHit {
     /// The DocId identifies a unique document at the scale of a tantivy segment.
     #[prost(uint32, tag = "4")]
     pub doc_id: u32,
+    /// Value of the sorting key for the given document.
+    ///
+    /// Quickwit only computes top-K of this sorting field.
+    /// If the user requested for a bottom-K of a given fast field, then quickwit simply
+    /// emits an decreasing mapping of this fast field.
+    ///
+    /// In case of a tie, quickwit uses the increasing order of
+    /// - the split_id,
+    /// - the segment_ord,
+    /// - the doc id.
+    #[prost(oneof = "partial_hit::SortValue", tags = "5, 6, 7, 8")]
+    pub sort_value: ::core::option::Option<partial_hit::SortValue>,
+}
+/// Nested message and enum types in `PartialHit`.
+pub mod partial_hit {
+    /// Value of the sorting key for the given document.
+    ///
+    /// Quickwit only computes top-K of this sorting field.
+    /// If the user requested for a bottom-K of a given fast field, then quickwit simply
+    /// emits an decreasing mapping of this fast field.
+    ///
+    /// In case of a tie, quickwit uses the increasing order of
+    /// - the split_id,
+    /// - the segment_ord,
+    /// - the doc id.
+    #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+    #[derive(Copy)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum SortValue {
+        #[prost(uint64, tag = "5")]
+        U64(u64),
+        #[prost(int64, tag = "6")]
+        I64(i64),
+        #[prost(double, tag = "7")]
+        F64(f64),
+        #[prost(bool, tag = "8")]
+        Boolean(bool),
+    }
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

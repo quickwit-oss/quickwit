@@ -17,14 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, IndexConfig};
-use quickwit_doc_mapper::DocMapper;
+use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafListTermsRequest, LeafListTermsResponse,
@@ -148,11 +147,13 @@ fn validate_sort_by_field(field_name: &str, schema: &Schema) -> crate::Result<()
     if field_name == "_score" {
         return Ok(());
     }
-    let sort_by_field = schema.get_field(field_name).map_err(|_| {
-        SearchError::InvalidArgument(format!("Unknown sort by field: `{field_name}`"))
-    })?;
+    let dynamic_field_opt = schema.get_field(DYNAMIC_FIELD_NAME).ok();
+    let (sort_by_field, _json_path) = schema
+        .find_field_with_default(field_name, dynamic_field_opt)
+        .ok_or_else(|| {
+            SearchError::InvalidArgument(format!("Unknown field used in `sort by`: {field_name}"))
+        })?;
     let sort_by_field_entry = schema.get_field_entry(sort_by_field);
-
     if matches!(sort_by_field_entry.field_type(), FieldType::Str(_)) {
         return Err(SearchError::InvalidArgument(format!(
             "Sort by field on type text is currently not supported `{field_name}`."
@@ -311,6 +312,20 @@ pub async fn root_search(
         return Err(SearchError::InternalError(errors));
     }
 
+    let hit_order: HashMap<(String, u32, u32), usize> = leaf_search_response
+        .partial_hits
+        .iter()
+        .enumerate()
+        .map(|(position, partial_hit)| {
+            let key = (
+                partial_hit.split_id.clone(),
+                partial_hit.segment_ord,
+                partial_hit.doc_id,
+            );
+            (key, position)
+        })
+        .collect();
+
     let client_fetch_docs_task: Vec<(SearchServiceClient, Vec<FetchDocsJob>)> =
         assign_client_fetch_doc_tasks(
             &leaf_search_response.partial_hits,
@@ -355,22 +370,31 @@ pub async fn root_search(
         .into_iter()
         .flat_map(|response| response.hits.into_iter());
 
-    let mut hits: Vec<Hit> = leaf_hits
-        .map(|leaf_hit: LeafHit| Hit {
-            json: leaf_hit.leaf_json,
-            partial_hit: leaf_hit.partial_hit,
-            snippet: leaf_hit.leaf_snippet_json,
+    let mut hits_with_position: Vec<(usize, Hit)> = leaf_hits
+        .flat_map(|leaf_hit: LeafHit| {
+            let partial_hit_ref = leaf_hit.partial_hit.as_ref()?;
+            let key = (
+                partial_hit_ref.split_id.clone(),
+                partial_hit_ref.segment_ord,
+                partial_hit_ref.doc_id,
+            );
+            let position = *hit_order.get(&key)?;
+            Some((
+                position,
+                Hit {
+                    json: leaf_hit.leaf_json,
+                    partial_hit: leaf_hit.partial_hit,
+                    snippet: leaf_hit.leaf_snippet_json,
+                },
+            ))
         })
         .collect();
 
-    hits.sort_unstable_by_key(|hit| {
-        Reverse(
-            hit.partial_hit
-                .as_ref()
-                .map(|hit| hit.sorting_field_value)
-                .unwrap_or(0),
-        )
-    });
+    hits_with_position.sort_by_key(|(position, _)| *position);
+    let hits = hits_with_position
+        .into_iter()
+        .map(|(_position, hit)| hit)
+        .collect();
 
     let elapsed = start_instant.elapsed();
 
@@ -607,7 +631,7 @@ mod tests {
     use quickwit_config::SearcherConfig;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::{qast_helper, SplitSearchError};
+    use quickwit_proto::{qast_helper, SortOrder, SortValue, SplitSearchError};
     use tantivy::schema::{FAST, STORED, TEXT};
 
     use super::*;
@@ -648,11 +672,11 @@ mod tests {
 
     fn mock_partial_hit(
         split_id: &str,
-        sorting_field_value: u64,
+        sort_value: u64,
         doc_id: u32,
     ) -> quickwit_proto::PartialHit {
         quickwit_proto::PartialHit {
-            sorting_field_value,
+            sort_value: Some(SortValue::U64(sort_value)),
             split_id: split_id.to_string(),
             segment_ord: 1,
             doc_id,
@@ -904,6 +928,319 @@ mod tests {
         .unwrap();
         assert_eq!(search_response.num_hits, 3);
         assert_eq!(search_response.hits.len(), 3);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_multiple_splits_sort_heteregeneous_field_ascending(
+    ) -> anyhow::Result<()> {
+        let mut search_request = quickwit_proto::SearchRequest {
+            index_id: "test-index".to_string(),
+            query_ast: qast_helper("test", &["body"]),
+            max_hits: 10,
+            ..Default::default()
+        };
+        search_request.set_sort_order(SortOrder::Asc);
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-index",
+                    "ram:///indexes/test-index",
+                ))
+            });
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1.expect_leaf_search().returning(
+            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResponse {
+                    num_hits: 2,
+                    partial_hits: vec![
+                        quickwit_proto::PartialHit {
+                            sort_value: Some(SortValue::U64(2u64)),
+                            split_id: "split1".to_string(),
+                            segment_ord: 0,
+                            doc_id: 0,
+                        },
+                        quickwit_proto::PartialHit {
+                            sort_value: None,
+                            split_id: "split1".to_string(),
+                            segment_ord: 0,
+                            doc_id: 1,
+                        },
+                    ],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 1,
+                    ..Default::default()
+                })
+            },
+        );
+        mock_search_service_1.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Ok(quickwit_proto::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2.expect_leaf_search().returning(
+            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResponse {
+                    num_hits: 3,
+                    partial_hits: vec![
+                        quickwit_proto::PartialHit {
+                            sort_value: Some(SortValue::I64(-1i64)),
+                            split_id: "split2".to_string(),
+                            segment_ord: 0,
+                            doc_id: 1,
+                        },
+                        quickwit_proto::PartialHit {
+                            sort_value: Some(SortValue::I64(1i64)),
+                            split_id: "split2".to_string(),
+                            segment_ord: 0,
+                            doc_id: 0,
+                        },
+                        quickwit_proto::PartialHit {
+                            sort_value: None,
+                            split_id: "split2".to_string(),
+                            segment_ord: 0,
+                            doc_id: 2,
+                        },
+                    ],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 1,
+                    ..Default::default()
+                })
+            },
+        );
+        mock_search_service_2.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Ok(quickwit_proto::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
+        ]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let cluster_client = ClusterClient::new(search_job_placer.clone());
+        let search_response = root_search(
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request.clone(),
+            &metastore,
+            &cluster_client,
+            &search_job_placer,
+        )
+        .await?;
+
+        assert_eq!(search_response.num_hits, 5);
+        assert_eq!(search_response.hits.len(), 5);
+        assert_eq!(
+            search_response.hits[2].partial_hit.as_ref().unwrap(),
+            &PartialHit {
+                split_id: "split2".to_string(),
+                segment_ord: 0,
+                doc_id: 1,
+                sort_value: Some(SortValue::I64(-1i64)),
+            }
+        );
+        assert_eq!(
+            search_response.hits[1].partial_hit.as_ref().unwrap(),
+            &PartialHit {
+                split_id: "split2".to_string(),
+                segment_ord: 0,
+                doc_id: 0,
+                sort_value: Some(SortValue::I64(1i64)),
+            }
+        );
+        assert_eq!(
+            search_response.hits[0].partial_hit.as_ref().unwrap(),
+            &PartialHit {
+                split_id: "split1".to_string(),
+                segment_ord: 0,
+                doc_id: 0,
+                sort_value: Some(SortValue::U64(2u64)),
+            }
+        );
+        assert_eq!(
+            search_response.hits[4].partial_hit.as_ref().unwrap(),
+            &PartialHit {
+                split_id: "split1".to_string(),
+                segment_ord: 0,
+                doc_id: 1,
+                sort_value: None,
+            }
+        );
+        assert_eq!(
+            search_response.hits[3].partial_hit.as_ref().unwrap(),
+            &PartialHit {
+                split_id: "split2".to_string(),
+                segment_ord: 0,
+                doc_id: 2,
+                sort_value: None,
+            }
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_multiple_splits_sort_heteregeneous_field_descending(
+    ) -> anyhow::Result<()> {
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: "test-index".to_string(),
+            query_ast: qast_helper("test", &["body"]),
+            max_hits: 10,
+            ..Default::default()
+        };
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-index",
+                    "ram:///indexes/test-index",
+                ))
+            });
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1.expect_leaf_search().returning(
+            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResponse {
+                    num_hits: 2,
+                    partial_hits: vec![
+                        quickwit_proto::PartialHit {
+                            sort_value: Some(SortValue::U64(2u64)),
+                            split_id: "split1".to_string(),
+                            segment_ord: 0,
+                            doc_id: 0,
+                        },
+                        quickwit_proto::PartialHit {
+                            sort_value: None,
+                            split_id: "split1".to_string(),
+                            segment_ord: 0,
+                            doc_id: 1,
+                        },
+                    ],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 1,
+                    ..Default::default()
+                })
+            },
+        );
+        mock_search_service_1.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Ok(quickwit_proto::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2.expect_leaf_search().returning(
+            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResponse {
+                    num_hits: 3,
+                    partial_hits: vec![
+                        quickwit_proto::PartialHit {
+                            sort_value: Some(SortValue::I64(1i64)),
+                            split_id: "split2".to_string(),
+                            segment_ord: 0,
+                            doc_id: 0,
+                        },
+                        quickwit_proto::PartialHit {
+                            sort_value: Some(SortValue::I64(-1i64)),
+                            split_id: "split2".to_string(),
+                            segment_ord: 0,
+                            doc_id: 1,
+                        },
+                        quickwit_proto::PartialHit {
+                            sort_value: None,
+                            split_id: "split2".to_string(),
+                            segment_ord: 0,
+                            doc_id: 2,
+                        },
+                    ],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 1,
+                    ..Default::default()
+                })
+            },
+        );
+        mock_search_service_2.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Ok(quickwit_proto::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
+        ]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let cluster_client = ClusterClient::new(search_job_placer.clone());
+        let search_response = root_search(
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request.clone(),
+            &metastore,
+            &cluster_client,
+            &search_job_placer,
+        )
+        .await?;
+
+        assert_eq!(search_response.num_hits, 5);
+        assert_eq!(search_response.hits.len(), 5);
+        assert_eq!(
+            search_response.hits[0].partial_hit.as_ref().unwrap(),
+            &PartialHit {
+                split_id: "split1".to_string(),
+                segment_ord: 0,
+                doc_id: 0,
+                sort_value: Some(SortValue::U64(2u64)),
+            }
+        );
+        assert_eq!(
+            search_response.hits[1].partial_hit.as_ref().unwrap(),
+            &PartialHit {
+                split_id: "split2".to_string(),
+                segment_ord: 0,
+                doc_id: 0,
+                sort_value: Some(SortValue::I64(1i64)),
+            }
+        );
+        assert_eq!(
+            search_response.hits[2].partial_hit.as_ref().unwrap(),
+            &PartialHit {
+                split_id: "split2".to_string(),
+                segment_ord: 0,
+                doc_id: 1,
+                sort_value: Some(SortValue::I64(-1i64)),
+            }
+        );
+        assert_eq!(
+            search_response.hits[3].partial_hit.as_ref().unwrap(),
+            &PartialHit {
+                split_id: "split2".to_string(),
+                segment_ord: 0,
+                doc_id: 2,
+                sort_value: None,
+            }
+        );
+        assert_eq!(
+            search_response.hits[4].partial_hit.as_ref().unwrap(),
+            &PartialHit {
+                split_id: "split1".to_string(),
+                segment_ord: 0,
+                doc_id: 1,
+                sort_value: None,
+            }
+        );
         Ok(())
     }
 
