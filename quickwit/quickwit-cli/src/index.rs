@@ -550,9 +550,12 @@ impl Tabled for IndexStats {
         vec![
             self.index_id.clone(),
             self.index_uri.to_string(),
-            self.num_published_splits.to_string(),
             self.num_published_docs.to_string(),
             self.size_published_docs_uncompressed
+                .get_appropriate_unit(false)
+                .to_string(),
+            self.num_published_splits.to_string(),
+            self.size_published_splits
                 .get_appropriate_unit(false)
                 .to_string(),
             display_option_in_table(&self.timestamp_field_name),
@@ -564,8 +567,9 @@ impl Tabled for IndexStats {
         vec![
             "Index ID: ".to_string(),
             "Index URI: ".to_string(),
-            "Number of published splits: ".to_string(),
             "Number of published documents: ".to_string(),
+            "Size of published documents (uncompressed): ".to_string(),
+            "Number of published splits: ".to_string(),
             "Size of published splits: ".to_string(),
             "Timestamp field: ".to_string(),
             "Timestamp range: ".to_string(),
