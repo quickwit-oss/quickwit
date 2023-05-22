@@ -19,7 +19,9 @@
 
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
+use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
 use quickwit_control_plane::control_plane_service_grpc_server::ControlPlaneServiceGrpcServer;
 use quickwit_control_plane::ControlPlaneServiceGrpcServerAdapter;
@@ -46,7 +48,9 @@ use crate::QuickwitServices;
 /// Starts gRPC services given a gRPC address.
 pub(crate) async fn start_grpc_server(
     grpc_listen_addr: SocketAddr,
-    services: &QuickwitServices,
+    services: Arc<QuickwitServices>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
     let mut server = Server::builder();
@@ -149,7 +153,13 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(search_grpc_service)
         .add_optional_service(jaeger_grpc_service);
 
-    info!(enabled_grpc_services=?enabled_grpc_services, grpc_listen_addr=?grpc_listen_addr, "Starting gRPC server.");
-    server_router.serve(grpc_listen_addr).await?;
+    info!(
+        enabled_grpc_services=?enabled_grpc_services,
+        grpc_listen_addr=?grpc_listen_addr,
+        "Starting gRPC server listening on {grpc_listen_addr}."
+    );
+    let serve_fut = server_router.serve_with_shutdown(grpc_listen_addr, shutdown_signal);
+    let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
+    serve_res?;
     Ok(())
 }

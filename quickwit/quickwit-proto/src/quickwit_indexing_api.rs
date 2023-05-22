@@ -14,9 +14,9 @@ pub struct ApplyIndexingPlanResponse {}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexingTask {
-    /// / Index ID of the task.
+    /// / Index UID of the task.
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     /// / Source ID of the task.
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,

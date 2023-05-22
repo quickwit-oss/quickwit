@@ -97,4 +97,7 @@ build-ui:
 	$(MAKE) -C $(QUICKWIT_SRC) build-ui
 
 rm-postgres:
-	rm -fr /tmp/quickwit/services/postgres
+	docker volume rm quickwit_postgres_data
+
+rm-data:
+	docker volume rm quickwit_postgres_data quickwit_localstack_data quickwit_azurite_data

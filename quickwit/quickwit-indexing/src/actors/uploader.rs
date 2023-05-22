@@ -31,6 +31,7 @@ use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_proto::IndexUid;
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
 use tantivy::TrackedObject;
@@ -289,7 +290,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let metastore = self.metastore.clone();
         let split_store = self.split_store.clone();
         let counters = self.counters.clone();
-        let index_id = batch.index_id();
+        let index_uid = batch.index_uid();
         let ctx_clone = ctx.clone();
         info!(split_ids=?split_ids, "start-stage-and-store-splits");
         tokio::spawn(
@@ -319,7 +320,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 }
 
                 metastore
-                    .stage_splits(&index_id, split_metadata_list.clone())
+                    .stage_splits(index_uid.clone(), split_metadata_list.clone())
                     .await?;
                 counters.num_staged_splits.fetch_add(split_metadata_list.len() as u64, Ordering::SeqCst);
 
@@ -343,7 +344,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 }
 
                 let splits_update = make_publish_operation(
-                    index_id,
+                    index_uid,
                     batch.publish_lock,
                     packaged_splits_and_metadata,
                     batch.checkpoint_delta_opt,
@@ -383,7 +384,7 @@ impl Handler<EmptySplit> for Uploader {
             .get_split_update_sender(ctx)
             .await?;
         let splits_update = SplitsUpdate {
-            index_id: empty_split.index_id,
+            index_uid: empty_split.index_uid,
             new_splits: Vec::new(),
             replaced_split_ids: Vec::new(),
             checkpoint_delta_opt: Some(empty_split.checkpoint_delta),
@@ -398,7 +399,7 @@ impl Handler<EmptySplit> for Uploader {
 }
 
 fn make_publish_operation(
-    index_id: String,
+    index_uid: IndexUid,
     publish_lock: PublishLock,
     packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
     checkpoint_delta_opt: Option<IndexCheckpointDelta>,
@@ -411,7 +412,7 @@ fn make_publish_operation(
         .flat_map(|(split, _)| split.split_attrs.replaced_split_ids.clone())
         .collect::<HashSet<_>>();
     SplitsUpdate {
-        index_id,
+        index_uid,
         publish_lock,
         new_splits: packaged_splits_and_metadatas
             .into_iter()
@@ -470,7 +471,7 @@ mod tests {
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
         let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -480,9 +481,9 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_splits()
-            .withf(move |index_id, metadata| -> bool {
+            .withf(move |index_uid, metadata| -> bool {
                 let metadata = &metadata[0];
-                (index_id == "test-index")
+                index_uid.index_id() == "test-index"
                     && metadata.split_id() == "test-split"
                     && metadata.time_range == Some(1628203589..=1628203640)
             })
@@ -548,14 +549,14 @@ mod tests {
             SequencerCommand::Proceed(publisher_message) => publisher_message,
         };
         let SplitsUpdate {
-            index_id,
+            index_uid,
             new_splits,
             checkpoint_delta_opt,
             replaced_split_ids,
             ..
         } = publisher_message;
 
-        assert_eq!(index_id, "test-index");
+        assert_eq!(index_uid.index_id(), "test-index");
         assert_eq!(new_splits.len(), 1);
         assert_eq!(new_splits[0].split_id(), "test-split");
         let checkpoint_delta = checkpoint_delta_opt.unwrap();
@@ -575,7 +576,7 @@ mod tests {
     #[tokio::test]
     async fn test_uploader_with_sequencer_emits_replace() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -586,13 +587,13 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_splits()
-            .withf(move |index_id, metadata_list| -> bool {
+            .withf(move |index_uid, metadata_list| -> bool {
                 let is_metadata_valid = metadata_list.iter().all(|metadata| {
                     vec!["test-split-1", "test-split-2"].contains(&metadata.split_id())
                         && metadata.time_range == Some(1628203589..=1628203640)
                 });
 
-                (index_id == "test-index") && is_metadata_valid
+                index_uid.index_id() == "test-index" && is_metadata_valid
             })
             .times(1)
             .returning(|_, _| Ok(()));
@@ -680,13 +681,13 @@ mod tests {
             SequencerCommand::Proceed(publisher_message) => publisher_message,
         };
         let SplitsUpdate {
-            index_id,
+            index_uid,
             new_splits,
             mut replaced_split_ids,
             checkpoint_delta_opt,
             ..
         } = publisher_message;
-        assert_eq!(&index_id, "test-index");
+        assert_eq!(index_uid.index_id(), "test-index");
         // Sort first to avoid test failing.
         replaced_split_ids.sort();
         assert_eq!(new_splits.len(), 2);
@@ -717,7 +718,7 @@ mod tests {
     #[tokio::test]
     async fn test_uploader_without_sequencer() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index-no-sequencer".to_string(),
+            index_uid: IndexUid::new("test-index-no-sequencer"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -727,7 +728,9 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_splits()
-            .withf(move |index_id, _| -> bool { index_id == "test-index-no-sequencer" })
+            .withf(move |index_uid, _| -> bool {
+                index_uid.index_id() == "test-index-no-sequencer"
+            })
             .times(1)
             .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
@@ -776,13 +779,13 @@ mod tests {
             ObservationType::Alive
         );
         let SplitsUpdate {
-            index_id,
+            index_uid,
             new_splits,
             replaced_split_ids,
             ..
         } = publisher_inbox.recv_typed_message().await.unwrap();
 
-        assert_eq!(index_id, "test-index-no-sequencer");
+        assert_eq!(index_uid.index_id(), "test-index-no-sequencer");
         assert_eq!(new_splits.len(), 1);
         assert!(replaced_split_ids.is_empty());
         universe.assert_quit().await;
@@ -813,7 +816,7 @@ mod tests {
         };
         uploader_mailbox
             .send_message(EmptySplit {
-                index_id: "test-index".to_string(),
+                index_uid: IndexUid::new("test-index"),
                 batch_parent_span: Span::none(),
                 checkpoint_delta,
                 publish_lock: PublishLock::default(),
@@ -835,14 +838,14 @@ mod tests {
             SequencerCommand::Proceed(publisher_message) => publisher_message,
         };
         let SplitsUpdate {
-            index_id,
+            index_uid,
             new_splits,
             checkpoint_delta_opt,
             replaced_split_ids,
             ..
         } = publisher_message;
 
-        assert_eq!(index_id, "test-index");
+        assert_eq!(index_uid.index_id(), "test-index");
         assert_eq!(new_splits.len(), 0);
         let checkpoint_delta = checkpoint_delta_opt.unwrap();
         assert_eq!(checkpoint_delta.source_id, "test-source");

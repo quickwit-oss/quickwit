@@ -19,7 +19,7 @@
 
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::io::{self, ErrorKind, SeekFrom};
+use std::io::{self, SeekFrom};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
@@ -29,7 +29,8 @@ use rusoto_core::ByteStream;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
-use crate::{BundleStorageFileOffsets, PutPayload};
+use crate::bundle_storage::BundleStorageFileOffsetsVersions;
+use crate::{BundleStorageFileOffsets, PutPayload, VersionedComponent};
 
 /// Payload of a split which builds the split bundle and hotcache on the fly and streams it to the
 /// storage.
@@ -109,7 +110,10 @@ pub struct SplitPayloadBuilder {
 
 impl SplitPayloadBuilder {
     /// Creates a new SplitPayloadBuilder for given files and hotcache.
-    pub fn get_split_payload(split_files: &[PathBuf], hotcache: &[u8]) -> io::Result<SplitPayload> {
+    pub fn get_split_payload(
+        split_files: &[PathBuf],
+        hotcache: &[u8],
+    ) -> anyhow::Result<SplitPayload> {
         let mut split_payload_builder = SplitPayloadBuilder::default();
         for file in split_files {
             split_payload_builder.add_file(file)?;
@@ -132,7 +136,7 @@ impl SplitPayloadBuilder {
 
     /// Writes the bundle file offsets metadata at the end of the bundle file,
     /// and returns the byte-range of this metadata information.
-    pub fn finalize(self, hotcache: &[u8]) -> io::Result<SplitPayload> {
+    pub fn finalize(self, hotcache: &[u8]) -> anyhow::Result<SplitPayload> {
         // Build the footer.
         let mut footer_bytes = Vec::new();
         // Fix paths to be relative
@@ -141,25 +145,24 @@ impl SplitPayloadBuilder {
             .files
             .iter()
             .map(|(path, range)| {
-                let file_name = PathBuf::from(path.file_name().ok_or_else(|| {
-                    io::Error::new(
-                        ErrorKind::InvalidInput,
-                        format!("could not extract file_name from path {path:?}"),
-                    )
-                })?);
+                let file_name = path.file_name().ok_or_else(|| {
+                    anyhow::anyhow!("could not extract file_name from path {path:?}")
+                })?;
+                let file_name = PathBuf::from(file_name);
                 Ok((file_name, range.start..range.end))
             })
-            .collect::<Result<HashMap<_, _>, io::Error>>()?;
+            .collect::<Result<HashMap<_, _>, anyhow::Error>>()?;
 
-        let metadata_json = serde_json::to_string(&BundleStorageFileOffsets {
+        let bundle_storage_file_offsets = BundleStorageFileOffsets {
             files: metadata_with_fixed_paths,
-        })?;
+        };
+        let metadata_json =
+            BundleStorageFileOffsetsVersions::serialize(&bundle_storage_file_offsets);
 
-        footer_bytes.extend(metadata_json.as_bytes());
-        let metadata_json_len = metadata_json.len() as u64;
-        footer_bytes.extend(metadata_json_len.to_le_bytes());
+        footer_bytes.extend(&metadata_json);
+        footer_bytes.extend((metadata_json.len() as u32).to_le_bytes());
         footer_bytes.extend(hotcache);
-        footer_bytes.extend(hotcache.len().to_le_bytes());
+        footer_bytes.extend((hotcache.len() as u32).to_le_bytes());
 
         let mut payloads: Vec<Box<dyn PutPayload>> = Vec::new();
 
@@ -390,7 +393,7 @@ mod tests {
         // border 3 case skip and take in separate blocks with full block between
         assert_eq!(
             fetch_data(&split_streamer, 1..6).await?,
-            vec![76, 99, 55, 44, 123]
+            vec![76, 99, 55, 44, 174]
         );
 
         // border case 4 exact middle block
@@ -405,19 +408,19 @@ mod tests {
         // border case 7 start exact last block - footer
         assert_eq!(
             fetch_data(&split_streamer, 5..10).await?,
-            vec![123, 34, 102, 105, 108]
+            vec![174, 190, 18, 24, 1]
         );
         // border case 8 skip and take in last block  - footer
         assert_eq!(
             fetch_data(&split_streamer, 6..10).await?,
-            vec![34, 102, 105, 108]
+            vec![190, 18, 24, 1]
         );
 
         let total_len = split_streamer.len();
         let all_data = fetch_data(&split_streamer, 0..total_len).await?;
 
         // last 8 bytes are the length of the hotcache bytes
-        assert_eq!(all_data[all_data.len() - 8..], 3_u64.to_le_bytes());
+        assert_eq!(all_data[all_data.len() - 4..], 3_u32.to_le_bytes());
         Ok(())
     }
 }

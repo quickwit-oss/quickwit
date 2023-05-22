@@ -55,7 +55,7 @@ impl RetryPolicy<LeafSearchRequest, LeafSearchResponse, SearchError> for LeafSea
 #[cfg(test)]
 mod tests {
     use quickwit_proto::{
-        LeafSearchRequest, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
+        qast_helper, LeafSearchRequest, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
         SplitSearchError,
     };
 
@@ -67,12 +67,8 @@ mod tests {
         LeafSearchRequest {
             search_request: Some(SearchRequest {
                 index_id: "test-idx".to_string(),
-                query: "test".to_string(),
-                search_fields: vec!["body".to_string()],
-                start_timestamp: None,
-                end_timestamp: None,
+                query_ast: qast_helper("test", &["body"]),
                 max_hits: 10,
-                start_offset: 0,
                 ..Default::default()
             }),
             doc_mapper: "doc_mapper".to_string(),
@@ -82,11 +78,15 @@ mod tests {
                     split_id: "split_1".to_string(),
                     split_footer_end: 100,
                     split_footer_start: 0,
+                    timestamp_start: None,
+                    timestamp_end: None,
                 },
                 SplitIdAndFooterOffsets {
                     split_id: "split_2".to_string(),
                     split_footer_end: 100,
                     split_footer_start: 0,
+                    timestamp_start: None,
+                    timestamp_end: None,
                 },
             ],
         }

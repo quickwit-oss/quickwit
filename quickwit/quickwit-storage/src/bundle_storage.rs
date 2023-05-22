@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
+use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_common::chunk_range;
 use quickwit_common::uri::Uri;
@@ -36,7 +37,7 @@ use tokio::io::AsyncWriteExt;
 use tracing::error;
 
 use crate::storage::{BulkDeleteError, SendableAsync};
-use crate::{OwnedBytes, Storage, StorageError, StorageResult};
+use crate::{OwnedBytes, Storage, StorageError, StorageResult, VersionedComponent};
 
 /// BundleStorage bundles together multiple files into a single file.
 /// with some metadata
@@ -57,7 +58,7 @@ impl BundleStorage {
         storage: Arc<dyn Storage>,
         bundle_filepath: PathBuf,
         split_data: OwnedBytes,
-    ) -> io::Result<(FileSlice, Self)> {
+    ) -> anyhow::Result<(FileSlice, Self)> {
         Self::open_from_split_data(
             storage,
             bundle_filepath,
@@ -74,7 +75,7 @@ impl BundleStorage {
         storage: Arc<dyn Storage>,
         bundle_filepath: PathBuf,
         split_data: FileSlice,
-    ) -> io::Result<(FileSlice, Self)> {
+    ) -> anyhow::Result<(FileSlice, Self)> {
         let (hotcache, metadata) = BundleStorageFileOffsets::open_from_split_data(split_data)?;
         Ok((
             hotcache,
@@ -100,8 +101,41 @@ pub struct CorruptedData {
     pub error: serde_json::Error,
 }
 
-const SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u64>();
-const BUNDLE_METADATA_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u64>();
+const SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u32>();
+const BUNDLE_METADATA_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u32>();
+
+#[derive(Copy, Clone, Default)]
+#[repr(u32)]
+pub enum BundleStorageFileOffsetsVersions {
+    #[default]
+    V1 = 1,
+}
+
+impl VersionedComponent for BundleStorageFileOffsetsVersions {
+    const MAGIC_NUMBER: u32 = 403_881_646u32;
+
+    type Component = BundleStorageFileOffsets;
+
+    fn to_version_code(self) -> u32 {
+        self as u32
+    }
+
+    fn try_from_version_code_impl(version_code: u32) -> Option<Self> {
+        match version_code {
+            1 => Some(Self::V1),
+            _ => None,
+        }
+    }
+
+    fn serialize_impl(component: &BundleStorageFileOffsets, output: &mut Vec<u8>) {
+        let metadata_json = serde_json::to_string(component).unwrap();
+        output.extend_from_slice(metadata_json.as_bytes());
+    }
+
+    fn deserialize_impl(&self, bytes: &mut OwnedBytes) -> anyhow::Result<Self::Component> {
+        serde_json::from_reader(bytes).context("Deserializing bundle storage file offsets failed")
+    }
+}
 
 /// Returns the file offsets in the file bundle.
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
@@ -115,11 +149,10 @@ impl BundleStorageFileOffsets {
     /// See docs/internals/split-format.md
     /// [Files, FileMetadata, FileMetadata Len, HotCache, HotCache Len]
     /// Returns (Hotcache, Self)
-    fn open_from_split_data(file: FileSlice) -> io::Result<(FileSlice, Self)> {
+    fn open_from_split_data(file: FileSlice) -> anyhow::Result<(FileSlice, Self)> {
         let (bundle_and_hotcache_bytes, hotcache_num_bytes_data) =
             file.split_from_end(SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES);
-
-        let hotcache_num_bytes: u64 = u64::from_le_bytes(
+        let hotcache_num_bytes: u32 = u32::from_le_bytes(
             hotcache_num_bytes_data
                 .read_bytes()?
                 .as_ref()
@@ -134,10 +167,10 @@ impl BundleStorageFileOffsets {
     /// FileSlice needs to end with the bundle (without hotcache from the split at the end).
     /// See docs/internals/split-format.md
     /// [Files, FileMetadata, FileMetadata Len]
-    pub fn open(file: FileSlice) -> io::Result<Self> {
+    pub fn open(file: FileSlice) -> anyhow::Result<Self> {
         let (tantivy_files_data, num_bytes_file_metadata) =
             file.split_from_end(BUNDLE_METADATA_LENGTH_NUM_BYTES);
-        let footer_num_bytes: u64 = u64::from_le_bytes(
+        let footer_num_bytes: u32 = u32::from_le_bytes(
             num_bytes_file_metadata
                 .read_bytes()?
                 .as_slice()
@@ -145,13 +178,10 @@ impl BundleStorageFileOffsets {
                 .unwrap(),
         );
 
-        let bundle_storage_file_offsets_data = tantivy_files_data
+        let mut bundle_storage_file_offsets_data = tantivy_files_data
             .slice_from_end(footer_num_bytes as usize)
             .read_bytes()?;
-        let bundle_storage_file_offsets =
-            serde_json::from_slice(&bundle_storage_file_offsets_data)?;
-
-        Ok(bundle_storage_file_offsets)
+        BundleStorageFileOffsetsVersions::try_read_component(&mut bundle_storage_file_offsets_data)
     }
 
     /// Returns file offsets for given path.

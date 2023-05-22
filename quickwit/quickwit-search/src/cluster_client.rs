@@ -168,17 +168,18 @@ fn merge_leaf_search_results(
                 .append(&mut retry_response.partial_hits);
             let intermediate_aggregation_result = initial_response
                 .intermediate_aggregation_result
-                .map::<crate::Result<_>, _>(|res1_str| {
+                .map::<crate::Result<_>, _>(|res1_bytes| {
                     if let Some(res2_str) = retry_response.intermediate_aggregation_result.as_ref()
                     {
                         let mut res1: IntermediateAggregationResults =
-                            serde_json::from_str(&res1_str)?;
-                        let res2: IntermediateAggregationResults = serde_json::from_str(res2_str)?;
+                            postcard::from_bytes(res1_bytes.as_slice())?;
+                        let res2: IntermediateAggregationResults =
+                            postcard::from_bytes(res2_str.as_slice())?;
                         res1.merge_fruits(res2)?;
-                        let res = serde_json::to_string(&res1)?;
-                        Ok(res)
+                        let serialized = postcard::to_allocvec(&res1)?;
+                        Ok(serialized)
                     } else {
-                        Ok(res1_str)
+                        Ok(res1_bytes)
                     }
                 })
                 .transpose()?;
@@ -232,7 +233,8 @@ mod tests {
 
     use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_proto::{
-        PartialHit, SearchRequest, SearchStreamRequest, SplitIdAndFooterOffsets, SplitSearchError,
+        qast_helper, PartialHit, SearchRequest, SearchStreamRequest, SplitIdAndFooterOffsets,
+        SplitSearchError,
     };
 
     use super::*;
@@ -257,6 +259,8 @@ mod tests {
                 split_id: split_id.to_string(),
                 split_footer_end: 100,
                 split_footer_start: 0,
+                timestamp_start: None,
+                timestamp_end: None,
             }],
             ..Default::default()
         }
@@ -265,12 +269,8 @@ mod tests {
     fn mock_leaf_search_request() -> LeafSearchRequest {
         let search_request = SearchRequest {
             index_id: "test-idx".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
+            query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
-            start_offset: 0,
             ..Default::default()
         };
         LeafSearchRequest {
@@ -282,11 +282,15 @@ mod tests {
                     split_id: "split_1".to_string(),
                     split_footer_start: 0,
                     split_footer_end: 100,
+                    timestamp_start: None,
+                    timestamp_end: None,
                 },
                 SplitIdAndFooterOffsets {
                     split_id: "split_2".to_string(),
                     split_footer_start: 0,
                     split_footer_end: 100,
+                    timestamp_start: None,
+                    timestamp_end: None,
                 },
             ],
         }
@@ -295,8 +299,7 @@ mod tests {
     fn mock_leaf_search_stream_request() -> LeafSearchStreamRequest {
         let search_request = SearchStreamRequest {
             index_id: "test-idx".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
+            query_ast: qast_helper("text", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
@@ -313,11 +316,15 @@ mod tests {
                     split_id: "split_1".to_string(),
                     split_footer_start: 0,
                     split_footer_end: 100,
+                    timestamp_start: None,
+                    timestamp_end: None,
                 },
                 SplitIdAndFooterOffsets {
                     split_id: "split_2".to_string(),
                     split_footer_start: 0,
                     split_footer_end: 100,
+                    timestamp_start: None,
+                    timestamp_end: None,
                 },
             ],
         }

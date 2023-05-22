@@ -34,8 +34,8 @@ pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
 use tracing::warn;
+use vrl::compiler::{CompilationResult, Program, TimeZone};
 use vrl::diagnostic::Formatter;
-use vrl::{CompilationResult, Program, TimeZone};
 
 use crate::TestableForRegression;
 
@@ -79,6 +79,10 @@ pub struct SourceConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "transform")]
     pub transform_config: Option<TransformConfig>,
+
+    // Denotes the input data format.
+    #[serde(default)]
+    pub input_format: SourceInputFormat,
 }
 
 impl SourceConfig {
@@ -119,6 +123,7 @@ impl SourceConfig {
             enabled: true,
             source_params: SourceParams::IngestApi,
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         }
     }
 
@@ -131,6 +136,7 @@ impl SourceConfig {
             enabled: true,
             source_params: SourceParams::IngestCli,
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         }
     }
 
@@ -143,6 +149,7 @@ impl SourceConfig {
             enabled: true,
             source_params,
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         }
     }
 }
@@ -164,12 +171,22 @@ impl TestableForRegression for SourceConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone_opt: None,
             }),
+            input_format: SourceInputFormat::Json,
         }
     }
 
     fn test_equality(&self, other: &Self) {
         assert_eq!(self, other);
     }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceInputFormat {
+    #[default]
+    Json,
+    #[serde(alias = "plain")]
+    PlainText,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -408,16 +425,16 @@ impl TransformConfig {
         let timezone_str = self.timezone_opt.as_deref().unwrap_or("UTC");
         let timezone = TimeZone::parse(timezone_str).with_context(|| {
             format!(
-            "Failed to parse timezone: `{timezone_str}`. Timezone must be a valid name \
+                "Failed to parse timezone: `{timezone_str}`. Timezone must be a valid name \
             in the TZ database: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
-        )
+            )
         })?;
         // Append "\n." to the script to return the entire document and not only the modified
         // fields.
         let vrl_script = self.vrl_script.clone() + "\n.";
         let functions = vrl_stdlib::all();
 
-        let compilation_res = match vrl::compile(&vrl_script, &functions) {
+        let compilation_res = match vrl::compiler::compile(&vrl_script, &functions) {
             Ok(compilation_res) => compilation_res,
             Err(diagnostics) => {
                 let mut formatter = Formatter::new(&vrl_script, diagnostics);
@@ -489,6 +506,7 @@ mod tests {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone_opt: Some("local".to_string()),
             }),
+            input_format: SourceInputFormat::Json,
         };
         assert_eq!(source_config, expected_source_config);
         assert_eq!(source_config.desired_num_pipelines.get(), 2);
@@ -584,6 +602,7 @@ mod tests {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone_opt: Some("local".to_string()),
             }),
+            input_format: SourceInputFormat::Json,
         };
         assert_eq!(source_config, expected_source_config);
         assert_eq!(source_config.desired_num_pipelines.get(), 1);
@@ -594,7 +613,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 0,
                 "max_num_pipelines_per_indexer": 1,
@@ -611,7 +630,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 1,
                 "max_num_pipelines_per_indexer": 0,
@@ -628,7 +647,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 1,
                 "max_num_pipelines_per_indexer": 2,
@@ -643,7 +662,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 2,
                 "max_num_pipelines_per_indexer": 1,
@@ -662,7 +681,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-kafka-source",
                 "desired_num_pipelines": 3,
                 "max_num_pipelines_per_indexer": 3,
@@ -681,7 +700,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-pulsar-source",
                 "desired_num_pipelines": 3,
                 "max_num_pipelines_per_indexer": 3,
@@ -986,6 +1005,7 @@ mod tests {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone_opt: None,
             }),
+            input_format: SourceInputFormat::Json,
         };
         assert_eq!(source_config, expected_source_config);
         assert_eq!(source_config.desired_num_pipelines.get(), 1);
@@ -1086,5 +1106,22 @@ mod tests {
             let error = transform_config.compile_vrl_script().unwrap_err();
             assert!(error.to_string().starts_with("Failed to compile"));
         }
+    }
+
+    #[tokio::test]
+    async fn test_source_config_plain_text_input_format() {
+        let file_content = r#"{
+            "version": "0.6",
+            "source_id": "logs-file-source",
+            "desired_num_pipelines": 1,
+            "max_num_pipelines_per_indexer": 1,
+            "source_type": "file",
+            "params": {"filepath": "/test_non_json_corpus.txt"},
+            "input_format": "plain_text"
+        }"#;
+        let source_config =
+            load_source_config_from_user_config(ConfigFormat::Json, file_content.as_bytes())
+                .unwrap();
+        assert_eq!(source_config.input_format, SourceInputFormat::PlainText);
     }
 }

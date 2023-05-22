@@ -50,9 +50,11 @@ mod prefix_storage;
 mod ram_storage;
 mod split;
 mod storage_resolver;
+mod versioned_component;
 
 use quickwit_common::uri::Uri;
 pub use tantivy::directory::OwnedBytes;
+pub use versioned_component::VersionedComponent;
 
 pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]

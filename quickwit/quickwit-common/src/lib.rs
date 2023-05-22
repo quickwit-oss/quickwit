@@ -34,7 +34,9 @@ pub mod pubsub;
 pub mod rand;
 pub mod rendezvous_hasher;
 pub mod runtimes;
-pub mod simple_list;
+pub mod sorted_iter;
+
+pub mod stream_utils;
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;
 pub mod tower;
@@ -53,6 +55,7 @@ pub use coolid::new_coolid;
 pub use file_entry::FileEntry;
 pub use kill_switch::KillSwitch;
 pub use progress::{Progress, ProtectedZoneGuard};
+pub use stream_utils::{BoxStream, ServiceStream};
 use tracing::{error, info};
 
 pub fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {

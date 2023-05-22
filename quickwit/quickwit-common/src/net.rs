@@ -17,7 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::ffi::OsString;
 use std::fmt::Display;
+use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 use std::str::FromStr;
 
@@ -222,6 +224,7 @@ pub fn find_private_ip() -> Option<(String, IpAddr)> {
     _find_private_ip(&datalink::interfaces())
 }
 
+// Inner function for testing purposes.
 fn _find_private_ip(interfaces: &[NetworkInterface]) -> Option<(String, IpAddr)> {
     // The way we do this is the following:
     // 1. List the network interfaces
@@ -319,7 +322,32 @@ fn is_private_ip(ip_addr: &IpAddr) -> bool {
         .any(|network| network.contains(*ip_addr))
 }
 
-/// Returns whether a hostname is valid according to [IETF RFC 1123](https://tools.ietf.org/html/rfc1123).
+pub fn get_hostname() -> io::Result<String> {
+    _get_hostname(hostname::get()?)
+}
+
+// Inner function for testing purposes.
+fn _get_hostname(hostname: OsString) -> io::Result<String> {
+    let hostname_lossy = hostname.to_string_lossy();
+    if is_valid_hostname(&hostname_lossy) {
+        Ok(hostname_lossy.to_string())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Invalid hostname: `{}`.", hostname_lossy),
+        ))
+    }
+}
+
+pub fn get_short_hostname() -> io::Result<String> {
+    Ok(get_hostname()?
+        .split('.')
+        .next()
+        .expect("Split should never fail.")
+        .to_string())
+}
+
+/// Returns whether a hostname is valid according to [RFC 1123](https://www.rfc-editor.org/rfc/rfc1123).
 ///
 /// A hostname is valid if the following conditions are met:
 ///
@@ -330,7 +358,7 @@ fn is_private_ip(ip_addr: &IpAddr) -> bool {
 /// - Its labels (characters separated by `.`) are not empty.
 /// - Its labels are 63 or fewer characters.
 /// - Its labels do not start or end with '-' or '.'.
-fn is_valid_hostname(hostname: &str) -> bool {
+pub fn is_valid_hostname(hostname: &str) -> bool {
     if hostname.is_empty() || hostname.len() > 253 {
         return false;
     }
@@ -562,5 +590,14 @@ mod tests {
                 "IP `{ip}` is public!"
             );
         }
+    }
+
+    #[test]
+    fn test_get_hostname() {
+        assert_eq!(
+            get_hostname().unwrap(),
+            hostname::get().unwrap().to_string_lossy().to_string()
+        );
+        _get_hostname(OsString::from("")).unwrap_err();
     }
 }

@@ -24,6 +24,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig, TestableForRegression};
+use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use serialize::VersionedIndexMetadata;
 use time::OffsetDateTime;
@@ -38,6 +39,8 @@ use crate::{MetastoreError, MetastoreResult};
 #[serde(into = "VersionedIndexMetadata")]
 #[serde(try_from = "VersionedIndexMetadata")]
 pub struct IndexMetadata {
+    /// Index incarnation id
+    pub index_uid: IndexUid,
     /// Index configuration
     pub index_config: IndexConfig,
     /// Per-source map of checkpoint for the given index.
@@ -52,6 +55,7 @@ impl IndexMetadata {
     /// Panics if `index_config` is missing `index_uri`.
     pub fn new(index_config: IndexConfig) -> Self {
         IndexMetadata {
+            index_uid: IndexUid::new(index_config.index_id.clone()),
             index_config,
             checkpoint: Default::default(),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
@@ -139,6 +143,7 @@ impl TestableForRegression for IndexMetadata {
         let checkpoint = IndexCheckpoint::from(per_source_checkpoint);
         let index_config = IndexConfig::sample_for_regression();
         let mut index_metadata = IndexMetadata {
+            index_uid: IndexUid::from_parts("test", "1111111111111"),
             index_config,
             checkpoint,
             create_timestamp: 1789,
