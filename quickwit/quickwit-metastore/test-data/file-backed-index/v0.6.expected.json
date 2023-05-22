@@ -4,7 +4,7 @@
       "create_timestamp": 0,
       "delete_query": {
         "index_uid": "index:1111111111111",
-        "query_ast": "{\"type\":\"Bool\",\"must\":[{\"type\":\"Phrase\",\"field\":\"body\",\"phrase\":\"Harry\"},{\"type\":\"Phrase\",\"field\":\"body\",\"phrase\":\"Potter\"}]}"
+        "query_ast": "{\"type\":\"bool\",\"must\":[{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Harry\",\"params\":{\"mode\":{\"type\":\"phrase\"}}},{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Potter\",\"params\":{\"mode\":{\"type\":\"phrase\"}}}]}"
       },
       "opstamp": 10
     }

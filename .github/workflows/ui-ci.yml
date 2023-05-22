@@ -26,8 +26,7 @@ jobs:
               CI=false yarn --cwd quickwit-ui build
               cargo build --features=postgres
               mkdir qwdata
-              # Workaround for possible rust regression - https://github.com/quickwit-oss/quickwit/issues/3346
-              target/debug/quickwit run --service searcher --service metastore --config ../config/quickwit.yaml &
+              cargo run --features=postgres -- run --service searcher --service metastore --config ../config/quickwit.yaml &
               yarn --cwd quickwit-ui cypress run
           - name: Lint
             command: yarn --cwd quickwit-ui lint
