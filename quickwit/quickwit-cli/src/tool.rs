@@ -201,10 +201,9 @@ impl ToolCliCommand {
 
         let input_format = matches
             .remove_one::<String>("input-format")
-            .map(|e| SourceInputFormat::from_str)
-            .expect("`input-format` should have a default value.");
-            //.map_err(|err| anyhow::anyhow!(err))?;
-
+            .map(|input_format| SourceInputFormat::from_str(&input_format))
+            .expect("`input-format` should have a default value.")
+            .map_err(|err| anyhow::anyhow!(err))?;
         let overwrite = matches.get_flag("overwrite");
         let vrl_script = matches.remove_one::<String>("transform-script");
         let clear_cache = !matches.get_flag("keep-cache");
