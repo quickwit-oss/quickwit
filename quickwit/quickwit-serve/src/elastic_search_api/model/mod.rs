@@ -20,11 +20,15 @@
 mod bulk_body;
 mod bulk_query_params;
 mod error;
+mod multi_search;
 mod search_body;
 mod search_query_params;
 
 pub use bulk_body::{BulkAction, BulkActionMeta};
 pub use bulk_query_params::{ElasticIngestOptions, ElasticRefresh};
 pub use error::ElasticSearchError;
+pub use multi_search::{
+    MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,
+};
 pub use search_body::SearchBody;
 pub use search_query_params::SearchQueryParams;

@@ -66,7 +66,7 @@ First, let's create a new index. Here is the index config and doc mapping corres
 #
 # Index config file for Stack Overflow dataset.
 #
-version: 0.5
+version: 0.6
 
 index_id: stackoverflow
 
@@ -133,7 +133,7 @@ A Pulsar source just needs to define the list of topics and the instance address
 #
 # Pulsar source config file.
 #
-version: 0.5
+version: 0.6
 source_id: pulsar-source
 source_type: pulsar
 params:

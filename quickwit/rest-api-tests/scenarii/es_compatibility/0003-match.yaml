@@ -1,26 +1,73 @@
-# match not supported yet.
-engines: ["elasticsearch"]
 method: [GET, POST]
 json:
   query:
     match:
+      type:
+        query:  PushEvent
+expected:
+  hits:
+    total:
+      value: 60
+---
+method: [GET, POST]
+json:
+  query:
+    match:
+      # It is strangely possible to supply the
+      # query directly as a string.
       type: PushEvent
 expected:
   hits:
     total:
       value: 60
 ---
-engines: ["elasticsearch"]
 method: [GET, POST]
-params:
-  size: 2
 json:
   query:
     match:
-      type: PushEvent
+      type: "," # this will result in a zero-ter query
 expected:
   hits:
     total:
-      value: 60
-    hits:
-      $expect: "len(val) == 2"
+      value: 0
+---
+method: [GET, POST]
+json:
+  query:
+    match:
+      type:
+        query: ", " # this will result in a zero term query.
+        zero_terms_query: all
+expected:
+  hits:
+    total:
+      value: 100
+---
+method: [GET, POST]
+json:
+  query:
+    match:
+      payload.commits.message:
+        query: "intial commit" # by default this is a disjunction
+expected:
+  hits:
+    total:
+      value: 6
+---
+method: [GET, POST]
+json:
+  query:
+    match:
+      payload.commits.message:
+        query: "intial commit" # by default this is a disjunction
+        operator: AND
+expected:
+  hits:
+    total:
+      value: 1
+
+
+
+
+
+

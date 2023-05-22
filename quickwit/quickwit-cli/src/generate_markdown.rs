@@ -19,29 +19,27 @@
 
 use clap::Command;
 use quickwit_cli::cli::build_cli;
-use quickwit_serve::quickwit_build_info;
+use quickwit_serve::BuildInfo;
 use toml::Value;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let build_info = quickwit_build_info();
+    let build_info = BuildInfo::get();
     let version_text = format!(
         "{} ({} {})",
         build_info.cargo_pkg_version, build_info.cargo_pkg_version, build_info.commit_date,
     );
-
     let app = build_cli()
         .version(version_text.as_str())
         .disable_help_subcommand(true);
 
     generate_markdown_from_clap(&app);
-
     Ok(())
 }
 
 fn markdown_for_command(command: &Command, doc_extensions: &toml::Value) {
     let command_name = command.get_name();
-    let command_ext: Option<&Value> = doc_extensions.get(command_name.to_owned());
+    let command_ext: Option<&Value> = doc_extensions.get(command_name.to_string());
     markdown_for_command_helper(command, command_ext, command_name.to_string(), Vec::new());
 }
 
@@ -56,11 +54,11 @@ fn markdown_for_subcommand(
     println!("### {command_name}\n");
 
     let subcommand_ext: Option<&Value> = {
-        let mut val_opt: Option<&Value> = doc_extensions.get(command_group[0].to_owned());
+        let mut val_opt: Option<&Value> = doc_extensions.get(command_group[0].to_string());
         for command in command_group
             .iter()
             .skip(1)
-            .chain(&[subcommand_name.to_owned()])
+            .chain(&[subcommand_name.to_string()])
         {
             if let Some(val) = val_opt {
                 val_opt = val.get(command);

@@ -338,9 +338,9 @@ mod tests {
     use tantivy::schema::{Schema, FAST, STORED, TEXT};
 
     use super::RangeQuery;
-    use crate::query_ast::tantivy_query_ast::{MatchAllOrNone, TantivyBoolQuery};
+    use crate::query_ast::tantivy_query_ast::TantivyBoolQuery;
     use crate::query_ast::BuildTantivyAst;
-    use crate::{InvalidQuery, JsonLiteral};
+    use crate::{InvalidQuery, JsonLiteral, MatchAllOrNone};
 
     fn make_schema(dynamic_mode: bool) -> Schema {
         let mut schema_builder = Schema::builder();
