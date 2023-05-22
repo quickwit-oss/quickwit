@@ -53,6 +53,8 @@ use crate::{
     STORAGE_METRICS,
 };
 
+/// Semaphore to limit the number of concurent requests to the object store. Some object stores
+/// (R2, SeaweedFs...) return errors when too many concurent requests are emited.
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
     let permit_count =
         std::env::var("QW_S3_MAX_CONCURRENCY").unwrap_or_else(|_| "10000".to_string());
