@@ -63,7 +63,7 @@ pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
 /// Regular expression representing a valid duration with unit.
 pub const DURATION_WITH_UNIT_PATTERN: &str = r#"^(\d{1,3})(s|m|h|d)$"#;
 
-fn config_cli_arg<'a>() -> Arg<'a> {
+fn config_cli_arg() -> Arg {
     Arg::new("config")
         .long("config")
         .help("Config file location")
@@ -73,7 +73,7 @@ fn config_cli_arg<'a>() -> Arg<'a> {
         .display_order(1)
 }
 
-fn cluster_endpoint_arg<'a>() -> Arg<'a> {
+fn cluster_endpoint_arg() -> Arg {
     arg!(--"endpoint" <QW_CLUSTER_ENDPOINT> "Quickwit cluster endpoint.")
         .default_value("http://127.0.0.1:7280")
         .env("QW_CLUSTER_ENDPOINT")
