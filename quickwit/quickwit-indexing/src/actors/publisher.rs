@@ -112,7 +112,7 @@ impl Handler<SplitsUpdate> for Publisher {
         fail_point!("publisher:before");
 
         let SplitsUpdate {
-            index_id,
+            index_uid,
             new_splits,
             replaced_split_ids,
             checkpoint_delta_opt,
@@ -128,7 +128,7 @@ impl Handler<SplitsUpdate> for Publisher {
 
         if let Some(_guard) = publish_lock.acquire().await {
             ctx.protect_future(self.metastore.publish_splits(
-                &index_id,
+                index_uid,
                 &split_ids[..],
                 &replaced_split_ids_ref_vec,
                 checkpoint_delta_opt.clone(),
@@ -192,6 +192,7 @@ mod tests {
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
     use quickwit_metastore::{MockMetastore, SplitMetadata};
+    use quickwit_proto::IndexUid;
     use tracing::Span;
 
     use super::*;
@@ -204,9 +205,9 @@ mod tests {
         mock_metastore
             .expect_publish_splits()
             .withf(
-                |index_id, split_ids, replaced_split_ids, checkpoint_delta_opt| {
+                |index_uid, split_ids, replaced_split_ids, checkpoint_delta_opt| {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_id == "index"
+                    index_uid.to_string() == "index:1111111111111"
                         && checkpoint_delta.source_id == "source"
                         && split_ids[..] == ["split"]
                         && replaced_split_ids.is_empty()
@@ -229,7 +230,7 @@ mod tests {
 
         assert!(publisher_mailbox
             .send_message(SplitsUpdate {
-                index_id: "index".to_string(),
+                index_uid: "index:1111111111111".to_string().into(),
                 new_splits: vec![SplitMetadata {
                     split_id: "split".to_string(),
                     ..Default::default()
@@ -276,9 +277,9 @@ mod tests {
         mock_metastore
             .expect_publish_splits()
             .withf(
-                |index_id, split_ids, replaced_split_ids, checkpoint_delta_opt| {
+                |index_uid, split_ids, replaced_split_ids, checkpoint_delta_opt| {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_id == "index"
+                    index_uid.to_string() == "index:1111111111111"
                         && checkpoint_delta.source_id == "source"
                         && split_ids.is_empty()
                         && replaced_split_ids.is_empty()
@@ -301,7 +302,7 @@ mod tests {
 
         assert!(publisher_mailbox
             .send_message(SplitsUpdate {
-                index_id: "index".to_string(),
+                index_uid: "index:1111111111111".to_string().into(),
                 new_splits: Vec::new(),
                 replaced_split_ids: Vec::new(),
                 checkpoint_delta_opt: Some(IndexCheckpointDelta {
@@ -346,8 +347,8 @@ mod tests {
         mock_metastore
             .expect_publish_splits()
             .withf(
-                |index_id, new_split_ids, replaced_split_ids, checkpoint_delta_opt| {
-                    index_id == "index"
+                |index_uid, new_split_ids, replaced_split_ids, checkpoint_delta_opt| {
+                    index_uid.to_string() == "index:1111111111111"
                         && new_split_ids[..] == ["split3"]
                         && replaced_split_ids[..] == ["split1", "split2"]
                         && checkpoint_delta_opt.is_none()
@@ -364,7 +365,7 @@ mod tests {
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
         let publisher_message = SplitsUpdate {
-            index_id: "index".to_string(),
+            index_uid: "index:1111111111111".to_string().into(),
             new_splits: vec![SplitMetadata {
                 split_id: "split3".to_string(),
                 ..Default::default()
@@ -408,7 +409,7 @@ mod tests {
 
         publisher_mailbox
             .send_message(SplitsUpdate {
-                index_id: "test-index".to_string(),
+                index_uid: IndexUid::new("index"),
                 new_splits: vec![SplitMetadata::for_test("test-split".to_string())],
                 replaced_split_ids: Vec::new(),
                 checkpoint_delta_opt: None,

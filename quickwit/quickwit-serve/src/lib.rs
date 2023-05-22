@@ -24,7 +24,9 @@ mod metrics;
 
 mod grpc;
 mod rest;
+pub(crate) mod simple_list;
 
+mod build_info;
 mod cluster_api;
 mod delete_task_api;
 mod elastic_search_api;
@@ -32,17 +34,17 @@ mod health_check_api;
 mod index_api;
 mod indexing_api;
 mod ingest_api;
+mod json_api_response;
 mod node_info_handler;
 mod openapi;
 mod search_api;
 #[cfg(test)]
-mod test_utils;
-#[cfg(test)]
 mod tests;
 mod ui_handler;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,19 +52,19 @@ use std::time::Duration;
 use anyhow::anyhow;
 use byte_unit::n_mib_bytes;
 use format::BodyFormat;
+use futures::StreamExt;
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
-use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::{Cluster, ClusterMember};
+use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
+use quickwit_cluster::{Cluster, ClusterChange, ClusterMember};
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::tower::{
-    BufferLayer, ConstantRate, EstimateRateLayer, Rate, RateLimitLayer, SmaRateEstimator,
+    BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
+    Rate, RateLimitLayer, SmaRateEstimator,
 };
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, QuickwitConfig};
 use quickwit_control_plane::{start_control_plane_service, ControlPlaneServiceClient};
 use quickwit_core::{IndexService, IndexServiceError};
-use quickwit_grpc_clients::create_balance_channel_from_watched_members;
 use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
@@ -77,11 +79,12 @@ use quickwit_metastore::{
 use quickwit_opentelemetry::otlp::{OTEL_LOGS_INDEX_CONFIG, OTEL_TRACE_INDEX_CONFIG};
 use quickwit_search::{start_searcher_service, SearchJobPlacer, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
-use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
 use tower::ServiceBuilder;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
+pub use crate::build_info::{BuildInfo, RuntimeInfo};
 pub use crate::index_api::ListSplitsQueryParams;
 pub use crate::metrics::SERVE_METRICS;
 #[cfg(test)]
@@ -96,8 +99,7 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 
 struct QuickwitServices {
     pub config: Arc<QuickwitConfig>,
-    pub build_info: &'static QuickwitBuildInfo,
-    pub cluster: Arc<Cluster>,
+    pub cluster: Cluster,
     pub metastore: Arc<dyn Metastore>,
     pub control_plane_service: Option<ControlPlaneServiceClient>,
     /// The control plane listens to metastore events.
@@ -123,7 +125,29 @@ fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
     })
 }
 
-pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
+async fn balance_channel_for_service(
+    cluster: &Cluster,
+    service: QuickwitService,
+) -> BalanceChannel<SocketAddr> {
+    let cluster_change_stream = cluster.ready_nodes_change_stream().await;
+    let service_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
+        Box::pin(async move {
+            match cluster_change {
+                ClusterChange::Add(node) if node.enabled_services().contains(&service) => {
+                    Some(Change::Insert(node.grpc_advertise_addr(), node.channel()))
+                }
+                ClusterChange::Remove(node) => Some(Change::Remove(node.grpc_advertise_addr())),
+                _ => None,
+            }
+        })
+    });
+    BalanceChannel::from_stream(service_change_stream)
+}
+
+pub async fn serve_quickwit(
+    config: QuickwitConfig,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
     let universe = Universe::new();
     let event_broker = EventBroker::default();
     let storage_resolver = quickwit_storage_uri_resolver().clone();
@@ -146,7 +170,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     } else {
         // Wait 10 seconds for nodes running a `Metastore` service.
         cluster
-            .wait_for_members(has_node_with_metastore_service, Duration::from_secs(10))
+            .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(10))
             .await
             .map_err(|_| {
                 error!("No metastore service found among cluster members, stopping server.");
@@ -156,11 +180,10 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
                      run --service metastore`."
                 )
             })?;
-        let grpc_metastore_client = MetastoreGrpcClient::create_and_update_from_members(
-            1,
-            cluster.ready_member_change_watcher(),
-        )
-        .await?;
+        let balance_channel =
+            balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
+        let grpc_metastore_client =
+            MetastoreGrpcClient::from_balance_channel(balance_channel).await?;
         let metastore_client = RetryingMetastore::new(Box::new(grpc_metastore_client));
         Arc::new(metastore_client)
     };
@@ -194,12 +217,9 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         .enabled_services
         .contains(&QuickwitService::Metastore)
     {
-        let (channel, _) = create_balance_channel_from_watched_members(
-            cluster.ready_member_change_watcher(),
-            QuickwitService::ControlPlane,
-        )
-        .await?;
-        Some(ControlPlaneServiceClient::from_channel(channel))
+        let balance_channel =
+            balance_channel_for_service(&cluster, QuickwitService::ControlPlane).await;
+        Some(ControlPlaneServiceClient::from_channel(balance_channel))
     } else {
         None
     };
@@ -262,17 +282,14 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
             .build_from_mailbox(ingest_api_service);
         (ingest_service, Some(indexing_service))
     } else {
-        let (channel, _) = create_balance_channel_from_watched_members(
-            cluster.ready_member_change_watcher(),
-            QuickwitService::Indexer,
-        )
-        .await?;
-        let ingest_service = IngestServiceClient::from_channel(channel);
+        let balance_channel = balance_channel_for_service(&cluster, QuickwitService::Indexer).await;
+        let ingest_service = IngestServiceClient::from_channel(balance_channel);
         (ingest_service, None)
     };
 
+    let ready_members_watcher = cluster.ready_members_watcher().await;
     let search_job_placer = SearchJobPlacer::new(
-        ServiceClientPool::create_and_update_members(cluster.ready_member_change_watcher()).await?,
+        ServiceClientPool::create_and_update_members(ready_members_watcher).await?,
     );
 
     let janitor_service = if config.enabled_services.contains(&QuickwitService::Janitor) {
@@ -300,9 +317,8 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     let grpc_listen_addr = config.grpc_listen_addr;
     let rest_listen_addr = config.rest_listen_addr;
     let services = config.enabled_services.clone();
-    let quickwit_services = QuickwitServices {
+    let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         config: Arc::new(config),
-        build_info: quickwit_build_info(),
         cluster: cluster.clone(),
         metastore: metastore.clone(),
         control_plane_service,
@@ -313,16 +329,81 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         ingest_service,
         index_service,
         services,
-    };
-    let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
-    let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
+    });
+    // Setup and start gRPC server.
+    let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();
+    let grpc_readiness_trigger = Box::pin(async move {
+        if grpc_readiness_trigger_tx.send(()).is_err() {
+            debug!("gRPC server readiness signal receiver was dropped.");
+        }
+    });
+    let (grpc_shutdown_trigger_tx, grpc_shutdown_signal_rx) = oneshot::channel::<()>();
+    let grpc_shutdown_signal = Box::pin(async move {
+        if grpc_shutdown_signal_rx.await.is_err() {
+            debug!("gRPC server shutdown trigger sender was dropped.");
+        }
+    });
+    let grpc_server = grpc::start_grpc_server(
+        grpc_listen_addr,
+        quickwit_services.clone(),
+        grpc_readiness_trigger,
+        grpc_shutdown_signal,
+    );
+    // Setup and start REST server.
+    let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel::<()>();
+    let rest_readiness_trigger = Box::pin(async move {
+        if rest_readiness_trigger_tx.send(()).is_err() {
+            debug!("REST server readiness signal receiver was dropped.");
+        }
+    });
+    let (rest_shutdown_trigger_tx, rest_shutdown_signal_rx) = oneshot::channel::<()>();
+    let rest_shutdown_signal = Box::pin(async move {
+        if rest_shutdown_signal_rx.await.is_err() {
+            debug!("REST server shutdown trigger sender was dropped.");
+        }
+    });
+    let rest_server = rest::start_rest_server(
+        rest_listen_addr,
+        quickwit_services,
+        rest_readiness_trigger,
+        rest_shutdown_signal,
+    );
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
-    tokio::spawn(node_readiness_reporting_task(cluster, metastore));
+    tokio::spawn(node_readiness_reporting_task(
+        cluster,
+        metastore,
+        grpc_readiness_signal_rx,
+        rest_readiness_signal_rx,
+    ));
 
-    tokio::try_join!(grpc_server, rest_server)?;
-    Ok(())
+    let shutdown_handle = tokio::spawn(async move {
+        shutdown_signal.await;
+
+        if grpc_shutdown_trigger_tx.send(()).is_err() {
+            debug!("gRPC server shutdown signal receiver was dropped.");
+        }
+        if rest_shutdown_trigger_tx.send(()).is_err() {
+            debug!("REST server shutdown signal receiver was dropped.");
+        }
+        universe.quit().await
+    });
+
+    let grpc_join_handle = tokio::spawn(grpc_server);
+    let rest_join_handle = tokio::spawn(rest_server);
+
+    let (grpc_res, rest_res) = tokio::try_join!(grpc_join_handle, rest_join_handle)
+        .expect("The tasks running the gRPC and REST servers should not panic or be cancelled.");
+
+    if let Err(grpc_err) = grpc_res {
+        error!("gRPC server failed: {:?}", grpc_err);
+    }
+    if let Err(rest_err) = rest_res {
+        error!("REST server failed: {:?}", rest_err);
+    }
+    let actor_exit_statuses = shutdown_handle.await?;
+    Ok(actor_exit_statuses)
 }
 
 #[derive(Clone)]
@@ -406,21 +487,40 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 }
 
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
-async fn node_readiness_reporting_task(cluster: Arc<Cluster>, metastore: Arc<dyn Metastore>) {
+async fn node_readiness_reporting_task(
+    cluster: Cluster,
+    metastore: Arc<dyn Metastore>,
+    grpc_readiness_signal_rx: oneshot::Receiver<()>,
+    rest_readiness_signal_rx: oneshot::Receiver<()>,
+) {
+    if grpc_readiness_signal_rx.await.is_err() {
+        // the gRPC server failed.
+        return;
+    };
+    info!("gRPC server is ready.");
+
+    if rest_readiness_signal_rx.await.is_err() {
+        // the REST server failed.
+        return;
+    };
+    info!("REST server is ready.");
+
     let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
+
     loop {
         interval.tick().await;
+
         let node_ready = match metastore.check_connectivity().await {
             Ok(()) => {
-                debug!(metastore_uri=?metastore.uri(), "Metastore is available.");
+                debug!(metastore_uri=%metastore.uri(), "Metastore service is available.");
                 true
             }
-            Err(err) => {
-                warn!(metastore_uri=?metastore.uri(), err=?err, "Metastore is not available.");
+            Err(error) => {
+                warn!(metastore_uri=%metastore.uri(), error=?error, "Metastore service is unavailable.");
                 false
             }
         };
-        cluster.set_self_node_ready(node_ready).await;
+        cluster.set_self_node_readiness(node_ready).await;
     }
 }
 
@@ -462,63 +562,4 @@ async fn check_cluster_configuration(
         );
     }
     Ok(())
-}
-
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct QuickwitBuildInfo {
-    pub build_date: &'static str,
-    pub build_profile: &'static str,
-    pub build_target: &'static str,
-    pub cargo_pkg_version: &'static str,
-    pub commit_date: &'static str,
-    pub commit_hash: &'static str,
-    pub commit_short_hash: &'static str,
-    pub commit_tags: Vec<String>,
-    pub version: String,
-}
-
-/// QuickwitBuildInfo from env variables prepopulated by the build script or CI env.
-pub fn quickwit_build_info() -> &'static QuickwitBuildInfo {
-    const UNKNOWN: &str = "unknown";
-
-    static INSTANCE: OnceCell<QuickwitBuildInfo> = OnceCell::new();
-    INSTANCE.get_or_init(|| {
-        let commit_date = option_env!("QW_COMMIT_DATE")
-            .filter(|commit_date| !commit_date.is_empty())
-            .unwrap_or(UNKNOWN);
-        let commit_hash = option_env!("QW_COMMIT_HASH")
-            .filter(|commit_hash| !commit_hash.is_empty())
-            .unwrap_or(UNKNOWN);
-        let commit_short_hash = option_env!("QW_COMMIT_HASH")
-            .filter(|commit_hash| commit_hash.len() >= 7)
-            .map(|commit_hash| &commit_hash[..7])
-            .unwrap_or(UNKNOWN);
-        let commit_tags: Vec<String> = option_env!("QW_COMMIT_TAGS")
-            .map(|tags| {
-                tags.split(',')
-                    .map(|tag| tag.trim().to_string())
-                    .filter(|tag| !tag.is_empty())
-                    .sorted()
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let version = commit_tags
-            .iter()
-            .find(|tag| tag.starts_with('v'))
-            .cloned()
-            .unwrap_or_else(|| concat!(env!("CARGO_PKG_VERSION"), "-nightly").to_string());
-
-        QuickwitBuildInfo {
-            build_date: env!("BUILD_DATE"),
-            build_profile: env!("BUILD_PROFILE"),
-            build_target: env!("BUILD_TARGET"),
-            cargo_pkg_version: env!("CARGO_PKG_VERSION"),
-            commit_date,
-            commit_hash,
-            commit_short_hash,
-            commit_tags,
-            version,
-        }
-    })
 }

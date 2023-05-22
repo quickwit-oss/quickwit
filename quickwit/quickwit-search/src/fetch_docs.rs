@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use anyhow::{Context, Ok};
-use futures::stream::{StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::{FetchDocsResponse, PartialHit, SearchRequest, SplitIdAndFooterOffsets};
@@ -148,6 +148,7 @@ pub async fn fetch_docs(
     Ok(FetchDocsResponse { hits })
 }
 
+// number of concurrent fetch allowed for a single split.
 const NUM_CONCURRENT_REQUESTS: usize = 10;
 
 /// A struct for holding a fetched document's content and snippet.
@@ -190,7 +191,7 @@ async fn fetch_docs_in_split(
         let moved_searcher = searcher.clone();
         let moved_doc_mapper = doc_mapper.clone();
         let fields_snippet_generator_opt_clone = fields_snippet_generator_opt.clone();
-        async move {
+        tokio::spawn(async move {
             let doc = moved_searcher
                 .doc_async(global_doc_addr.doc_addr)
                 .await
@@ -237,11 +238,14 @@ async fn fetch_docs_in_split(
                     snippet_json: Some(snippet_json),
                 },
             ))
-        }
+        })
     });
 
-    let stream = futures::stream::iter(doc_futures).buffer_unordered(NUM_CONCURRENT_REQUESTS);
-    stream.try_collect::<Vec<_>>().await
+    futures::stream::iter(doc_futures)
+        .buffer_unordered(NUM_CONCURRENT_REQUESTS)
+        .map(|res| res?)
+        .try_collect::<Vec<_>>()
+        .await
 }
 
 // A struct to hold the snippet generators associated to
@@ -289,11 +293,13 @@ async fn create_fields_snippet_generator(
     search_request: &SearchRequest,
 ) -> anyhow::Result<FieldsSnippetGenerator> {
     let schema = searcher.schema();
-    let (query, _) = doc_mapper.query(schema.clone(), search_request)?;
+    let query_ast =
+        serde_json::from_str(&search_request.query_ast).context("Invalid query ast Json")?;
+    let (query, _) = doc_mapper.query(schema.clone(), &query_ast, false)?;
     let mut snippet_generators = HashMap::new();
     for field_name in &search_request.snippet_fields {
         let field = schema.get_field(field_name)?;
-        let snippet_generator = create_snippet_generator(searcher, &*query, field).await?;
+        let snippet_generator = create_snippet_generator(searcher, &query, field).await?;
         snippet_generators.insert(field_name.clone(), snippet_generator);
     }
 
@@ -317,7 +323,8 @@ async fn create_snippet_generator(
     });
     let mut terms_text: BTreeMap<String, f32> = BTreeMap::default();
     for term in terms {
-        let Some(term_str) = term.as_str() else {
+        let value = term.value();
+        let Some(term_str) = value.as_str() else {
             continue;
         };
         let doc_freq = searcher.doc_freq_async(term).await?;

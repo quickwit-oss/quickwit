@@ -30,7 +30,7 @@ use futures::StreamExt;
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::{Protocol, Uri};
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tracing::warn;
 
 use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
@@ -209,13 +209,24 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), level = "debug")]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let full_path = self.full_path(path)?;
-        let mut file = fs::File::open(full_path).await?;
-        file.seek(SeekFrom::Start(range.start as u64)).await?;
-        let mut content_bytes: Vec<u8> = vec![0u8; range.len()];
-        file.read_exact(&mut content_bytes).await?;
-        Ok(OwnedBytes::new(content_bytes))
+        tokio::task::spawn_blocking(move || {
+            use std::io::{Read, Seek};
+
+            // we run these io in a spawn_blocking so there is no scheduling delay between each
+            // step, as there would be if using tokio async File.
+            let mut file = std::fs::File::open(full_path)?;
+            file.seek(SeekFrom::Start(range.start as u64))?;
+            let mut content_bytes: Vec<u8> = vec![0u8; range.len()];
+            file.read_exact(&mut content_bytes)?;
+            Ok(OwnedBytes::new(content_bytes))
+        })
+        .await
+        .map_err(|_| {
+            StorageErrorKind::InternalError.with_error(anyhow::anyhow!("reading file panicked"))
+        })?
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
@@ -347,8 +358,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_file_storage() -> anyhow::Result<()> {
-        let tempdir = tempfile::tempdir()?;
-        let uri = Uri::from_str(&format!("{}", tempdir.path().display())).unwrap();
+        let temp_dir = tempfile::tempdir()?;
+        let uri = Uri::from_str(&format!("{}", temp_dir.path().display())).unwrap();
         let mut local_file_storage = LocalFileStorage::from_uri(&uri)?;
         storage_test_suite(&mut local_file_storage).await?;
         Ok(())
@@ -356,8 +367,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_file_storage_forbids_double_dot() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let uri = Uri::from_str(&format!("{}", tempdir.path().display())).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let uri = Uri::from_str(&format!("{}", temp_dir.path().display())).unwrap();
         let local_file_storage = LocalFileStorage::from_uri(&uri).unwrap();
         assert_eq!(
             local_file_storage
@@ -375,9 +386,9 @@ mod tests {
 
     #[test]
     fn test_local_file_storage_factory() -> anyhow::Result<()> {
-        let tempdir = tempfile::tempdir()?;
+        let temp_dir = tempfile::tempdir()?;
         let index_uri =
-            Uri::from_well_formed(format!("file://{}/foo/bar", tempdir.path().display()));
+            Uri::from_well_formed(format!("file://{}/foo/bar", temp_dir.path().display()));
         let local_file_storage_factory = LocalFileStorageFactory::default();
         let local_file_storage = local_file_storage_factory.resolve(&index_uri)?;
         assert_eq!(local_file_storage.uri(), &index_uri);
@@ -398,18 +409,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_file_storage_bulk_delete() {
-        let tempdir = tempfile::tempdir().unwrap();
-        tokio::fs::create_dir(tempdir.path().join("foo-dir"))
+        let temp_dir = tempfile::tempdir().unwrap();
+        tokio::fs::create_dir(temp_dir.path().join("foo-dir"))
             .await
             .unwrap();
-        tokio::fs::create_dir(tempdir.path().join("bar-dir"))
+        tokio::fs::create_dir(temp_dir.path().join("bar-dir"))
             .await
             .unwrap();
-        tokio::fs::File::create(tempdir.path().join("foo-dir/foo"))
+        tokio::fs::File::create(temp_dir.path().join("foo-dir/foo"))
             .await
             .unwrap();
 
-        let uri = Uri::from_str(&format!("{}", tempdir.path().display())).unwrap();
+        let uri = Uri::from_str(&format!("{}", temp_dir.path().display())).unwrap();
         let local_file_storage = LocalFileStorage::from_uri(&uri).unwrap();
         let error = local_file_storage
             .bulk_delete(&[Path::new("foo-dir/foo"), Path::new("bar-dir")])
@@ -420,7 +431,7 @@ mod tests {
         let failure = error.failures.get(Path::new("bar-dir")).unwrap();
         assert_eq!(failure.error.as_ref().unwrap().kind(), StorageErrorKind::Io);
 
-        assert!(!tempdir.path().join("foo-dir").try_exists().unwrap());
+        assert!(!temp_dir.path().join("foo-dir").try_exists().unwrap());
     }
 
     #[tokio::test]

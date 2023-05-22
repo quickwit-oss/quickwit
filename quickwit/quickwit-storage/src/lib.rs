@@ -50,9 +50,11 @@ mod prefix_storage;
 mod ram_storage;
 mod split;
 mod storage_resolver;
+mod versioned_component;
 
 use quickwit_common::uri::Uri;
 pub use tantivy::directory::OwnedBytes;
+pub use versioned_component::VersionedComponent;
 
 pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]
@@ -175,8 +177,8 @@ pub(crate) mod test_suite {
         storage
             .put(test_path, Box::new(payload_bytes.to_vec()))
             .await?;
-        let tempdir = tempfile::tempdir()?;
-        let dest_path = tempdir.path().to_path_buf();
+        let temp_dir = tempfile::tempdir()?;
+        let dest_path = temp_dir.path().to_path_buf();
         let local_copy = dest_path.join("local_copy");
         storage.copy_to_file(test_path, &local_copy).await?;
         let payload = std::fs::read(&local_copy)?;

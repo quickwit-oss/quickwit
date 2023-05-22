@@ -181,16 +181,18 @@ impl ActorRegistry {
         }
     }
 
-    pub async fn quit(&self) -> Vec<ActorExitStatus> {
+    pub async fn quit(&self) -> HashMap<String, ActorExitStatus> {
         let mut obs_futures = Vec::new();
+        let mut actor_ids = Vec::new();
         for registry_for_type in self.actors.read().unwrap().values() {
             for obs in &registry_for_type.observables {
                 let obs_clone = obs.clone();
                 obs_futures.push(async move { obs_clone.quit().await });
+                actor_ids.push(obs.actor_instance_id().to_string());
             }
         }
         let res = future::join_all(obs_futures).await;
-        res.into_iter().collect()
+        actor_ids.into_iter().zip(res).collect()
     }
 
     pub fn is_empty(&self) -> bool {

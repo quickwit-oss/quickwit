@@ -130,8 +130,9 @@ mod tests {
 
     use bytes::Bytes;
     use quickwit_actors::{Actor, Command, Universe};
-    use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::metastore_for_test;
+    use quickwit_proto::IndexUid;
     use serde_json::json;
 
     use super::*;
@@ -153,7 +154,7 @@ mod tests {
         let vec_source = VecSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                "test-index",
+                IndexUid::new("test-index"),
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
@@ -162,6 +163,7 @@ mod tests {
                     enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                     transform_config: None,
+                    input_format: SourceInputFormat::Json,
                 },
             ),
             params,
@@ -212,7 +214,7 @@ mod tests {
         let vec_source = VecSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                "test-index",
+                IndexUid::new("test-index"),
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
@@ -221,6 +223,7 @@ mod tests {
                     enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                     transform_config: None,
+                    input_format: SourceInputFormat::Json,
                 },
             ),
             params,

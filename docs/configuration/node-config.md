@@ -15,14 +15,14 @@ A commented example is accessible here: [quickwit.yaml](https://github.com/quick
 
 | Property | Description | Env variable | Default value |
 | --- | --- | --- | --- |
-| `version` | Config file version. `0.5` is the only available value with a retro compatibility on `0.4`. |  |  |
-| `cluster_id` | Unique Id for the cluster this node will be joining. Should be set to a unique name to ensure clusters do not accidentally merge together. | `QW_CLUSTER_ID` | `quickwit-default-cluster` |
-| `node_id` | Node ID of the instance (searcher or indexer). It must be unique in your cluster. If not set, a random ID is generated at each boot. | `QW_NODE_ID` |  |
-| `enabled_services` | Enabled services (indexer, janitor, metastore, searcher) | `QW_ENABLED_SERVICES` | all services enabled |
+| `version` | Config file version. `0.6` is the only available value with a retro compatibility on `0.5` and `0.4`. |  |  |
+| `cluster_id` | Unique identifier of the cluster the node will be joining. Clusters sharing the same network should use distinct cluster IDs.| `QW_CLUSTER_ID` | `quickwit-default-cluster` |
+| `node_id` | Unique identifier of the node. It must be distinct from the node IDs of its cluster peers. Defaults to the instance's short hostname if not set. | `QW_NODE_ID` | short hostname |
+| `enabled_services` | Enabled services (control_plane, indexer, janitor, metastore, searcher) | `QW_ENABLED_SERVICES` | all services |
 | `listen_address` | The IP address or hostname that Quickwit service binds to for starting REST and GRPC server and connecting this node to other nodes. By default, Quickwit binds itself to 127.0.0.1 (localhost). This default is not valid when trying to form a cluster. | `QW_LISTEN_ADDRESS` | `127.0.0.1` |
 | `advertise_address` | IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs. | `QW_ADVERTISE_ADDRESS` | `listen_address` |
 | `rest_listen_port` | The port which to listen for HTTP REST API. | `QW_REST_LISTEN_PORT` | `7280` |
-| `gossip_listen_addr` | The port which to listen for the Gossip cluster membership service (UDP). | `QW_GOSSIP_LISTEN_PORT` | `rest_listen_port` |
+| `gossip_listen_port` | The port which to listen for the Gossip cluster membership service (UDP). | `QW_GOSSIP_LISTEN_PORT` | `rest_listen_port` |
 | `grpc_listen_port` | The port which to listen for the gRPC service.| `QW_GRPC_LISTEN_PORT` | `rest_listen_port + 1` |
 | `peer_seeds` | List of IP addresses used by gossip for bootstrapping new nodes joining a cluster. This list may contain the current node address, and it does not need to be exhaustive on every node. | `QW_PEER_SEEDS` |  |
 | `data_dir` | Path to directory where data (tmp data, splits kept for caching purpose) is persisted. This is mostly used in indexing. | `QW_DATA_DIR` | `./qwdata` |
@@ -110,7 +110,7 @@ export QW_LISTEN_ADDRESS=0.0.0.0
 
 ```yaml
 # config.yaml
-version: 0.5
+version: 0.6
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: ${QW_LISTEN_ADDRESS}
@@ -120,7 +120,7 @@ rest_listen_port: ${QW_LISTEN_PORT:-1111}
 Will be interpreted by Quickwit as:
 
 ```yaml
-version: 0.5
+version: 0.6
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: 0.0.0.0
@@ -129,13 +129,13 @@ rest_listen_port: 1111
 
 ## Configuring CORS (Cross-origin resource sharing)
 
-CORS (Cross-origin resource sharing) describes what address/origins can access the REST API from the browser, 
+CORS (Cross-origin resource sharing) describes what address/origins can access the REST API from the browser,
 by default no origins are allowed.
 
 A wildcard, single origin or multiple origins can be specified as part of the `rest_cors_allow_origins` parameter:
 
 ```yaml
-version: 0.5
+version: 0.6
 index_id: hdfs
 
 rest_cors_allow_origins: '*'                                 # Allow all origins

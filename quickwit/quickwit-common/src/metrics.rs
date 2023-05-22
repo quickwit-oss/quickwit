@@ -17,21 +17,38 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::{Borrow, Cow};
+
 use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
 pub use prometheus::{
     Histogram, HistogramTimer, HistogramVec as PrometheusHistogramVec, IntCounter,
     IntCounterVec as PrometheusIntCounterVec, IntGauge, IntGaugeVec as PrometheusIntGaugeVec,
 };
 
-#[derive(utoipa::OpenApi)]
-#[openapi(paths(metrics_handler))]
-/// Endpoints which are weirdly tied to another crate with no
-/// other bits of information attached.
-///
-/// If a crate plans to encompass different schemas, handlers, etc...
-/// Then it should have it's own specific API group.
-pub struct MetricsApi;
+pub struct OwnedPrometheusLabels<const N: usize> {
+    labels: [Cow<'static, str>; N],
+}
 
+impl<const N: usize> OwnedPrometheusLabels<N> {
+    pub fn new(labels: [Cow<'static, str>; N]) -> Self {
+        Self { labels }
+    }
+
+    pub fn borrow_labels(&self) -> [&str; N] {
+        let mut labels = [""; N];
+
+        for (i, label) in self.labels.iter().enumerate() {
+            labels[i] = label.borrow();
+        }
+        labels
+    }
+}
+
+pub trait PrometheusLabels<const N: usize> {
+    fn labels(&self) -> OwnedPrometheusLabels<N>;
+}
+
+#[derive(Clone)]
 pub struct HistogramVec<const N: usize> {
     underlying: PrometheusHistogramVec,
 }
@@ -42,6 +59,7 @@ impl<const N: usize> HistogramVec<N> {
     }
 }
 
+#[derive(Clone)]
 pub struct IntCounterVec<const N: usize> {
     underlying: PrometheusIntCounterVec,
 }
@@ -52,6 +70,7 @@ impl<const N: usize> IntCounterVec<N> {
     }
 }
 
+#[derive(Clone)]
 pub struct IntGaugeVec<const N: usize> {
     underlying: PrometheusIntGaugeVec,
 }
@@ -122,6 +141,30 @@ pub fn new_histogram_vec<const N: usize>(
     HistogramVec { underlying }
 }
 
+pub struct GaugeGuard(&'static IntGauge);
+
+impl GaugeGuard {
+    pub fn from_gauge(gauge: &'static IntGauge) -> Self {
+        gauge.inc();
+        Self(gauge)
+    }
+}
+
+impl Drop for GaugeGuard {
+    fn drop(&mut self) {
+        self.0.dec();
+    }
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(metrics_handler))]
+/// Endpoints which are weirdly tied to another crate with no
+/// other bits of information attached.
+///
+/// If a crate plans to encompass different schemas, handlers, etc...
+/// Then it should have it's own specific API group.
+pub struct MetricsApi;
+
 #[utoipa::path(
     get,
     tag = "Get Metrics",
@@ -139,17 +182,4 @@ pub fn metrics_handler() -> impl warp::Reply {
     let encoder = TextEncoder::new();
     let _ = encoder.encode(&metric_families, &mut buffer); // TODO avoid ignoring the error.
     String::from_utf8_lossy(&buffer).to_string()
-}
-
-pub fn create_gauge_guard(gauge: &'static IntGauge) -> GaugeGuard {
-    gauge.inc();
-    GaugeGuard(gauge)
-}
-
-pub struct GaugeGuard(&'static IntGauge);
-
-impl Drop for GaugeGuard {
-    fn drop(&mut self) {
-        self.0.dec();
-    }
 }

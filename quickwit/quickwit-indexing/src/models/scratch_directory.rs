@@ -107,10 +107,10 @@ impl ScratchDirectory {
     /// Creates a new ScratchDirectory in an existing directory.
     /// The directory location will depend on the OS settings.
     pub fn for_test() -> ScratchDirectory {
-        let tempdir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
         let inner = InnerScratchDirectory {
             _parent: None,
-            dir: ScratchDirectoryType::TempDir(tempdir),
+            dir: ScratchDirectoryType::TempDir(temp_dir),
         };
         ScratchDirectory {
             inner: Arc::new(inner),
@@ -120,7 +120,7 @@ impl ScratchDirectory {
     pub fn path(&self) -> &Path {
         match &self.inner.dir {
             ScratchDirectoryType::Path(path) => path,
-            ScratchDirectoryType::TempDir(tempdir) => tempdir.path(),
+            ScratchDirectoryType::TempDir(temp_dir) => temp_dir.path(),
         }
     }
 
@@ -167,8 +167,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_directory() -> anyhow::Result<()> {
-        let tempdir = tempfile::tempdir()?;
-        let tmp_path = tempdir.path();
+        let temp_dir = tempfile::tempdir()?;
+        let tmp_path = temp_dir.path();
         let scratch_directory = ScratchDirectory::create_in_dir(tmp_path).await?;
         let scratch_directory_path = scratch_directory.path().to_path_buf();
 
@@ -179,7 +179,7 @@ mod tests {
         tokio::fs::File::create(&scratch_file_path).await?;
         assert!(scratch_file_path.try_exists()?);
 
-        let _scratch_directory = ScratchDirectory::create_in_dir(tempdir.path()).await?;
+        let _scratch_directory = ScratchDirectory::create_in_dir(temp_dir.path()).await?;
         assert!(!scratch_file_path.try_exists()?);
 
         Ok(())
@@ -222,13 +222,13 @@ mod tests {
 
     #[test]
     fn test_scratch_directory_in_path() -> io::Result<()> {
-        let tempdir = tempfile::tempdir()?;
-        let tempdir_path = tempdir.path().to_path_buf();
-        assert!(tempdir_path.try_exists()?);
+        let temp_dir = tempfile::tempdir()?;
+        let temp_dir_path = temp_dir.path().to_path_buf();
+        assert!(temp_dir_path.try_exists()?);
 
-        let parent = ScratchDirectory::new_in_dir(tempdir_path.clone());
-        assert_eq!(parent.path(), tempdir.path());
-        assert!(tempdir.path().try_exists()?);
+        let parent = ScratchDirectory::new_in_dir(temp_dir_path.clone());
+        assert_eq!(parent.path(), temp_dir.path());
+        assert!(temp_dir.path().try_exists()?);
 
         let child = parent.named_temp_child("child-")?;
         let child_path = child.path().to_path_buf();
@@ -240,8 +240,8 @@ mod tests {
         mem::drop(parent);
         assert!(!child_path.try_exists()?);
 
-        mem::drop(tempdir);
-        assert!(!tempdir_path.try_exists()?);
+        mem::drop(temp_dir);
+        assert!(!temp_dir_path.try_exists()?);
         Ok(())
     }
 }

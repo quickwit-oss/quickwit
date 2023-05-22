@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
 
@@ -120,7 +121,7 @@ impl Universe {
     }
 
     /// Gracefully quits all registered actors.
-    pub async fn quit(&self) -> Vec<ActorExitStatus> {
+    pub async fn quit(&self) -> HashMap<String, ActorExitStatus> {
         self.spawn_ctx.registry.quit().await
     }
 
@@ -132,7 +133,7 @@ impl Universe {
         assert!(!self
             .quit()
             .await
-            .into_iter()
+            .values()
             .any(|status| matches!(status, ActorExitStatus::Panicked)));
     }
 }
@@ -233,7 +234,10 @@ mod tests {
         universe.sleep(Duration::from_secs(200)).await;
         let res = universe.quit().await;
         assert_eq!(res.len(), 1);
-        assert!(matches!(res.first().unwrap(), ActorExitStatus::Quit));
+        assert!(matches!(
+            res.values().next().unwrap(),
+            ActorExitStatus::Quit
+        ));
         assert!(matches!(handler.quit().await, (ActorExitStatus::Quit, 4)));
     }
 
@@ -246,7 +250,7 @@ mod tests {
         assert!(!universe
             .quit()
             .await
-            .into_iter()
+            .values()
             .any(|status| matches!(status, ActorExitStatus::Panicked)));
     }
 
@@ -260,7 +264,7 @@ mod tests {
         assert!(universe
             .quit()
             .await
-            .into_iter()
+            .values()
             .any(|status| matches!(status, ActorExitStatus::Panicked)));
     }
 

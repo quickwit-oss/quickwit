@@ -1,10 +1,10 @@
 [package]
 name = "quickwit-codegen-example"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Provides an example of code generation for a simple service."
+description = "Demonstrates how to set up, configure, and run code generation for a simple service."
 repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
@@ -12,10 +12,13 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 async-trait = { workspace = true }
 dyn-clone = { workspace = true }
+http = { workspace = true }
+hyper = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 utoipa = { workspace = true }

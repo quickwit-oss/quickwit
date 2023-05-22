@@ -26,6 +26,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::TelemetryEvent;
+use tokio::signal;
 use tracing::debug;
 
 use crate::{config_cli_arg, load_quickwit_config, start_actor_runtimes};
@@ -71,6 +72,7 @@ impl RunCliCommand {
     pub async fn execute(&self) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
         let mut config = load_quickwit_config(&self.config_uri).await?;
+        crate::busy_detector::set_enabled(true);
 
         if let Some(services) = &self.services {
             tracing::info!(services = %services.iter().join(", "), "Setting services from override.");
@@ -80,7 +82,12 @@ impl RunCliCommand {
         quickwit_telemetry::send_telemetry_event(telemetry_event).await;
         // TODO move in serve quickwit?
         start_actor_runtimes(&config.enabled_services)?;
-        serve_quickwit(config).await?;
+        let shutdown_signal = Box::pin(async move {
+            signal::ctrl_c()
+                .await
+                .expect("Registering a signal handler for SIGINT should not fail.");
+        });
+        let _ = serve_quickwit(config, shutdown_signal).await?;
         Ok(())
     }
 }

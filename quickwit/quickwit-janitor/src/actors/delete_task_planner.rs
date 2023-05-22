@@ -33,7 +33,7 @@ use quickwit_metastore::{
     split_tag_filter, split_time_range_filter, Metastore, MetastoreResult, Split,
 };
 use quickwit_proto::metastore_api::DeleteTask;
-use quickwit_proto::SearchRequest;
+use quickwit_proto::{IndexUid, SearchRequest};
 use quickwit_search::{jobs_to_leaf_request, SearchJob, SearchJobPlacer};
 use serde::Serialize;
 use tantivy::Inventory;
@@ -74,7 +74,7 @@ const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 ///      documents, update the split `delete_opstamp` to the last `opstamp`.
 #[derive(Clone)]
 pub struct DeleteTaskPlanner {
-    index_id: String,
+    index_uid: IndexUid,
     index_uri: Uri,
     doc_mapper_str: String,
     metastore: Arc<dyn Metastore>,
@@ -119,7 +119,7 @@ impl Actor for DeleteTaskPlanner {
 
 impl DeleteTaskPlanner {
     pub fn new(
-        index_id: String,
+        index_uid: IndexUid,
         index_uri: Uri,
         doc_mapper_str: String,
         metastore: Arc<dyn Metastore>,
@@ -128,7 +128,7 @@ impl DeleteTaskPlanner {
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> Self {
         Self {
-            index_id,
+            index_uid,
             index_uri,
             doc_mapper_str,
             metastore,
@@ -143,13 +143,16 @@ impl DeleteTaskPlanner {
     async fn send_delete_operations(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         // Loop until there is no more stale splits.
         loop {
-            let last_delete_opstamp = self.metastore.last_delete_opstamp(&self.index_id).await?;
+            let last_delete_opstamp = self
+                .metastore
+                .last_delete_opstamp(self.index_uid.clone())
+                .await?;
             let stale_splits = self
-                .get_relevant_stale_splits(&self.index_id, last_delete_opstamp, ctx)
+                .get_relevant_stale_splits(self.index_uid.clone(), last_delete_opstamp, ctx)
                 .await?;
             ctx.record_progress();
             info!(
-                index_id = self.index_id,
+                index_id = self.index_uid.index_id(),
                 last_delete_opstamp = last_delete_opstamp,
                 num_stale_splits = stale_splits.len()
             );
@@ -160,6 +163,7 @@ impl DeleteTaskPlanner {
 
             let (splits_with_deletes, splits_without_deletes) =
                 self.partition_splits_by_deletes(&stale_splits, ctx).await?;
+
             info!(
                 "{} splits with deletes, {} splits without deletes.",
                 splits_with_deletes.len(),
@@ -173,7 +177,7 @@ impl DeleteTaskPlanner {
                 .map(|split| split.split_id())
                 .collect_vec();
             ctx.protect_future(self.metastore.update_splits_delete_opstamp(
-                &self.index_id,
+                self.index_uid.clone(),
                 &split_ids_without_delete,
                 last_delete_opstamp,
             ))
@@ -195,7 +199,7 @@ impl DeleteTaskPlanner {
                 .await?;
                 JANITOR_METRICS
                     .ongoing_num_delete_operations_total
-                    .with_label_values([&self.index_id])
+                    .with_label_values([self.index_uid.index_id()])
                     .set(self.ongoing_delete_operations_inventory.list().len() as i64);
             }
         }
@@ -215,12 +219,10 @@ impl DeleteTaskPlanner {
 
         for stale_split in stale_splits {
             let pending_tasks = ctx
-                .protect_future(
-                    self.metastore.list_delete_tasks(
-                        &self.index_id,
-                        stale_split.split_metadata.delete_opstamp,
-                    ),
-                )
+                .protect_future(self.metastore.list_delete_tasks(
+                    self.index_uid.clone(),
+                    stale_split.split_metadata.delete_opstamp,
+                ))
                 .await?;
 
             // Keep only delete tasks that matches the split metadata.
@@ -236,8 +238,9 @@ impl DeleteTaskPlanner {
                         delete_query.end_timestamp,
                     );
                     // TODO: validate the query at the beginning and return an appropriate error.
-                    let tags_filter = extract_tags_from_query(&delete_query.query)
-                        .expect("Delete query must have been validated upfront.");
+                    let delete_query_ast = serde_json::from_str(&delete_query.query_ast)
+                        .expect("Failed to deserialize query_ast json");
+                    let tags_filter = extract_tags_from_query(delete_query_ast);
                     split_time_range_filter(stale_split, time_range.as_ref())
                         && split_tag_filter(stale_split, tags_filter.as_ref())
                 })
@@ -291,12 +294,12 @@ impl DeleteTaskPlanner {
                 .as_ref()
                 .expect("Delete task must have a delete query.");
             let search_request = SearchRequest {
-                index_id: delete_query.index_id.clone(),
-                query: delete_query.query.clone(),
+                index_id: IndexUid::from(delete_query.index_uid.clone())
+                    .index_id()
+                    .to_string(),
+                query_ast: delete_query.query_ast.clone(),
                 start_timestamp: delete_query.start_timestamp,
                 end_timestamp: delete_query.end_timestamp,
-                search_fields: delete_query.search_fields.clone(),
-                max_hits: 0,
                 ..Default::default()
             };
             let leaf_search_request = jobs_to_leaf_request(
@@ -318,19 +321,19 @@ impl DeleteTaskPlanner {
     /// ongoing delete operations.
     async fn get_relevant_stale_splits(
         &self,
-        index_id: &str,
+        index_uid: IndexUid,
         last_delete_opstamp: u64,
         ctx: &ActorContext<Self>,
     ) -> MetastoreResult<Vec<Split>> {
         let stale_splits = ctx
             .protect_future(self.metastore.list_stale_splits(
-                index_id,
+                index_uid.clone(),
                 last_delete_opstamp,
                 NUM_STALE_SPLITS_TO_FETCH,
             ))
             .await?;
         debug!(
-            index_id = index_id,
+            index_id = index_uid.index_id(),
             last_delete_opstamp = last_delete_opstamp,
             num_stale_splits_from_metastore = stale_splits.len()
         );
@@ -433,12 +436,11 @@ mod tests {
             test_sandbox.add_documents(vec![doc]).await?;
         }
         let metastore = test_sandbox.metastore();
-        let index_config = metastore
-            .index_metadata(index_id)
-            .await?
-            .into_index_config();
+        let index_metadata = metastore.index_metadata(index_id).await?;
+        let index_uid = index_metadata.index_uid.clone();
+        let index_config = index_metadata.into_index_config();
         let split_metas: Vec<SplitMetadata> = metastore
-            .list_all_splits(index_id)
+            .list_all_splits(index_uid.clone())
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
@@ -451,22 +453,22 @@ mod tests {
         // Creates 2 delete tasks, one that will match 1 document,
         // the other that will match no document.
 
+        let body_delete_ast = quickwit_proto::qast_helper("body:delete", &[]);
+        let match_nothing_ast = quickwit_proto::qast_helper("body:matchnothing", &[]);
         metastore
             .create_delete_task(DeleteQuery {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: "body:delete".to_string(),
-                search_fields: Vec::new(),
+                query_ast: body_delete_ast.clone(),
             })
             .await?;
         metastore
             .create_delete_task(DeleteQuery {
-                index_id: index_id.to_string(),
+                index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: "MatchNothing".to_string(),
-                search_fields: Vec::new(),
+                query_ast: match_nothing_ast,
             })
             .await?;
         let mut mock_search_service = MockSearchService::new();
@@ -479,7 +481,7 @@ mod tests {
                 // Search on body:delete should return one hit only on the last split
                 // that should contains the doc.
                 if request.split_offsets[0].split_id == split_id_with_doc_to_delete
-                    && request.search_request.as_ref().unwrap().query == "body:delete"
+                    && request.search_request.as_ref().unwrap().query_ast == body_delete_ast
                 {
                     return Ok(LeafSearchResponse {
                         num_hits: 1,
@@ -500,7 +502,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(client_pool);
         let (downloader_mailbox, downloader_inbox) = test_sandbox.universe().create_test_mailbox();
         let delete_planner_executor = DeleteTaskPlanner::new(
-            index_id.to_string(),
+            index_uid.clone(),
             index_config.index_uri.clone(),
             doc_mapper_str,
             metastore.clone(),
@@ -557,7 +559,7 @@ mod tests {
         );
         // The other splits has just their delete opstamps updated to the last opstamps which is 2
         // as there are 2 delete tasks. The last split
-        let all_splits = metastore.list_all_splits(index_id).await?;
+        let all_splits = metastore.list_all_splits(index_uid).await?;
         assert_eq!(all_splits[0].split_metadata.delete_opstamp, 2);
         assert_eq!(all_splits[1].split_metadata.delete_opstamp, 2);
         // The last split has not yet its delete opstamp updated.

@@ -22,3 +22,4 @@ quickwit/quickwit-ui/package-lock.json
 deps
 qwdata
 elastic-search-artifacts
+.env

@@ -42,7 +42,7 @@ use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0";
 
 pub const OTEL_LOGS_INDEX_CONFIG: &str = r#"
-version: 0.5
+version: 0.6
 
 index_id: otel-logs-v0
 
@@ -212,7 +212,7 @@ impl OtlpGrpcLogsService {
         if num_log_records == num_parse_errors {
             return Err(tonic::Status::internal(error_message));
         }
-        let num_bytes = doc_batch.concat_docs.len() as u64;
+        let num_bytes = doc_batch.num_bytes() as u64;
         self.store_logs(doc_batch).await?;
 
         OTLP_SERVICE_METRICS
@@ -363,7 +363,7 @@ impl OtlpGrpcLogsService {
         Ok(parsed_spans)
     }
 
-    #[instrument(skip_all, fields(num_bytes = doc_batch.concat_docs.len()))]
+    #[instrument(skip_all, fields(num_bytes = doc_batch.num_bytes()))]
     async fn store_logs(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],

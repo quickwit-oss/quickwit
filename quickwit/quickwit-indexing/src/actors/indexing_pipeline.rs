@@ -240,7 +240,7 @@ impl IndexingPipeline {
         level="info",
         skip_all,
         fields(
-            index=%self.params.pipeline_id.index_id,
+            index=%self.params.pipeline_id.index_uid.index_id(),
             gen=self.generation()
         ))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
@@ -249,7 +249,7 @@ impl IndexingPipeline {
             .await
             .expect("The semaphore should not be closed.");
         self.statistics.num_spawn_attempts += 1;
-        let index_id = self.params.pipeline_id.index_id.as_str();
+        let index_id = self.params.pipeline_id.index_uid.index_id();
         let source_id = self.params.pipeline_id.source_id.as_str();
         self.kill_switch = ctx.kill_switch().child();
         info!(
@@ -349,6 +349,7 @@ impl IndexingPipeline {
             self.params.doc_mapper.clone(),
             indexer_mailbox,
             self.params.source_config.transform_config.clone(),
+            self.params.source_config.input_format.clone(),
         )?;
         let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
@@ -373,7 +374,7 @@ impl IndexingPipeline {
             .protect_future(quickwit_supported_sources().load_source(
                 Arc::new(SourceExecutionContext {
                     metastore: self.params.metastore.clone(),
-                    index_id: self.params.pipeline_id.index_id.clone(),
+                    index_uid: self.params.pipeline_id.index_uid.clone(),
                     queues_dir_path: self.params.queues_dir_path.clone(),
                     source_config: self.params.source_config.clone(),
                 }),
@@ -536,9 +537,10 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{Command, Universe};
-    use quickwit_config::{IndexingSettings, SourceParams, VoidSourceParams};
+    use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
+    use quickwit_proto::IndexUid;
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
@@ -577,8 +579,8 @@ mod tests {
             });
         metastore
             .expect_last_delete_opstamp()
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!("test-index", index_uid.index_id());
                 Ok(10)
             });
         metastore
@@ -586,14 +588,16 @@ mod tests {
             .returning(|_, _| Ok(()));
         metastore
             .expect_stage_splits()
-            .withf(|index_id, _metadata| -> bool { index_id == "test-index" })
+            .withf(|index_uid, _metadata| -> bool {
+                index_uid.to_string() == "test-index:1111111111111"
+            })
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
             .withf(
-                |index_id, splits, replaced_splits, checkpoint_delta_opt| -> bool {
+                |index_uid, splits, replaced_splits, checkpoint_delta_opt| -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_id == "test-index"
+                    index_uid.to_string() == "test-index:1111111111111"
                         && checkpoint_delta.source_id == "test-source"
                         && splits.len() == 1
                         && replaced_splits.is_empty()
@@ -605,7 +609,7 @@ mod tests {
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_uid: "test-index:1111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -617,6 +621,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
@@ -669,20 +674,20 @@ mod tests {
             });
         metastore
             .expect_last_delete_opstamp()
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!("test-index", index_uid.index_id());
                 Ok(10)
             });
         metastore
             .expect_stage_splits()
-            .withf(|index_id, _metadata| index_id == "test-index")
+            .withf(|index_uid, _metadata| index_uid.to_string() == "test-index:1111111111111")
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
             .withf(
-                |index_id, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
+                |index_uid, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_id == "test-index"
+                    index_uid.to_string() == "test-index:1111111111111"
                         && splits.len() == 1
                         && replaced_split_ids.is_empty()
                         && checkpoint_delta.source_id == "test-source"
@@ -695,7 +700,7 @@ mod tests {
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_uid: "test-index:1111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -707,6 +712,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
@@ -754,7 +760,7 @@ mod tests {
         let metastore = Arc::new(metastore);
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -766,6 +772,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::Void(VoidSourceParams),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
@@ -837,8 +844,8 @@ mod tests {
             });
         metastore
             .expect_last_delete_opstamp()
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!("test-index", index_uid.index_id());
                 Ok(10)
             });
         metastore
@@ -848,9 +855,9 @@ mod tests {
         metastore
             .expect_publish_splits()
             .withf(
-                |index_id, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
+                |index_uid, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_id == "test-index"
+                    index_uid.to_string() == "test-index:1111111111111"
                         && splits.is_empty()
                         && replaced_split_ids.is_empty()
                         && checkpoint_delta.source_id == "test-source"
@@ -858,13 +865,12 @@ mod tests {
                             .ends_with(":(00000000000000000000..00000000000000001030])")
                 },
             )
-            .times(1)
             .returning(|_, _, _, _| Ok(()));
-        let universe = Universe::with_accelerated_time();
+        let universe = Universe::new();
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_id: "test-index".to_string(),
+            index_uid: "test-index:1111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -876,6 +882,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());

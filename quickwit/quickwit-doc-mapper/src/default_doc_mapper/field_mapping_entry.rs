@@ -138,6 +138,9 @@ pub enum QuickwitTextTokenizer {
     StemEn,
     #[serde(rename = "chinese_compatible")]
     Chinese,
+    #[serde(rename = "lowercase")]
+    /// Does not tokenize, only lowercases the text.
+    Lowercase,
 }
 
 impl QuickwitTextTokenizer {
@@ -147,6 +150,7 @@ impl QuickwitTextTokenizer {
             QuickwitTextTokenizer::Default => "default",
             QuickwitTextTokenizer::StemEn => "en_stem",
             QuickwitTextTokenizer::Chinese => "chinese_compatible",
+            QuickwitTextTokenizer::Lowercase => "lowercase",
         }
     }
 }
@@ -172,7 +176,20 @@ pub struct QuickwitTextOptions {
     #[serde(default = "default_as_true")]
     pub stored: bool,
     #[serde(default)]
-    pub fast: bool,
+    pub fast: FastFieldOptions,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FastFieldOptions {
+    IsEnabled(bool),
+    EnabledWithTokenizer { tokenizer: String },
+}
+
+impl Default for FastFieldOptions {
+    fn default() -> Self {
+        FastFieldOptions::IsEnabled(false)
+    }
 }
 
 impl Default for QuickwitTextOptions {
@@ -184,7 +201,7 @@ impl Default for QuickwitTextOptions {
             record: None,
             fieldnorms: false,
             stored: true,
-            fast: false,
+            fast: FastFieldOptions::default(),
         }
     }
 }
@@ -195,8 +212,14 @@ impl From<QuickwitTextOptions> for TextOptions {
         if quickwit_text_options.stored {
             text_options = text_options.set_stored();
         }
-        if quickwit_text_options.fast {
-            text_options = text_options.set_fast();
+        match &quickwit_text_options.fast {
+            FastFieldOptions::IsEnabled(true) => {
+                text_options = text_options.set_fast(None);
+            }
+            FastFieldOptions::EnabledWithTokenizer { tokenizer } => {
+                text_options = text_options.set_fast(Some(tokenizer));
+            }
+            FastFieldOptions::IsEnabled(false) => {}
         }
         if quickwit_text_options.indexed {
             let index_record_option = quickwit_text_options
@@ -615,7 +638,7 @@ mod tests {
         assert_eq!(
             mapping_entry.unwrap_err().to_string(),
             "Error while parsing field `my_field_name`: unknown variant `notexist`, expected one \
-             of `raw`, `default`, `en_stem`, `chinese_compatible`"
+             of `raw`, `default`, `en_stem`, `chinese_compatible`, `lowercase`"
                 .to_string()
         );
         Ok(())
@@ -1080,6 +1103,32 @@ mod tests {
                 "name": "my_field_name",
                 "type": "text",
                 "fast": false,
+                "stored": true,
+                "indexed": true,
+                "fieldnorms": false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_text_fast_field_tokenizer() {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "text",
+                "fast": {"tokenizer": "lowercase"}
+            }
+            "#,
+        )
+        .unwrap();
+        let entry_deserser = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_deserser,
+            json!({
+                "name": "my_field_name",
+                "type": "text",
+                "fast": {"tokenizer": "lowercase"},
                 "stored": true,
                 "indexed": true,
                 "fieldnorms": false,

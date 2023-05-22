@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-serve"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -14,13 +14,14 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 byte-unit = { workspace = true }
-clap = { workspace = true }
 elasticsearch-dsl = "0.4"
 futures = { workspace = true }
 futures-util = { workspace = true }
+http-serde = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
+num_cpus = { workspace = true }
 once_cell = { workspace = true }
 regex = { workspace = true }
 rust-embed = { workspace = true }
@@ -58,6 +59,7 @@ quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
+quickwit-query = { workspace = true }
 
 [build-dependencies]
 time = { workspace = true }

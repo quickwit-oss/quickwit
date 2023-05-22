@@ -7,11 +7,12 @@ Quickwit can insert data into an index from one or multiple sources.
 A source can be added after index creation using the [CLI command](../reference/cli.md#source) `quickwit source create`.
 It can also be enabled or disabled with the `quickwit source enable/disable` subcommands.
 
-A source is declared using an object called source config, which defines the source's settings. It consists of seven parameters:
+A source is declared using an object called source config, which defines the source's settings. It consists of multiple parameters:
 
 - source ID
 - source type
 - source parameters
+- input_format
 - maximum number of pipelines per indexer (optional)
 - desired number of pipelines (optional)
 - transform parameters (optional)
@@ -76,7 +77,7 @@ Short max poll interval durations may cause a source to crash when back pressure
 
 ```bash
 cat << EOF > source-config.yaml
-version: 0.5
+version: 0.6
 source_id: my-kafka-source
 source_type: kafka
 params:
@@ -118,7 +119,7 @@ If no region is specified, Quickwit will attempt to find one in multiple other l
 
 ```bash
 cat << EOF > source-config.yaml
-version: 0.5
+version: 0.6
 source_id: my-kinesis-source
 source_type: kinesis
 params:
@@ -147,7 +148,7 @@ The Pulsar source consumes `topics` using the client library [pulsar-rs](https:/
 
 ```bash
 cat << EOF > source-config.yaml
-version: 0.5
+version: 0.6
 source_id: my-pulsar-source
 source_type: pulsar
 params:
@@ -209,6 +210,28 @@ transform:
     .timestamp = now()
     del(.username)
   timezone: local
+```
+
+## Input format
+
+The `input_format` parameter specifies the expected data format of the source. Two formats are currently supported:
+- `json`: JSON, the default
+- `plain_text`: unstructured text document
+
+Internally, Quickwit can only index JSON data. To allow the ingestion of plain text documents, Quickwit transform them on the fly into JSON objects of the following form: `{"plain_text": "<original plain text document>"}`. Then, they can be optionally transformed into more complex documents using a VRL script. (see [transform feature](#transform-parameters)).
+
+The following is an example of how one could parse and transform a CSV dataset containing a list of users described by 3 attributes: first name, last name, and age.
+
+```yaml
+# Your source config here
+# ...
+transform:
+  script: |
+    user = parse_csv!(.plain_text)
+    .first_name = user[0]
+    .last_name = user[1]
+    .age = to_int!(user[2])
+    del(.plain_text)
 ```
 
 ## Enabling/Disabling a source from an index

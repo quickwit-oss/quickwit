@@ -112,6 +112,9 @@ impl QuickwitDateTimeOptions {
             DateTimeOutputFormat::TimestampMicros => {
                 Ok(JsonValue::Number(date_time.into_timestamp_micros().into()))
             }
+            DateTimeOutputFormat::TimestampNanos => {
+                Ok(JsonValue::Number(date_time.into_timestamp_nanos().into()))
+            }
         };
         format_result.map_err(|error| error.to_string())
     }
