@@ -354,16 +354,17 @@ Describes an index of ID `index id`.
 
 The response is the stats about the requested index, and the content type is `application/json; charset=UTF-8.`
 
-| Field                  | Description                               |         Type          |
-|------------------------|-------------------------------------------|:---------------------:|
-| `index_id`             | Index ID of index.                        |       `String`        |
-| `index_uri`            | Uri of index                              |       `String`        |
-| `num_published_splits` | Number of published splits.               |       `number`        |
-| `num_published_docs`   | Number of published documents.            |       `number`        |
-| `size_published_docs`  | Size of the published documents in bytes. |       `number`        |
-| `timestamp_field_name` | Type of timestamp.                        |       `String`        |
-| `min_timestamp`        | Starting time of timestamp.               |       `number`        |
-| `max_timestamp`        | Ending time of timestamp.                 |       `number`        |
+| Field                               | Description                                              |         Type          |
+|-------------------------------------|----------------------------------------------------------|:---------------------:|
+| `index_id`                          | Index ID of index.                                       |       `String`        |
+| `index_uri`                         | Uri of index                                             |       `String`        |
+| `num_published_splits`              | Number of published splits.                              |       `number`        |
+| `size_published_splits`             | Size of published splits.                                |       `number`        |
+| `num_published_docs`                | Number of published documents.                           |       `number`        |
+| `size_published_docs_uncompressed`  | Size of the published documents in bytes (uncompressed). |       `number`        |
+| `timestamp_field_name`              | Name of timestamp field.                                       |       `String`        |
+| `min_timestamp`                     | Starting time of timestamp.                              |       `number`        |
+| `max_timestamp`                     | Ending time of timestamp.                                |       `number`        |
 
 ### Clears an index
 
