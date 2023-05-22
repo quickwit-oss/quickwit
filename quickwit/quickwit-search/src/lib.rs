@@ -68,7 +68,7 @@ use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{
     Hit, IndexUid, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::StorageResolver;
 use tantivy::DocAddress;
 
 pub use crate::client::{
@@ -178,7 +178,7 @@ fn convert_document_to_json_string(
 pub async fn single_node_search(
     mut search_request: SearchRequest,
     metastore: &dyn Metastore,
-    storage_resolver: StorageUriResolver,
+    storage_resolver: StorageResolver,
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
@@ -273,13 +273,13 @@ pub async fn single_node_search(
 pub async fn start_searcher_service(
     searcher_config: SearcherConfig,
     metastore: Arc<dyn Metastore>,
-    storage_uri_resolver: StorageUriResolver,
+    storage_resolver: StorageResolver,
     search_job_placer: SearchJobPlacer,
 ) -> anyhow::Result<Arc<dyn SearchService>> {
     let cluster_client = ClusterClient::new(search_job_placer.clone());
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore,
-        storage_uri_resolver,
+        storage_resolver,
         cluster_client,
         search_job_placer,
         searcher_config,

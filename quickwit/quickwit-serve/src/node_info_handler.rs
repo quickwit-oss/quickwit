@@ -19,7 +19,6 @@
 
 use std::sync::Arc;
 
-use quickwit_common::uri::Uri;
 use quickwit_config::QuickwitConfig;
 use serde_json::json;
 use warp::{Filter, Rejection};
@@ -65,16 +64,16 @@ fn node_config_handler(
 }
 
 async fn get_config(config: Arc<QuickwitConfig>) -> impl warp::Reply {
-    // We need to hide sensitive information from metastore URI.
-    let mut config_to_serialize = (*config).clone();
-    let redacted_uri = Uri::from_well_formed(config_to_serialize.metastore_uri.as_redacted_str());
-    config_to_serialize.metastore_uri = redacted_uri;
-    warp::reply::json(&config_to_serialize)
+    // We must redact sensitive information such as credentials.
+    let mut config = (*config).clone();
+    config.redact();
+    warp::reply::json(&config)
 }
 
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_include;
+    use quickwit_common::uri::Uri;
     use serde_json::Value as JsonValue;
 
     use super::*;

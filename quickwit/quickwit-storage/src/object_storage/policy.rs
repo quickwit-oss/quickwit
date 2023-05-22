@@ -32,8 +32,8 @@ pub struct MultiPartPolicy {
     pub multipart_threshold_num_bytes: u64,
     /// Maximum size allowed for an object.
     pub max_object_num_bytes: u64,
-    /// Maximum number of part to be upload concurrently.
-    pub max_concurrent_upload: usize,
+    /// Maximum number of parts to be upload concurrently.
+    pub max_concurrent_uploads: usize,
 }
 
 impl MultiPartPolicy {
@@ -63,8 +63,8 @@ impl MultiPartPolicy {
     }
 
     /// Limits the number of parts that can be concurrently uploaded.
-    pub fn max_concurrent_upload(&self) -> usize {
-        self.max_concurrent_upload
+    pub fn max_concurrent_uploads(&self) -> usize {
+        self.max_concurrent_uploads
     }
 }
 
@@ -79,7 +79,7 @@ impl Default for MultiPartPolicy {
             multipart_threshold_num_bytes: 128 * 1_024 * 1_024, // 128 MiB
             max_num_parts: 10_000,
             max_object_num_bytes: 5_000_000_000_000u64, // S3 allows up to 5TB objects
-            max_concurrent_upload: 100,
+            max_concurrent_uploads: 100,
         }
     }
 }

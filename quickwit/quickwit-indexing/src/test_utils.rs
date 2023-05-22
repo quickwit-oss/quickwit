@@ -26,17 +26,16 @@ use chitchat::transport::ChannelTransport;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::create_cluster_for_test;
 use quickwit_common::rand::append_random_suffix;
-use quickwit_common::uri::{Protocol, Uri};
+use quickwit_common::uri::Uri;
 use quickwit_config::{
-    build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, IngestApiConfig, SourceConfig,
-    SourceInputFormat, SourceParams, VecSourceParams,
+    build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, IngestApiConfig, MetastoreConfigs,
+    SourceConfig, SourceInputFormat, SourceParams, VecSourceParams,
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::{init_ingest_api, QUEUES_DIR_NAME};
-use quickwit_metastore::file_backed_metastore::FileBackedMetastoreFactory;
-use quickwit_metastore::{Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState};
+use quickwit_metastore::{Metastore, MetastoreResolver, Split, SplitMetadata, SplitState};
 use quickwit_proto::IndexUid;
-use quickwit_storage::{Storage, StorageUriResolver};
+use quickwit_storage::{Storage, StorageResolver};
 use serde_json::Value as JsonValue;
 
 use crate::actors::IndexingService;
@@ -52,7 +51,7 @@ pub struct TestSandbox {
     indexing_service: Mailbox<IndexingService>,
     doc_mapper: Arc<dyn DocMapper>,
     metastore: Arc<dyn Metastore>,
-    storage_resolver: StorageUriResolver,
+    storage_resolver: StorageResolver,
     storage: Arc<dyn Storage>,
     add_docs_id: AtomicUsize,
     universe: Universe,
@@ -92,14 +91,10 @@ impl TestSandbox {
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig::for_test()?;
         let num_blocking_threads = 1;
-        let storage_resolver = StorageUriResolver::for_test();
-        let metastore_uri_resolver = MetastoreUriResolver::builder()
-            .register(
-                Protocol::Ram,
-                FileBackedMetastoreFactory::new(storage_resolver.clone()),
-            )
-            .build();
-        let metastore = metastore_uri_resolver
+        let storage_resolver = StorageResolver::ram_for_test();
+        let metastore_resolver =
+            MetastoreResolver::configured(storage_resolver.clone(), &MetastoreConfigs::default());
+        let metastore = metastore_resolver
             .resolve(&Uri::from_well_formed(METASTORE_URI))
             .await?;
         let index_uid = metastore.create_index(index_config.clone()).await?;
@@ -193,8 +188,8 @@ impl TestSandbox {
         self.storage.clone()
     }
 
-    /// Returns the storage URI resolver of the TestSandbox.
-    pub fn storage_uri_resolver(&self) -> StorageUriResolver {
+    /// Returns the storage resolver of the TestSandbox.
+    pub fn storage_resolver(&self) -> StorageResolver {
         self.storage_resolver.clone()
     }
 

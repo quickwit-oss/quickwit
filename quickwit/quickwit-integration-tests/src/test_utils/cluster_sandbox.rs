@@ -33,12 +33,13 @@ use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
-use quickwit_metastore::SplitState;
+use quickwit_metastore::{MetastoreResolver, SplitState};
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{
     CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
 };
 use quickwit_serve::{serve_quickwit, ListSplitsQueryParams};
+use quickwit_storage::StorageResolver;
 use reqwest::Url;
 use tempfile::TempDir;
 use tokio::sync::watch::{self, Receiver, Sender};
@@ -143,6 +144,8 @@ impl ClusterSandbox {
         let temp_dir = tempfile::tempdir()?;
         let services = QuickwitService::supported_services();
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
+        let storage_resolver = StorageResolver::unconfigured();
+        let metastore_resolver = MetastoreResolver::unconfigured();
         // There is exactly one node.
         let node_config = node_configs[0].clone();
         let node_config_clone = node_config.clone();
@@ -153,6 +156,8 @@ impl ClusterSandbox {
             let result = serve_quickwit(
                 node_config_clone.quickwit_config,
                 runtimes_config,
+                storage_resolver,
+                metastore_resolver,
                 shutdown_signal,
             )
             .await?;
@@ -182,19 +187,27 @@ impl ClusterSandbox {
         let temp_dir = tempfile::tempdir()?;
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
         let runtimes_config = RuntimesConfig::light_for_tests();
+        let storage_resolver = StorageResolver::unconfigured();
+        let metastore_resolver = MetastoreResolver::unconfigured();
         let mut join_handles = Vec::new();
         let shutdown_trigger = ClusterShutdownTrigger::new();
         for node_config in node_configs.iter() {
-            let node_config_clone = node_config.clone();
-            let shutdown_signal = shutdown_trigger.shutdown_signal();
-            join_handles.push(tokio::spawn(async move {
-                let result = serve_quickwit(
-                    node_config_clone.quickwit_config,
-                    runtimes_config,
-                    shutdown_signal,
-                )
-                .await?;
-                Result::<_, anyhow::Error>::Ok(result)
+            join_handles.push(tokio::spawn({
+                let node_config = node_config.quickwit_config.clone();
+                let storage_resolver = storage_resolver.clone();
+                let metastore_resolver = metastore_resolver.clone();
+                let shutdown_signal = shutdown_trigger.shutdown_signal();
+                async move {
+                    let result = serve_quickwit(
+                        node_config,
+                        runtimes_config,
+                        storage_resolver,
+                        metastore_resolver,
+                        shutdown_signal,
+                    )
+                    .await?;
+                    Result::<_, anyhow::Error>::Ok(result)
+                }
             }));
         }
         let searcher_config = node_configs

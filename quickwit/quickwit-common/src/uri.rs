@@ -31,7 +31,8 @@ use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Serialize, Serializer};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Protocol {
     Azure,
     File,
@@ -104,10 +105,10 @@ impl FromStr for Protocol {
             "azure" => Ok(Protocol::Azure),
             "file" => Ok(Protocol::File),
             "grpc" => Ok(Protocol::Grpc),
-            "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
+            "pg" | "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
-            _ => bail!("Unknown URI protocol `{}`.", protocol),
+            _ => bail!("Unknown URI protocol `{protocol}`."),
         }
     }
 }
@@ -158,7 +159,7 @@ impl Uri {
     }
 
     /// Strips sensitive information such as credentials from URI.
-    pub fn as_redacted_str(&self) -> Cow<str> {
+    fn as_redacted_str(&self) -> Cow<str> {
         if self.protocol().is_database() {
             static DATABASE_URI_PATTERN: OnceCell<Regex> = OnceCell::new();
             DATABASE_URI_PATTERN
@@ -170,6 +171,10 @@ impl Uri {
         } else {
             Cow::Borrowed(&self.uri)
         }
+    }
+
+    pub fn redact(&mut self) {
+        self.uri = self.as_redacted_str().into_owned();
     }
 
     /// Returns the file path of the URI.

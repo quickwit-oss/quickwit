@@ -39,7 +39,7 @@ use quickwit_ingest::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUE
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
 use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
-use quickwit_storage::{StorageError, StorageResolverError, StorageUriResolver};
+use quickwit_storage::{StorageError, StorageResolver, StorageResolverError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::Semaphore;
@@ -133,7 +133,7 @@ pub struct IndexingService {
     cluster: Cluster,
     metastore: Arc<dyn Metastore>,
     ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
-    storage_resolver: StorageUriResolver,
+    storage_resolver: StorageResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     counters: IndexingServiceCounters,
     local_split_store: Arc<LocalSplitStore>,
@@ -152,7 +152,7 @@ impl IndexingService {
         cluster: Cluster,
         metastore: Arc<dyn Metastore>,
         ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
-        storage_resolver: StorageUriResolver,
+        storage_resolver: StorageResolver,
     ) -> anyhow::Result<IndexingService> {
         let split_store_space_quota = SplitStoreQuota::new(
             indexer_config.split_store_max_num_splits,
@@ -798,12 +798,11 @@ mod tests {
     use quickwit_actors::{Health, ObservationType, Supervisable, Universe, HEARTBEAT};
     use quickwit_cluster::create_cluster_for_test;
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_common::uri::Uri;
     use quickwit_config::{
         IngestApiConfig, SourceConfig, SourceInputFormat, SourceParams, VecSourceParams,
     };
     use quickwit_ingest::{init_ingest_api, CreateQueueIfNotExistsRequest};
-    use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore};
+    use quickwit_metastore::{metastore_for_test, MockMetastore};
     use quickwit_proto::indexing_api::IndexingTask;
 
     use super::*;
@@ -816,7 +815,7 @@ mod tests {
     ) -> (Mailbox<IndexingService>, ActorHandle<IndexingService>) {
         let indexer_config = IndexerConfig::for_test().unwrap();
         let num_blocking_threads = 1;
-        let storage_resolver = StorageUriResolver::for_test();
+        let storage_resolver = StorageResolver::unconfigured();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         let ingest_api_service =
             init_ingest_api(universe, &queues_dir_path, &IngestApiConfig::default())
@@ -844,11 +843,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let metastore_uri = Uri::from_well_formed("ram:///metastore");
-        let metastore = quickwit_metastore_uri_resolver()
-            .resolve(&metastore_uri)
-            .await
-            .unwrap();
+        let metastore = metastore_for_test();
 
         let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -941,11 +936,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let metastore_uri = Uri::from_well_formed("ram:///metastore");
-        let metastore = quickwit_metastore_uri_resolver()
-            .resolve(&metastore_uri)
-            .await
-            .unwrap();
+        let metastore = metastore_for_test();
 
         let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -999,11 +990,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let metastore_uri = Uri::from_well_formed("ram:///metastore");
-        let metastore = quickwit_metastore_uri_resolver()
-            .resolve(&metastore_uri)
-            .await
-            .unwrap();
+        let metastore = metastore_for_test();
 
         let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -1194,11 +1181,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let metastore_uri = Uri::from_well_formed("ram:///metastore");
-        let metastore = quickwit_metastore_uri_resolver()
-            .resolve(&metastore_uri)
-            .await
-            .unwrap();
+        let metastore = metastore_for_test();
 
         let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -1224,7 +1207,7 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let num_blocking_threads = 1;
-        let storage_resolver = StorageUriResolver::for_test();
+        let storage_resolver = StorageResolver::unconfigured();
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         let ingest_api_service =
@@ -1387,11 +1370,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let metastore_uri = Uri::from_well_formed("ram:///metastore");
-        let metastore = quickwit_metastore_uri_resolver()
-            .resolve(&metastore_uri)
-            .await
-            .unwrap();
+        let metastore = metastore_for_test();
         let index_uid = metastore.create_index(index_config).await.unwrap();
 
         // Setup ingest api objects
@@ -1414,7 +1393,7 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let num_blocking_threads = 1;
-        let storage_resolver = StorageUriResolver::for_test();
+        let storage_resolver = StorageResolver::unconfigured();
         let mut indexing_server = IndexingService::new(
             "test-ingest-api-gc-node".to_string(),
             data_dir_path,

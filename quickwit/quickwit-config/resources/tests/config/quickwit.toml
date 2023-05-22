@@ -1,4 +1,5 @@
 version = "0.6"
+
 cluster_id = "quickwit-cluster"
 node_id = "my-unique-node-id"
 enabled_services = [ "janitor", "metastore" ]
@@ -12,7 +13,18 @@ data_dir = "/opt/quickwit/data"
 metastore_uri = "postgres://username:password@host:port/db"
 default_index_root_uri = "s3://quickwit-indexes"
 
+[storage.azure]
+account_name = "quickwit-dev"
+
+[storage.s3]
+endpoint = "http://localhost:4566"
+force_path_style_access = true
+
+[metastore.postgres]
+max_num_connections = 12
+
 [indexer]
+enable_otlp_endpoint = true
 split_store_max_num_bytes = "1T"
 split_store_max_num_splits = 10_000
 max_concurrent_split_uploads = 8
@@ -26,7 +38,7 @@ max_num_concurrent_split_streams = 120
 max_num_concurrent_split_searches = 150
 
 [jaeger]
-enable_endpoint = false
+enable_endpoint = true
 lookback_period_hours = 24
 max_trace_duration_secs = 600
 max_fetch_spans = 1_000

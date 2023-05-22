@@ -33,6 +33,7 @@ mod tests;
 pub mod checkpoint;
 mod error;
 mod metastore;
+mod metastore_factory;
 mod metastore_resolver;
 mod metrics;
 mod split_metadata;
@@ -51,9 +52,8 @@ pub use metastore::retrying_metastore::RetryingMetastore;
 #[cfg(any(test, feature = "testsuite"))]
 pub use metastore::MockMetastore;
 pub use metastore::{file_backed_metastore, IndexMetadata, ListSplitsQuery, Metastore};
-pub use metastore_resolver::{
-    quickwit_metastore_uri_resolver, MetastoreFactory, MetastoreUriResolver,
-};
+pub use metastore_factory::{MetastoreFactory, UnsupportedMetastore};
+pub use metastore_resolver::MetastoreResolver;
 use quickwit_common::is_disjoint;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 pub use split_metadata::{Split, SplitMetadata, SplitState};

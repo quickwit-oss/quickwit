@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -33,6 +34,15 @@ struct PrefixStorage {
     pub storage: Arc<dyn Storage>,
     pub prefix: PathBuf,
     uri: Uri,
+}
+
+impl fmt::Debug for PrefixStorage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PrefixStorage")
+            .field("uri", &self.uri)
+            .field("prefix", &self.prefix)
+            .finish()
+    }
 }
 
 #[async_trait]

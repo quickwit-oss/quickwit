@@ -24,15 +24,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_common::uri::{Protocol, Uri};
+use quickwit_common::uri::Uri;
+use quickwit_config::{StorageBackend, StorageConfig};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
 use crate::prefix_storage::add_prefix_to_storage;
 use crate::storage::{BulkDeleteError, SendableAsync};
-use crate::{
-    OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
-};
+use crate::storage_factory::StorageFactory;
+use crate::{OwnedBytes, Storage, StorageErrorKind, StorageResolverError, StorageResult};
 
 /// In Ram implementation of quickwit's storage.
 ///
@@ -173,7 +173,7 @@ impl RamStorageBuilder {
     }
 }
 
-/// In Ram storage resolver
+/// Storage resolver for [`RamStorage`].
 pub struct RamStorageFactory {
     ram_storage: Arc<dyn Storage>,
 }
@@ -188,29 +188,33 @@ impl Default for RamStorageFactory {
 
 #[async_trait]
 impl StorageFactory for RamStorageFactory {
-    fn protocol(&self) -> Protocol {
-        Protocol::Ram
+    fn backend(&self) -> StorageBackend {
+        StorageBackend::Ram
     }
 
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(
+        &self,
+        _storage_config: &StorageConfig,
+        uri: &Uri,
+    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
         match uri.filepath() {
             Some(prefix) if uri.protocol().is_ram() => Ok(add_prefix_to_storage(
                 self.ram_storage.clone(),
                 prefix.to_path_buf(),
                 uri.clone(),
             )),
-            _ => Err(StorageResolverError::InvalidUri {
-                message: format!(
-                    "URI `{uri}` is not a valid RAM storage URI. `ram://` is the only protocol \
-                     accepted."
-                ),
-            }),
+            _ => {
+                let message = format!("URI `{uri}` is not a valid RAM URI.");
+                Err(StorageResolverError::InvalidUri(message))
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use quickwit_config::RamStorageConfig;
+
     use super::*;
     use crate::test_suite::storage_test_suite;
 
@@ -224,17 +228,34 @@ mod tests {
     #[tokio::test]
     async fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
+        let storage_config = RamStorageConfig::default().into();
         let ram_uri = Uri::from_well_formed("s3:///foo");
-        let err = ram_storage_factory.resolve(&ram_uri).await.err().unwrap();
+        let err = ram_storage_factory
+            .resolve(&storage_config, &ram_uri)
+            .await
+            .err()
+            .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let data_uri = Uri::from_well_formed("ram:///data");
-        let data_storage = ram_storage_factory.resolve(&data_uri).await.ok().unwrap();
+        let data_storage = ram_storage_factory
+            .resolve(&storage_config, &data_uri)
+            .await
+            .ok()
+            .unwrap();
         let home_uri = Uri::from_well_formed("ram:///home");
-        let home_storage = ram_storage_factory.resolve(&home_uri).await.ok().unwrap();
+        let home_storage = ram_storage_factory
+            .resolve(&storage_config, &home_uri)
+            .await
+            .ok()
+            .unwrap();
         assert_ne!(data_storage.uri(), home_storage.uri());
 
-        let data_storage_two = ram_storage_factory.resolve(&data_uri).await.ok().unwrap();
+        let data_storage_two = ram_storage_factory
+            .resolve(&storage_config, &data_uri)
+            .await
+            .ok()
+            .unwrap();
         assert_eq!(data_storage.uri(), data_storage_two.uri());
     }
 

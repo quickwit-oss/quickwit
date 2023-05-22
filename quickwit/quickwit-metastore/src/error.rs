@@ -19,13 +19,13 @@
 
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
+use thiserror::Error as ThisError;
 
 use crate::checkpoint::IncompatibleCheckpointDelta;
 
 /// Metastore error kinds.
 #[allow(missing_docs)]
-#[derive(Clone, Debug, Error, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, ThisError, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MetastoreError {
     #[error("Connection error: `{message}`.")]
     ConnectionError { message: String },
@@ -133,21 +133,23 @@ impl ServiceError for MetastoreError {
 pub type MetastoreResult<T> = Result<T, MetastoreError>;
 
 /// Generic Storage Resolver Error.
-#[derive(Error, Debug)]
+#[derive(Debug, ThisError)]
 pub enum MetastoreResolverError {
-    /// The input is not a valid URI.
-    /// A protocol is required for the URI.
-    #[error("Invalid URI format: required: `{0}`")]
+    /// The metastore config is invalid.
+    #[error("Invalid metastore config: `{0}`")]
+    InvalidConfig(String),
+
+    /// The URI does not contain sufficient information to connect to the metastore.
+    #[error("Invalid metastore URI: `{0}`")]
     InvalidUri(String),
 
-    /// The protocol is not supported by this resolver.
-    #[error("Unsupported protocol: `{0}`")]
-    ProtocolUnsupported(String),
+    /// The requested backend is unsupported or unavailable.
+    #[error("Unsupported metastore backend: `{0}`")]
+    UnsupportedBackend(String),
 
-    /// The URI is valid, and is meant to be handled by this resolver,
-    /// but the resolver failed to actually connect to the storage.
-    /// e.g. Connection error, credential error, incompatible version,
-    /// internal error in third party, etc.
+    /// The config and URI are valid, and are meant to be handled by this resolver, but the
+    /// resolver failed to actually connect to the backend. e.g. connection error, credentials
+    /// error, incompatible version, internal error in a third party, etc.
     #[error("Failed to connect to metastore: `{0}`")]
     FailedToOpenMetastore(MetastoreError),
 }

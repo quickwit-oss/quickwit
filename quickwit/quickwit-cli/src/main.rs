@@ -440,7 +440,6 @@ mod tests {
             ])
             .unwrap();
         let command = CliCommand::parse_cli_args(matches).unwrap();
-        println!("{command:?}");
         assert!(matches!(
             command,
             CliCommand::Tool(ToolCliCommand::LocalIngest(

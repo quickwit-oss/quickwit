@@ -45,7 +45,7 @@ use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortByField};
-use quickwit_storage::load_file;
+use quickwit_storage::{load_file, StorageResolver};
 use tabled::object::{Columns, Segment};
 use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
 use thousands::Separable;
@@ -452,7 +452,8 @@ pub async fn clear_index_cli(args: ClearIndexArgs) -> anyhow::Result<()> {
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "create-index");
     println!("❯ Creating index...");
-    let file_content = load_file(&args.index_config_uri).await?;
+    let storage_resolver = StorageResolver::unconfigured();
+    let file_content = load_file(&storage_resolver, &args.index_config_uri).await?;
     let config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
     let qw_client = args.client_args.client();
     // TODO: nice to have: check first if the index exists by send a GET request, if we get a 404,

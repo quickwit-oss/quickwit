@@ -27,7 +27,9 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_common::PrettySample;
-use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_config::{
+    IndexConfig, MetastoreBackend, MetastoreConfig, PostgresMetastoreConfig, SourceConfig,
+};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
@@ -51,8 +53,6 @@ use crate::{
 
 static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
 
-const CONNECTION_POOL_MAX_SIZE: u32 = 10;
-
 // https://www.postgresql.org/docs/current/errcodes-appendix.html
 mod pg_error_code {
     pub const FOREIGN_KEY_VIOLATION: &str = "23503";
@@ -60,20 +60,29 @@ mod pg_error_code {
 }
 
 /// Establishes a connection to the given database URI.
-async fn establish_connection(connection_uri: &Uri) -> MetastoreResult<Pool<Postgres>> {
+async fn establish_connection(
+    connection_uri: &Uri,
+    min_connections: usize,
+    max_connections: usize,
+    acquire_timeout: Duration,
+    idle_timeout_opt: Option<Duration>,
+    max_lifetime_opt: Option<Duration>,
+) -> MetastoreResult<Pool<Postgres>> {
     let pool_options = PgPoolOptions::new()
-        .max_connections(CONNECTION_POOL_MAX_SIZE)
-        .idle_timeout(Duration::from_secs(1))
-        .acquire_timeout(Duration::from_secs(2));
+        .min_connections(min_connections as u32)
+        .max_connections(max_connections as u32)
+        .acquire_timeout(acquire_timeout)
+        .idle_timeout(idle_timeout_opt)
+        .max_lifetime(max_lifetime_opt);
     let mut pg_connect_options: PgConnectOptions = connection_uri.as_str().parse()?;
     pg_connect_options.log_statements(LevelFilter::Info);
     pool_options
         .connect_with(pg_connect_options)
         .await
-        .map_err(|err| {
-            error!(connection_uri=%connection_uri, err=?err, "Failed to establish connection to database.");
+        .map_err(|error| {
+            error!(connection_uri=%connection_uri, error=?error, "Failed to establish connection to database.");
             MetastoreError::ConnectionError {
-                message: err.to_string(),
+                message: error.to_string(),
             }
         })
 }
@@ -105,11 +114,22 @@ pub struct PostgresqlMetastore {
 
 impl PostgresqlMetastore {
     /// Creates a meta store given a database URI.
-    pub async fn new(connection_uri: Uri) -> MetastoreResult<Self> {
-        let connection_pool = establish_connection(&connection_uri).await?;
+    pub async fn new(
+        postgres_metastore_config: &PostgresMetastoreConfig,
+        connection_uri: &Uri,
+    ) -> MetastoreResult<Self> {
+        let connection_pool = establish_connection(
+            connection_uri,
+            1,
+            postgres_metastore_config.max_num_connections.get(),
+            Duration::from_secs(2),
+            Some(Duration::from_secs(1)),
+            None,
+        )
+        .await?;
         run_postgres_migrations(&connection_pool).await?;
         Ok(PostgresqlMetastore {
-            uri: connection_uri,
+            uri: connection_uri.clone(),
             connection_pool,
         })
     }
@@ -1184,13 +1204,28 @@ impl PostgresqlMetastoreFactory {
 
 #[async_trait]
 impl MetastoreFactory for PostgresqlMetastoreFactory {
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+    fn backend(&self) -> MetastoreBackend {
+        MetastoreBackend::PostgreSQL
+    }
+
+    async fn resolve(
+        &self,
+        metastore_config: &MetastoreConfig,
+        uri: &Uri,
+    ) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
         if let Some(metastore) = self.get_from_cache(uri).await {
             debug!("using metastore from cache");
             return Ok(metastore);
         }
         debug!("metastore not found in cache");
-        let postgresql_metastore = PostgresqlMetastore::new(uri.clone())
+        let postgresql_metastore_config = metastore_config.as_postgres().ok_or_else(|| {
+            let message = format!(
+                "Expected PostgreSQL metastore config, got `{:?}`.",
+                metastore_config.backend()
+            );
+            MetastoreResolverError::InvalidConfig(message)
+        })?;
+        let postgresql_metastore = PostgresqlMetastore::new(postgresql_metastore_config, uri)
             .await
             .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
         let instrumented_metastore = InstrumentedMetastore::new(Box::new(postgresql_metastore));
@@ -1222,7 +1257,7 @@ impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
             .expect("Environment variable `TEST_DATABASE_URL` should be set.")
             .parse()
             .expect("Environment variable `TEST_DATABASE_URL` should be a valid URI.");
-        PostgresqlMetastore::new(uri)
+        PostgresqlMetastore::new(&PostgresMetastoreConfig::default(), &uri)
             .await
             .expect("Failed to initialize test PostgreSQL metastore.")
     }

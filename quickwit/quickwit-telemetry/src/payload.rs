@@ -121,16 +121,16 @@ impl Default for QuickwitTelemetryInfo {
 #[serde(rename_all = "snake_case")]
 pub enum QuickwitFeature {
     FileBackedMetastore,
-    PostgresqMetastore,
-    Otlp,
     Jaeger,
+    Otlp,
+    PostgresqMetastore,
 }
 
 fn hashed_host_username() -> String {
     let hostname = hostname::get()
         .map(|hostname| hostname.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "".to_string());
-    let username = username::get_user_name().unwrap_or_else(|_| "".to_string());
+        .unwrap_or_default();
+    let username = username::get_user_name().unwrap_or_default();
     let hashed_value = format!("{hostname}:{username}");
     let digest = md5::compute(hashed_value.as_bytes());
     format!("{digest:x}")

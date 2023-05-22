@@ -18,138 +18,185 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use once_cell::sync::OnceCell;
+use anyhow::ensure;
+use once_cell::sync::Lazy;
 use quickwit_common::uri::{Protocol, Uri};
+use quickwit_config::{StorageBackend, StorageConfig, StorageConfigs};
 
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
+use crate::storage_factory::StorageFactory;
 #[cfg(feature = "azure")]
 use crate::AzureBlobStorageFactory;
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
 
-/// Quickwit supported storage resolvers.
-pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
-    static STORAGE_URI_RESOLVER: OnceCell<StorageUriResolver> = OnceCell::new();
-    STORAGE_URI_RESOLVER.get_or_init(|| {
-        #[allow(unused_mut)]
-        let mut builder = StorageUriResolver::builder()
-            .register(RamStorageFactory::default())
-            .register(LocalFileStorageFactory::default())
-            .register(S3CompatibleObjectStorageFactory::default());
+type FactoryAndConfig = (Box<dyn StorageFactory>, StorageConfig);
 
-        #[cfg(feature = "azure")]
-        {
-            builder = builder.register(AzureBlobStorageFactory::default());
-        }
-
-        #[cfg(not(feature = "azure"))]
-        {
-            builder = builder.register(UnsupportedStorage {
-                protocol: Protocol::Azure,
-            })
-        }
-
-        builder.build()
-    })
-}
-
-/// A storage factory builds a [`Storage`] object from an URI.
-#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
-#[async_trait]
-pub trait StorageFactory: Send + Sync + 'static {
-    /// Returns the protocol handled by the storage factory.
-    fn protocol(&self) -> Protocol;
-
-    /// Returns the appropriate [`Storage`] object for the URI.
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError>;
-}
-
-/// A storage factory implementation for handling not supported features.
-#[derive(Clone, Copy, Debug)]
-pub struct UnsupportedStorage {
-    protocol: Protocol,
-}
-
-#[async_trait]
-impl StorageFactory for UnsupportedStorage {
-    fn protocol(&self) -> Protocol {
-        self.protocol
-    }
-
-    async fn resolve(&self, _: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        Err(StorageResolverError::ProtocolUnsupported {
-            protocol: self.protocol.to_string(),
-        })
-    }
-}
-
-/// Resolves an URI by dispatching it to the right [`StorageFactory`]
-/// based on its protocol.
+/// Returns the [`Storage`] instance associated with the protocol of a URI. The actual creation of
+/// storage objects is delegated to pre-registered [`StorageFactory`]. The resolver is only
+/// responsible for dispatching to the appropriate factory.
 #[derive(Clone)]
-pub struct StorageUriResolver {
-    per_protocol_resolver: Arc<HashMap<Protocol, Arc<dyn StorageFactory>>>,
+pub struct StorageResolver {
+    per_backend_factories: Arc<HashMap<StorageBackend, FactoryAndConfig>>,
 }
 
-#[derive(Default)]
-pub struct StorageUriResolverBuilder {
-    per_protocol_resolver: HashMap<Protocol, Arc<dyn StorageFactory>>,
-}
-
-impl StorageUriResolverBuilder {
-    /// Registers a storage factory.
-    ///
-    /// If a previous factory was registered for this protocol, it is discarded
-    /// and replaced with the new one.
-    pub fn register<S: StorageFactory>(mut self, factory: S) -> Self {
-        self.per_protocol_resolver
-            .insert(factory.protocol(), Arc::new(factory));
-        self
-    }
-
-    /// Builds the `StorageUriResolver`.
-    pub fn build(self) -> StorageUriResolver {
-        StorageUriResolver {
-            per_protocol_resolver: Arc::new(self.per_protocol_resolver),
-        }
+impl fmt::Debug for StorageResolver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StorageResolver").finish()
     }
 }
 
-impl StorageUriResolver {
-    /// Creates an empty [`StorageUriResolverBuilder`].
-    pub fn builder() -> StorageUriResolverBuilder {
-        StorageUriResolverBuilder::default()
-    }
-
-    /// Creates a `StorageUriResolver` for testing.
-    #[doc(hidden)]
-    pub fn for_test() -> Self {
-        #[allow(unused_mut)]
-        let mut builder = StorageUriResolver::builder()
-            .register(RamStorageFactory::default())
-            .register(LocalFileStorageFactory::default())
-            .register(S3CompatibleObjectStorageFactory::default());
-
-        #[cfg(feature = "azure")]
-        {
-            builder = builder.register(AzureBlobStorageFactory::default());
-        }
-
-        builder.build()
+impl StorageResolver {
+    /// Creates an empty [`StorageResolverBuilder`].
+    pub fn builder() -> StorageResolverBuilder {
+        StorageResolverBuilder::default()
     }
 
     /// Resolves the given URI.
     pub async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let resolver = self
-            .per_protocol_resolver
-            .get(&uri.protocol())
-            .ok_or_else(|| StorageResolverError::ProtocolUnsupported {
-                protocol: uri.protocol().to_string(),
+        let backend = match uri.protocol() {
+            Protocol::Azure => StorageBackend::Azure,
+            Protocol::File => StorageBackend::File,
+            Protocol::Ram => StorageBackend::Ram,
+            Protocol::S3 => StorageBackend::S3,
+            _ => {
+                let message = format!(
+                    "Quickwit does not support {} as a storage backend.",
+                    uri.protocol()
+                );
+                return Err(StorageResolverError::UnsupportedBackend(message));
+            }
+        };
+        let (storage_factory, storage_config) =
+            self.per_backend_factories.get(&backend).ok_or({
+                let message = format!("no storage factory is registered for {}.", uri.protocol());
+                StorageResolverError::UnsupportedBackend(message)
             })?;
-        let storage = resolver.resolve(uri).await?;
+        let storage = storage_factory.resolve(storage_config, uri).await?;
         Ok(storage)
+    }
+
+    /// Creates and returns a default [`StorageResolver`] with the default storage configuration for
+    /// each backend. Note that if the environment (env vars, instance metadata, ...) fails to
+    /// provide the necessary credentials, the default Azure or S3 storage returned by this
+    /// resolver will not work.
+    pub fn unconfigured() -> Self {
+        static STORAGE_RESOLVER: Lazy<StorageResolver> = Lazy::new(|| {
+            let storage_configs = StorageConfigs::default();
+            StorageResolver::configured(&storage_configs)
+        });
+        STORAGE_RESOLVER.clone()
+    }
+
+    /// Creates and returns a [`StorageResolver`].
+    pub fn configured(storage_configs: &StorageConfigs) -> Self {
+        let mut builder = StorageResolver::builder()
+            .register(
+                LocalFileStorageFactory,
+                storage_configs
+                    .find_file()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into(),
+            )
+            .register(
+                RamStorageFactory::default(),
+                storage_configs
+                    .find_ram()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into(),
+            )
+            .register(
+                S3CompatibleObjectStorageFactory,
+                storage_configs
+                    .find_s3()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into(),
+            );
+        #[cfg(feature = "azure")]
+        {
+            builder = builder.register(
+                AzureBlobStorageFactory::default(),
+                storage_configs
+                    .find_azure()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into(),
+            );
+        }
+        #[cfg(not(feature = "azure"))]
+        {
+            use quickwit_config::AzureStorageConfig;
+
+            use crate::storage_factory::UnsupportedStorage;
+
+            builder = builder.register(
+                UnsupportedStorage::new(
+                    StorageBackend::Azure,
+                    "Quickwit was compiled without the `azure` feature.",
+                ),
+                AzureStorageConfig::default().into(),
+            )
+        }
+        builder
+            .build()
+            .expect("Storage factory and config backends should match.")
+    }
+
+    /// Returns a [`StorageResolver`] for testing purposes. Unlike
+    /// [`StorageResolver::unconfigured`], this resolver does not return a singleton.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn ram_for_test() -> Self {
+        use quickwit_config::RamStorageConfig;
+
+        StorageResolver::builder()
+            .register(
+                RamStorageFactory::default(),
+                RamStorageConfig::default().into(),
+            )
+            .build()
+            .expect("Storage factory and config backends should match.")
+    }
+}
+
+#[derive(Default)]
+pub struct StorageResolverBuilder {
+    per_backend_factories: HashMap<StorageBackend, (Box<dyn StorageFactory>, StorageConfig)>,
+}
+
+impl StorageResolverBuilder {
+    /// Registers a [`StorageFactory`] and a [`StorageConfig`].
+    pub fn register<S: StorageFactory>(
+        mut self,
+        storage_factory: S,
+        storage_config: StorageConfig,
+    ) -> Self {
+        self.per_backend_factories.insert(
+            storage_factory.backend(),
+            (Box::new(storage_factory), storage_config),
+        );
+        self
+    }
+
+    /// Builds the [`StorageResolver`].
+    pub fn build(self) -> anyhow::Result<StorageResolver> {
+        for (storage_factory, storage_config) in self.per_backend_factories.values() {
+            ensure!(
+                storage_factory.backend() == storage_config.backend(),
+                "Storage factory and config backends do not match: {:?} vs. {:?}.",
+                storage_factory.backend(),
+                storage_config.backend(),
+            );
+        }
+        let storage_resolver = StorageResolver {
+            per_backend_factories: Arc::new(self.per_backend_factories),
+        };
+        Ok(storage_resolver)
     }
 }
 
@@ -157,31 +204,36 @@ impl StorageUriResolver {
 mod tests {
     use std::path::Path;
 
+    use quickwit_config::{FileStorageConfig, RamStorageConfig};
+
     use super::*;
-    use crate::RamStorage;
+    use crate::{MockStorageFactory, RamStorage};
 
     #[tokio::test]
     async fn test_storage_resolver_simple() -> anyhow::Result<()> {
         let mut file_storage_factory = MockStorageFactory::new();
         file_storage_factory
-            .expect_protocol()
-            .returning(|| Protocol::File);
+            .expect_backend()
+            .returning(|| StorageBackend::File);
 
         let mut ram_storage_factory = MockStorageFactory::new();
         ram_storage_factory
-            .expect_protocol()
-            .returning(|| Protocol::Ram);
-        ram_storage_factory.expect_resolve().returning(|_uri| {
-            Ok(Arc::new(
-                RamStorage::builder()
-                    .put("hello", b"hello_content_second")
-                    .build(),
-            ))
-        });
-        let storage_resolver = StorageUriResolver::builder()
-            .register(file_storage_factory)
-            .register(ram_storage_factory)
-            .build();
+            .expect_backend()
+            .returning(|| StorageBackend::Ram);
+        ram_storage_factory
+            .expect_resolve()
+            .returning(|_storage_config, _uri| {
+                Ok(Arc::new(
+                    RamStorage::builder()
+                        .put("hello", b"hello_content_second")
+                        .build(),
+                ))
+            });
+        let storage_resolver = StorageResolver::builder()
+            .register(file_storage_factory, FileStorageConfig::default().into())
+            .register(ram_storage_factory, RamStorageConfig::default().into())
+            .build()
+            .unwrap();
         let storage = storage_resolver
             .resolve(&Uri::from_well_formed("ram:///".to_string()))
             .await?;
@@ -194,16 +246,16 @@ mod tests {
     async fn test_storage_resolver_override() -> anyhow::Result<()> {
         let mut first_ram_storage_factory = MockStorageFactory::new();
         first_ram_storage_factory
-            .expect_protocol()
-            .returning(|| Protocol::Ram);
+            .expect_backend()
+            .returning(|| StorageBackend::Ram);
 
         let mut second_ram_storage_factory = MockStorageFactory::new();
         second_ram_storage_factory
-            .expect_protocol()
-            .returning(|| Protocol::Ram);
+            .expect_backend()
+            .returning(|| StorageBackend::Ram);
         second_ram_storage_factory
             .expect_resolve()
-            .returning(|uri| {
+            .returning(|_storage_config, uri| {
                 assert_eq!(uri.as_str(), "ram:///home");
                 Ok(Arc::new(
                     RamStorage::builder()
@@ -211,10 +263,17 @@ mod tests {
                         .build(),
                 ))
             });
-        let storage_resolver = StorageUriResolver::builder()
-            .register(first_ram_storage_factory)
-            .register(second_ram_storage_factory)
-            .build();
+        let storage_resolver = StorageResolver::builder()
+            .register(
+                first_ram_storage_factory,
+                RamStorageConfig::default().into(),
+            )
+            .register(
+                second_ram_storage_factory,
+                RamStorageConfig::default().into(),
+            )
+            .build()
+            .unwrap();
         let storage = storage_resolver
             .resolve(&Uri::from_well_formed("ram:///home".to_string()))
             .await?;
@@ -225,12 +284,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_storage_resolver_unsupported_protocol() {
-        let storage_resolver = StorageUriResolver::for_test();
+        let storage_resolver = StorageResolver::unconfigured();
         let storage_uri =
             Uri::from_well_formed("postgresql://localhost:5432/metastore".to_string());
+        let resolver_error = storage_resolver.resolve(&storage_uri).await.unwrap_err();
         assert!(matches!(
-            storage_resolver.resolve(&storage_uri).await,
-            Err(crate::StorageResolverError::ProtocolUnsupported { protocol }) if protocol == "postgresql"
+            resolver_error,
+            StorageResolverError::UnsupportedBackend(_)
         ));
     }
 }
