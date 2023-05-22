@@ -540,8 +540,9 @@ pub struct IndexStats {
     pub index_id: String,
     pub index_uri: Uri,
     pub num_published_splits: usize,
+    pub size_published_splits: Byte,
     pub num_published_docs: u64,
-    pub size_published_docs: Byte,
+    pub size_published_docs_uncompressed: Byte,
     pub timestamp_field_name: Option<String>,
     pub timestamp_range: Option<(i64, i64)>,
     pub num_docs_descriptive: Option<DescriptiveStats>,
@@ -555,9 +556,12 @@ impl Tabled for IndexStats {
         vec![
             self.index_id.clone(),
             self.index_uri.to_string(),
-            self.num_published_splits.to_string(),
             self.num_published_docs.to_string(),
-            self.size_published_docs
+            self.size_published_docs_uncompressed
+                .get_appropriate_unit(false)
+                .to_string(),
+            self.num_published_splits.to_string(),
+            self.size_published_splits
                 .get_appropriate_unit(false)
                 .to_string(),
             display_option_in_table(&self.timestamp_field_name),
@@ -569,8 +573,9 @@ impl Tabled for IndexStats {
         vec![
             "Index ID: ".to_string(),
             "Index URI: ".to_string(),
-            "Number of published splits: ".to_string(),
             "Number of published documents: ".to_string(),
+            "Size of published documents (uncompressed): ".to_string(),
+            "Number of published splits: ".to_string(),
             "Size of published splits: ".to_string(),
             "Timestamp field: ".to_string(),
             "Timestamp range: ".to_string(),
@@ -613,11 +618,14 @@ impl IndexStats {
 
         let splits_bytes = published_splits
             .iter()
-            .filter(|split| split.split_state == SplitState::Published)
             .map(|split| split.split_metadata.footer_offsets.end)
             .sorted()
             .collect_vec();
-        let total_bytes = splits_bytes.iter().sum::<u64>();
+        let total_num_bytes = splits_bytes.iter().sum::<u64>();
+        let total_uncompressed_num_bytes = published_splits
+            .iter()
+            .map(|split| split.split_metadata.uncompressed_docs_size_in_bytes)
+            .sum::<u64>();
 
         let timestamp_range = if index_metadata
             .index_config()
@@ -658,8 +666,9 @@ impl IndexStats {
             index_id: index_config.index_id.clone(),
             index_uri: index_config.index_uri.clone(),
             num_published_splits: published_splits.len(),
+            size_published_splits: Byte::from(total_num_bytes),
             num_published_docs: total_num_docs,
-            size_published_docs: Byte::from(total_bytes),
+            size_published_docs_uncompressed: Byte::from(total_uncompressed_num_bytes),
             timestamp_field_name: index_config.doc_mapping.timestamp_field,
             timestamp_range,
             num_docs_descriptive,
@@ -1120,10 +1129,12 @@ mod test {
         let index_uri = "s3://some-test-bucket";
 
         let index_metadata = IndexMetadata::for_test(&index_id, index_uri);
-        let split_metadata_1 =
+        let mut split_metadata_1 =
             split_metadata_for_test(&split_id_1, 100_000, 1111..=2222, 15_000_000);
-        let split_metadata_2 =
+        split_metadata_1.uncompressed_docs_size_in_bytes = 19_000_000;
+        let mut split_metadata_2 =
             split_metadata_for_test(&split_id_2, 100_000, 1000..=3000, 30_000_000);
+        split_metadata_2.uncompressed_docs_size_in_bytes = 36_000_000;
 
         let split_data_1 = Split {
             split_metadata: split_metadata_1,
@@ -1144,8 +1155,15 @@ mod test {
         assert_eq!(index_stats.index_id, index_id);
         assert_eq!(index_stats.index_uri.as_str(), index_uri);
         assert_eq!(index_stats.num_published_splits, 1);
+        assert_eq!(
+            index_stats.size_published_splits,
+            Byte::from(15_000_000usize)
+        );
         assert_eq!(index_stats.num_published_docs, 100_000);
-        assert_eq!(index_stats.size_published_docs, Byte::from(15_000_000usize));
+        assert_eq!(
+            index_stats.size_published_docs_uncompressed,
+            Byte::from(19_000_000usize)
+        );
         assert_eq!(
             index_stats.timestamp_field_name,
             Some("timestamp".to_string())

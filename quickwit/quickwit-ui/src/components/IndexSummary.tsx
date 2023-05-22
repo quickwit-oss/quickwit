@@ -38,7 +38,7 @@ flex-direction: row;
 &:nth-of-type(odd){ background: rgba(0,0,0,0.05) }
 `
 const RowKey = styled.div`
-width: 300px;
+width: 350px;
 `
 const IndexRow: FC<{ title: string; children: ReactNode }> = ({
   title,
@@ -63,6 +63,11 @@ export function IndexSummary({ index }: { index: Index }) {
       return split.footer_offsets.end
     })
     .reduce((sum, current) => sum + current, 0);
+  const total_uncompressed_num_bytes = published_splits
+    .map(split => {
+      return split.uncompressed_docs_size_in_bytes
+    })
+    .reduce((sum, current) => sum + current, 0);
   return (
     <Paper variant="outlined" >
       <ItemContainer>
@@ -73,6 +78,23 @@ export function IndexSummary({ index }: { index: Index }) {
             .format("YYYY/MM/DD HH:MM")}
         </IndexRow>
         <IndexRow title="URI:">{index.metadata.index_config.index_uri}</IndexRow>
+        <IndexRow title="Number of published documents:">
+          <NumberFormat
+            value={total_num_docs}
+            displayType={"text"}
+            thousandSeparator={true}
+          />
+        </IndexRow>
+        <IndexRow title="Size of published documents (uncompressed):">
+          <NumberFormat
+            value={total_uncompressed_num_bytes / 1000000}
+            displayType={"text"}
+            thousandSeparator={true}
+            suffix=" MB"
+            decimalScale={2}
+          />
+        </IndexRow>
+        <IndexRow title="Number of published splits:">{published_splits.length}</IndexRow>
         <IndexRow title="Size of published splits:">
           <NumberFormat
             value={total_num_bytes / 1000000}
@@ -82,14 +104,6 @@ export function IndexSummary({ index }: { index: Index }) {
             decimalScale={2}
           />
         </IndexRow>
-        <IndexRow title="Number of published documents:">
-          <NumberFormat
-            value={total_num_docs}
-            displayType={"text"}
-            thousandSeparator={true}
-          />
-        </IndexRow>
-        <IndexRow title="Number of published splits:">{published_splits.length}</IndexRow>
         <IndexRow title="Number of staged splits:">{num_of_staged_splits}</IndexRow>
         <IndexRow title="Number of splits marked for deletion:">{num_of_marked_for_delete_splits}</IndexRow>
       </ItemContainer>

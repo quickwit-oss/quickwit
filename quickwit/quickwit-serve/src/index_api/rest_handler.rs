@@ -153,8 +153,9 @@ struct IndexStats {
     #[schema(value_type = String)]
     pub index_uri: Uri,
     pub num_published_splits: usize,
+    pub size_published_splits: u64,
     pub num_published_docs: u64,
-    pub size_published_docs: u64,
+    pub size_published_docs_uncompressed: u64,
     pub timestamp_field_name: Option<String>,
     pub min_timestamp: Option<i64>,
     pub max_timestamp: Option<i64>,
@@ -185,13 +186,15 @@ async fn describe_index(
         .filter(|split| split.split_state == SplitState::Published)
         .collect();
     let mut total_num_docs = 0;
-    let mut total_bytes = 0;
+    let mut total_num_bytes = 0;
+    let mut total_uncompressed_num_bytes = 0;
     let mut min_timestamp: Option<i64> = None;
     let mut max_timestamp: Option<i64> = None;
 
     for split in &published_splits {
         total_num_docs += split.split_metadata.num_docs as u64;
-        total_bytes += split.split_metadata.footer_offsets.end;
+        total_num_bytes += split.split_metadata.footer_offsets.end;
+        total_uncompressed_num_bytes += split.split_metadata.uncompressed_docs_size_in_bytes;
 
         if let Some(time_range) = &split.split_metadata.time_range {
             min_timestamp = min_timestamp
@@ -208,8 +211,9 @@ async fn describe_index(
         index_id,
         index_uri: index_config.index_uri.clone(),
         num_published_splits: published_splits.len(),
+        size_published_splits: total_num_bytes,
         num_published_docs: total_num_docs,
-        size_published_docs: total_bytes,
+        size_published_docs_uncompressed: total_uncompressed_num_bytes,
         timestamp_field_name: index_config.doc_mapping.timestamp_field,
         min_timestamp,
         max_timestamp,
@@ -911,8 +915,9 @@ mod tests {
             "index_id": "test-index",
             "index_uri": "ram:///indexes/test-index",
             "num_published_splits": 2,
+            "size_published_splits": 1600,
             "num_published_docs": 20,
-            "size_published_docs": 1600,
+            "size_published_docs_uncompressed": 512,
             "timestamp_field_name": "timestamp",
             "min_timestamp": split_1_time_range.start() - 10,
             "max_timestamp": split_1_time_range.end() + 10,
