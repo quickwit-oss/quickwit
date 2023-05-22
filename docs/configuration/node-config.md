@@ -36,6 +36,7 @@ There are also other parameters that can be only defined by env variables:
 | Env variable | Description |
 | --- | --- |
 | `QW_S3_ENDPOINT` | Custom S3 endpoint. |
+| `QW_S3_MAX_CONCURRENCY` | Limit the number of concurent requests to S3 |
 | `QW_ENABLE_JAEGER_EXPORTER` | Enable trace export to Jaeger. |
 | `QW_AZURE_ACCESS_KEY` | Azure Blob storage access key. |
 
