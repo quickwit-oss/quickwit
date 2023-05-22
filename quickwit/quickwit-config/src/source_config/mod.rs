@@ -425,9 +425,9 @@ impl TransformConfig {
         let timezone_str = self.timezone_opt.as_deref().unwrap_or("UTC");
         let timezone = TimeZone::parse(timezone_str).with_context(|| {
             format!(
-            "Failed to parse timezone: `{timezone_str}`. Timezone must be a valid name \
+                "Failed to parse timezone: `{timezone_str}`. Timezone must be a valid name \
             in the TZ database: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
-        )
+            )
         })?;
         // Append "\n." to the script to return the entire document and not only the modified
         // fields.
