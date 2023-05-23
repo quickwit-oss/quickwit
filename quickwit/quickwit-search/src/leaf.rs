@@ -304,11 +304,12 @@ async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyh
 #[instrument(skip(searcher_context, search_request, storage, split, doc_mapper,))]
 async fn leaf_search_single_split(
     searcher_context: &SearcherContext,
-    search_request: &SearchRequest,
+    mut search_request: SearchRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
 ) -> crate::Result<LeafSearchResponse> {
+    rewrite_request(&mut search_request, &split);
     if let Some(cached_answer) = searcher_context
         .leaf_search_cache
         .get(split.clone(), search_request.clone())
@@ -322,7 +323,7 @@ async fn leaf_search_single_split(
     let quickwit_collector = make_collector_for_split(
         split_id.clone(),
         doc_mapper.as_ref(),
-        search_request,
+        &search_request,
         searcher_context.aggregation_limits.clone(),
     )?;
     let query_ast: QueryAst = serde_json::from_str(search_request.query_ast.as_str())
@@ -348,12 +349,36 @@ async fn leaf_search_single_split(
         crate::SearchError::InternalError(format!("Leaf search panicked. split={split_id}"))
     })??;
 
-    searcher_context.leaf_search_cache.put(
-        split,
-        search_request.clone(),
-        leaf_search_response.clone(),
-    );
+    searcher_context
+        .leaf_search_cache
+        .put(split, search_request, leaf_search_response.clone());
     Ok(leaf_search_response)
+}
+
+/// Rewrite a request removing parts which incure additional download or computation with no
+/// effect.
+///
+/// This include things such as sorting result by a field or _score when no document is requested,
+/// or applying date range when the range covers the entire split.
+fn rewrite_request(search_request: &mut SearchRequest, split: &SplitIdAndFooterOffsets) {
+    if search_request.max_hits == 0 {
+        search_request.sort_by_field = None;
+    }
+
+    if let (Some(split_start), Some(split_end)) = (split.timestamp_start, split.timestamp_end) {
+        if let Some(start_timestamp) = search_request.start_timestamp {
+            // both starts are inclusive
+            if start_timestamp <= split_start {
+                search_request.start_timestamp = None;
+            }
+        }
+        if let Some(end_timestamp) = search_request.end_timestamp {
+            // search end is exclusive, split end is inclusive
+            if end_timestamp > split_end {
+                search_request.end_timestamp = None;
+            }
+        }
+    }
 }
 
 /// `leaf` step of search.
@@ -390,7 +415,7 @@ pub async fn leaf_search(
                     .start_timer();
                 let leaf_search_single_split_res = leaf_search_single_split(
                     &searcher_context_clone,
-                    &request,
+                    (*request).clone(),
                     index_storage_clone,
                     split.clone(),
                     doc_mapper_clone,
