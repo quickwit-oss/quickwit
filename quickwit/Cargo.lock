@@ -4752,6 +4752,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "tower",
  "tracing",
  "tracing-opentelemetry",
  "utoipa",

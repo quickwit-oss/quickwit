@@ -190,13 +190,10 @@ impl Handler<SuperviseLoop> for DeleteTaskService {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use quickwit_actors::HEARTBEAT;
-    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::TestSandbox;
     use quickwit_proto::metastore_api::DeleteQuery;
-    use quickwit_search::{MockSearchService, SearchJobPlacer, SearchServiceClient};
+    use quickwit_search::{searcher_pool_for_test, MockSearchService, SearchJobPlacer};
     use quickwit_storage::StorageUriResolver;
 
     use super::DeleteTaskService;
@@ -217,12 +214,8 @@ mod tests {
         let index_uid = test_sandbox.index_uid();
         let metastore = test_sandbox.metastore();
         let mock_search_service = MockSearchService::new();
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(mock_search_service),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1000", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let delete_task_service = DeleteTaskService::new(
