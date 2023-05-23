@@ -116,7 +116,7 @@ pub async fn start_ingest_api_service(
 
 /// Specifies if the ingest request should block waiting for the records to be committed.
 #[repr(u32)]
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all(deserialize = "snake_case"))]
 #[derive(Default)]
 pub enum CommitType {
