@@ -110,7 +110,7 @@ async fn leaf_search_stream_single_split(
     searcher_context: Arc<SearcherContext>,
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
-    stream_request: SearchStreamRequest,
+    mut stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
     let _leaf_split_stream_permit = searcher_context
@@ -118,6 +118,7 @@ async fn leaf_search_stream_single_split(
         .acquire()
         .await
         .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+    rewrite_request(&mut stream_request, &split);
 
     let index = open_index_with_caches(&searcher_context, storage, &split, true).await?;
     let split_schema = index.schema();
@@ -284,6 +285,27 @@ async fn leaf_search_stream_single_split(
         data: buffer,
         split_id: split.split_id,
     })
+}
+
+/// Rewrite a request removing parts which incure additional download or computation with no
+/// effect.
+///
+/// At the moment, this only affect date range which covers the entire split.
+fn rewrite_request(search_request: &mut SearchStreamRequest, split: &SplitIdAndFooterOffsets) {
+    if let (Some(split_start), Some(split_end)) = (split.timestamp_start, split.timestamp_end) {
+        if let Some(start_timestamp) = search_request.start_timestamp {
+            // both starts are inclusive
+            if start_timestamp <= split_start {
+                search_request.start_timestamp = None;
+            }
+        }
+        if let Some(end_timestamp) = search_request.end_timestamp {
+            // search end is exclusive, split end is inclusive
+            if end_timestamp > split_end {
+                search_request.end_timestamp = None;
+            }
+        }
+    }
 }
 
 fn collect_values<Item: HasAssociatedColumnType>(
