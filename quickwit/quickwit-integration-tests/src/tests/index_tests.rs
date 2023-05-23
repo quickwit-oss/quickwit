@@ -127,6 +127,7 @@ async fn test_restarting_standalone_server() {
             index_id,
             ingest_json!({"body": "third record"}),
             None,
+            None,
             CommitType::Force,
         )
         .await
@@ -136,6 +137,7 @@ async fn test_restarting_standalone_server() {
         .ingest(
             index_id,
             ingest_json!({"body": "fourth record"}),
+            None,
             None,
             CommitType::Force,
         )
@@ -236,6 +238,7 @@ async fn test_commit_modes() {
             index_id,
             ingest_json!({"body": "wait"}),
             None,
+            None,
             CommitType::WaitFor,
         )
         .await
@@ -263,6 +266,7 @@ async fn test_commit_modes() {
         .ingest(
             index_id,
             ingest_json!({"body": "auto"}),
+            None,
             None,
             CommitType::Auto,
         )
@@ -351,6 +355,7 @@ async fn test_shutdown() {
         .ingest(
             index_id,
             ingest_json!({"body": "two"}),
+            None,
             None,
             CommitType::Force,
         )
