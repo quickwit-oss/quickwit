@@ -70,14 +70,34 @@ pub enum TelemetryEvent {
     DeleteIndex,
     /// Garbage collect command is called.
     GarbageCollect,
-    /// Run service command is called.
-    RunService(String),
+    /// Run services command is called.
+    RunCommand(RunCommandInfo),
     /// EndCommand (with the return code)
     EndCommand { return_code: i32 },
-    /// Sent every once in a while (used for deducing uptime).
+    /// Event sent every 12h to signal the server is running.
     Running,
     /// Quickwit UI was requested.
     UiRequest,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunCommandInfo {
+    services: Vec<String>,
+    otlp_endpoint_enabled: bool,
+    jaeger_endpoint_enabled: bool,
+}
+impl RunCommandInfo {
+    pub fn new(
+        services: Vec<String>,
+        otlp_endpoint_enabled: bool,
+        jaeger_endpoint_enabled: bool,
+    ) -> Self {
+        Self {
+            services,
+            otlp_endpoint_enabled,
+            jaeger_endpoint_enabled,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -34,8 +34,8 @@ use crate::sink::{HttpClient, Sink};
 /// At most 1 Request per minutes.
 const TELEMETRY_PUSH_COOLDOWN: Duration = Duration::from_secs(60);
 
-/// Interval at which to send telemetry uptime event.
-const TELEMETRY_UPTIME_INTERVAL: Duration =
+/// Interval at which to send telemetry `Running` event.
+const TELEMETRY_RUNNING_EVENT_INTERVAL: Duration =
     Duration::from_secs(if cfg!(test) { 3 } else { 60 * 60 * 12 }); // 12h
 
 /// Upon termination of the program, we send one last telemetry request with pending events.
@@ -285,7 +285,7 @@ pub fn is_telemetry_enabled() -> bool {
 }
 
 fn start_uptime_monitor_task(telemetry_sender: Arc<Inner>) {
-    let mut clock = tokio::time::interval(TELEMETRY_UPTIME_INTERVAL);
+    let mut clock = tokio::time::interval(TELEMETRY_RUNNING_EVENT_INTERVAL);
     tokio::spawn(async move {
         // Drop the first immediate tick.
         clock.tick().await;
@@ -381,7 +381,7 @@ mod tests {
             assert_eq!(payload.events.len(), 1);
         }
         clock_btn.tick().await;
-        tokio::time::sleep(TELEMETRY_UPTIME_INTERVAL + Duration::from_secs(1)).await;
+        tokio::time::sleep(TELEMETRY_RUNNING_EVENT_INTERVAL + Duration::from_secs(1)).await;
         {
             let payload = rx.recv().await.unwrap();
             assert_eq!(payload.events.len(), 1);
