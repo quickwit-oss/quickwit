@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-opentelemetry"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -24,8 +24,11 @@ tracing = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
 quickwit-actors = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-metastore = { workspace = true, features = ["testsuite"] }

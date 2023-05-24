@@ -368,7 +368,7 @@ impl Actor for DocProcessor {
             | ActorExitStatus::Failure(_)
             | ActorExitStatus::Panicked => return Ok(()),
             ActorExitStatus::Quit | ActorExitStatus::Success => {
-                ctx.send_exit_with_success(&self.indexer_mailbox).await?;
+                let _ = ctx.send_exit_with_success(&self.indexer_mailbox).await;
             }
         }
         Ok(())

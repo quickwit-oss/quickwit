@@ -27,7 +27,7 @@ Let's create a schemaless index with only one field `timestamp`. The mode `dynam
 
 ```yaml title="index-config.yaml"
 
-version: 0.5
+version: 0.6
 
 index_id: fluentbit-logs
 

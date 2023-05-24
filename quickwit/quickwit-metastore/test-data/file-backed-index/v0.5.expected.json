@@ -96,7 +96,7 @@
           "message"
         ]
       },
-      "version": "0.5"
+      "version": "0.6"
     },
     "index_uid": "my-index",
     "sources": [
@@ -114,10 +114,10 @@
         "transform": {
           "script": ".message = downcase(string!(.message))"
         },
-        "version": "0.5"
+        "version": "0.6"
       }
     ],
-    "version": "0.5"
+    "version": "0.6"
   },
   "splits": [
     {
@@ -146,8 +146,8 @@
       },
       "uncompressed_docs_size_in_bytes": 234234,
       "update_timestamp": 1789,
-      "version": "0.5"
+      "version": "0.6"
     }
   ],
-  "version": "0.5"
+  "version": "0.6"
 }

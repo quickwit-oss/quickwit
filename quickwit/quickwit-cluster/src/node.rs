@@ -58,6 +58,27 @@ impl ClusterNode {
         Ok(node)
     }
 
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn for_test(
+        node_id: &str,
+        port: u16,
+        is_self_node: bool,
+        enabled_services: &[&str],
+    ) -> Self {
+        use quickwit_common::tower::make_channel;
+
+        use crate::member::{ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY};
+
+        let gossip_advertise_addr = ([127, 0, 0, 1], port).into();
+        let grpc_advertise_addr = ([127, 0, 0, 1], port + 1).into();
+        let chitchat_id = ChitchatId::new(node_id.to_string(), 0, gossip_advertise_addr);
+        let channel = make_channel(grpc_advertise_addr).await;
+        let mut node_state = NodeState::default();
+        node_state.set(ENABLED_SERVICES_KEY, enabled_services.join(","));
+        node_state.set(GRPC_ADVERTISE_ADDR_KEY, grpc_advertise_addr.to_string());
+        Self::try_new(chitchat_id, &node_state, channel, is_self_node).unwrap()
+    }
+
     pub fn chitchat_id(&self) -> &ChitchatId {
         &self.inner.chitchat_id
     }

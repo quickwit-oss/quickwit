@@ -19,29 +19,27 @@
 
 use clap::Command;
 use quickwit_cli::cli::build_cli;
-use quickwit_serve::quickwit_build_info;
+use quickwit_serve::BuildInfo;
 use toml::Value;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let build_info = quickwit_build_info();
+    let build_info = BuildInfo::get();
     let version_text = format!(
         "{} ({} {})",
         build_info.cargo_pkg_version, build_info.cargo_pkg_version, build_info.commit_date,
     );
-
     let app = build_cli()
-        .version(version_text.as_str())
+        .version(version_text)
         .disable_help_subcommand(true);
 
     generate_markdown_from_clap(&app);
-
     Ok(())
 }
 
 fn markdown_for_command(command: &Command, doc_extensions: &toml::Value) {
     let command_name = command.get_name();
-    let command_ext: Option<&Value> = doc_extensions.get(command_name.to_owned());
+    let command_ext: Option<&Value> = doc_extensions.get(command_name.to_string());
     markdown_for_command_helper(command, command_ext, command_name.to_string(), Vec::new());
 }
 
@@ -56,11 +54,11 @@ fn markdown_for_subcommand(
     println!("### {command_name}\n");
 
     let subcommand_ext: Option<&Value> = {
-        let mut val_opt: Option<&Value> = doc_extensions.get(command_group[0].to_owned());
+        let mut val_opt: Option<&Value> = doc_extensions.get(command_group[0].to_string());
         for command in command_group
             .iter()
             .skip(1)
-            .chain(&[subcommand_name.to_owned()])
+            .chain(&[subcommand_name.to_string()])
         {
             if let Some(val) = val_opt {
                 val_opt = val.get(command);
@@ -91,7 +89,7 @@ fn markdown_for_command_helper(
             println!("{about}  ");
         }
     } else if let Some(about) = subcommand.get_about() {
-        if !about.trim().is_empty() {
+        if !about.to_string().trim().is_empty() {
             println!("{about}  ");
         }
     }
@@ -122,7 +120,7 @@ fn markdown_for_command_helper(
         println!("quickwit {command_name}");
         for arg in &arguments {
             let is_required = arg.is_required_set();
-            let is_bool = !arg.is_takes_value_set();
+            let is_bool = !arg.get_action().takes_values();
 
             let mut commando = format!("--{}", arg.get_id());
             if !is_bool {
@@ -172,7 +170,7 @@ fn generate_markdown_from_clap(command: &Command) {
         let command_name = command.get_name(); // index, split, source
         println!("## {command_name}");
         if let Some(about) = command.get_long_about().or_else(|| command.get_about()) {
-            if !about.trim().is_empty() {
+            if !about.to_string().trim().is_empty() {
                 println!("{about}\n");
             }
         }

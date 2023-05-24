@@ -88,13 +88,13 @@ fn extract_unsimplified_tags_filter_ast(query_ast: QueryAst) -> UnsimplifiedTagF
                 .collect();
             UnsimplifiedTagFilterAst::Or(children)
         }
-        QueryAst::Phrase(phrase_query) => {
+        QueryAst::FullText(full_text_query) => {
             // TODO This is a bug in a sense.
             // A phrase is supposed to go through the tokenizer.
             UnsimplifiedTagFilterAst::Tag {
                 is_present: true,
-                field: phrase_query.field,
-                value: phrase_query.phrase,
+                field: full_text_query.field,
+                value: full_text_query.text,
             }
         }
         QueryAst::Boost { underlying, .. } => extract_unsimplified_tags_filter_ast(*underlying),
@@ -373,7 +373,7 @@ pub fn no_tag(tag: impl ToString) -> TagFilterAst {
 #[cfg(test)]
 mod test {
     use quickwit_query::query_ast::{QueryAst, UserInputQuery};
-    use quickwit_query::DefaultOperator;
+    use quickwit_query::BooleanOperand;
 
     use super::extract_tags_from_query;
     use crate::tag_pruning::TagFilterAst;
@@ -382,7 +382,7 @@ mod test {
         let query_ast: QueryAst = UserInputQuery {
             user_text: user_query.to_string(),
             default_fields: None,
-            default_operator: DefaultOperator::Or,
+            default_operator: BooleanOperand::Or,
         }
         .into();
         let parsed_query_ast = query_ast.parse_user_query(&[]).unwrap();

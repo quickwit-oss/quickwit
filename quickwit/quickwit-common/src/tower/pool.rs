@@ -30,24 +30,23 @@ use tokio::sync::RwLock;
 
 use super::Change;
 
-/// A pool of `S` services identified by `K` keys. The pool can be updated manually by calling the
+/// A pool of `V` values identified by `K` keys. The pool can be updated manually by calling the
 /// `add/remove` methods or by listening to a stream of changes.
-#[derive(Default)]
-pub struct Pool<K, S> {
-    inner: Arc<RwLock<InnerPool<K, S>>>,
+pub struct Pool<K, V> {
+    inner: Arc<RwLock<InnerPool<K, V>>>,
 }
 
-impl<K, S> fmt::Debug for Pool<K, S>
+impl<K, V> fmt::Debug for Pool<K, V>
 where
     K: 'static,
-    S: 'static,
+    V: 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Pool<{:?}, {:?}>", TypeId::of::<K>(), TypeId::of::<S>())
+        write!(f, "Pool<{:?}, {:?}>", TypeId::of::<K>(), TypeId::of::<V>())
     }
 }
 
-impl<K, S> Clone for Pool<K, S> {
+impl<K, V> Clone for Pool<K, V> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -55,20 +54,30 @@ impl<K, S> Clone for Pool<K, S> {
     }
 }
 
-#[derive(Default)]
-struct InnerPool<K, S> {
-    nodes: HashMap<K, S>,
+impl<K, V> Default for Pool<K, V> {
+    fn default() -> Self {
+        let inner = InnerPool {
+            map: HashMap::new(),
+        };
+        Self {
+            inner: Arc::new(RwLock::new(inner)),
+        }
+    }
 }
 
-impl<K, S> Pool<K, S>
+struct InnerPool<K, V> {
+    map: HashMap<K, V>,
+}
+
+impl<K, V> Pool<K, V>
 where
     K: Eq + PartialEq + Hash + Clone + Send + Sync + 'static,
-    S: Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
 {
     /// Listens for the changes emitted by the stream and updates the pool accordingly.
     pub fn listen_for_changes(
         &self,
-        change_stream: impl Stream<Item = Change<K, S>> + Send + 'static,
+        change_stream: impl Stream<Item = Change<K, V>> + Send + 'static,
     ) {
         let pool = self.clone();
         let future = async move {
@@ -90,26 +99,32 @@ where
 
     /// Returns whether the pool is empty.
     pub async fn is_empty(&self) -> bool {
-        self.inner.read().await.nodes.is_empty()
+        self.inner.read().await.map.is_empty()
     }
 
     /// Returns the number of values in the pool.
-    pub async fn num_nodes(&self) -> usize {
-        self.inner.read().await.nodes.len()
+    pub async fn len(&self) -> usize {
+        self.inner.read().await.map.len()
     }
 
-    /// Returns all the values in the pool.
-    pub async fn get_all(&self) -> Vec<S> {
-        self.inner.read().await.nodes.values().cloned().collect()
+    /// Returns all the key-value pairs in the pool.
+    pub async fn all(&self) -> Vec<(K, V)> {
+        self.inner
+            .read()
+            .await
+            .map
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     /// Returns the value associated with the given key.
-    pub async fn get<Q>(&self, key: &Q) -> Option<S>
+    pub async fn get<Q>(&self, key: &Q) -> Option<V>
     where
         Q: Hash + Eq + ?Sized,
         K: Borrow<Q>,
     {
-        self.inner.read().await.nodes.get(key).cloned()
+        self.inner.read().await.map.get(key).cloned()
     }
 
     /// Finds a key in the pool that satisfies the given predicate.
@@ -117,20 +132,34 @@ where
         self.inner
             .read()
             .await
-            .nodes
+            .map
             .keys()
             .find(|k| func(k))
             .cloned()
     }
 
     /// Adds a value to the pool.
-    pub async fn insert(&self, key: K, service: S) {
-        self.inner.write().await.nodes.insert(key, service);
+    pub async fn insert(&self, key: K, service: V) {
+        self.inner.write().await.map.insert(key, service);
     }
 
     /// Removes a value from the pool.
     pub async fn remove(&self, key: &K) {
-        self.inner.write().await.nodes.remove(key);
+        self.inner.write().await.map.remove(key);
+    }
+}
+
+impl<K, V> FromIterator<(K, V)> for Pool<K, V>
+where K: Eq + PartialEq + Hash
+{
+    fn from_iter<I>(iter: I) -> Self
+    where I: IntoIterator<Item = (K, V)> {
+        let key_values = HashMap::from_iter(iter);
+        let inner = InnerPool { map: key_values };
+
+        Self {
+            inner: Arc::new(RwLock::new(inner)),
+        }
     }
 }
 
@@ -149,24 +178,24 @@ mod tests {
         let pool = Pool::default();
         pool.listen_for_changes(change_stream);
         assert!(pool.is_empty().await);
-        assert_eq!(pool.num_nodes().await, 0);
+        assert_eq!(pool.len().await, 0);
 
         change_stream_tx.send(Change::Insert(1, 11)).await.unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
         assert!(!pool.is_empty().await);
-        assert_eq!(pool.num_nodes().await, 1);
+        assert_eq!(pool.len().await, 1);
         assert_eq!(pool.get(&1).await, Some(11));
 
         change_stream_tx.send(Change::Insert(2, 21)).await.unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
-        assert_eq!(pool.num_nodes().await, 2);
+        assert_eq!(pool.len().await, 2);
         assert_eq!(pool.get(&2).await, Some(21));
 
         assert_eq!(pool.find(|k| *k == 1).await, Some(1));
 
-        let mut all_nodes = pool.get_all().await;
+        let mut all_nodes = pool.all().await;
         all_nodes.sort();
-        assert_eq!(all_nodes, vec![11, 21]);
+        assert_eq!(all_nodes, vec![(1, 11), (2, 21)]);
 
         change_stream_tx.send(Change::Insert(1, 12)).await.unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
@@ -174,11 +203,11 @@ mod tests {
 
         change_stream_tx.send(Change::Remove(1)).await.unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
-        assert_eq!(pool.num_nodes().await, 1);
+        assert_eq!(pool.len().await, 1);
 
         change_stream_tx.send(Change::Remove(2)).await.unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
         assert!(pool.is_empty().await);
-        assert_eq!(pool.num_nodes().await, 0);
+        assert_eq!(pool.len().await, 0);
     }
 }

@@ -287,7 +287,8 @@ impl DeleteTaskPlanner {
         let search_job = SearchJob::from(&stale_split.split_metadata);
         let mut search_client = self
             .search_job_placer
-            .assign_job(search_job.clone(), &HashSet::new())?;
+            .assign_job(search_job.clone(), &HashSet::new())
+            .await?;
         for delete_task in delete_tasks {
             let delete_query = delete_task
                 .delete_query
@@ -402,13 +403,12 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 #[cfg(test)]
 mod tests {
     use quickwit_config::build_doc_mapper;
-    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::merge_policy::{MergeOperation, NopMergePolicy};
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
-    use quickwit_search::{MockSearchService, SearchServiceClient};
+    use quickwit_search::{searcher_pool_for_test, MockSearchService};
     use tantivy::TrackedObject;
 
     use super::*;
@@ -494,12 +494,8 @@ mod tests {
                 })
             },
         );
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(mock_search_service),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1000", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let (downloader_mailbox, downloader_inbox) = test_sandbox.universe().create_test_mailbox();
         let delete_planner_executor = DeleteTaskPlanner::new(
             index_uid.clone(),

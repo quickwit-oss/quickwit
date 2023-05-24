@@ -37,7 +37,7 @@ use tracing::debug;
 
 use crate::{cluster_endpoint_arg, make_table, prompt_confirmation};
 
-pub fn build_source_command<'a>() -> Command<'a> {
+pub fn build_source_command() -> Command {
     Command::new("source")
         .about("Manages sources: creates, updates, deletes sources...")
         .arg(cluster_endpoint_arg())
@@ -46,24 +46,34 @@ pub fn build_source_command<'a>() -> Command<'a> {
                 .about("Adds a new source to an index.")
                 .args(&[
                     arg!(--index <INDEX_ID> "ID of the target index")
-                        .display_order(1),
-                    arg!(--"source-config" <SOURCE_CONFIG> "Path to source config file. Please, refer to the documentation for more details."),
+                        .display_order(1)
+                        .required(true),
+                    arg!(--"source-config" <SOURCE_CONFIG> "Path to source config file. Please, refer to the documentation for more details.")
+                        .required(true),
                 ])
             )
         .subcommand(
             Command::new("enable")
                 .about("Enables a source for an index.")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
-                    arg!(--source <SOURCE_ID> "ID of the source."),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1)
+                        .required(true),
+                    arg!(--source <SOURCE_ID> "ID of the source.")
+                        .display_order(2)
+                        .required(true),
                 ])
             )
         .subcommand(
             Command::new("disable")
                 .about("Disables a source for an index.")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
-                    arg!(--source <SOURCE_ID> "ID of the source."),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1)
+                        .required(true),
+                    arg!(--source <SOURCE_ID> "ID of the source.")
+                        .display_order(2)
+                        .required(true),
                 ])
             )
         .subcommand(
@@ -71,14 +81,13 @@ pub fn build_source_command<'a>() -> Command<'a> {
                 .about("Enables/disables the ingest API of an index.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
-                        .display_order(1),
+                        .display_order(1)
+                        .required(true),
                     arg!(--enable "Enables the ingest API.")
-                        .required(true)
-                        .conflicts_with("disable")
-                        .takes_value(false),
+                        .display_order(2),
                     arg!(--disable "Disables the ingest API.")
-                        .takes_value(false)
-                        .required(false),
+                        .display_order(3)
+                        .conflicts_with("enable"),
                 ])
             )
         .subcommand(
@@ -87,9 +96,11 @@ pub fn build_source_command<'a>() -> Command<'a> {
                 .alias("del")
                 .args(&[
                     arg!(--index <INDEX_ID> "ID of the target index")
-                        .display_order(1),
+                        .display_order(1)
+                        .required(true),
                     arg!(--source <SOURCE_ID> "ID of the source.")
-                        .display_order(2),
+                        .display_order(2)
+                        .required(true),
                 ])
             )
         .subcommand(
@@ -98,9 +109,11 @@ pub fn build_source_command<'a>() -> Command<'a> {
                 .alias("desc")
                 .args(&[
                     arg!(--index <INDEX_ID> "ID of the target index")
-                        .display_order(1),
+                        .display_order(1)
+                        .required(true),
                     arg!(--source <SOURCE_ID> "ID of the source.")
-                        .display_order(2),
+                        .display_order(2)
+                        .required(true),
                 ])
             )
         .subcommand(
@@ -109,7 +122,8 @@ pub fn build_source_command<'a>() -> Command<'a> {
                 .alias("ls")
                 .args(&[
                     arg!(--index <INDEX_ID> "ID of the target index")
-                        .display_order(1),
+                        .display_order(1)
+                        .required(true),
                 ])
             )
         .subcommand(
@@ -118,9 +132,11 @@ pub fn build_source_command<'a>() -> Command<'a> {
                 .alias("reset")
                 .args(&[
                     arg!(--index <INDEX_ID> "Index ID")
-                        .display_order(1),
+                        .display_order(1)
+                        .required(true),
                     arg!(--source <SOURCE_ID> "Source ID")
-                        .display_order(2),
+                        .display_order(2)
+                        .required(true),
                 ])
             )
         .arg_required_else_help(true)
@@ -192,17 +208,17 @@ impl SourceCliCommand {
         }
     }
 
-    pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
-            .subcommand()
-            .ok_or_else(|| anyhow::anyhow!("Failed to parse source subcommand arguments."))?;
-        match subcommand {
+            .remove_subcommand()
+            .context("Failed to parse source subcommand.")?;
+        match subcommand.as_str() {
             "create" => Self::parse_create_args(submatches).map(Self::CreateSource),
             "enable" => {
-                Self::parse_toggle_source_args(subcommand, submatches).map(Self::ToggleSource)
+                Self::parse_toggle_source_args(&subcommand, submatches).map(Self::ToggleSource)
             }
             "disable" => {
-                Self::parse_toggle_source_args(subcommand, submatches).map(Self::ToggleSource)
+                Self::parse_toggle_source_args(&subcommand, submatches).map(Self::ToggleSource)
             }
             "delete" => Self::parse_delete_args(submatches).map(Self::DeleteSource),
             "describe" => Self::parse_describe_args(submatches).map(Self::DescribeSource),
@@ -210,23 +226,22 @@ impl SourceCliCommand {
             "reset-checkpoint" => {
                 Self::parse_reset_checkpoint_args(submatches).map(Self::ResetCheckpoint)
             }
-            _ => bail!("Source subcommand `{}` is not implemented.", subcommand),
+            _ => bail!("Unknown source subcommand `{subcommand}`."),
         }
     }
 
-    fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<CreateSourceArgs> {
+    fn parse_create_args(mut matches: ArgMatches) -> anyhow::Result<CreateSourceArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .map(String::from)
-            .expect("`index` is a required arg.");
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
         let source_config_uri = matches
-            .value_of("source-config")
-            .map(Uri::from_str)
-            .expect("`source-config` is a required arg.")?;
+            .remove_one::<String>("source-config")
+            .map(|uri_str| Uri::from_str(&uri_str))
+            .expect("`source-config` should be a required arg.")?;
         Ok(CreateSourceArgs {
             cluster_endpoint,
             index_id,
@@ -236,20 +251,18 @@ impl SourceCliCommand {
 
     fn parse_toggle_source_args(
         subcommand: &str,
-        matches: &ArgMatches,
+        mut matches: ArgMatches,
     ) -> anyhow::Result<ToggleSourceArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .map(String::from)
-            .expect("`index` is a required arg.");
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
         let source_id = matches
-            .value_of("source")
-            .map(String::from)
-            .expect("`source` is a required arg.");
+            .remove_one::<String>("source")
+            .expect("`source` should be a required arg.");
         let enable = matches!(subcommand, "enable");
         Ok(ToggleSourceArgs {
             cluster_endpoint,
@@ -259,20 +272,18 @@ impl SourceCliCommand {
         })
     }
 
-    fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<DeleteSourceArgs> {
+    fn parse_delete_args(mut matches: ArgMatches) -> anyhow::Result<DeleteSourceArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .map(String::from)
-            .expect("`index` is a required arg.");
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
         let source_id = matches
-            .value_of("source")
-            .map(String::from)
-            .expect("`source` is a required arg.");
-        let assume_yes = matches.is_present("yes");
+            .remove_one::<String>("source")
+            .expect("`source` should be a required arg.");
+        let assume_yes = matches.get_flag("yes");
         Ok(DeleteSourceArgs {
             cluster_endpoint,
             index_id,
@@ -281,19 +292,17 @@ impl SourceCliCommand {
         })
     }
 
-    fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<DescribeSourceArgs> {
+    fn parse_describe_args(mut matches: ArgMatches) -> anyhow::Result<DescribeSourceArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .map(String::from)
-            .expect("`index` is a required arg.");
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
         let source_id = matches
-            .value_of("source")
-            .map(String::from)
-            .expect("`source` is a required arg.");
+            .remove_one::<String>("source")
+            .expect("`source` should be a required arg.");
         Ok(DescribeSourceArgs {
             cluster_endpoint,
             index_id,
@@ -301,35 +310,32 @@ impl SourceCliCommand {
         })
     }
 
-    fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<ListSourcesArgs> {
+    fn parse_list_args(mut matches: ArgMatches) -> anyhow::Result<ListSourcesArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .map(String::from)
-            .expect("`index` is a required arg.");
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
         Ok(ListSourcesArgs {
             cluster_endpoint,
             index_id,
         })
     }
 
-    fn parse_reset_checkpoint_args(matches: &ArgMatches) -> anyhow::Result<ResetCheckpointArgs> {
+    fn parse_reset_checkpoint_args(mut matches: ArgMatches) -> anyhow::Result<ResetCheckpointArgs> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .map(String::from)
-            .expect("`index` is a required arg.");
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
         let source_id = matches
-            .value_of("source")
-            .map(String::from)
-            .expect("`source` is a required arg.");
-        let assume_yes = matches.is_present("yes");
+            .remove_one::<String>("source")
+            .expect("`source` should be a required arg.");
+        let assume_yes = matches.get_flag("yes");
         Ok(ResetCheckpointArgs {
             cluster_endpoint,
             index_id,
@@ -612,7 +618,7 @@ mod tests {
                 "/source-conf.yaml",
             ])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::CreateSource(CreateSourceArgs {
                 cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
@@ -636,7 +642,7 @@ mod tests {
                     "kafka-foo",
                 ])
                 .unwrap();
-            let command = CliCommand::parse_cli_args(&matches).unwrap();
+            let command = CliCommand::parse_cli_args(matches).unwrap();
             let expected_command =
                 CliCommand::Source(SourceCliCommand::ToggleSource(ToggleSourceArgs {
                     cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
@@ -658,7 +664,7 @@ mod tests {
                     "kafka-foo",
                 ])
                 .unwrap();
-            let command = CliCommand::parse_cli_args(&matches).unwrap();
+            let command = CliCommand::parse_cli_args(matches).unwrap();
             let expected_command =
                 CliCommand::Source(SourceCliCommand::ToggleSource(ToggleSourceArgs {
                     cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
@@ -684,7 +690,7 @@ mod tests {
                 "--yes",
             ])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::DeleteSource(DeleteSourceArgs {
                 cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
@@ -708,7 +714,7 @@ mod tests {
                 "hdfs-logs-source",
             ])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::DescribeSource(DescribeSourceArgs {
                 cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
@@ -732,7 +738,7 @@ mod tests {
                 "--yes",
             ])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::ResetCheckpoint(ResetCheckpointArgs {
                 cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
@@ -806,7 +812,7 @@ mod tests {
         let matches = app
             .try_get_matches_from(vec!["source", "list", "--index", "hdfs-logs"])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_command = CliCommand::Source(SourceCliCommand::ListSources(ListSourcesArgs {
             cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
             index_id: "hdfs-logs".to_string(),

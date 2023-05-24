@@ -45,7 +45,7 @@ use crate::{IndexMetadata, SplitMetadata};
 ///     #[serde(rename="0.2")]
 ///     V0_2(MyResourceV1) //< there was no change in this version.
 /// }
-const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "0.5";
+const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "0.6";
 
 /// This test makes sure that the resource is using the current `GLOBAL_QUICKWIT_RESOURCE_VERSION`.
 fn test_global_version<T: Serialize>(serializable: &T) -> anyhow::Result<()> {
@@ -144,13 +144,41 @@ where for<'a> T: Serialize {
         .expect("version should be a string");
     let mut sample_json = serde_json::to_string_pretty(&sample_json_value)?;
     sample_json.push('\n');
-    let md5_digest = md5::compute(&sample_json);
-    let test_name = format!("v{version}-{md5_digest:x}");
-    let file_regression_test_path = format!("{}/{}.json", test_dir.display(), test_name);
-    let file_regression_expected_path =
+    let test_name = format!("v{version}");
+    let file_regression_test_path_str = format!("{}/{}.json", test_dir.display(), test_name);
+    let file_regression_expected_path_str =
         format!("{}/{}.expected.json", test_dir.display(), test_name);
-    std::fs::write(file_regression_test_path, sample_json.as_bytes())?;
-    std::fs::write(file_regression_expected_path, sample_json.as_bytes())?;
+
+    let file_regression_test_path = Path::new(&file_regression_test_path_str);
+    let (changes_detected, file_created) = if file_regression_test_path.try_exists()? {
+        let expected_old_json_value: JsonValue = deserialize_json_file(file_regression_test_path)?;
+        let expected_new_json_value: JsonValue = serde_json::from_str(&sample_json)?;
+        (expected_old_json_value != expected_new_json_value, false)
+    } else {
+        (false, true)
+    };
+
+    if changes_detected || file_created {
+        std::fs::write(
+            file_regression_test_path_str.clone(),
+            sample_json.as_bytes(),
+        )?;
+        std::fs::write(
+            file_regression_expected_path_str.clone(),
+            sample_json.as_bytes(),
+        )?;
+        if file_created {
+            panic!(
+                "The following files need to be added: {file_regression_test_path_str:?} and \
+                 {file_regression_expected_path_str:?}"
+            )
+        } else {
+            panic!(
+                "The following files need to be updated: {file_regression_test_path_str:?} and \
+                 {file_regression_expected_path_str:?}"
+            )
+        }
+    }
     Ok(())
 }
 

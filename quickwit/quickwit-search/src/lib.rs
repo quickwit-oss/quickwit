@@ -46,6 +46,7 @@ mod tests;
 
 pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
+use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_query::query_ast::QueryAst;
 use root::{finalize_aggregation, validate_request};
@@ -56,12 +57,13 @@ use tantivy::schema::NamedFieldDocument;
 pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::cmp::Reverse;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::Context;
 pub use find_trace_ids_collector::FindTraceIdsCollector;
 use itertools::Itertools;
-use quickwit_config::{build_doc_mapper, QuickwitConfig, SearcherConfig};
+use quickwit_config::{build_doc_mapper, SearcherConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{
@@ -70,17 +72,22 @@ use quickwit_proto::{
 use quickwit_storage::StorageUriResolver;
 use tantivy::DocAddress;
 
-pub use crate::client::{create_search_service_client, SearchServiceClient};
+pub use crate::client::{
+    create_search_client_from_channel, create_search_client_from_grpc_addr, SearchServiceClient,
+};
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::{leaf_list_terms, leaf_search};
 pub use crate::root::{jobs_to_leaf_request, root_list_terms, root_search, SearchJob};
-pub use crate::search_job_placer::SearchJobPlacer;
+pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 use crate::thread_pool::run_cpu_intensive;
+
+/// A pool of searcher clients identified by their gRPC socket address.
+pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
 
 /// GlobalDocAddress serves as a hit address.
 #[derive(Clone, Eq, Debug, PartialEq, Hash, Ord, PartialOrd)]
@@ -272,7 +279,7 @@ pub async fn single_node_search(
 
 /// Starts a search node, aka a `searcher`.
 pub async fn start_searcher_service(
-    quickwit_config: &QuickwitConfig,
+    searcher_config: SearcherConfig,
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
     search_job_placer: SearchJobPlacer,
@@ -283,7 +290,7 @@ pub async fn start_searcher_service(
         storage_uri_resolver,
         cluster_client,
         search_job_placer,
-        quickwit_config.searcher_config.clone(),
+        searcher_config,
     ));
     Ok(search_service)
 }
@@ -303,4 +310,23 @@ macro_rules! encode_term_for_test {
     ($value:expr) => {
         encode_term_for_test!(0, $value)
     };
+}
+
+/// Creates a `SearcherPool` for tests from an iterator of socket addresses and mock search
+/// services.
+#[cfg(any(test, feature = "testsuite"))]
+pub fn searcher_pool_for_test(
+    iter: impl IntoIterator<Item = (&'static str, MockSearchService)>,
+) -> SearcherPool {
+    SearcherPool::from_iter(
+        iter.into_iter()
+            .map(|(grpc_addr_str, mock_search_service)| {
+                let grpc_addr: SocketAddr = grpc_addr_str
+                    .parse()
+                    .expect("The gRPC address should be valid socket address.");
+                let client =
+                    SearchServiceClient::from_service(Arc::new(mock_search_service), grpc_addr);
+                (grpc_addr, client)
+            }),
+    )
 }

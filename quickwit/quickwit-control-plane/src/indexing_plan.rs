@@ -169,12 +169,14 @@ pub(crate) fn build_physical_indexing_plan(
         // `build_indexing_plan`, we make sure to always respect the constraint
         // `max_num_pipelines_per_indexer` by limiting the number of indexing tasks per
         // source.
-        let best_node_score_opt =
-            candidates
+        let best_node_score_opt = candidates
             .iter()
             .rev() //< we use the reverse iterator, because in case of a tie, max picks the last element.
             // we want the first one in order to maximize affinity.
-            .map(|&node_id| NodeScore { node_id, score: compute_node_score(node_id, &plan) })
+            .map(|&node_id| NodeScore {
+                node_id,
+                score: compute_node_score(node_id, &plan),
+            })
             .max();
         if let Some(best_node_score) = best_node_score_opt {
             plan.assign_indexing_task(best_node_score.node_id.to_string(), indexing_task);

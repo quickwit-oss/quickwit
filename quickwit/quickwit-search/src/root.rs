@@ -50,15 +50,15 @@ use crate::{
 };
 
 /// SearchJob to be assigned to search clients by the [`SearchJobPlacer`].
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SearchJob {
-    cost: u32,
+    cost: usize,
     offsets: SplitIdAndFooterOffsets,
 }
 
 impl SearchJob {
     #[cfg(test)]
-    pub fn for_test(split_id: &str, cost: u32) -> SearchJob {
+    pub fn for_test(split_id: &str, cost: usize) -> SearchJob {
         SearchJob {
             cost,
             offsets: SplitIdAndFooterOffsets {
@@ -89,7 +89,7 @@ impl Job for SearchJob {
         &self.offsets.split_id
     }
 
-    fn cost(&self) -> u32 {
+    fn cost(&self) -> usize {
         self.cost
     }
 }
@@ -104,8 +104,8 @@ impl Job for FetchDocsJob {
         &self.offsets.split_id
     }
 
-    fn cost(&self) -> u32 {
-        self.partial_hits.len() as u32
+    fn cost(&self) -> usize {
+        self.partial_hits.len()
     }
 }
 
@@ -262,22 +262,20 @@ pub async fn root_search(
 
     let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
 
-    let assigned_leaf_search_jobs = search_job_placer.assign_jobs(jobs, &HashSet::default())?;
-    debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
-    let leaf_search_responses: Vec<LeafSearchResponse> = try_join_all(
-        assigned_leaf_search_jobs
-            .into_iter()
-            .map(|(client, client_jobs)| {
-                let leaf_request = jobs_to_leaf_request(
-                    &search_request,
-                    &doc_mapper_str,
-                    index_uri.as_ref(),
-                    client_jobs,
-                );
-                cluster_client.leaf_search(leaf_request, client)
-            }),
-    )
-    .await?;
+    let assigned_leaf_search_jobs = search_job_placer
+        .assign_jobs(jobs, &HashSet::default())
+        .await?;
+    let leaf_search_responses: Vec<LeafSearchResponse> =
+        try_join_all(assigned_leaf_search_jobs.map(|(client, client_jobs)| {
+            let leaf_request = jobs_to_leaf_request(
+                &search_request,
+                &doc_mapper_str,
+                index_uri.as_ref(),
+                client_jobs,
+            );
+            cluster_client.leaf_search(leaf_request, client)
+        }))
+        .await?;
 
     // Creates a collector which merges responses into one
     let merge_collector =
@@ -318,7 +316,8 @@ pub async fn root_search(
             &leaf_search_response.partial_hits,
             &split_offsets_map,
             search_job_placer,
-        )?;
+        )
+        .await?;
 
     let fetch_docs_resp_futures =
         client_fetch_docs_task
@@ -482,23 +481,21 @@ pub async fn root_list_terms(
     let index_uri = &index_config.index_uri;
 
     let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
-    let assigned_leaf_search_jobs = search_job_placer.assign_jobs(jobs, &HashSet::default())?;
-    debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
-    let leaf_search_responses: Vec<LeafListTermsResponse> = try_join_all(
-        assigned_leaf_search_jobs
-            .into_iter()
-            .map(|(client, client_jobs)| {
-                cluster_client.leaf_list_terms(
-                    LeafListTermsRequest {
-                        list_terms_request: Some(list_terms_request.clone()),
-                        split_offsets: client_jobs.into_iter().map(|job| job.offsets).collect(),
-                        index_uri: index_uri.to_string(),
-                    },
-                    client,
-                )
-            }),
-    )
-    .await?;
+    let assigned_leaf_search_jobs = search_job_placer
+        .assign_jobs(jobs, &HashSet::default())
+        .await?;
+    let leaf_search_responses: Vec<LeafListTermsResponse> =
+        try_join_all(assigned_leaf_search_jobs.map(|(client, client_jobs)| {
+            cluster_client.leaf_list_terms(
+                LeafListTermsRequest {
+                    list_terms_request: Some(list_terms_request.clone()),
+                    split_offsets: client_jobs.into_iter().map(|job| job.offsets).collect(),
+                    index_uri: index_uri.to_string(),
+                },
+                client,
+            )
+        }))
+        .await?;
 
     let failed_splits: Vec<_> = leaf_search_responses
         .iter()
@@ -541,7 +538,7 @@ pub async fn root_list_terms(
     })
 }
 
-fn assign_client_fetch_doc_tasks(
+async fn assign_client_fetch_doc_tasks(
     partial_hits: &[PartialHit],
     split_offsets_map: &HashMap<String, SplitIdAndFooterOffsets>,
     client_pool: &SearchJobPlacer,
@@ -572,13 +569,15 @@ fn assign_client_fetch_doc_tasks(
         fetch_docs_req_jobs.push(fetch_docs_job);
     }
 
-    let assigned_jobs: Vec<(SearchServiceClient, Vec<FetchDocsJob>)> =
-        client_pool.assign_jobs(fetch_docs_req_jobs, &HashSet::new())?;
+    let assigned_jobs: Vec<(SearchServiceClient, Vec<FetchDocsJob>)> = client_pool
+        .assign_jobs(fetch_docs_req_jobs, &HashSet::new())
+        .await?
+        .collect();
     Ok(assigned_jobs)
 }
 
 // Measure the cost associated to searching in a given split metadata.
-fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
+fn compute_split_cost(_split_metadata: &SplitMetadata) -> usize {
     // TODO: Have a smarter cost, by smoothing the number of docs.
     1
 }
@@ -606,14 +605,13 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_config::SearcherConfig;
-    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::{qast_helper, SplitSearchError};
     use tantivy::schema::{FAST, STORED, TEXT};
 
     use super::*;
-    use crate::MockSearchService;
+    use crate::{searcher_pool_for_test, MockSearchService};
 
     #[track_caller]
     fn check_snippet_fields_validation(snippet_fields: &[String]) -> anyhow::Result<()> {
@@ -701,8 +699,8 @@ mod tests {
         metastore
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
-        let mut mock_search_service2 = MockSearchService::new();
-        mock_search_service2.expect_leaf_search().returning(
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 3,
@@ -717,15 +715,15 @@ mod tests {
                 })
             },
         );
-        mock_search_service2.expect_fetch_docs().returning(
+        mock_search_service_2.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
-        let mut mock_search_service1 = MockSearchService::new();
-        mock_search_service1.expect_leaf_search().returning(
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 2,
@@ -739,25 +737,20 @@ mod tests {
                 })
             },
         );
-        mock_search_service1.expect_fetch_docs().returning(
+        mock_search_service_1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
-        let client_pool = ServiceClientPool::for_clients_list(vec![
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service1),
-                ([127, 0, 0, 1], 1000).into(),
-            ),
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service2),
-                ([127, 0, 0, 1], 1001).into(),
-            ),
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
         ]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
+
         let search_response = root_search(
             &Arc::new(SearcherContext::new(SearcherConfig::default())),
             search_request,
@@ -765,7 +758,8 @@ mod tests {
             &cluster_client,
             &search_job_placer,
         )
-        .await?;
+        .await
+        .unwrap();
         assert_eq!(search_response.num_hits, 5);
         assert_eq!(search_response.hits.len(), 0);
         Ok(())
@@ -814,13 +808,10 @@ mod tests {
                 })
             },
         );
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(mock_search_service),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
+
         let search_response = root_search(
             &SearcherContext::new(SearcherConfig::default()),
             search_request,
@@ -828,7 +819,8 @@ mod tests {
             &cluster_client,
             &search_job_placer,
         )
-        .await?;
+        .await
+        .unwrap();
         assert_eq!(search_response.num_hits, 3);
         assert_eq!(search_response.hits.len(), 3);
         Ok(())
@@ -854,8 +846,8 @@ mod tests {
         metastore
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
-        let mut mock_search_service1 = MockSearchService::new();
-        mock_search_service1.expect_leaf_search().returning(
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 2,
@@ -869,15 +861,15 @@ mod tests {
                 })
             },
         );
-        mock_search_service1.expect_fetch_docs().returning(
+        mock_search_service_1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
-        let mut mock_search_service2 = MockSearchService::new();
-        mock_search_service2.expect_leaf_search().returning(
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 1,
@@ -888,24 +880,18 @@ mod tests {
                 })
             },
         );
-        mock_search_service2.expect_fetch_docs().returning(
+        mock_search_service_2.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
-        let client_pool = ServiceClientPool::for_clients_list(vec![
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service1),
-                ([127, 0, 0, 1], 1000).into(),
-            ),
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service2),
-                ([127, 0, 0, 1], 1001).into(),
-            ),
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
         ]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
             &SearcherContext::new(SearcherConfig::default()),
@@ -914,7 +900,8 @@ mod tests {
             &cluster_client,
             &search_job_placer,
         )
-        .await?;
+        .await
+        .unwrap();
         assert_eq!(search_response.num_hits, 3);
         assert_eq!(search_response.hits.len(), 3);
         Ok(())
@@ -941,8 +928,33 @@ mod tests {
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
 
-        let mut mock_search_service1 = MockSearchService::new();
-        mock_search_service1
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1
+            .expect_leaf_search()
+            .times(1)
+            .returning(|_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResponse {
+                    // requests from split 2 arrive here - simulate failure
+                    num_hits: 0,
+                    partial_hits: Vec::new(),
+                    failed_splits: vec![SplitSearchError {
+                        error: "mock_error".to_string(),
+                        split_id: "split2".to_string(),
+                        retryable_error: true,
+                    }],
+                    num_attempted_splits: 1,
+                    ..Default::default()
+                })
+            });
+        mock_search_service_1.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Ok(quickwit_proto::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2
             .expect_leaf_search()
             .times(2)
             .returning(|leaf_search_req: quickwit_proto::LeafSearchRequest| {
@@ -975,50 +987,18 @@ mod tests {
                     panic!("unexpected request in test {split_ids:?}");
                 }
             });
-        mock_search_service1.expect_fetch_docs().returning(
+        mock_search_service_2.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
-
-        let mut mock_search_service2 = MockSearchService::new();
-        mock_search_service2
-            .expect_leaf_search()
-            .times(1)
-            .returning(|_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
-                    // requests from split 2 arrive here - simulate failure
-                    num_hits: 0,
-                    partial_hits: Vec::new(),
-                    failed_splits: vec![SplitSearchError {
-                        error: "mock_error".to_string(),
-                        split_id: "split2".to_string(),
-                        retryable_error: true,
-                    }],
-                    num_attempted_splits: 1,
-                    ..Default::default()
-                })
-            });
-        mock_search_service2.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
-                    hits: get_doc_for_fetch_req(fetch_docs_req),
-                })
-            },
-        );
-        let client_pool = ServiceClientPool::for_clients_list(vec![
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service1),
-                ([127, 0, 0, 1], 1000).into(),
-            ),
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service2),
-                ([127, 0, 0, 1], 1001).into(),
-            ),
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
         ]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
             &SearcherContext::new(SearcherConfig::default()),
@@ -1027,7 +1007,8 @@ mod tests {
             &cluster_client,
             &search_job_placer,
         )
-        .await?;
+        .await
+        .unwrap();
         assert_eq!(search_response.num_hits, 3);
         assert_eq!(search_response.hits.len(), 3);
         Ok(())
@@ -1053,8 +1034,8 @@ mod tests {
         metastore
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
-        let mut mock_search_service1 = MockSearchService::new();
-        mock_search_service1
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1
             .expect_leaf_search()
             .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split2")
             .return_once(|_| {
@@ -1073,7 +1054,7 @@ mod tests {
                     ..Default::default()
                 })
             });
-        mock_search_service1
+        mock_search_service_1
             .expect_leaf_search()
             .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split1")
             .return_once(|_| {
@@ -1090,15 +1071,15 @@ mod tests {
                     ..Default::default()
                 })
             });
-        mock_search_service1.expect_fetch_docs().returning(
+        mock_search_service_1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
-        let mut mock_search_service2 = MockSearchService::new();
-        mock_search_service2
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2
             .expect_leaf_search()
             .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split2")
             .return_once(|_| {
@@ -1112,7 +1093,7 @@ mod tests {
                     ..Default::default()
                 })
             });
-        mock_search_service2
+        mock_search_service_2
             .expect_leaf_search()
             .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split1")
             .return_once(|_| {
@@ -1131,24 +1112,18 @@ mod tests {
                     ..Default::default()
                 })
             });
-        mock_search_service2.expect_fetch_docs().returning(
+        mock_search_service_2.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
-        let client_pool = ServiceClientPool::for_clients_list(vec![
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service1),
-                ([127, 0, 0, 1], 1000).into(),
-            ),
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service2),
-                ([127, 0, 0, 1], 1001).into(),
-            ),
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
         ]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
             &SearcherContext::new(SearcherConfig::default()),
@@ -1157,7 +1132,8 @@ mod tests {
             &cluster_client,
             &search_job_placer,
         )
-        .await?;
+        .await
+        .unwrap();
         assert_eq!(search_response.num_hits, 3);
         assert_eq!(search_response.hits.len(), 3);
         Ok(())
@@ -1184,11 +1160,9 @@ mod tests {
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split1")]));
         let mut first_call = true;
-        let mut mock_search_service1 = MockSearchService::new();
-        mock_search_service1
-            .expect_leaf_search()
-            .times(2)
-            .returning(move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service.expect_leaf_search().times(2).returning(
+            move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 // requests from split 2 arrive here - simulate failure, then success
                 if first_call {
                     first_call = false;
@@ -1212,20 +1186,17 @@ mod tests {
                         ..Default::default()
                     })
                 }
-            });
-        mock_search_service1.expect_fetch_docs().returning(
+            },
+        );
+        mock_search_service.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(mock_search_service1),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
             &SearcherContext::new(SearcherConfig::default()),
@@ -1234,7 +1205,8 @@ mod tests {
             &cluster_client,
             &search_job_placer,
         )
-        .await?;
+        .await
+        .unwrap();
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
         Ok(())
@@ -1261,11 +1233,9 @@ mod tests {
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split1")]));
 
-        let mut mock_search_service1 = MockSearchService::new();
-        mock_search_service1
-            .expect_leaf_search()
-            .times(2)
-            .returning(move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service.expect_leaf_search().times(2).returning(
+            move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 0,
                     partial_hits: Vec::new(),
@@ -1277,18 +1247,15 @@ mod tests {
                     num_attempted_splits: 1,
                     ..Default::default()
                 })
-            });
-        mock_search_service1.expect_fetch_docs().returning(
+            },
+        );
+        mock_search_service.expect_fetch_docs().returning(
             |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(mock_search_service1),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
             &SearcherContext::new(SearcherConfig::default()),
@@ -1324,8 +1291,8 @@ mod tests {
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split1")]));
         // Service1 - broken node.
-        let mut mock_search_service1 = MockSearchService::new();
-        mock_search_service1.expect_leaf_search().returning(
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 // retry requests from split 1 arrive here
                 Ok(quickwit_proto::LeafSearchResponse {
@@ -1337,7 +1304,7 @@ mod tests {
                 })
             },
         );
-        mock_search_service1.expect_fetch_docs().returning(
+        mock_search_service_1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
@@ -1345,8 +1312,8 @@ mod tests {
             },
         );
         // Service2 - working node.
-        let mut mock_search_service2 = MockSearchService::new();
-        mock_search_service2.expect_leaf_search().returning(
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 0,
@@ -1361,22 +1328,16 @@ mod tests {
                 })
             },
         );
-        mock_search_service2.expect_fetch_docs().returning(
+        mock_search_service_2.expect_fetch_docs().returning(
             |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
-        let client_pool = ServiceClientPool::for_clients_list(vec![
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service1),
-                ([127, 0, 0, 1], 1000).into(),
-            ),
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service2),
-                ([127, 0, 0, 1], 1001).into(),
-            ),
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
         ]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
             &SearcherContext::new(SearcherConfig::default()),
@@ -1385,7 +1346,8 @@ mod tests {
             &cluster_client,
             &search_job_placer,
         )
-        .await?;
+        .await
+        .unwrap();
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
         Ok(())
@@ -1414,8 +1376,8 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split1")]));
 
         // Service1 - working node.
-        let mut mock_search_service1 = MockSearchService::new();
-        mock_search_service1.expect_leaf_search().returning(
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 1,
@@ -1426,7 +1388,7 @@ mod tests {
                 })
             },
         );
-        mock_search_service1.expect_fetch_docs().returning(
+        mock_search_service_1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
@@ -1434,28 +1396,22 @@ mod tests {
             },
         );
         // Service2 - broken node.
-        let mut mock_search_service2 = MockSearchService::new();
-        mock_search_service2.expect_leaf_search().returning(
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Err(SearchError::InternalError("mockerr search".to_string()))
             },
         );
-        mock_search_service2.expect_fetch_docs().returning(
+        mock_search_service_2.expect_fetch_docs().returning(
             |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
-        let client_pool = ServiceClientPool::for_clients_list(vec![
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service1),
-                ([127, 0, 0, 1], 1000).into(),
-            ),
-            SearchServiceClient::from_service(
-                Arc::new(mock_search_service2),
-                ([127, 0, 0, 1], 1001).into(),
-            ),
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
         ]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
             &SearcherContext::new(SearcherConfig::default()),
@@ -1464,7 +1420,8 @@ mod tests {
             &cluster_client,
             &search_job_placer,
         )
-        .await?;
+        .await
+        .unwrap();
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
         Ok(())
@@ -1485,12 +1442,8 @@ mod tests {
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split")]));
 
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(MockSearchService::new()),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
 
         assert!(root_search(
@@ -1566,12 +1519,8 @@ mod tests {
         metastore
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split1")]));
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(MockSearchService::new()),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
             &SearcherContext::new(SearcherConfig::default()),
@@ -1611,12 +1560,8 @@ mod tests {
         metastore
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split1")]));
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(MockSearchService::new()),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let search_response = root_search(
             &SearcherContext::new(SearcherConfig::default()),

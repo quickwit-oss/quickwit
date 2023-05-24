@@ -87,7 +87,7 @@ And here is the complete config:
 #
 # Index config file for stackoverflow dataset.
 #
-version: 0.5
+version: 0.6
 
 index_id: stackoverflow
 

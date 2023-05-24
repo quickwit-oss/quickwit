@@ -10,7 +10,7 @@ Quickwit provides two endpoints with full-text search queries identified by the 
 
 A search query received by a searcher will be executed using a map-reduce approach following these steps:
 
-1. the Searcher identifies relevant splits based on the request’s [timestamp interval](#time-sharding) and [tags](#tag-pruning).
+1. The Searcher identifies relevant splits based on the request’s [timestamp interval](#time-sharding) and [tags](#tag-pruning).
 2. It distributes the splits workload among other searchers available in the cluster using *[rendez-vous hashing](https://en.wikipedia.org/wiki/Rendezvous_hashing)* to optimize caching and load.
 3. It finally waits for all results, merges them, and returns them to the client.
 

@@ -24,7 +24,7 @@ The doc mapping of this index described below is derived from the [OpenTelemetry
 
 ```yaml
 
-version: 0.5
+version: 0.6
 
 index_id: otel-logs-v0
 
@@ -107,7 +107,7 @@ You can also send traces to Quickwit that you can visualize in Jaeger UI, as exp
 
 ## Known limitations
 
-There are a few limitations on the log management setup in Quickwit 0.5:
+There are a few limitations on the log management setup in Quickwit 0.6:
 - Aggregations are not available on sparse fields and JSON field, this will be fixed in 0.6. This means that only the timestamp field can support aggregations.
 - The ingest API does not provide High-Availability and High-Durability, this will be fixed in Q2/Q3.
 - Grafana and Elasticsearch query API support are planned for Q2 2023.

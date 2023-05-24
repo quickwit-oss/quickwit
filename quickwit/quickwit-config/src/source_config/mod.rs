@@ -425,9 +425,9 @@ impl TransformConfig {
         let timezone_str = self.timezone_opt.as_deref().unwrap_or("UTC");
         let timezone = TimeZone::parse(timezone_str).with_context(|| {
             format!(
-            "Failed to parse timezone: `{timezone_str}`. Timezone must be a valid name \
+                "Failed to parse timezone: `{timezone_str}`. Timezone must be a valid name \
             in the TZ database: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
-        )
+            )
         })?;
         // Append "\n." to the script to return the entire document and not only the modified
         // fields.
@@ -613,7 +613,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 0,
                 "max_num_pipelines_per_indexer": 1,
@@ -630,7 +630,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 1,
                 "max_num_pipelines_per_indexer": 0,
@@ -647,7 +647,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 1,
                 "max_num_pipelines_per_indexer": 2,
@@ -662,7 +662,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-void-source",
                 "desired_num_pipelines": 2,
                 "max_num_pipelines_per_indexer": 1,
@@ -681,7 +681,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-kafka-source",
                 "desired_num_pipelines": 3,
                 "max_num_pipelines_per_indexer": 3,
@@ -700,7 +700,7 @@ mod tests {
         {
             let content = r#"
             {
-                "version": "0.5",
+                "version": "0.6",
                 "source_id": "hdfs-logs-pulsar-source",
                 "desired_num_pipelines": 3,
                 "max_num_pipelines_per_indexer": 3,
@@ -1111,7 +1111,7 @@ mod tests {
     #[tokio::test]
     async fn test_source_config_plain_text_input_format() {
         let file_content = r#"{
-            "version": "0.5",
+            "version": "0.6",
             "source_id": "logs-file-source",
             "desired_num_pipelines": 1,
             "max_num_pipelines_per_indexer": 1,

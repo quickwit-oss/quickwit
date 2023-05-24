@@ -23,15 +23,40 @@ use serde::de::DeserializeOwned;
 use warp::reject::LengthRequired;
 use warp::{Filter, Rejection};
 
-use crate::elastic_search_api::model::{SearchBody, SearchQueryParams};
+use super::model::MultiSearchQueryParams;
+use crate::elastic_search_api::model::{ElasticIngestOptions, SearchBody, SearchQueryParams};
 
 const BODY_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(1_000_000);
+const CONTENT_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(10 * 1024 * 1024); // 10MiB
 
 #[utoipa::path(get, tag = "Search", path = "/_search")]
 pub(crate) fn elastic_search_filter(
 ) -> impl Filter<Extract = (SearchQueryParams,), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_search")
         .and(warp::get().or(warp::post()).unify())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+}
+
+#[utoipa::path(
+    post,
+    tag = "Ingest",
+    path = "/_bulk",
+    request_body(content = String, description = "Elasticsearch compatible bulk request body limited to 10MB", content_type = "application/json"),
+    responses(
+        (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
+    ),
+    params(
+        ("refresh" = Option<ElasticRefresh>, Query, description = "Force or wait for commit at the end of the indexing operation."),
+    )
+)]
+pub(crate) fn elastic_bulk_filter(
+) -> impl Filter<Extract = (Bytes, ElasticIngestOptions), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_bulk")
+        .and(warp::post())
+        .and(warp::body::content_length_limit(
+            CONTENT_LENGTH_LIMIT.get_bytes(),
+        ))
+        .and(warp::body::bytes())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
@@ -80,4 +105,41 @@ pub(crate) fn elastic_index_search_filter(
         .and(warp::get().or(warp::post()).unify())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(json_or_empty())
+}
+
+#[utoipa::path(
+    post,
+    tag = "Ingest",
+    path = "/{index}/_bulk",
+    request_body(content = String, description = "Elasticsearch compatible bulk request body limited to 10MB", content_type = "application/json"),
+    responses(
+        (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
+    ),
+    params(
+        ("refresh" = Option<ElasticRefresh>, Query, description = "Force or wait for commit at the end of the indexing operation."),
+    )
+)]
+pub(crate) fn elastic_index_bulk_filter(
+) -> impl Filter<Extract = (String, Bytes, ElasticIngestOptions), Error = Rejection> + Clone {
+    warp::path!("_elastic" / String / "_bulk")
+        .and(warp::post())
+        .and(warp::body::content_length_limit(
+            CONTENT_LENGTH_LIMIT.get_bytes(),
+        ))
+        .and(warp::body::bytes())
+        .and(serde_qs::warp::query::<ElasticIngestOptions>(
+            serde_qs::Config::default(),
+        ))
+}
+
+#[utoipa::path(post, tag = "Search", path = "/_msearch")]
+pub(crate) fn elastic_multi_search_filter(
+) -> impl Filter<Extract = (Bytes, MultiSearchQueryParams), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_msearch")
+        .and(warp::body::content_length_limit(
+            BODY_LENGTH_LIMIT.get_bytes(),
+        ))
+        .and(warp::body::bytes())
+        .and(warp::post())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
 }

@@ -2,8 +2,7 @@
 method: [GET]
 json:
   query:
-      query_string:
-        query: "*"
+      match_all: {}
 expected:
   hits:
     total:
@@ -14,7 +13,7 @@ json:
   query:
       bool:
         filter:
-          - {"query_string":{"query":"*"}}
+          - match_all: {}
 expected:
   hits:
     total:
@@ -50,3 +49,70 @@ expected:
   hits:
     total:
       value: 98
+---
+# Silly edge case 1
+method: [GET]
+json:
+  query:
+      bool:
+        should:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 0
+---
+# Silly edge case 2
+method: [GET]
+json:
+  query:
+      bool:
+        should:
+          - match_none: {}
+        must_not:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 0
+---
+# Silly edge case 3
+method: [GET]
+json:
+  query:
+      bool:
+        must_not:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 100
+---
+# Silly edge case 4
+method: [GET]
+json:
+  query:
+      bool:
+        must:
+          - match_all: {}
+        should:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 100
+---
+# Silly edge case 4
+method: [GET]
+json:
+  query:
+      bool:
+        filter:
+          - match_all: {}
+        should:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 100
+

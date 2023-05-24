@@ -153,8 +153,9 @@ struct IndexStats {
     #[schema(value_type = String)]
     pub index_uri: Uri,
     pub num_published_splits: usize,
+    pub size_published_splits: u64,
     pub num_published_docs: u64,
-    pub size_published_docs: u64,
+    pub size_published_docs_uncompressed: u64,
     pub timestamp_field_name: Option<String>,
     pub min_timestamp: Option<i64>,
     pub max_timestamp: Option<i64>,
@@ -185,13 +186,15 @@ async fn describe_index(
         .filter(|split| split.split_state == SplitState::Published)
         .collect();
     let mut total_num_docs = 0;
-    let mut total_bytes = 0;
+    let mut total_num_bytes = 0;
+    let mut total_uncompressed_num_bytes = 0;
     let mut min_timestamp: Option<i64> = None;
     let mut max_timestamp: Option<i64> = None;
 
     for split in &published_splits {
         total_num_docs += split.split_metadata.num_docs as u64;
-        total_bytes += split.split_metadata.footer_offsets.end;
+        total_num_bytes += split.split_metadata.footer_offsets.end;
+        total_uncompressed_num_bytes += split.split_metadata.uncompressed_docs_size_in_bytes;
 
         if let Some(time_range) = &split.split_metadata.time_range {
             min_timestamp = min_timestamp
@@ -208,8 +211,9 @@ async fn describe_index(
         index_id,
         index_uri: index_config.index_uri.clone(),
         num_published_splits: published_splits.len(),
+        size_published_splits: total_num_bytes,
         num_published_docs: total_num_docs,
-        size_published_docs: total_bytes,
+        size_published_docs_uncompressed: total_uncompressed_num_bytes,
         timestamp_field_name: index_config.doc_mapping.timestamp_field,
         min_timestamp,
         max_timestamp,
@@ -911,8 +915,9 @@ mod tests {
             "index_id": "test-index",
             "index_uri": "ram:///indexes/test-index",
             "num_published_splits": 2,
+            "size_published_splits": 1600,
             "num_published_docs": 20,
-            "size_published_docs": 1600,
+            "size_published_docs_uncompressed": 512,
             "timestamp_field_name": "timestamp",
             "min_timestamp": split_1_time_range.start() - 10,
             "max_timestamp": split_1_time_range.end() + 10,
@@ -1181,7 +1186,7 @@ mod tests {
                 .path("/indexes?overwrite=true")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.5", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -1191,7 +1196,7 @@ mod tests {
                 .path("/indexes?overwrite=true")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.5", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -1201,7 +1206,7 @@ mod tests {
                 .path("/indexes")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.5", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 400);
@@ -1221,7 +1226,7 @@ mod tests {
             .path("/indexes")
             .method("POST")
             .json(&true)
-            .body(r#"{"version": "0.5", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+            .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
@@ -1235,7 +1240,7 @@ mod tests {
         assert_json_include!(actual: resp_json, expected: expected_response_json);
 
         // Create source.
-        let source_config_body = r#"{"version": "0.5", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 10}}"#;
+        let source_config_body = r#"{"version": "0.6", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 10}}"#;
         let resp = warp::test::request()
             .path("/indexes/hdfs-logs/sources")
             .method("POST")
@@ -1326,7 +1331,7 @@ mod tests {
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
                 .recover(recover_fn);
-        let source_config_body = r#"{"version": "0.5", "source_id": "file-source", "source_type": "file", "params": {"filepath": "FILEPATH"}}"#;
+        let source_config_body = r#"{"version": "0.6", "source_id": "file-source", "source_type": "file", "params": {"filepath": "FILEPATH"}}"#;
         let resp = warp::test::request()
             .path("/indexes/hdfs-logs/sources")
             .method("POST")
@@ -1354,7 +1359,7 @@ mod tests {
             .header("content-type", "application/yaml")
             .body(
                 r#"
-            version: 0.5
+            version: 0.6
             index_id: hdfs-logs
             doc_mapping:
               field_mappings:
@@ -1393,7 +1398,7 @@ mod tests {
             .header("content-type", "application/toml")
             .body(
                 r#"
-            version = "0.5"
+            version = "0.6"
             index_id = "hdfs-logs"
             [doc_mapping]
             field_mappings = [
@@ -1450,7 +1455,7 @@ mod tests {
             .method("POST")
             .json(&true)
             .body(
-                r#"{"version": "0.5", "index_id": "hdfs-log", "doc_mapping":
+                r#"{"version": "0.6", "index_id": "hdfs-log", "doc_mapping":
     {"field_mappings":[{"name": "timestamp", "type": "unknown", "fast": true, "indexed":
     true}]}}"#,
             )
@@ -1490,7 +1495,7 @@ mod tests {
                 .path("/indexes/my-index/sources")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.5", "source_id": "pulsar-source", "desired_num_pipelines": 2, "source_type": "pulsar", "params": {"topics": ["my-topic"], "address": "pulsar://localhost:6650" }}"#)
+                .body(r#"{"version": "0.6", "source_id": "pulsar-source", "desired_num_pipelines": 2, "source_type": "pulsar", "params": {"topics": ["my-topic"], "address": "pulsar://localhost:6650" }}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 400);
