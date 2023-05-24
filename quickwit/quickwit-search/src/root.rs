@@ -1692,4 +1692,95 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_extract_timestamp_range_from_ast() {
+        use std::ops::Bound;
+
+        use quickwit_query::JsonLiteral;
+
+        let timestamp_field = "timestamp";
+
+        let simple_range = quickwit_query::query_ast::RangeQuery {
+            field: timestamp_field.to_string(),
+            lower_bound: Bound::Included(JsonLiteral::String("2021-04-13T22:45:41Z".to_owned())),
+            upper_bound: Bound::Excluded(JsonLiteral::String("2021-05-06T06:51:19Z".to_owned())),
+        }
+        .into();
+
+        // direct range
+        let mut timestamp_range_extractor = ExtractTimestampRange {
+            timestamp_field,
+            start_timestamp: None,
+            end_timestamp: None,
+        };
+        timestamp_range_extractor.visit(&simple_range).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353941));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283879));
+
+        // range inside a must bool query
+        let bool_query_must = quickwit_query::query_ast::BoolQuery {
+            must: vec![simple_range.clone()],
+            ..Default::default()
+        };
+        timestamp_range_extractor.start_timestamp = None;
+        timestamp_range_extractor.end_timestamp = None;
+        timestamp_range_extractor
+            .visit(&bool_query_must.into())
+            .unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353941));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283879));
+
+        // range inside a should bool query
+        let bool_query_should = quickwit_query::query_ast::BoolQuery {
+            should: vec![simple_range.clone()],
+            ..Default::default()
+        };
+        timestamp_range_extractor.start_timestamp = Some(123);
+        timestamp_range_extractor.end_timestamp = None;
+        timestamp_range_extractor
+            .visit(&bool_query_should.into())
+            .unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(123));
+        assert_eq!(timestamp_range_extractor.end_timestamp, None);
+
+        // start bound was already more restrictive
+        timestamp_range_extractor.start_timestamp = Some(1618601297);
+        timestamp_range_extractor.end_timestamp = Some(i64::MAX);
+        timestamp_range_extractor.visit(&simple_range).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618601297));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283879));
+
+        // end bound was already more restrictive
+        timestamp_range_extractor.start_timestamp = Some(1);
+        timestamp_range_extractor.end_timestamp = Some(1618601297);
+        timestamp_range_extractor.visit(&simple_range).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353941));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1618601297));
+
+        // bounds are (start..end] instead of [start..end)
+        let unusual_bounds = quickwit_query::query_ast::RangeQuery {
+            field: timestamp_field.to_string(),
+            lower_bound: Bound::Excluded(JsonLiteral::String("2021-04-13T22:45:41Z".to_owned())),
+            upper_bound: Bound::Included(JsonLiteral::String("2021-05-06T06:51:19Z".to_owned())),
+        }
+        .into();
+        timestamp_range_extractor.start_timestamp = None;
+        timestamp_range_extractor.end_timestamp = None;
+        timestamp_range_extractor.visit(&unusual_bounds).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353942));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283880));
+
+        let wrong_field = quickwit_query::query_ast::RangeQuery {
+            field: "other_field".to_string(),
+            lower_bound: Bound::Included(JsonLiteral::String("2021-04-13T22:45:41Z".to_owned())),
+            upper_bound: Bound::Excluded(JsonLiteral::String("2021-05-06T06:51:19Z".to_owned())),
+        }
+        .into();
+        timestamp_range_extractor.start_timestamp = None;
+        timestamp_range_extractor.end_timestamp = None;
+        timestamp_range_extractor.visit(&wrong_field).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, None);
+        assert_eq!(timestamp_range_extractor.end_timestamp, None);
+    }
 }
