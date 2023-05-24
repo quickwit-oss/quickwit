@@ -364,18 +364,29 @@ fn rewrite_request(search_request: &mut SearchRequest, split: &SplitIdAndFooterO
     if search_request.max_hits == 0 {
         search_request.sort_by_field = None;
     }
+    rewrite_start_end_time_bounds(
+        &mut search_request.start_timestamp,
+        &mut search_request.end_timestamp,
+        split,
+    )
+}
 
+pub(crate) fn rewrite_start_end_time_bounds(
+    start_timestamp_opt: &mut Option<i64>,
+    end_timestamp_opt: &mut Option<i64>,
+    split: &SplitIdAndFooterOffsets,
+) {
     if let (Some(split_start), Some(split_end)) = (split.timestamp_start, split.timestamp_end) {
-        if let Some(start_timestamp) = search_request.start_timestamp {
+        if let Some(start_timestamp) = start_timestamp_opt {
             // both starts are inclusive
-            if start_timestamp <= split_start {
-                search_request.start_timestamp = None;
+            if *start_timestamp <= split_start {
+                *start_timestamp_opt = None;
             }
         }
-        if let Some(end_timestamp) = search_request.end_timestamp {
+        if let Some(end_timestamp) = end_timestamp_opt {
             // search end is exclusive, split end is inclusive
-            if end_timestamp > split_end {
-                search_request.end_timestamp = None;
+            if *end_timestamp > split_end {
+                *end_timestamp_opt = None;
             }
         }
     }
