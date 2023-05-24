@@ -848,6 +848,8 @@ fn inject_span_status_tags(tags: &mut Vec<JaegerKeyValue>, span_status_opt: Opti
     }
 }
 
+/// Converts OpenTelemetry attributes to Jaeger tags.
+/// <https://opentelemetry.io/docs/specs/otel/trace/sdk_exporters/jaeger/#attributes>
 fn otlp_attributes_to_jaeger_tags(
     attributes: HashMap<String, JsonValue>,
 ) -> Result<Vec<JaegerKeyValue>, Status> {
@@ -863,7 +865,12 @@ fn otlp_attributes_to_jaeger_tags(
             v_binary: Vec::new(),
         };
         match value {
-            JsonValue::String(value) => tag.v_str = value,
+            // Array values MUST be serialized to string like a JSON list.
+            JsonValue::Array(values) => {
+                tag.v_type = ValueType::String as i32;
+                tag.v_str = serde_json::to_string(&values)
+                    .expect("A vec of `serde_json::Value` values should be JSON serializable.");
+            }
             JsonValue::Bool(value) => {
                 tag.v_type = ValueType::Bool as i32;
                 tag.v_bool = value;
@@ -876,6 +883,10 @@ fn otlp_attributes_to_jaeger_tags(
                     tag.v_type = ValueType::Float64 as i32;
                     tag.v_float64 = value
                 }
+            }
+            JsonValue::String(value) => {
+                tag.v_type = ValueType::String as i32;
+                tag.v_str = value
             }
             _ => {
                 return Err(Status::internal(format!(
@@ -1498,6 +1509,8 @@ mod tests {
     #[test]
     fn test_otlp_attributes_to_jaeger_tags() {
         let attributes = HashMap::from_iter([
+            ("array_int".to_string(), json!([1, 2])),
+            ("array_str".to_string(), json!(["foo", "bar"])),
             ("bool".to_string(), json!(true)),
             ("float".to_string(), json!(1.0)),
             ("integer".to_string(), json!(1)),
@@ -1506,23 +1519,31 @@ mod tests {
         let mut tags = otlp_attributes_to_jaeger_tags(attributes).unwrap();
         tags.sort_by(|left, right| left.key.cmp(&right.key));
 
-        assert_eq!(tags.len(), 4);
+        assert_eq!(tags.len(), 6);
 
-        assert_eq!(tags[0].key, "bool");
-        assert_eq!(tags[0].v_type(), ValueType::Bool);
-        assert!(tags[0].v_bool);
+        assert_eq!(tags[0].key, "array_int");
+        assert_eq!(tags[0].v_type(), ValueType::String);
+        assert_eq!(tags[0].v_str, "[1,2]");
 
-        assert_eq!(tags[1].key, "float");
-        assert_eq!(tags[1].v_type(), ValueType::Float64);
-        assert_eq!(tags[1].v_float64, 1.0);
+        assert_eq!(tags[1].key, "array_str");
+        assert_eq!(tags[1].v_type(), ValueType::String);
+        assert_eq!(tags[1].v_str, r#"["foo","bar"]"#);
 
-        assert_eq!(tags[2].key, "integer");
-        assert_eq!(tags[2].v_type(), ValueType::Int64);
-        assert_eq!(tags[2].v_int64, 1);
+        assert_eq!(tags[2].key, "bool");
+        assert_eq!(tags[2].v_type(), ValueType::Bool);
+        assert!(tags[2].v_bool);
 
-        assert_eq!(tags[3].key, "string");
-        assert_eq!(tags[3].v_type(), ValueType::String);
-        assert_eq!(tags[3].v_str, "foo");
+        assert_eq!(tags[3].key, "float");
+        assert_eq!(tags[3].v_type(), ValueType::Float64);
+        assert_eq!(tags[3].v_float64, 1.0);
+
+        assert_eq!(tags[4].key, "integer");
+        assert_eq!(tags[4].v_type(), ValueType::Int64);
+        assert_eq!(tags[4].v_int64, 1);
+
+        assert_eq!(tags[5].key, "string");
+        assert_eq!(tags[5].v_type(), ValueType::String);
+        assert_eq!(tags[5].v_str, "foo");
     }
 
     #[test]
