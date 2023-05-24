@@ -31,7 +31,7 @@ use quickwit_proto::{
     LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
     SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
-use quickwit_query::query_ast::QueryAst;
+use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstVisitor, RangeQuery};
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
@@ -234,6 +234,17 @@ pub async fn root_search(
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
     let query_ast_resolved = query_ast.parse_user_query(doc_mapper.default_search_fields())?;
 
+    if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
+        let mut timestamp_range_extractor = ExtractTimestampRange {
+            timestamp_field,
+            start_timestamp: search_request.start_timestamp,
+            end_timestamp: search_request.end_timestamp,
+        };
+        timestamp_range_extractor.visit(&query_ast_resolved)?;
+        search_request.start_timestamp = timestamp_range_extractor.start_timestamp;
+        search_request.end_timestamp = timestamp_range_extractor.end_timestamp;
+    }
+
     // Validates the query by effectively building it against the current schema.
     doc_mapper.query(doc_mapper.schema(), &query_ast_resolved, true)?;
 
@@ -387,6 +398,87 @@ pub async fn root_search(
         elapsed_time_micros: elapsed.as_micros() as u64,
         errors: Vec::new(),
     })
+}
+
+struct ExtractTimestampRange<'a> {
+    timestamp_field: &'a str,
+    start_timestamp: Option<i64>,
+    end_timestamp: Option<i64>,
+}
+
+impl<'a> ExtractTimestampRange<'a> {
+    fn update_start_timestamp(
+        &mut self,
+        lower_bound: &quickwit_query::JsonLiteral,
+        included: bool,
+    ) {
+        use quickwit_query::InterpretUserInput;
+        let Some(lower_bound) = tantivy::DateTime::interpret(lower_bound) else { return };
+        let mut lower_bound = lower_bound.into_timestamp_secs();
+        if !included {
+            // TODO saturating isn't exactly right, we should replace the RangeQuery with
+            // a match_none, but the visitor doesn't allow mutation.
+            lower_bound = lower_bound.saturating_add(1);
+        }
+        self.start_timestamp = Some(
+            self.start_timestamp
+                .map_or(lower_bound, |current| current.max(lower_bound)),
+        );
+    }
+
+    fn update_end_timestamp(&mut self, upper_bound: &quickwit_query::JsonLiteral, included: bool) {
+        use quickwit_query::InterpretUserInput;
+        let Some(upper_bound) = tantivy::DateTime::interpret(upper_bound) else { return };
+        let mut upper_bound = upper_bound.into_timestamp_secs();
+        if included {
+            // TODO saturating isn't exactly right, we should replace the RangeQuery with
+            // a match_none, but the visitor doesn't allow mutation.
+            upper_bound = upper_bound.saturating_add(1);
+        }
+        self.end_timestamp = Some(
+            self.end_timestamp
+                .map_or(upper_bound, |current| current.min(upper_bound)),
+        );
+    }
+}
+
+impl<'a, 'b> QueryAstVisitor<'b> for ExtractTimestampRange<'a> {
+    type Err = std::convert::Infallible;
+
+    fn visit_bool(&mut self, bool_query: &'b BoolQuery) -> Result<(), Self::Err> {
+        // we only want to visit sub-queries which are strict (positive) requirement
+        for ast in bool_query.must.iter().chain(bool_query.filter.iter()) {
+            self.visit(ast)?;
+        }
+        Ok(())
+    }
+
+    fn visit_range(&mut self, range_query: &'b RangeQuery) -> Result<(), Self::Err> {
+        use std::ops::Bound;
+
+        if range_query.field == self.timestamp_field {
+            match &range_query.lower_bound {
+                Bound::Included(lower_bound) => self.update_start_timestamp(lower_bound, true),
+                Bound::Excluded(lower_bound) => self.update_start_timestamp(lower_bound, false),
+                Bound::Unbounded => (),
+            }
+            match &range_query.upper_bound {
+                Bound::Included(upper_bound) => self.update_end_timestamp(upper_bound, true),
+                Bound::Excluded(upper_bound) => self.update_end_timestamp(upper_bound, false),
+                Bound::Unbounded => (),
+            }
+        }
+        Ok(())
+    }
+    // TODO visiting those could be usefull too,
+    // fn visit_term(
+    // &mut self,
+    // _term_query: &'a TermQuery
+    // ) -> Result<(), Self::Err> { ... }
+    // fn visit_term_set(
+    // &mut self,
+    // _term_query: &'a TermSetQuery
+    // ) -> Result<(), Self::Err> { ... }
 }
 
 pub fn finalize_aggregation(

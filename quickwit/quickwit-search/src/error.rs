@@ -116,6 +116,12 @@ impl From<JoinError> for SearchError {
     }
 }
 
+impl From<std::convert::Infallible> for SearchError {
+    fn from(infallible: std::convert::Infallible) -> SearchError {
+        match infallible {}
+    }
+}
+
 #[derive(Debug)]
 pub struct NodeSearchError {
     pub search_error: SearchError,
