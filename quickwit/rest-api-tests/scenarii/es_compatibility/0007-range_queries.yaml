@@ -94,3 +94,69 @@ expected:
     total:
       value: 82
       relation: "eq"
+---
+# Missing in some documents
+method: [GET]
+json:
+  query:
+    range:
+      payload.size:
+        gte: 2
+expected:
+  hits:
+    total:
+      value: 13
+      relation: "eq"
+---
+# Field not present in all documents
+method: [GET]
+json:
+  query:
+    range:
+      payload.size:
+        lt: 2
+expected:
+  hits:
+    total:
+      value: 47
+      relation: "eq"
+---
+# Timestamp field
+method: [GET]
+json:
+  query:
+    range:
+      created_at:
+        lt: "2015-02-01T00:00:13Z"
+        gte: "2015-02-01T00:00:10Z"
+expected:
+  hits:
+    total:
+      value: 44
+      relation: "eq"
+---
+# Timestamp field
+method: [GET]
+json:
+  query:
+    range:
+      created_at:
+        gte: "2015-02-01T00:00:10Z"
+expected:
+  hits:
+    total:
+      value: 58
+      relation: "eq"
+---
+# Timestamp field
+method: [GET]
+json:
+  query:
+    range:
+      created_at:
+        lt: "2015-02-01T00:00:13Z"
+expected:
+  hits:
+    total:
+      value: 86
+      relation: "eq"
