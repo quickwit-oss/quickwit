@@ -112,7 +112,7 @@ pub async fn ingest_with_retry(
 ) -> anyhow::Result<()> {
     wait_until_predicate(
         || {
-            let commit_type_clone = commit_type.clone();
+            let commit_type_clone = commit_type;
             let ingest_source_clone = ingest_source.clone();
             async move {
                 // Index one record.

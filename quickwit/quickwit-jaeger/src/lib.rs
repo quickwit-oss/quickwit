@@ -32,7 +32,7 @@ use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
     Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint, SpanKind as QwSpanKind,
-    SpanStatus as QwSpanStatus, TraceId, OTEL_TRACE_INDEX_ID,
+    SpanStatus as QwSpanStatus, TraceId, OTEL_TRACES_INDEX_ID,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -59,6 +59,8 @@ use tracing::{debug, error, instrument, warn, Span as RuntimeSpan};
 
 use crate::metrics::JAEGER_SERVICE_METRICS;
 
+#[cfg(test)]
+mod integration_tests;
 mod metrics;
 
 // OpenTelemetry to Jaeger Transformation
@@ -101,7 +103,7 @@ impl JaegerService {
     ) -> JaegerResult<GetServicesResponse> {
         debug!(request=?request, "`get_services` request");
 
-        let index_id = OTEL_TRACE_INDEX_ID.to_string();
+        let index_id = OTEL_TRACES_INDEX_ID.to_string();
         let max_hits = Some(1_000);
         let start_timestamp =
             Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
@@ -133,7 +135,7 @@ impl JaegerService {
     ) -> JaegerResult<GetOperationsResponse> {
         debug!(request=?request, "`get_operations` request");
 
-        let index_id = OTEL_TRACE_INDEX_ID.to_string();
+        let index_id = OTEL_TRACES_INDEX_ID.to_string();
         let max_hits = Some(1_000);
         let start_timestamp =
             Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
@@ -233,7 +235,7 @@ impl JaegerService {
         &self,
         trace_query: TraceQueryParameters,
     ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
-        let index_id = OTEL_TRACE_INDEX_ID.to_string();
+        let index_id = OTEL_TRACES_INDEX_ID.to_string();
         let span_kind_opt = None;
         let min_span_start_timestamp_secs_opt = trace_query.start_time_min.map(|ts| ts.seconds);
         let max_span_start_timestamp_secs_opt = trace_query.start_time_max.map(|ts| ts.seconds);
@@ -301,7 +303,7 @@ impl JaegerService {
         debug!(query=%query, "Fetch spans query");
 
         let search_request = SearchRequest {
-            index_id: OTEL_TRACE_INDEX_ID.to_string(),
+            index_id: OTEL_TRACES_INDEX_ID.to_string(),
             query_ast: query_ast_json(&query)?,
             start_timestamp: Some(*search_window.start()),
             end_timestamp: Some(*search_window.end()),
@@ -386,13 +388,13 @@ impl JaegerService {
 
             JAEGER_SERVICE_METRICS
                 .fetched_traces_total
-                .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+                .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
                 .inc_by(num_traces);
 
             let elapsed = request_start.elapsed().as_secs_f64();
             JAEGER_SERVICE_METRICS
                 .request_duration_seconds
-                .with_label_values([operation_name, OTEL_TRACE_INDEX_ID, "false"])
+                .with_label_values([operation_name, OTEL_TRACES_INDEX_ID, "false"])
                 .observe(elapsed);
         });
         Ok(ReceiverStream::new(rx))
@@ -424,24 +426,24 @@ macro_rules! metrics {
 fn record_error(operation_name: &'static str, request_start: Instant) {
     JAEGER_SERVICE_METRICS
         .request_errors_total
-        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
         .inc();
 
     let elapsed = request_start.elapsed().as_secs_f64();
     JAEGER_SERVICE_METRICS
         .request_duration_seconds
-        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID, "true"])
+        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID, "true"])
         .observe(elapsed);
 }
 
 fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
     JAEGER_SERVICE_METRICS
         .fetched_spans_total
-        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
         .inc_by(num_spans as u64);
     JAEGER_SERVICE_METRICS
         .transferred_bytes_total
-        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
         .inc_by(num_bytes as u64);
 }
 
@@ -457,7 +459,7 @@ impl SpanReaderPlugin for JaegerService {
     ) -> Result<Response<GetServicesResponse>, Status> {
         metrics!(
             self.get_services_inner(request.into_inner()).await,
-            [get_services, OTEL_TRACE_INDEX_ID]
+            [get_services, OTEL_TRACES_INDEX_ID]
         );
     }
 
@@ -467,7 +469,7 @@ impl SpanReaderPlugin for JaegerService {
     ) -> Result<Response<GetOperationsResponse>, Status> {
         metrics!(
             self.get_operations_inner(request.into_inner()).await,
-            [get_operations, OTEL_TRACE_INDEX_ID]
+            [get_operations, OTEL_TRACES_INDEX_ID]
         );
     }
 
@@ -477,7 +479,7 @@ impl SpanReaderPlugin for JaegerService {
     ) -> Result<Response<FindTraceIDsResponse>, Status> {
         metrics!(
             self.find_trace_ids_inner(request.into_inner()).await,
-            [find_trace_ids, OTEL_TRACE_INDEX_ID]
+            [find_trace_ids, OTEL_TRACES_INDEX_ID]
         );
     }
 
@@ -600,13 +602,15 @@ fn build_search_query(
         if !query.is_empty() {
             query.push_str(" AND ");
         }
-        query.push_str("span_start_timestamp_secs:[");
+        query.push_str("span_start_timestamp_nanos:[");
 
         if let Some(min_span_start_timestamp_secs) = min_span_start_timestamp_secs_opt {
             let min_span_start_datetime =
-                OffsetDateTime::from_unix_timestamp(min_span_start_timestamp_secs).expect("");
-            let min_span_start_datetime_rfc3339 =
-                min_span_start_datetime.format(&Rfc3339).expect("");
+                OffsetDateTime::from_unix_timestamp(min_span_start_timestamp_secs)
+                    .expect("Timestamp should fall within the [Date::MIN, Date::MAX] interval.");
+            let min_span_start_datetime_rfc3339 = min_span_start_datetime
+                .format(&Rfc3339)
+                .expect("Datetime should be formattable to RFC 3339.");
             query.push_str(&min_span_start_datetime_rfc3339);
         } else {
             query.push('*');
@@ -615,9 +619,11 @@ fn build_search_query(
 
         if let Some(max_span_start_timestamp_secs) = max_span_start_timestamp_secs_opt {
             let max_span_start_datetime =
-                OffsetDateTime::from_unix_timestamp(max_span_start_timestamp_secs).expect("");
-            let max_span_start_datetime_rfc3339 =
-                max_span_start_datetime.format(&Rfc3339).expect("");
+                OffsetDateTime::from_unix_timestamp(max_span_start_timestamp_secs)
+                    .expect("Timestamp should fall within the [Date::MIN, Date::MAX] interval.");
+            let max_span_start_datetime_rfc3339 = max_span_start_datetime
+                .format(&Rfc3339)
+                .expect("Datetime should be formattable to RFC 3339.");
             query.push_str(&max_span_start_datetime_rfc3339);
         } else {
             query.push('*');
@@ -657,7 +663,7 @@ fn build_aggregations_query(num_traces: usize) -> String {
     let query = serde_json::to_string(&FindTraceIdsCollector {
         num_traces,
         trace_id_field_name: "trace_id".to_string(),
-        span_timestamp_field_name: "span_start_timestamp_secs".to_string(),
+        span_timestamp_field_name: "span_start_timestamp_nanos".to_string(),
     })
     .expect("The collector should be JSON serializable.");
     debug!(query=%query, "Aggregations query");
@@ -1228,7 +1234,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"span_start_timestamp_secs:[1970-01-01T00:00:03Z TO *]"#
+                r#"span_start_timestamp_nanos:[1970-01-01T00:00:03Z TO *]"#
             );
         }
         {
@@ -1251,7 +1257,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"span_start_timestamp_secs:[* TO 1970-01-01T00:00:33Z]"#
+                r#"span_start_timestamp_nanos:[* TO 1970-01-01T00:00:33Z]"#
             );
         }
         {
@@ -1274,7 +1280,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"span_start_timestamp_secs:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z]"#
+                r#"span_start_timestamp_nanos:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z]"#
             );
         }
         {
@@ -1435,7 +1441,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                r#"service_name:"quickwit" AND span_kind:3 AND span_name:"leaf_search" AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_start_timestamp_secs:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z] AND span_duration_millis:[7 TO 77]"#
+                r#"service_name:"quickwit" AND span_kind:3 AND span_name:"leaf_search" AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_start_timestamp_nanos:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z] AND span_duration_millis:[7 TO 77]"#
             );
         }
     }
@@ -1451,7 +1457,7 @@ mod tests {
         assert_eq!(collector.trace_id_field_name, "trace_id");
         assert_eq!(
             collector.span_timestamp_field_name,
-            "span_start_timestamp_secs"
+            "span_start_timestamp_nanos"
         );
     }
 
@@ -1716,7 +1722,6 @@ mod tests {
             span_fingerprint: Some(SpanFingerprint::new("quickwit", 2.into(), "publish_split")),
             span_start_timestamp_nanos: 1_000_000_001,
             span_end_timestamp_nanos: 2_000_000_002,
-            span_start_timestamp_secs: Some(1),
             span_duration_millis: Some(1_001),
             span_attributes: HashMap::from_iter([("span_key".to_string(), json!("span_value"))]),
             span_dropped_attributes_count: 3,
@@ -1956,27 +1961,27 @@ mod tests {
             let agg_result_json = r#"[
                 {
                     "trace_id": "AQEBAQEBAQEBAQEBAQEBAQ==",
-                    "span_timestamp": 1736522020000000
+                    "span_timestamp": 1684857492783747000
                 }
             ]"#;
             let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
             assert_eq!(trace_ids.len(), 1);
-            assert_eq!(span_timestamps_range, 1736522020..=1736522020);
+            assert_eq!(span_timestamps_range, 1684857492..=1684857492);
         }
         {
             let agg_result_json = r#"[
                 {
                     "trace_id": "AQIDBAUGBwgJCgsMDQ4PEA==",
-                    "span_timestamp": 1736522020000000
+                    "span_timestamp": 1684857492783747000
                 },
                 {
                     "trace_id": "AgICAgICAgICAgICAgICAg==",
-                    "span_timestamp": 1704899620000000
+                    "span_timestamp": 1684857826019627000
                 }
             ]"#;
             let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
             assert_eq!(trace_ids.len(), 2);
-            assert_eq!(span_timestamps_range, 1704899620..=1736522020);
+            assert_eq!(span_timestamps_range, 1684857492..=1684857826);
         }
     }
 
@@ -1986,7 +1991,7 @@ mod tests {
         service
             .expect_root_list_terms()
             .withf(|req| {
-                req.index_id == "otel-trace-v0"
+                req.index_id == OTEL_TRACES_INDEX_ID
                     && req.field == "service_name"
                     && req.start_timestamp.is_some()
             })

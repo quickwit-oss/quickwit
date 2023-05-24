@@ -26,6 +26,8 @@ mod node;
 
 use std::collections::HashSet;
 
+#[cfg(any(test, feature = "testsuite"))]
+pub use chitchat::transport::ChannelTransport;
 use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
 use quickwit_config::service::QuickwitService;
