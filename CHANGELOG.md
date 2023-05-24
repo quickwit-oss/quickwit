@@ -4,19 +4,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added
+## [0.5.2] - 2023-03-24
 
 ### Fixed
 
+- Fix conversion from OTLP attributes to Jaeger tags for arrays
+
+## [0.5.1] - 2023-03-21
+
+### Added
+
+- Extract arrays of primitive values from OTLP attributes
+
+### Fixed
+
+- Fix source actor timeout
+
 ### Changed
 
-### Deprecated
-
-### Removed
-
-### Security
+- Update mrecordlog to 0.3
 
 ## [0.5.0] - 2023-03-16
 
