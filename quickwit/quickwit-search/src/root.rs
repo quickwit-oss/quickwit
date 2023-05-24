@@ -400,10 +400,10 @@ pub async fn root_search(
     })
 }
 
-struct ExtractTimestampRange<'a> {
-    timestamp_field: &'a str,
-    start_timestamp: Option<i64>,
-    end_timestamp: Option<i64>,
+pub(crate) struct ExtractTimestampRange<'a> {
+    pub timestamp_field: &'a str,
+    pub start_timestamp: Option<i64>,
+    pub end_timestamp: Option<i64>,
 }
 
 impl<'a> ExtractTimestampRange<'a> {
