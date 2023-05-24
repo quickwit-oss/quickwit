@@ -36,13 +36,14 @@ use quickwit_metastore::{FileBackedMetastore, Metastore};
 use quickwit_opentelemetry::otlp::OtlpGrpcTracesService;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPlugin;
 use quickwit_proto::jaeger::storage::v1::{
-    FindTraceIDsRequest, GetOperationsRequest, GetServicesRequest, Operation, TraceQueryParameters,
+    FindTraceIDsRequest, GetOperationsRequest, GetServicesRequest, GetTraceRequest, Operation,
+    SpansResponseChunk, TraceQueryParameters,
 };
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
 use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
 use quickwit_proto::opentelemetry::proto::common::v1::{
-    AnyValue as OtlpAnyValue, InstrumentationScope, KeyValue as OtlpKeyValue,
+    AnyValue as OtlpAnyValue, ArrayValue, InstrumentationScope, KeyValue as OtlpKeyValue,
 };
 use quickwit_proto::opentelemetry::proto::resource::v1::Resource;
 use quickwit_proto::opentelemetry::proto::trace::v1::span::{Event as OtlpEvent, Link as OtlpLink};
@@ -55,6 +56,7 @@ use quickwit_search::{
 use quickwit_storage::{quickwit_storage_uri_resolver, StorageUriResolver as StorageResolver};
 use tempfile::TempDir;
 use time::OffsetDateTime;
+use tokio_stream::StreamExt;
 
 use crate::JaegerService;
 
@@ -225,6 +227,27 @@ async fn test_otel_jaeger_integration() {
             .into_inner();
         assert_eq!(find_trace_ids_response.trace_ids.len(), 1);
         assert_eq!(find_trace_ids_response.trace_ids[0], [4; 16]);
+    }
+    {
+        // Test `GetTrace`
+        let get_trace_request = GetTraceRequest {
+            trace_id: [1; 16].to_vec(),
+        };
+        let mut span_stream = jaeger_service
+            .get_trace(tonic::Request::new(get_trace_request))
+            .await
+            .unwrap()
+            .into_inner();
+        let SpansResponseChunk { spans } = span_stream.next().await.unwrap().unwrap();
+        assert_eq!(spans.len(), 1);
+
+        let span: &quickwit_proto::jaeger::api_v2::Span = &spans[0];
+        assert_eq!(span.operation_name, "stage_splits");
+
+        let process = span.process.as_ref().unwrap();
+        assert_eq!(process.tags.len(), 1);
+        assert_eq!(process.tags[0].key, "tags");
+        assert_eq!(process.tags[0].v_str, r#"["foo"]"#);
     }
     _indexer_handle.quit().await;
     universe.assert_quit().await;
@@ -471,12 +494,24 @@ fn make_resource_spans() -> Vec<ResourceSpans> {
         spans,
         schema_url: "".to_string(),
     }];
-    let resource_attributes = vec![OtlpKeyValue {
-        key: "service.name".to_string(),
-        value: Some(OtlpAnyValue {
-            value: Some(OtlpAnyValueValue::StringValue("quickwit".to_string())),
-        }),
-    }];
+    let resource_attributes = vec![
+        OtlpKeyValue {
+            key: "service.name".to_string(),
+            value: Some(OtlpAnyValue {
+                value: Some(OtlpAnyValueValue::StringValue("quickwit".to_string())),
+            }),
+        },
+        OtlpKeyValue {
+            key: "tags".to_string(),
+            value: Some(OtlpAnyValue {
+                value: Some(OtlpAnyValueValue::ArrayValue(ArrayValue {
+                    values: vec![OtlpAnyValue {
+                        value: Some(OtlpAnyValueValue::StringValue("foo".to_string())),
+                    }],
+                })),
+            }),
+        },
+    ];
     let resource_spans = ResourceSpans {
         resource: Some(Resource {
             attributes: resource_attributes,
