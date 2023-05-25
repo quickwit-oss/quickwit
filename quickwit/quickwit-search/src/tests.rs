@@ -26,6 +26,7 @@ use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::{
     qast_helper, query_ast_from_user_text, LeafListTermsResponse, SearchRequest, SortOrder,
+    SortValue,
 };
 use serde_json::{json, Value as JsonValue};
 use tantivy::schema::Value as TantivyValue;
@@ -319,7 +320,13 @@ async fn test_single_node_several_splits() -> anyhow::Result<()> {
     assert!(&single_node_result.hits[0].json.contains("Snoopy"));
     assert!(&single_node_result.hits[1].json.contains("breed"));
     assert!(is_sorted(single_node_result.hits.iter().flat_map(|hit| {
-        hit.partial_hit.as_ref().map(partial_hit_sorting_key)
+        hit.partial_hit.as_ref().map(|partial_hit| {
+            (
+                partial_hit.sort_value,
+                partial_hit.split_id.as_str(),
+                partial_hit.doc_id,
+            )
+        })
     })));
     assert!(single_node_result.elapsed_time_micros > 10);
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
@@ -513,8 +520,8 @@ async fn single_node_search_sort_by_field(
                 .partial_hit
                 .as_ref()
                 .unwrap()
-                .sorting_field_value
-                >= hits[1].partial_hit.as_ref().unwrap().sorting_field_value));
+                .sort_value
+                >= hits[1].partial_hit.as_ref().unwrap().sort_value));
             test_sandbox.assert_quit().await;
             Ok(())
         }
@@ -530,16 +537,6 @@ async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
     single_node_search_sort_by_field("temperature", false).await?;
     single_node_search_sort_by_field("_score", true).await?;
     Ok(())
-}
-
-fn u64_to_f32(value: u64) -> f32 {
-    const HIGHEST_BIT: u32 = 1 << 31;
-    let value_u32 = value as u32;
-    f32::from_bits(if value_u32 & HIGHEST_BIT != 0 {
-        value_u32 ^ HIGHEST_BIT
-    } else {
-        !value_u32
-    })
 }
 
 #[tokio::test]
@@ -598,10 +595,8 @@ async fn test_sort_bm25() {
                 .into_iter()
                 .map(|hit| {
                     let partial_hit = hit.partial_hit.unwrap();
-                    (
-                        u64_to_f32(partial_hit.sorting_field_value),
-                        partial_hit.doc_id,
-                    )
+                    let Some(SortValue::F64(score)) = partial_hit.sort_value else { panic!()};
+                    (score as f32, partial_hit.doc_id)
                 })
                 .collect()
         }
@@ -626,6 +621,103 @@ async fn test_sort_bm25() {
             &hits[..],
             &[(0.31931427, 1), (0.2972603, 2), (0.24686484, 0)]
         );
+    }
+    test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_sort_by_static_and_dynamic_field() {
+    let index_id = "sort_by_dynamic_field".to_string();
+    // In this test, we will try sorting docs by several fields.
+    // - static_i64
+    // - static_u64
+    // - dynamic_i64
+    // - dynamic_u64
+    let doc_mapping_yaml = r#"
+            mode: dynamic
+            field_mappings:
+              - name: static_u64
+                type: u64
+                fast: true
+              - name: static_i64
+                type: i64
+                fast: true
+            dynamic_mapping:
+                fast: true
+                stored: true
+            "#;
+    let test_sandbox = TestSandbox::create(&index_id, doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
+    let docs = vec![
+        // 0
+        json!({"static_u64": 3u64, "dynamic_u64": 3u64, "static_i64": 0i64, "dynamic_i64": 0i64}),
+        // 1
+        json!({"static_u64": 2u64, "dynamic_u64": 2u64, "static_i64": -1i64, "dynamic_i64": -1i64}),
+        // 2
+        json!({}),
+        // 3
+        json!({"static_u64": 4u64, "dynamic_u64": (i64::MAX as u64) + 1, "static_i64": 1i64, "dynamic_i64": 1i64}),
+    ];
+    test_sandbox.add_documents(docs).await.unwrap();
+    let search_hits = |sort_field: &str, order: SortOrder| {
+        let query_ast_json = serde_json::to_string(&QueryAst::MatchAll).unwrap();
+        let search_request = SearchRequest {
+            index_id: index_id.to_string(),
+            query_ast: query_ast_json,
+            max_hits: 1_000,
+            sort_by_field: Some(sort_field.to_string()),
+            sort_order: Some(order as i32),
+            ..Default::default()
+        };
+        let metastore = test_sandbox.metastore();
+        let storage_uri_resolver = test_sandbox.storage_uri_resolver();
+        async move {
+            let search_resp = single_node_search(search_request, &*metastore, storage_uri_resolver)
+                .await
+                .unwrap();
+            assert_eq!(search_resp.num_hits, 4);
+            search_resp
+                .hits
+                .into_iter()
+                .map(|hit| {
+                    let partial_hit = hit.partial_hit.unwrap();
+                    partial_hit.doc_id
+                })
+                .collect::<Vec<u32>>()
+        }
+    };
+    {
+        let ordered_docs: Vec<u32> = search_hits("static_u64", SortOrder::Desc).await;
+        assert_eq!(&ordered_docs[..], &[3, 0, 1, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> = search_hits("static_u64", SortOrder::Asc).await;
+        assert_eq!(&ordered_docs[..], &[1, 0, 3, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> = search_hits("static_i64", SortOrder::Desc).await;
+        assert_eq!(&ordered_docs[..], &[3, 0, 1, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> = search_hits("static_i64", SortOrder::Asc).await;
+        assert_eq!(&ordered_docs[..], &[1, 0, 3, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> = search_hits("dynamic_u64", SortOrder::Desc).await;
+        assert_eq!(&ordered_docs[..], &[3, 0, 1, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> = search_hits("dynamic_u64", SortOrder::Asc).await;
+        assert_eq!(&ordered_docs[..], &[1, 0, 3, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> = search_hits("dynamic_i64", SortOrder::Desc).await;
+        assert_eq!(&ordered_docs[..], &[3, 0, 1, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> = search_hits("dynamic_i64", SortOrder::Asc).await;
+        assert_eq!(&ordered_docs[..], &[1, 0, 3, 2]);
     }
     test_sandbox.assert_quit().await;
 }
@@ -739,7 +831,6 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     )
     .await?;
     assert_eq!(selected_splits.len(), 2);
-
     let split_tags: BTreeSet<String> = selected_splits
         .iter()
         .flat_map(|split| split.tags.clone())
@@ -752,7 +843,6 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         vec!["owner!", "owner:adrien", "owner:paul"]
     );
     test_sandbox.assert_quit().await;
-
     Ok(())
 }
 
