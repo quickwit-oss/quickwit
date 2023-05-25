@@ -26,7 +26,7 @@ use std::path::Path;
 use std::str::FromStr;
 
 use anyhow::Result;
-use clap::ErrorKind;
+use clap::error::ErrorKind;
 use helpers::{TestEnv, TestStorageType};
 use quickwit_cli::cli::build_cli;
 use quickwit_cli::index::{
@@ -75,7 +75,6 @@ async fn local_ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Res
 fn test_cmd_help() {
     let cmd = build_cli();
     let error = cmd
-        .clone()
         .try_get_matches_from(vec![PACKAGE_BIN_NAME, "--help"])
         .unwrap_err();
     // on `--help` clap returns an error.
@@ -147,12 +146,10 @@ async fn test_cmd_create_overwrite() {
 fn test_cmd_create_with_ill_formed_command() {
     // Attempt to create with ill-formed new command.
     let app = build_cli();
-    let result = app.try_get_matches_from(vec![PACKAGE_BIN_NAME, "index", "create"]);
-    assert!(result.is_err());
-    assert_eq!(
-        result.unwrap_err().kind(),
-        ErrorKind::MissingRequiredArgument
-    );
+    let error = app
+        .try_get_matches_from(vec![PACKAGE_BIN_NAME, "index", "create"])
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
 }
 
 #[tokio::test]

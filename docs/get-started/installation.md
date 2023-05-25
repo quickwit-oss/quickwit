@@ -21,7 +21,7 @@ Support of aarch64 is currently experimental.
 
 ## Download
 
-version: 0.5.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.5.0)
+version: 0.5.0 - [Release notes](https://github.com/quickwit-oss/quickwit/releases/tag/v0.5.0) - [Changelog](https://github.com/quickwit-oss/quickwit/blob/main/CHANGELOG.md)
 License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
 - [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.5.0/quickwit-v0.5.0-aarch64-unknown-linux-gnu.tar.gz)

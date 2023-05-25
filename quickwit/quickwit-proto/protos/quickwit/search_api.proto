@@ -210,12 +210,13 @@ message Hit {
   optional string snippet = 3;
 }
 
+
 // A partial hit, is a hit for which we have not fetch the content yet.
 // Instead, it holds a document_uri which is enough information to
 // go and fetch the actual document data, by performing a `get_doc(...)`
 // request.
 message PartialHit {
-  // Sorting field value. (e.g. timestamp)
+  // Value of the sorting key for the given document.
   //
   // Quickwit only computes top-K of this sorting field.
   // If the user requested for a bottom-K of a given fast field, then quickwit simply
@@ -225,7 +226,17 @@ message PartialHit {
   // - the split_id,
   // - the segment_ord,
   // - the doc id.
-  uint64 sorting_field_value = 1;
+  oneof sort_value {
+    uint64 u64 = 5;
+    int64 i64 = 6;
+    double f64 = 7;
+    bool boolean = 8;
+  }
+  // Deprecated
+  reserved 1;
+  // Room for eventual future sorted key types.
+  reserved 9 to 20;
+
   string split_id = 2;
 
   // (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document

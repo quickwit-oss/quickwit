@@ -356,42 +356,44 @@ mod serde_datetime {
 
     pub(crate) fn serialize<S>(datetime: &DateTime, serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
-        serializer.serialize_i64(datetime.into_timestamp_micros())
+        serializer.serialize_i64(datetime.into_timestamp_nanos())
     }
 
     pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<DateTime, D::Error>
     where D: Deserializer<'de> {
-        let datetime_64: i64 = Deserialize::deserialize(deserializer)?;
-        Ok(DateTime::from_timestamp_micros(datetime_64))
+        let datetime_i64: i64 = Deserialize::deserialize(deserializer)?;
+        Ok(DateTime::from_timestamp_nanos(datetime_i64))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use tantivy::time::OffsetDateTime;
+
     use super::*;
     use crate::collector::QuickwitAggregations;
 
     impl Span {
-        fn for_test(bytes: &[u8], span_timestamp_micros: i64) -> Self {
+        fn for_test(bytes: &[u8], span_timestamp_nanos: i64) -> Self {
             let mut trace_id = [0u8; 16];
             trace_id[..bytes.len()].copy_from_slice(bytes);
-            let span_timestamp = DateTime::from_timestamp_micros(span_timestamp_micros);
+            let span_timestamp = DateTime::from_timestamp_nanos(span_timestamp_nanos);
             Self::new(TraceId::new(trace_id), span_timestamp)
         }
     }
 
     impl TraceIdTermOrd {
-        fn for_test(term_ord: TermOrd, span_timestamp_micros: i64) -> Self {
+        fn for_test(term_ord: TermOrd, span_timestamp_nanos: i64) -> Self {
             Self {
                 term_ord,
-                span_timestamp: DateTime::from_timestamp_micros(span_timestamp_micros),
+                span_timestamp: DateTime::from_timestamp_nanos(span_timestamp_nanos),
             }
         }
     }
 
     impl SelectTraceIds {
-        fn collect_for_test(&mut self, term_ord: TermOrd, span_timestamp_micros: i64) {
-            let span_timestamp = DateTime::from_timestamp_micros(span_timestamp_micros);
+        fn collect_for_test(&mut self, term_ord: TermOrd, span_timestamp_nanos: i64) {
+            let span_timestamp = DateTime::from_timestamp_nanos(span_timestamp_nanos);
             self.collect(term_ord, span_timestamp)
         }
     }
@@ -415,7 +417,8 @@ mod tests {
 
     #[test]
     fn test_span_serde() {
-        let expected_span = Span::for_test(b"trace_id", 123456789);
+        let span_timestamp_nanos = OffsetDateTime::now_utc().unix_timestamp_nanos() as i64;
+        let expected_span = Span::for_test(b"trace_id", span_timestamp_nanos);
         let span_json = serde_json::to_string(&expected_span).unwrap();
         let span = serde_json::from_str::<Span>(&span_json).unwrap();
         assert_eq!(span, expected_span);

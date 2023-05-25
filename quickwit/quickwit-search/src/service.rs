@@ -289,7 +289,7 @@ impl SearchService for SearchServiceImpl {
 pub struct SearcherContext {
     /// Searcher config.
     pub searcher_config: SearcherConfig,
-    // Aggregation limits.
+    /// Aggregation limits.
     pub aggregation_limits: AggregationLimits,
     /// Fast fields cache.
     pub fast_fields_cache: Arc<dyn Cache>,
