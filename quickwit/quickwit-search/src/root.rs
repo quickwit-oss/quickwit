@@ -31,7 +31,9 @@ use quickwit_proto::{
     LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
     SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
-use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstVisitor, RangeQuery};
+use quickwit_query::query_ast::{
+    BoolQuery, QueryAst, QueryAstVisitor, RangeQuery, TermQuery, TermSetQuery,
+};
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
@@ -446,7 +448,7 @@ impl<'a, 'b> QueryAstVisitor<'b> for ExtractTimestampRange<'a> {
     type Err = std::convert::Infallible;
 
     fn visit_bool(&mut self, bool_query: &'b BoolQuery) -> Result<(), Self::Err> {
-        // we only want to visit sub-queries which are strict (positive) requirement
+        // we only want to visit sub-queries which are strict (positive) requirements
         for ast in bool_query.must.iter().chain(bool_query.filter.iter()) {
             self.visit(ast)?;
         }
@@ -470,15 +472,34 @@ impl<'a, 'b> QueryAstVisitor<'b> for ExtractTimestampRange<'a> {
         }
         Ok(())
     }
-    // TODO visiting those could be usefull too,
-    // fn visit_term(
-    // &mut self,
-    // _term_query: &'a TermQuery
-    // ) -> Result<(), Self::Err> { ... }
-    // fn visit_term_set(
-    // &mut self,
-    // _term_query: &'a TermSetQuery
-    // ) -> Result<(), Self::Err> { ... }
+
+    // if we visit a term, limit the range to DATE..=DATE
+    fn visit_term(&mut self, term_query: &'b TermQuery) -> Result<(), Self::Err> {
+        if term_query.field == self.timestamp_field {
+            // TODO when fixing #3323, this may need to be modified to support numbers too
+            let json_term = quickwit_query::JsonLiteral::String(term_query.value.clone());
+            self.update_start_timestamp(&json_term, true);
+            self.update_end_timestamp(&json_term, true);
+        }
+        Ok(())
+    }
+
+    // if we visit a termset, limit the range to LOWEST..=HIGHEST
+    fn visit_term_set(&mut self, term_query: &'b TermSetQuery) -> Result<(), Self::Err> {
+        if let Some(term_set) = term_query.terms_per_field.get(self.timestamp_field) {
+            // rfc3339 is lexicographically ordered if YEAR <= 9999, so we can use string
+            // ordering to get the start and end quickly.
+            if let Some(first) = term_set.first() {
+                let json_term = quickwit_query::JsonLiteral::String(first.clone());
+                self.update_start_timestamp(&json_term, true);
+            }
+            if let Some(last) = term_set.last() {
+                let json_term = quickwit_query::JsonLiteral::String(last.clone());
+                self.update_end_timestamp(&json_term, true);
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn finalize_aggregation(

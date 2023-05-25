@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::ops::Bound;
 
 use anyhow::Context;
@@ -149,8 +149,8 @@ fn convert_user_input_ast_to_query_ast(
                 if field_names.is_empty() {
                     anyhow::bail!("Set query need to target a specific field.");
                 }
-                let mut terms_per_field: HashMap<String, HashSet<String>> = Default::default();
-                let terms: HashSet<String> = elements.into_iter().collect();
+                let mut terms_per_field: HashMap<String, BTreeSet<String>> = Default::default();
+                let terms: BTreeSet<String> = elements.into_iter().collect();
                 for field in field_names {
                     terms_per_field.insert(field.to_string(), terms.clone());
                 }
