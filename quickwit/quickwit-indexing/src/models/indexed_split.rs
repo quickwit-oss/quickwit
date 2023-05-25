@@ -21,7 +21,7 @@ use std::fmt;
 use std::path::Path;
 
 use quickwit_common::io::IoControls;
-use quickwit_common::temp_dir::TempDir;
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::IndexUid;
 use tantivy::directory::MmapDirectory;
@@ -36,14 +36,14 @@ use crate::new_split_id;
 pub struct IndexedSplitBuilder {
     pub split_attrs: SplitAttrs,
     pub index_writer: tantivy::SingleSegmentIndexWriter,
-    pub split_scratch_directory: TempDir,
+    pub split_scratch_directory: TempDirectory,
     pub controlled_directory_opt: Option<ControlledDirectory>,
 }
 
 pub struct IndexedSplit {
     pub split_attrs: SplitAttrs,
     pub index: tantivy::Index,
-    pub split_scratch_directory: TempDir,
+    pub split_scratch_directory: TempDirectory,
     pub controlled_directory_opt: Option<ControlledDirectory>,
 }
 
@@ -80,7 +80,7 @@ impl IndexedSplitBuilder {
         pipeline_id: IndexingPipelineId,
         partition_id: u64,
         last_delete_opstamp: u64,
-        scratch_directory: TempDir,
+        scratch_directory: TempDirectory,
         index_builder: IndexBuilder,
         io_controls: IoControls,
     ) -> anyhow::Result<Self> {

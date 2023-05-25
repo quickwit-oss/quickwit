@@ -21,6 +21,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use tempfile::TempDir;
 use tokio::fs;
 
 use crate::ignore_error_kind;
@@ -39,12 +40,12 @@ pub async fn create_clean_directory(path: &Path) -> io::Result<PathBuf> {
 
 /// A temporary directory. This directory is deleted when the object is dropped.
 #[derive(Debug, Clone)]
-pub struct TempDir {
-    inner: Arc<tempfile::TempDir>,
-    _parent: Option<Arc<tempfile::TempDir>>,
+pub struct TempDirectory {
+    inner: Arc<TempDir>,
+    _parent: Option<Arc<TempDir>>,
 }
 
-impl TempDir {
+impl TempDirectory {
     /// A path where the temporary directory is pointing to.
     pub fn path(&self) -> &Path {
         self.inner.path()
@@ -53,8 +54,8 @@ impl TempDir {
     /// Creates a new temporary directory with the current temporary directory.
     /// The new directory keeps a pointer to the parent directory to perevent it
     /// from premature deletion. The directory is deleted when the object is dropped.
-    pub fn named_temp_child(&self, prefix: &str) -> io::Result<TempDir> {
-        Ok(TempDir {
+    pub fn named_temp_child(&self, prefix: &str) -> io::Result<TempDirectory> {
+        Ok(TempDirectory {
             inner: Arc::new(
                 tempfile::Builder::new()
                     .prefix(prefix)
@@ -66,7 +67,7 @@ impl TempDir {
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
-        Builder::new().tempdir().unwrap()
+        Builder::default().tempdir().unwrap()
     }
 }
 
@@ -76,7 +77,7 @@ pub struct Builder<'a> {
     parts: Vec<&'a str>,
     max_length: usize,
     separator: char,
-    rand_bytes: usize,
+    num_rand_chars: usize,
 }
 
 impl<'a> Default for Builder<'a> {
@@ -85,20 +86,15 @@ impl<'a> Default for Builder<'a> {
             parts: Default::default(),
             max_length: MAX_LENGTH,
             separator: SEPARATOR,
-            rand_bytes: NUM_RAND_CHARS,
+            num_rand_chars: NUM_RAND_CHARS,
         }
     }
 }
 
 impl<'a> Builder<'a> {
-    /// Create a new temporary directory builder.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Specifies the number of random bytes to add at the end of the directory name. Default is 6.
     pub fn rand_bytes(&mut self, rand: usize) -> &mut Self {
-        self.rand_bytes = rand;
+        self.num_rand_chars = rand;
         self
     }
 
@@ -116,7 +112,7 @@ impl<'a> Builder<'a> {
         self
     }
 
-    pub(crate) fn push_str(buffer: &mut String, addition: &'a str, size: usize) -> usize {
+    fn push_str(buffer: &mut String, addition: &'a str, size: usize) -> usize {
         let len = addition.len();
         if len <= size {
             buffer.push_str(addition);
@@ -137,24 +133,24 @@ impl<'a> Builder<'a> {
     /// separator character in between. If parts are too large they will
     /// trancated by replacing the middle of each part with "..". The resulting
     /// string will be at most max_length characters long.
-    pub(crate) fn prefix(&self) -> io::Result<String> {
+    fn prefix(&self) -> io::Result<String> {
         if self.parts.is_empty() {
             return Ok(String::new());
         }
-        let separator_count = if self.rand_bytes > 0 {
+        let separator_count = if self.num_rand_chars > 0 {
             self.parts.len()
         } else {
             self.parts.len() - 1
         };
         // We want to preserve at least one letter from each part with separatos.
-        if self.max_length < self.parts.len() + separator_count + self.rand_bytes {
+        if self.max_length < self.parts.len() + separator_count + self.num_rand_chars {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "The filename limit is too small",
             ));
         }
         // Calculate how many characters from the parts we can use in the final string.
-        let len_without_separators = self.max_length - separator_count - self.rand_bytes;
+        let len_without_separators = self.max_length - separator_count - self.num_rand_chars;
         // Calculate how many characters per part can we use.
         let average_len = len_without_separators / self.parts.len();
         // Account for the average length may not be a whole number.
@@ -185,7 +181,7 @@ impl<'a> Builder<'a> {
                 leftovers -= pushed;
             }
             // The last separator is only added if there are random bytes at the end
-            if i < self.parts.len() - 1 || self.rand_bytes > 0 {
+            if i < self.parts.len() - 1 || self.num_rand_chars > 0 {
                 buf.push(self.separator)
             }
         }
@@ -193,11 +189,11 @@ impl<'a> Builder<'a> {
     }
 
     /// Creates a temporary directory in the temp directory of operation system
-    pub fn tempdir(&self) -> io::Result<TempDir> {
-        Ok(TempDir {
+    pub fn tempdir(&self) -> io::Result<TempDirectory> {
+        Ok(TempDirectory {
             inner: Arc::new(
                 tempfile::Builder::new()
-                    .rand_bytes(self.rand_bytes)
+                    .rand_bytes(self.num_rand_chars)
                     .prefix(&self.prefix()?)
                     .tempdir()?,
             ),
@@ -206,11 +202,11 @@ impl<'a> Builder<'a> {
     }
 
     /// Creates a temporary directory in the specified directory
-    pub fn tempdir_in<P: AsRef<Path>>(&self, dir: P) -> io::Result<TempDir> {
-        Ok(TempDir {
+    pub fn tempdir_in<P: AsRef<Path>>(&self, dir: P) -> io::Result<TempDirectory> {
+        Ok(TempDirectory {
             inner: Arc::new(
                 tempfile::Builder::new()
-                    .rand_bytes(self.rand_bytes)
+                    .rand_bytes(self.num_rand_chars)
                     .prefix(&self.prefix()?)
                     .tempdir_in(dir)?,
             ),
@@ -229,22 +225,22 @@ mod tests {
 
     #[test]
     fn test_push_str() {
-        assert_trancate("abcdef", 6, "abcdef", 100);
-        assert_trancate("abcdef", 6, "abcdef", 6);
-        assert_trancate("ab..z", 5, "abcdefghijklmnopqrstuvwxyz", 5);
-        assert_trancate("a..z", 4, "abcdefghijklmnopqrstuvwxyz", 4);
-        assert_trancate("a..", 3, "abcdefghijklmnopqrstuvwxyz", 3);
-        assert_trancate("ab", 2, "abcdefghijklmnopqrstuvwxyz", 2);
-        assert_trancate("a", 1, "abcdefghijklmnopqrstuvwxyz", 1);
-        assert_trancate("abcde", 5, "abcde", 10);
-        assert_trancate("abcde", 5, "abcde", 5);
-        assert_trancate("a..e", 4, "abcde", 4);
-        assert_trancate("a..", 3, "abcde", 3);
-        assert_trancate("ab", 2, "abcde", 2);
-        assert_trancate("a", 1, "abcde", 1);
+        assert_truncate("abcdef", 100, "abcdef", 6);
+        assert_truncate("abcdef", 6, "abcdef", 6);
+        assert_truncate("abcdefghijklmnopqrstuvwxyz", 5, "ab..z", 5);
+        assert_truncate("abcdefghijklmnopqrstuvwxyz", 4, "a..z", 4);
+        assert_truncate("abcdefghijklmnopqrstuvwxyz", 3, "a..", 3);
+        assert_truncate("abcdefghijklmnopqrstuvwxyz", 2, "ab", 2);
+        assert_truncate("abcdefghijklmnopqrstuvwxyz", 1, "a", 1);
+        assert_truncate("abcde", 10, "abcde", 5);
+        assert_truncate("abcde", 5, "abcde", 5);
+        assert_truncate("abcde", 4, "a..e", 4);
+        assert_truncate("abcde", 3, "a..", 3);
+        assert_truncate("abcde", 2, "ab", 2);
+        assert_truncate("abcde", 1, "a", 1);
     }
 
-    fn assert_trancate(expected_addition: &str, expected_size: usize, addition: &str, size: usize) {
+    fn assert_truncate(addition: &str, size: usize, expected_addition: &str, expected_size: usize) {
         let mut buf = String::new();
         let size = Builder::push_str(&mut buf, addition, size);
         assert_eq!(expected_addition, buf);
@@ -254,12 +250,11 @@ mod tests {
     #[test]
     fn test_random_failures() {
         assert_prefix(
-            "AAAAAAAAAA%AA%AA..A%AAAA%AAAA%A..A%",
             vec!["AAAAAAAAAA", "AA", "AAAAAAA", "AAAA", "AAAA", "AAAAAAAAA"],
             35,
+            "AAAAAAAAAA%AA%AA..A%AAAA%AAAA%A..A%",
         );
         assert_prefix(
-            "AAAAAA%AAAAAAAAA%AAAAAA%AAA%A%AAAAAAA%AAAAAAAAAA%AAAAA%",
             vec![
                 "AAAAAA",
                 "AAAAAAAAA",
@@ -271,46 +266,47 @@ mod tests {
                 "AAAAA",
             ],
             55,
+            "AAAAAA%AAAAAAAAA%AAAAAA%AAA%A%AAAAAAA%AAAAAAAAAA%AAAAA%",
         );
         assert_prefix(
-            "AAA..AAA%AAAAAAA%AAAAAAA%",
             vec!["AAAAAAAAA", "", "AAAAAAA", "AAAAAAA"],
             25,
+            "AAA..AAA%AAAAAAA%AAAAAAA%",
         );
     }
 
     #[test]
     fn test_prefix() {
-        assert_prefix("0%abcde%uvwxyz%", vec!["0", "abcde", "uvwxyz"], 15);
+        assert_prefix(vec!["0", "abcde", "uvwxyz"], 15, "0%abcde%uvwxyz%");
 
-        assert_prefix("a%b%", vec!["a", "b"], 100);
-        assert_prefix("abcde%uvwxyz%", vec!["abcde", "uvwxyz"], 100);
-        assert_prefix("abcde%uvwxyz%", vec!["abcde", "uvwxyz"], 13);
-        assert_prefix("abcde%uv..z%", vec!["abcde", "uvwxyz"], 12);
-        assert_prefix("abcde%u..z%", vec!["abcde", "uvwxyz"], 11);
-        assert_prefix("a..e%u..z%", vec!["abcde", "uvwxyz"], 10);
-        assert_prefix("a..e%u..%", vec!["abcde", "uvwxyz"], 9);
-        assert_prefix("a..%u..%", vec!["abcde", "uvwxyz"], 8);
-        assert_prefix("a..%uv%", vec!["abcde", "uvwxyz"], 7);
-        assert_prefix("ab%uv%", vec!["abcde", "uvwxyz"], 6);
-        assert_prefix("ab%u%", vec!["abcde", "uvwxyz"], 5);
-        assert_prefix("a%u%", vec!["abcde", "uvwxyz"], 4);
+        assert_prefix(vec!["a", "b"], 100, "a%b%");
+        assert_prefix(vec!["abcde", "uvwxyz"], 100, "abcde%uvwxyz%");
+        assert_prefix(vec!["abcde", "uvwxyz"], 13, "abcde%uvwxyz%");
+        assert_prefix(vec!["abcde", "uvwxyz"], 12, "abcde%uv..z%");
+        assert_prefix(vec!["abcde", "uvwxyz"], 11, "abcde%u..z%");
+        assert_prefix(vec!["abcde", "uvwxyz"], 10, "a..e%u..z%");
+        assert_prefix(vec!["abcde", "uvwxyz"], 9, "a..e%u..%");
+        assert_prefix(vec!["abcde", "uvwxyz"], 8, "a..%u..%");
+        assert_prefix(vec!["abcde", "uvwxyz"], 7, "a..%uv%");
+        assert_prefix(vec!["abcde", "uvwxyz"], 6, "ab%uv%");
+        assert_prefix(vec!["abcde", "uvwxyz"], 5, "ab%u%");
+        assert_prefix(vec!["abcde", "uvwxyz"], 4, "a%u%");
         assert_prefix_err(
             "The filename limit is too small",
             vec!["abcde", "uvwxyz"],
             3,
         );
 
-        assert_prefix("0%abcde%uvwxyz%", vec!["0", "abcde", "uvwxyz"], 15);
-        assert_prefix("0%abcde%uv..z%", vec!["0", "abcde", "uvwxyz"], 14);
-        assert_prefix("0%abcde%u..z%", vec!["0", "abcde", "uvwxyz"], 13);
-        assert_prefix("0%abcde%u..%", vec!["0", "abcde", "uvwxyz"], 12);
-        assert_prefix("0%abcde%uv%", vec!["0", "abcde", "uvwxyz"], 11);
-        assert_prefix("0%a..e%uv%", vec!["0", "abcde", "uvwxyz"], 10);
-        assert_prefix("0%a..%uv%", vec!["0", "abcde", "uvwxyz"], 9);
-        assert_prefix("0%a..%u%", vec!["0", "abcde", "uvwxyz"], 8);
-        assert_prefix("0%ab%u%", vec!["0", "abcde", "uvwxyz"], 7);
-        assert_prefix("0%a%u%", vec!["0", "abcde", "uvwxyz"], 6);
+        assert_prefix(vec!["0", "abcde", "uvwxyz"], 15, "0%abcde%uvwxyz%");
+        assert_prefix(vec!["0", "abcde", "uvwxyz"], 14, "0%abcde%uv..z%");
+        assert_prefix(vec!["0", "abcde", "uvwxyz"], 13, "0%abcde%u..z%");
+        assert_prefix(vec!["0", "abcde", "uvwxyz"], 12, "0%abcde%u..%");
+        assert_prefix(vec!["0", "abcde", "uvwxyz"], 11, "0%abcde%uv%");
+        assert_prefix(vec!["0", "abcde", "uvwxyz"], 10, "0%a..e%uv%");
+        assert_prefix(vec!["0", "abcde", "uvwxyz"], 9, "0%a..%uv%");
+        assert_prefix(vec!["0", "abcde", "uvwxyz"], 8, "0%a..%u%");
+        assert_prefix(vec!["0", "abcde", "uvwxyz"], 7, "0%ab%u%");
+        assert_prefix(vec!["0", "abcde", "uvwxyz"], 6, "0%a%u%");
         assert_prefix_err(
             "The filename limit is too small",
             vec!["0", "abcde", "uvwxyz"],
@@ -318,8 +314,8 @@ mod tests {
         );
     }
 
-    fn assert_prefix(expected_path: &str, parts: Vec<&str>, size: usize) {
-        let mut builder = Builder::new();
+    fn assert_prefix(parts: Vec<&str>, size: usize, expected_path: &str) {
+        let mut builder = Builder::default();
         builder.rand_bytes(5);
         builder.max_length(size + 5); // Size of random suffix
         for part in parts.iter() {
@@ -330,7 +326,7 @@ mod tests {
     }
 
     fn assert_prefix_err(expected_err: &str, parts: Vec<&str>, size: usize) {
-        let mut builder = Builder::new();
+        let mut builder = Builder::default();
         builder.rand_bytes(5);
         builder.max_length(size + 5); // Size of random suffix
         for part in parts.iter() {
@@ -347,7 +343,7 @@ mod tests {
         for _ in 0..10000 {
             let rand_bytes = rng.gen::<usize>() % 4;
             let parts_num = rng.gen::<usize>() % 10;
-            let mut builder = Builder::new();
+            let mut builder = Builder::default();
             builder.rand_bytes(rand_bytes);
             let mut max_size = 0;
             for _ in 0..parts_num {
@@ -391,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_directory_creation_and_removal() {
-        let directory = Builder::new()
+        let directory = Builder::default()
             .join("foo")
             .join("bar")
             .join("baz")
@@ -407,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_directory_creation_and_removal_with_random_bytes() {
-        let directory = Builder::new()
+        let directory = Builder::default()
             .join("foo")
             .join("bar")
             .join("baz")
@@ -426,10 +422,10 @@ mod tests {
     fn test_directory_randomness() {
         let mut directories = Vec::new();
         let mut paths = Vec::new();
-        let temp_dir = Builder::new().tempdir().unwrap();
+        let temp_dir = Builder::default().tempdir().unwrap();
         // Try creating the maximum number of directories for a single random byte a-z,A-Z,0-9
         for _ in 0..62 {
-            let dir = Builder::new()
+            let dir = Builder::default()
                 .join("test")
                 .rand_bytes(1)
                 .tempdir_in(temp_dir.path())

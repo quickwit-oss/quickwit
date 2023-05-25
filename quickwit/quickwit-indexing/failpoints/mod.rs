@@ -44,7 +44,7 @@ use quickwit_actors::ActorExitStatus;
 use quickwit_common::io::IoControls;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::split_file;
-use quickwit_common::temp_dir::TempDir;
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_indexing::actors::MergeExecutor;
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::{IndexingPipelineId, MergeScratch};
@@ -263,7 +263,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         .into_iter()
         .map(|split| split.split_metadata)
         .collect();
-    let merge_scratch_directory = TempDir::for_test();
+    let merge_scratch_directory = TempDirectory::for_test();
 
     let downloaded_splits_directory =
         merge_scratch_directory.named_temp_child("downloaded-splits-")?;

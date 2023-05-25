@@ -20,7 +20,7 @@ qwdata
 ├── delete_task_service
 │   └── wikipedia%01H13SVKDS03P%TpCfrA
 ├── indexing
-│   ├── wikipedia%01H13SVKDS03P%_ingest-api-soruce%RbaOAI
+│   ├── wikipedia%01H13SVKDS03P%_ingest-api-source%RbaOAI
 │   └── wikipedia%01H13SVKDS03P%kafka-source%cNqQtI
 └── queues
     ├── partition_id

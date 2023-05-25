@@ -200,7 +200,7 @@ impl DeleteTaskPipeline {
         );
         let (delete_executor_mailbox, task_executor_supervisor_handler) =
             ctx.spawn_actor().supervise(delete_executor);
-        let scratch_directory = temp_dir::Builder::new()
+        let scratch_directory = temp_dir::Builder::default()
             .join(self.index_uid.index_id())
             .join(self.index_uid.incarnation_id())
             .tempdir_in(&self.delete_service_task_dir)?;
@@ -283,7 +283,7 @@ impl Handler<Observe> for DeleteTaskPipeline {
 mod tests {
     use async_trait::async_trait;
     use quickwit_actors::{Handler, HEARTBEAT};
-    use quickwit_common::temp_dir::TempDir;
+    use quickwit_common::temp_dir::TempDirectory;
     use quickwit_config::merge_policy_config::MergePolicyConfig;
     use quickwit_config::IndexingSettings;
     use quickwit_indexing::TestSandbox;
@@ -369,7 +369,7 @@ mod tests {
             });
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
-        let delete_service_task_dir = TempDir::for_test();
+        let delete_service_task_dir = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.merge_policy = MergePolicyConfig::Nop;
         let pipeline = DeleteTaskPipeline::new(
@@ -440,7 +440,7 @@ mod tests {
             });
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
-        let delete_service_task_dir = TempDir::for_test();
+        let delete_service_task_dir = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let pipeline = DeleteTaskPipeline::new(
             test_sandbox.index_uid(),

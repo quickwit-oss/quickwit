@@ -26,7 +26,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, QueueCapacity,
     Supervisable,
 };
-use quickwit_common::temp_dir::TempDir;
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
@@ -519,7 +519,7 @@ impl Handler<Spawn> for IndexingPipeline {
 pub struct IndexingPipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
-    pub indexing_directory: TempDir,
+    pub indexing_directory: TempDirectory,
     pub queues_dir_path: PathBuf,
     pub indexing_settings: IndexingSettings,
     pub source_config: SourceConfig,
@@ -630,7 +630,7 @@ mod tests {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
-            indexing_directory: TempDir::for_test(),
+            indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             metastore: metastore.clone(),
             storage,
@@ -721,7 +721,7 @@ mod tests {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
-            indexing_directory: TempDir::for_test(),
+            indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             metastore: metastore.clone(),
             queues_dir_path: PathBuf::from("./queues"),
@@ -779,7 +779,7 @@ mod tests {
         let merge_pipeline_params = MergePipelineParams {
             pipeline_id: pipeline_id.clone(),
             doc_mapper: doc_mapper.clone(),
-            indexing_directory: TempDir::for_test(),
+            indexing_directory: TempDirectory::for_test(),
             metastore: metastore.clone(),
             split_store: split_store.clone(),
             merge_policy: default_merge_policy(),
@@ -794,7 +794,7 @@ mod tests {
             pipeline_id,
             doc_mapper,
             source_config,
-            indexing_directory: TempDir::for_test(),
+            indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             metastore: metastore.clone(),
             queues_dir_path: PathBuf::from("./queues"),
@@ -909,7 +909,7 @@ mod tests {
             pipeline_id,
             doc_mapper: Arc::new(broken_mapper),
             source_config,
-            indexing_directory: TempDir::for_test(),
+            indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             metastore: metastore.clone(),
             queues_dir_path: PathBuf::from("./queues"),

@@ -28,7 +28,7 @@ use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
-use quickwit_common::temp_dir::TempDir;
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use quickwit_doc_mapper::NamedField;
@@ -188,7 +188,7 @@ impl Handler<EmptySplit> for Packager {
 /// returns true iff merge is required to reach a state where
 fn list_split_files(
     segment_metas: &[SegmentMeta],
-    scratch_directory: &TempDir,
+    scratch_directory: &TempDirectory,
 ) -> io::Result<Vec<PathBuf>> {
     let mut index_files = vec![scratch_directory.path().join("meta.json")];
 
@@ -347,7 +347,7 @@ mod tests {
     fn make_indexed_split_for_test(
         segment_timestamps: &[DateTime],
     ) -> anyhow::Result<IndexedSplit> {
-        let split_scratch_directory = TempDir::for_test();
+        let split_scratch_directory = TempDirectory::for_test();
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
         let timestamp_field = schema_builder.add_u64_field("timestamp", FAST);

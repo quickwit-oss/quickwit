@@ -258,7 +258,7 @@ impl IndexingService {
                 pipeline_ord: pipeline_id.pipeline_ord,
             });
         }
-        let indexing_directory = temp_dir::Builder::new()
+        let indexing_directory = temp_dir::Builder::default()
             .join(pipeline_id.index_uid.index_id())
             .join(pipeline_id.index_uid.incarnation_id())
             .join(&pipeline_id.source_id)

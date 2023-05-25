@@ -27,7 +27,7 @@ use quickwit_actors::{
     SpawnContext, Supervisable,
 };
 use quickwit_common::io::IoControls;
-use quickwit_common::temp_dir::TempDir;
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitState};
@@ -428,7 +428,7 @@ impl Handler<Spawn> for MergePipeline {
 pub struct MergePipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
-    pub indexing_directory: TempDir,
+    pub indexing_directory: TempDirectory,
     pub metastore: Arc<dyn Metastore>,
     pub split_store: IndexingSplitStore,
     pub merge_policy: Arc<dyn MergePolicy>,
@@ -441,7 +441,7 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{ActorExitStatus, Universe};
-    use quickwit_common::temp_dir::TempDir;
+    use quickwit_common::temp_dir::TempDirectory;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::MockMetastore;
     use quickwit_proto::IndexUid;
@@ -471,7 +471,7 @@ mod tests {
         let pipeline_params = MergePipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
-            indexing_directory: TempDir::for_test(),
+            indexing_directory: TempDirectory::for_test(),
             metastore: Arc::new(metastore),
             split_store,
             merge_policy: default_merge_policy(),
