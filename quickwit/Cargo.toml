@@ -53,7 +53,7 @@ byte-unit = { version = "4", default-features = false, features = ["serde"] }
 bytes = "1"
 chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "bc29598" }
 chrono = { version = "0.4.23", default-features = false, features = ["clock", "std"] }
-clap = { version = "=3.1", features = ["env"] }
+clap = { version = "4.3.0", features = ["env", "string"] }
 colored = "2.0.0"
 console-subscriber = "0.1.8"
 criterion = { version = "0.4", features = ["async_tokio"] }
@@ -225,7 +225,7 @@ quickwit-serve = { version = "0.6.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.6.0", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.6.0", path = "./quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "04562c0", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "62709b8", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",

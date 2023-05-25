@@ -88,7 +88,7 @@ The response is a JSON object, and the content type is `application/json; charse
 ### Search stream in an index
 
 ```
-GET api/v1/<index id>/search/stream?query=searchterm
+GET api/v1/<index id>/search/stream?query=searchterm&fast_field=my_id
 ```
 
 Streams field values from ALL documents matching a search query in the given index `<index id>`, in a specified output format among the following:
@@ -124,7 +124,6 @@ The endpoint will return 10 million values if 10 million documents match the que
 | `start_timestamp` | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds.        |                                                    |
 | `end_timestamp`   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.           |                                                    |
 | `partition_by_field`   | `String`      | If set, the endpoint returns chunks of data for each partition field value. This field must be a fast field of type `i64` or `u64`.           |                                                    |
-
 | `output_format`   | `String`   | Response output format. `csv` or `clickHouseRowBinary`                                                           | `csv`                                              |
 
 :::info
@@ -354,16 +353,17 @@ Describes an index of ID `index id`.
 
 The response is the stats about the requested index, and the content type is `application/json; charset=UTF-8.`
 
-| Field                  | Description                               |         Type          |
-|------------------------|-------------------------------------------|:---------------------:|
-| `index_id`             | Index ID of index.                        |       `String`        |
-| `index_uri`            | Uri of index                              |       `String`        |
-| `num_published_splits` | Number of published splits.               |       `number`        |
-| `num_published_docs`   | Number of published documents.            |       `number`        |
-| `size_published_docs`  | Size of the published documents in bytes. |       `number`        |
-| `timestamp_field_name` | Type of timestamp.                        |       `String`        |
-| `min_timestamp`        | Starting time of timestamp.               |       `number`        |
-| `max_timestamp`        | Ending time of timestamp.                 |       `number`        |
+| Field                               | Description                                              |         Type          |
+|-------------------------------------|----------------------------------------------------------|:---------------------:|
+| `index_id`                          | Index ID of index.                                       |       `String`        |
+| `index_uri`                         | Uri of index                                             |       `String`        |
+| `num_published_splits`              | Number of published splits.                              |       `number`        |
+| `size_published_splits`             | Size of published splits.                                |       `number`        |
+| `num_published_docs`                | Number of published documents.                           |       `number`        |
+| `size_published_docs_uncompressed`  | Size of the published documents in bytes (uncompressed). |       `number`        |
+| `timestamp_field_name`              | Name of timestamp field.                                       |       `String`        |
+| `min_timestamp`                     | Starting time of timestamp.                              |       `number`        |
+| `max_timestamp`                     | Ending time of timestamp.                                |       `number`        |
 
 ### Clears an index
 

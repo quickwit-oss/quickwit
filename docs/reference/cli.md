@@ -226,22 +226,24 @@ quickwit run --service metastore --config=./config/quickwit.yaml
 quickwit index describe --endpoint=http://127.0.0.1:7280 --index wikipedia
 
 1. General infos
-===============================================================================
-Index id:                           wikipedia
-Index uri:                          file:///home/quickwit-indices/qwdata/indexes/wikipedia
-Number of published splits:         1
-Number of published documents:      300000
-Size of published splits:           448 MB
+---------------------------------------------+---------------------------------------------------------
+Index ID:                                    | wikipedia
+Index URI:                                   | file:///home/quickwit-indices/qwdata/indexes/wikipedia
+Number of published documents:               | 300000
+Size of published documents (uncompressed):  | 33.73 MB 
+Number of published splits:                  | 1
+Size of published splits:                    | 24.07 MB
+Timestamp field:                             | Field does not exist for the index.                                     
+Timestamp range:                             | Range does not exist for the index. 
 
-2. Statistics on splits
-===============================================================================
-Document count stats:
-Mean ± σ in [min … max]:            300000 ± 0 in [300000 … 300000]
-Quantiles [1%, 25%, 50%, 75%, 99%]: [300000, 300000, 300000, 300000, 300000]
-
-Size in MB stats:
-Mean ± σ in [min … max]:            448 ± 0 in [448 … 448]
-Quantiles [1%, 25%, 50%, 75%, 99%]: [448, 448, 448, 448, 448]
+Document count stats (published)                                                                                        
+Mean ± σ in [min … max]:                     | 15000 ± 5000 in [10000 … 20000]                                         
+Quantiles [1%, 25%, 50%, 75%, 99%]:          | [10100, 15000, 15000, 17500, 17500]                                     
+                                                                                                                        
+                                                                                                                        
+Size in MB stats (published)                                                                                            
+Mean ± σ in [min … max]:                     | 12.037121 ± 3.802938 in [8 … 15]                                        
+Quantiles [1%, 25%, 50%, 75%, 99%]:          | [8.310242, 12.037121, 12.037121, 13.93859, 13.93859] 
 
 ```
 

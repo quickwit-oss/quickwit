@@ -15,7 +15,7 @@ A commented example is accessible here: [quickwit.yaml](https://github.com/quick
 
 | Property | Description | Env variable | Default value |
 | --- | --- | --- | --- |
-| `version` | Config file version. 0.4 is the only available value. |  |  |
+| `version` | Config file version. `0.6` is the only available value with a retro compatibility on `0.5` and `0.4`. |  |  |
 | `cluster_id` | Unique identifier of the cluster the node will be joining. Clusters sharing the same network should use distinct cluster IDs.| `QW_CLUSTER_ID` | `quickwit-default-cluster` |
 | `node_id` | Unique identifier of the node. It must be distinct from the node IDs of its cluster peers. Defaults to the instance's short hostname if not set. | `QW_NODE_ID` | short hostname |
 | `enabled_services` | Enabled services (control_plane, indexer, janitor, metastore, searcher) | `QW_ENABLED_SERVICES` | all services |
@@ -36,6 +36,7 @@ There are also other parameters that can be only defined by env variables:
 | Env variable | Description |
 | --- | --- |
 | `QW_S3_ENDPOINT` | Custom S3 endpoint. |
+| `QW_S3_MAX_CONCURRENCY` | Limit the number of concurent requests to S3 |
 | `QW_ENABLE_JAEGER_EXPORTER` | Enable trace export to Jaeger. |
 | `QW_AZURE_ACCESS_KEY` | Azure Blob storage access key. |
 
@@ -70,6 +71,7 @@ This section contains the configuration options for a Searcher.
 | `aggregation_bucket_limit` | Determines the maximum number of buckets returned to the client. | `65000` |
 | `fast_field_cache_capacity` | Fast field cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or if you use the search stream API, or even for tracing, it might worth increasing this parameter. The [metrics](../reference/metrics.md) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. | `1G` |
 | `split_footer_cache_capacity` | Split footer cache (it is essentially the hotcache) capacity on a Searcher.| `500M` |
+| `partial_request_cache_capacity` | Partial request cache capacity on a Searcher. Cache intermediate state for a request, possibly making subsequent requests faster. It can be disabled by setting the size to `0`. | `64M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `max_num_concurrent_split_streams` | Maximum number of concurrent split stream requests running on a Searcher. | `100` |
 

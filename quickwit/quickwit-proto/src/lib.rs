@@ -419,7 +419,7 @@ impl TryFrom<&str> for IndexingTask {
 }
 
 
-/// Creates a query ast json by parsing a user query.
+/// Parses a user query and returns a JSON query AST.
 ///
 /// The resulting query does not include `UserInputQuery` nodes.
 /// The resolution assumes that there are no default search fields
@@ -435,8 +435,8 @@ pub fn qast_helper(
     let default_fields: Vec<String> = default_fields.iter().map(|default_field| default_field.to_string()).collect();
     let ast: QueryAst = query_ast_from_user_text(user_text, Some(default_fields))
         .parse_user_query(&[])
-        .expect("Invalid user query");
-    serde_json::to_string(&ast).expect("Failed to serialize ast")
+        .expect("The user query should be valid.");
+    serde_json::to_string(&ast).expect("The query AST should be JSON serializable.")
 }
 
 /// Creates a QueryAST with a single UserInputQuery node.

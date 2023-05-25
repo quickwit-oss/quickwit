@@ -281,19 +281,18 @@ impl Handler<Observe> for DeleteTaskPipeline {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use async_trait::async_trait;
     use quickwit_actors::{Handler, HEARTBEAT};
     use quickwit_common::temp_dir::TempDir;
     use quickwit_config::merge_policy_config::MergePolicyConfig;
     use quickwit_config::IndexingSettings;
-    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitState;
     use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
-    use quickwit_search::{MockSearchService, SearchError, SearchJobPlacer, SearchServiceClient};
+    use quickwit_search::{
+        searcher_pool_for_test, MockSearchService, SearchError, SearchJobPlacer,
+    };
 
     use super::{ActorContext, ActorExitStatus, DeleteTaskPipeline};
 
@@ -368,12 +367,8 @@ mod tests {
                     ..Default::default()
                 })
             });
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(mock_search_service),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let delete_service_task_dir = TempDir::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.merge_policy = MergePolicyConfig::Nop;
@@ -443,12 +438,8 @@ mod tests {
                     ..Default::default()
                 })
             });
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(mock_search_service),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let delete_service_task_dir = TempDir::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let pipeline = DeleteTaskPipeline::new(

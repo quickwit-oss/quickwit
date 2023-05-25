@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
         build_info.cargo_pkg_version, build_info.cargo_pkg_version, build_info.commit_date,
     );
     let app = build_cli()
-        .version(version_text.as_str())
+        .version(version_text)
         .disable_help_subcommand(true);
 
     generate_markdown_from_clap(&app);
@@ -89,7 +89,7 @@ fn markdown_for_command_helper(
             println!("{about}  ");
         }
     } else if let Some(about) = subcommand.get_about() {
-        if !about.trim().is_empty() {
+        if !about.to_string().trim().is_empty() {
             println!("{about}  ");
         }
     }
@@ -120,7 +120,7 @@ fn markdown_for_command_helper(
         println!("quickwit {command_name}");
         for arg in &arguments {
             let is_required = arg.is_required_set();
-            let is_bool = !arg.is_takes_value_set();
+            let is_bool = !arg.get_action().takes_values();
 
             let mut commando = format!("--{}", arg.get_id());
             if !is_bool {
@@ -170,7 +170,7 @@ fn generate_markdown_from_clap(command: &Command) {
         let command_name = command.get_name(); // index, split, source
         println!("## {command_name}");
         if let Some(about) = command.get_long_about().or_else(|| command.get_about()) {
-            if !about.trim().is_empty() {
+            if !about.to_string().trim().is_empty() {
                 println!("{about}\n");
             }
         }

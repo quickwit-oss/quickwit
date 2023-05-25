@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use futures::{stream, StreamExt};
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 use quickwit_aws::error::RusotoErrorWrapper;
 use quickwit_aws::get_http_client;
 use quickwit_aws::region::sniff_aws_region_and_cache;
@@ -43,6 +43,7 @@ use rusoto_s3::{
     S3Client, UploadPartRequest, S3,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::Semaphore;
 use tracing::{instrument, warn};
 
 use crate::object_storage::MultiPartPolicy;
@@ -51,6 +52,15 @@ use crate::{
     OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResolverError, StorageResult,
     STORAGE_METRICS,
 };
+
+/// Semaphore to limit the number of concurent requests to the object store. Some object stores
+/// (R2, SeaweedFs...) return errors when too many concurent requests are emited.
+static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
+    let permit_count =
+        std::env::var("QW_S3_MAX_CONCURRENCY").unwrap_or_else(|_| "10000".to_string());
+    let permit_count = permit_count.parse().expect("invalid QW_S3_MAX_CONCURRENCY");
+    Semaphore::new(permit_count)
+});
 
 /// S3 Compatible object storage implementation.
 pub struct S3CompatibleObjectStorage {
@@ -500,6 +510,8 @@ async fn download_all(byte_stream: ByteStream, output: &mut Vec<u8>) -> io::Resu
 #[async_trait]
 impl Storage for S3CompatibleObjectStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
+        // we ignore error as we never close the semaphore
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
         self.s3_client
             .list_objects_v2(ListObjectsV2Request {
                 bucket: self.bucket.clone(),
@@ -516,6 +528,7 @@ impl Storage for S3CompatibleObjectStorage {
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         crate::STORAGE_METRICS.object_storage_put_total.inc();
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
         let key = self.key(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
@@ -529,6 +542,7 @@ impl Storage for S3CompatibleObjectStorage {
     }
 
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
         let get_object_req = self.create_get_object_request(path, None);
         let get_object_output = retry(&self.retry_params, || async {
             self.s3_client
@@ -550,6 +564,7 @@ impl Storage for S3CompatibleObjectStorage {
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
         let key = self.key(path);
         let delete_object_req = DeleteObjectRequest {
             bucket: self.bucket.clone(),
@@ -567,6 +582,7 @@ impl Storage for S3CompatibleObjectStorage {
     }
 
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
         let mut error = None;
         let mut successes = Vec::with_capacity(paths.len());
         let mut failures = HashMap::new();
@@ -658,6 +674,7 @@ impl Storage for S3CompatibleObjectStorage {
 
     #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
         self.get_to_vec(path, Some(range.clone()))
             .await
             .map(OwnedBytes::new)
@@ -673,6 +690,7 @@ impl Storage for S3CompatibleObjectStorage {
 
     #[instrument(level = "debug", skip(self), fields(num_bytes_fetched))]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bytes = self
             .get_to_vec(path, None)
             .await
@@ -689,6 +707,7 @@ impl Storage for S3CompatibleObjectStorage {
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
         let key = self.key(path);
         let head_object_req = HeadObjectRequest {
             bucket: self.bucket.clone(),

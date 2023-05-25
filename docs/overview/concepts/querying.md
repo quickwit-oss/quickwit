@@ -10,7 +10,7 @@ Quickwit provides two endpoints with full-text search queries identified by the 
 
 A search query received by a searcher will be executed using a map-reduce approach following these steps:
 
-1. the Searcher identifies relevant splits based on the request’s [timestamp interval](#time-sharding) and [tags](#tag-pruning).
+1. The Searcher identifies relevant splits based on the request’s [timestamp interval](#time-sharding) and [tags](#tag-pruning).
 2. It distributes the splits workload among other searchers available in the cluster using *[rendez-vous hashing](https://en.wikipedia.org/wiki/Rendezvous_hashing)* to optimize caching and load.
 3. It finally waits for all results, merges them, and returns them to the client.
 
@@ -100,6 +100,7 @@ Quickwit does caching in many places to deliver a highly performing query engine
 
 - Hotcache caching: A static cache that holds information about a split file internal representation. It helps speed up the opening of a split file. Its size can be defined via the `split_footer_cache_capacity` configuration parameter.
 - Fast field caching: Fast fields tend to be accessed very frequently by users especially for stream requests. They are cached in a RAM whose size can be limited by the `fast_field_cache_capacity` configuration value.
+- Partial request caching: In some cases, like when using dashboards, some very similar requests might be issued, with only timestamp bounds changing. Some partial results can be cached to make these requests faster and issue less requests to the storage. They are cached in a RAM whose size can be limited by the `partial_request_cache_capacity` configuration value.
 
 ### Scoring
 

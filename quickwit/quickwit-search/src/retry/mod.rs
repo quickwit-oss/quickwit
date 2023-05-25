@@ -21,6 +21,7 @@ pub mod search;
 pub mod search_stream;
 
 use std::collections::HashSet;
+use std::net::SocketAddr;
 
 use crate::search_job_placer::Job;
 use crate::{SearchJobPlacer, SearchServiceClient};
@@ -59,22 +60,24 @@ impl<'a> Job for &'a str {
         self
     }
 
-    fn cost(&self) -> u32 {
+    fn cost(&self) -> usize {
         1
     }
 }
 
 // Select a new client from the client pool by the following oversimplified policy:
 // 1. Take the first split_id of the request
-// 2. Ask for a relevant client for that split while excluding the failing client.
-pub fn retry_client(
+// 2. Ask for a relevant client for that split while excluding the failing identified by its socket
+// addr.
+pub async fn retry_client(
     search_job_placer: &SearchJobPlacer,
-    failing_client: &SearchServiceClient,
+    excluded_addr: SocketAddr,
     split_id: &str,
 ) -> anyhow::Result<SearchServiceClient> {
-    let mut exclude_addresses = HashSet::new();
-    exclude_addresses.insert(failing_client.grpc_addr());
-    search_job_placer.assign_job(split_id, &exclude_addresses)
+    let excluded_addrs = HashSet::from_iter([excluded_addr]);
+    search_job_placer
+        .assign_job(split_id, &excluded_addrs)
+        .await
 }
 
 #[cfg(test)]
@@ -82,11 +85,12 @@ mod tests {
     use std::net::SocketAddr;
     use std::sync::Arc;
 
-    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_proto::{FetchDocsResponse, SplitIdAndFooterOffsets};
 
     use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
-    use crate::{MockSearchService, SearchError, SearchJobPlacer, SearchServiceClient};
+    use crate::{
+        MockSearchService, SearchError, SearchJobPlacer, SearchServiceClient, SearcherPool,
+    };
 
     #[test]
     fn test_should_retry_on_error() {
@@ -105,22 +109,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_client_should_return_another_client() -> anyhow::Result<()> {
-        let mock_service_1 = MockSearchService::new();
-        let mock_service_2 = MockSearchService::new();
-        let client_pool = ServiceClientPool::for_clients_list(vec![
-            SearchServiceClient::from_service(
-                Arc::new(mock_service_1),
-                ([127, 0, 0, 1], 1000).into(),
-            ),
-            SearchServiceClient::from_service(
-                Arc::new(mock_service_2),
-                ([127, 0, 0, 1], 1001).into(),
-            ),
+        let searcher_grpc_addr_1 = ([127, 0, 0, 1], 1000).into();
+        let mock_search_service_1 = MockSearchService::new();
+        let searcher_client_1 = SearchServiceClient::from_service(
+            Arc::new(mock_search_service_1),
+            searcher_grpc_addr_1,
+        );
+        let searcher_grpc_addr_2 = ([127, 0, 0, 1], 1001).into();
+        let mock_search_service_2 = MockSearchService::new();
+        let searcher_client_2 = SearchServiceClient::from_service(
+            Arc::new(mock_search_service_2),
+            searcher_grpc_addr_2,
+        );
+        let searcher_pool = SearcherPool::from_iter([
+            (searcher_grpc_addr_1, searcher_client_1),
+            (searcher_grpc_addr_2, searcher_client_2),
         ]);
-        let client_hashmap = client_pool.all();
-        let search_job_placer = SearchJobPlacer::new(client_pool);
-        let first_grpc_addr: SocketAddr = "127.0.0.1:1000".parse()?;
-        let failing_client = client_hashmap.get(&first_grpc_addr).unwrap();
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let _first_grpc_addr: SocketAddr = "127.0.0.1:1000".parse()?;
         let split_id_and_footer_offsets = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),
             split_footer_end: 100,
@@ -130,9 +136,10 @@ mod tests {
         };
         let client_for_retry = retry_client(
             &search_job_placer,
-            failing_client,
+            searcher_grpc_addr_1,
             &split_id_and_footer_offsets.split_id,
         )
+        .await
         .unwrap();
         assert_eq!(client_for_retry.grpc_addr().to_string(), "127.0.0.1:1001");
         Ok(())
