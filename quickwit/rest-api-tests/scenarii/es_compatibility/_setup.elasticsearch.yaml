@@ -1,4 +1,14 @@
-{
+# Delete possibly remaining index
+method: DELETE
+engines: [elasticsearch]
+endpoint: gharchive
+status_code: null
+---
+# Create index
+method: PUT
+engines: [elasticsearch]
+endpoint: gharchive
+json: {
   "mappings": {
     "properties": {
       "id": {
@@ -74,3 +84,14 @@
     }
   }
 }
+---
+# Ingest documents
+method: POST
+engines: [elasticsearch]
+endpoint: _elastic/_bulk
+params:
+  refresh: "true"
+headers: {"Content-Type": "application/json"}
+body_from_file: gharchive-bulk.json.gz
+
+

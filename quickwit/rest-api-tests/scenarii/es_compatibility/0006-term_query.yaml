@@ -1,6 +1,5 @@
 # case_insensitive not supported.
 engines: ["elasticsearch"]
-method: [GET, POST]
 params:
   # this overrides the query sent in body apparently
   size: 3

@@ -1,0 +1,2 @@
+method: [GET, POST]
+endpoint: "gharchive/_search"

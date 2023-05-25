@@ -1,4 +1,3 @@
-method: [GET, POST]
 params:
   q: type:PushEvent
 expected:
@@ -10,7 +9,6 @@ expected:
       $expect: "len(val) == 10"
 ---
 # Testing size.
-method: [GET, POST]
 params:
   q: type:PushEvent
   size: 3
@@ -23,7 +21,6 @@ expected:
       $expect: "len(val) == 3"
 ---
 # Query string takes priority over query defined in body
-method: [GET, POST]
 params:
   # this overrides the query sent in body
   q: type:PushEvent
@@ -41,7 +38,6 @@ expected:
     hits:
       $expect: "len(val) == 3"
 ---
-method: [GET, POST]
 params:
   # this overrides the query sent in body
   size: 3

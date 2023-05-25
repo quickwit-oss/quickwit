@@ -1,6 +1,5 @@
 # disabled due to the previous lack of fast field specific tokenizer.
 engines: ["elasticsearch"]
-method: [GET, POST]
 params:
   size: 0
 json:
