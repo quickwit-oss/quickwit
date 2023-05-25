@@ -18,10 +18,10 @@ qwdata
 |       ├── 03BSWV41QNGY5MZV9JYAE1DCGA.split
 │       └── 01GSWV41QNGY5MZV9JYAE1DCB7.split
 ├── delete_task_service
-│   └── wikipedia-TpCfrA
+│   └── wikipedia%01H13SVKDS03P%TpCfrA
 ├── indexing
-│   ├── wikipedia-RbaOAI
-│   └── wikipedia-cNqQtI
+│   ├── wikipedia%01H13SVKDS03P%_ingest-api-soruce%RbaOAI
+│   └── wikipedia%01H13SVKDS03P%kafka-source%cNqQtI
 └── queues
     ├── partition_id
     ├── wal-00000000000000000028

@@ -23,8 +23,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
+use quickwit_common::temp_dir::{self};
 use quickwit_config::IndexConfig;
-use quickwit_indexing::models::ScratchDirectory;
 use quickwit_metastore::Metastore;
 use quickwit_proto::IndexUid;
 use quickwit_search::SearchJobPlacer;
@@ -45,7 +45,7 @@ pub struct DeleteTaskService {
     metastore: Arc<dyn Metastore>,
     search_job_placer: SearchJobPlacer,
     storage_resolver: StorageUriResolver,
-    delete_service_task_dir: ScratchDirectory,
+    delete_service_task_dir: PathBuf,
     pipeline_handles_by_index_uid: HashMap<IndexUid, ActorHandle<DeleteTaskPipeline>>,
     max_concurrent_split_uploads: usize,
 }
@@ -60,8 +60,7 @@ impl DeleteTaskService {
     ) -> anyhow::Result<Self> {
         let delete_service_task_path = data_dir_path.join(DELETE_SERVICE_TASK_DIR_NAME);
         let delete_service_task_dir =
-            ScratchDirectory::create_new_dir(delete_service_task_path).await?;
-
+            temp_dir::create_clean_directory(delete_service_task_path.as_path()).await?;
         Ok(Self {
             metastore,
             search_job_placer,

@@ -31,6 +31,7 @@ use quickwit_actors::{
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
+use quickwit_common::temp_dir;
 use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
@@ -47,7 +48,7 @@ use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
 use crate::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingPipelineId, Observe, ObservePipeline,
-    ScratchDirectory, SpawnPipeline,
+    SpawnPipeline,
 };
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
@@ -126,7 +127,7 @@ struct MergePipelineHandle {
 
 pub struct IndexingService {
     node_id: String,
-    indexing_root_directory: ScratchDirectory,
+    indexing_root_directory: PathBuf,
     queue_dir_path: PathBuf,
     cluster: Cluster,
     metastore: Arc<dyn Metastore>,
@@ -157,7 +158,7 @@ impl IndexingService {
         let local_split_store =
             LocalSplitStore::open(split_cache_dir_path, split_store_space_quota).await?;
         let indexing_root_directory =
-            ScratchDirectory::create_new_dir(data_dir_path.join(INDEXING_DIR_NAME)).await?;
+            temp_dir::create_clean_directory(&data_dir_path.join(INDEXING_DIR_NAME)).await?;
         let queue_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         Ok(Self {
             node_id,
@@ -257,10 +258,12 @@ impl IndexingService {
                 pipeline_ord: pipeline_id.pipeline_ord,
             });
         }
-        let index_prefix = format!("{}-", index_config.index_id);
-        let indexing_directory = self
-            .indexing_root_directory
-            .named_temp_child(index_prefix)
+        let indexing_directory = temp_dir::Builder::new()
+            .join(pipeline_id.index_uid.index_id())
+            .join(pipeline_id.index_uid.incarnation_id())
+            .join(&pipeline_id.source_id)
+            .join(&pipeline_id.pipeline_ord.to_string())
+            .tempdir_in(&self.indexing_root_directory)
             .map_err(|err| IndexingServiceError::StorageError(err.into()))?;
         let storage = self.storage_resolver.resolve(&index_config.index_uri)?;
         let merge_policy =
