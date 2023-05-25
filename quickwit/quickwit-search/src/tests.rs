@@ -631,7 +631,7 @@ async fn test_sort_by_static_and_dynamic_field() {
     // In this test, we will try sorting docs by several fields.
     // - static_i64
     // - static_u64
-    // - dynamic_u64
+    // - dynamic_i64
     // - dynamic_u64
     let doc_mapping_yaml = r#"
             mode: dynamic
