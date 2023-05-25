@@ -32,14 +32,13 @@ mod tests {
     use std::sync::Arc;
 
     use futures::TryStreamExt;
-    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::search_service_server::SearchServiceServer;
     use quickwit_proto::{qast_helper, tonic, OutputFormat};
     use quickwit_search::{
-        root_search_stream, ClusterClient, MockSearchService, SearchError, SearchJobPlacer,
-        SearchService,
+        create_search_client_from_grpc_addr, root_search_stream, ClusterClient, MockSearchService,
+        SearchError, SearchJobPlacer, SearchService, SearcherPool,
     };
     use tokio_stream::wrappers::UnboundedReceiverStream;
     use tonic::transport::Server;
@@ -116,17 +115,21 @@ mod tests {
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
 
-        let grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
+        let grpc_addr: SocketAddr = "127.0.0.1:10001".parse()?;
         start_test_server(grpc_addr, Arc::new(mock_search_service)).await?;
-        let client_pool = ServiceClientPool::for_addrs(&[grpc_addr]).await.unwrap();
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+
+        let searcher_pool = SearcherPool::default();
+        searcher_pool
+            .insert(grpc_addr, create_search_client_from_grpc_addr(grpc_addr))
+            .await;
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let stream =
             root_search_stream(request, &metastore, cluster_client, &search_job_placer).await?;
-        let result: Result<Vec<_>, SearchError> = stream.try_collect().await;
-        assert!(result.is_err());
+        let search_stream_result: Result<Vec<_>, SearchError> = stream.try_collect().await;
+        let search_error = search_stream_result.unwrap_err();
         assert_eq!(
-            result.unwrap_err().to_string(),
+            search_error.to_string(),
             "Internal error: `Internal error: `Error again on `split2``.`."
         );
         Ok(())
