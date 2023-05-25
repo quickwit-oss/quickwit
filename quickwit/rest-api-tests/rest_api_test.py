@@ -8,6 +8,7 @@ import sys
 from os import path as osp
 import gzip
 import http
+import json
 
 def debug_http():
     old_send = http.client.HTTPConnection.send
@@ -31,7 +32,9 @@ def open_scenario(scenario_filepath):
         step_data  = step_data.strip()
         if step_data == "":
             continue
-        yield yaml.load(step_data, Loader=yaml.Loader)
+        step_dict = yaml.load(step_data, Loader=yaml.Loader)
+        if type(step_dict) == dict:
+            yield step_dict
 
 def run_step(step):
     if "method" in step:
@@ -63,16 +66,23 @@ def run_request_step(method, step):
     if body_from_file is not None:
         body_from_file = osp.join(step["cwd"], body_from_file)
         kvargs["data"] = load_data(body_from_file)
+    ndjson = step.get("ndjson", None)
+    if ndjson is not None:
+        kvargs["data"] = "\n".join([json.dumps(doc) for doc in ndjson])
+        kvargs.setdefault("headers")["Content-Type"] = "application/json"
     r = method_req(url, **kvargs)
     expected_status_code = step.get("status_code", 200)
     if expected_status_code is not None:
-        print("-----")
-        print(r.text)
         if r.status_code != expected_status_code:
+            print(r.text)
             raise Exception("Wrong status code. Got %s, expected %s" % (r.status_code, expected_status_code))
     expected_resp = step.get("expected", None)
     if expected_resp is not None:
-        check_result(r.json(), expected_resp)
+        try:
+            check_result(r.json(), expected_resp)
+        except Exception as e:
+            print(r.json())
+            raise e
 
 def check_result(result, expected, context_path = ""):
     if type(expected) == dict and "$expect" in expected:
@@ -168,6 +178,7 @@ class Visitor:
         self.context_stack.append(context)
         self.context.update(context)
     def enter_directory(self, path):
+        print("============")
         self.load_context(path)
         self.run_setup_teardown_scripts("_setup", path)
     def exit_directory(self, path):
@@ -213,6 +224,21 @@ def run(scenario_paths, engine):
     visitor = Visitor(engine=engine)
     path_tree.visit_nodes(visitor)
 
+def filter_test(prefixes, test_name):
+    for prefix in prefixes:
+        if test_name.startswith(prefix):
+            return True
+    return False
+
+def filter_tests(prefixes, test_names):
+    if prefixes is None or len(prefixes) == 0:
+        return test_names
+    return [
+        test_name
+        for test_name in test_names
+        if filter_test(prefixes, test_name)
+    ]
+
 def main():
     import argparse
     arg_parser = argparse.ArgumentParser(
@@ -220,11 +246,10 @@ def main():
         description="Runs a set of calls against a REST API and checks for conditions over the results."
     )
     arg_parser.add_argument("--engine", help="Targetted engine (elastic/quickwit).", default="elasticsearch")
-    arg_parser.add_argument("--test", help="Specific test to run. If not specified, all tests are run.", default="scenarii/**/*.yaml")
+    arg_parser.add_argument("--test", help="Specific prefix to select the tests to run. If not specified, all tests are run.", nargs="*")
     parsed_args = arg_parser.parse_args()
-    print(parsed_args)
-    print("------------------------\n")
-    scenario_filepaths = glob.glob(parsed_args.test, recursive=True)
+    scenario_filepaths = glob.glob("scenarii/**/*.yaml", recursive=True)
+    scenario_filepaths = list(filter_tests(parsed_args.test, scenario_filepaths))
     run(scenario_filepaths, engine=parsed_args.engine)
 
 if __name__ == "__main__":

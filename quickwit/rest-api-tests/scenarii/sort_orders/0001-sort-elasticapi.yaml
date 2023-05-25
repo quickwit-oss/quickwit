@@ -1,8 +1,7 @@
 method: [GET]
 engines:
   - quickwit
-endpoint:
-  /sortorder/_search
+endpoint: _elastic/sortorder/_search
 json:
   query:
     match_all: {}
@@ -20,11 +19,7 @@ expected:
       - fields: { "id": 5 }
       - fields: { "id": 3 }
 ---
-method: [GET]
-engines:
-  - quickwit
-endpoint:
-  /sortorder/_search
+endpoint: _elastic/sortorder/_search
 json:
   query:
     match_all: {}
