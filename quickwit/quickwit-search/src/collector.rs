@@ -159,7 +159,7 @@ impl TryFrom<ColumnType> for SortFieldType {
             ColumnType::DateTime => Ok(SortFieldType::DateTime),
             ColumnType::Bool => Ok(SortFieldType::Bool),
             _ => Err(TantivyError::InvalidArgument(format!(
-                "Sort field type {:?}",
+                "Unsupported sort field type `{:?}`.",
                 column_type
             ))),
         }
