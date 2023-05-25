@@ -234,17 +234,17 @@ mod tests {
     use std::net::SocketAddr;
 
     use quickwit_proto::{
-        qast_helper, PartialHit, SearchRequest, SearchStreamRequest, SplitIdAndFooterOffsets,
-        SplitSearchError,
+        qast_helper, PartialHit, SearchRequest, SearchStreamRequest, SortValue,
+        SplitIdAndFooterOffsets, SplitSearchError,
     };
 
     use super::*;
     use crate::root::SearchJob;
     use crate::{searcher_pool_for_test, MockSearchService};
 
-    fn mock_partial_hit(split_id: &str, sorting_field_value: u64, doc_id: u32) -> PartialHit {
+    fn mock_partial_hit(split_id: &str, sort_value: u64, doc_id: u32) -> PartialHit {
         PartialHit {
-            sorting_field_value,
+            sort_value: Some(SortValue::U64(sort_value)),
             split_id: split_id.to_string(),
             segment_ord: 1,
             doc_id,

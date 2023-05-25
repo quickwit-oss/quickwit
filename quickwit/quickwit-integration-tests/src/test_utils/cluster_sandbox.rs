@@ -117,7 +117,7 @@ pub async fn ingest_with_retry(
             async move {
                 // Index one record.
                 if let Err(err) = client
-                    .ingest(index_id, ingest_source_clone, None, commit_type_clone)
+                    .ingest(index_id, ingest_source_clone, None, None, commit_type_clone)
                     .await
                 {
                     debug!("Failed to index into {} due to error: {}", index_id, err);

@@ -170,7 +170,9 @@ impl std::ops::RangeBounds<i64> for Range {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest, SplitIdAndFooterOffsets};
+    use quickwit_proto::{
+        LeafSearchResponse, PartialHit, SearchRequest, SortValue, SplitIdAndFooterOffsets,
+    };
 
     use super::LeafSearchCache;
 
@@ -222,7 +224,7 @@ mod tests {
             partial_hits: vec![PartialHit {
                 doc_id: 1,
                 segment_ord: 0,
-                sorting_field_value: 0,
+                sort_value: Some(SortValue::U64(0u64)),
                 split_id: "split_1".to_string(),
             }],
         };
@@ -307,7 +309,7 @@ mod tests {
             partial_hits: vec![PartialHit {
                 doc_id: 1,
                 segment_ord: 0,
-                sorting_field_value: 0,
+                sort_value: Some(SortValue::U64(0)),
                 split_id: "split_1".to_string(),
             }],
         };

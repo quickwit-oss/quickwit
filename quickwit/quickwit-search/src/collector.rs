@@ -17,24 +17,25 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::cmp::Ordering;
+use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashSet};
 
 use itertools::Itertools;
+use quickwit_common::binary_heap::top_k;
 use quickwit_doc_mapper::{DocMapper, WarmupInfo};
-use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest, SortOrder};
+use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue};
 use serde::Deserialize;
 use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::{AggregationLimits, AggregationSegmentCollector};
 use tantivy::collector::{Collector, SegmentCollector};
-use tantivy::columnar::ColumnType;
+use tantivy::columnar::{ColumnType, MonotonicallyMappableToU64};
 use tantivy::fastfield::Column;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
 use crate::filters::{create_timestamp_filter_builder, TimestampFilter, TimestampFilterBuilder};
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector};
-use crate::partial_hit_sorting_key;
+use crate::GlobalDocAddress;
 
 #[derive(Clone, Debug)]
 pub(crate) enum SortBy {
@@ -48,6 +49,25 @@ pub(crate) enum SortBy {
     },
 }
 
+impl SortBy {
+    pub fn sort_order(&self) -> SortOrder {
+        match self {
+            SortBy::DocId => SortOrder::Desc,
+            SortBy::FastField { order, .. } => *order,
+            SortBy::Score { order } => *order,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+enum SortFieldType {
+    U64,
+    I64,
+    F64,
+    DateTime,
+    Bool,
+}
+
 /// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific
 /// `SegmentReader`. Its role is to compute the sorting field given a `DocId`.
 enum SortingFieldComputer {
@@ -55,6 +75,7 @@ enum SortingFieldComputer {
     DocId,
     FastField {
         sort_column: Column<u64>,
+        sort_field_type: SortFieldType,
         order: SortOrder,
     },
     Score {
@@ -63,44 +84,86 @@ enum SortingFieldComputer {
 }
 
 impl SortingFieldComputer {
+    fn recover_typed_sort_value(&self, sort_value: u64) -> SortValue {
+        match self {
+            SortingFieldComputer::DocId => SortValue::U64(sort_value),
+            SortingFieldComputer::FastField {
+                sort_field_type,
+                order,
+                ..
+            } => {
+                let sort_value = match order {
+                    SortOrder::Asc => u64::MAX - sort_value,
+                    SortOrder::Desc => sort_value,
+                };
+                match sort_field_type {
+                    SortFieldType::U64 => SortValue::U64(sort_value),
+                    SortFieldType::I64 => SortValue::I64(i64::from_u64(sort_value)),
+                    SortFieldType::F64 => SortValue::F64(f64::from_u64(sort_value)),
+                    SortFieldType::DateTime => SortValue::U64(sort_value),
+                    SortFieldType::Bool => SortValue::Boolean(sort_value == 1u64),
+                }
+            }
+            SortingFieldComputer::Score { .. } => {
+                SortValue::F64(MonotonicallyMappableToU64::from_u64(sort_value))
+            }
+        }
+    }
+
     /// Returns the ranking key for the given element
-    fn compute_sorting_field(&self, doc_id: DocId, score: Score) -> u64 {
+    ///
+    /// The functions return None if the sort key is a fast field, for which we have no value
+    /// for the given doc_id.
+    /// All value are mapped using a monotonic mapping.
+    /// If the sort ord is ascending, we use the mapping `val -> u64::MAX - val` to
+    /// artificially invert the order.
+    ///
+    /// Given the u64 value, it is possible to recover the original value using
+    /// `Self::recover_typed_sort_value`.
+    fn compute_u64_sort_value_opt(&self, doc_id: DocId, score: Score) -> Option<u64> {
         match self {
             SortingFieldComputer::FastField {
                 sort_column: fast_field_reader,
                 order,
+                ..
             } => {
-                if let Some(field_val) = fast_field_reader.first(doc_id) {
-                    match order {
-                        // Descending is our most common case.
-                        SortOrder::Desc => field_val,
-                        // We get Ascending order by using a decreasing mapping over u64 as the
-                        // sorting_field.
-                        SortOrder::Asc => u64::MAX - field_val,
-                    }
-                } else {
-                    0u64
+                let field_val = fast_field_reader.first(doc_id)?;
+                match order {
+                    // Descending is our most common case.
+                    SortOrder::Desc => Some(field_val),
+                    // We get Ascending order by using a decreasing mapping over u64 as the
+                    // sorting_field.
+                    SortOrder::Asc => Some(u64::MAX - field_val),
                 }
             }
-            SortingFieldComputer::DocId => doc_id as u64,
+            SortingFieldComputer::DocId => Some(doc_id as u64),
             SortingFieldComputer::Score { order } => {
-                let u64_score = f32_to_u64(score);
+                let u64_score = (score as f64).to_u64();
                 match order {
-                    SortOrder::Desc => u64_score,
-                    SortOrder::Asc => u64::MAX - u64_score,
+                    SortOrder::Desc => Some(u64_score),
+                    SortOrder::Asc => Some(u64::MAX - u64_score),
                 }
             }
         }
     }
 }
 
-/// Converts a float to an unsigned integer while preserving order.
-/// See `<https://lemire.me/blog/2020/12/14/converting-floating-point-numbers-to-integers-while-preserving-order/>`
-fn f32_to_u64(value: f32) -> u64 {
-    let value_u32 = u32::from_le_bytes(value.to_le_bytes());
-    let mut mask = (value_u32 as i32 >> 31) as u32;
-    mask |= 0x80000000;
-    (value_u32 ^ mask) as u64
+impl TryFrom<ColumnType> for SortFieldType {
+    type Error = tantivy::TantivyError;
+
+    fn try_from(column_type: ColumnType) -> tantivy::Result<Self> {
+        match column_type {
+            ColumnType::U64 => Ok(SortFieldType::U64),
+            ColumnType::I64 => Ok(SortFieldType::I64),
+            ColumnType::F64 => Ok(SortFieldType::F64),
+            ColumnType::DateTime => Ok(SortFieldType::DateTime),
+            ColumnType::Bool => Ok(SortFieldType::Bool),
+            _ => Err(TantivyError::InvalidArgument(format!(
+                "Unsupported sort field type `{:?}`.",
+                column_type
+            ))),
+        }
+    }
 }
 
 /// Takes a user-defined sorting criteria and resolves it to a
@@ -114,13 +177,16 @@ fn resolve_sort_by(
         SortBy::FastField { field_name, order } => {
             let sort_column_opt: Option<(Column<u64>, ColumnType)> =
                 segment_reader.fast_fields().u64_lenient(field_name)?;
-            let sort_column = if let Some((sort_column, _column_type)) = sort_column_opt {
-                sort_column
-            } else {
-                Column::build_empty_column(segment_reader.max_doc())
-            };
+            let (sort_column, column_type) = sort_column_opt.unwrap_or_else(|| {
+                (
+                    Column::build_empty_column(segment_reader.max_doc()),
+                    ColumnType::U64,
+                )
+            });
+            let sort_field_type = SortFieldType::try_from(column_type)?;
             Ok(SortingFieldComputer::FastField {
                 sort_column,
+                sort_field_type,
                 order: *order,
             })
         }
@@ -132,7 +198,7 @@ fn resolve_sort_by(
 /// so that we actually have a min-heap.
 #[derive(Clone, Copy)]
 struct PartialHitHeapItem {
-    sorting_field_value: u64,
+    sort_value_opt: Option<u64>,
     doc_id: DocId,
 }
 
@@ -145,10 +211,7 @@ impl PartialOrd for PartialHitHeapItem {
 impl Ord for PartialHitHeapItem {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        let by_sorting_field = other
-            .sorting_field_value
-            .partial_cmp(&self.sorting_field_value)
-            .unwrap_or(Ordering::Equal);
+        let by_sorting_field = other.sort_value_opt.cmp(&self.sort_value_opt);
 
         let lazy_order_by_doc_id = || {
             self.doc_id
@@ -194,15 +257,19 @@ impl QuickwitSegmentCollector {
 
     #[inline]
     fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
-        let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id, score);
+        let sorting_field_value_opt: Option<u64> =
+            self.sort_by.compute_u64_sort_value_opt(doc_id, score);
         if self.at_capacity() {
-            if let Some(limit_sorting_field) = self.hits.peek().map(|head| head.sorting_field_value)
-            {
-                // In case of a tie, we keep the document with a lower `DocId`.
-                if limit_sorting_field < sorting_field_value {
-                    if let Some(mut head) = self.hits.peek_mut() {
-                        head.sorting_field_value = sorting_field_value;
-                        head.doc_id = doc_id;
+            if let Some(sorting_field_value) = sorting_field_value_opt {
+                if let Some(limit_sorting_field) =
+                    self.hits.peek().and_then(|head| head.sort_value_opt)
+                {
+                    // In case of a tie, we keep the document with a lower `DocId`.
+                    if limit_sorting_field < sorting_field_value {
+                        if let Some(mut head) = self.hits.peek_mut() {
+                            head.sort_value_opt = Some(sorting_field_value);
+                            head.doc_id = doc_id;
+                        }
                     }
                 }
             }
@@ -210,7 +277,7 @@ impl QuickwitSegmentCollector {
             // we have not reached capacity yet, so we can just push the
             // element.
             self.hits.push(PartialHitHeapItem {
-                sorting_field_value,
+                sort_value_opt: sorting_field_value_opt,
                 doc_id,
             });
         }
@@ -252,12 +319,15 @@ impl SegmentCollector for QuickwitSegmentCollector {
         let segment_ord = self.segment_ord;
         // TODO use into_iter_sorted() once it gets stable.
         let split_id = self.split_id;
+        let sort_by = self.sort_by;
         let partial_hits: Vec<PartialHit> = self
             .hits
             .into_sorted_vec()
             .into_iter()
             .map(|hit| PartialHit {
-                sorting_field_value: hit.sorting_field_value,
+                sort_value: hit
+                    .sort_value_opt
+                    .map(|sort_value| sort_by.recover_typed_sort_value(sort_value)),
                 segment_ord,
                 doc_id: hit.doc_id,
                 split_id: split_id.clone(),
@@ -421,8 +491,9 @@ impl Collector for QuickwitCollector {
         // All leaves will return their top [0..max_hits) documents.
         // We compute the overall [0..start_offset + max_hits) documents ...
         let num_hits = self.start_offset + self.max_hits;
+        let sort_order = self.sort_by.sort_order();
         let mut merged_leaf_response =
-            merge_leaf_responses(&self.aggregation, segment_fruits?, num_hits)?;
+            merge_leaf_responses(&self.aggregation, segment_fruits?, sort_order, num_hits)?;
         // ... and drop the first [..start_offsets) hits.
         merged_leaf_response
             .partial_hits
@@ -444,6 +515,7 @@ fn map_error(err: postcard::Error) -> TantivyError {
 fn merge_leaf_responses(
     aggregations_opt: &Option<QuickwitAggregations>,
     mut leaf_responses: Vec<LeafSearchResponse>,
+    sort_order: SortOrder,
     max_hits: usize,
 ) -> tantivy::Result<LeafSearchResponse> {
     // Optimization: No merging needed if there is only one result.
@@ -514,8 +586,8 @@ fn merge_leaf_responses(
         .into_iter()
         .flat_map(|leaf_response| leaf_response.partial_hits)
         .collect();
-    // TODO optimize
-    let top_k_partial_hits = top_k_partial_hits(all_partial_hits, max_hits);
+    let top_k_partial_hits: Vec<PartialHit> =
+        top_k_partial_hits(all_partial_hits.into_iter(), sort_order, max_hits);
     Ok(LeafSearchResponse {
         intermediate_aggregation_result: merged_intermediate_aggregation_result,
         num_hits,
@@ -529,14 +601,49 @@ fn merge_leaf_responses(
 /// and so that these elements are sorted.
 ///
 /// TODO we could possibly optimize the sort away (but I doubt it matters).
-fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec<PartialHit> {
-    partial_hits.sort_unstable_by(|left, right| {
-        let left_key = partial_hit_sorting_key(left);
-        let right_key = partial_hit_sorting_key(right);
-        left_key.cmp(&right_key)
-    });
-    partial_hits.truncate(num_hits);
-    partial_hits
+fn top_k_partial_hits(
+    partial_hits: impl Iterator<Item = PartialHit>,
+    sort_order: SortOrder,
+    num_hits: usize,
+) -> Vec<PartialHit> {
+    match sort_order {
+        SortOrder::Asc => top_k(partial_hits.into_iter(), num_hits, |partial_hit| {
+            // This reverse dance is a little bit complicated.
+            // Note that `Option<Reverse<T>>` is very different from `Reverse<Option<T>>`.
+            //
+            // We do want the earlier: documents without any values should always get ranked after
+            // documents with a value, regardless of whether we use ascending or
+            // descending order.
+            let score = partial_hit.sort_value.map(Reverse);
+            let addr = GlobalDocAddress::from_partial_hit(partial_hit);
+            (score, Reverse(addr))
+        }),
+        SortOrder::Desc => top_k(partial_hits.into_iter(), num_hits, |partial_hit| {
+            let addr = GlobalDocAddress::from_partial_hit(partial_hit);
+            (partial_hit.sort_value, addr)
+        }),
+    }
+}
+
+pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortBy {
+    let sort_order = search_request
+        .sort_order
+        .and_then(SortOrder::from_i32)
+        .unwrap_or(SortOrder::Desc);
+    search_request
+        .sort_by_field
+        .as_ref()
+        .map(|field_name| {
+            if field_name == "_score" {
+                SortBy::Score { order: sort_order }
+            } else {
+                SortBy::FastField {
+                    field_name: field_name.clone(),
+                    order: sort_order,
+                }
+            }
+        })
+        .unwrap_or(SortBy::DocId)
 }
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
@@ -555,25 +662,7 @@ pub(crate) fn make_collector_for_split(
         search_request.start_timestamp,
         search_request.end_timestamp,
     );
-    let sort_order = search_request
-        .sort_order
-        .and_then(SortOrder::from_i32)
-        .unwrap_or(SortOrder::Desc);
-    let sort_by = search_request
-        .sort_by_field
-        .as_ref()
-        .map(|field_name| {
-            if field_name == "_score" {
-                SortBy::Score { order: sort_order }
-            } else {
-                SortBy::FastField {
-                    field_name: field_name.clone(),
-                    order: sort_order,
-                }
-            }
-        })
-        .unwrap_or(SortBy::DocId);
-
+    let sort_by = sort_by_from_request(search_request);
     Ok(QuickwitCollector {
         split_id,
         start_offset: search_request.start_offset as usize,
@@ -586,9 +675,6 @@ pub(crate) fn make_collector_for_split(
 }
 
 /// Builds a QuickwitCollector that's only useful for merging fruits.
-///
-/// This collector only needs `start_offset` & `max_hit` so the other attributes
-/// can be set to default.
 pub(crate) fn make_merge_collector(
     search_request: &SearchRequest,
     aggregation_limits: &AggregationLimits,
@@ -597,11 +683,12 @@ pub(crate) fn make_merge_collector(
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
         None => None,
     };
+    let sort_by = sort_by_from_request(search_request);
     Ok(QuickwitCollector {
         split_id: String::default(),
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
-        sort_by: SortBy::DocId,
+        sort_by,
         timestamp_filter_builder_opt: None,
         aggregation,
         aggregation_limits: aggregation_limits.clone(),
@@ -612,20 +699,19 @@ pub(crate) fn make_merge_collector(
 mod tests {
     use std::cmp::Ordering;
 
-    use proptest::prelude::*;
-    use quickwit_proto::PartialHit;
+    use quickwit_proto::{PartialHit, SortOrder, SortValue};
 
     use super::PartialHitHeapItem;
-    use crate::collector::{f32_to_u64, top_k_partial_hits};
+    use crate::collector::top_k_partial_hits;
 
     #[test]
     fn test_partial_hit_ordered_by_sorting_field() {
         let lesser_score = PartialHitHeapItem {
-            sorting_field_value: 1u64,
             doc_id: 1u32,
+            sort_value_opt: Some(1u64),
         };
         let higher_score = PartialHitHeapItem {
-            sorting_field_value: 2u64,
+            sort_value_opt: Some(2u64),
             doc_id: 1u32,
         };
         assert_eq!(lesser_score.cmp(&higher_score), Ordering::Greater);
@@ -633,53 +719,55 @@ mod tests {
 
     #[test]
     fn test_merge_partial_hits_no_tie() {
-        let make_doc = |sorting_field_value: u64| PartialHit {
-            sorting_field_value,
+        let make_doc = |sort_value: u64| PartialHit {
+            sort_value: Some(SortValue::U64(sort_value)),
             split_id: "split1".to_string(),
             segment_ord: 0u32,
             doc_id: 0u32,
         };
         assert_eq!(
-            top_k_partial_hits(vec![make_doc(1u64), make_doc(3u64), make_doc(2u64),], 2),
-            vec![make_doc(3), make_doc(2)]
+            top_k_partial_hits(
+                vec![make_doc(1u64), make_doc(3u64), make_doc(2u64),].into_iter(),
+                SortOrder::Asc,
+                2
+            ),
+            vec![make_doc(1), make_doc(2)]
         );
     }
 
     #[test]
     fn test_merge_partial_hits_with_tie() {
         let make_hit_given_split_id = |split_id: u64| PartialHit {
-            sorting_field_value: 0u64,
+            sort_value: Some(SortValue::U64(0u64)),
             split_id: format!("split_{split_id}"),
             segment_ord: 0u32,
             doc_id: 0u32,
         };
         assert_eq!(
-            top_k_partial_hits(
+            &top_k_partial_hits(
                 vec![
                     make_hit_given_split_id(1u64),
                     make_hit_given_split_id(3u64),
                     make_hit_given_split_id(2u64),
-                ],
+                ]
+                .into_iter(),
+                SortOrder::Desc,
                 2
             ),
-            vec![make_hit_given_split_id(1), make_hit_given_split_id(2)]
+            &[make_hit_given_split_id(3), make_hit_given_split_id(2)]
         );
-    }
-
-    prop_compose! {
-        // Turns out, zero's and negative zero's u64 representation is not same.
-        // It is not relevant for our use case. For simplicity we filter the negative
-        // zero.
-        fn any_f32_without_negative_zero()(val in any::<f32>().prop_filter("Value can't be negative zero", |val| *val != -0.0)) -> f32 {
-            val
-        }
-    }
-
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(10000))]
-        #[test]
-        fn test_proptest_f32_to_u64_compare_arbitrary(a in any_f32_without_negative_zero(), b in any_f32_without_negative_zero()) {
-            prop_assert_eq!(a < b, f32_to_u64(a) < f32_to_u64(b))
-        }
+        assert_eq!(
+            &top_k_partial_hits(
+                vec![
+                    make_hit_given_split_id(1u64),
+                    make_hit_given_split_id(3u64),
+                    make_hit_given_split_id(2u64),
+                ]
+                .into_iter(),
+                SortOrder::Asc,
+                2
+            ),
+            &[make_hit_given_split_id(1), make_hit_given_split_id(2)]
+        );
     }
 }
