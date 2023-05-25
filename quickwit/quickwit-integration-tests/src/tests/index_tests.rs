@@ -20,6 +20,9 @@
 use std::time::Duration;
 
 use bytes::Bytes;
+use quickwit_common::test_utils::wait_until_predicate;
+use quickwit_indexing::actors::INDEXING_DIR_NAME;
+use quickwit_janitor::actors::DELETE_SERVICE_TASK_DIR_NAME;
 use quickwit_metastore::SplitState;
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
@@ -85,7 +88,7 @@ async fn test_restarting_standalone_server() {
     .await
     .unwrap();
 
-    // Delete the indexq
+    // Delete the index
     sandbox
         .indexer_rest_client
         .indexes()
@@ -168,6 +171,44 @@ async fn test_restarting_standalone_server() {
         )
         .await
         .unwrap();
+
+    // Check that we have one directory
+    let path = sandbox
+        .node_configs
+        .first()
+        .unwrap()
+        .quickwit_config
+        .data_dir_path
+        .clone();
+    let delete_service_path = path.join(DELETE_SERVICE_TASK_DIR_NAME);
+    let indexing_path = path.join(INDEXING_DIR_NAME);
+
+    assert_eq!(delete_service_path.read_dir().unwrap().count(), 1);
+    assert_eq!(indexing_path.read_dir().unwrap().count(), 1);
+
+    // Delete the index
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .delete(index_id, false)
+        .await
+        .unwrap();
+
+    // Wait to make sure all directories are cleaned up
+    wait_until_predicate(
+        || {
+            let delete_service_path = delete_service_path.clone();
+            let indexing_path = indexing_path.clone();
+            async move {
+                delete_service_path.read_dir().unwrap().count() == 0
+                    && indexing_path.read_dir().unwrap().count() == 0
+            }
+        },
+        Duration::from_secs(10),
+        Duration::from_millis(100),
+    )
+    .await
+    .unwrap();
 
     sandbox.shutdown().await.unwrap();
 }

@@ -18,12 +18,10 @@ qwdata
 |       ├── 03BSWV41QNGY5MZV9JYAE1DCGA.split
 │       └── 01GSWV41QNGY5MZV9JYAE1DCB7.split
 ├── delete_task_service
-│   └── wikipedia
-│       └── scratch
+│   └── wikipedia%01H13SVKDS03P%TpCfrA
 ├── indexing
-│   └── wikipedia
-│       └── _ingest-api-source
-│           └── scratch
+│   ├── wikipedia%01H13SVKDS03P%_ingest-api-source%RbaOAI
+│   └── wikipedia%01H13SVKDS03P%kafka-source%cNqQtI
 └── queues
     ├── partition_id
     ├── wal-00000000000000000028
@@ -31,7 +29,7 @@ qwdata
 ```
 
 ### `/queues` directory
-
+ 
 This directory is created only if the ingest API service is running on your node. It contains write ahead log files of the ingest API to guard against data lost.
 The queue is truncated when Quickwit commits a split (piece of index), which means that the split is stored on the storage and its metadata are in the metastore.
 
@@ -39,7 +37,8 @@ You can configure `max_queue_memory_usage` and `max_queue_disk_usage` in the [no
 
 ### `/indexing` directory
 
-This directory holds the local indexing directory of each index managed by Quickwit. The local indexing directories are further separated by indexing source. In the above tree, you can see there is an indexing folder corresponding to `_ingest-api-source` source for `wikipedia` index. This directory gets created only on nodes running the indexing service.
+This directory holds the local indexing directory of each indexing source of each index managed by Quickwit. In the above tree, you can see two directories corresponding to the `wikipedia` index, which means that index is currently handling two sources.
+
 
 ### `/delete_task_service` directory
 

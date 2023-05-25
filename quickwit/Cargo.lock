@@ -4474,6 +4474,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-indexing",
+ "quickwit-janitor",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-rest-client",

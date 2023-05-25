@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
+use quickwit_common::temp_dir::{self};
 use quickwit_config::IndexConfig;
 use quickwit_metastore::Metastore;
 use quickwit_proto::IndexUid;
@@ -44,27 +45,30 @@ pub struct DeleteTaskService {
     metastore: Arc<dyn Metastore>,
     search_job_placer: SearchJobPlacer,
     storage_resolver: StorageUriResolver,
-    data_dir_path: PathBuf,
+    delete_service_task_dir: PathBuf,
     pipeline_handles_by_index_uid: HashMap<IndexUid, ActorHandle<DeleteTaskPipeline>>,
     max_concurrent_split_uploads: usize,
 }
 
 impl DeleteTaskService {
-    pub fn new(
+    pub async fn new(
         metastore: Arc<dyn Metastore>,
         search_job_placer: SearchJobPlacer,
         storage_resolver: StorageUriResolver,
         data_dir_path: PathBuf,
         max_concurrent_split_uploads: usize,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        let delete_service_task_path = data_dir_path.join(DELETE_SERVICE_TASK_DIR_NAME);
+        let delete_service_task_dir =
+            temp_dir::create_clean_directory(delete_service_task_path.as_path()).await?;
+        Ok(Self {
             metastore,
             search_job_placer,
             storage_resolver,
-            data_dir_path,
+            delete_service_task_dir,
             pipeline_handles_by_index_uid: Default::default(),
             max_concurrent_split_uploads,
-        }
+        })
     }
 }
 
@@ -144,7 +148,6 @@ impl DeleteTaskService {
         index_config: IndexConfig,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
-        let delete_task_service_dir = self.data_dir_path.join(DELETE_SERVICE_TASK_DIR_NAME);
         let index_uri = index_config.index_uri.clone();
         let index_storage = self.storage_resolver.resolve(&index_uri)?;
         let index_metadata = self
@@ -157,7 +160,7 @@ impl DeleteTaskService {
             self.search_job_placer.clone(),
             index_config.indexing_settings,
             index_storage,
-            delete_task_service_dir,
+            self.delete_service_task_dir.clone(),
             self.max_concurrent_split_uploads,
         );
         let (_pipeline_mailbox, pipeline_handler) = ctx.spawn_actor().spawn(pipeline);
@@ -224,7 +227,9 @@ mod tests {
             StorageUriResolver::for_test(),
             data_dir_path,
             4,
-        );
+        )
+        .await
+        .unwrap();
         let (_delete_task_service_mailbox, delete_task_service_handler) = test_sandbox
             .universe()
             .spawn_builder()
