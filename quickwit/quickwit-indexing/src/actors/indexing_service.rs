@@ -329,6 +329,7 @@ impl IndexingService {
     }
 
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
+        debug!("Supervise indexing pipelines.");
         self.indexing_pipeline_handles
             .retain(
                 |pipeline_id, pipeline_handle| match pipeline_handle.state() {
@@ -463,6 +464,7 @@ impl IndexingService {
         ctx: &ActorContext<Self>,
         physical_indexing_plan_request: ApplyIndexingPlanRequest,
     ) -> Result<(), IndexingServiceError> {
+        debug!("Apply indexing plan {:?}.", physical_indexing_plan_request);
         let mut updated_pipeline_ids: HashSet<IndexingPipelineId> = HashSet::new();
         let mut pipeline_ordinals: HashMap<&IndexingTask, usize> = HashMap::new();
         for indexing_task in physical_indexing_plan_request.indexing_tasks.iter() {
