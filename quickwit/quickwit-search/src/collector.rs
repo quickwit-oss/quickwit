@@ -417,7 +417,6 @@ impl QuickwitCollector {
 
     pub fn warmup_info(&self) -> WarmupInfo {
         WarmupInfo {
-            term_dict_field_names: Default::default(),
             fast_field_names: self.fast_field_names(),
             field_norms: self.requires_scoring(),
             ..WarmupInfo::default()
