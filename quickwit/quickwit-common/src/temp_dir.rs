@@ -29,7 +29,7 @@ const MAX_LENGTH: usize = 255;
 const SEPARATOR: char = '%';
 const NUM_RAND_CHARS: usize = 6;
 
-/// Crates the specified directory. If the directory already exists, deletes its contents.
+/// Creates the specified directory. If the directory already exists, deletes its contents.
 pub async fn create_clean_directory(path: &Path) -> io::Result<PathBuf> {
     // Delete if exists and recreate scratch directory.
     ignore_error_kind!(io::ErrorKind::NotFound, fs::remove_dir_all(&path).await)?;
