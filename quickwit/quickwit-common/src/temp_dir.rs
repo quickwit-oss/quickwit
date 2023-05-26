@@ -423,8 +423,9 @@ mod tests {
         let mut directories = Vec::new();
         let mut paths = Vec::new();
         let temp_dir = Builder::default().tempdir().unwrap();
-        // Try creating the maximum number of directories for a single random byte a-z,A-Z,0-9
-        for _ in 0..62 {
+        // Try creating the maximum number of directories for a single random byte
+        // On case-insensitive filesystems we can only have 36 different directories a-z,0-9
+        for _ in 0..36 {
             let dir = Builder::default()
                 .join("test")
                 .rand_bytes(1)
