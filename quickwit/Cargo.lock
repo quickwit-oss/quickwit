@@ -4511,6 +4511,7 @@ dependencies = [
  "quickwit-metastore",
  "quickwit-opentelemetry",
  "quickwit-proto",
+ "quickwit-query",
  "quickwit-search",
  "quickwit-storage",
  "serde",
