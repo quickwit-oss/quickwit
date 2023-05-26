@@ -1,5 +1,4 @@
 # Motivated by #3249
-method: [GET]
 json:
   query:
       match_all: {}
@@ -8,7 +7,6 @@ expected:
     total:
       value: 100
 ---
-method: [GET]
 json:
   query:
       bool:
@@ -19,7 +17,6 @@ expected:
     total:
       value: 100
 ---
-method: [GET]
 json:
   query:
       bool: {}
@@ -28,7 +25,6 @@ expected:
     total:
       value: 100
 ---
-method: [GET]
 json:
   query:
       bool:
@@ -39,7 +35,6 @@ expected:
     total:
       value: 100
 ---
-method: [GET]
 json:
   query:
       bool:
@@ -51,7 +46,6 @@ expected:
       value: 98
 ---
 # Silly edge case 1
-method: [GET]
 json:
   query:
       bool:
@@ -63,7 +57,6 @@ expected:
       value: 0
 ---
 # Silly edge case 2
-method: [GET]
 json:
   query:
       bool:
@@ -77,7 +70,6 @@ expected:
       value: 0
 ---
 # Silly edge case 3
-method: [GET]
 json:
   query:
       bool:
@@ -89,7 +81,6 @@ expected:
       value: 100
 ---
 # Silly edge case 4
-method: [GET]
 json:
   query:
       bool:
@@ -103,7 +94,6 @@ expected:
       value: 100
 ---
 # Silly edge case 4
-method: [GET]
 json:
   query:
       bool:
