@@ -30,12 +30,14 @@ async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
     use anyhow::Context;
     use quickwit_common::uri::Uri;
     use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
+
     let _ = tracing_subscriber::fmt::try_init();
     let storage_uri = Uri::from_well_formed("s3://quickwit-integration-tests");
-    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?;
+    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri).await?;
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
 
-    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?
+    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)
+        .await?
         .with_prefix(Path::new("test-s3-compatible-storage"));
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await

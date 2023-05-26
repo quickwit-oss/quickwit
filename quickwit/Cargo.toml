@@ -44,9 +44,6 @@ assert-json-diff = "2"
 async-speed-limit = "0.4"
 async-trait = "0.1"
 atty = "0.2"
-azure_core = { version = "0.5.0", features = ["enable_reqwest_rustls"] }
-azure_storage = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"] }
-azure_storage_blobs = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"] }
 backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.21"
 byte-unit = { version = "4", default-features = false, features = ["serde", "std"] }
@@ -77,12 +74,12 @@ http-serde = "1.1.2"
 humansize = "2.1.3"
 humantime = "2.1.0"
 hyper = { version = "0.14", features = [
-  "stream",
-  "server",
+  "client",
   "http1",
   "http2",
+  "server",
+  "stream",
   "tcp",
-  "client",
 ] }
 hyper-rustls = "0.23"
 indexmap = { version = "1.9.2", features = ["serde"] }
@@ -135,21 +132,6 @@ reqwest = { version = "0.11", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-rusoto_core = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_kinesis = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_mock = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_s3 = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_sts = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
 rust-embed = "6.6.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
@@ -195,6 +177,19 @@ utoipa = "3.3.0"
 uuid = { version = "1.3", features = ["v4", "serde"] }
 warp = "0.3"
 wiremock = "0.5"
+
+aws-config = "0.55.0"
+aws-sdk-kinesis = "0.27.0"
+aws-sdk-s3 = "0.27.0"
+aws-smithy-async = "0.55.0"
+aws-smithy-client = "0.55.0"
+aws-smithy-http = "0.55.0"
+aws-smithy-types = "0.55.0"
+aws-types = "0.55.0"
+
+azure_core = { version = "0.5.0", features = ["enable_reqwest_rustls"] }
+azure_storage = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"] }
+azure_storage_blobs = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"] }
 
 quickwit-actors = { version = "0.6.0", path = "./quickwit-actors" }
 quickwit-aws = { version = "0.6.0", path = "./quickwit-aws" }

@@ -17,96 +17,73 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-#![deny(clippy::disallowed_methods)]
-
 use std::time::Duration;
 
-use anyhow::Context;
-use async_trait::async_trait;
+use aws_config::retry::RetryConfig;
+pub use aws_smithy_async::rt::sleep::TokioSleep;
+use aws_smithy_client::hyper_ext;
+use aws_types::region::Region;
+use hyper::client::{Client as HyperClient, HttpConnector};
 use hyper_rustls::HttpsConnectorBuilder;
-use once_cell::sync::OnceCell;
-use rusoto_core::credential::{
-    AutoRefreshingProvider, AwsCredentials, ChainProvider, CredentialsError, ProvideAwsCredentials,
-};
-use rusoto_core::{HttpClient, HttpConfig};
-use rusoto_sts::WebIdentityProvider;
+use tokio::sync::OnceCell;
 
 pub mod error;
-pub mod region;
 pub mod retry;
 
-/// A timeout for idle sockets being kept-alive.
-const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
+pub const DEFAULT_AWS_REGION: Region = Region::from_static("us-east-1");
 
-/// Sets the request timeout for HTTP-based credentials providers (container and instance metadata
-/// providers).
-const CREDENTIALS_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
+/// Initialises and returns the AWS config.
+pub async fn get_aws_config() -> &'static aws_config::SdkConfig {
+    static SDK_CONFIG: OnceCell<aws_config::SdkConfig> = OnceCell::const_new();
 
-/// Returns a hyper http client.
-pub fn get_http_client() -> HttpClient {
-    let mut http_config: HttpConfig = HttpConfig::default();
-    // We experience an issue similar to https://github.com/hyperium/hyper/issues/2312.
-    // It seems like the setting below solved it.
-    http_config.pool_idle_timeout(POOL_IDLE_TIMEOUT);
-    let builder = HttpsConnectorBuilder::new();
-    let builder = builder.with_native_roots();
-    let connector = builder
-        .https_or_http()
-        // We do not enable HTTP2.
-        // It is not enabled on S3 and it does not seem to work with Google Cloud Storage at
-        // this point. https://github.com/quickwit-oss/quickwit/issues/1584
-        //
-        // (HTTP2 would be awesome since we do a lot of concurrent requests and
-        // HTTP2 enables multiplexing a given connection.)
-        .enable_http1()
-        .build();
-    HttpClient::from_connector_with_config(connector, http_config)
-}
+    SDK_CONFIG
+        .get_or_init(|| async {
+            let mut http_connector = HttpConnector::new();
+            http_connector.enforce_http(false); // Enforced by `HttpsConnector`.
+            http_connector.set_nodelay(true);
 
-/// Returns a singleton credentials provider.
-pub fn get_credentials_provider() -> anyhow::Result<impl ProvideAwsCredentials + Send + Sync> {
-    static CREDENTIALS_PROVIDER_SINGLETON: OnceCell<AutoRefreshingProvider<ExtendedChainProvider>> =
-        OnceCell::new();
-    CREDENTIALS_PROVIDER_SINGLETON
-        .get_or_try_init(move || {
-            let chain_provider = ExtendedChainProvider::new();
-            let credentials_provider = AutoRefreshingProvider::new(chain_provider)
-                .context("Failed to instantiate AWS credentials provider.")?;
-            Ok(credentials_provider)
+            let https_connector = HttpsConnectorBuilder::new()
+                .with_native_roots()
+                .https_or_http()
+                // We do not enable HTTP2.
+                // It is not enabled on S3 and it does not seem to work with Google Cloud Storage at
+                // this point. https://github.com/quickwit-oss/quickwit/issues/1584
+                //
+                // (HTTP2 would be awesome since we do a lot of concurrent requests and
+                // HTTP2 enables multiplexing a given connection.)
+                .enable_http1()
+                .wrap_connector(http_connector);
+
+            let mut hyper_client_builder = HyperClient::builder();
+            hyper_client_builder.pool_idle_timeout(Duration::from_secs(30));
+
+            let mut smithy_connector_builder = hyper_ext::Adapter::builder();
+            smithy_connector_builder.set_hyper_builder(Some(hyper_client_builder));
+
+            let smithy_connector = smithy_connector_builder.build(https_connector);
+
+            aws_config::from_env()
+                .http_connector(smithy_connector)
+                // Currently handle this ourselves so probably best for now to leave it as is.
+                .retry_config(RetryConfig::disabled())
+                .sleep_impl(TokioSleep::default())
+                .load()
+                .await
         })
-        .cloned()
+        .await
 }
 
-#[derive(Clone, Debug)]
-struct ExtendedChainProvider {
-    chain_provider: ChainProvider,
-    web_identity_provider: WebIdentityProvider,
+/// Gets the set S3 endpoint if applicable.
+pub fn get_s3_endpoint() -> Option<String> {
+    std::env::var("QW_S3_ENDPOINT").ok()
 }
 
-impl ExtendedChainProvider {
-    fn new() -> Self {
-        let mut chain_provider = ChainProvider::new();
-        chain_provider.set_timeout(CREDENTIALS_FETCH_TIMEOUT);
-        let web_identity_provider = WebIdentityProvider::from_k8s_env();
-        Self {
-            chain_provider,
-            web_identity_provider,
-        }
-    }
-}
-
-#[async_trait]
-impl ProvideAwsCredentials for ExtendedChainProvider {
-    async fn credentials(&self) -> Result<AwsCredentials, CredentialsError> {
-        if let Ok(credentials) = self.web_identity_provider.credentials().await {
-            return Ok(credentials);
-        }
-        if let Ok(credentials) = self.chain_provider.credentials().await {
-            return Ok(credentials);
-        }
-        Err(CredentialsError::new(
-            "Failed to find AWS credentials in environment, credentials file, or IAM role for \
-             instance or service account.",
-        ))
-    }
+/// Check the environment variable if Quickwit should
+/// use path style bucket access or not.
+///
+/// This is required for things like MinIO, etc...
+pub fn should_use_path_style_s3_access() -> Option<bool> {
+    std::env::var("QW_S3_FORCE_PATH_STYLE_ACCESS")
+        .map(|v| v.parse::<bool>().unwrap_or_default())
+        .ok()
 }

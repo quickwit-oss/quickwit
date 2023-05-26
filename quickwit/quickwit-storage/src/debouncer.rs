@@ -240,7 +240,7 @@ mod tests {
         static COUNT: AtomicU32 = AtomicU32::new(0);
 
         // Load via closure
-        let val = cache
+        let _val = cache
             .get_or_create(addr1.clone(), || {
                 let test_filepath1 = test_filepath1.clone();
                 async move {
@@ -256,17 +256,13 @@ mod tests {
             .await
             .unwrap();
 
-        println!("{val}");
-
         // Load via function
-        let val = cache
+        let _val = cache
             .get_or_create(addr1, || {
                 load_via_fn(test_filepath1.as_ref().clone(), &COUNT)
             })
             .await
             .unwrap();
-
-        println!("{val}");
 
         assert_eq!(COUNT.load(Ordering::SeqCst), 2);
 
@@ -342,8 +338,6 @@ mod tests {
         let cache: AsyncDebouncer<String, Result<String, String>> = AsyncDebouncer::default();
 
         let load = || async {
-            println!("a");
-            // tokio::time::sleep(Duration::from_secs(1)).await;
             timeout(Duration::from_millis(10), load_via_fn2())
                 .await
                 .map_err(|err| err.to_string())
@@ -359,9 +353,7 @@ mod tests {
     }
 
     async fn load_via_fn2() -> String {
-        println!("b");
         tokio::time::sleep(Duration::from_millis(500)).await;
-        println!("c");
         "blub".to_string()
     }
 

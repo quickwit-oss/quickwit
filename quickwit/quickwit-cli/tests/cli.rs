@@ -85,7 +85,9 @@ fn test_cmd_help() {
 async fn test_cmd_create() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-create-cmd");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
@@ -101,7 +103,9 @@ async fn test_cmd_create() {
 async fn test_cmd_create_no_index_uri() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-create-cmd-no-index-uri");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
 
     let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
@@ -124,7 +128,9 @@ async fn test_cmd_create_no_index_uri() {
 async fn test_cmd_create_overwrite() {
     // Create non existing index with --overwrite.
     let index_id = append_random_suffix("test-create-non-existing-index-with-overwrite");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
 
     let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
@@ -155,7 +161,9 @@ fn test_cmd_create_with_ill_formed_command() {
 #[tokio::test]
 async fn test_cmd_ingest_on_non_existing_index() {
     let index_id = append_random_suffix("index-does-not-exist");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
 
     let args = LocalIngestDocsArgs {
         config_uri: test_env.config_uri,
@@ -180,7 +188,9 @@ async fn test_cmd_ingest_on_non_existing_index() {
 async fn test_ingest_docs_cli_keep_cache() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-index-keep-cache");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
@@ -203,7 +213,9 @@ async fn test_ingest_docs_cli_keep_cache() {
 async fn test_ingest_docs_cli() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-index-simple");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
     let index_uid = test_env.index_metadata().await.unwrap().index_uid;
@@ -311,7 +323,9 @@ fn assert_flexible_json_eq(value_json: &serde_json::Value, expected_json: &serde
 async fn test_cmd_search_aggregation() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-search-cmd");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
@@ -409,7 +423,9 @@ async fn test_cmd_search_aggregation() {
 async fn test_cmd_search_with_snippets() -> Result<()> {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-search-cmd");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
@@ -448,7 +464,9 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
 async fn test_search_index_cli() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-search-cmd");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
@@ -495,7 +513,9 @@ async fn test_search_index_cli() {
 async fn test_delete_index_cli_dry_run() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-delete-cmd--dry-run");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
@@ -546,7 +566,9 @@ async fn test_delete_index_cli_dry_run() {
 #[tokio::test]
 async fn test_delete_index_cli() {
     let index_id = append_random_suffix("test-delete-cmd");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
@@ -576,7 +598,9 @@ async fn test_delete_index_cli() {
 async fn test_garbage_collect_cli_no_grace() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-gc-cmd--no-grace-period");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
     let index_uid = test_env.index_metadata().await.unwrap().index_uid;
@@ -671,7 +695,9 @@ async fn test_garbage_collect_cli_no_grace() {
 #[tokio::test]
 async fn test_garbage_collect_index_cli() {
     let index_id = append_random_suffix("test-gc-cmd");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
     let index_uid = test_env.index_metadata().await.unwrap().index_uid;
@@ -771,7 +797,9 @@ async fn test_garbage_collect_index_cli() {
 async fn test_all_local_index() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-all");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
@@ -849,7 +877,9 @@ async fn test_all_local_index() {
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_all_with_s3_localstack_cli() {
     let index_id = append_random_suffix("test-all--cli-s3-localstack");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::S3).unwrap();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::S3)
+        .await
+        .unwrap();
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 

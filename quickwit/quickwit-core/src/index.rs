@@ -149,7 +149,7 @@ impl IndexService {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         let index_uid = index_metadata.index_uid.clone();
         let index_uri = index_metadata.into_index_config().index_uri.clone();
-        let storage = self.storage_resolver.resolve(&index_uri)?;
+        let storage = self.storage_resolver.resolve(&index_uri).await?;
 
         if dry_run {
             let all_splits = self
@@ -214,7 +214,10 @@ impl IndexService {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         let index_uid = index_metadata.index_uid.clone();
         let index_config = index_metadata.into_index_config();
-        let storage = self.storage_resolver.resolve(&index_config.index_uri)?;
+        let storage = self
+            .storage_resolver
+            .resolve(&index_config.index_uri)
+            .await?;
 
         let deleted_entries = run_garbage_collect(
             index_uid,
@@ -244,7 +247,10 @@ impl IndexService {
     pub async fn clear_index(&self, index_id: &str) -> Result<(), IndexServiceError> {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         let index_uid = index_metadata.index_uid.clone();
-        let storage = self.storage_resolver.resolve(index_metadata.index_uri())?;
+        let storage = self
+            .storage_resolver
+            .resolve(index_metadata.index_uri())
+            .await?;
         let splits = self.metastore.list_all_splits(index_uid.clone()).await?;
         let split_ids: Vec<&str> = splits.iter().map(|split| split.split_id()).collect();
         self.metastore
@@ -352,6 +358,8 @@ pub async fn validate_storage_uri(
     storage_uri_resolver: &StorageUriResolver,
     index_config: &IndexConfig,
 ) -> anyhow::Result<()> {
-    storage_uri_resolver.resolve(&index_config.index_uri)?;
+    storage_uri_resolver
+        .resolve(&index_config.index_uri)
+        .await?;
     Ok(())
 }
