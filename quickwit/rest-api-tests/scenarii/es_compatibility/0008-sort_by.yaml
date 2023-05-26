@@ -2,7 +2,6 @@
 # does not pass on quickwit because we only handle field in schema for sort at the moment
 # See #3284
 engines: []
-method: [GET]
 json:
   size: 1
   query:

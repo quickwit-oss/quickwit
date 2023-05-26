@@ -37,6 +37,7 @@ pub mod runtimes;
 pub mod sorted_iter;
 
 pub mod stream_utils;
+pub mod temp_dir;
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;
 pub mod tower;

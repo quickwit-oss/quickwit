@@ -27,6 +27,7 @@ use quickwit_actors::{
     SpawnContext, Supervisable,
 };
 use quickwit_common::io::IoControls;
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitState};
@@ -38,7 +39,7 @@ use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
 use crate::actors::{MergeExecutor, MergePlanner, Packager, Publisher, Uploader, UploaderType};
 use crate::merge_policy::MergePolicy;
-use crate::models::{IndexingPipelineId, MergeStatistics, Observe, ScratchDirectory};
+use crate::models::{IndexingPipelineId, MergeStatistics, Observe};
 use crate::split_store::IndexingSplitStore;
 
 pub struct MergePipelineHandles {
@@ -427,7 +428,7 @@ impl Handler<Spawn> for MergePipeline {
 pub struct MergePipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
-    pub indexing_directory: ScratchDirectory,
+    pub indexing_directory: TempDirectory,
     pub metastore: Arc<dyn Metastore>,
     pub split_store: IndexingSplitStore,
     pub merge_policy: Arc<dyn MergePolicy>,
@@ -440,6 +441,7 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{ActorExitStatus, Universe};
+    use quickwit_common::temp_dir::TempDirectory;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::MockMetastore;
     use quickwit_proto::IndexUid;
@@ -447,7 +449,7 @@ mod tests {
 
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
     use crate::merge_policy::default_merge_policy;
-    use crate::models::{IndexingPipelineId, ScratchDirectory};
+    use crate::models::IndexingPipelineId;
     use crate::IndexingSplitStore;
 
     #[tokio::test]
@@ -469,7 +471,7 @@ mod tests {
         let pipeline_params = MergePipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
-            indexing_directory: ScratchDirectory::for_test(),
+            indexing_directory: TempDirectory::for_test(),
             metastore: Arc::new(metastore),
             split_store,
             merge_policy: default_merge_policy(),

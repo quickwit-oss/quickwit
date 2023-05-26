@@ -56,7 +56,6 @@ use tantivy::schema::NamedFieldDocument;
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
 
-use std::cmp::Reverse;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -106,13 +105,6 @@ impl GlobalDocAddress {
             },
         }
     }
-}
-
-fn partial_hit_sorting_key(partial_hit: &PartialHit) -> (Reverse<u64>, GlobalDocAddress) {
-    (
-        Reverse(partial_hit.sorting_field_value),
-        GlobalDocAddress::from_partial_hit(partial_hit),
-    )
 }
 
 fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAndFooterOffsets {

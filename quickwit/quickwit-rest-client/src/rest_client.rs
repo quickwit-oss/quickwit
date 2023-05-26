@@ -167,18 +167,18 @@ impl QuickwitClient {
         &self,
         index_id: &str,
         ingest_source: IngestSource,
+        batch_size_limit_opt: Option<usize>,
         on_ingest_event: Option<&dyn Fn(IngestEvent)>,
         last_block_commit: CommitType,
     ) -> Result<(), Error> {
         let ingest_path = format!("{index_id}/ingest");
+        let batch_size_limit = batch_size_limit_opt.unwrap_or(INGEST_CONTENT_LENGTH_LIMIT);
         let mut batch_reader = match ingest_source {
             IngestSource::File(filepath) => {
-                BatchLineReader::from_file(&filepath, INGEST_CONTENT_LENGTH_LIMIT).await?
+                BatchLineReader::from_file(&filepath, batch_size_limit).await?
             }
-            IngestSource::Stdin => BatchLineReader::from_stdin(INGEST_CONTENT_LENGTH_LIMIT),
-            IngestSource::Bytes(bytes) => {
-                BatchLineReader::from_bytes(bytes, INGEST_CONTENT_LENGTH_LIMIT)
-            }
+            IngestSource::Stdin => BatchLineReader::from_stdin(batch_size_limit),
+            IngestSource::Bytes(bytes) => BatchLineReader::from_bytes(bytes, batch_size_limit),
         };
         while let Some(batch) = batch_reader.next_batch().await? {
             loop {
@@ -650,7 +650,7 @@ mod test {
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
         qw_client
-            .ingest("my-index", ingest_source, None, CommitType::Auto)
+            .ingest("my-index", ingest_source, None, None, CommitType::Auto)
             .await
             .unwrap();
     }
@@ -678,7 +678,7 @@ mod test {
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
         qw_client
-            .ingest("my-index", ingest_source, None, CommitType::Force)
+            .ingest("my-index", ingest_source, None, None, CommitType::Force)
             .await
             .unwrap();
     }
@@ -706,7 +706,7 @@ mod test {
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
         qw_client
-            .ingest("my-index", ingest_source, None, CommitType::WaitFor)
+            .ingest("my-index", ingest_source, None, None, CommitType::WaitFor)
             .await
             .unwrap();
     }
@@ -735,7 +735,13 @@ mod test {
             .await;
         let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
         let error = qw_client
-            .ingest("my-index", ingest_source, None, CommitType::Auto)
+            .ingest(
+                "my-index",
+                ingest_source,
+                Some(4096),
+                None,
+                CommitType::Auto,
+            )
             .await
             .unwrap_err();
         assert!(matches!(error, Error::Api(_)));

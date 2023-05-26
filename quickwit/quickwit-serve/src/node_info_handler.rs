@@ -102,7 +102,10 @@ mod tests {
         let expected_runtime_info_json = serde_json::json!({
             "num_cpus_physical": runtime_info.num_cpus_physical,
         });
-        assert_json_include!(actual: runtime_info_json, expected: expected_runtime_info_json);
+        assert_json_include!(
+            actual: runtime_info_json,
+            expected: expected_runtime_info_json
+        );
 
         let resp = warp::test::request().path("/config").reply(&handler).await;
         assert_eq!(resp.status(), 200);

@@ -31,7 +31,6 @@ mod processed_doc;
 mod publish_lock;
 mod publisher_message;
 mod raw_doc_batch;
-mod scratch_directory;
 mod split_attrs;
 
 pub use indexed_split::{
@@ -51,7 +50,6 @@ pub use processed_doc::{ProcessedDoc, ProcessedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};
 pub use publisher_message::SplitsUpdate;
 pub use raw_doc_batch::RawDocBatch;
-pub use scratch_directory::{ScratchDirectory, WeakScratchDirectory};
 pub use split_attrs::{create_split_metadata, SplitAttrs};
 
 #[derive(Clone, Copy, Debug)]

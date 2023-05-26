@@ -22,18 +22,19 @@ use std::path::Path;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::io::IoControls;
+use quickwit_common::temp_dir::{self, TempDirectory};
 use quickwit_metastore::SplitMetadata;
 use tantivy::{Directory, TrackedObject};
 use tracing::{debug, info, instrument};
 
 use super::MergeExecutor;
 use crate::merge_policy::MergeOperation;
-use crate::models::{MergeScratch, ScratchDirectory};
+use crate::models::MergeScratch;
 use crate::split_store::IndexingSplitStore;
 
 #[derive(Clone)]
 pub struct MergeSplitDownloader {
-    pub scratch_directory: ScratchDirectory,
+    pub scratch_directory: TempDirectory,
     pub split_store: IndexingSplitStore,
     pub executor_mailbox: Mailbox<MergeExecutor>,
     pub io_controls: IoControls,
@@ -66,13 +67,14 @@ impl Handler<TrackedObject<MergeOperation>> for MergeSplitDownloader {
         merge_operation: TrackedObject<MergeOperation>,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        let merge_scratch_directory = self
-            .scratch_directory
-            .named_temp_child("merge-")
+        let merge_scratch_directory = temp_dir::Builder::default()
+            .join("merge")
+            .tempdir_in(self.scratch_directory.path())
             .map_err(|error| anyhow::anyhow!(error))?;
         info!(dir=%merge_scratch_directory.path().display(), "download-merge-splits");
-        let downloaded_splits_directory = merge_scratch_directory
-            .named_temp_child("downloaded-splits-")
+        let downloaded_splits_directory = temp_dir::Builder::default()
+            .join("downloaded-splits")
+            .tempdir_in(merge_scratch_directory.path())
             .map_err(|error| anyhow::anyhow!(error))?;
         let tantivy_dirs = self
             .download_splits(
@@ -144,7 +146,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_split_downloader() -> anyhow::Result<()> {
-        let scratch_directory = ScratchDirectory::for_test();
+        let scratch_directory = TempDirectory::for_test();
         let splits_to_merge: Vec<SplitMetadata> = iter::repeat_with(|| {
             let split_id = new_split_id();
             SplitMetadata {

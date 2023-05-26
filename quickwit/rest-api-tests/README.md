@@ -22,11 +22,25 @@ indexes involved.
 
 ```./rest_api_test.py --engine elasticsearch```
 
-# Writing new tests
+# Writing a new test suite
 
-Writing a new test suite only requires to create a new subdirectory somewhere in the scenarii.
-The test script recursively browse the directories and execute the `setup.{engine}.sh` and
-`teardow.{engine}.sh` scripts as it enter and exits directories.
+Writing a new test suite only requires to create a new subdirectory somewhere in the scenarii/` tree.
+The test script recursively browse the directories and executes some setup / teardown operation.
+
+## setup
+
+Setup consists in two things. First a context is built by loading and merging the content of the files `_ctx.yaml` and `_ctx.<engine>.yaml`.
+This context will be used to prepopulate our steps dictionary.
+
+This engine-specific context is perfect if you know all steps will target a specific endpoint, or a specific method.
+
+Once the context is loaded, the steps described in `_setup.yaml` and `_setup.<engine>.yaml` (if present) will be executed.
+
+These steps are just like any other steps except you are guaranteed they will be executed respectively before and after all other steps.
+In particular, when targetting one specific test using the `--test flag`,
+the necessary `setup` and `teardown` script will be automatically executed.
+
+# teardown
 
 It then executes the tests described in .yaml files, in their lexicographical order.
 A single file can contain more than one tests, by separating them by `---`.

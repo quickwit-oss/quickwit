@@ -1,4 +1,3 @@
-method: [GET, POST]
 json:
   query:
     match:
@@ -9,7 +8,6 @@ expected:
     total:
       value: 60
 ---
-method: [GET, POST]
 json:
   query:
     match:
@@ -21,7 +19,6 @@ expected:
     total:
       value: 60
 ---
-method: [GET, POST]
 json:
   query:
     match:
@@ -31,7 +28,6 @@ expected:
     total:
       value: 0
 ---
-method: [GET, POST]
 json:
   query:
     match:
@@ -43,7 +39,6 @@ expected:
     total:
       value: 100
 ---
-method: [GET, POST]
 json:
   query:
     match:
@@ -54,7 +49,6 @@ expected:
     total:
       value: 6
 ---
-method: [GET, POST]
 json:
   query:
     match:
