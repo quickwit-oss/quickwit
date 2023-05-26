@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use itertools::Itertools;
-use tantivy::DateTime as TantivyDateTime;
+use crate::TantivyDateTime;
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 use time::OffsetDateTime;
 
@@ -30,7 +30,7 @@ const MIN_TIMESTAMP_SECONDS: i64 = 72_057_595;
 // Maximum supported timestamp value in seconds (16 Mar 2242 12:56:31 GMT).
 const MAX_TIMESTAMP_SECONDS: i64 = 8_589_934_591;
 
-pub(super) fn parse_date_time_str(
+pub fn parse_date_time_str(
     date_time_str: &str,
     date_time_formats: &[DateTimeInputFormat],
 ) -> Result<TantivyDateTime, String> {
@@ -63,7 +63,7 @@ pub(super) fn parse_date_time_str(
     ))
 }
 
-pub(super) fn parse_date_time_int(
+pub fn parse_date_time_int(
     timestamp: i64,
     date_time_formats: &[DateTimeInputFormat],
 ) -> Result<TantivyDateTime, String> {
@@ -137,7 +137,7 @@ mod tests {
     use time::macros::datetime;
 
     use super::*;
-    use crate::default_doc_mapper::date_time_format::StrptimeParser;
+    use crate::StrptimeParser;
 
     #[test]
     fn test_parse_iso8601() {

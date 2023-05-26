@@ -23,11 +23,15 @@ use std::str::FromStr;
 use ouroboros::self_referencing;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value as JsonValue;
 use time::error::Format;
 use time::format_description::FormatItem;
+use time::format_description::well_known::{Rfc3339, Iso8601, Rfc2822};
 use time::parsing::Parsed;
 use time::{OffsetDateTime, PrimitiveDateTime};
 use time_fmt::parse::time_format_item::parse_to_format_item;
+
+use crate::TantivyDateTime;
 
 /// A date time parser that holds the format specification `Vec<FormatItem>`.
 #[self_referencing]
@@ -231,6 +235,57 @@ impl DateTimeOutputFormat {
             DateTimeOutputFormat::TimestampMillis => "unix_timestamp_millis",
             DateTimeOutputFormat::TimestampMicros => "unix_timestamp_micros",
             DateTimeOutputFormat::TimestampNanos => "unix_timestamp_nanos",
+        }
+    }
+
+    pub fn format_to_json(&self, date_time: TantivyDateTime) -> Result<JsonValue, String> {
+        let date = date_time.into_utc();
+        let format_result = match &self {
+            DateTimeOutputFormat::Rfc3339 => date.format(&Rfc3339).map(JsonValue::String),
+            DateTimeOutputFormat::Iso8601 => date.format(&Iso8601::DEFAULT).map(JsonValue::String),
+            DateTimeOutputFormat::Rfc2822 => date.format(&Rfc2822).map(JsonValue::String),
+            DateTimeOutputFormat::Strptime(strftime_parser) => strftime_parser
+                .format_date_time(&date)
+                .map(JsonValue::String),
+            DateTimeOutputFormat::TimestampSecs => {
+                Ok(JsonValue::Number(date_time.into_timestamp_secs().into()))
+            }
+            DateTimeOutputFormat::TimestampMillis => {
+                Ok(JsonValue::Number(date_time.into_timestamp_millis().into()))
+            }
+            DateTimeOutputFormat::TimestampMicros => {
+                Ok(JsonValue::Number(date_time.into_timestamp_micros().into()))
+            }
+            DateTimeOutputFormat::TimestampNanos => {
+                Ok(JsonValue::Number(date_time.into_timestamp_nanos().into()))
+            }
+        };
+        format_result.map_err(|error| error.to_string())
+    }
+
+    pub fn format(&self, date_time: OffsetDateTime) -> Result<DateTimeOutputValue, time::error::Format> {
+        match self {
+            DateTimeOutputFormat::Rfc3339 =>
+                date_time.format(&Rfc3339).map(DateTimeOutputValue::String),
+            DateTimeOutputFormat::Iso8601 =>
+                date_time.format(&Iso8601::DEFAULT).map(DateTimeOutputValue::String),
+            DateTimeOutputFormat::Rfc2822 =>
+                date_time.format(&Rfc2822).map(DateTimeOutputValue::String),
+            DateTimeOutputFormat::Strptime(strftime_parser) => strftime_parser
+                .format_date_time(&date_time)
+                .map(DateTimeOutputValue::String),
+            DateTimeOutputFormat::TimestampSecs => {
+                Ok(DateTimeOutputValue::Number(date_time.unix_timestamp()))
+            }
+            DateTimeOutputFormat::TimestampMillis => {
+                Ok(DateTimeOutputValue::Number((date_time.unix_timestamp_nanos() / 1_000_000) as i64))
+            }
+            DateTimeOutputFormat::TimestampMicros => {
+                Ok(DateTimeOutputValue::Number((date_time.unix_timestamp_nanos() / 1_000) as i64))
+            }
+            DateTimeOutputFormat::TimestampNanos => {
+                Ok(DateTimeOutputValue::Number(date_time.unix_timestamp_nanos() as i64))
+            }
         }
     }
 }
