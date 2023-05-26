@@ -237,14 +237,12 @@ pub async fn root_search(
     let query_ast_resolved = query_ast.parse_user_query(doc_mapper.default_search_fields())?;
 
     if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
-        let mut timestamp_range_extractor = ExtractTimestampRange {
+        refine_start_end_timestamp_from_ast(
+            &query_ast_resolved,
             timestamp_field,
-            start_timestamp: search_request.start_timestamp,
-            end_timestamp: search_request.end_timestamp,
-        };
-        timestamp_range_extractor.visit(&query_ast_resolved)?;
-        search_request.start_timestamp = timestamp_range_extractor.start_timestamp;
-        search_request.end_timestamp = timestamp_range_extractor.end_timestamp;
+            &mut search_request.start_timestamp,
+            &mut search_request.end_timestamp,
+        );
     }
 
     // Validates the query by effectively building it against the current schema.
@@ -402,10 +400,33 @@ pub async fn root_search(
     })
 }
 
-pub(crate) struct ExtractTimestampRange<'a> {
-    pub timestamp_field: &'a str,
-    pub start_timestamp: Option<i64>,
-    pub end_timestamp: Option<i64>,
+pub(crate) fn refine_start_end_timestamp_from_ast(
+    query_ast: &QueryAst,
+    timestamp_field: &str,
+    start_timestamp: &mut Option<i64>,
+    end_timestamp: &mut Option<i64>,
+) {
+    let mut timestamp_range_extractor = ExtractTimestampRange {
+        timestamp_field,
+        start_timestamp: *start_timestamp,
+        end_timestamp: *end_timestamp,
+    };
+    timestamp_range_extractor
+        .visit(query_ast)
+        .expect("can't fail unwrapping Infallible");
+    *start_timestamp = timestamp_range_extractor.start_timestamp;
+    *end_timestamp = timestamp_range_extractor.end_timestamp;
+}
+
+/// Boundaries identified as being implied by the QueryAst.
+///
+/// `start_timestamp` is to be interpreted as Inclusive (or Unbounded)
+/// `end_timestamp` is to be interpreted as Exclusive (or Unbounded)
+/// In other word, this is a `[start_timestamp..end_timestamp)` interval.
+struct ExtractTimestampRange<'a> {
+    timestamp_field: &'a str,
+    start_timestamp: Option<i64>,
+    end_timestamp: Option<i64>,
 }
 
 impl<'a> ExtractTimestampRange<'a> {

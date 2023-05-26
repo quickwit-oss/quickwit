@@ -25,12 +25,12 @@ use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
-use quickwit_query::query_ast::{QueryAst, QueryAstVisitor};
+use quickwit_query::query_ast::QueryAst;
 use tokio_stream::StreamMap;
 use tracing::*;
 
 use crate::cluster_client::ClusterClient;
-use crate::root::{ExtractTimestampRange, SearchJob};
+use crate::root::{refine_start_end_timestamp_from_ast, SearchJob};
 use crate::{list_relevant_splits, SearchError, SearchJobPlacer};
 
 /// Perform a distributed search stream.
@@ -60,14 +60,12 @@ pub async fn root_search_stream(
     let query_ast_resolved = query_ast.parse_user_query(doc_mapper.default_search_fields())?;
 
     if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
-        let mut timestamp_range_extractor = ExtractTimestampRange {
+        refine_start_end_timestamp_from_ast(
+            &query_ast_resolved,
             timestamp_field,
-            start_timestamp: search_stream_request.start_timestamp,
-            end_timestamp: search_stream_request.end_timestamp,
-        };
-        timestamp_range_extractor.visit(&query_ast_resolved)?;
-        search_stream_request.start_timestamp = timestamp_range_extractor.start_timestamp;
-        search_stream_request.end_timestamp = timestamp_range_extractor.end_timestamp;
+            &mut search_stream_request.start_timestamp,
+            &mut search_stream_request.end_timestamp,
+        );
     }
 
     // Validates the query by effectively building it against the current schema.
