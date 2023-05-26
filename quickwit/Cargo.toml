@@ -49,7 +49,7 @@ azure_storage = { version = "0.6.0", default-features = false, features = ["enab
 azure_storage_blobs = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"] }
 backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.21"
-byte-unit = { version = "4", default-features = false, features = ["serde"] }
+byte-unit = { version = "4", default-features = false, features = ["serde", "std"] }
 bytes = "1"
 chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "bc29598" }
 chrono = { version = "0.4.23", default-features = false, features = ["clock", "std"] }

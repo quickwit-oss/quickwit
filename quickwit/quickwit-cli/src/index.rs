@@ -126,6 +126,8 @@ pub fn build_index_command() -> Command {
                         .required(true),
                     arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
                         .required(false),
+                    arg!(--"batch-size-limit" <BATCH_SIZE_LIMIT> "Size limit of each submitted document batch.")
+                        .required(false),
                     Arg::new("wait")
                         .long("wait")
                         .short('w')
@@ -201,6 +203,7 @@ pub struct IngestDocsArgs {
     pub cluster_endpoint: Url,
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
+    pub batch_size_limit_opt: Option<Byte>,
     pub commit_type: CommitType,
 }
 
@@ -340,6 +343,11 @@ impl IndexCliCommand {
         } else {
             None
         };
+
+        let batch_size_limit_opt = matches
+            .remove_one::<String>("batch-size-limit")
+            .map(Byte::from_str)
+            .transpose()?;
         let commit_type = match (matches.get_flag("wait"), matches.get_flag("force")) {
             (false, false) => CommitType::Auto,
             (false, true) => CommitType::Force,
@@ -351,6 +359,7 @@ impl IndexCliCommand {
             cluster_endpoint,
             index_id,
             input_path_opt,
+            batch_size_limit_opt,
             commit_type,
         }))
     }
@@ -817,10 +826,14 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         Some(filepath) => IngestSource::File(filepath),
         None => IngestSource::Stdin,
     };
+    let batch_size_limit_opt = args
+        .batch_size_limit_opt
+        .map(|batch_size_limit| batch_size_limit.get_bytes() as usize);
     qw_client
         .ingest(
             &args.index_id,
             ingest_source,
+            batch_size_limit_opt,
             Some(&update_progress_bar),
             args.commit_type,
         )

@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,7 +24,6 @@ use std::time::Duration;
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_common::FileEntry;
 use quickwit_config::{validate_identifier, IndexConfig, QuickwitConfig, SourceConfig};
-use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_indexing::check_source_connectivity;
 use quickwit_janitor::{
     delete_splits_with_files, run_garbage_collect, SplitDeletionError, SplitRemovalInfo,
@@ -347,21 +345,6 @@ pub async fn clear_cache_directory(data_dir_path: &Path) -> anyhow::Result<()> {
     info!(path = %cache_directory_path.display(), "Clearing cache directory.");
     empty_dir(&cache_directory_path).await?;
     Ok(())
-}
-
-/// Removes the indexing directory of a given index.
-///
-/// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
-///   persisted.
-/// * `index_id` - The target index ID.
-pub async fn remove_indexing_directory(data_dir_path: &Path, index_id: String) -> io::Result<()> {
-    let indexing_directory_path = data_dir_path.join(INDEXING_DIR_NAME).join(index_id);
-    info!(path = %indexing_directory_path.display(), "Clearing indexing directory.");
-    match tokio::fs::remove_dir_all(indexing_directory_path.as_path()).await {
-        Ok(_) => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error),
-    }
 }
 
 /// Resolve storage endpoints to validate.
