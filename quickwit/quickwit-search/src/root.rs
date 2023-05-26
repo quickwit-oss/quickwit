@@ -475,9 +475,10 @@ impl<'a> ExtractTimestampRange<'a> {
 
     fn update_end_timestamp(&mut self, upper_bound: &quickwit_query::JsonLiteral, included: bool) {
         use quickwit_query::InterpretUserInput;
-        let Some(upper_bound) = tantivy::DateTime::interpret(upper_bound) else { return };
-        let mut upper_bound = upper_bound.into_timestamp_secs();
-        if included {
+        let Some(upper_bound_timestamp) = tantivy::DateTime::interpret(upper_bound) else { return };
+        let mut upper_bound = upper_bound_timestamp.into_timestamp_secs();
+        let round_up = (upper_bound_timestamp.into_timestamp_nanos() % 1_000_000_000) != 0;
+        if included || round_up {
             // TODO saturating isn't exactly right, we should replace the RangeQuery with
             // a match_none, but the visitor doesn't allow mutation.
             upper_bound = upper_bound.saturating_add(1);
@@ -2161,5 +2162,26 @@ mod tests {
         timestamp_range_extractor.visit(&wrong_field).unwrap();
         assert_eq!(timestamp_range_extractor.start_timestamp, None);
         assert_eq!(timestamp_range_extractor.end_timestamp, None);
+
+        let high_precision = quickwit_query::query_ast::RangeQuery {
+            field: timestamp_field.to_string(),
+            lower_bound: Bound::Included(JsonLiteral::String(
+                "2021-04-13T22:45:41.001Z".to_owned(),
+            )),
+            upper_bound: Bound::Excluded(JsonLiteral::String(
+                "2021-05-06T06:51:19.001Z".to_owned(),
+            )),
+        }
+        .into();
+
+        // the upper bound should be rounded up as to includes documents from X.000 to X.001
+        let mut timestamp_range_extractor = ExtractTimestampRange {
+            timestamp_field,
+            start_timestamp: None,
+            end_timestamp: None,
+        };
+        timestamp_range_extractor.visit(&high_precision).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353941));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283880));
     }
 }
