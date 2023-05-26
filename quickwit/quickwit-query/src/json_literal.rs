@@ -20,6 +20,7 @@
 use std::net::{IpAddr, Ipv6Addr};
 use std::str::FromStr;
 
+use base64::Engine;
 use once_cell::sync::OnceCell;
 use quickwit_datetime::{parse_date_time_str, parse_timestamp, DateTimeInputFormat};
 use serde::{Deserialize, Serialize};
@@ -159,6 +160,31 @@ impl<'a> InterpretUserInput<'a> for tantivy::DateTime {
     }
 }
 
+/// Lenient base64 engine that allow user to use padding or not.
+const LENIENT_BASE64_ENGINE: base64::engine::GeneralPurpose = base64::engine::GeneralPurpose::new(
+    &base64::alphabet::STANDARD,
+    base64::engine::GeneralPurposeConfig::new()
+        .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+);
+
+impl<'a> InterpretUserInput<'a> for Vec<u8> {
+    fn interpret_str(mut text: &str) -> Option<Vec<u8>> {
+        let Some(first_byte) = text.as_bytes().first().copied() else { return Some(Vec::new()); };
+        let mut buffer = Vec::with_capacity(text.len() * 3 / 4);
+        if first_byte == b'!' {
+            // We use ! as a marker to force base64 decoding.
+            text = &text[1..];
+        } else {
+            if base16::decode_buf(text, &mut buffer).is_ok() {
+                return Some(buffer);
+            }
+            buffer.clear();
+        }
+        LENIENT_BASE64_ENGINE.decode_vec(text, &mut buffer).ok()?;
+        Some(buffer)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tantivy::DateTime;
@@ -194,5 +220,28 @@ mod tests {
         let dt_opt = DateTime::interpret_json(&JsonLiteral::Number(1685086013.into()));
         let expected_datetime = datetime!(2023-05-26 07:26:53 UTC);
         assert_eq!(dt_opt, Some(DateTime::from_utc(expected_datetime)));
+    }
+
+    #[test]
+    fn test_interpret_bytes_base16() {
+        let bytes_opt = Vec::<u8>::interpret_str("deadbeef");
+        assert_eq!(bytes_opt, Some(vec![0xde, 0xad, 0xbe, 0xef]));
+    }
+
+    #[test]
+    fn test_interpret_bytes_base64() {
+        let decoded = Vec::<u8>::interpret_str("aGVsbG8=").unwrap();
+        assert_eq!(decoded, b"hello");
+    }
+
+    #[test]
+    fn test_interpret_force_ambiguous_base64() {
+        let decoded = Vec::<u8>::interpret_str("!").unwrap();
+        assert_eq!(decoded, b"hello");
+    }
+
+    #[test]
+    fn test_interpret_bytes_invalid() {
+        assert!(Vec::<u8>::interpret_str("deadbeef@").is_none());
     }
 }

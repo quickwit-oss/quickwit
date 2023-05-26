@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use base64::engine::DecodePaddingMode;
-use base64::Engine;
 use tantivy::json_utils::{convert_to_fast_value_and_get_term, JsonTermWriter};
 use tantivy::query::TermQuery as TantivyTermQuery;
 use tantivy::schema::{
@@ -33,14 +31,6 @@ use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::InvalidQuery;
 
 const DYNAMIC_FIELD_NAME: &str = "_dynamic";
-
-/// Lenient base64 engine that allow user to use padding or not.
-pub const LENIENT_BASE64_ENGINE: base64::engine::GeneralPurpose =
-    base64::engine::GeneralPurpose::new(
-        &base64::alphabet::STANDARD,
-        base64::engine::GeneralPurposeConfig::new()
-            .with_decode_padding_mode(DecodePaddingMode::Indifferent),
-    );
 
 fn make_term_query(term: Term) -> TantivyQueryAst {
     TantivyTermQuery::new(term, IndexRecordOption::WithFreqs).into()
@@ -165,14 +155,7 @@ fn compute_query_with_field(
             "Facets are not supported in Quickwit.".to_string(),
         )),
         FieldType::Bytes(_) => {
-            let mut buffer = Vec::with_capacity(value.len() * 3 / 4);
-            LENIENT_BASE64_ENGINE
-                .decode_vec(value, &mut buffer)
-                .map_err(|_| InvalidQuery::InvalidSearchTerm {
-                    expected_value_type: "base64 bytess",
-                    field_name: field_entry.name().to_string(),
-                    value: value.to_string(),
-                })?;
+            let buffer: Vec<u8> = parse_value_from_user_text(value, field_entry.name())?;
             let term = Term::from_field_bytes(field, &buffer[..]);
             Ok(make_term_query(term))
         }
