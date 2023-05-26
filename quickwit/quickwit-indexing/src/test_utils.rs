@@ -102,7 +102,7 @@ impl TestSandbox {
             .resolve(&Uri::from_well_formed(METASTORE_URI))
             .await?;
         let index_uid = metastore.create_index(index_config.clone()).await?;
-        let storage = storage_resolver.resolve(&index_uri)?;
+        let storage = storage_resolver.resolve(&index_uri).await?;
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
         let ingest_api_service =

@@ -17,32 +17,50 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_aws::error::RusotoErrorWrapper;
+use aws_sdk_s3::error::{DisplayErrorContext, SdkError};
+use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
+use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError;
+use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadError;
+use aws_sdk_s3::operation::delete_object::DeleteObjectError;
+use aws_sdk_s3::operation::delete_objects::DeleteObjectsError;
+use aws_sdk_s3::operation::get_object::GetObjectError;
+use aws_sdk_s3::operation::head_object::HeadObjectError;
+use aws_sdk_s3::operation::put_object::PutObjectError;
+use aws_sdk_s3::operation::upload_part::UploadPartError;
+use hyper::http::StatusCode;
 use quickwit_aws::retry::Retryable;
-use rusoto_core::RusotoError;
-use rusoto_s3::{
-    AbortMultipartUploadError, CompleteMultipartUploadError, CreateMultipartUploadError,
-    DeleteObjectError, DeleteObjectsError, GetObjectError, HeadObjectError, PutObjectError,
-    UploadPartError,
-};
 
 use crate::{StorageError, StorageErrorKind};
 
-impl<T> From<RusotoErrorWrapper<T>> for StorageError
-where T: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
+impl<E> From<SdkError<E>> for StorageError
+where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
 {
-    fn from(err: RusotoErrorWrapper<T>) -> StorageError {
-        let error_kind = match &err.0 {
-            RusotoError::Credentials(_) => StorageErrorKind::Unauthorized,
-            RusotoError::Service(err) => err.to_storage_error_kind(),
-            RusotoError::Unknown(http_resp) => match http_resp.status.as_u16() {
-                403 => StorageErrorKind::Unauthorized,
-                404 => StorageErrorKind::DoesNotExist,
-                _ => StorageErrorKind::InternalError,
-            },
+    fn from(error: SdkError<E>) -> StorageError {
+        let error_kind = match &error {
+            SdkError::ConstructionFailure(_) => StorageErrorKind::InternalError,
+            SdkError::DispatchFailure(failure) => {
+                if failure.is_io() {
+                    StorageErrorKind::Io
+                } else if failure.is_timeout() {
+                    StorageErrorKind::Timeout
+                } else {
+                    StorageErrorKind::InternalError
+                }
+            }
+            SdkError::ResponseError(response_error) => {
+                let response = response_error.raw().http();
+                match response.status() {
+                    StatusCode::NOT_FOUND => StorageErrorKind::NotFound,
+                    StatusCode::UNAUTHORIZED => StorageErrorKind::Unauthorized,
+                    _ => StorageErrorKind::InternalError,
+                }
+            }
+            SdkError::ServiceError(service_error) => service_error.err().to_storage_error_kind(),
+            SdkError::TimeoutError(_) => StorageErrorKind::Timeout,
             _ => StorageErrorKind::InternalError,
         };
-        error_kind.with_error(err)
+        let source = anyhow::anyhow!("{}", DisplayErrorContext(error));
+        error_kind.with_error(source)
     }
 }
 
@@ -54,7 +72,9 @@ impl ToStorageErrorKind for GetObjectError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
         match self {
             GetObjectError::InvalidObjectState(_) => StorageErrorKind::Service,
-            GetObjectError::NoSuchKey(_) => StorageErrorKind::DoesNotExist,
+            GetObjectError::NoSuchKey(_) => StorageErrorKind::NotFound,
+            GetObjectError::Unhandled(_) => StorageErrorKind::Service,
+            _ => StorageErrorKind::Service,
         }
     }
 }
@@ -85,7 +105,11 @@ impl ToStorageErrorKind for CompleteMultipartUploadError {
 
 impl ToStorageErrorKind for AbortMultipartUploadError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
-        StorageErrorKind::Service
+        match self {
+            AbortMultipartUploadError::NoSuchUpload(_) => StorageErrorKind::InternalError,
+            AbortMultipartUploadError::Unhandled(_) => StorageErrorKind::Service,
+            _ => StorageErrorKind::Service,
+        }
     }
 }
 
@@ -103,6 +127,10 @@ impl ToStorageErrorKind for PutObjectError {
 
 impl ToStorageErrorKind for HeadObjectError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
-        StorageErrorKind::Service
+        match self {
+            HeadObjectError::NotFound(_) => StorageErrorKind::NotFound,
+            HeadObjectError::Unhandled(_) => StorageErrorKind::Service,
+            _ => StorageErrorKind::Service,
+        }
     }
 }

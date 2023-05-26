@@ -44,9 +44,6 @@ assert-json-diff = "2"
 async-speed-limit = "0.4"
 async-trait = "0.1"
 atty = "0.2"
-azure_core = { version = "0.5.0", features = ["enable_reqwest_rustls"] }
-azure_storage = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"] }
-azure_storage_blobs = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"] }
 backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.21"
 byte-unit = { version = "4", default-features = false, features = ["serde", "std"] }
@@ -56,7 +53,7 @@ chrono = { version = "0.4.23", default-features = false, features = ["clock", "s
 clap = { version = "4.3.0", features = ["env", "string"] }
 colored = "2.0.0"
 console-subscriber = "0.1.8"
-criterion = { version = "0.4", features = ["async_tokio"] }
+criterion = { version = "0.5", features = ["async_tokio"] }
 cron = "0.11.0"
 dialoguer = "0.10.3"
 dotenv = "0.15"
@@ -77,14 +74,14 @@ http-serde = "1.1.2"
 humansize = "2.1.3"
 humantime = "2.1.0"
 hyper = { version = "0.14", features = [
-  "stream",
-  "server",
+  "client",
   "http1",
   "http2",
+  "server",
+  "stream",
   "tcp",
-  "client",
 ] }
-hyper-rustls = "0.23"
+hyper-rustls = "0.24"
 indexmap = { version = "1.9.2", features = ["serde"] }
 indicatif = "0.17.3"
 itertools = "0.10.5"
@@ -103,9 +100,9 @@ once_cell = "1"
 oneshot = "0.1.5"
 openssl = { version = "0.10.48", default-features = false }
 openssl-probe = "0.1.5"
-opentelemetry = { version = "0.18", features = ["rt-tokio"] }
-opentelemetry-jaeger = { version = "0.17", features = ["rt-tokio"] }
-opentelemetry-otlp = "0.11.0"
+opentelemetry = { version = "0.19", features = ["rt-tokio"] }
+opentelemetry-jaeger = { version = "0.18", features = ["rt-tokio"] }
+opentelemetry-otlp = "0.12.0"
 pin-project = "1.1.0"
 pnet = { version = "0.31.0", features = ["std"] }
 postcard = { version = "1.0.4", features = ["use-std"], default-features = false}
@@ -135,21 +132,6 @@ reqwest = { version = "0.11", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-rusoto_core = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_kinesis = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_mock = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_s3 = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
-rusoto_sts = { version = "0.48", default-features = false, features = [
-  "rustls",
-] }
 rust-embed = "6.6.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
@@ -177,12 +159,12 @@ tokio = { version = "1.28", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
 toml = "0.6.0"
-tonic = { version = "0.8.3", features = ["gzip"] }
-tonic-build = "0.8.4"
+tonic = { version = "0.9.0", features = ["gzip"] }
+tonic-build = "0.9.0"
 tower = { version = "0.4.13", features = ["balance", "buffer", "load", "util"] }
 tower-http = { version = "0.4.0", features = ["compression-gzip", "cors"] }
 tracing = "0.1.37"
-tracing-opentelemetry = "0.18.0"
+tracing-opentelemetry = "0.19.0"
 tracing-subscriber = { version = "0.3.16", features = [
   "time",
   "std",
@@ -195,6 +177,19 @@ utoipa = "3.3.0"
 uuid = { version = "1.3", features = ["v4", "serde"] }
 warp = "0.3"
 wiremock = "0.5"
+
+aws-config = "0.55.0"
+aws-sdk-kinesis = "0.27.0"
+aws-sdk-s3 = "0.27.0"
+aws-smithy-async = "0.55.0"
+aws-smithy-client = "0.55.0"
+aws-smithy-http = "0.55.0"
+aws-smithy-types = "0.55.0"
+aws-types = "0.55.0"
+
+azure_core = { version = "0.5.0", features = ["enable_reqwest_rustls"] }
+azure_storage = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"] }
+azure_storage_blobs = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"] }
 
 quickwit-actors = { version = "0.6.0", path = "./quickwit-actors" }
 quickwit-aws = { version = "0.6.0", path = "./quickwit-aws" }

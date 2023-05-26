@@ -99,7 +99,7 @@ impl Storage for RamStorage {
 
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
-            StorageErrorKind::DoesNotExist
+            StorageErrorKind::NotFound
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
         })?;
         output.write_all(&payload_bytes).await?;
@@ -109,7 +109,7 @@ impl Storage for RamStorage {
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
-            StorageErrorKind::DoesNotExist
+            StorageErrorKind::NotFound
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
         })?;
         Ok(payload_bytes.slice(range.start..range.end))
@@ -130,7 +130,7 @@ impl Storage for RamStorage {
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
-            StorageErrorKind::DoesNotExist
+            StorageErrorKind::NotFound
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
         })?;
         Ok(payload_bytes)
@@ -145,7 +145,7 @@ impl Storage for RamStorage {
             Ok(file_bytes.len() as u64)
         } else {
             let err = anyhow::anyhow!("Missing file `{}`", path.display());
-            Err(StorageErrorKind::DoesNotExist.with_error(err))
+            Err(StorageErrorKind::NotFound.with_error(err))
         }
     }
 }
@@ -186,12 +186,13 @@ impl Default for RamStorageFactory {
     }
 }
 
+#[async_trait]
 impl StorageFactory for RamStorageFactory {
     fn protocol(&self) -> Protocol {
         Protocol::Ram
     }
 
-    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         match uri.filepath() {
             Some(prefix) if uri.protocol().is_ram() => Ok(add_prefix_to_storage(
                 self.ram_storage.clone(),
@@ -220,20 +221,20 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_ram_storage_factory() {
+    #[tokio::test]
+    async fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
         let ram_uri = Uri::from_well_formed("s3:///foo");
-        let err = ram_storage_factory.resolve(&ram_uri).err().unwrap();
+        let err = ram_storage_factory.resolve(&ram_uri).await.err().unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let data_uri = Uri::from_well_formed("ram:///data");
-        let data_storage = ram_storage_factory.resolve(&data_uri).ok().unwrap();
+        let data_storage = ram_storage_factory.resolve(&data_uri).await.ok().unwrap();
         let home_uri = Uri::from_well_formed("ram:///home");
-        let home_storage = ram_storage_factory.resolve(&home_uri).ok().unwrap();
+        let home_storage = ram_storage_factory.resolve(&home_uri).await.ok().unwrap();
         assert_ne!(data_storage.uri(), home_storage.uri());
 
-        let data_storage_two = ram_storage_factory.resolve(&data_uri).ok().unwrap();
+        let data_storage_two = ram_storage_factory.resolve(&data_uri).await.ok().unwrap();
         assert_eq!(data_storage.uri(), data_storage_two.uri());
     }
 

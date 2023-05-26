@@ -60,7 +60,7 @@ pub(crate) fn meta_path(index_id: &str) -> PathBuf {
 
 fn convert_error(index_id: &str, storage_err: StorageError) -> MetastoreError {
     match storage_err.kind() {
-        StorageErrorKind::DoesNotExist => MetastoreError::IndexDoesNotExist {
+        StorageErrorKind::NotFound => MetastoreError::IndexDoesNotExist {
             index_id: index_id.to_string(),
         },
         StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
@@ -92,7 +92,7 @@ pub(crate) async fn fetch_or_init_indexes_states(
         .await
         .map_err(|storage_err| convert_error("indexes", storage_err))?;
     if !exists {
-        let indexes_states = HashMap::default();
+        let indexes_states: HashMap<String, IndexState> = HashMap::default();
         put_indexes_states(&*storage, &indexes_states).await?;
         return Ok(HashMap::default());
     }
