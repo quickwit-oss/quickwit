@@ -100,7 +100,7 @@ fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
 /// The tradeoff is that we can only support dates ranging:
 /// - from `13 Apr 1972 23:59:55`: smallest value that can be converted to all precisions.
 /// - to: `16 Mar 2242 12:56:31`: greatest value that can be converted to all precisions.
-fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
+pub fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
     const MIN_TIMESTAMP_MILLIS: i64 = MIN_TIMESTAMP_SECONDS * 1000;
     const MAX_TIMESTAMP_MILLIS: i64 = MAX_TIMESTAMP_SECONDS * 1000;
 

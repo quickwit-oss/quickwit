@@ -4694,11 +4694,13 @@ dependencies = [
  "base64 0.21.0",
  "once_cell",
  "proptest",
+ "quickwit-datetime",
  "serde",
  "serde_json",
  "serde_with 2.3.3",
  "tantivy",
  "thiserror",
+ "time 0.3.21",
 ]
 
 [[package]]
