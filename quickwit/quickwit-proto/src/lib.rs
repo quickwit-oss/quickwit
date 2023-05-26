@@ -26,6 +26,8 @@ use ulid::Ulid;
 mod quickwit;
 mod quickwit_indexing_api;
 mod quickwit_metastore_api;
+pub use partial_hit::SortValue;
+use std::cmp::Ordering;
 
 pub mod indexing_api {
     pub use crate::quickwit_indexing_api::*;
@@ -110,13 +112,13 @@ use ::opentelemetry::propagation::Injector;
 pub use quickwit::*;
 use quickwit_indexing_api::IndexingTask;
 use quickwit_metastore_api::DeleteQuery;
+use quickwit_query::query_ast::QueryAst;
 pub use tonic;
 use tonic::codegen::http;
 use tonic::service::Interceptor;
 use tonic::Status;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use quickwit_query::query_ast::QueryAst;
 
 /// This enum serves as a Rosetta stone of
 /// gRPC and Http status code.
@@ -210,7 +212,7 @@ impl TryFrom<DeleteQuery> for SearchRequest {
             query_ast: delete_query.query_ast,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,
-            ..Default::default()
+            .. Default::default()
         })
     }
 }
@@ -219,7 +221,8 @@ impl SearchRequest {
     pub fn time_range(&self) -> impl std::ops::RangeBounds<i64> {
         use std::ops::Bound;
         (
-            self.start_timestamp.map_or(Bound::Unbounded, Bound::Included),
+            self.start_timestamp
+                .map_or(Bound::Unbounded, Bound::Included),
             self.end_timestamp.map_or(Bound::Unbounded, Bound::Excluded),
         )
     }
@@ -229,7 +232,8 @@ impl SplitIdAndFooterOffsets {
     pub fn time_range(&self) -> impl std::ops::RangeBounds<i64> {
         use std::ops::Bound;
         (
-            self.timestamp_start.map_or(Bound::Unbounded, Bound::Included),
+            self.timestamp_start
+                .map_or(Bound::Unbounded, Bound::Included),
             self.timestamp_end.map_or(Bound::Unbounded, Bound::Included),
         )
     }
@@ -329,17 +333,16 @@ pub struct IndexUid(String);
 impl IndexUid {
     /// Creates a new index uid form index_id and incarnation_id
     pub fn new(index_id: impl Into<String>) -> Self {
-        Self::from_parts(index_id,  &Ulid::new().to_string()[..13])
+        Self::from_parts(index_id, &Ulid::new().to_string()[..13])
     }
 
     pub fn from_parts(index_id: impl Into<String>, incarnation_id: impl Into<String>) -> Self {
         let incarnation_id = incarnation_id.into();
+        let index_id = index_id.into();
         if incarnation_id.is_empty() {
-            Self(index_id.into())
+            Self(index_id)
         } else {
-            Self (
-                format!("{}:{}", index_id.into(), incarnation_id)
-            )
+            Self(format!("{index_id}:{incarnation_id}"))
         }
     }
 
@@ -380,10 +383,7 @@ impl From<String> for IndexUid {
 
 impl ToString for IndexingTask {
     fn to_string(&self) -> String {
-        format!(
-            "{}:{}",
-            self.index_uid, self.source_id
-        )
+        format!("{}:{}", self.index_uid, self.source_id)
     }
 }
 
@@ -418,7 +418,6 @@ impl TryFrom<&str> for IndexingTask {
     }
 }
 
-
 /// Parses a user query and returns a JSON query AST.
 ///
 /// The resulting query does not include `UserInputQuery` nodes.
@@ -428,11 +427,11 @@ impl TryFrom<&str> for IndexingTask {
 /// # Panics
 ///
 /// Panics if the user text is invalid.
-pub fn qast_helper(
-    user_text: &str,
-    default_fields: &[&'static str]
-) -> String {
-    let default_fields: Vec<String> = default_fields.iter().map(|default_field| default_field.to_string()).collect();
+pub fn qast_helper(user_text: &str, default_fields: &[&'static str]) -> String {
+    let default_fields: Vec<String> = default_fields
+        .iter()
+        .map(|default_field| default_field.to_string())
+        .collect();
     let ast: QueryAst = query_ast_from_user_text(user_text, Some(default_fields))
         .parse_user_query(&[])
         .expect("The user query should be valid.");
@@ -451,16 +450,69 @@ pub fn qast_helper(
 /// If it is not supplied, the docmapper search fields are meant to be used.
 ///
 /// If no boolean operator is specified, the default is `AND` (contrary to the Elasticsearch default).
-pub fn query_ast_from_user_text(
-    user_text: &str,
-    default_fields: Option<Vec<String>>,
-) -> QueryAst {
+pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<String>>) -> QueryAst {
     quickwit_query::query_ast::UserInputQuery {
         user_text: user_text.to_string(),
         default_fields,
         default_operator: quickwit_query::BooleanOperand::And,
     }
     .into()
+}
+
+// !!! Disclaimer !!!
+//
+// Prost imposes the PartialEq derived implementation.
+// This is terrible because this means Eq, PartialEq are not really in line with Ord's implementation.
+// if in presence of NaN.
+
+impl Eq for SortValue {}
+
+impl Ord for SortValue {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // We make sure to end up with a total order.
+        match (*self, *other) {
+            // Same types.
+            (SortValue::U64(left), SortValue::U64(right)) => left.cmp(&right),
+            (SortValue::I64(left), SortValue::I64(right)) => left.cmp(&right),
+            (SortValue::F64(left), SortValue::F64(right)) => {
+                if left.is_nan() {
+                    if right.is_nan() {
+                        Ordering::Equal
+                    } else {
+                        Ordering::Less
+                    }
+                } else if right.is_nan() {
+                    Ordering::Greater
+                } else {
+                    left.partial_cmp(&right).unwrap_or(Ordering::Less)
+                }
+            }
+            (SortValue::Boolean(left), SortValue::Boolean(right)) => left.cmp(&right),
+            // We half the logic by making sure we keep
+            // the "stronger" type on the left.
+            (SortValue::U64(left), SortValue::I64(right)) => {
+                if left > i64::MAX as u64 {
+                    return Ordering::Greater;
+                }
+                (left as i64).cmp(&right)
+            }
+            (SortValue::F64(left), _) if left.is_nan() => Ordering::Less,
+            (SortValue::F64(left), SortValue::U64(right)) => {
+                left.partial_cmp(&(right as f64)).unwrap_or(Ordering::Less)
+            }
+            (SortValue::F64(left), SortValue::I64(right)) => {
+                left.partial_cmp(&(right as f64)).unwrap_or(Ordering::Less)
+            }
+            (SortValue::Boolean(left), right) => SortValue::U64(left as u64).cmp(&right),
+            (left, right) => right.cmp(&left).reverse(),
+        }
+    }
+}
+
+impl PartialOrd for SortValue {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 #[cfg(test)]
@@ -504,18 +556,9 @@ mod tests {
 
     #[test]
     fn test_index_uid_parsing() {
-        assert_eq!(
-            "foo",
-            IndexUid::from("foo".to_string()).index_id()
-        );
-        assert_eq!(
-            "foo",
-            IndexUid::from("foo:bar".to_string()).index_id()
-        );
-        assert_eq!(
-            "",
-            IndexUid::from("foo".to_string()).incarnation_id()
-        );
+        assert_eq!("foo", IndexUid::from("foo".to_string()).index_id());
+        assert_eq!("foo", IndexUid::from("foo:bar".to_string()).index_id());
+        assert_eq!("", IndexUid::from("foo".to_string()).incarnation_id());
         assert_eq!(
             "bar",
             IndexUid::from("foo:bar".to_string()).incarnation_id()
@@ -524,26 +567,14 @@ mod tests {
 
     #[test]
     fn test_index_uid_roundtrip() {
-        assert_eq!(
-            "foo",
-            IndexUid::from("foo".to_string()).to_string()
-        );
-        assert_eq!(
-            "foo:bar",
-            IndexUid::from("foo:bar".to_string()).to_string()
-        );
+        assert_eq!("foo", IndexUid::from("foo".to_string()).to_string());
+        assert_eq!("foo:bar", IndexUid::from("foo:bar".to_string()).to_string());
     }
 
     #[test]
     fn test_index_uid_roundtrip_using_parts() {
-        assert_eq!(
-            "foo",
-            index_uid_roundtrip_using_parts("foo")
-        );
-        assert_eq!(
-            "foo:bar",
-            index_uid_roundtrip_using_parts("foo:bar")
-        );
+        assert_eq!("foo", index_uid_roundtrip_using_parts("foo"));
+        assert_eq!("foo:bar", index_uid_roundtrip_using_parts("foo:bar"));
     }
 
     fn index_uid_roundtrip_using_parts(index_uid: &str) -> String {
@@ -558,6 +589,9 @@ mod tests {
     fn test_query_ast_from_user_text_default_as_and() {
         let ast = query_ast_from_user_text("hello you", None);
         let QueryAst::UserInput(input_query) = ast else { panic!() };
-        assert_eq!(input_query.default_operator, quickwit_query::BooleanOperand::And);
+        assert_eq!(
+            input_query.default_operator,
+            quickwit_query::BooleanOperand::And
+        );
     }
 }

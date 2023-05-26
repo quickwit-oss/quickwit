@@ -28,6 +28,7 @@ use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use quickwit_doc_mapper::NamedField;
@@ -46,7 +47,6 @@ const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")
 use crate::actors::Uploader;
 use crate::models::{
     EmptySplit, IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch,
-    ScratchDirectory,
 };
 
 /// The role of the packager is to get an index writer and
@@ -188,7 +188,7 @@ impl Handler<EmptySplit> for Packager {
 /// returns true iff merge is required to reach a state where
 fn list_split_files(
     segment_metas: &[SegmentMeta],
-    scratch_directory: &ScratchDirectory,
+    scratch_directory: &TempDirectory,
 ) -> io::Result<Vec<PathBuf>> {
     let mut index_files = vec![scratch_directory.path().join("meta.json")];
 
@@ -342,12 +342,12 @@ mod tests {
     use tracing::Span;
 
     use super::*;
-    use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
+    use crate::models::{IndexingPipelineId, PublishLock, SplitAttrs};
 
     fn make_indexed_split_for_test(
         segment_timestamps: &[DateTime],
     ) -> anyhow::Result<IndexedSplit> {
-        let split_scratch_directory = ScratchDirectory::for_test();
+        let split_scratch_directory = TempDirectory::for_test();
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
         let timestamp_field = schema_builder.add_u64_field("timestamp", FAST);

@@ -1,4 +1,3 @@
-method: [GET]
 json:
   query:
     range:
@@ -10,7 +9,6 @@ expected:
       value: 2
       relation: "eq"
 ---
-method: [GET]
 json:
   query:
     range:
@@ -22,7 +20,6 @@ expected:
       value: 1
       relation: "eq"
 ---
-method: [GET]
 json:
   query:
     range:
@@ -34,7 +31,6 @@ expected:
       value: 98
       relation: "eq"
 ---
-method: [GET]
 json:
   query:
     range:
@@ -46,7 +42,6 @@ expected:
       value: 99
       relation: "eq"
 ---
-method: [GET]
 json:
   query:
     range:
@@ -58,7 +53,6 @@ expected:
       value: 84
       relation: "eq"
 ---
-method: [GET]
 json:
   query:
     range:
@@ -70,7 +64,6 @@ expected:
       value: 85
       relation: "eq"
 ---
-method: [GET]
 json:
   query:
     range:
@@ -82,7 +75,6 @@ expected:
       value: 16
       relation: "eq"
 ---
-method: [GET]
 json:
   query:
     range:
@@ -93,4 +85,65 @@ expected:
   hits:
     total:
       value: 82
+      relation: "eq"
+---
+# Missing in some documents
+json:
+  query:
+    range:
+      payload.size:
+        gte: 2
+expected:
+  hits:
+    total:
+      value: 13
+      relation: "eq"
+---
+# Field not present in all documents
+json:
+  query:
+    range:
+      payload.size:
+        lt: 2
+expected:
+  hits:
+    total:
+      value: 47
+      relation: "eq"
+---
+# Timestamp field
+json:
+  query:
+    range:
+      created_at:
+        lt: "2015-02-01T00:00:13Z"
+        gte: "2015-02-01T00:00:10Z"
+expected:
+  hits:
+    total:
+      value: 44
+      relation: "eq"
+---
+# Timestamp field
+json:
+  query:
+    range:
+      created_at:
+        gte: "2015-02-01T00:00:10Z"
+expected:
+  hits:
+    total:
+      value: 58
+      relation: "eq"
+---
+# Timestamp field
+json:
+  query:
+    range:
+      created_at:
+        lt: "2015-02-01T00:00:13Z"
+expected:
+  hits:
+    total:
+      value: 86
       relation: "eq"
