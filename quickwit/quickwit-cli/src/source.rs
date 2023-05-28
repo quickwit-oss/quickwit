@@ -28,19 +28,17 @@ use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::{validate_identifier, ConfigFormat, SourceConfig};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
-use quickwit_rest_client::rest_client::{QuickwitClient, Transport};
 use quickwit_storage::load_file;
-use reqwest::Url;
 use serde_json::Value as JsonValue;
 use tabled::{Table, Tabled};
 use tracing::debug;
 
-use crate::{cluster_endpoint_arg, make_table, prompt_confirmation};
+use crate::{client_args, make_table, prompt_confirmation, ClientArgs};
 
 pub fn build_source_command() -> Command {
     Command::new("source")
         .about("Manages sources: creates, updates, deletes sources...")
-        .arg(cluster_endpoint_arg())
+        .args(client_args())
         .subcommand(
             Command::new("create")
                 .about("Adds a new source to an index.")
@@ -144,14 +142,14 @@ pub fn build_source_command() -> Command {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct CreateSourceArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub source_config_uri: Uri,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ToggleSourceArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub source_id: String,
     pub enable: bool,
@@ -159,7 +157,7 @@ pub struct ToggleSourceArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DeleteSourceArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub source_id: String,
     pub assume_yes: bool,
@@ -167,20 +165,20 @@ pub struct DeleteSourceArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeSourceArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub source_id: String,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ListSourcesArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ResetCheckpointArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub source_id: String,
     pub assume_yes: bool,
@@ -231,10 +229,7 @@ impl SourceCliCommand {
     }
 
     fn parse_create_args(mut matches: ArgMatches) -> anyhow::Result<CreateSourceArgs> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
@@ -243,7 +238,7 @@ impl SourceCliCommand {
             .map(|uri_str| Uri::from_str(&uri_str))
             .expect("`source-config` should be a required arg.")?;
         Ok(CreateSourceArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
             source_config_uri,
         })
@@ -253,10 +248,7 @@ impl SourceCliCommand {
         subcommand: &str,
         mut matches: ArgMatches,
     ) -> anyhow::Result<ToggleSourceArgs> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
@@ -265,7 +257,7 @@ impl SourceCliCommand {
             .expect("`source` should be a required arg.");
         let enable = matches!(subcommand, "enable");
         Ok(ToggleSourceArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
             source_id,
             enable,
@@ -273,10 +265,7 @@ impl SourceCliCommand {
     }
 
     fn parse_delete_args(mut matches: ArgMatches) -> anyhow::Result<DeleteSourceArgs> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
@@ -285,7 +274,7 @@ impl SourceCliCommand {
             .expect("`source` should be a required arg.");
         let assume_yes = matches.get_flag("yes");
         Ok(DeleteSourceArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
             source_id,
             assume_yes,
@@ -293,10 +282,7 @@ impl SourceCliCommand {
     }
 
     fn parse_describe_args(mut matches: ArgMatches) -> anyhow::Result<DescribeSourceArgs> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
@@ -304,31 +290,25 @@ impl SourceCliCommand {
             .remove_one::<String>("source")
             .expect("`source` should be a required arg.");
         Ok(DescribeSourceArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
             source_id,
         })
     }
 
     fn parse_list_args(mut matches: ArgMatches) -> anyhow::Result<ListSourcesArgs> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
         Ok(ListSourcesArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
         })
     }
 
     fn parse_reset_checkpoint_args(mut matches: ArgMatches) -> anyhow::Result<ResetCheckpointArgs> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
@@ -337,7 +317,7 @@ impl SourceCliCommand {
             .expect("`source` should be a required arg.");
         let assume_yes = matches.get_flag("yes");
         Ok(ResetCheckpointArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
             source_id,
             assume_yes,
@@ -350,8 +330,7 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
     println!("❯ Creating source...");
     let source_config_content = load_file(&args.source_config_uri).await?;
     let config_format = ConfigFormat::sniff_from_uri(&args.source_config_uri)?;
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     qw_client
         .sources(&args.index_id)
         .create(Bytes::from(source_config_content.to_vec()), config_format)
@@ -363,8 +342,7 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
 async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
     debug!(args=?args, "toggle-source");
     println!("❯ Toggling source...");
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     qw_client
         .sources(&args.index_id)
         .toggle(&args.source_id, args.enable)
@@ -392,8 +370,7 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
         }
     }
 
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     qw_client
         .sources(&args.index_id)
         .delete(&args.source_id)
@@ -405,8 +382,7 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
 
 async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
     debug!(args=?args, "describe-source");
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     let index_metadata = qw_client
         .indexes()
         .get(&args.index_id)
@@ -464,10 +440,7 @@ where
 }
 
 async fn list_sources_cli(args: ListSourcesArgs) -> anyhow::Result<()> {
-    let endpoint =
-        Url::parse(args.cluster_endpoint.as_str()).context("Failed to parse cluster endpoint.")?;
-    let transport = Transport::new(endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     let index_metadata = qw_client
         .indexes()
         .get(&args.index_id)
@@ -534,8 +507,7 @@ async fn reset_checkpoint_cli(args: ResetCheckpointArgs) -> anyhow::Result<()> {
             return Ok(());
         }
     }
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     qw_client
         .sources(&args.index_id)
         .reset_checkpoint(&args.source_id)
@@ -621,7 +593,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::CreateSource(CreateSourceArgs {
-                cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
+                client_args: ClientArgs::default(),
                 index_id: "hdfs-logs".to_string(),
                 source_config_uri: Uri::from_str("file:///source-conf.yaml").unwrap(),
             }));
@@ -645,7 +617,7 @@ mod tests {
             let command = CliCommand::parse_cli_args(matches).unwrap();
             let expected_command =
                 CliCommand::Source(SourceCliCommand::ToggleSource(ToggleSourceArgs {
-                    cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
+                    client_args: ClientArgs::default(),
                     index_id: "hdfs-logs".to_string(),
                     source_id: "kafka-foo".to_string(),
                     enable: true,
@@ -667,7 +639,7 @@ mod tests {
             let command = CliCommand::parse_cli_args(matches).unwrap();
             let expected_command =
                 CliCommand::Source(SourceCliCommand::ToggleSource(ToggleSourceArgs {
-                    cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
+                    client_args: ClientArgs::default(),
                     index_id: "hdfs-logs".to_string(),
                     source_id: "kafka-foo".to_string(),
                     enable: false,
@@ -693,7 +665,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::DeleteSource(DeleteSourceArgs {
-                cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
+                client_args: ClientArgs::default(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
                 assume_yes: true,
@@ -717,7 +689,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::DescribeSource(DescribeSourceArgs {
-                cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
+                client_args: ClientArgs::default(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
             }));
@@ -741,7 +713,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::ResetCheckpoint(ResetCheckpointArgs {
-                cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
+                client_args: ClientArgs::default(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
                 assume_yes: true,
@@ -814,7 +786,7 @@ mod tests {
             .unwrap();
         let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_command = CliCommand::Source(SourceCliCommand::ListSources(ListSourcesArgs {
-            cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
+            client_args: ClientArgs::default(),
             index_id: "hdfs-logs".to_string(),
         }));
         assert_eq!(command, expected_command);

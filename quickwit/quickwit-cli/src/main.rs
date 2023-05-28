@@ -184,6 +184,7 @@ mod tests {
     use quickwit_cli::tool::{
         ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, MergeArgs, ToolCliCommand,
     };
+    use quickwit_cli::ClientArgs;
     use quickwit_common::uri::Uri;
     use quickwit_rest_client::rest_client::CommitType;
     use reqwest::Url;
@@ -196,7 +197,7 @@ mod tests {
             .unwrap();
         let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
-            cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
+            client_args: ClientArgs::default(),
             index_id: "wikipedia".to_string(),
             assume_yes: false,
         }));
@@ -208,7 +209,7 @@ mod tests {
             .unwrap();
         let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
-            cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
+            client_args: ClientArgs::default(),
             index_id: "wikipedia".to_string(),
             assume_yes: true,
         }));
@@ -232,7 +233,7 @@ mod tests {
         ))
         .unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
-            cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
+            client_args: ClientArgs::default(),
             index_config_uri: expected_index_config_uri.clone(),
             overwrite: false,
             assume_yes: false,
@@ -249,7 +250,7 @@ mod tests {
         ])?;
         let command = CliCommand::parse_cli_args(matches)?;
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
-            cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
+            client_args: ClientArgs::default(),
             index_config_uri: expected_index_config_uri,
             overwrite: true,
             assume_yes: false,
@@ -275,13 +276,16 @@ mod tests {
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
                 IngestDocsArgs {
-                    cluster_endpoint,
+                    client_args,
                     index_id,
                     input_path_opt: None,
                     batch_size_limit_opt: None,
                     commit_type: CommitType::Auto,
                 })) if &index_id == "wikipedia"
-                       && cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
+                && client_args.timeout.is_none()
+                && client_args.connect_timeout.is_none()
+                && client_args.commit_timeout.is_none()
+                && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -299,14 +303,18 @@ mod tests {
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
                 IngestDocsArgs {
-                    cluster_endpoint,
+                    client_args,
                     index_id,
                     input_path_opt: None,
                     batch_size_limit_opt: Some(batch_size_limit),
                     commit_type: CommitType::Force,
                 })) if &index_id == "wikipedia"
-                        && cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+                        && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+                        && client_args.timeout.is_none()
+                        && client_args.connect_timeout.is_none()
+                        && client_args.commit_timeout.is_none()
                         && batch_size_limit == Byte::from_str("8MB").unwrap()
+
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -324,14 +332,76 @@ mod tests {
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
                 IngestDocsArgs {
-                    cluster_endpoint,
+                    client_args,
                     index_id,
                     input_path_opt: None,
                     batch_size_limit_opt: Some(batch_size_limit),
                     commit_type: CommitType::WaitFor,
                 })) if &index_id == "wikipedia"
-                        && cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
-                        && batch_size_limit == Byte::from_str("4KB").unwrap()
+                    && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+                    && client_args.timeout.is_none()
+                    && client_args.connect_timeout.is_none()
+                    && client_args.commit_timeout.is_none()
+                    && batch_size_limit == Byte::from_str("4KB").unwrap()
+        ));
+
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from([
+            "index",
+            "ingest",
+            "--index",
+            "wikipedia",
+            "--timeout",
+            "10s",
+            "--connect-timeout",
+            "2s",
+        ])?;
+        let command = CliCommand::parse_cli_args(matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Ingest(
+                IngestDocsArgs {
+                    client_args,
+                    index_id,
+                    input_path_opt: None,
+                    batch_size_limit_opt: None,
+                    commit_type: CommitType::Auto,
+                })) if &index_id == "wikipedia"
+                        && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+                        && client_args.timeout == Some(Some(Duration::from_secs(10)))
+                        && client_args.connect_timeout == Some(Some(Duration::from_secs(2)))
+                        && client_args.commit_timeout.is_none()
+        ));
+
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from([
+            "index",
+            "ingest",
+            "--index",
+            "wikipedia",
+            "--timeout",
+            "none",
+            "--wait",
+            "--connect-timeout",
+            "15s",
+            "--commit-timeout",
+            "4h",
+        ])?;
+        let command = CliCommand::parse_cli_args(matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Ingest(
+                IngestDocsArgs {
+                    client_args,
+                    index_id,
+                    input_path_opt: None,
+                    batch_size_limit_opt: None,
+                    commit_type: CommitType::WaitFor,
+                })) if &index_id == "wikipedia"
+                        && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+                        && client_args.timeout == Some(None)
+                        && client_args.connect_timeout == Some(Some(Duration::from_secs(15)))
+                        && client_args.commit_timeout == Some(Some(Duration::from_secs(60 * 60 * 4)))
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -439,10 +509,10 @@ mod tests {
             "body",
         ])?;
         let command = CliCommand::parse_cli_args(matches)?;
-        let _cluster_endpoint = Uri::from_str("http://127.0.0.1:7280").unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
+                client_args: _,
                 index_id,
                 query,
                 aggregation: None,
@@ -452,7 +522,6 @@ mod tests {
                 snippet_fields: Some(snippet_field_names),
                 start_timestamp: Some(0),
                 end_timestamp: Some(1),
-                cluster_endpoint: _cluster_endpoint,
                 sort_by_score: false,
             })) if &index_id == "wikipedia"
                   && query == "Barack Obama"
