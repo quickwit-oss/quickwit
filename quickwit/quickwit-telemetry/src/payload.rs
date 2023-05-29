@@ -39,6 +39,7 @@ pub struct EventWithTimestamp {
     /// Unix time in seconds.
     pub unixtime: u64,
     /// Telemetry event.
+    #[serde(flatten)]
     pub event: TelemetryEvent,
 }
 
@@ -63,6 +64,7 @@ impl From<TelemetryEvent> for EventWithTimestamp {
 
 /// Represents a Telemetry Event send to Quickwit's server for usage information.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type")]
 pub enum TelemetryEvent {
     /// Create index API endpoint is called.
     CreateIndex,
@@ -130,5 +132,25 @@ impl Default for ClientInformation {
             hashed_host_username: hashed_host_username(),
             kubernetes: std::env::var_os("KUBERNETES_SERVICE_HOST").is_some(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json;
+
+    use super::{EventWithTimestamp, TelemetryEvent};
+
+    #[test]
+    fn test_serialize_payload_as_expected() {
+        let event = EventWithTimestamp {
+            unixtime: 0,
+            event: TelemetryEvent::EndCommand { return_code: 0 },
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert_eq!(
+            json,
+            r#"{"unixtime":0,"type":"EndCommand","return_code":0}"#
+        );
     }
 }

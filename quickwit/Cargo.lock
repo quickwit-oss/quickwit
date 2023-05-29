@@ -5299,6 +5299,7 @@ dependencies = [
  "once_cell",
  "reqwest",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "username",
