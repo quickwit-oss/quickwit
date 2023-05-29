@@ -65,19 +65,17 @@ impl From<TelemetryEvent> for EventWithTimestamp {
 /// Represents a Telemetry Event send to Quickwit's telemetry server for usage information.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
 pub enum TelemetryEvent {
-    /// Create index API endpoint is called.
-    CreateIndex,
-    /// Delete index API endpoint is called.
-    DeleteIndex,
-    /// Run services command is called.
     RunCommand(RunCommandInfo),
     /// EndCommand (with the return code).
-    EndCommand { return_code: i32 },
+    EndCommand {
+        return_code: i32,
+    },
     /// Event sent every 12h to signal the server is running.
     Running,
     /// UI index.html was requested.
-    UiIndexPageRequest,
+    UiIndexPageLoad,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -148,7 +146,7 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         assert_eq!(
             json,
-            r#"{"unixtime":0,"type":"EndCommand","return_code":0}"#
+            r#"{"unixtime":0,"type":"end_command","return_code":0}"#
         );
     }
 }

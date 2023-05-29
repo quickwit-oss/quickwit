@@ -55,7 +55,7 @@ async fn serve_impl(path: &str) -> Result<impl warp::Reply, Rejection> {
         // Any path request that is not an asset should serve the `index.html` file.
         // The client (browser) usually request `index.html` once unless the user refreshes the
         // page.
-        quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiIndexPageRequest).await;
+        quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiIndexPageLoad).await;
         UI_INDEX_FILE_NAME
     };
     let asset = Asset::get(path_to_file).ok_or_else(warp::reject::not_found)?;
