@@ -166,11 +166,11 @@ fn convert_bound<'a, T>(bound: &'a Bound<JsonLiteral>) -> Option<Bound<T>>
 where T: InterpretUserInput<'a> {
     match bound {
         Bound::Included(val) => {
-            let val = T::interpret(val)?;
+            let val = T::interpret_json(val)?;
             Some(Bound::Included(val))
         }
         Bound::Excluded(val) => {
-            let val = T::interpret(val)?;
+            let val = T::interpret_json(val)?;
             Some(Bound::Excluded(val))
         }
         Bound::Unbounded => Some(Bound::Unbounded),

@@ -18,11 +18,29 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::net::{IpAddr, Ipv6Addr};
+use std::str::FromStr;
 
+use once_cell::sync::OnceCell;
+use quickwit_datetime::{parse_date_time_str, parse_timestamp, DateTimeInputFormat};
 use serde::{Deserialize, Serialize};
 use tantivy::schema::IntoIpv6Addr;
-use tantivy::time::format_description::well_known::Rfc3339;
-use tantivy::time::OffsetDateTime;
+
+fn get_default_date_time_format() -> &'static [DateTimeInputFormat] {
+    static DEFAULT_DATE_TIME_FORMATS: OnceCell<Vec<DateTimeInputFormat>> = OnceCell::new();
+    DEFAULT_DATE_TIME_FORMATS
+        .get_or_init(|| {
+            vec![
+                DateTimeInputFormat::Rfc3339,
+                DateTimeInputFormat::Rfc2822,
+                DateTimeInputFormat::Timestamp,
+                DateTimeInputFormat::from_str("%Y-%m-%d %H:%M:%S.%f").unwrap(),
+                DateTimeInputFormat::from_str("%Y-%m-%d %H:%M:%S").unwrap(),
+                DateTimeInputFormat::from_str("%Y-%m-%d").unwrap(),
+                DateTimeInputFormat::from_str("%Y/%m/%d").unwrap(),
+            ]
+        })
+        .as_slice()
+}
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Clone, Debug)]
 #[serde(untagged)]
@@ -40,24 +58,38 @@ pub enum JsonLiteral {
 }
 
 pub trait InterpretUserInput<'a>: Sized {
-    fn interpret(user_input: &'a JsonLiteral) -> Option<Self>;
+    fn interpret_json(user_input: &'a JsonLiteral) -> Option<Self> {
+        match user_input {
+            JsonLiteral::Number(number) => Self::interpret_number(number),
+            JsonLiteral::String(str_val) => Self::interpret_str(str_val),
+            JsonLiteral::Bool(bool_val) => Self::interpret_bool(*bool_val),
+        }
+    }
+
+    fn interpret_number(_number: &serde_json::Number) -> Option<Self> {
+        None
+    }
+
+    fn interpret_bool(_bool: bool) -> Option<Self> {
+        None
+    }
+    fn interpret_str(_text: &'a str) -> Option<Self> {
+        None
+    }
+
     fn name() -> &'static str {
         std::any::type_name::<Self>()
     }
 }
 
 impl<'a> InterpretUserInput<'a> for &'a str {
-    fn interpret(user_input: &'a JsonLiteral) -> Option<&'a str> {
-        match user_input {
-            JsonLiteral::Number(_) => None,
-            JsonLiteral::String(text) => Some(text.as_str()),
-            JsonLiteral::Bool(_) => None,
-        }
+    fn interpret_str(text: &'a str) -> Option<Self> {
+        Some(text)
     }
 }
 
 impl<'a> InterpretUserInput<'a> for u64 {
-    fn interpret(user_input: &JsonLiteral) -> Option<u64> {
+    fn interpret_json(user_input: &JsonLiteral) -> Option<u64> {
         match user_input {
             JsonLiteral::Number(json_number) => json_number.as_u64(),
             JsonLiteral::String(text) => text.parse().ok(),
@@ -67,7 +99,7 @@ impl<'a> InterpretUserInput<'a> for u64 {
 }
 
 impl<'a> InterpretUserInput<'a> for i64 {
-    fn interpret(user_input: &JsonLiteral) -> Option<i64> {
+    fn interpret_json(user_input: &JsonLiteral) -> Option<i64> {
         match user_input {
             JsonLiteral::Number(json_number) => json_number.as_i64(),
             JsonLiteral::String(text) => text.parse().ok(),
@@ -78,7 +110,7 @@ impl<'a> InterpretUserInput<'a> for i64 {
 
 // We refuse NaN and infinity.
 impl<'a> InterpretUserInput<'a> for f64 {
-    fn interpret(user_input: &JsonLiteral) -> Option<f64> {
+    fn interpret_json(user_input: &JsonLiteral) -> Option<f64> {
         let val: f64 = match user_input {
             JsonLiteral::Number(json_number) => json_number.as_f64()?,
             JsonLiteral::String(text) => text.parse().ok()?,
@@ -94,38 +126,74 @@ impl<'a> InterpretUserInput<'a> for f64 {
 }
 
 impl<'a> InterpretUserInput<'a> for bool {
-    fn interpret(user_input: &JsonLiteral) -> Option<bool> {
-        match user_input {
-            JsonLiteral::Number(_) => None,
-            JsonLiteral::String(text) => text.parse().ok(),
-            JsonLiteral::Bool(bool_value) => Some(*bool_value),
-        }
+    fn interpret_bool(b: bool) -> Option<Self> {
+        Some(b)
+    }
+    fn interpret_str(text: &str) -> Option<Self> {
+        text.parse().ok()
     }
 }
 
 impl<'a> InterpretUserInput<'a> for Ipv6Addr {
-    fn interpret(user_input: &JsonLiteral) -> Option<Ipv6Addr> {
-        match user_input {
-            JsonLiteral::Number(_) => None,
-            JsonLiteral::String(text) => {
-                let ip_addr: IpAddr = text.parse().ok()?;
-                Some(ip_addr.into_ipv6_addr())
-            }
-            JsonLiteral::Bool(_) => None,
-        }
+    fn interpret_str(text: &str) -> Option<Self> {
+        let ip_addr: IpAddr = text.parse().ok()?;
+        Some(ip_addr.into_ipv6_addr())
     }
 }
 
 impl<'a> InterpretUserInput<'a> for tantivy::DateTime {
-    fn interpret(user_input: &JsonLiteral) -> Option<tantivy::DateTime> {
-        match user_input {
-            JsonLiteral::Number(_) => None,
-            JsonLiteral::String(text) => {
-                let dt = OffsetDateTime::parse(text, &Rfc3339).ok()?;
-                Some(tantivy::DateTime::from_utc(dt))
-            }
-            JsonLiteral::Bool(_) => None,
+    fn interpret_str(text: &str) -> Option<Self> {
+        let date_time_formats = get_default_date_time_format();
+        if let Ok(datetime) = parse_date_time_str(text, date_time_formats) {
+            return Some(datetime);
         }
+        // Parsing the normal string formats failed.
+        // Maybe it is actually a timestamp as a string?
+        let possible_timestamp = text.parse::<i64>().ok()?;
+        parse_timestamp(possible_timestamp).ok()
+    }
+
+    fn interpret_number(number: &serde_json::Number) -> Option<Self> {
+        let possible_timestamp = number.as_i64()?;
+        parse_timestamp(possible_timestamp).ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tantivy::DateTime;
+    use time::macros::datetime;
+
+    use crate::json_literal::InterpretUserInput;
+    use crate::JsonLiteral;
+
+    #[test]
+    fn test_interpret_datetime_simple_date() {
+        let dt_opt = DateTime::interpret_json(&JsonLiteral::String("2023-05-25".to_string()));
+        let expected_datetime = datetime!(2023-05-25 00:00 UTC);
+        assert_eq!(dt_opt, Some(DateTime::from_utc(expected_datetime)));
+    }
+
+    #[test]
+    fn test_interpret_datetime_fractional_millis() {
+        let dt_opt =
+            DateTime::interpret_json(&JsonLiteral::String("2023-05-25 10:20:11.322".to_string()));
+        let expected_datetime = datetime!(2023-05-25 10:20:11.322 UTC);
+        assert_eq!(dt_opt, Some(DateTime::from_utc(expected_datetime)));
+    }
+
+    #[test]
+    fn test_interpret_datetime_unix_timestamp_as_string() {
+        let dt_opt = DateTime::interpret_json(&JsonLiteral::String("1685086013".to_string()));
+        let expected_datetime = datetime!(2023-05-26 07:26:53 UTC);
+        assert_eq!(dt_opt, Some(DateTime::from_utc(expected_datetime)));
+    }
+
+    #[test]
+    fn test_interpret_datetime_unix_timestamp_as_number() {
+        let dt_opt = DateTime::interpret_json(&JsonLiteral::Number(1685086013.into()));
+        let expected_datetime = datetime!(2023-05-26 07:26:53 UTC);
+        assert_eq!(dt_opt, Some(DateTime::from_utc(expected_datetime)));
     }
 }
 

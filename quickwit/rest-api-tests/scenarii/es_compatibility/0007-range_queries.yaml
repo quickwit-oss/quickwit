@@ -124,6 +124,18 @@ expected:
       value: 44
       relation: "eq"
 ---
+# Timestamp field using timestamp
+json:
+  query:
+    range:
+      created_at:
+        lt: 1422748813000
+expected:
+  hits:
+    total:
+      value: 86
+      relation: "eq"
+---
 # Timestamp field
 json:
   query:

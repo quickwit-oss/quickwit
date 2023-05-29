@@ -4703,6 +4703,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-datetime"
+version = "0.6.0"
+dependencies = [
+ "itertools",
+ "ouroboros",
+ "serde",
+ "serde_json",
+ "tantivy",
+ "time 0.3.21",
+ "time-fmt",
+]
+
+[[package]]
 name = "quickwit-directories"
 version = "0.6.0"
 dependencies = [
@@ -4738,8 +4751,8 @@ dependencies = [
  "mockall",
  "nom",
  "once_cell",
- "ouroboros",
  "proptest",
+ "quickwit-datetime",
  "quickwit-proto",
  "quickwit-query",
  "regex",
@@ -4749,7 +4762,6 @@ dependencies = [
  "tantivy",
  "thiserror",
  "time 0.3.21",
- "time-fmt",
  "tracing",
  "typetag",
  "utoipa",
@@ -5092,11 +5104,13 @@ dependencies = [
  "base64 0.21.2",
  "once_cell",
  "proptest",
+ "quickwit-datetime",
  "serde",
  "serde_json",
  "serde_with 2.3.3",
  "tantivy",
  "thiserror",
+ "time 0.3.21",
 ]
 
 [[package]]

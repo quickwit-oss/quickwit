@@ -23,11 +23,15 @@ use std::str::FromStr;
 use ouroboros::self_referencing;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value as JsonValue;
 use time::error::Format;
+use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 use time::format_description::FormatItem;
 use time::parsing::Parsed;
 use time::{OffsetDateTime, PrimitiveDateTime};
 use time_fmt::parse::time_format_item::parse_to_format_item;
+
+use crate::TantivyDateTime;
 
 /// A date time parser that holds the format specification `Vec<FormatItem>`.
 #[self_referencing]
@@ -232,6 +236,31 @@ impl DateTimeOutputFormat {
             DateTimeOutputFormat::TimestampMicros => "unix_timestamp_micros",
             DateTimeOutputFormat::TimestampNanos => "unix_timestamp_nanos",
         }
+    }
+
+    pub fn format_to_json(&self, date_time: TantivyDateTime) -> Result<JsonValue, String> {
+        let date = date_time.into_utc();
+        let format_result = match &self {
+            DateTimeOutputFormat::Rfc3339 => date.format(&Rfc3339).map(JsonValue::String),
+            DateTimeOutputFormat::Iso8601 => date.format(&Iso8601::DEFAULT).map(JsonValue::String),
+            DateTimeOutputFormat::Rfc2822 => date.format(&Rfc2822).map(JsonValue::String),
+            DateTimeOutputFormat::Strptime(strftime_parser) => strftime_parser
+                .format_date_time(&date)
+                .map(JsonValue::String),
+            DateTimeOutputFormat::TimestampSecs => {
+                Ok(JsonValue::Number(date_time.into_timestamp_secs().into()))
+            }
+            DateTimeOutputFormat::TimestampMillis => {
+                Ok(JsonValue::Number(date_time.into_timestamp_millis().into()))
+            }
+            DateTimeOutputFormat::TimestampMicros => {
+                Ok(JsonValue::Number(date_time.into_timestamp_micros().into()))
+            }
+            DateTimeOutputFormat::TimestampNanos => {
+                Ok(JsonValue::Number(date_time.into_timestamp_nanos().into()))
+            }
+        };
+        format_result.map_err(|error| error.to_string())
     }
 }
 
