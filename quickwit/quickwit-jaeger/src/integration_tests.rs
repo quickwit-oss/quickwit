@@ -128,21 +128,25 @@ async fn test_otel_jaeger_integration() {
             .await
             .unwrap()
             .into_inner();
-        assert_eq!(get_operations_response.operations.len(), 3);
+        assert_eq!(get_operations_response.operations.len(), 4);
         assert_eq!(
             get_operations_response.operations,
             vec![
                 Operation {
-                    name: "stage_splits".to_string(),
-                    span_kind: "internal".to_string(),
+                    name: "delete_splits".to_string(),
+                    span_kind: "client".to_string(),
+                },
+                Operation {
+                    name: "list_splits".to_string(),
+                    span_kind: "client".to_string(),
                 },
                 Operation {
                     name: "publish_splits".to_string(),
                     span_kind: "server".to_string(),
                 },
                 Operation {
-                    name: "list_splits".to_string(),
-                    span_kind: "client".to_string(),
+                    name: "stage_splits".to_string(),
+                    span_kind: "internal".to_string(),
                 }
             ]
         );
@@ -211,7 +215,7 @@ async fn test_otel_jaeger_integration() {
         // Search by service name, operation name, and event attribute.
         let query = TraceQueryParameters {
             service_name: "quickwit".to_string(),
-            operation_name: "list_splits".to_string(),
+            operation_name: "delete_splits".to_string(),
             tags: HashMap::from([("event_key".to_string(), "event_value".to_string())]),
             start_time_min: None,
             start_time_max: None,
@@ -226,7 +230,47 @@ async fn test_otel_jaeger_integration() {
             .unwrap()
             .into_inner();
         assert_eq!(find_trace_ids_response.trace_ids.len(), 1);
+        assert_eq!(find_trace_ids_response.trace_ids[0], [5; 16]);
+
+        // Search traces with an error.
+        let query = TraceQueryParameters {
+            service_name: "quickwit".to_string(),
+            operation_name: "list_splits".to_string(),
+            tags: HashMap::from([("error".to_string(), "true".to_string())]),
+            start_time_min: None,
+            start_time_max: None,
+            duration_min: None,
+            duration_max: None,
+            num_traces: 10,
+        };
+        let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
+        let find_trace_ids_response = jaeger_service
+            .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(find_trace_ids_response.trace_ids.len(), 1);
         assert_eq!(find_trace_ids_response.trace_ids[0], [4; 16]);
+
+        // Search traces without an error.
+        let query = TraceQueryParameters {
+            service_name: "quickwit".to_string(),
+            operation_name: "list_splits".to_string(),
+            tags: HashMap::from([("error".to_string(), "false".to_string())]),
+            start_time_min: None,
+            start_time_max: None,
+            duration_min: None,
+            duration_max: None,
+            num_traces: 10,
+        };
+        let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
+        let find_trace_ids_response = jaeger_service
+            .find_trace_i_ds(tonic::Request::new(find_trace_ids_request))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(find_trace_ids_response.trace_ids.len(), 1);
+        assert_eq!(find_trace_ids_response.trace_ids[0], [3; 16]);
     }
     {
         // Test `GetTrace`
@@ -460,8 +504,8 @@ fn make_resource_spans() -> Vec<ResourceSpans> {
             links: Vec::new(),
             dropped_links_count: 0,
             status: Some(OtlpStatus {
-                code: 2,
-                message: "An error occurred.".to_string(),
+                code: 1,
+                message: "".to_string(),
             }),
         },
         OtlpSpan {
@@ -475,13 +519,33 @@ fn make_resource_spans() -> Vec<ResourceSpans> {
             end_time_unix_nano: now_minus_x_secs(&now, 1),
             attributes: Vec::new(),
             dropped_attributes_count: 0,
+            events: Vec::new(),
+            dropped_events_count: 0,
+            links: Vec::new(),
+            dropped_links_count: 0,
+            status: Some(OtlpStatus {
+                code: 2,
+                message: "An error occurred.".to_string(),
+            }),
+        },
+        OtlpSpan {
+            trace_id: vec![5; 16],
+            span_id: vec![5; 8],
+            parent_span_id: Vec::new(),
+            trace_state: "key1=value1,key2=value2".to_string(),
+            name: "delete_splits".to_string(),
+            kind: 3, // Client
+            start_time_unix_nano: now_minus_x_secs(&now, 2),
+            end_time_unix_nano: now_minus_x_secs(&now, 1),
+            attributes: Vec::new(),
+            dropped_attributes_count: 0,
             events,
             dropped_events_count: 0,
             links,
             dropped_links_count: 0,
             status: Some(OtlpStatus {
                 code: 2,
-                message: "An error occurred.".to_string(),
+                message: "Storage error.".to_string(),
             }),
         },
     ];
