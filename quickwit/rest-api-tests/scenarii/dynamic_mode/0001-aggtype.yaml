@@ -1,0 +1,20 @@
+method: [POST]
+engines:
+  - quickwit
+endpoint: dyn/search
+json:
+  query: "*"
+  aggs:
+    countid:
+      terms:
+        field: objects.id
+expected:
+  aggregations:
+    countid:
+      buckets:
+        - {'doc_count': 1, 'key': 'obj2'}
+      doc_count_error_upper_bound: 0
+      sum_other_doc_count: 0
+  hits:
+     num_hits: 2
+

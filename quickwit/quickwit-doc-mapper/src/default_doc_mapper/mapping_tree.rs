@@ -430,13 +430,33 @@ impl MappingTree {
                 mapping_leaf.doc_from_json(json_value, document, path)
             }
             MappingTree::Node(mapping_node) => {
-                if let JsonValue::Object(json_obj) = json_value {
-                    mapping_node.doc_from_json(json_obj, mode, document, path, dynamic_json_obj)
-                } else {
-                    Err(DocParsingError::ValueError(
-                        path.join("."),
-                        format!("Expected an JSON Object, got {json_value}"),
-                    ))
+                match json_value {
+                    JsonValue::Array(json_arr) => {
+                        if mapping_node.cardinality == Cardinality::SingleValue {
+                            return Err(DocParsingError::ValueError(
+                                path.join("."),
+                                format!("Expected a JSON Object, got an array: {json_arr:?}"),
+                            ));
+                        }
+                        for json_el in json_arr {
+                            self.doc_from_json(json_el, mode, document, path, dynamic_json_obj)?;
+                        }
+                        Ok(())
+                    },
+                    JsonValue::Object(json_obj) => {
+                        mapping_node.doc_from_json(json_obj, mode, document, path, dynamic_json_obj)
+                    }
+                    _ => {
+                        let expected_type =
+                            match mapping_node.cardinality {
+                                Cardinality::SingleValue => "a JSON Object",
+                                Cardinality::MultiValues => "a JSON Array",
+                            };
+                        return Err(DocParsingError::ValueError(
+                            path.join("."),
+                            format!("Expected {expected_type}, got {json_value}"),
+                        ));
+                    }
                 }
             }
         }
