@@ -478,7 +478,6 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
 pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "garbage-collect-index");
     println!("❯ Garbage collecting index...");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
     let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let index_service = IndexService::from_config(quickwit_config.clone()).await?;

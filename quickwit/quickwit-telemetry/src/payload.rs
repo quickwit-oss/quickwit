@@ -62,7 +62,7 @@ impl From<TelemetryEvent> for EventWithTimestamp {
     }
 }
 
-/// Represents a Telemetry Event send to Quickwit's server for usage information.
+/// Represents a Telemetry Event send to Quickwit's telemetry server for usage information.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type")]
 pub enum TelemetryEvent {
@@ -70,16 +70,14 @@ pub enum TelemetryEvent {
     CreateIndex,
     /// Delete index API endpoint is called.
     DeleteIndex,
-    /// Garbage collect command is called.
-    GarbageCollect,
     /// Run services command is called.
     RunCommand(RunCommandInfo),
-    /// EndCommand (with the return code)
+    /// EndCommand (with the return code).
     EndCommand { return_code: i32 },
     /// Event sent every 12h to signal the server is running.
     Running,
-    /// Quickwit UI was requested.
-    UiRequest,
+    /// UI index.html was requested.
+    UiIndexPageRequest,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
