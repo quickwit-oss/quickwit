@@ -230,7 +230,7 @@ impl Source for PulsarSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch = BatchBuilder::default();
-        let deadline = time::sleep(quickwit_actors::HEARTBEAT / 2);
+        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
         tokio::pin!(deadline);
 
         loop {
@@ -1211,7 +1211,7 @@ mod pulsar_broker_tests {
             )
             .await
             .unwrap();
-            tokio::time::sleep(HEARTBEAT * 5).await;
+            tokio::time::sleep(*HEARTBEAT * 5).await;
             source_handle2.kill().await;
         }
 
