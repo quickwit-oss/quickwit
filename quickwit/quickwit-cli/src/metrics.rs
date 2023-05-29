@@ -28,8 +28,8 @@ impl Default for CliMetrics {
     fn default() -> Self {
         CliMetrics {
             thread_unpark_duration_microseconds: new_histogram_vec(
-                "thread_unpark_duration_milliseconds",
-                "Duration during tokio main thread was unparked",
+                "thread_unpark_duration_microseconds",
+                "Duration for which a thread of the main tokio runtime is unparked.",
                 "quickwit_cli",
                 [],
             ),
