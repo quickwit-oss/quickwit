@@ -22,7 +22,6 @@ use quickwit_ingest::{
     CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestService,
     IngestServiceClient, IngestServiceError, TailRequest,
 };
-use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::Deserialize;
 use thiserror::Error;
 use warp::{Filter, Rejection};
@@ -152,110 +151,6 @@ async fn tail_endpoint(
 ) -> Result<FetchResponse, IngestServiceError> {
     let fetch_response = ingest_service.tail(TailRequest { index_id }).await?;
     Ok(fetch_response)
-}
-
-/// ?refresh parameter for elasticsearch bulk request
-///
-/// The syntax for this parameter is a bit confusing for backward compatibility reasons.
-/// - Absence of ?refresh parameter or ?refresh=false means no refresh
-/// - Presence of ?refresh parameter without any values or ?refresh=true means force refresh
-/// - ?refresh=wait_for means wait for refresh
-#[derive(Clone, Debug, Deserialize, PartialEq, utoipa::ToSchema)]
-#[serde(rename_all(deserialize = "snake_case"))]
-#[derive(Default)]
-pub enum ElasticRefresh {
-    // if the refresh parameter is not present it is false
-    #[default]
-    False,
-    // but if it is present without a value like this: ?refresh, it should be the same as
-    // ?refresh=true
-    #[serde(alias = "")]
-    True,
-    WaitFor,
-}
-
-impl From<ElasticRefresh> for CommitType {
-    fn from(val: ElasticRefresh) -> Self {
-        match val {
-            ElasticRefresh::False => CommitType::Auto,
-            ElasticRefresh::True => CommitType::Force,
-            ElasticRefresh::WaitFor => CommitType::WaitFor,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
-struct ElasticIngestOptions {
-    #[serde(default)]
-    refresh: ElasticRefresh,
-}
-
-fn elastic_bulk_filter(
-) -> impl Filter<Extract = (Bytes, ElasticIngestOptions), Error = Rejection> + Clone {
-    warp::path!("_bulk")
-        .and(warp::post())
-        .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
-        .and(warp::body::bytes())
-        .and(serde_qs::warp::query::<ElasticIngestOptions>(
-            serde_qs::Config::default(),
-        ))
-}
-
-pub fn elastic_bulk_handler(
-    ingest_service: IngestServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_bulk_filter()
-        .and(with_arg(ingest_service))
-        .then(elastic_ingest)
-        .and(extract_format_from_qs())
-        .map(make_response)
-}
-
-#[utoipa::path(
-    post,
-    tag = "Ingest",
-    path = "/_bulk",
-    request_body(content = String, description = "Elasticsearch compatible bulk request body limited to 10MB", content_type = "application/json"),
-    responses(
-        (status = 200, description = "Successfully ingested documents.", body = IngestResponse)
-    ),
-    params(
-        ("refresh" = Option<ElasticRefresh>, Query, description = "Force or wait for commit at the end of the indexing operation."),
-    )
-)]
-/// Elasticsearch-compatible Bulk Ingest
-async fn elastic_ingest(
-    body: Bytes,
-    ingest_options: ElasticIngestOptions,
-    mut ingest_service: IngestServiceClient,
-) -> Result<IngestResponse, IngestRestApiError> {
-    let mut doc_batch_builders = HashMap::new();
-    let mut lines = lines(&body);
-
-    while let Some(line) = lines.next() {
-        let action = serde_json::from_slice::<BulkAction>(line)
-            .map_err(|error| IngestRestApiError::BulkInvalidAction(error.to_string()))?;
-        let source = lines.next().ok_or_else(|| {
-            IngestRestApiError::BulkInvalidSource("Expected source for the action.".to_string())
-        })?;
-        let index_id = action.into_index();
-        let doc_batch_builder = doc_batch_builders
-            .entry(index_id.clone())
-            .or_insert(DocBatchBuilder::new(index_id));
-
-        doc_batch_builder.ingest_doc(source);
-    }
-    let doc_batches = doc_batch_builders
-        .into_values()
-        .map(|builder| builder.build())
-        .collect();
-    let commit_type: CommitType = ingest_options.refresh.into();
-    let ingest_request = IngestRequest {
-        doc_batches,
-        commit: commit_type as u32,
-    };
-    let ingest_response = ingest_service.ingest(ingest_request).await?;
-    Ok(ingest_response)
 }
 
 pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
