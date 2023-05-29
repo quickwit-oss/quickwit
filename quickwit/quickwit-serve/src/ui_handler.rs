@@ -51,14 +51,13 @@ async fn serve_impl(path: &str) -> Result<impl warp::Reply, Rejection> {
     let path_to_file = if PATH_PTN.is_match(path) {
         path
     } else {
+        // Quickwit UI is a single page application.
+        // Any path request that is not an asset should serve the `index.html` file.
+        // The client (browser) usually request `index.html` once unless the user refreshes the
+        // page.
+        quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiIndexPageRequest).await;
         UI_INDEX_FILE_NAME
     };
-
-    // Only send event on `index.html` request.
-    if path_to_file == UI_INDEX_FILE_NAME {
-        quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiIndexPageRequest).await;
-    }
-
     let asset = Asset::get(path_to_file).ok_or_else(warp::reject::not_found)?;
     let mime = mime_guess::from_path(path_to_file).first_or_octet_stream();
 
