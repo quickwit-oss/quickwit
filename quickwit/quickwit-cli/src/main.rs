@@ -162,7 +162,7 @@ fn about_text() -> String {
     let mut about_text = String::from(
         "Sub-second search & analytics engine on cloud storage.\n  Find more information at https://quickwit.io/docs\n\n",
     );
-    if quickwit_telemetry::is_telemetry_enabled() {
+    if !quickwit_telemetry::is_telemetry_disabled() {
         about_text += "Telemetry: enabled";
     }
     about_text

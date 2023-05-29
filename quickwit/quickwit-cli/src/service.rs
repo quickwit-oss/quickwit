@@ -25,7 +25,7 @@ use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_serve::serve_quickwit;
-use quickwit_telemetry::payload::TelemetryEvent;
+use quickwit_telemetry::payload::{RunCommandInfo, TelemetryEvent};
 use tokio::signal;
 use tracing::debug;
 
@@ -80,7 +80,15 @@ impl RunCliCommand {
             tracing::info!(services = %services.iter().join(", "), "Setting services from override.");
             config.enabled_services = services.clone();
         }
-        let telemetry_event = TelemetryEvent::RunService(config.enabled_services.iter().join(","));
+        let telemetry_event = TelemetryEvent::RunCommand(RunCommandInfo::new(
+            config
+                .enabled_services
+                .iter()
+                .map(|service| service.to_string())
+                .collect(),
+            config.indexer_config.enable_otlp_endpoint,
+            config.jaeger_config.enable_endpoint,
+        ));
         quickwit_telemetry::send_telemetry_event(telemetry_event).await;
         // TODO move in serve quickwit?
         start_actor_runtimes(&config.enabled_services)?;
