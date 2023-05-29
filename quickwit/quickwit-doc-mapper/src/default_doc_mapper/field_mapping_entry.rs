@@ -19,16 +19,13 @@
 
 use std::convert::TryFrom;
 
-use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type};
+use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions};
 
-use super::date_time_type::QuickwitDateTimeOptions;
 use super::{default_as_true, FieldMappingType};
-use crate::default_doc_mapper::field_mapping_type::QuickwitFieldType;
+use crate::default_doc_mapper::field_mapping_type::parse_field_mapping_type;
 use crate::default_doc_mapper::validate_field_mapping_name;
-use crate::Cardinality;
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 pub struct QuickwitObjectOptions {
@@ -335,102 +332,13 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
     }
 }
 
-fn deserialize_mapping_type(
-    quickwit_field_type: QuickwitFieldType,
-    json: JsonValue,
-) -> anyhow::Result<FieldMappingType> {
-    let (typ, cardinality) = match quickwit_field_type {
-        QuickwitFieldType::Simple(typ) => (typ, Cardinality::SingleValue),
-        QuickwitFieldType::Array(typ) => (typ, Cardinality::MultiValues),
-        QuickwitFieldType::Object => {
-            let object_options: QuickwitObjectOptions = serde_json::from_value(json)?;
-            if object_options.field_mappings.is_empty() {
-                anyhow::bail!("object type must have at least one field mapping.");
-            }
-            return Ok(FieldMappingType::Object(object_options));
-        }
-    };
-    match typ {
-        Type::Str => {
-            let text_options: QuickwitTextOptions = serde_json::from_value(json)?;
-            #[allow(clippy::collapsible_if)]
-            if !text_options.indexed {
-                if text_options.tokenizer.is_some()
-                    || text_options.record.is_some()
-                    || text_options.fieldnorms
-                {
-                    bail!(
-                        "`record`, `tokenizer`, and `fieldnorms` parameters are allowed only if \
-                         indexed is true."
-                    );
-                }
-            }
-            Ok(FieldMappingType::Text(text_options, cardinality))
-        }
-        Type::U64 => {
-            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
-            Ok(FieldMappingType::U64(numeric_options, cardinality))
-        }
-        Type::I64 => {
-            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
-            Ok(FieldMappingType::I64(numeric_options, cardinality))
-        }
-        Type::F64 => {
-            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
-            Ok(FieldMappingType::F64(numeric_options, cardinality))
-        }
-        Type::Bool => {
-            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
-            Ok(FieldMappingType::Bool(numeric_options, cardinality))
-        }
-        Type::IpAddr => {
-            let ip_addr_options: QuickwitIpAddrOptions = serde_json::from_value(json)?;
-            Ok(FieldMappingType::IpAddr(ip_addr_options, cardinality))
-        }
-        Type::Date => {
-            let date_time_options = serde_json::from_value::<QuickwitDateTimeOptions>(json)?;
-            Ok(FieldMappingType::DateTime(date_time_options, cardinality))
-        }
-        Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
-        Type::Bytes => {
-            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
-            if numeric_options.fast && cardinality == Cardinality::MultiValues {
-                bail!("fast field is not allowed for array<bytes>.");
-            }
-            Ok(FieldMappingType::Bytes(numeric_options, cardinality))
-        }
-        Type::Json => {
-            let json_options: QuickwitJsonOptions = serde_json::from_value(json)?;
-            #[allow(clippy::collapsible_if)]
-            if !json_options.indexed {
-                if json_options.tokenizer.is_some() || json_options.record.is_some() {
-                    bail!(
-                        "`record` and `tokenizer` parameters are allowed only if indexed is true."
-                    );
-                }
-            }
-            Ok(FieldMappingType::Json(json_options, cardinality))
-        }
-    }
-}
-
 impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
     type Error = String;
 
     fn try_from(value: FieldMappingEntryForSerialization) -> Result<Self, String> {
         validate_field_mapping_name(&value.name).map_err(|err| err.to_string())?;
-        let quickwit_field_type =
-            QuickwitFieldType::parse_type_id(&value.type_id).ok_or_else(|| {
-                format!(
-                    "Field `{}` has an unknown type: `{}`.",
-                    &value.name, &value.type_id
-                )
-            })?;
-        let mapping_type = deserialize_mapping_type(
-            quickwit_field_type,
-            JsonValue::Object(value.field_mapping_json),
-        )
-        .map_err(|err| format!("Error while parsing field `{}`: {}", value.name, err))?;
+        let mapping_type =
+            parse_field_mapping_type(&value.name, &value.type_id, value.field_mapping_json)?;
         Ok(FieldMappingEntry {
             name: value.name,
             mapping_type,
@@ -461,17 +369,14 @@ fn typed_mapping_to_json_params(
         FieldMappingType::IpAddr(options, _) => serialize_to_map(&options),
         FieldMappingType::DateTime(date_time_options, _) => serialize_to_map(&date_time_options),
         FieldMappingType::Json(json_options, _) => serialize_to_map(&json_options),
-        FieldMappingType::Object(object_options) => serialize_to_map(&object_options),
+        FieldMappingType::Object(object_options, _) => serialize_to_map(&object_options),
     }
     .unwrap()
 }
 
 impl From<FieldMappingEntry> for FieldMappingEntryForSerialization {
     fn from(field_mapping_entry: FieldMappingEntry) -> FieldMappingEntryForSerialization {
-        let type_id = field_mapping_entry
-            .mapping_type
-            .quickwit_field_type()
-            .to_type_id();
+        let type_id = field_mapping_entry.mapping_type.type_id();
         let field_mapping_json = typed_mapping_to_json_params(field_mapping_entry.mapping_type);
         FieldMappingEntryForSerialization {
             name: field_mapping_entry.name,
@@ -774,12 +679,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(mapping_entry.name, "my_field_name");
-        match mapping_entry.mapping_type {
-            FieldMappingType::Object(options) => {
-                assert_eq!(options.field_mappings.len(), 1);
-            }
-            _ => panic!("wrong property type"),
-        }
+        let FieldMappingType::Object(options, Cardinality::SingleValue) = mapping_entry.mapping_type else {
+            panic!("wrong property type");
+        };
+        assert_eq!(options.field_mappings.len(), 1);
     }
 
     #[test]

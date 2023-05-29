@@ -258,7 +258,9 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             timestamp_field: default_doc_mapper
                 .timestamp_field_name()
                 .map(ToString::to_string),
-            field_mappings: default_doc_mapper.field_mappings.into(),
+            field_mappings: default_doc_mapper
+                .field_mappings
+                .ordered_field_mapping_entries(),
             tag_fields: default_doc_mapper.tag_field_names.into_iter().collect(),
             default_search_fields: default_doc_mapper.default_search_field_names,
             mode,

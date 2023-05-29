@@ -277,10 +277,11 @@ impl NumVal for f64 {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct MappingNode {
     pub branches: fnv::FnvHashMap<String, MappingTree>,
     branches_order: Vec<String>,
+    cardinality: Cardinality,
 }
 
 fn get_or_insert_path<'a>(
@@ -377,9 +378,7 @@ impl From<MappingTree> for FieldMappingType {
     fn from(mapping_tree: MappingTree) -> Self {
         match mapping_tree {
             MappingTree::Leaf(leaf) => leaf.into(),
-            MappingTree::Node(node) => FieldMappingType::Object(QuickwitObjectOptions {
-                field_mappings: node.into(),
-            }),
+            MappingTree::Node(node) => node.into(),
         }
     }
 }
@@ -400,9 +399,14 @@ impl From<MappingLeaf> for FieldMappingType {
     }
 }
 
-impl From<MappingNode> for Vec<FieldMappingEntry> {
+impl From<MappingNode> for FieldMappingType {
     fn from(node: MappingNode) -> Self {
-        node.ordered_field_mapping_entries()
+        FieldMappingType::Object(
+            QuickwitObjectOptions {
+                field_mappings: node.ordered_field_mapping_entries(),
+            },
+            node.cardinality,
+        )
     }
 }
 
@@ -460,15 +464,20 @@ pub(crate) fn build_mapping_tree(
     schema: &mut SchemaBuilder,
 ) -> anyhow::Result<MappingNode> {
     let mut field_path = Vec::new();
-    build_mapping_tree_from_entries(entries, &mut field_path, schema)
+    build_mapping_tree_from_entries(entries, &mut field_path, Cardinality::SingleValue, schema)
 }
 
 fn build_mapping_tree_from_entries<'a>(
     entries: &'a [FieldMappingEntry],
     field_path: &mut Vec<&'a str>,
+    cardinality: Cardinality,
     schema: &mut SchemaBuilder,
 ) -> anyhow::Result<MappingNode> {
-    let mut mapping_node = MappingNode::default();
+    let mut mapping_node = MappingNode {
+        branches: Default::default(),
+        branches_order: Default::default(),
+        cardinality,
+    };
     for entry in entries {
         field_path.push(&entry.name);
         if mapping_node.branches.contains_key(&entry.name) {
@@ -657,10 +666,11 @@ fn build_mapping_from_field_type<'a>(
                 cardinality: *cardinality,
             }))
         }
-        FieldMappingType::Object(entries) => {
+        FieldMappingType::Object(entries, cardinality) => {
             let mapping_node = build_mapping_tree_from_entries(
                 &entries.field_mappings,
                 field_path,
+                *cardinality,
                 schema_builder,
             )?;
             Ok(MappingTree::Node(mapping_node))

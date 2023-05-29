@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use anyhow::bail;
+use serde_json::Value as JsonValue;
 use tantivy::schema::Type;
 
 use super::date_time_type::QuickwitDateTimeOptions;
@@ -49,91 +51,207 @@ pub(crate) enum FieldMappingType {
     /// Json mapping type configuration.
     Json(QuickwitJsonOptions, Cardinality),
     /// Object mapping type configuration.
-    Object(QuickwitObjectOptions),
+    Object(QuickwitObjectOptions, Cardinality),
 }
 
 impl FieldMappingType {
-    pub fn quickwit_field_type(&self) -> QuickwitFieldType {
-        let (primitive_type, cardinality) = match self {
-            FieldMappingType::Text(_, cardinality) => (Type::Str, *cardinality),
-            FieldMappingType::I64(_, cardinality) => (Type::I64, *cardinality),
-            FieldMappingType::U64(_, cardinality) => (Type::U64, *cardinality),
-            FieldMappingType::F64(_, cardinality) => (Type::F64, *cardinality),
-            FieldMappingType::Bool(_, cardinality) => (Type::Bool, *cardinality),
-            FieldMappingType::IpAddr(_, cardinality) => (Type::IpAddr, *cardinality),
-            FieldMappingType::DateTime(_, cardinality) => (Type::Date, *cardinality),
-            FieldMappingType::Bytes(_, cardinality) => (Type::Bytes, *cardinality),
-            FieldMappingType::Json(_, cardinality) => (Type::Json, *cardinality),
-            FieldMappingType::Object(_) => {
-                return QuickwitFieldType::Object;
-            }
+    pub fn type_id(&self) -> String {
+        self.quickwit_field_type().type_id()
+    }
+
+    fn quickwit_field_type(&self) -> QuickwitFieldType {
+        let (object_or_type, cardinality) = match self {
+            FieldMappingType::Text(_, cardinality) => (Type::Str.into(), *cardinality),
+            FieldMappingType::I64(_, cardinality) => (Type::I64.into(), *cardinality),
+            FieldMappingType::U64(_, cardinality) => (Type::U64.into(), *cardinality),
+            FieldMappingType::F64(_, cardinality) => (Type::F64.into(), *cardinality),
+            FieldMappingType::Bool(_, cardinality) => (Type::Bool.into(), *cardinality),
+            FieldMappingType::IpAddr(_, cardinality) => (Type::IpAddr.into(), *cardinality),
+            FieldMappingType::DateTime(_, cardinality) => (Type::Date.into(), *cardinality),
+            FieldMappingType::Bytes(_, cardinality) => (Type::Bytes.into(), *cardinality),
+            FieldMappingType::Json(_, cardinality) => (Type::Json.into(), *cardinality),
+            FieldMappingType::Object(_, cardinality) => (ObjectOrType::Object, *cardinality),
         };
-        match cardinality {
-            Cardinality::SingleValue => QuickwitFieldType::Simple(primitive_type),
-            Cardinality::MultiValues => QuickwitFieldType::Array(primitive_type),
+        QuickwitFieldType {
+            cardinality,
+            object_or_type,
         }
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum QuickwitFieldType {
-    Simple(Type),
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+enum ObjectOrType {
     Object,
-    Array(Type),
+    TantivyType(Type),
+}
+
+impl From<Type> for ObjectOrType {
+    fn from(typ: Type) -> Self {
+        ObjectOrType::TantivyType(typ)
+    }
+}
+
+impl ObjectOrType {
+    fn from_id(typ: &str) -> Option<ObjectOrType> {
+        match typ {
+            "text" => Some(Type::Str.into()),
+            "u64" => Some(Type::U64.into()),
+            "i64" => Some(Type::I64.into()),
+            "f64" => Some(Type::F64.into()),
+            "bool" => Some(Type::Bool.into()),
+            "ip" => Some(Type::IpAddr.into()),
+            "datetime" => Some(Type::Date.into()),
+            "bytes" => Some(Type::Bytes.into()),
+            "json" => Some(Type::Json.into()),
+            "object" => Some(ObjectOrType::Object),
+            _unknown_type => None,
+        }
+    }
+
+    fn to_id(&self) -> &'static str {
+        let typ = match self {
+            ObjectOrType::Object => return "object",
+            ObjectOrType::TantivyType(typ) => typ,
+        };
+        match typ {
+            Type::Str => "text",
+            Type::U64 => "u64",
+            Type::I64 => "i64",
+            Type::F64 => "f64",
+            Type::Bool => "bool",
+            Type::IpAddr => "ip",
+            Type::Date => "datetime",
+            Type::Bytes => "bytes",
+            Type::Json => "json",
+            Type::Facet => {
+                unimplemented!("Facets are not supported by quickwit at the moment.")
+            }
+        }
+    }
+}
+
+/// Helper type only used for serialization.
+#[derive(Debug, Eq, PartialEq)]
+struct QuickwitFieldType {
+    cardinality: Cardinality,
+    object_or_type: ObjectOrType,
 }
 
 impl QuickwitFieldType {
-    pub fn to_type_id(&self) -> String {
-        match self {
-            QuickwitFieldType::Simple(typ) => primitive_type_to_str(typ).to_string(),
-            QuickwitFieldType::Object => "object".to_string(),
-            QuickwitFieldType::Array(typ) => format!("array<{}>", primitive_type_to_str(typ)),
+    fn type_id(&self) -> String {
+        match self.cardinality {
+            Cardinality::SingleValue => self.object_or_type.to_id().to_string(),
+            Cardinality::MultiValues => {
+                format!("array<{}>", self.object_or_type.to_id())
+            }
         }
     }
 
-    pub fn parse_type_id(type_str: &str) -> Option<QuickwitFieldType> {
-        if type_str == "object" {
-            return Some(QuickwitFieldType::Object);
-        }
-        if type_str.starts_with("array<") && type_str.ends_with('>') {
-            let parsed_type_str = parse_primitive_type(&type_str[6..type_str.len() - 1])?;
-            return Some(QuickwitFieldType::Array(parsed_type_str));
-        }
-        let parsed_type_str = parse_primitive_type(type_str)?;
-        Some(QuickwitFieldType::Simple(parsed_type_str))
+    fn parse_from_type_id(typ_card_str: &str) -> Option<QuickwitFieldType> {
+        let (cardinality, type_str) =
+            if typ_card_str.starts_with("array<") && typ_card_str.ends_with('>') {
+                (
+                    Cardinality::MultiValues,
+                    &typ_card_str[6..typ_card_str.len() - 1],
+                )
+            } else {
+                (Cardinality::SingleValue, typ_card_str)
+            };
+        let object_or_type = ObjectOrType::from_id(type_str)?;
+        Some(QuickwitFieldType {
+            cardinality,
+            object_or_type,
+        })
     }
 }
 
-fn parse_primitive_type(primitive_type_str: &str) -> Option<Type> {
-    match primitive_type_str {
-        "text" => Some(Type::Str),
-        "u64" => Some(Type::U64),
-        "i64" => Some(Type::I64),
-        "f64" => Some(Type::F64),
-        "bool" => Some(Type::Bool),
-        "ip" => Some(Type::IpAddr),
-        "datetime" => Some(Type::Date),
-        "bytes" => Some(Type::Bytes),
-        "json" => Some(Type::Json),
-        _unknown_type => None,
+fn deserialize_mapping_type(
+    quickwit_field_type: QuickwitFieldType,
+    json: JsonValue,
+) -> anyhow::Result<FieldMappingType> {
+    let cardinality = quickwit_field_type.cardinality;
+    match quickwit_field_type.object_or_type {
+        ObjectOrType::Object => {
+            let object_options: QuickwitObjectOptions = serde_json::from_value(json)?;
+            if object_options.field_mappings.is_empty() {
+                anyhow::bail!("object type must have at least one field mapping.");
+            }
+            Ok(FieldMappingType::Object(object_options, cardinality))
+        }
+        ObjectOrType::TantivyType(Type::Bool) => {
+            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::Bool(numeric_options, cardinality))
+        }
+        ObjectOrType::TantivyType(Type::Str) => {
+            let text_options: QuickwitTextOptions = serde_json::from_value(json)?;
+            #[allow(clippy::collapsible_if)]
+            if !text_options.indexed {
+                if text_options.tokenizer.is_some()
+                    || text_options.record.is_some()
+                    || text_options.fieldnorms
+                {
+                    bail!(
+                        "`record`, `tokenizer`, and `fieldnorms` parameters are allowed only if \
+                         indexed is true."
+                    );
+                }
+            }
+            Ok(FieldMappingType::Text(text_options, cardinality))
+        }
+        ObjectOrType::TantivyType(Type::U64) => {
+            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::U64(numeric_options, cardinality))
+        }
+        ObjectOrType::TantivyType(Type::I64) => {
+            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::I64(numeric_options, cardinality))
+        }
+        ObjectOrType::TantivyType(Type::F64) => {
+            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::F64(numeric_options, cardinality))
+        }
+        ObjectOrType::TantivyType(Type::IpAddr) => {
+            let ip_addr_options: QuickwitIpAddrOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::IpAddr(ip_addr_options, cardinality))
+        }
+        ObjectOrType::TantivyType(Type::Date) => {
+            let date_time_options = serde_json::from_value::<QuickwitDateTimeOptions>(json)?;
+            Ok(FieldMappingType::DateTime(date_time_options, cardinality))
+        }
+        ObjectOrType::TantivyType(Type::Facet) => {
+            unimplemented!("Facet are not supported in quickwit yet.")
+        }
+        ObjectOrType::TantivyType(Type::Bytes) => {
+            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            if numeric_options.fast && cardinality == Cardinality::MultiValues {
+                bail!("fast field is not allowed for array<bytes>.");
+            }
+            Ok(FieldMappingType::Bytes(numeric_options, cardinality))
+        }
+        ObjectOrType::TantivyType(Type::Json) => {
+            let json_options: QuickwitJsonOptions = serde_json::from_value(json)?;
+            #[allow(clippy::collapsible_if)]
+            if !json_options.indexed {
+                if json_options.tokenizer.is_some() || json_options.record.is_some() {
+                    bail!(
+                        "`record` and `tokenizer` parameters are allowed only if indexed is true."
+                    );
+                }
+            }
+            Ok(FieldMappingType::Json(json_options, cardinality))
+        }
     }
 }
 
-fn primitive_type_to_str(primitive_type: &Type) -> &'static str {
-    match primitive_type {
-        Type::Str => "text",
-        Type::U64 => "u64",
-        Type::I64 => "i64",
-        Type::F64 => "f64",
-        Type::Bool => "bool",
-        Type::IpAddr => "ip",
-        Type::Date => "datetime",
-        Type::Bytes => "bytes",
-        Type::Json => "json",
-        Type::Facet => {
-            unimplemented!("Facets are not supported by quickwit at the moment.")
-        }
-    }
+pub(crate) fn parse_field_mapping_type(
+    field_name: &str,
+    type_id: &str,
+    params: serde_json::Map<String, JsonValue>,
+) -> Result<FieldMappingType, String> {
+    let quickwit_field_type = QuickwitFieldType::parse_from_type_id(&type_id)
+        .ok_or_else(|| format!("Field `{field_name}` has an unknown type: `{type_id}`."))?;
+    deserialize_mapping_type(quickwit_field_type, JsonValue::Object(params))
+        .map_err(|err| format!("Error while parsing field `{field_name}`: {err}"))
 }
 
 #[cfg(test)]
@@ -141,22 +259,44 @@ mod tests {
     use tantivy::schema::Type;
 
     use super::QuickwitFieldType;
+    use crate::default_doc_mapper::field_mapping_type::ObjectOrType;
+    use crate::Cardinality;
 
     #[track_caller]
-    fn test_parse_type_aux(type_str: &str, expected: Option<QuickwitFieldType>) {
-        let quickwit_field_type = QuickwitFieldType::parse_type_id(type_str);
-        assert_eq!(quickwit_field_type, expected);
+    fn test_parse_type_aux(typ: QuickwitFieldType) {
+        let deser_ser_typ = QuickwitFieldType::parse_from_type_id(&typ.type_id()).unwrap();
+        assert_eq!(deser_ser_typ, typ);
     }
 
     #[test]
-    fn test_parse_type() {
-        test_parse_type_aux("array<i64>", Some(QuickwitFieldType::Array(Type::I64)));
-        test_parse_type_aux("array<text>", Some(QuickwitFieldType::Array(Type::Str)));
-        test_parse_type_aux("array<texto>", None);
-        test_parse_type_aux("text", Some(QuickwitFieldType::Simple(Type::Str)));
-        test_parse_type_aux("object", Some(QuickwitFieldType::Object));
-        test_parse_type_aux("object2", None);
-        test_parse_type_aux("bool", Some(QuickwitFieldType::Simple(Type::Bool)));
-        test_parse_type_aux("ip", Some(QuickwitFieldType::Simple(Type::IpAddr)));
+    fn test_type_serialization() {
+        for object_or_type in [
+            Type::Str.into(),
+            Type::U64.into(),
+            Type::I64.into(),
+            Type::F64.into(),
+            Type::Bool.into(),
+            Type::IpAddr.into(),
+            Type::Date.into(),
+            Type::Bytes.into(),
+            Type::Json.into(),
+            ObjectOrType::Object,
+        ] {
+            for &cardinality in &[Cardinality::SingleValue, Cardinality::MultiValues] {
+                let quickwit_field_type = QuickwitFieldType {
+                    cardinality,
+                    object_or_type,
+                };
+                test_parse_type_aux(quickwit_field_type);
+            }
+        }
+    }
+
+    #[test]
+    fn test_type_serialize_failures() {
+        assert!(QuickwitFieldType::parse_from_type_id("array<i64").is_none());
+        assert!(QuickwitFieldType::parse_from_type_id("array<i64!").is_none());
+        assert!(QuickwitFieldType::parse_from_type_id("array<d64>").is_none());
+        assert!(QuickwitFieldType::parse_from_type_id("objet").is_none());
     }
 }
