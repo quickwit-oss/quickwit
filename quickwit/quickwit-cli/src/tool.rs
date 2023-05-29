@@ -48,7 +48,6 @@ use quickwit_indexing::models::{
 use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
-use quickwit_telemetry::payload::TelemetryEvent;
 use thousands::Separable;
 use tracing::{debug, info};
 

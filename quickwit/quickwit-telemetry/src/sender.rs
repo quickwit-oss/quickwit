@@ -254,8 +254,8 @@ impl TelemetrySender {
         );
 
         let inner = self.inner.clone();
+        start_uptime_monitor_task(inner.clone());
         let join_handle = tokio::task::spawn(async move {
-            start_uptime_monitor_task(inner.clone());
             // This channel is used to send the command to terminate telemetry.
             loop {
                 let quit_loop = tokio::select! {
@@ -280,8 +280,8 @@ impl TelemetrySender {
 }
 
 /// Check to see if telemetry is enabled.
-pub fn is_telemetry_enabled() -> bool {
-    std::env::var_os(crate::DISABLE_TELEMETRY_ENV_KEY).is_none()
+pub fn is_telemetry_disabled() -> bool {
+    std::env::var_os(crate::DISABLE_TELEMETRY_ENV_KEY).is_some()
 }
 
 fn start_uptime_monitor_task(telemetry_sender: Arc<Inner>) {
@@ -297,18 +297,13 @@ fn start_uptime_monitor_task(telemetry_sender: Arc<Inner>) {
 }
 
 fn create_http_client() -> Option<HttpClient> {
-    // TODO add telemetry URL.
-    let client_opt = if is_telemetry_enabled() {
-        HttpClient::try_new()
-    } else {
-        None
-    };
-    if let Some(client) = client_opt.as_ref() {
-        info!("telemetry to {} is enabled.", client.endpoint());
-    } else {
+    if is_telemetry_disabled() {
         info!("telemetry to quickwit is disabled.");
+        return None;
     }
-    client_opt
+    let client = HttpClient::try_new()?;
+    info!("telemetry to {} is enabled.", client.endpoint());
+    Some(client)
 }
 
 impl Default for TelemetrySender {
