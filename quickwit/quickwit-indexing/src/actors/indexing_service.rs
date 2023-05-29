@@ -265,7 +265,10 @@ impl IndexingService {
             .join(&pipeline_id.pipeline_ord.to_string())
             .tempdir_in(&self.indexing_root_directory)
             .map_err(|err| IndexingServiceError::StorageError(err.into()))?;
-        let storage = self.storage_resolver.resolve(&index_config.index_uri)?;
+        let storage = self
+            .storage_resolver
+            .resolve(&index_config.index_uri)
+            .await?;
         let merge_policy =
             crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
         let split_store = IndexingSplitStore::new(

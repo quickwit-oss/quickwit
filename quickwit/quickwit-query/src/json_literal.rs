@@ -196,3 +196,27 @@ mod tests {
         assert_eq!(dt_opt, Some(DateTime::from_utc(expected_datetime)));
     }
 }
+
+impl From<bool> for JsonLiteral {
+    fn from(b: bool) -> JsonLiteral {
+        JsonLiteral::Bool(b)
+    }
+}
+
+impl From<String> for JsonLiteral {
+    fn from(s: String) -> JsonLiteral {
+        JsonLiteral::String(s)
+    }
+}
+
+impl From<u64> for JsonLiteral {
+    fn from(number: u64) -> JsonLiteral {
+        JsonLiteral::Number(number.into())
+    }
+}
+
+impl From<i64> for JsonLiteral {
+    fn from(number: i64) -> JsonLiteral {
+        JsonLiteral::Number(number.into())
+    }
+}

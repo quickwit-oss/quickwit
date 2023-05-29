@@ -30,7 +30,9 @@ use quickwit_proto::{
     LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
     SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
-use quickwit_query::query_ast::QueryAst;
+use quickwit_query::query_ast::{
+    BoolQuery, QueryAst, QueryAstVisitor, RangeQuery, TermQuery, TermSetQuery,
+};
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
@@ -235,6 +237,15 @@ pub async fn root_search(
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
     let query_ast_resolved = query_ast.parse_user_query(doc_mapper.default_search_fields())?;
 
+    if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
+        refine_start_end_timestamp_from_ast(
+            &query_ast_resolved,
+            timestamp_field,
+            &mut search_request.start_timestamp,
+            &mut search_request.end_timestamp,
+        );
+    }
+
     // Validates the query by effectively building it against the current schema.
     doc_mapper.query(doc_mapper.schema(), &query_ast_resolved, true)?;
 
@@ -411,6 +422,130 @@ pub async fn root_search(
         elapsed_time_micros: elapsed.as_micros() as u64,
         errors: Vec::new(),
     })
+}
+
+pub(crate) fn refine_start_end_timestamp_from_ast(
+    query_ast: &QueryAst,
+    timestamp_field: &str,
+    start_timestamp: &mut Option<i64>,
+    end_timestamp: &mut Option<i64>,
+) {
+    let mut timestamp_range_extractor = ExtractTimestampRange {
+        timestamp_field,
+        start_timestamp: *start_timestamp,
+        end_timestamp: *end_timestamp,
+    };
+    timestamp_range_extractor
+        .visit(query_ast)
+        .expect("can't fail unwrapping Infallible");
+    *start_timestamp = timestamp_range_extractor.start_timestamp;
+    *end_timestamp = timestamp_range_extractor.end_timestamp;
+}
+
+/// Boundaries identified as being implied by the QueryAst.
+///
+/// `start_timestamp` is to be interpreted as Inclusive (or Unbounded)
+/// `end_timestamp` is to be interpreted as Exclusive (or Unbounded)
+/// In other word, this is a `[start_timestamp..end_timestamp)` interval.
+struct ExtractTimestampRange<'a> {
+    timestamp_field: &'a str,
+    start_timestamp: Option<i64>,
+    end_timestamp: Option<i64>,
+}
+
+impl<'a> ExtractTimestampRange<'a> {
+    fn update_start_timestamp(
+        &mut self,
+        lower_bound: &quickwit_query::JsonLiteral,
+        included: bool,
+    ) {
+        use quickwit_query::InterpretUserInput;
+        let Some(lower_bound) = tantivy::DateTime::interpret(lower_bound) else { return };
+        let mut lower_bound = lower_bound.into_timestamp_secs();
+        if !included {
+            // TODO saturating isn't exactly right, we should replace the RangeQuery with
+            // a match_none, but the visitor doesn't allow mutation.
+            lower_bound = lower_bound.saturating_add(1);
+        }
+        self.start_timestamp = Some(
+            self.start_timestamp
+                .map_or(lower_bound, |current| current.max(lower_bound)),
+        );
+    }
+
+    fn update_end_timestamp(&mut self, upper_bound: &quickwit_query::JsonLiteral, included: bool) {
+        use quickwit_query::InterpretUserInput;
+        let Some(upper_bound_timestamp) = tantivy::DateTime::interpret(upper_bound) else { return };
+        let mut upper_bound = upper_bound_timestamp.into_timestamp_secs();
+        let round_up = (upper_bound_timestamp.into_timestamp_nanos() % 1_000_000_000) != 0;
+        if included || round_up {
+            // TODO saturating isn't exactly right, we should replace the RangeQuery with
+            // a match_none, but the visitor doesn't allow mutation.
+            upper_bound = upper_bound.saturating_add(1);
+        }
+        self.end_timestamp = Some(
+            self.end_timestamp
+                .map_or(upper_bound, |current| current.min(upper_bound)),
+        );
+    }
+}
+
+impl<'a, 'b> QueryAstVisitor<'b> for ExtractTimestampRange<'a> {
+    type Err = std::convert::Infallible;
+
+    fn visit_bool(&mut self, bool_query: &'b BoolQuery) -> Result<(), Self::Err> {
+        // we only want to visit sub-queries which are strict (positive) requirements
+        for ast in bool_query.must.iter().chain(bool_query.filter.iter()) {
+            self.visit(ast)?;
+        }
+        Ok(())
+    }
+
+    fn visit_range(&mut self, range_query: &'b RangeQuery) -> Result<(), Self::Err> {
+        use std::ops::Bound;
+
+        if range_query.field == self.timestamp_field {
+            match &range_query.lower_bound {
+                Bound::Included(lower_bound) => self.update_start_timestamp(lower_bound, true),
+                Bound::Excluded(lower_bound) => self.update_start_timestamp(lower_bound, false),
+                Bound::Unbounded => (),
+            }
+            match &range_query.upper_bound {
+                Bound::Included(upper_bound) => self.update_end_timestamp(upper_bound, true),
+                Bound::Excluded(upper_bound) => self.update_end_timestamp(upper_bound, false),
+                Bound::Unbounded => (),
+            }
+        }
+        Ok(())
+    }
+
+    // if we visit a term, limit the range to DATE..=DATE
+    fn visit_term(&mut self, term_query: &'b TermQuery) -> Result<(), Self::Err> {
+        if term_query.field == self.timestamp_field {
+            // TODO when fixing #3323, this may need to be modified to support numbers too
+            let json_term = quickwit_query::JsonLiteral::String(term_query.value.clone());
+            self.update_start_timestamp(&json_term, true);
+            self.update_end_timestamp(&json_term, true);
+        }
+        Ok(())
+    }
+
+    // if we visit a termset, limit the range to LOWEST..=HIGHEST
+    fn visit_term_set(&mut self, term_query: &'b TermSetQuery) -> Result<(), Self::Err> {
+        if let Some(term_set) = term_query.terms_per_field.get(self.timestamp_field) {
+            // rfc3339 is lexicographically ordered if YEAR <= 9999, so we can use string
+            // ordering to get the start and end quickly.
+            if let Some(first) = term_set.first() {
+                let json_term = quickwit_query::JsonLiteral::String(first.clone());
+                self.update_start_timestamp(&json_term, true);
+            }
+            if let Some(last) = term_set.last() {
+                let json_term = quickwit_query::JsonLiteral::String(last.clone());
+                self.update_end_timestamp(&json_term, true);
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn finalize_aggregation(
@@ -1936,5 +2071,117 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_extract_timestamp_range_from_ast() {
+        use std::ops::Bound;
+
+        use quickwit_query::JsonLiteral;
+
+        let timestamp_field = "timestamp";
+
+        let simple_range = quickwit_query::query_ast::RangeQuery {
+            field: timestamp_field.to_string(),
+            lower_bound: Bound::Included(JsonLiteral::String("2021-04-13T22:45:41Z".to_owned())),
+            upper_bound: Bound::Excluded(JsonLiteral::String("2021-05-06T06:51:19Z".to_owned())),
+        }
+        .into();
+
+        // direct range
+        let mut timestamp_range_extractor = ExtractTimestampRange {
+            timestamp_field,
+            start_timestamp: None,
+            end_timestamp: None,
+        };
+        timestamp_range_extractor.visit(&simple_range).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353941));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283879));
+
+        // range inside a must bool query
+        let bool_query_must = quickwit_query::query_ast::BoolQuery {
+            must: vec![simple_range.clone()],
+            ..Default::default()
+        };
+        timestamp_range_extractor.start_timestamp = None;
+        timestamp_range_extractor.end_timestamp = None;
+        timestamp_range_extractor
+            .visit(&bool_query_must.into())
+            .unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353941));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283879));
+
+        // range inside a should bool query
+        let bool_query_should = quickwit_query::query_ast::BoolQuery {
+            should: vec![simple_range.clone()],
+            ..Default::default()
+        };
+        timestamp_range_extractor.start_timestamp = Some(123);
+        timestamp_range_extractor.end_timestamp = None;
+        timestamp_range_extractor
+            .visit(&bool_query_should.into())
+            .unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(123));
+        assert_eq!(timestamp_range_extractor.end_timestamp, None);
+
+        // start bound was already more restrictive
+        timestamp_range_extractor.start_timestamp = Some(1618601297);
+        timestamp_range_extractor.end_timestamp = Some(i64::MAX);
+        timestamp_range_extractor.visit(&simple_range).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618601297));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283879));
+
+        // end bound was already more restrictive
+        timestamp_range_extractor.start_timestamp = Some(1);
+        timestamp_range_extractor.end_timestamp = Some(1618601297);
+        timestamp_range_extractor.visit(&simple_range).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353941));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1618601297));
+
+        // bounds are (start..end] instead of [start..end)
+        let unusual_bounds = quickwit_query::query_ast::RangeQuery {
+            field: timestamp_field.to_string(),
+            lower_bound: Bound::Excluded(JsonLiteral::String("2021-04-13T22:45:41Z".to_owned())),
+            upper_bound: Bound::Included(JsonLiteral::String("2021-05-06T06:51:19Z".to_owned())),
+        }
+        .into();
+        timestamp_range_extractor.start_timestamp = None;
+        timestamp_range_extractor.end_timestamp = None;
+        timestamp_range_extractor.visit(&unusual_bounds).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353942));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283880));
+
+        let wrong_field = quickwit_query::query_ast::RangeQuery {
+            field: "other_field".to_string(),
+            lower_bound: Bound::Included(JsonLiteral::String("2021-04-13T22:45:41Z".to_owned())),
+            upper_bound: Bound::Excluded(JsonLiteral::String("2021-05-06T06:51:19Z".to_owned())),
+        }
+        .into();
+        timestamp_range_extractor.start_timestamp = None;
+        timestamp_range_extractor.end_timestamp = None;
+        timestamp_range_extractor.visit(&wrong_field).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, None);
+        assert_eq!(timestamp_range_extractor.end_timestamp, None);
+
+        let high_precision = quickwit_query::query_ast::RangeQuery {
+            field: timestamp_field.to_string(),
+            lower_bound: Bound::Included(JsonLiteral::String(
+                "2021-04-13T22:45:41.001Z".to_owned(),
+            )),
+            upper_bound: Bound::Excluded(JsonLiteral::String(
+                "2021-05-06T06:51:19.001Z".to_owned(),
+            )),
+        }
+        .into();
+
+        // the upper bound should be rounded up as to includes documents from X.000 to X.001
+        let mut timestamp_range_extractor = ExtractTimestampRange {
+            timestamp_field,
+            start_timestamp: None,
+            end_timestamp: None,
+        };
+        timestamp_range_extractor.visit(&high_precision).unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353941));
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283880));
     }
 }

@@ -30,7 +30,7 @@ use tokio_stream::StreamMap;
 use tracing::*;
 
 use crate::cluster_client::ClusterClient;
-use crate::root::SearchJob;
+use crate::root::{refine_start_end_timestamp_from_ast, SearchJob};
 use crate::{list_relevant_splits, SearchError, SearchJobPlacer};
 
 /// Perform a distributed search stream.
@@ -58,6 +58,15 @@ pub async fn root_search_stream(
     let query_ast: QueryAst = serde_json::from_str(&search_stream_request.query_ast)
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
     let query_ast_resolved = query_ast.parse_user_query(doc_mapper.default_search_fields())?;
+
+    if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
+        refine_start_end_timestamp_from_ast(
+            &query_ast_resolved,
+            timestamp_field,
+            &mut search_stream_request.start_timestamp,
+            &mut search_stream_request.end_timestamp,
+        );
+    }
 
     // Validates the query by effectively building it against the current schema.
     doc_mapper.query(doc_mapper.schema(), &query_ast_resolved, true)?;

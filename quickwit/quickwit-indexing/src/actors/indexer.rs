@@ -726,7 +726,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_trigger_on_memory_limit() -> anyhow::Result<()> {
-        let universe = Universe::with_accelerated_time();
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),

@@ -70,7 +70,7 @@ async fn test_otel_jaeger_integration() {
     let traces_service = OtlpGrpcTracesService::new(ingester_client, Some(CommitType::Force));
 
     let storage_resolver = StorageResolver::for_test();
-    let metastore = metastore_for_test(&storage_resolver);
+    let metastore = metastore_for_test(&storage_resolver).await;
     let (indexer_service, _indexer_handle) = indexer_for_test(
         &universe,
         temp_dir.path(),
@@ -277,9 +277,10 @@ async fn ingester_for_test(
     (ingester_service, ingester_client)
 }
 
-fn metastore_for_test(storage_resolver: &StorageResolver) -> Arc<dyn Metastore> {
+async fn metastore_for_test(storage_resolver: &StorageResolver) -> Arc<dyn Metastore> {
     let storage = storage_resolver
         .resolve(&Uri::for_test("ram:///metastore"))
+        .await
         .unwrap();
     Arc::new(FileBackedMetastore::for_test(storage))
 }
