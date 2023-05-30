@@ -67,6 +67,7 @@ pub fn new_split_id() -> String {
 pub async fn start_indexing_service(
     universe: &Universe,
     config: &QuickwitConfig,
+    num_blocking_threads: usize,
     cluster: Cluster,
     metastore: Arc<dyn Metastore>,
     ingest_api_service: Mailbox<IngestApiService>,
@@ -79,6 +80,7 @@ pub async fn start_indexing_service(
         config.node_id.clone(),
         config.data_dir_path.to_path_buf(),
         config.indexer_config.clone(),
+        num_blocking_threads,
         cluster,
         metastore.clone(),
         Some(ingest_api_service),

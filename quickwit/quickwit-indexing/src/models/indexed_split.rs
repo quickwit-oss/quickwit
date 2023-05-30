@@ -57,7 +57,7 @@ impl fmt::Debug for IndexedSplit {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("IndexedSplit")
-            .field("id", &self.split_attrs.split_id)
+            .field("split_id", &self.split_attrs.split_id)
             .field("dir", &self.split_scratch_directory.path())
             .field("num_docs", &self.split_attrs.num_docs)
             .finish()
@@ -68,7 +68,7 @@ impl fmt::Debug for IndexedSplitBuilder {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("IndexedSplitBuilder")
-            .field("id", &self.split_attrs.split_id)
+            .field("split_id", &self.split_attrs.split_id)
             .field("dir", &self.split_scratch_directory.path())
             .field("num_docs", &self.split_attrs.num_docs)
             .finish()
@@ -165,11 +165,12 @@ pub struct IndexedSplitBatch {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommitTrigger {
-    Timeout,
+    Drained,
+    ForceCommit,
+    MemoryLimit,
     NoMoreDocs,
     NumDocsLimit,
-    MemoryLimit,
-    ForceCommit,
+    Timeout,
 }
 
 #[derive(Debug)]

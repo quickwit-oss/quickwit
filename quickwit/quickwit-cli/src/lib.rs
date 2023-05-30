@@ -28,7 +28,7 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use once_cell::sync::Lazy;
 use quickwit_common::run_checklist;
-use quickwit_common::runtimes::RuntimesConfiguration;
+use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig, DEFAULT_QW_CONFIG_PATH};
@@ -102,13 +102,15 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
     }
 }
 
-pub fn start_actor_runtimes(services: &HashSet<QuickwitService>) -> anyhow::Result<()> {
+pub fn start_actor_runtimes(
+    runtimes_config: RuntimesConfig,
+    services: &HashSet<QuickwitService>,
+) -> anyhow::Result<()> {
     if services.contains(&QuickwitService::Indexer)
         || services.contains(&QuickwitService::Janitor)
         || services.contains(&QuickwitService::ControlPlane)
     {
-        let runtime_configuration = RuntimesConfiguration::default();
-        quickwit_common::runtimes::initialize_runtimes(runtime_configuration)
+        quickwit_common::runtimes::initialize_runtimes(runtimes_config)
             .context("Failed to start actor runtimes.")?;
     }
     Ok(())

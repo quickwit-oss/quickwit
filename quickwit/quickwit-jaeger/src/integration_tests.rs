@@ -341,6 +341,7 @@ async fn indexer_for_test(
         "test-node".to_string(),
         data_dir_path.to_path_buf(),
         indexer_config,
+        1,
         cluster,
         metastore,
         Some(ingester_service),
