@@ -144,7 +144,7 @@ impl ClusterSandbox {
         // There is exactly one node.
         let node_config = node_configs[0].clone();
         let node_config_clone = node_config.clone();
-        let runtimes_config = RuntimesConfig::light_for_test();
+        let runtimes_config = RuntimesConfig::light_for_tests();
         let shutdown_trigger = ClusterShutdownTrigger::new();
         let shutdown_signal = shutdown_trigger.shutdown_signal();
         let join_handles = vec![tokio::spawn(async move {
@@ -177,7 +177,7 @@ impl ClusterSandbox {
     ) -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
-        let runtimes_config = RuntimesConfig::light_for_test();
+        let runtimes_config = RuntimesConfig::light_for_tests();
         let mut join_handles = Vec::new();
         let shutdown_trigger = ClusterShutdownTrigger::new();
         for node_config in node_configs.iter() {
