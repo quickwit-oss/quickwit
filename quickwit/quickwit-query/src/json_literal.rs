@@ -160,7 +160,7 @@ impl<'a> InterpretUserInput<'a> for tantivy::DateTime {
     }
 }
 
-/// Lenient base64 engine that allow user to use padding or not.
+/// Lenient base64 engine that allows users to use padding or not.
 const LENIENT_BASE64_ENGINE: base64::engine::GeneralPurpose = base64::engine::GeneralPurpose::new(
     &base64::alphabet::STANDARD,
     base64::engine::GeneralPurposeConfig::new()
