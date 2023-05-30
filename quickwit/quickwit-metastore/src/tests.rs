@@ -112,6 +112,25 @@ pub mod test_suite {
         cleanup_index(&metastore, index_uid).await;
     }
 
+    pub async fn test_metastore_create_index_with_maximum_length<
+        MetastoreToTest: Metastore + DefaultForTest,
+    >() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id =
+            append_random_suffix(format!("very-long-index-{}", "a".repeat(233)).as_str());
+        assert_eq!(index_id.len(), 255);
+        let index_uri = format!("ram:///indexes/{index_id}");
+
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
+
+        let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
+
+        assert!(metastore.index_exists(&index_id).await.unwrap());
+
+        cleanup_index(&metastore, index_uid).await;
+    }
+
     pub async fn test_metastore_index_exists<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
@@ -2663,6 +2682,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_create_index() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_create_index::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_create_index_with_maximum_length() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_create_index_with_maximum_length::<$metastore_type>().await;
             }
 
             #[tokio::test]

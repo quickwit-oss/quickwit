@@ -763,7 +763,7 @@ mod tests {
         .await
         .unwrap();
         let indexing_task = IndexingTask {
-            index_uid: "index-1:1111111111111".to_string(),
+            index_uid: "index-1:11111111111111111111111111".to_string(),
             source_id: "source-1".to_string(),
         };
         cluster2
@@ -838,7 +838,7 @@ mod tests {
                 let index_id = random_generator.gen_range(0..=10_000);
                 let source_id = random_generator.gen_range(0..=100);
                 IndexingTask {
-                    index_uid: format!("index-{index_id}:1111111111111"),
+                    index_uid: format!("index-{index_id}:11111111111111111111111111"),
                     source_id: format!("source-{source_id}"),
                 }
             })
@@ -946,11 +946,13 @@ mod tests {
             let chitchat_handle = node.inner.read().await.chitchat_handle.chitchat();
             let mut chitchat_guard = chitchat_handle.lock().await;
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}:my_good_index:my_source:1111111111111"),
+                format!(
+                    "{INDEXING_TASK_PREFIX}:my_good_index:my_source:11111111111111111111111111"
+                ),
                 "2".to_string(),
             );
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}:my_bad_index:my_source:1111111111111"),
+                format!("{INDEXING_TASK_PREFIX}:my_bad_index:my_source:11111111111111111111111111"),
                 "malformatted value".to_string(),
             );
         }

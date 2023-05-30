@@ -854,11 +854,11 @@ mod tests {
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
-                index_uid: "index-1:1111111111111".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
             };
             let task_2 = IndexingTask {
-                index_uid: "index-1:1111111111111".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
             };
             running_plan.insert(
@@ -876,11 +876,11 @@ mod tests {
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
-                index_uid: "index-1:1111111111111".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
             };
             let task_2 = IndexingTask {
-                index_uid: "index-1:1111111111111".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
             };
             running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
@@ -904,11 +904,11 @@ mod tests {
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
-                index_uid: "index-1:1111111111111".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
             };
             let task_2 = IndexingTask {
-                index_uid: "index-2:1111111111111".to_string(),
+                index_uid: "index-2:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
             };
             running_plan.insert("indexer-2".to_string(), vec![task_2.clone()]);
@@ -940,7 +940,7 @@ mod tests {
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
-                index_uid: "index-1:1111111111111".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
             };
             running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
@@ -963,7 +963,7 @@ mod tests {
             let mut running_plan = HashMap::new();
             let mut desired_plan = HashMap::new();
             let task_1 = IndexingTask {
-                index_uid: "index-1:1111111111111".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
             };
             running_plan.insert(

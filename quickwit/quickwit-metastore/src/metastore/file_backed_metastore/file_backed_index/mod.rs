@@ -84,7 +84,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
             create_timestamp: 0,
             opstamp: 10,
             delete_query: Some(DeleteQuery {
-                index_uid: "index:1111111111111".to_string(),
+                index_uid: "index:11111111111111111111111111".to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
                 query_ast: quickwit_proto::qast_helper("Harry Potter", &["body"]),
