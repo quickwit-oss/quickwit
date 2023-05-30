@@ -25,7 +25,12 @@ expected:
 ---
 endpoint: simple/search
 params:
-  query: "ts:>=2023-05-25T05:36:42" # AND ts:<2023-05-25T05:36:44"
+  query: "ts:>=2023/05/25"
+expected:
+  num_hits: 4
+---
+endpoint: simple/search
+params:
+  query: "ts:>=1684993002 AND ts:<1684993004"
 expected:
   num_hits: 2
-

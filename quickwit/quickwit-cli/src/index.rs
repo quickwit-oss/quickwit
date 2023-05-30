@@ -46,7 +46,6 @@ use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortByField};
 use quickwit_storage::load_file;
-use quickwit_telemetry::payload::TelemetryEvent;
 use tabled::object::{Columns, Segment};
 use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
 use thousands::Separable;
@@ -453,7 +452,6 @@ pub async fn clear_index_cli(args: ClearIndexArgs) -> anyhow::Result<()> {
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "create-index");
     println!("❯ Creating index...");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
     let file_content = load_file(&args.index_config_uri).await?;
     let config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
     let qw_client = args.client_args.client();
@@ -778,7 +776,6 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     } else {
         println!("❯ Ingesting documents from stdin.");
     }
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
     let progress_bar = match &args.input_path_opt {
         Some(filepath) => {
             let file_len = std::fs::metadata(filepath).context("File not found")?.len();
@@ -878,7 +875,6 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     }
 
     println!("❯ Deleting index...");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
     let qw_client = args.client_args.client();
     let affected_files = qw_client
         .indexes()

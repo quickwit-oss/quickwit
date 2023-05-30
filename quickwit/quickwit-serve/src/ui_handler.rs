@@ -19,6 +19,7 @@
 
 use hyper::header::HeaderValue;
 use once_cell::sync::Lazy;
+use quickwit_telemetry::payload::TelemetryEvent;
 use regex::Regex;
 use rust_embed::RustEmbed;
 use warp::path::Tail;
@@ -28,6 +29,8 @@ use warp::{Filter, Rejection};
 /// Regular expression to identify which path should serve an asset file.
 /// If not matched, the server serves the `index.html` file.
 const PATH_PATTERN: &str = r#"(^static|\.(png|json|txt|ico|js|map)$)"#;
+
+const UI_INDEX_FILE_NAME: &str = "index.html";
 
 #[derive(RustEmbed)]
 #[folder = "../quickwit-ui/build/"]
@@ -40,17 +43,21 @@ pub fn ui_handler() -> impl Filter<Extract = (impl warp::Reply,), Error = Reject
 }
 
 async fn serve_file(path: Tail) -> Result<impl warp::Reply, Rejection> {
-    serve_impl(path.as_str())
+    serve_impl(path.as_str()).await
 }
 
-fn serve_impl(path: &str) -> Result<impl warp::Reply, Rejection> {
+async fn serve_impl(path: &str) -> Result<impl warp::Reply, Rejection> {
     static PATH_PTN: Lazy<Regex> = Lazy::new(|| Regex::new(PATH_PATTERN).unwrap());
     let path_to_file = if PATH_PTN.is_match(path) {
         path
     } else {
-        "index.html"
+        // Quickwit UI is a single page application.
+        // Any path request that is not an asset should serve the `index.html` file.
+        // The client (browser) usually request `index.html` once unless the user refreshes the
+        // page.
+        quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiIndexPageLoad).await;
+        UI_INDEX_FILE_NAME
     };
-
     let asset = Asset::get(path_to_file).ok_or_else(warp::reject::not_found)?;
     let mime = mime_guess::from_path(path_to_file).first_or_octet_stream();
 

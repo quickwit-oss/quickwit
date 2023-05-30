@@ -206,6 +206,7 @@ fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue>
         }
         (TantivyValue::Date(date_time), LeafType::DateTime(date_time_options)) => {
             let json_value = date_time_options
+                .output_format
                 .format_to_json(*date_time)
                 .expect("Invalid datetime is not allowed.");
             Some(json_value)
