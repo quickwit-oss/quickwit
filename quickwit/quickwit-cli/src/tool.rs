@@ -48,7 +48,6 @@ use quickwit_indexing::models::{
 use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
-use quickwit_telemetry::payload::TelemetryEvent;
 use thousands::Separable;
 use tracing::{debug, info};
 
@@ -283,7 +282,6 @@ impl ToolCliCommand {
 pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<()> {
     debug!(args=?args, "local-ingest-docs");
     println!("❯ Ingesting documents locally...");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
 
     let config = load_quickwit_config(&args.config_uri).await?;
 
@@ -479,7 +477,6 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
 pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "garbage-collect-index");
     println!("❯ Garbage collecting index...");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
     let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let index_service = IndexService::from_config(quickwit_config.clone()).await?;

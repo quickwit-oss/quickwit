@@ -68,6 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let protos = find_protos("protos/third-party/otlp");
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
+        .type_attribute("StatusCode", r#"#[serde(rename_all = "snake_case")]"#)
         .out_dir("src/")
         .compile_with_config(prost_config, &protos, &["protos/third-party/otlp"])?;
     Ok(())
