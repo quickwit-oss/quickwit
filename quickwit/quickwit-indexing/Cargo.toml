@@ -69,7 +69,11 @@ kinesis = ["aws-config", "aws-smithy-client", "aws-sdk-kinesis", "quickwit-aws/k
 kinesis-localstack-tests = []
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
-testsuite = ["quickwit-actors/testsuite", "quickwit-cluster/testsuite"]
+testsuite = [
+  "quickwit-actors/testsuite",
+  "quickwit-cluster/testsuite",
+  "quickwit-common/testsuite",
+]
 
 [dev-dependencies]
 bytes = { workspace = true }
