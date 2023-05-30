@@ -31,8 +31,8 @@ use regex::Regex;
 pub use self::default_mapper::DefaultDocMapper;
 pub use self::default_mapper_builder::{DefaultDocMapperBuilder, ModeType};
 pub use self::field_mapping_entry::{
-    FastFieldOptions, FieldMappingEntry, QuickwitJsonOptions, QuickwitNumericOptions,
-    QuickwitTextOptions,
+    FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
+    QuickwitNumericOptions, QuickwitTextOptions,
 };
 pub(crate) use self::field_mapping_entry::{
     FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,

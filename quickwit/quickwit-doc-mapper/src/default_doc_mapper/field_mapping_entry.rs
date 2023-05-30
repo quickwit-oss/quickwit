@@ -18,9 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 use anyhow::bail;
-use serde::{Deserialize, Serialize};
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type};
 
@@ -100,6 +102,84 @@ impl Default for QuickwitNumericOptions {
             stored: true,
             fast: false,
         }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct QuickwitBytesOptions {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default = "default_as_true")]
+    pub stored: bool,
+    #[serde(default = "default_as_true")]
+    pub indexed: bool,
+    #[serde(default)]
+    pub fast: bool,
+    #[serde(default)]
+    pub input_format: BinaryFormat,
+    #[serde(default)]
+    pub output_format: BinaryFormat,
+}
+
+impl Default for QuickwitBytesOptions {
+    fn default() -> Self {
+        Self {
+            description: None,
+            indexed: true,
+            stored: true,
+            fast: false,
+            input_format: BinaryFormat::default(),
+            output_format: BinaryFormat::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default)]
+pub enum BinaryFormat {
+    #[default]
+    Base64,
+    Hex,
+}
+
+impl BinaryFormat {
+    pub fn as_str(&self) -> &str {
+        match self {
+            BinaryFormat::Base64 => "base64",
+            BinaryFormat::Hex => "hex",
+        }
+    }
+}
+
+impl FromStr for BinaryFormat {
+    type Err = String;
+
+    fn from_str(bytes_format_str: &str) -> Result<Self, Self::Err> {
+        let bytes_format = match bytes_format_str.to_lowercase().as_str() {
+            "base64" => BinaryFormat::Base64,
+            "hex" => BinaryFormat::Hex,
+            _ => {
+                return Err(format!("Unknown byte format: `{bytes_format_str}`."));
+            }
+        };
+        Ok(bytes_format)
+    }
+}
+
+impl Serialize for BinaryFormat {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for BinaryFormat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let bytes_format_str: String = Deserialize::deserialize(deserializer)?;
+        let bytes_format = bytes_format_str.parse().map_err(D::Error::custom)?;
+        Ok(bytes_format)
     }
 }
 
@@ -393,7 +473,7 @@ fn deserialize_mapping_type(
         }
         Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
         Type::Bytes => {
-            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            let numeric_options: QuickwitBytesOptions = serde_json::from_value(json)?;
             if numeric_options.fast && cardinality == Cardinality::MultiValues {
                 bail!("fast field is not allowed for array<bytes>.");
             }
@@ -455,9 +535,9 @@ fn typed_mapping_to_json_params(
         FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
         FieldMappingType::U64(options, _)
         | FieldMappingType::I64(options, _)
-        | FieldMappingType::Bytes(options, _)
         | FieldMappingType::F64(options, _)
         | FieldMappingType::Bool(options, _) => serialize_to_map(&options),
+        FieldMappingType::Bytes(options, _) => serialize_to_map(&options),
         FieldMappingType::IpAddr(options, _) => serialize_to_map(&options),
         FieldMappingType::DateTime(date_time_options, _) => serialize_to_map(&date_time_options),
         FieldMappingType::Json(json_options, _) => serialize_to_map(&json_options),
@@ -920,7 +1000,7 @@ mod tests {
                 "type": "i64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
             })
         );
         Ok(())
@@ -1006,7 +1086,7 @@ mod tests {
                 "type":"u64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
             })
         );
     }
@@ -1030,7 +1110,7 @@ mod tests {
                 "type":"f64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
             })
         );
     }
@@ -1054,7 +1134,7 @@ mod tests {
                 "type": "bool",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
             })
         );
     }
@@ -1222,7 +1302,9 @@ mod tests {
             r#"
             {
                 "name": "my_field_name",
-                "type": "bytes"
+                "type": "bytes",
+                "input_format": "hex",
+                "output_format": "base64"
             }
             "#,
         )
@@ -1236,6 +1318,8 @@ mod tests {
                 "stored": true,
                 "indexed": true,
                 "fast": false,
+                "input_format": "hex",
+                "output_format": "base64"
             })
         );
     }
@@ -1260,6 +1344,8 @@ mod tests {
                 "stored": true,
                 "indexed": true,
                 "fast": false,
+                "input_format": "base64",
+                "output_format": "base64"
             })
         );
     }
@@ -1375,7 +1461,7 @@ mod tests {
                 "type": "i64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
             })
         );
     }
