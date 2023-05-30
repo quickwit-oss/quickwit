@@ -18,9 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 use anyhow::bail;
-use serde::{Deserialize, Serialize};
+use indexmap::IndexSet;
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type};
 
@@ -90,9 +93,121 @@ pub struct QuickwitNumericOptions {
     pub indexed: bool,
     #[serde(default)]
     pub fast: bool,
+    #[serde(default)]
+    pub input_formats: NumericInputFormats,
+    #[serde(default)]
+    pub output_format: NumericFormat,
 }
 
 impl Default for QuickwitNumericOptions {
+    fn default() -> Self {
+        Self {
+            description: None,
+            indexed: true,
+            stored: true,
+            fast: false,
+            input_formats: NumericInputFormats::default(),
+            output_format: NumericFormat::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct NumericInputFormats(Vec<NumericFormat>);
+
+impl<'de> Deserialize<'de> for NumericInputFormats {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let numeric_formats = IndexSet::<NumericFormat>::deserialize(deserializer)?;
+
+        if numeric_formats.is_empty() {
+            return Ok(NumericInputFormats::default());
+        }
+
+        if numeric_formats.contains(&NumericFormat::DecimalStr)
+            && numeric_formats.contains(&NumericFormat::Hex)
+        {
+            return Err(D::Error::custom(
+                "input format for numbers doesn't allow `hex` and `decimal_str` at the same time \
+                 as the are ambiguous.",
+            ));
+        }
+
+        Ok(NumericInputFormats(numeric_formats.into_iter().collect()))
+    }
+}
+
+impl Default for NumericInputFormats {
+    fn default() -> NumericInputFormats {
+        Self(vec![NumericFormat::Decimal, NumericFormat::DecimalStr])
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default)]
+pub enum NumericFormat {
+    #[default]
+    Decimal,
+    DecimalStr,
+    Hex,
+}
+
+impl NumericFormat {
+    pub fn as_str(&self) -> &str {
+        match self {
+            NumericFormat::Decimal => "decimal",
+            NumericFormat::DecimalStr => "decimal_str",
+            NumericFormat::Hex => "hex",
+        }
+    }
+}
+
+impl FromStr for NumericFormat {
+    type Err = String;
+
+    fn from_str(numeric_format_str: &str) -> Result<Self, Self::Err> {
+        let numeric_format = match numeric_format_str.to_lowercase().as_str() {
+            "decimal" => NumericFormat::Decimal,
+            "decimal_str" => NumericFormat::DecimalStr,
+            "hex" => NumericFormat::Hex,
+            _ => {
+                return Err(format!("Unknown numeric format: `{numeric_format_str}`."));
+            }
+        };
+        Ok(numeric_format)
+    }
+}
+
+impl Serialize for NumericFormat {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for NumericFormat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let numeric_format_str: String = Deserialize::deserialize(deserializer)?;
+        let numeric_format = numeric_format_str.parse().map_err(D::Error::custom)?;
+        Ok(numeric_format)
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct QuickwitBytesOptions {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default = "default_as_true")]
+    pub stored: bool,
+    #[serde(default = "default_as_true")]
+    pub indexed: bool,
+    #[serde(default)]
+    pub fast: bool,
+}
+
+impl Default for QuickwitBytesOptions {
     fn default() -> Self {
         Self {
             description: None,
@@ -393,7 +508,7 @@ fn deserialize_mapping_type(
         }
         Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
         Type::Bytes => {
-            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            let numeric_options: QuickwitBytesOptions = serde_json::from_value(json)?;
             if numeric_options.fast && cardinality == Cardinality::MultiValues {
                 bail!("fast field is not allowed for array<bytes>.");
             }
@@ -455,9 +570,9 @@ fn typed_mapping_to_json_params(
         FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
         FieldMappingType::U64(options, _)
         | FieldMappingType::I64(options, _)
-        | FieldMappingType::Bytes(options, _)
         | FieldMappingType::F64(options, _)
         | FieldMappingType::Bool(options, _) => serialize_to_map(&options),
+        FieldMappingType::Bytes(options, _) => serialize_to_map(&options),
         FieldMappingType::IpAddr(options, _) => serialize_to_map(&options),
         FieldMappingType::DateTime(date_time_options, _) => serialize_to_map(&date_time_options),
         FieldMappingType::Json(json_options, _) => serialize_to_map(&json_options),
@@ -488,7 +603,7 @@ mod tests {
     use serde_json::json;
     use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextOptions};
 
-    use super::FieldMappingEntry;
+    use super::{FieldMappingEntry, NumericFormat};
     use crate::default_doc_mapper::field_mapping_entry::{
         QuickwitJsonOptions, QuickwitTextOptions, QuickwitTextTokenizer,
     };
@@ -850,7 +965,7 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "Error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
-             of `description`, `stored`, `indexed`, `fast`"
+             of `description`, `stored`, `indexed`, `fast`, `input_formats`, `output_format`"
         );
     }
 
@@ -920,7 +1035,9 @@ mod tests {
                 "type": "i64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
+                "input_formats": ["decimal", "decimal_str"],
+                "output_format": "decimal",
             })
         );
         Ok(())
@@ -940,8 +1057,64 @@ mod tests {
             .unwrap_err()
             .to_string(),
             "Error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
-             of `description`, `stored`, `indexed`, `fast`"
+             of `description`, `stored`, `indexed`, `fast`, `input_formats`, `output_format`"
         );
+    }
+
+    #[test]
+    fn test_deserialize_u64_mapping_with_wrong_input_format() {
+        assert_eq!(
+            serde_json::from_str::<FieldMappingEntry>(
+                r#"
+            {
+                "name": "my_field_name",
+                "type": "u64",
+                "input_formats": ["not_decimal"]
+            }"#
+            )
+            .unwrap_err()
+            .to_string(),
+            "Error while parsing field `my_field_name`: Unknown numeric format: `not_decimal`."
+        );
+    }
+
+    #[test]
+    fn test_deserialize_u64_mapping_with_ambiguous_input_format() {
+        assert_eq!(
+            serde_json::from_str::<FieldMappingEntry>(
+                r#"
+            {
+                "name": "my_field_name",
+                "type": "u64",
+                "input_formats": ["decimal_str", "hex"]
+            }"#
+            )
+            .unwrap_err()
+            .to_string(),
+            "Error while parsing field `my_field_name`: input format for numbers doesn't allow \
+             `hex` and `decimal_str` at the same time as the are ambiguous."
+        );
+    }
+
+    #[test]
+    fn test_deserialize_u64_mapping_with_input_format() {
+        let result = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "u64",
+                "input_formats": ["decimal", "hex"]
+            }"#,
+        )
+        .unwrap();
+        if let FieldMappingType::U64(options, _) = result.mapping_type {
+            assert_eq!(
+                options.input_formats.0,
+                vec![NumericFormat::Decimal, NumericFormat::Hex]
+            );
+        } else {
+            panic!("Wrong type");
+        }
     }
 
     #[test]
@@ -1006,7 +1179,9 @@ mod tests {
                 "type":"u64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
+                "input_formats": ["decimal", "decimal_str"],
+                "output_format": "decimal"
             })
         );
     }
@@ -1030,7 +1205,9 @@ mod tests {
                 "type":"f64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
+                "input_formats": ["decimal", "decimal_str"],
+                "output_format": "decimal",
             })
         );
     }
@@ -1054,7 +1231,9 @@ mod tests {
                 "type": "bool",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
+                "input_formats": ["decimal", "decimal_str"],
+                "output_format": "decimal",
             })
         );
     }
@@ -1375,7 +1554,9 @@ mod tests {
                 "type": "i64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
+                "input_formats": ["decimal", "decimal_str"],
+                "output_format": "decimal"
             })
         );
     }

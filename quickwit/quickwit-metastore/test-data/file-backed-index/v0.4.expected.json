@@ -22,7 +22,12 @@
           {
             "fast": true,
             "indexed": true,
+            "input_formats": [
+              "decimal",
+              "decimal_str"
+            ],
             "name": "tenant_id",
+            "output_format": "decimal",
             "stored": true,
             "type": "u64"
           },
