@@ -90,35 +90,37 @@ impl<'a> InterpretUserInput<'a> for &'a str {
 }
 
 impl<'a> InterpretUserInput<'a> for u64 {
-    fn interpret_json(user_input: &JsonLiteral) -> Option<u64> {
-        match user_input {
-            JsonLiteral::Number(json_number) => json_number.as_u64(),
-            JsonLiteral::String(text) => text.parse().ok(),
-            JsonLiteral::Bool(_) => None,
-        }
+    fn interpret_number(number: &serde_json::Number) -> Option<Self> {
+        number.as_u64()
+    }
+
+    fn interpret_str(text: &'a str) -> Option<Self> {
+        text.parse().ok()
     }
 }
 
 impl<'a> InterpretUserInput<'a> for i64 {
-    fn interpret_json(user_input: &JsonLiteral) -> Option<i64> {
-        match user_input {
-            JsonLiteral::Number(json_number) => json_number.as_i64(),
-            JsonLiteral::String(text) => text.parse().ok(),
-            JsonLiteral::Bool(_) => None,
-        }
+    fn interpret_number(number: &serde_json::Number) -> Option<Self> {
+        number.as_i64()
+    }
+
+    fn interpret_str(text: &'a str) -> Option<Self> {
+        text.parse().ok()
     }
 }
 
 // We refuse NaN and infinity.
 impl<'a> InterpretUserInput<'a> for f64 {
-    fn interpret_json(user_input: &JsonLiteral) -> Option<f64> {
-        let val: f64 = match user_input {
-            JsonLiteral::Number(json_number) => json_number.as_f64()?,
-            JsonLiteral::String(text) => text.parse().ok()?,
-            JsonLiteral::Bool(_) => {
-                return None;
-            }
-        };
+    fn interpret_number(number: &serde_json::Number) -> Option<Self> {
+        let val = number.as_f64()?;
+        if val.is_nan() || val.is_infinite() {
+            return None;
+        }
+        Some(val)
+    }
+
+    fn interpret_str(text: &'a str) -> Option<f64> {
+        let val: f64 = text.parse().ok()?;
         if val.is_nan() || val.is_infinite() {
             return None;
         }
@@ -130,6 +132,7 @@ impl<'a> InterpretUserInput<'a> for bool {
     fn interpret_bool(b: bool) -> Option<Self> {
         Some(b)
     }
+
     fn interpret_str(text: &str) -> Option<Self> {
         text.parse().ok()
     }
@@ -193,6 +196,12 @@ mod tests {
 
     use crate::json_literal::InterpretUserInput;
     use crate::JsonLiteral;
+
+    #[test]
+    fn test_interpret_str_u64() {
+        let val_opt = u64::interpret_str("123");
+        assert_eq!(val_opt, Some(123u64));
+    }
 
     #[test]
     fn test_interpret_datetime_simple_date() {
