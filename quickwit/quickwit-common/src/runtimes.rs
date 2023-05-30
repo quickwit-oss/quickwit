@@ -22,7 +22,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use once_cell::sync::OnceCell;
 use tokio::runtime::Runtime;
-use tracing::warn;
 
 static RUNTIMES: OnceCell<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceCell::new();
 
@@ -56,7 +55,7 @@ pub struct RuntimesConfig {
 
 impl RuntimesConfig {
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn light_for_test() -> RuntimesConfig {
+    pub fn light_for_tests() -> RuntimesConfig {
         RuntimesConfig {
             num_threads_blocking: 1,
             num_threads_non_blocking: 1,
@@ -119,10 +118,15 @@ impl RuntimeType {
     pub fn get_runtime_handle(self) -> tokio::runtime::Handle {
         RUNTIMES
             .get_or_init(|| {
-                warn!(
-                    "Starting tokio actor runtimes for tests! (this should only happen in tests.)"
-                );
-                start_runtimes(RuntimesConfig::light_for_test())
+                #[cfg(any(test, feature = "testsuite"))]
+                {
+                    tracing::warn!("Starting Tokio actor runtimes for tests.");
+                    start_runtimes(RuntimesConfig::light_for_tests())
+                }
+                #[cfg(not(any(test, feature = "testsuite")))]
+                {
+                    panic!("Tokio runtimes not initialized. Please, report this issue on GitHub: https://github.com/quickwit-oss/quickwit/issues.");
+                }
             })
             .get(&self)
             .unwrap()
