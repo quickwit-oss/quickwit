@@ -141,8 +141,7 @@ pub fn build_index_command() -> Command {
                         .long("commit-timeout")
                         .help("Duration of the commit timeout operation.")
                         .required(false)
-                        .global(true)
-                        .display_order(1),
+                        .global(true),
                 ])
             )
         .subcommand(

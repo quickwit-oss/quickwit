@@ -89,13 +89,13 @@ fn client_args() -> Vec<Arg> {
             .help("Duration of the timeout.")
             .required(false)
             .global(true)
-            .display_order(1),
+            .display_order(2),
         Arg::new("connect-timeout")
             .long("connect-timeout")
             .help("Duration of the connect timeout.")
             .required(false)
             .global(true)
-            .display_order(1),
+            .display_order(3),
     ]
 }
 
