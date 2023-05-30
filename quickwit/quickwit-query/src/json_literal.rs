@@ -175,7 +175,8 @@ impl<'a> InterpretUserInput<'a> for Vec<u8> {
             // We use ! as a marker to force base64 decoding.
             text = &text[1..];
         } else {
-            if base16::decode_buf(text, &mut buffer).is_ok() {
+            buffer.resize(text.len() / 2, 0u8);
+            if hex::decode_to_slice(text, &mut buffer[..]).is_ok() {
                 return Some(buffer);
             }
             buffer.clear();
@@ -223,8 +224,20 @@ mod tests {
     }
 
     #[test]
-    fn test_interpret_bytes_base16() {
+    fn test_interpret_bytes_base16_lowercase() {
         let bytes_opt = Vec::<u8>::interpret_str("deadbeef");
+        assert_eq!(bytes_opt, Some(vec![0xde, 0xad, 0xbe, 0xef]));
+    }
+
+    #[test]
+    fn test_interpret_bytes_base16_uppercase() {
+        let bytes_opt = Vec::<u8>::interpret_str("DEADBEEF");
+        assert_eq!(bytes_opt, Some(vec![0xde, 0xad, 0xbe, 0xef]));
+    }
+
+    #[test]
+    fn test_interpret_bytes_base16_mixed_casing() {
+        let bytes_opt = Vec::<u8>::interpret_str("dEadbeef");
         assert_eq!(bytes_opt, Some(vec![0xde, 0xad, 0xbe, 0xef]));
     }
 

@@ -5089,8 +5089,8 @@ name = "quickwit-query"
 version = "0.6.0"
 dependencies = [
  "anyhow",
- "base16",
  "base64 0.21.2",
+ "hex",
  "once_cell",
  "proptest",
  "quickwit-datetime",
