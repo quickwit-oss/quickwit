@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::ops::Mul;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -281,7 +282,7 @@ async fn test_timeouting_actor() {
         ObservationType::Timeout
     );
     assert_eq!(buggy_handle.harvest_health(), Health::Healthy);
-    universe.sleep(crate::HEARTBEAT * 2).await;
+    universe.sleep(crate::HEARTBEAT.mul(2)).await;
     assert_eq!(buggy_handle.harvest_health(), Health::FailureOrUnhealthy);
     buggy_handle.kill().await;
 }
