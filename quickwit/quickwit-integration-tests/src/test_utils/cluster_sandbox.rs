@@ -35,7 +35,9 @@ use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
 use quickwit_metastore::SplitState;
 use quickwit_rest_client::models::IngestSource;
-use quickwit_rest_client::rest_client::{CommitType, QuickwitClient, Transport, DEFAULT_BASE_URL};
+use quickwit_rest_client::rest_client::{
+    CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
+};
 use quickwit_serve::{serve_quickwit, ListSplitsQueryParams};
 use reqwest::Url;
 use tempfile::TempDir;
@@ -159,12 +161,14 @@ impl ClusterSandbox {
         wait_for_server_ready(node_config.quickwit_config.grpc_listen_addr).await?;
         Ok(Self {
             node_configs,
-            indexer_rest_client: QuickwitClient::new(Transport::new(transport_url(
+            indexer_rest_client: QuickwitClientBuilder::new(transport_url(
                 node_config.quickwit_config.rest_listen_addr,
-            ))),
-            searcher_rest_client: QuickwitClient::new(Transport::new(transport_url(
+            ))
+            .build(),
+            searcher_rest_client: QuickwitClientBuilder::new(transport_url(
                 node_config.quickwit_config.rest_listen_addr,
-            ))),
+            ))
+            .build(),
             _temp_dir: temp_dir,
             join_handles,
             shutdown_trigger,
@@ -208,12 +212,14 @@ impl ClusterSandbox {
         tokio::time::sleep(Duration::from_millis(100)).await;
         Ok(Self {
             node_configs,
-            searcher_rest_client: QuickwitClient::new(Transport::new(transport_url(
+            searcher_rest_client: QuickwitClientBuilder::new(transport_url(
                 searcher_config.quickwit_config.rest_listen_addr,
-            ))),
-            indexer_rest_client: QuickwitClient::new(Transport::new(transport_url(
+            ))
+            .build(),
+            indexer_rest_client: QuickwitClientBuilder::new(transport_url(
                 indexer_config.quickwit_config.rest_listen_addr,
-            ))),
+            ))
+            .build(),
             _temp_dir: temp_dir,
             join_handles,
             shutdown_trigger,

@@ -42,23 +42,22 @@ use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::{IndexMetadata, Split, SplitState};
 use quickwit_proto::SortOrder;
 use quickwit_rest_client::models::IngestSource;
-use quickwit_rest_client::rest_client::{CommitType, IngestEvent, QuickwitClient, Transport};
+use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortByField};
 use quickwit_storage::load_file;
-use reqwest::Url;
 use tabled::object::{Columns, Segment};
 use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
 use thousands::Separable;
 use tracing::{debug, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
-use crate::{cluster_endpoint_arg, make_table, prompt_confirmation, THROUGHPUT_WINDOW_SIZE};
+use crate::{client_args, make_table, prompt_confirmation, ClientArgs, THROUGHPUT_WINDOW_SIZE};
 
 pub fn build_index_command() -> Command {
     Command::new("index")
         .about("Manages indexes: creates, deletes, ingests, searches, describes...")
-        .arg(cluster_endpoint_arg())
+        .args(client_args())
         .subcommand(
             Command::new("create")
                 .display_order(1)
@@ -112,7 +111,6 @@ pub fn build_index_command() -> Command {
                 .alias("ls")
                 .display_order(5)
                 .about("List indexes.")
-                .arg(cluster_endpoint_arg())
             )
         .subcommand(
             Command::new("ingest")
@@ -138,6 +136,11 @@ pub fn build_index_command() -> Command {
                         .help("Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting")
                         .action(ArgAction::SetTrue)
                         .conflicts_with("wait"),
+                    Arg::new("commit-timeout")
+                        .long("commit-timeout")
+                        .help("Duration of the commit timeout operation.")
+                        .required(false)
+                        .global(true),
                 ])
             )
         .subcommand(
@@ -178,14 +181,14 @@ pub fn build_index_command() -> Command {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ClearIndexArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub assume_yes: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct CreateIndexArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_config_uri: Uri,
     pub overwrite: bool,
     pub assume_yes: bool,
@@ -193,13 +196,13 @@ pub struct CreateIndexArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IngestDocsArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
     pub batch_size_limit_opt: Option<Byte>,
@@ -208,7 +211,7 @@ pub struct IngestDocsArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SearchIndexArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub query: String,
     pub aggregation: Option<String>,
@@ -223,7 +226,7 @@ pub struct SearchIndexArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DeleteIndexArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub dry_run: bool,
     pub assume_yes: bool,
@@ -231,7 +234,7 @@ pub struct DeleteIndexArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ListIndexesArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -270,26 +273,20 @@ impl IndexCliCommand {
     }
 
     fn parse_clear_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
         let assume_yes = matches.get_flag("yes");
         Ok(Self::Clear(ClearIndexArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
             assume_yes,
         }))
     }
 
     fn parse_create_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_config_uri = matches
             .remove_one::<String>("index-config")
             .map(|uri| Uri::from_str(&uri))
@@ -298,7 +295,7 @@ impl IndexCliCommand {
         let assume_yes = matches.get_flag("yes");
 
         Ok(Self::Create(CreateIndexArgs {
-            cluster_endpoint,
+            client_args,
             index_config_uri,
             overwrite,
             assume_yes,
@@ -306,32 +303,23 @@ impl IndexCliCommand {
     }
 
     fn parse_describe_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
         Ok(Self::Describe(DescribeIndexArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
         }))
     }
 
     fn parse_list_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
-        Ok(Self::List(ListIndexesArgs { cluster_endpoint }))
+        let client_args = ClientArgs::parse(&mut matches)?;
+        Ok(Self::List(ListIndexesArgs { client_args }))
     }
 
     fn parse_ingest_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse_for_ingest(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
@@ -354,8 +342,12 @@ impl IndexCliCommand {
             (true, true) => bail!("`--wait` and `--force` are mutually exclusive options."),
         };
 
+        if commit_type == CommitType::Auto && client_args.commit_timeout.is_some() {
+            bail!("`--commit-timeout` can only be used with --wait or --force options");
+        }
+
         Ok(Self::Ingest(IngestDocsArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
             input_path_opt,
             batch_size_limit_opt,
@@ -395,10 +387,7 @@ impl IndexCliCommand {
             .remove_one::<String>("end-timestamp")
             .map(|ts| ts.parse())
             .transpose()?;
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         Ok(Self::Search(SearchIndexArgs {
             index_id,
             query,
@@ -409,16 +398,13 @@ impl IndexCliCommand {
             snippet_fields,
             start_timestamp,
             end_timestamp,
-            cluster_endpoint,
+            client_args,
             sort_by_score,
         }))
     }
 
     fn parse_delete_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
@@ -427,7 +413,7 @@ impl IndexCliCommand {
         Ok(Self::Delete(DeleteIndexArgs {
             index_id,
             dry_run,
-            cluster_endpoint,
+            client_args,
             assume_yes,
         }))
     }
@@ -457,9 +443,7 @@ pub async fn clear_index_cli(args: ClearIndexArgs) -> anyhow::Result<()> {
             return Ok(());
         }
     }
-    let endpoint = args.cluster_endpoint;
-    let transport = Transport::new(endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     qw_client.indexes().clear(&args.index_id).await?;
     println!("{} Index successfully cleared.", "✔".color(GREEN_COLOR),);
     Ok(())
@@ -470,8 +454,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     println!("❯ Creating index...");
     let file_content = load_file(&args.index_config_uri).await?;
     let config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     // TODO: nice to have: check first if the index exists by send a GET request, if we get a 404,
     // the index does not exist. If it exists, we can display the prompt.
     if args.overwrite && !args.assume_yes {
@@ -494,8 +477,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
 
 pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
     debug!(args=?args, "list-index");
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     let indexes_metadatas = qw_client.indexes().list().await?;
     let index_table = make_list_indexes_table(
         indexes_metadatas
@@ -528,10 +510,7 @@ struct IndexRow {
 
 pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "describe-index");
-    let endpoint =
-        Url::parse(args.cluster_endpoint.as_str()).context("Failed to parse cluster endpoint.")?;
-    let transport = Transport::new(endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     let index_metadata = qw_client.indexes().get(&args.index_id).await?;
     let list_splits_query_params = ListSplitsQueryParams::default();
     let splits = qw_client
@@ -817,8 +796,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         progress_bar.set_message(format!("{throughput:.1} MiB/s"));
     };
 
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.ingest_client();
     let ingest_source = match args.input_path_opt {
         Some(filepath) => IngestSource::File(filepath),
         None => IngestSource::Stdin,
@@ -874,8 +852,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         sort_by_field,
         ..Default::default()
     };
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.search_client();
     let search_response = qw_client.search(&args.index_id, search_request).await?;
     Ok(search_response)
 }
@@ -898,10 +875,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     }
 
     println!("❯ Deleting index...");
-    let endpoint =
-        Url::parse(args.cluster_endpoint.as_str()).context("Failed to parse cluster endpoint.")?;
-    let transport = Transport::new(endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     let affected_files = qw_client
         .indexes()
         .delete(&args.index_id, args.dry_run)

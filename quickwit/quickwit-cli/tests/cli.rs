@@ -37,6 +37,7 @@ use quickwit_cli::service::RunCliCommand;
 use quickwit_cli::tool::{
     garbage_collect_index_cli, local_ingest_docs_cli, GarbageCollectIndexArgs, LocalIngestDocsArgs,
 };
+use quickwit_cli::ClientArgs;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
@@ -51,7 +52,10 @@ use crate::helpers::{create_test_env, wait_port_ready, PACKAGE_BIN_NAME};
 
 async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
     let args = CreateIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_config_uri: test_env.index_config_uri.clone(),
         overwrite: false,
         assume_yes: true,
@@ -111,7 +115,10 @@ async fn test_cmd_create_no_index_uri() {
 
     let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
     let args = CreateIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_config_uri: index_config_without_uri,
         overwrite: false,
         assume_yes: true,
@@ -136,7 +143,10 @@ async fn test_cmd_create_overwrite() {
 
     let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
     let args = CreateIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_config_uri: index_config_without_uri,
         overwrite: true,
         assume_yes: true,
@@ -369,7 +379,10 @@ async fn test_cmd_search_aggregation() {
         snippet_fields: None,
         start_timestamp: None,
         end_timestamp: None,
-        cluster_endpoint: test_env.cluster_endpoint,
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint,
+            ..Default::default()
+        },
         sort_by_score: false,
     };
     let search_response = search_index(args).await.unwrap();
@@ -449,7 +462,10 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
         snippet_fields: Some(vec!["event".to_string()]),
         start_timestamp: None,
         end_timestamp: None,
-        cluster_endpoint: test_env.cluster_endpoint,
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint,
+            ..Default::default()
+        },
         sort_by_score: false,
     };
     let search_response = search_index(args).await.unwrap();
@@ -476,7 +492,10 @@ async fn test_search_index_cli() {
     create_logs_index(&test_env).await.unwrap();
 
     let create_search_args = |query: &str| SearchIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id: index_id.clone(),
         query: query.to_string(),
         aggregation: None,
@@ -535,7 +554,10 @@ async fn test_delete_index_cli_dry_run() {
     };
 
     let create_delete_args = |dry_run| DeleteIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id: index_id.clone(),
         dry_run,
         assume_yes: true,
@@ -582,7 +604,10 @@ async fn test_delete_index_cli() {
         .unwrap();
 
     let args = DeleteIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id: index_id.clone(),
         assume_yes: true,
         dry_run: false,
@@ -686,7 +711,10 @@ async fn test_garbage_collect_cli_no_grace() {
     );
 
     let args = DeleteIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id,
         dry_run: false,
         assume_yes: true,
@@ -861,7 +889,10 @@ async fn test_all_local_index() {
     service_task.abort();
 
     let args = DeleteIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id,
         dry_run: false,
         assume_yes: true,
@@ -894,7 +925,10 @@ async fn test_all_with_s3_localstack_cli() {
 
     // Cli search
     let args = SearchIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id: index_id.clone(),
         query: "level:info".to_string(),
         aggregation: None,
@@ -940,7 +974,10 @@ async fn test_all_with_s3_localstack_cli() {
     service_task.abort();
 
     let args = DeleteIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id: index_id.clone(),
         dry_run: false,
         assume_yes: true,
