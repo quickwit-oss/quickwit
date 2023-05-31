@@ -117,31 +117,6 @@ impl DefaultDocMapper {
     }
 }
 
-fn validate_tag_fields(tag_fields: &[String], schema: &Schema) -> anyhow::Result<()> {
-    for tag_field in tag_fields {
-        let field = schema.get_field(tag_field)?;
-        let field_type = schema.get_field_entry(field).field_type();
-        match field_type {
-            FieldType::Str(options) => {
-                let tokenizer_opt = options
-                    .get_indexing_options()
-                    .map(|text_options| text_options.tokenizer());
-
-                if tokenizer_opt != Some(QuickwitTextTokenizer::Raw.get_name()) {
-                    bail!(
-                        "Tags collection is only allowed on text fields with the `raw` tokenizer."
-                    );
-                }
-            }
-            FieldType::Bytes(_) => {
-                bail!("Tags collection is not allowed on `bytes` fields.")
-            }
-            _ => (),
-        }
-    }
-    Ok(())
-}
-
 fn validate_timestamp_field_if_any(builder: &DefaultDocMapperBuilder) -> anyhow::Result<()> {
     let Some(timestamp_field_name) = builder.timestamp_field.as_ref() else {
         return Ok(());
@@ -194,9 +169,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 
         let schema = schema_builder.build();
 
-        // validate fast fields
-        validate_tag_fields(&builder.tag_fields, &schema)?;
-
         // Resolve default search fields
         let mut default_search_field_names = Vec::new();
         for field_name in &builder.default_search_fields {
@@ -210,20 +182,24 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         }
 
         // Resolve tag fields
-        let mut tag_field_names: BTreeSet<String> = Default::default();
+        let mut tag_field_names: BTreeSet<String> = builder.tag_fields.iter().cloned().collect();
         for tag_field_name in &builder.tag_fields {
-            if tag_field_names.contains(tag_field_name) {
-                bail!("Duplicated tag field: `{}`", tag_field_name)
+            validate_tag(tag_field_name, &schema)?;
+        }
+
+        let partition_key_expr: &str = builder.partition_key.as_deref().unwrap_or("");
+        let partition_key = RoutingExpr::new(partition_key_expr).with_context(|| {
+            format!("Failed to interpret the partition key: `{partition_key_expr}`")
+        })?;
+
+        // If valid, partition key fields should be considered as tags.
+        for partition_key in partition_key.field_names() {
+            if validate_tag(&partition_key, &schema).is_ok() {
+                tag_field_names.insert(partition_key);
             }
-            schema
-                .get_field(tag_field_name)
-                .with_context(|| format!("Unknown tag field: `{tag_field_name}`"))?;
-            tag_field_names.insert(tag_field_name.clone());
         }
 
         let required_fields = Vec::new();
-        let partition_key = RoutingExpr::new(builder.partition_key.as_deref().unwrap_or(""))
-            .context("Failed to interpret the partition key.")?;
         Ok(DefaultDocMapper {
             schema,
             source_field,
@@ -238,6 +214,52 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             mode,
         })
     }
+}
+
+/// Checks that a given field name is a valid candidate for a tag.
+///
+/// The conditions are:
+/// - the field must be str, u64, or i64
+/// - if str, the field must use the `raw` tokenizer for indexing.
+/// - the field must be indexed.
+fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Error> {
+    let field = schema
+        .get_field(tag_field_name)
+        .with_context(|| format!("Unknown tag field: `{tag_field_name}`"))?;
+    let field_type = schema.get_field_entry(field).field_type();
+    match field_type {
+        FieldType::Str(options) => {
+            let tokenizer_opt = options
+                .get_indexing_options()
+                .map(|text_options| text_options.tokenizer());
+            if tokenizer_opt != Some(QuickwitTextTokenizer::Raw.get_name()) {
+                bail!("Tags collection is only allowed on text fields with the `raw` tokenizer.");
+            }
+        }
+        FieldType::U64(_) | FieldType::I64(_) => {
+            // u64 and i64 are accepted as tags.
+        }
+        _ => {
+            // We avoid the bytes / bool / f64 types,
+            // as they are generally speaking poor tags and we want to avoid
+            // bugs associated to the multiplicity of their representation.
+            //
+            // (Tags are relying heavily on string manipulation and we want to
+            // avoid a "ZRP because you searched you searched for 0.100 instead of 0.1",
+            // or `myflag:1`, `myflag:True` instead of `myflag:true`.
+            bail!(
+                "Tags collection is not allowed on `{}` fields.",
+                field_type.value_type().name().to_lowercase()
+            )
+        }
+    }
+    if !field_type.is_indexed() {
+        bail!(
+            "Tag fields are required to be indexed. (`{}` is not configured as indexed).",
+            tag_field_name
+        )
+    }
+    Ok(())
 }
 
 impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
@@ -768,6 +790,77 @@ mod tests {
                 assert!(is_value_in_expected_values);
             }
         });
+    }
+
+    #[test]
+    fn test_partion_key_in_tags() {
+        let doc_mapper = r#"{
+            "default_search_fields": [],
+            "timestamp_field": null,
+            "tag_fields": ["city"],
+            "store_source": true,
+            "partition_key": "hash_mod((service,division,city), 50)",
+            "field_mappings": [
+                {
+                    "name": "city",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                },
+                {
+                    "name": "division",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                },
+                {
+                    "name": "service",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                }
+            ]
+        }"#;
+
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let doc_mapper = builder.try_build().unwrap();
+        let tag_fields: Vec<_> = doc_mapper.tag_field_names.into_iter().collect();
+        assert_eq!(tag_fields, vec!["city", "division", "service",]);
+    }
+
+    #[test]
+    fn test_partion_key_in_tags_without_explicit_tags() {
+        let doc_mapper = r#"{
+            "default_search_fields": [],
+            "timestamp_field": null,
+            "store_source": true,
+            "partition_key": "service,hash_mod((division,city), 50)",
+            "field_mappings": [
+                {
+                    "name": "city",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                },
+                {
+                    "name": "division",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                },
+                {
+                    "name": "service",
+                    "type": "text",
+                    "stored": true,
+                    "tokenizer": "raw"
+                }
+            ]
+        }"#;
+
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let doc_mapper = builder.try_build().unwrap();
+        let tag_fields: Vec<_> = doc_mapper.tag_field_names.into_iter().collect();
+        assert_eq!(tag_fields, vec!["city", "division", "service",]);
     }
 
     #[test]
