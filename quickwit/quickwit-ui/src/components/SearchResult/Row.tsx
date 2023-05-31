@@ -24,7 +24,7 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
 import React, { useState } from "react";
-import { DATE_TIME_WITH_SECONDS_FORMAT, Entry, Field, RawDoc } from "../../utils/models";
+import { DATE_TIME_WITH_SECONDS_FORMAT as DATE_TIME_WITH_MILLISECONDS_FORMAT, DATE_TIME_WITH_SECONDS_FORMAT, Entry, Field, RawDoc } from "../../utils/models";
 import { QUICKWIT_INTERMEDIATE_GREY } from "../../utils/theme";
 import { JsonEditor } from "../JsonEditor";
 
@@ -85,13 +85,15 @@ function DisplayTimestampValue(row: RawDoc, timestampField: Field | null) {
 
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 function formatDateTime(field_value: any, timestampOutputFormat: string): any {
-  // A unix timestamp can be in secs/millis/micros and need to be converted properly.
+  // A unix timestamp can be in secs/millis/micros/nanos and need to be converted properly.
   if (timestampOutputFormat === 'unix_timestamp_secs' && typeof field_value === 'number') {
     return dayjs(field_value * 1000).utc().format(DATE_TIME_WITH_SECONDS_FORMAT);
   } else if (timestampOutputFormat === 'unix_timestamp_millis' && typeof field_value === 'number') {
-    return dayjs(field_value).utc().format(DATE_TIME_WITH_SECONDS_FORMAT);
+    return dayjs(field_value).utc().format(DATE_TIME_WITH_MILLISECONDS_FORMAT);
   } else if (timestampOutputFormat === 'unix_timestamp_micros' && typeof field_value === 'number') {
-    return dayjs(field_value / 1000).utc().format(DATE_TIME_WITH_SECONDS_FORMAT);
+    return dayjs(field_value / 1000).utc().format(DATE_TIME_WITH_MILLISECONDS_FORMAT);
+  } else if (timestampOutputFormat === 'unix_timestamp_nanos' && typeof field_value === 'number') {
+    return dayjs(field_value/ 1000000).utc().format(DATE_TIME_WITH_MILLISECONDS_FORMAT);
   } else {
     // Other formats are string values and we can just display it as is.
     return field_value;
