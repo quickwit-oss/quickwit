@@ -150,6 +150,16 @@ impl BinaryFormat {
             BinaryFormat::Hex => "hex",
         }
     }
+
+    pub fn format_to_json(&self, value: &[u8]) -> JsonValue {
+        use base64::Engine;
+        match self {
+            BinaryFormat::Base64 => base64::engine::general_purpose::STANDARD
+                .encode(value)
+                .into(),
+            BinaryFormat::Hex => hex::encode(value).into(),
+        }
+    }
 }
 
 impl FromStr for BinaryFormat {

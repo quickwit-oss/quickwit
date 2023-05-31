@@ -199,10 +199,13 @@ fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue>
         | (TantivyValue::F64(_), LeafType::F64(_))
         | (TantivyValue::Bool(_), LeafType::Bool(_))
         | (TantivyValue::IpAddr(_), LeafType::IpAddr(_))
-        | (TantivyValue::Bytes(_), LeafType::Bytes(_))
         | (TantivyValue::JsonObject(_), LeafType::Json(_)) => {
             let json_value =
                 serde_json::to_value(&value).expect("Json serialization should never fail.");
+            Some(json_value)
+        }
+        (TantivyValue::Bytes(bytes), LeafType::Bytes(bytes_options)) => {
+            let json_value = bytes_options.output_format.format_to_json(bytes);
             Some(json_value)
         }
         (TantivyValue::Date(date_time), LeafType::DateTime(date_time_options)) => {
@@ -678,10 +681,11 @@ mod tests {
     use tantivy::{DateTime, Document};
     use time::macros::datetime;
 
-    use super::{LeafType, MappingLeaf};
+    use super::{value_to_json, LeafType, MappingLeaf};
     use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::default_doc_mapper::field_mapping_entry::{
-        QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitTextOptions,
+        BinaryFormat, QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitNumericOptions,
+        QuickwitTextOptions,
     };
     use crate::Cardinality;
 
@@ -1072,5 +1076,23 @@ mod tests {
                 b"this is a base64 encoded string"
             ]
         )
+    }
+
+    #[test]
+    fn test_serialize_bytes() {
+        let base64 = QuickwitBytesOptions::default();
+        let hex = QuickwitBytesOptions {
+            output_format: BinaryFormat::Hex,
+            ..QuickwitBytesOptions::default()
+        };
+
+        assert_eq!(
+            value_to_json(TantivyValue::Bytes(vec![1, 2, 3]), &LeafType::Bytes(base64)).unwrap(),
+            serde_json::json!("AQID")
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::Bytes(vec![1, 2, 3]), &LeafType::Bytes(hex)).unwrap(),
+            serde_json::json!("010203")
+        );
     }
 }

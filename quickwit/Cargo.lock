@@ -4733,6 +4733,7 @@ dependencies = [
  "criterion",
  "dyn-clone",
  "fnv",
+ "hex",
  "indexmap",
  "itertools",
  "matches",
