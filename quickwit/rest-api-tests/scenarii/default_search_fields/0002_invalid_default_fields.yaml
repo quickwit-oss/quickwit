@@ -1,0 +1,56 @@
+# should fail because we are not in dynamic,
+# yet we are targetting a field not in the field mapping.
+method: POST
+endpoint: indexes/
+json:
+  version: "0.6"
+  index_id: failing1
+  doc_mapping:
+    mode: lenient
+    field_mappings: []
+  search_settings:
+    default_search_fields:
+      - regular_field
+status_code: 400
+expected:
+  message:
+    $expect: "\"Unknown default search field: `regular_field`\" in val"
+---
+# should fail because default search field targets the root
+# of a json field.
+method: POST
+endpoint: indexes/
+json:
+  version: "0.6"
+  index_id: failing2
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: inner_json
+        type: json
+  search_settings:
+    default_search_fields:
+      - inner_json
+status_code: 400
+expected:
+  message:
+    $expect: "\"Unknown default search field: `inner_json`\" in val"
+---
+# should fail because dynamic field is not indexed.
+method: POST
+endpoint: indexes/
+json:
+  version: "0.6"
+  index_id: failing3
+  doc_mapping:
+    mode: dynamic
+    field_mappings: []
+    dynamic_mapping:
+      indexed: false
+  search_settings:
+    default_search_fields:
+      - some_field
+status_code: 400
+expected:
+  message:
+    $expect: "\"Default search field `some_field` is not indexed\" in val"

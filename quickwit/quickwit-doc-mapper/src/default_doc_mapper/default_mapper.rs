@@ -171,14 +171,20 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 
         // Resolve default search fields
         let mut default_search_field_names = Vec::new();
-        for field_name in &builder.default_search_fields {
-            if default_search_field_names.contains(field_name) {
-                bail!("Duplicated default search field: `{}`", field_name)
+        for default_search_field_name in &builder.default_search_fields {
+            if default_search_field_names.contains(default_search_field_name) {
+                bail!("Duplicated default search field: `{}`", default_search_field_name)
             }
-            schema
-                .get_field(field_name)
-                .with_context(|| format!("Unknown default search field: `{field_name}`"))?;
-            default_search_field_names.push(field_name.clone());
+            let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).ok();
+            let (default_search_field, _json_path) = schema
+                .find_field_with_default(default_search_field_name, dynamic_field)
+                .with_context(|| format!("Unknown default search field: `{default_search_field_name}`"))?;
+            if !schema.get_field_entry(default_search_field).is_indexed() {
+                bail!(
+                    "Default search field `{default_search_field_name}` is not indexed.",
+                );
+            }
+            default_search_field_names.push(default_search_field_name.clone());
         }
 
         // Resolve tag fields
