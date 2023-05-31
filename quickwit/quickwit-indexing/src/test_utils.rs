@@ -91,6 +91,7 @@ impl TestSandbox {
             build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig::for_test()?;
+        let num_blocking_threads = 1;
         let storage_resolver = StorageUriResolver::for_test();
         let metastore_uri_resolver = MetastoreUriResolver::builder()
             .register(
@@ -102,7 +103,7 @@ impl TestSandbox {
             .resolve(&Uri::from_well_formed(METASTORE_URI))
             .await?;
         let index_uid = metastore.create_index(index_config.clone()).await?;
-        let storage = storage_resolver.resolve(&index_uri)?;
+        let storage = storage_resolver.resolve(&index_uri).await?;
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
         let ingest_api_service =
@@ -111,6 +112,7 @@ impl TestSandbox {
             node_id.to_string(),
             temp_dir.path().to_path_buf(),
             indexer_config,
+            num_blocking_threads,
             cluster,
             metastore.clone(),
             Some(ingest_api_service),

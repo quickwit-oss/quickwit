@@ -12,21 +12,17 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-azure_core = { workspace = true, optional = true }
-azure_storage = { workspace = true, optional = true }
-azure_storage_blobs = { workspace = true, optional = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
+hyper = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
-rusoto_core = { workspace = true }
-rusoto_s3 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }
@@ -37,26 +33,30 @@ tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 
+aws-config = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-smithy-http = { workspace = true }
+aws-smithy-types = { workspace = true }
+
+azure_core = { workspace = true, optional = true }
+azure_storage = { workspace = true, optional = true }
+azure_storage_blobs = { workspace = true, optional = true }
+
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
 proptest = { workspace = true }
-quickwit-common = { workspace = true, features = ["testsuite"] }
-rusoto_mock = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+aws-sdk-s3 = { workspace = true, features = ["test-util"] }
+aws-smithy-client = { workspace = true, features = ["test-util"] }
+
+quickwit-common = { workspace = true, features = ["testsuite"] }
+
 [features]
-testsuite = [
-  "azure",
-  "azure_core/azurite_workaround",
-  "azure_storage/azurite_workaround",
-  "azure_storage_blobs/azurite_workaround",
-  "mockall",
-]
-ci-test = []
 azure = [
   "azure_core",
   "azure_storage",
@@ -64,4 +64,12 @@ azure = [
   "azure_core/enable_reqwest_rustls",
   "azure_storage/enable_reqwest_rustls",
   "azure_storage_blobs/enable_reqwest_rustls",
+]
+ci-test = []
+testsuite = [
+  "azure",
+  "azure_core/azurite_workaround",
+  "azure_storage/azurite_workaround",
+  "azure_storage_blobs/azurite_workaround",
+  "mockall",
 ]

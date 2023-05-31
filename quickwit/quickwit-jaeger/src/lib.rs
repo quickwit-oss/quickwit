@@ -18,21 +18,19 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::fmt::Write;
 use std::mem;
-use std::ops::RangeInclusive;
+use std::ops::{Bound, RangeInclusive};
 use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use base64::prelude::{Engine, BASE64_STANDARD};
 use itertools::Itertools;
 use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
-    Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint, SpanKind as QwSpanKind,
-    SpanStatus as QwSpanStatus, TraceId, OTEL_TRACE_INDEX_ID,
+    Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint, SpanId,
+    SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId, OTEL_TRACES_INDEX_ID,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -44,7 +42,9 @@ use quickwit_proto::jaeger::storage::v1::{
     GetOperationsResponse, GetServicesRequest, GetServicesResponse, GetTraceRequest, Operation,
     SpansResponseChunk, TraceQueryParameters,
 };
+use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
 use quickwit_proto::{ListTermsRequest, SearchRequest};
+use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery};
 use quickwit_search::{FindTraceIdsCollector, SearchService};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -59,6 +59,8 @@ use tracing::{debug, error, instrument, warn, Span as RuntimeSpan};
 
 use crate::metrics::JAEGER_SERVICE_METRICS;
 
+#[cfg(test)]
+mod integration_tests;
 mod metrics;
 
 // OpenTelemetry to Jaeger Transformation
@@ -75,13 +77,6 @@ pub struct JaegerService {
     lookback_period_secs: i64,
     max_trace_duration_secs: i64,
     max_fetch_spans: u64,
-}
-
-fn query_ast_json(user_query: &str) -> Result<String, Status> {
-    let query_ast = quickwit_proto::query_ast_from_user_text(user_query, None);
-    let query_ast_json =
-        serde_json::to_string(&query_ast).map_err(|err| Status::internal(err.to_string()))?;
-    Ok(query_ast_json)
 }
 
 impl JaegerService {
@@ -101,7 +96,7 @@ impl JaegerService {
     ) -> JaegerResult<GetServicesResponse> {
         debug!(request=?request, "`get_services` request");
 
-        let index_id = OTEL_TRACE_INDEX_ID.to_string();
+        let index_id = OTEL_TRACES_INDEX_ID.to_string();
         let max_hits = Some(1_000);
         let start_timestamp =
             Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
@@ -120,6 +115,7 @@ impl JaegerService {
             .terms
             .into_iter()
             .map(|term_bytes| extract_term(&term_bytes))
+            .sorted()
             .collect();
         let response = GetServicesResponse { services };
         debug!(response=?response, "`get_services` response");
@@ -133,7 +129,7 @@ impl JaegerService {
     ) -> JaegerResult<GetOperationsResponse> {
         debug!(request=?request, "`get_operations` request");
 
-        let index_id = OTEL_TRACE_INDEX_ID.to_string();
+        let index_id = OTEL_TRACES_INDEX_ID.to_string();
         let max_hits = Some(1_000);
         let start_timestamp =
             Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
@@ -156,6 +152,7 @@ impl JaegerService {
             .terms
             .into_iter()
             .map(|term_json| extract_operation(&term_json))
+            .sorted()
             .collect();
         debug!(operations=?operations, "`get_operations` response");
         let response = GetOperationsResponse {
@@ -233,7 +230,7 @@ impl JaegerService {
         &self,
         trace_query: TraceQueryParameters,
     ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
-        let index_id = OTEL_TRACE_INDEX_ID.to_string();
+        let index_id = OTEL_TRACES_INDEX_ID.to_string();
         let span_kind_opt = None;
         let min_span_start_timestamp_secs_opt = trace_query.start_time_min.map(|ts| ts.seconds);
         let max_span_start_timestamp_secs_opt = trace_query.start_time_max.map(|ts| ts.seconds);
@@ -253,11 +250,13 @@ impl JaegerService {
             min_span_duration_millis_opt,
             max_span_duration_millis_opt,
         );
+        let query_ast =
+            serde_json::to_string(&query).map_err(|err| Status::internal(err.to_string()))?;
         let aggregation_query = build_aggregations_query(trace_query.num_traces as usize);
         let max_hits = 0;
         let search_request = SearchRequest {
             index_id,
-            query_ast: query_ast_json(&query)?,
+            query_ast,
             aggregation_request: Some(aggregation_query),
             max_hits,
             start_timestamp: min_span_start_timestamp_secs_opt,
@@ -288,21 +287,24 @@ impl JaegerService {
             return Ok(ReceiverStream::new(rx));
         }
         let num_traces = trace_ids.len() as u64;
-        let mut query = String::new();
+        let mut query = BoolQuery::default();
 
-        for (i, trace_id) in trace_ids.iter().enumerate() {
-            if i > 0 {
-                query.push_str(" OR ");
-            }
-            query.push_str("trace_id:");
-            write!(query, "{}", trace_id.base64_display())
-                .expect("Writing to string should not fail.");
+        for trace_id in trace_ids {
+            let value = trace_id.base64_display().to_string();
+            let term_query = TermQuery {
+                field: "trace_id".to_string(),
+                value,
+            };
+            query.should.push(term_query.into());
         }
-        debug!(query=%query, "Fetch spans query");
+
+        let query_ast: QueryAst = query.into();
+        let query_ast =
+            serde_json::to_string(&query_ast).map_err(|err| Status::internal(err.to_string()))?;
 
         let search_request = SearchRequest {
-            index_id: OTEL_TRACE_INDEX_ID.to_string(),
-            query_ast: query_ast_json(&query)?,
+            index_id: OTEL_TRACES_INDEX_ID.to_string(),
+            query_ast,
             start_timestamp: Some(*search_window.start()),
             end_timestamp: Some(*search_window.end()),
             max_hits: self.max_fetch_spans,
@@ -386,13 +388,13 @@ impl JaegerService {
 
             JAEGER_SERVICE_METRICS
                 .fetched_traces_total
-                .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+                .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
                 .inc_by(num_traces);
 
             let elapsed = request_start.elapsed().as_secs_f64();
             JAEGER_SERVICE_METRICS
                 .request_duration_seconds
-                .with_label_values([operation_name, OTEL_TRACE_INDEX_ID, "false"])
+                .with_label_values([operation_name, OTEL_TRACES_INDEX_ID, "false"])
                 .observe(elapsed);
         });
         Ok(ReceiverStream::new(rx))
@@ -424,24 +426,24 @@ macro_rules! metrics {
 fn record_error(operation_name: &'static str, request_start: Instant) {
     JAEGER_SERVICE_METRICS
         .request_errors_total
-        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
         .inc();
 
     let elapsed = request_start.elapsed().as_secs_f64();
     JAEGER_SERVICE_METRICS
         .request_duration_seconds
-        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID, "true"])
+        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID, "true"])
         .observe(elapsed);
 }
 
 fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
     JAEGER_SERVICE_METRICS
         .fetched_spans_total
-        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
         .inc_by(num_spans as u64);
     JAEGER_SERVICE_METRICS
         .transferred_bytes_total
-        .with_label_values([operation_name, OTEL_TRACE_INDEX_ID])
+        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
         .inc_by(num_bytes as u64);
 }
 
@@ -457,7 +459,7 @@ impl SpanReaderPlugin for JaegerService {
     ) -> Result<Response<GetServicesResponse>, Status> {
         metrics!(
             self.get_services_inner(request.into_inner()).await,
-            [get_services, OTEL_TRACE_INDEX_ID]
+            [get_services, OTEL_TRACES_INDEX_ID]
         );
     }
 
@@ -467,7 +469,7 @@ impl SpanReaderPlugin for JaegerService {
     ) -> Result<Response<GetOperationsResponse>, Status> {
         metrics!(
             self.get_operations_inner(request.into_inner()).await,
-            [get_operations, OTEL_TRACE_INDEX_ID]
+            [get_operations, OTEL_TRACES_INDEX_ID]
         );
     }
 
@@ -477,7 +479,7 @@ impl SpanReaderPlugin for JaegerService {
     ) -> Result<Response<FindTraceIDsResponse>, Status> {
         metrics!(
             self.find_trace_ids_inner(request.into_inner()).await,
-            [find_trace_ids, OTEL_TRACE_INDEX_ID]
+            [find_trace_ids, OTEL_TRACES_INDEX_ID]
         );
     }
 
@@ -526,7 +528,7 @@ fn extract_operation(term_bytes: &[u8]) -> Operation {
     }
 }
 
-// TODO: builder pattern + query DSL
+// TODO: builder pattern
 #[allow(clippy::too_many_arguments)]
 fn build_search_query(
     service_name: &str,
@@ -537,127 +539,157 @@ fn build_search_query(
     max_span_start_timestamp_secs_opt: Option<i64>,
     min_span_duration_millis_opt: Option<i64>,
     max_span_duration_millis_opt: Option<i64>,
-) -> String {
+) -> QueryAst {
+    // TODO disable based on some feature?
     if let Some(qw_query) = tags.remove("_qw_query") {
-        return qw_query;
+        return quickwit_proto::query_ast_from_user_text(&qw_query, None);
     }
-    let mut query = String::new();
+    // TODO should we use filter instead of must? Does it changes anything? Less scoring?
+    let mut query_ast = BoolQuery::default();
 
     if !service_name.is_empty() {
-        query.push_str("service_name:\"");
-        query.push_str(service_name);
-        query.push('"');
+        query_ast.must.push(
+            TermQuery {
+                field: "service_name".to_string(),
+                value: service_name.to_string(),
+            }
+            .into(),
+        );
     }
     if let Some(span_kind) = span_kind_opt {
-        if !query.is_empty() {
-            query.push_str(" AND ");
-        }
-        query.push_str("span_kind:");
-        query.push(span_kind.as_char());
+        query_ast.must.push(
+            TermQuery {
+                field: "span_kind".to_string(),
+                value: span_kind.as_char().to_string(),
+            }
+            .into(),
+        )
     }
     if !span_name.is_empty() {
-        if !query.is_empty() {
-            query.push_str(" AND ");
-        }
-        query.push_str("span_name:\"");
-        query.push_str(span_name);
-        query.push('"');
+        query_ast.must.push(
+            TermQuery {
+                field: "span_name".to_string(),
+                value: span_name.to_string(),
+            }
+            .into(),
+        )
     }
     if !tags.is_empty() {
-        if !query.is_empty() {
-            query.push_str(" AND ");
-        }
         // Sort the tags for deterministic tests.
-        for (i, (key, value)) in tags.iter().sorted().enumerate() {
-            if i > 0 {
-                query.push_str(" AND ");
-            }
+        for (key, value) in tags.into_iter().sorted() {
             // In Jaeger land, `event` is a regular event attribute whereas in OpenTelemetry land,
             // it is an event top-level field named `name`. In Quickwit, it is stored as
             // `event_name` to distinguish it from the span top-level field `name`.
             if key == "event" {
-                query.push_str("events.event_name:\"");
-                query.push_str(value);
-                query.push('\"');
+                query_ast.must.push(
+                    TermQuery {
+                        field: "events.event_name".to_string(),
+                        value,
+                    }
+                    .into(),
+                )
+            } else if key == "error" && value == "true" {
+                query_ast.must.push(
+                    TermQuery {
+                        field: "span_status.code".to_string(),
+                        value: "error".to_string(),
+                    }
+                    .into(),
+                )
+            } else if key == "error" && value == "false" {
+                query_ast.must_not.push(
+                    TermQuery {
+                        field: "span_status.code".to_string(),
+                        value: "error".to_string(),
+                    }
+                    .into(),
+                )
             } else {
-                query.push_str("(resource_attributes.");
-                query.push_str(key);
-                query.push_str(":\"");
-                query.push_str(value);
-                query.push_str("\" OR span_attributes.");
-                query.push_str(key);
-                query.push_str(":\"");
-                query.push_str(value);
-                query.push_str("\" OR events.event_attributes.");
-                query.push_str(key);
-                query.push_str(":\"");
-                query.push_str(value);
-                query.push_str("\")");
+                let mut sub_query = BoolQuery::default();
+
+                sub_query.should.push(
+                    TermQuery {
+                        field: format!("resource_attributes.{key}"),
+                        value: value.clone(),
+                    }
+                    .into(),
+                );
+                sub_query.should.push(
+                    TermQuery {
+                        field: format!("span_attributes.{key}"),
+                        value: value.clone(),
+                    }
+                    .into(),
+                );
+                sub_query.should.push(
+                    TermQuery {
+                        field: format!("events.event_attributes.{key}"),
+                        value,
+                    }
+                    .into(),
+                );
+                query_ast.must.push(sub_query.into())
             }
         }
     }
     if min_span_start_timestamp_secs_opt.is_some() || max_span_start_timestamp_secs_opt.is_some() {
-        if !query.is_empty() {
-            query.push_str(" AND ");
-        }
-        query.push_str("span_start_timestamp_secs:[");
+        let mut start_range = RangeQuery {
+            field: "span_start_timestamp_nanos".to_string(),
+            lower_bound: Bound::Unbounded,
+            upper_bound: Bound::Unbounded,
+        };
 
         if let Some(min_span_start_timestamp_secs) = min_span_start_timestamp_secs_opt {
             let min_span_start_datetime =
-                OffsetDateTime::from_unix_timestamp(min_span_start_timestamp_secs).expect("");
-            let min_span_start_datetime_rfc3339 =
-                min_span_start_datetime.format(&Rfc3339).expect("");
-            query.push_str(&min_span_start_datetime_rfc3339);
-        } else {
-            query.push('*');
+                OffsetDateTime::from_unix_timestamp(min_span_start_timestamp_secs)
+                    .expect("Timestamp should fall within the [Date::MIN, Date::MAX] interval.");
+            let min_span_start_datetime_rfc3339 = min_span_start_datetime
+                .format(&Rfc3339)
+                .expect("Datetime should be formattable to RFC 3339.");
+            start_range.lower_bound = Bound::Included(min_span_start_datetime_rfc3339.into());
         }
-        query.push_str(" TO ");
 
         if let Some(max_span_start_timestamp_secs) = max_span_start_timestamp_secs_opt {
             let max_span_start_datetime =
-                OffsetDateTime::from_unix_timestamp(max_span_start_timestamp_secs).expect("");
-            let max_span_start_datetime_rfc3339 =
-                max_span_start_datetime.format(&Rfc3339).expect("");
-            query.push_str(&max_span_start_datetime_rfc3339);
-        } else {
-            query.push('*');
+                OffsetDateTime::from_unix_timestamp(max_span_start_timestamp_secs)
+                    .expect("Timestamp should fall within the [Date::MIN, Date::MAX] interval.");
+            let max_span_start_datetime_rfc3339 = max_span_start_datetime
+                .format(&Rfc3339)
+                .expect("Datetime should be formattable to RFC 3339.");
+            start_range.upper_bound = Bound::Included(max_span_start_datetime_rfc3339.into());
         }
-        query.push(']');
+
+        query_ast.must.push(start_range.into());
     }
     if min_span_duration_millis_opt.is_some() || max_span_duration_millis_opt.is_some() {
-        if !query.is_empty() {
-            query.push_str(" AND ");
-        }
-        query.push_str("span_duration_millis:[");
+        let mut duration_range = RangeQuery {
+            field: "span_duration_millis".to_string(),
+            lower_bound: Bound::Unbounded,
+            upper_bound: Bound::Unbounded,
+        };
 
         if let Some(min_span_duration_millis) = min_span_duration_millis_opt {
-            write!(query, "{min_span_duration_millis}")
-                .expect("Writing to a string should not fail.");
-        } else {
-            query.push('*');
+            duration_range.lower_bound = Bound::Included(min_span_duration_millis.into());
         }
-        query.push_str(" TO ");
 
         if let Some(max_span_duration_millis) = max_span_duration_millis_opt {
-            write!(query, "{max_span_duration_millis}")
-                .expect("Writing to a string should not fail.");
-        } else {
-            query.push('*');
+            duration_range.upper_bound = Bound::Included(max_span_duration_millis.into());
         }
-        query.push(']');
+
+        query_ast.must.push(duration_range.into());
     }
-    if query.is_empty() {
-        query.push('*');
+    if !query_ast.must.is_empty() || !query_ast.must_not.is_empty() {
+        query_ast.into()
+    } else {
+        QueryAst::MatchAll
     }
-    debug!(query=%query, "Search query");
-    query
 }
 
 fn build_aggregations_query(num_traces: usize) -> String {
     let query = serde_json::to_string(&FindTraceIdsCollector {
         num_traces,
         trace_id_field_name: "trace_id".to_string(),
-        span_timestamp_field_name: "span_start_timestamp_secs".to_string(),
+        span_timestamp_field_name: "span_start_timestamp_nanos".to_string(),
     })
     .expect("The collector should be JSON serializable.");
     debug!(query=%query, "Aggregations query");
@@ -666,8 +698,6 @@ fn build_aggregations_query(num_traces: usize) -> String {
 
 fn qw_span_to_jaeger_span(qw_span_json: &str) -> Result<JaegerSpan, Status> {
     let mut qw_span: QwSpan = json_deserialize(qw_span_json, "span")?;
-    let trace_id = qw_span.trace_id.to_vec();
-    let span_id = base64_decode(qw_span.span_id.as_bytes(), "span ID")?;
 
     let start_time = Some(to_well_known_timestamp(qw_span.span_start_timestamp_nanos));
     let duration = Some(to_well_known_duration(
@@ -685,7 +715,6 @@ fn qw_span_to_jaeger_span(qw_span_json: &str) -> Result<JaegerSpan, Status> {
         .map(qw_event_to_jaeger_log)
         .collect::<Result<_, _>>()?;
 
-    // From <https://opentelemetry.io/docs/reference/specification/trace/sdk_exporters/jaeger/#spankind>
     let mut tags = otlp_attributes_to_jaeger_tags(qw_span.span_attributes)?;
     inject_dropped_count_tags(
         &mut tags,
@@ -697,11 +726,11 @@ fn qw_span_to_jaeger_span(qw_span_json: &str) -> Result<JaegerSpan, Status> {
     inject_span_status_tags(&mut tags, qw_span.span_status);
 
     let references =
-        otlp_links_to_jaeger_references(&trace_id, qw_span.parent_span_id, qw_span.links)?;
+        otlp_links_to_jaeger_references(&qw_span.trace_id, qw_span.parent_span_id, qw_span.links)?;
 
     let span = JaegerSpan {
-        trace_id,
-        span_id,
+        trace_id: qw_span.trace_id.to_vec(),
+        span_id: qw_span.span_id.to_vec(),
         operation_name: qw_span.span_name,
         references,
         flags: 0, // TODO
@@ -766,7 +795,9 @@ fn inject_dropped_count_tags(
     }
 }
 
-fn inject_span_kind_tag(tags: &mut Vec<JaegerKeyValue>, span_kind_id: u64) {
+/// Injects span kind tag.
+/// <https://opentelemetry.io/docs/specs/otel/trace/sdk_exporters/jaeger/#spankind>
+fn inject_span_kind_tag(tags: &mut Vec<JaegerKeyValue>, span_kind_id: u32) {
     // OpenTelemetry SpanKind field MUST be encoded as span.kind tag in Jaeger span, except for
     // SpanKind.INTERNAL, which SHOULD NOT be translated to a tag.
     let span_kind = match span_kind_id {
@@ -791,44 +822,50 @@ fn inject_span_kind_tag(tags: &mut Vec<JaegerKeyValue>, span_kind_id: u64) {
     });
 }
 
-fn inject_span_status_tags(tags: &mut Vec<JaegerKeyValue>, span_status_opt: Option<QwSpanStatus>) {
-    // Span Status MUST be reported as key-value pairs associated with the Span, unless the Status
-    // is UNSET. In the latter case it MUST NOT be reported.
-    if let Some(span_status) = span_status_opt {
-        // Description of the Status if it has a value otherwise not set.
-        if let Some(message) = span_status.message {
+/// Injects span status tags.
+/// <https://opentelemetry.io/docs/specs/otel/common/mapping-to-non-otlp/#span-status>
+fn inject_span_status_tags(tags: &mut Vec<JaegerKeyValue>, span_status: QwSpanStatus) {
+    // "Span Status MUST be reported as key-value pairs associated with the Span, unless the Status
+    // is UNSET. In the latter case it MUST NOT be reported."
+    match span_status.code {
+        OtlpStatusCode::Unset => {}
+        OtlpStatusCode::Ok => {
+            // "Name of the code, either OK or ERROR. MUST NOT be set if the code is UNSET."
             tags.push(JaegerKeyValue {
-                key: "otel.status_description".to_string(),
+                key: "otel.status_code".to_string(),
                 v_type: ValueType::String as i32,
-                v_str: message,
+                v_str: "OK".to_string(),
                 v_bool: false,
                 v_int64: 0,
                 v_float64: 0.0,
                 v_binary: Vec::new(),
             });
         }
-        // Name of the code, either OK or ERROR. MUST NOT be set if the code is UNSET.
-        let status_code = match span_status.code {
-            0 => return,
-            1 => "OK",
-            2 => "ERROR",
-            _ => {
-                warn!(status_code=%span_status.code, "Unknown span status code.");
-                return;
+        OtlpStatusCode::Error => {
+            // "Name of the code, either OK or ERROR. MUST NOT be set if the code is UNSET."
+            tags.push(JaegerKeyValue {
+                key: "otel.status_code".to_string(),
+                v_type: ValueType::String as i32,
+                v_str: "ERROR".to_string(),
+                v_bool: false,
+                v_int64: 0,
+                v_float64: 0.0,
+                v_binary: Vec::new(),
+            });
+            // "Description of the Status if it has a value otherwise not set."
+            if let Some(message) = span_status.message {
+                tags.push(JaegerKeyValue {
+                    key: "otel.status_description".to_string(),
+                    v_type: ValueType::String as i32,
+                    v_str: message,
+                    v_bool: false,
+                    v_int64: 0,
+                    v_float64: 0.0,
+                    v_binary: Vec::new(),
+                });
             }
-        };
-        tags.push(JaegerKeyValue {
-            key: "otel.status_code".to_string(),
-            v_type: ValueType::String as i32,
-            v_str: status_code.to_string(),
-            v_bool: false,
-            v_int64: 0,
-            v_float64: 0.0,
-            v_binary: Vec::new(),
-        });
-        // "When Span Status is set to ERROR, an error span tag MUST be added with the Boolean value
-        // of true. The added error tag MAY override any previous value."
-        if status_code == "ERROR" {
+            // "When Span Status is set to ERROR, an error span tag MUST be added with the Boolean
+            // value of true. The added error tag MAY override any previous value."
             tags.push(JaegerKeyValue {
                 key: "error".to_string(),
                 v_type: ValueType::Bool as i32,
@@ -839,9 +876,11 @@ fn inject_span_status_tags(tags: &mut Vec<JaegerKeyValue>, span_status_opt: Opti
                 v_binary: Vec::new(),
             });
         }
-    }
+    };
 }
 
+/// Converts OpenTelemetry attributes to Jaeger tags.
+/// <https://opentelemetry.io/docs/specs/otel/trace/sdk_exporters/jaeger/#attributes>
 fn otlp_attributes_to_jaeger_tags(
     attributes: HashMap<String, JsonValue>,
 ) -> Result<Vec<JaegerKeyValue>, Status> {
@@ -857,7 +896,12 @@ fn otlp_attributes_to_jaeger_tags(
             v_binary: Vec::new(),
         };
         match value {
-            JsonValue::String(value) => tag.v_str = value,
+            // Array values MUST be serialized to string like a JSON list.
+            JsonValue::Array(values) => {
+                tag.v_type = ValueType::String as i32;
+                tag.v_str = serde_json::to_string(&values)
+                    .expect("A vec of `serde_json::Value` values should be JSON serializable.");
+            }
             JsonValue::Bool(value) => {
                 tag.v_type = ValueType::Bool as i32;
                 tag.v_bool = value;
@@ -871,6 +915,10 @@ fn otlp_attributes_to_jaeger_tags(
                     tag.v_float64 = value
                 }
             }
+            JsonValue::String(value) => {
+                tag.v_type = ValueType::String as i32;
+                tag.v_str = value
+            }
             _ => {
                 return Err(Status::internal(format!(
                     "Failed to serialize attributes: unexpected type `{value:?}`"
@@ -882,18 +930,20 @@ fn otlp_attributes_to_jaeger_tags(
     Ok(tags)
 }
 
+/// Converts OpenTelemetry links to Jaeger span references.
+/// <https://opentelemetry.io/docs/specs/otel/trace/sdk_exporters/jaeger/#links>
 fn otlp_links_to_jaeger_references(
-    trace_id: &[u8],
-    parent_span_id_opt: Option<String>,
+    trace_id: &TraceId,
+    parent_span_id_opt: Option<SpanId>,
     links: Vec<QwLink>,
 ) -> Result<Vec<JaegerSpanRef>, Status> {
     let mut references = Vec::with_capacity(parent_span_id_opt.is_some() as usize + links.len());
 
+    // <https://opentelemetry.io/docs/specs/otel/trace/sdk_exporters/jaeger/#parent-id>
     if let Some(parent_span_id) = parent_span_id_opt {
-        let parent_span_id = base64_decode(parent_span_id.as_bytes(), "parent span ID")?;
         let reference = JaegerSpanRef {
             trace_id: trace_id.to_vec(),
-            span_id: parent_span_id,
+            span_id: parent_span_id.to_vec(),
             ref_type: JaegerSpanRefType::ChildOf as i32,
         };
         references.push(reference);
@@ -902,7 +952,7 @@ fn otlp_links_to_jaeger_references(
     // Parent ID, if any."
     for link in links {
         let trace_id = link.link_trace_id.to_vec();
-        let span_id = base64_decode(link.link_span_id.as_bytes(), "link span ID")?;
+        let span_id = link.link_span_id.to_vec();
         let reference = JaegerSpanRef {
             trace_id,
             span_id,
@@ -960,18 +1010,6 @@ fn collect_trace_ids(trace_ids_json: &str) -> Result<(Vec<TraceId>, TimeInterval
     Ok((trace_ids, start..=end))
 }
 
-fn base64_decode(encoded: &[u8], label: &'static str) -> Result<Vec<u8>, Status> {
-    match BASE64_STANDARD.decode(encoded) {
-        Ok(decoded) => Ok(decoded),
-        Err(error) => {
-            error!("Failed to base64 decode {label}: {error:?}",);
-            Err(Status::internal(format!(
-                "Failed to base64 decode: {error:?}"
-            )))
-        }
-    }
-}
-
 fn json_deserialize<'a, T>(json: &'a str, label: &'static str) -> Result<T, Status>
 where T: Deserialize<'a> {
     match serde_json::from_str(json) {
@@ -992,6 +1030,22 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[track_caller]
+    fn get_must(ast: QueryAst) -> Vec<QueryAst> {
+        match ast {
+            QueryAst::Bool(boolean_query) => boolean_query.must,
+            _ => panic!("expected `QueryAst::Bool`, got `{:?}`", ast),
+        }
+    }
+
+    #[track_caller]
+    fn get_must_not(ast: QueryAst) -> Vec<QueryAst> {
+        match ast {
+            QueryAst::Bool(boolean_query) => boolean_query.must_not,
+            _ => panic!("expected `QueryAst::Bool`, got `{:?}`", ast),
+        }
+    }
 
     #[test]
     fn test_build_query() {
@@ -1015,7 +1069,7 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                "*"
+                QueryAst::MatchAll,
             );
         }
         {
@@ -1028,7 +1082,7 @@ mod tests {
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1037,8 +1091,12 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"service_name:"quickwit search""#
+                )),
+                vec![TermQuery {
+                    field: "service_name".to_string(),
+                    value: service_name.to_string(),
+                }
+                .into()]
             );
         }
         {
@@ -1061,7 +1119,12 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 ),
-                "query"
+                quickwit_query::query_ast::UserInputQuery {
+                    user_text: "query".to_string(),
+                    default_fields: None,
+                    default_operator: quickwit_query::BooleanOperand::And
+                }
+                .into()
             );
         }
         {
@@ -1074,7 +1137,7 @@ mod tests {
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1083,8 +1146,12 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                "span_kind:3"
+                )),
+                vec![TermQuery {
+                    field: "span_kind".to_string(),
+                    value: "3".to_string(),
+                }
+                .into()]
             );
         }
         {
@@ -1097,7 +1164,7 @@ mod tests {
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1106,21 +1173,25 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"span_name:"GET /config""#
+                )),
+                vec![TermQuery {
+                    field: "span_name".to_string(),
+                    value: span_name.to_string(),
+                }
+                .into()]
             );
         }
         {
             let service_name = "";
             let span_kind = None;
             let span_name = "";
-            let tags = HashMap::from_iter([("foo".to_string(), "bar baz".to_string())]);
+            let tags = HashMap::from_iter([("error".to_string(), "true".to_string())]);
             let min_span_start_timestamp_secs = None;
             let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1129,21 +1200,25 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"(resource_attributes.foo:"bar baz" OR span_attributes.foo:"bar baz" OR events.event_attributes.foo:"bar baz")"#
+                )),
+                vec![TermQuery {
+                    field: "span_status.code".to_string(),
+                    value: "error".to_string(),
+                }
+                .into(),],
             );
         }
         {
             let service_name = "";
             let span_kind = None;
             let span_name = "";
-            let tags = HashMap::from_iter([("event".to_string(), "Failed to ...".to_string())]);
+            let tags = HashMap::from_iter([("error".to_string(), "false".to_string())]);
             let min_span_start_timestamp_secs = None;
             let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must_not(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1152,24 +1227,102 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"events.event_name:"Failed to ...""#
+                )),
+                vec![TermQuery {
+                    field: "span_status.code".to_string(),
+                    value: "error".to_string(),
+                }
+                .into(),],
             );
         }
         {
             let service_name = "";
             let span_kind = None;
             let span_name = "";
+            let tag_value = "bar baz";
+            let tags = HashMap::from_iter([("foo".to_string(), tag_value.to_string())]);
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
+            assert_eq!(
+                get_must(build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                )),
+                vec![BoolQuery {
+                    should: vec![
+                        TermQuery {
+                            field: "resource_attributes.foo".to_string(),
+                            value: tag_value.to_string(),
+                        }
+                        .into(),
+                        TermQuery {
+                            field: "span_attributes.foo".to_string(),
+                            value: tag_value.to_string(),
+                        }
+                        .into(),
+                        TermQuery {
+                            field: "events.event_attributes.foo".to_string(),
+                            value: tag_value.to_string(),
+                        }
+                        .into(),
+                    ],
+                    ..Default::default()
+                }
+                .into()]
+            );
+        }
+        {
+            let service_name = "";
+            let span_kind = None;
+            let span_name = "";
+            let event_name = "Failed to ...";
+            let tags = HashMap::from_iter([("event".to_string(), event_name.to_string())]);
+            let min_span_start_timestamp_secs = None;
+            let max_span_start_timestamp_secs = None;
+            let min_span_duration_secs = None;
+            let max_span_duration_secs = None;
+            assert_eq!(
+                get_must(build_search_query(
+                    service_name,
+                    span_kind,
+                    span_name,
+                    tags,
+                    min_span_start_timestamp_secs,
+                    max_span_start_timestamp_secs,
+                    min_span_duration_secs,
+                    max_span_duration_secs
+                )),
+                vec![TermQuery {
+                    field: "events.event_name".to_string(),
+                    value: event_name.to_string(),
+                }
+                .into()]
+            );
+        }
+        {
+            let service_name = "";
+            let span_kind = None;
+            let span_name = "";
+            let tag_value = "bar";
+            let event_name = "Failed to ...";
             let tags = HashMap::from_iter([
-                ("event".to_string(), "Failed to ...".to_string()),
-                ("foo".to_string(), "bar".to_string()),
+                ("event".to_string(), event_name.to_string()),
+                ("foo".to_string(), tag_value.to_string()),
             ]);
             let min_span_start_timestamp_secs = None;
             let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1178,8 +1331,35 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"events.event_name:"Failed to ..." AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                )),
+                vec![
+                    TermQuery {
+                        field: "events.event_name".to_string(),
+                        value: event_name.to_string(),
+                    }
+                    .into(),
+                    BoolQuery {
+                        should: vec![
+                            TermQuery {
+                                field: "resource_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "span_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "events.event_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1195,7 +1375,7 @@ mod tests {
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1204,8 +1384,51 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"(resource_attributes.baz:"qux" OR span_attributes.baz:"qux" OR events.event_attributes.baz:"qux") AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                )),
+                vec![
+                    BoolQuery {
+                        should: vec![
+                            TermQuery {
+                                field: "resource_attributes.baz".to_string(),
+                                value: "qux".to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "span_attributes.baz".to_string(),
+                                value: "qux".to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "events.event_attributes.baz".to_string(),
+                                value: "qux".to_string(),
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into(),
+                    BoolQuery {
+                        should: vec![
+                            TermQuery {
+                                field: "resource_attributes.foo".to_string(),
+                                value: "bar".to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "span_attributes.foo".to_string(),
+                                value: "bar".to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "events.event_attributes.foo".to_string(),
+                                value: "bar".to_string(),
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into()
+                ]
             );
         }
         {
@@ -1218,7 +1441,7 @@ mod tests {
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1227,8 +1450,13 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"span_start_timestamp_secs:[1970-01-01T00:00:03Z TO *]"#
+                )),
+                vec![RangeQuery {
+                    field: "span_start_timestamp_nanos".to_string(),
+                    lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
+                    upper_bound: Bound::Unbounded
+                }
+                .into()]
             );
         }
         {
@@ -1241,7 +1469,7 @@ mod tests {
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1250,8 +1478,13 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"span_start_timestamp_secs:[* TO 1970-01-01T00:00:33Z]"#
+                )),
+                vec![RangeQuery {
+                    field: "span_start_timestamp_nanos".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
+                }
+                .into()]
             );
         }
         {
@@ -1264,7 +1497,7 @@ mod tests {
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1273,8 +1506,13 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"span_start_timestamp_secs:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z]"#
+                )),
+                vec![RangeQuery {
+                    field: "span_start_timestamp_nanos".to_string(),
+                    lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
+                    upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
+                }
+                .into()]
             );
         }
         {
@@ -1287,7 +1525,7 @@ mod tests {
             let min_span_duration_secs = Some(7);
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1296,8 +1534,13 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"span_duration_millis:[7 TO *]"#
+                )),
+                vec![RangeQuery {
+                    field: "span_duration_millis".to_string(),
+                    lower_bound: Bound::Included(7u64.into()),
+                    upper_bound: Bound::Unbounded
+                }
+                .into()]
             );
         }
         {
@@ -1310,7 +1553,7 @@ mod tests {
             let min_span_duration_secs = None;
             let max_span_duration_secs = Some(77);
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1319,8 +1562,13 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"span_duration_millis:[* TO 77]"#
+                )),
+                vec![RangeQuery {
+                    field: "span_duration_millis".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Included(77u64.into()),
+                }
+                .into()]
             );
         }
         {
@@ -1333,7 +1581,7 @@ mod tests {
             let min_span_duration_secs = Some(7);
             let max_span_duration_secs = Some(77);
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1342,21 +1590,27 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"span_duration_millis:[7 TO 77]"#
+                )),
+                vec![RangeQuery {
+                    field: "span_duration_millis".to_string(),
+                    lower_bound: Bound::Included(7u64.into()),
+                    upper_bound: Bound::Included(77u64.into()),
+                }
+                .into()]
             );
         }
         {
             let service_name = "quickwit";
             let span_kind = None;
             let span_name = "";
-            let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let tag_value = "bar";
+            let tags = HashMap::from_iter([("foo".to_string(), tag_value.to_string())]);
             let min_span_start_timestamp_secs = None;
             let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1365,21 +1619,49 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"service_name:"quickwit" AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                )),
+                vec![
+                    TermQuery {
+                        field: "service_name".to_string(),
+                        value: service_name.to_string(),
+                    }
+                    .into(),
+                    BoolQuery {
+                        should: vec![
+                            TermQuery {
+                                field: "resource_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "span_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "events.event_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into()
+                ]
             );
         }
         {
             let service_name = "quickwit";
             let span_kind = "client".parse().ok();
             let span_name = "";
-            let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let tag_value = "bar";
+            let tags = HashMap::from_iter([("foo".to_string(), tag_value.to_string())]);
             let min_span_start_timestamp_secs = None;
             let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1388,21 +1670,54 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"service_name:"quickwit" AND span_kind:3 AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                )),
+                vec![
+                    TermQuery {
+                        field: "service_name".to_string(),
+                        value: service_name.to_string(),
+                    }
+                    .into(),
+                    TermQuery {
+                        field: "span_kind".to_string(),
+                        value: "3".to_string()
+                    }
+                    .into(),
+                    BoolQuery {
+                        should: vec![
+                            TermQuery {
+                                field: "resource_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "span_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "events.event_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into()
+                ]
             );
         }
         {
             let service_name = "quickwit";
             let span_kind = "client".parse().ok();
             let span_name = "leaf_search";
-            let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let tag_value = "bar";
+            let tags = HashMap::from_iter([("foo".to_string(), tag_value.to_string())]);
             let min_span_start_timestamp_secs = None;
             let max_span_start_timestamp_secs = None;
             let min_span_duration_secs = None;
             let max_span_duration_secs = None;
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1411,21 +1726,59 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"service_name:"quickwit" AND span_kind:3 AND span_name:"leaf_search" AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar")"#
+                )),
+                vec![
+                    TermQuery {
+                        field: "service_name".to_string(),
+                        value: service_name.to_string(),
+                    }
+                    .into(),
+                    TermQuery {
+                        field: "span_kind".to_string(),
+                        value: "3".to_string()
+                    }
+                    .into(),
+                    TermQuery {
+                        field: "span_name".to_string(),
+                        value: span_name.to_string(),
+                    }
+                    .into(),
+                    BoolQuery {
+                        should: vec![
+                            TermQuery {
+                                field: "resource_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "span_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "events.event_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into()
+                ]
             );
         }
         {
             let service_name = "quickwit";
             let span_kind = "client".parse().ok();
             let span_name = "leaf_search";
-            let tags = HashMap::from_iter([("foo".to_string(), "bar".to_string())]);
+            let tag_value = "bar";
+            let tags = HashMap::from_iter([("foo".to_string(), tag_value.to_string())]);
             let min_span_start_timestamp_secs = Some(3);
             let max_span_start_timestamp_secs = Some(33);
             let min_span_duration_secs = Some(7);
             let max_span_duration_secs = Some(77);
             assert_eq!(
-                build_search_query(
+                get_must(build_search_query(
                     service_name,
                     span_kind,
                     span_name,
@@ -1434,8 +1787,57 @@ mod tests {
                     max_span_start_timestamp_secs,
                     min_span_duration_secs,
                     max_span_duration_secs
-                ),
-                r#"service_name:"quickwit" AND span_kind:3 AND span_name:"leaf_search" AND (resource_attributes.foo:"bar" OR span_attributes.foo:"bar" OR events.event_attributes.foo:"bar") AND span_start_timestamp_secs:[1970-01-01T00:00:03Z TO 1970-01-01T00:00:33Z] AND span_duration_millis:[7 TO 77]"#
+                )),
+                vec![
+                    TermQuery {
+                        field: "service_name".to_string(),
+                        value: service_name.to_string(),
+                    }
+                    .into(),
+                    TermQuery {
+                        field: "span_kind".to_string(),
+                        value: "3".to_string()
+                    }
+                    .into(),
+                    TermQuery {
+                        field: "span_name".to_string(),
+                        value: span_name.to_string(),
+                    }
+                    .into(),
+                    BoolQuery {
+                        should: vec![
+                            TermQuery {
+                                field: "resource_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "span_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                            TermQuery {
+                                field: "events.event_attributes.foo".to_string(),
+                                value: tag_value.to_string(),
+                            }
+                            .into(),
+                        ],
+                        ..Default::default()
+                    }
+                    .into(),
+                    RangeQuery {
+                        field: "span_start_timestamp_nanos".to_string(),
+                        lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
+                        upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
+                    }
+                    .into(),
+                    RangeQuery {
+                        field: "span_duration_millis".to_string(),
+                        lower_bound: Bound::Included(7u64.into()),
+                        upper_bound: Bound::Included(77u64.into()),
+                    }
+                    .into(),
+                ]
             );
         }
     }
@@ -1451,7 +1853,7 @@ mod tests {
         assert_eq!(collector.trace_id_field_name, "trace_id");
         assert_eq!(
             collector.span_timestamp_field_name,
-            "span_start_timestamp_secs"
+            "span_start_timestamp_nanos"
         );
     }
 
@@ -1492,6 +1894,8 @@ mod tests {
     #[test]
     fn test_otlp_attributes_to_jaeger_tags() {
         let attributes = HashMap::from_iter([
+            ("array_int".to_string(), json!([1, 2])),
+            ("array_str".to_string(), json!(["foo", "bar"])),
             ("bool".to_string(), json!(true)),
             ("float".to_string(), json!(1.0)),
             ("integer".to_string(), json!(1)),
@@ -1500,23 +1904,31 @@ mod tests {
         let mut tags = otlp_attributes_to_jaeger_tags(attributes).unwrap();
         tags.sort_by(|left, right| left.key.cmp(&right.key));
 
-        assert_eq!(tags.len(), 4);
+        assert_eq!(tags.len(), 6);
 
-        assert_eq!(tags[0].key, "bool");
-        assert_eq!(tags[0].v_type(), ValueType::Bool);
-        assert!(tags[0].v_bool);
+        assert_eq!(tags[0].key, "array_int");
+        assert_eq!(tags[0].v_type(), ValueType::String);
+        assert_eq!(tags[0].v_str, "[1,2]");
 
-        assert_eq!(tags[1].key, "float");
-        assert_eq!(tags[1].v_type(), ValueType::Float64);
-        assert_eq!(tags[1].v_float64, 1.0);
+        assert_eq!(tags[1].key, "array_str");
+        assert_eq!(tags[1].v_type(), ValueType::String);
+        assert_eq!(tags[1].v_str, r#"["foo","bar"]"#);
 
-        assert_eq!(tags[2].key, "integer");
-        assert_eq!(tags[2].v_type(), ValueType::Int64);
-        assert_eq!(tags[2].v_int64, 1);
+        assert_eq!(tags[2].key, "bool");
+        assert_eq!(tags[2].v_type(), ValueType::Bool);
+        assert!(tags[2].v_bool);
 
-        assert_eq!(tags[3].key, "string");
-        assert_eq!(tags[3].v_type(), ValueType::String);
-        assert_eq!(tags[3].v_str, "foo");
+        assert_eq!(tags[3].key, "float");
+        assert_eq!(tags[3].v_type(), ValueType::Float64);
+        assert_eq!(tags[3].v_float64, 1.0);
+
+        assert_eq!(tags[4].key, "integer");
+        assert_eq!(tags[4].v_type(), ValueType::Int64);
+        assert_eq!(tags[4].v_int64, 1);
+
+        assert_eq!(tags[5].key, "string");
+        assert_eq!(tags[5].v_type(), ValueType::String);
+        assert_eq!(tags[5].v_str, "foo");
     }
 
     #[test]
@@ -1574,63 +1986,41 @@ mod tests {
     fn test_inject_status_code_tag() {
         {
             let mut tags = Vec::new();
-            inject_span_status_tags(&mut tags, None);
-            assert!(tags.is_empty());
-        }
-        {
-            let mut tags = Vec::new();
             let span_status = QwSpanStatus {
-                code: 0,
+                code: OtlpStatusCode::Unset,
                 message: None,
             };
-            inject_span_status_tags(&mut tags, Some(span_status));
+            inject_span_status_tags(&mut tags, span_status);
             assert!(tags.is_empty());
         }
         {
             let mut tags = Vec::new();
             let span_status = QwSpanStatus {
-                code: 0,
-                message: Some("foo".to_string()),
+                code: OtlpStatusCode::Ok,
+                message: None,
             };
-            inject_span_status_tags(&mut tags, Some(span_status));
+            inject_span_status_tags(&mut tags, span_status);
             assert_eq!(tags.len(), 1);
-            assert_eq!(tags[0].key, "otel.status_description");
+            assert_eq!(tags[0].key, "otel.status_code");
             assert_eq!(tags[0].v_type(), ValueType::String);
-            assert_eq!(tags[0].v_str, "foo");
+            assert_eq!(tags[0].v_str, "OK");
         }
         {
             let mut tags = Vec::new();
             let span_status = QwSpanStatus {
-                code: 1,
-                message: Some("Ok".to_string()),
+                code: OtlpStatusCode::Error,
+                message: Some("An error occurred.".to_string()),
             };
-            inject_span_status_tags(&mut tags, Some(span_status));
-            assert_eq!(tags.len(), 2);
-
-            assert_eq!(tags[0].key, "otel.status_description");
-            assert_eq!(tags[0].v_type(), ValueType::String);
-            assert_eq!(tags[0].v_str, "Ok");
-
-            assert_eq!(tags[1].key, "otel.status_code");
-            assert_eq!(tags[1].v_type(), ValueType::String);
-            assert_eq!(tags[1].v_str, "OK");
-        }
-        {
-            let mut tags = Vec::new();
-            let span_status = QwSpanStatus {
-                code: 2,
-                message: Some("Error".to_string()),
-            };
-            inject_span_status_tags(&mut tags, Some(span_status));
+            inject_span_status_tags(&mut tags, span_status);
             assert_eq!(tags.len(), 3);
 
-            assert_eq!(tags[0].key, "otel.status_description");
+            assert_eq!(tags[0].key, "otel.status_code");
             assert_eq!(tags[0].v_type(), ValueType::String);
-            assert_eq!(tags[0].v_str, "Error");
+            assert_eq!(tags[0].v_str, "ERROR");
 
-            assert_eq!(tags[1].key, "otel.status_code");
+            assert_eq!(tags[1].key, "otel.status_description");
             assert_eq!(tags[1].v_type(), ValueType::String);
-            assert_eq!(tags[1].v_str, "ERROR");
+            assert_eq!(tags[1].v_str, "An error occurred.");
 
             assert_eq!(tags[2].key, "error");
             assert_eq!(tags[2].v_type(), ValueType::Bool);
@@ -1710,23 +2100,22 @@ mod tests {
             scope_version: Some("1.0.0".to_string()),
             scope_attributes: HashMap::from_iter([("scope_key".to_string(), json!("scope_value"))]),
             scope_dropped_attributes_count: 2,
-            span_id: BASE64_STANDARD.encode([2; 8]),
+            span_id: SpanId::new([2; 8]),
             span_kind: 2,
             span_name: "publish_split".to_string(),
             span_fingerprint: Some(SpanFingerprint::new("quickwit", 2.into(), "publish_split")),
             span_start_timestamp_nanos: 1_000_000_001,
             span_end_timestamp_nanos: 2_000_000_002,
-            span_start_timestamp_secs: Some(1),
             span_duration_millis: Some(1_001),
             span_attributes: HashMap::from_iter([("span_key".to_string(), json!("span_value"))]),
             span_dropped_attributes_count: 3,
             span_dropped_events_count: 4,
             span_dropped_links_count: 5,
-            span_status: Some(QwSpanStatus {
-                code: 2,
+            span_status: QwSpanStatus {
+                code: OtlpStatusCode::Error,
                 message: Some("An error occurred.".to_string()),
-            }),
-            parent_span_id: Some(BASE64_STANDARD.encode([3; 8])),
+            },
+            parent_span_id: Some(SpanId::new([3; 8])),
             events: vec![QwEvent {
                 event_timestamp_nanos: 1000500003,
                 event_name: "event_name".to_string(),
@@ -1739,8 +2128,8 @@ mod tests {
             event_names: vec!["event_name".to_string()],
             links: vec![QwLink {
                 link_trace_id: TraceId::new([4; 16]),
-                link_trace_state: "link_key1=link_value1,link_key2=link_value2".to_string(),
-                link_span_id: BASE64_STANDARD.encode([5; 8]),
+                link_trace_state: Some("link_key1=link_value1,link_key2=link_value2".to_string()),
+                link_span_id: SpanId::new([5; 8]),
                 link_attributes: HashMap::from_iter([(
                     "link_key".to_string(),
                     json!("link_value"),
@@ -1832,18 +2221,18 @@ mod tests {
                     v_binary: Vec::new()
                 },
                 JaegerKeyValue {
-                    key: "otel.status_description".to_string(),
+                    key: "otel.status_code".to_string(),
                     v_type: 0,
-                    v_str: "An error occurred.".to_string(),
+                    v_str: "ERROR".to_string(),
                     v_bool: false,
                     v_int64: 0,
                     v_float64: 0.0,
                     v_binary: Vec::new()
                 },
                 JaegerKeyValue {
-                    key: "otel.status_code".to_string(),
+                    key: "otel.status_description".to_string(),
                     v_type: 0,
-                    v_str: "ERROR".to_string(),
+                    v_str: "An error occurred.".to_string(),
                     v_bool: false,
                     v_int64: 0,
                     v_float64: 0.0,
@@ -1918,16 +2307,17 @@ mod tests {
 
     #[test]
     fn test_otlp_links_to_jaeger_references() {
-        let parent_span_id = BASE64_STANDARD.encode([3; 8]);
+        let trace_id = TraceId::new([1; 16]);
+        let parent_span_id = SpanId::new([3; 8]);
         let links = vec![QwLink {
             link_trace_id: TraceId::new([4; 16]),
-            link_trace_state: "link_key1=link_value1,link_key2=link_value2".to_string(),
-            link_span_id: BASE64_STANDARD.encode([5; 8]),
+            link_trace_state: Some("link_key1=link_value1,link_key2=link_value2".to_string()),
+            link_span_id: SpanId::new([5; 8]),
             link_attributes: HashMap::from_iter([("link_key".to_string(), json!("link_value"))]),
             link_dropped_attributes_count: 7,
         }];
         let jaeger_references =
-            otlp_links_to_jaeger_references(&[1; 16], Some(parent_span_id), links).unwrap();
+            otlp_links_to_jaeger_references(&trace_id, Some(parent_span_id), links).unwrap();
         assert_eq!(
             jaeger_references,
             vec![
@@ -1956,27 +2346,27 @@ mod tests {
             let agg_result_json = r#"[
                 {
                     "trace_id": "AQEBAQEBAQEBAQEBAQEBAQ==",
-                    "span_timestamp": 1736522020000000
+                    "span_timestamp": 1684857492783747000
                 }
             ]"#;
             let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
             assert_eq!(trace_ids.len(), 1);
-            assert_eq!(span_timestamps_range, 1736522020..=1736522020);
+            assert_eq!(span_timestamps_range, 1684857492..=1684857492);
         }
         {
             let agg_result_json = r#"[
                 {
                     "trace_id": "AQIDBAUGBwgJCgsMDQ4PEA==",
-                    "span_timestamp": 1736522020000000
+                    "span_timestamp": 1684857492783747000
                 },
                 {
                     "trace_id": "AgICAgICAgICAgICAgICAg==",
-                    "span_timestamp": 1704899620000000
+                    "span_timestamp": 1684857826019627000
                 }
             ]"#;
             let (trace_ids, span_timestamps_range) = collect_trace_ids(agg_result_json).unwrap();
             assert_eq!(trace_ids.len(), 2);
-            assert_eq!(span_timestamps_range, 1704899620..=1736522020);
+            assert_eq!(span_timestamps_range, 1684857492..=1684857826);
         }
     }
 
@@ -1986,7 +2376,7 @@ mod tests {
         service
             .expect_root_list_terms()
             .withf(|req| {
-                req.index_id == "otel-trace-v0"
+                req.index_id == OTEL_TRACES_INDEX_ID
                     && req.field == "service_name"
                     && req.start_timestamp.is_some()
             })

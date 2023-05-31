@@ -183,7 +183,7 @@ cat << EOF > my_logs.json
 EOF
 
 # Ingest documents.
-./quickwit index ingest --index my_dynamic_index --input-path my_logs.json 
+./quickwit index ingest --index my_dynamic_index --input-path my_logs.json --force
 
 # Execute search query.
 ./quickwit index search --index my_dynamic_index --query "event_type:order AND cart.product_id:120391
@@ -276,7 +276,7 @@ cat << EOF > otel_logs.json
 EOF
 
 # Ingest documents.
-./quickwit index ingest --index otel_logs --input-path otel_logs.json
+./quickwit index ingest --index otel_logs --input-path otel_logs.json --force
 
 # Execute search query.
 ./quickwit index search --index otel_logs --query "merge AND service:donut_shop"

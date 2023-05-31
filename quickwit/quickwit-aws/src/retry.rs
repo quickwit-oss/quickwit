@@ -44,8 +44,8 @@ pub enum Retry<E> {
 impl<E> Retry<E> {
     pub fn into_inner(self) -> E {
         match self {
-            Self::Transient(e) => e,
-            Self::Permanent(e) => e,
+            Self::Transient(error) => error,
+            Self::Permanent(error) => error,
         }
     }
 }
@@ -55,6 +55,18 @@ impl<E> Retryable for Retry<E> {
         match self {
             Retry::Transient(_) => true,
             Retry::Permanent(_) => false,
+        }
+    }
+}
+
+impl<E> From<E> for Retry<E>
+where E: Retryable
+{
+    fn from(error: E) -> Self {
+        if error.is_retryable() {
+            Retry::Transient(error)
+        } else {
+            Retry::Permanent(error)
         }
     }
 }

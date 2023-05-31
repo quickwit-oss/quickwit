@@ -115,7 +115,7 @@ pub trait Storage: Send + Sync + 'static {
     async fn exists(&self, path: &Path) -> StorageResult<bool> {
         match self.file_num_bytes(path).await {
             Ok(_) => Ok(true),
-            Err(storage_err) if storage_err.kind() == StorageErrorKind::DoesNotExist => Ok(false),
+            Err(storage_err) if storage_err.kind() == StorageErrorKind::NotFound => Ok(false),
             Err(other_storage_err) => Err(other_storage_err),
         }
     }

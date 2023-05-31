@@ -39,6 +39,7 @@ pub struct EventWithTimestamp {
     /// Unix time in seconds.
     pub unixtime: u64,
     /// Telemetry event.
+    #[serde(flatten)]
     pub event: TelemetryEvent,
 }
 
@@ -61,21 +62,40 @@ impl From<TelemetryEvent> for EventWithTimestamp {
     }
 }
 
-/// Represents a Telemetry Event send to Quickwit's server for usage information.
-#[derive(Debug, Serialize, Deserialize)]
+/// Represents a Telemetry Event send to Quickwit's telemetry server for usage information.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
 pub enum TelemetryEvent {
-    /// Create command is called.
-    Create,
-    /// Ingest command is called.
-    Ingest,
-    /// Delete command
-    Delete,
-    /// Garbage Collect command
-    GarbageCollect,
-    /// Serve command is called.
-    RunService(String),
-    /// EndCommand (with the return code)
-    EndCommand { return_code: i32 },
+    RunCommand(RunCommandInfo),
+    /// EndCommand (with the return code).
+    EndCommand {
+        return_code: i32,
+    },
+    /// Event sent every 12h to signal the server is running.
+    Running,
+    /// UI index.html was requested.
+    UiIndexPageLoad,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunCommandInfo {
+    services: Vec<String>,
+    otlp_endpoint_enabled: bool,
+    jaeger_endpoint_enabled: bool,
+}
+impl RunCommandInfo {
+    pub fn new(
+        services: Vec<String>,
+        otlp_endpoint_enabled: bool,
+        jaeger_endpoint_enabled: bool,
+    ) -> Self {
+        Self {
+            services,
+            otlp_endpoint_enabled,
+            jaeger_endpoint_enabled,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -108,5 +128,25 @@ impl Default for ClientInformation {
             hashed_host_username: hashed_host_username(),
             kubernetes: std::env::var_os("KUBERNETES_SERVICE_HOST").is_some(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json;
+
+    use super::{EventWithTimestamp, TelemetryEvent};
+
+    #[test]
+    fn test_serialize_payload_as_expected() {
+        let event = EventWithTimestamp {
+            unixtime: 0,
+            event: TelemetryEvent::EndCommand { return_code: 0 },
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert_eq!(
+            json,
+            r#"{"unixtime":0,"type":"end_command","return_code":0}"#
+        );
     }
 }

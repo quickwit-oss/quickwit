@@ -124,6 +124,7 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
         let storage = self
             .storage_uri_resolver
             .resolve(&uri)
+            .await
             .map_err(|err| match err {
                 StorageResolverError::InvalidUri { message } => {
                     MetastoreResolverError::InvalidUri(message)

@@ -22,7 +22,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::str::FromStr;
 
 use async_trait::async_trait;
-use base64::prelude::{Engine, BASE64_STANDARD};
+use quickwit_common::uri::Uri;
+use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
 use quickwit_ingest::{
     CommitType, DocBatch, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
 };
@@ -32,6 +33,8 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
 };
 use quickwit_proto::opentelemetry::proto::common::v1::InstrumentationScope;
 use quickwit_proto::opentelemetry::proto::resource::v1::Resource as OtlpResource;
+use quickwit_proto::opentelemetry::proto::trace::v1::span::Link as OtlpLink;
+use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
 use quickwit_proto::opentelemetry::proto::trace::v1::{Span as OtlpSpan, Status as OtlpStatus};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -40,21 +43,20 @@ use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
-use crate::otlp::{extract_attributes, TraceId};
+use crate::otlp::{extract_attributes, SpanId, TraceId};
 
-pub const OTEL_TRACE_INDEX_ID: &str = "otel-trace-v0";
+pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_6";
 
-pub const OTEL_TRACE_INDEX_CONFIG: &str = r#"
+const OTEL_TRACES_INDEX_CONFIG: &str = r#"
 version: 0.6
 
-index_id: otel-trace-v0
+index_id: ${INDEX_ID}
 
 doc_mapping:
   mode: strict
   field_mappings:
     - name: trace_id
-      type: text
-      tokenizer: raw
+      type: bytes
       fast: true
     - name: trace_state
       type: text
@@ -81,8 +83,7 @@ doc_mapping:
       type: u64
       indexed: false
     - name: span_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: span_kind
       type: u64
     - name: span_name
@@ -92,18 +93,18 @@ doc_mapping:
       type: text
       tokenizer: raw
     - name: span_start_timestamp_nanos
-      type: u64
-      indexed: false
-    - name: span_end_timestamp_nanos
-      type: u64
-      indexed: false
-    - name: span_start_timestamp_secs
       type: datetime
       input_formats: [unix_timestamp]
+      output_format: unix_timestamp_nanos
       indexed: false
       fast: true
-      precision: seconds
-      stored: false
+      precision: milliseconds
+    - name: span_end_timestamp_nanos
+      type: datetime
+      input_formats: [unix_timestamp]
+      output_format: unix_timestamp_nanos
+      indexed: false
+      fast: false
     - name: span_duration_millis
       type: u64
       indexed: false
@@ -123,9 +124,9 @@ doc_mapping:
       indexed: false
     - name: span_status
       type: json
-      indexed: false
+      indexed: true
     - name: parent_span_id
-      type: text
+      type: bytes
       indexed: false
     - name: events
       type: array<json>
@@ -139,7 +140,7 @@ doc_mapping:
       type: array<json>
       tokenizer: raw
 
-  timestamp_field: span_start_timestamp_secs
+  timestamp_field: span_start_timestamp_nanos
 
   # partition_key: hash_mod(service_name, 100)
   # tag_fields: [service_name]
@@ -151,54 +152,77 @@ search_settings:
   default_search_fields: []
 "#;
 
-pub type B64SpanId = String; // A base64-encoded 8-byte array.
+fn is_zero(count: &u32) -> bool {
+    *count == 0
+}
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Span {
     pub trace_id: TraceId,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_state: Option<String>,
     pub service_name: String,
-    pub resource_attributes: HashMap<String, JsonValue>,
-    pub resource_dropped_attributes_count: u32,
-    pub scope_name: Option<String>,
-    pub scope_version: Option<String>,
-    pub scope_attributes: HashMap<String, JsonValue>,
-    pub scope_dropped_attributes_count: u32,
-    pub span_id: B64SpanId,
-    pub span_kind: u64,
-    pub span_name: String,
-    pub span_fingerprint: Option<SpanFingerprint>,
-    /// Span start timestamp in nanoseconds. Stored as a `u64` instead of a `datetime` to avoid the
-    /// truncation to microseconds. This field is stored but not indexed.
-    pub span_start_timestamp_nanos: u64,
-    /// Span start timestamp in nanoseconds. Stored as a `u64` instead of a `datetime` to avoid the
-    /// truncation to microseconds. This field is stored but not indexed.
-    pub span_end_timestamp_nanos: u64,
-    /// Span start timestamp in seconds used for aggregations and range queries. This field is
-    /// stored as a fast field but not indexed.
-    pub span_start_timestamp_secs: Option<u64>,
-    pub span_duration_millis: Option<u64>,
-    pub span_attributes: HashMap<String, JsonValue>,
-    pub span_dropped_attributes_count: u32,
-    pub span_dropped_events_count: u32,
-    pub span_dropped_links_count: u32,
-    pub span_status: Option<SpanStatus>,
-    pub parent_span_id: Option<B64SpanId>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub resource_attributes: HashMap<String, JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
+    pub resource_dropped_attributes_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_version: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub scope_attributes: HashMap<String, JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
+    pub scope_dropped_attributes_count: u32,
+    pub span_id: SpanId,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
+    pub span_kind: u32,
+    pub span_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_fingerprint: Option<SpanFingerprint>,
+    pub span_start_timestamp_nanos: u64,
+    pub span_end_timestamp_nanos: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_duration_millis: Option<u64>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub span_attributes: HashMap<String, JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
+    pub span_dropped_attributes_count: u32,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
+    pub span_dropped_events_count: u32,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
+    pub span_dropped_links_count: u32,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "SpanStatus::is_unset")]
+    pub span_status: SpanStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_span_id: Option<SpanId>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<Event>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub event_names: Vec<String>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<Link>,
 }
 
 impl Span {
     fn from_otlp(span: OtlpSpan, resource: &Resource, scope: &Scope) -> Result<Self, Status> {
-        let trace_id = TraceId::try_from(span.trace_id)
-            .map_err(|error| Status::invalid_argument(error.to_string()))?;
-        let span_id = BASE64_STANDARD.encode(span.span_id);
+        let trace_id = TraceId::try_from(span.trace_id)?;
+        let span_id = SpanId::try_from(span.span_id)?;
         let parent_span_id = if !span.parent_span_id.is_empty() {
-            Some(BASE64_STANDARD.encode(span.parent_span_id))
+            Some(SpanId::try_from(span.parent_span_id)?)
         } else {
             None
         };
@@ -209,7 +233,6 @@ impl Span {
         };
         let span_fingerprint =
             SpanFingerprint::new(&resource.service_name, span.kind.into(), &span_name);
-        let span_start_timestamp_secs = Some(span.start_time_unix_nano / 1_000_000_000);
         let span_duration_nanos = span.end_time_unix_nano - span.start_time_unix_nano;
         let span_duration_millis = Some(span_duration_nanos / 1_000_000);
         let span_attributes = extract_attributes(span.attributes);
@@ -231,17 +254,8 @@ impl Span {
         let links: Vec<Link> = span
             .links
             .into_iter()
-            .map(|link| {
-                TraceId::try_from(link.trace_id).map(|link_trace_id| Link {
-                    link_trace_id,
-                    link_trace_state: link.trace_state,
-                    link_span_id: BASE64_STANDARD.encode(link.span_id),
-                    link_attributes: extract_attributes(link.attributes),
-                    link_dropped_attributes_count: link.dropped_attributes_count,
-                })
-            })
-            .collect::<Result<_, _>>()
-            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+            .map(Link::try_from_otlp)
+            .collect::<Result<_, _>>()?;
         let trace_state = if span.trace_state.is_empty() {
             None
         } else {
@@ -258,18 +272,17 @@ impl Span {
             scope_attributes: scope.attributes.clone(),
             scope_dropped_attributes_count: scope.dropped_attributes_count,
             span_id,
-            span_kind: span.kind as u64,
+            span_kind: span.kind as u32,
             span_name,
             span_fingerprint: Some(span_fingerprint),
             span_start_timestamp_nanos: span.start_time_unix_nano,
             span_end_timestamp_nanos: span.end_time_unix_nano,
-            span_start_timestamp_secs,
             span_duration_millis,
             span_attributes,
             span_dropped_attributes_count: span.dropped_attributes_count,
             span_dropped_events_count: span.dropped_events_count,
             span_dropped_links_count: span.dropped_links_count,
-            span_status: span.status.map(|status| status.into()),
+            span_status: span.status.map(SpanStatus::from_otlp).unwrap_or_default(),
             parent_span_id,
             events,
             event_names,
@@ -386,16 +399,22 @@ impl FromStr for SpanKind {
     }
 }
 
-const SPAN_FINGERPRINT_SEPARATOR: char = '\0';
-
 /// Concatenation of the service name, span kind, and span name.
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SpanFingerprint(String);
 
 impl SpanFingerprint {
+    /// Null character used to separate the service name, span kind, and span name.
+    const NULL_CHAR: char = '\u{0}';
+
+    /// Start of heading character, the next character after null.
+    const SOH_CHAR: char = '\u{1}';
+
     pub fn new(service_name: &str, span_kind: SpanKind, span_name: &str) -> Self {
         Self(format!(
-            "{service_name}{SPAN_FINGERPRINT_SEPARATOR}{span_kind}{SPAN_FINGERPRINT_SEPARATOR}{span_name}", span_kind = span_kind.0
+            "{service_name}{separator}{span_kind}{separator}{span_name}",
+            separator = Self::NULL_CHAR,
+            span_kind = span_kind.0
         ))
     }
 
@@ -408,18 +427,18 @@ impl SpanFingerprint {
     }
 
     pub fn service_name(&self) -> Option<&str> {
-        self.0.split(SPAN_FINGERPRINT_SEPARATOR).next()
+        self.0.split(Self::NULL_CHAR).next()
     }
 
     pub fn span_kind(&self) -> Option<SpanKind> {
         self.0
-            .split(SPAN_FINGERPRINT_SEPARATOR)
+            .split(Self::NULL_CHAR)
             .nth(1)
             .and_then(|span_kind| SpanKind::from_str(span_kind).ok())
     }
 
     pub fn span_name(&self) -> Option<&str> {
-        self.0.split(SPAN_FINGERPRINT_SEPARATOR).nth(2)
+        self.0.split(Self::NULL_CHAR).nth(2)
     }
 
     pub fn start_key(service_name: &str, span_kind_opt: Option<SpanKind>) -> Option<Vec<u8>> {
@@ -427,11 +446,11 @@ impl SpanFingerprint {
             return None;
         }
         let mut start_key = service_name.as_bytes().to_vec();
-        start_key.push(SPAN_FINGERPRINT_SEPARATOR as u8);
+        start_key.push(Self::NULL_CHAR as u8);
 
         if let Some(span_kind) = span_kind_opt {
-            start_key.push(span_kind.0 as u8);
-            start_key.push(SPAN_FINGERPRINT_SEPARATOR as u8);
+            start_key.push(span_kind.as_char() as u8);
+            start_key.push(Self::NULL_CHAR as u8);
         }
         Some(start_key)
     }
@@ -443,30 +462,53 @@ impl SpanFingerprint {
         let mut end_key = service_name.as_bytes().to_vec();
 
         if let Some(span_kind) = span_kind_opt {
-            end_key.push(SPAN_FINGERPRINT_SEPARATOR as u8);
-            end_key.push(span_kind.0 as u8);
+            end_key.push(Self::NULL_CHAR as u8);
+            end_key.push(span_kind.as_char() as u8);
         }
-        end_key.push(SPAN_FINGERPRINT_SEPARATOR as u8 + 1);
+        end_key.push(Self::SOH_CHAR as u8);
         Some(end_key)
     }
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SpanStatus {
-    pub code: i32,
+    pub code: OtlpStatusCode,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
 
-impl From<OtlpStatus> for SpanStatus {
-    fn from(value: OtlpStatus) -> Self {
-        let message = if value.message.is_empty() {
-            None
+impl SpanStatus {
+    pub fn is_unset(&self) -> bool {
+        self.code == OtlpStatusCode::Unset
+    }
+
+    fn from_otlp(span_status: OtlpStatus) -> Self {
+        if span_status.code == OtlpStatusCode::Ok as i32 {
+            Self {
+                code: OtlpStatusCode::Ok,
+                message: None,
+            }
+        } else if span_status.code == OtlpStatusCode::Error as i32 {
+            let message = if span_status.message.is_empty() {
+                None
+            } else {
+                Some(span_status.message)
+            };
+            Self {
+                code: OtlpStatusCode::Error,
+                message,
+            }
         } else {
-            Some(value.message)
-        };
+            Self::default()
+        }
+    }
+}
+
+impl Default for SpanStatus {
+    fn default() -> Self {
         Self {
-            code: value.code,
-            message,
+            code: OtlpStatusCode::Unset,
+            message: None,
         }
     }
 }
@@ -532,17 +574,45 @@ impl Scope {
 pub struct Event {
     pub event_timestamp_nanos: u64,
     pub event_name: String,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub event_attributes: HashMap<String, JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
     pub event_dropped_attributes_count: u32,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Link {
     pub link_trace_id: TraceId,
-    pub link_trace_state: String,
-    pub link_span_id: B64SpanId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_trace_state: Option<String>,
+    pub link_span_id: SpanId,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub link_attributes: HashMap<String, JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
     pub link_dropped_attributes_count: u32,
+}
+
+impl Link {
+    fn try_from_otlp(link: OtlpLink) -> tonic::Result<Link> {
+        let link_trace_id = TraceId::try_from(link.trace_id)?;
+        let link_span_id = SpanId::try_from(link.span_id)?;
+        let link = Link {
+            link_trace_id,
+            link_trace_state: if !link.trace_state.is_empty() {
+                Some(link.trace_state)
+            } else {
+                None
+            },
+            link_span_id,
+            link_attributes: extract_attributes(link.attributes),
+            link_dropped_attributes_count: link.dropped_attributes_count,
+        };
+        Ok(link)
+    }
 }
 
 struct ParsedSpans {
@@ -553,17 +623,31 @@ struct ParsedSpans {
 }
 
 #[derive(Debug, Clone)]
-pub struct OtlpGrpcTraceService {
+pub struct OtlpGrpcTracesService {
     ingest_service: IngestServiceClient,
+    commit_type: CommitType,
 }
 
-impl OtlpGrpcTraceService {
-    // TODO: remove and use registry
-    pub fn new(ingest_service: IngestServiceClient) -> Self {
-        Self { ingest_service }
+impl OtlpGrpcTracesService {
+    pub fn new(ingest_service: IngestServiceClient, commit_type_opt: Option<CommitType>) -> Self {
+        Self {
+            ingest_service,
+            commit_type: commit_type_opt.unwrap_or_default(),
+        }
     }
 
-    async fn export_inner(
+    pub fn index_config(default_index_root_uri: &Uri) -> anyhow::Result<IndexConfig> {
+        let index_config_str =
+            OTEL_TRACES_INDEX_CONFIG.replace("${INDEX_ID}", OTEL_TRACES_INDEX_ID);
+        let index_config = load_index_config_from_user_config(
+            ConfigFormat::Yaml,
+            index_config_str.as_bytes(),
+            default_index_root_uri,
+        )?;
+        Ok(index_config)
+    }
+
+    pub async fn export_inner(
         &mut self,
         request: ExportTraceServiceRequest,
         labels: [&'static str; 4],
@@ -582,6 +666,9 @@ impl OtlpGrpcTraceService {
             error!("Failed to parse spans: {join_error:?}");
             Status::internal("Failed to parse spans.")
         })??;
+        if num_spans == 0 {
+            return Err(tonic::Status::invalid_argument("The request is empty."));
+        }
         if num_spans == num_parse_errors {
             return Err(tonic::Status::internal(error_message));
         }
@@ -632,7 +719,7 @@ impl OtlpGrpcTraceService {
             }
         }
         let mut doc_batch_builder =
-            DocBatchBuilder::new(OTEL_TRACE_INDEX_ID.to_string()).json_writer();
+            DocBatchBuilder::new(OTEL_TRACES_INDEX_ID.to_string()).json_writer();
         for span in ordered_spans {
             if let Err(error) = doc_batch_builder.ingest_doc(&span.0) {
                 error!(error=?error, "Failed to JSON serialize span.");
@@ -659,7 +746,7 @@ impl OtlpGrpcTraceService {
     async fn store_spans(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],
-            commit: CommitType::Auto as u32,
+            commit: self.commit_type as u32,
         };
         self.ingest_service.ingest(ingest_request).await?;
         Ok(())
@@ -671,7 +758,7 @@ impl OtlpGrpcTraceService {
     ) -> Result<ExportTraceServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels = ["trace", OTEL_TRACE_INDEX_ID, "grpc", "protobuf"];
+        let labels = ["trace", OTEL_TRACES_INDEX_ID, "grpc", "protobuf"];
 
         OTLP_SERVICE_METRICS
             .requests_total
@@ -688,7 +775,7 @@ impl OtlpGrpcTraceService {
             }
         };
         let elapsed = start.elapsed().as_secs_f64();
-        let labels = ["trace", OTEL_TRACE_INDEX_ID, "grpc", "protobuf", is_error];
+        let labels = ["trace", OTEL_TRACES_INDEX_ID, "grpc", "protobuf", is_error];
         OTLP_SERVICE_METRICS
             .request_duration_seconds
             .with_label_values(labels)
@@ -699,7 +786,7 @@ impl OtlpGrpcTraceService {
 }
 
 #[async_trait]
-impl TraceService for OtlpGrpcTraceService {
+impl TraceService for OtlpGrpcTracesService {
     #[instrument(name = "ingest_spans", skip_all)]
     async fn export(
         &self,
@@ -715,7 +802,7 @@ impl TraceService for OtlpGrpcTraceService {
 
 #[cfg(test)]
 mod tests {
-
+    use quickwit_metastore::metastore_for_test;
     use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
     use quickwit_proto::opentelemetry::proto::common::v1::{
         AnyValue as OtlpAnyValue, KeyValue as OtlpKeyValue,
@@ -726,6 +813,21 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn test_index_config_is_valid() {
+        let index_config =
+            OtlpGrpcTracesService::index_config(&Uri::for_test("ram:///indexes")).unwrap();
+        assert_eq!(index_config.index_id, OTEL_TRACES_INDEX_ID);
+    }
+
+    #[tokio::test]
+    async fn test_create_index() {
+        let metastore = metastore_for_test();
+        let index_config =
+            OtlpGrpcTracesService::index_config(&Uri::for_test("ram:///indexes")).unwrap();
+        metastore.create_index(index_config).await.unwrap();
+    }
 
     #[test]
     fn test_resource_from_otlp() {
@@ -758,8 +860,8 @@ mod tests {
     #[test]
     fn test_scope_from_otlp() {
         let otlp_scope = InstrumentationScope {
-            name: "vector.dev".to_string(),
-            version: "1.0.0".to_string(),
+            name: "opentelemetry-otlp".to_string(),
+            version: "0.11.0".to_string(),
             attributes: vec![OtlpKeyValue {
                 key: "key".to_string(),
                 value: Some(OtlpAnyValue {
@@ -769,8 +871,8 @@ mod tests {
             dropped_attributes_count: 1,
         };
         let scope = Scope::from_otlp(otlp_scope);
-        assert_eq!(scope.name.unwrap(), "vector.dev");
-        assert_eq!(scope.version.unwrap(), "1.0.0");
+        assert_eq!(scope.name.unwrap(), "opentelemetry-otlp");
+        assert_eq!(scope.version.unwrap(), "0.11.0");
         assert_eq!(
             scope.attributes,
             HashMap::from_iter([("key".to_string(), json!("value"))])
@@ -780,8 +882,8 @@ mod tests {
 
     #[test]
     fn test_span_from_otlp() {
-        // Test minimal span.
         {
+            // Test minimal span.
             let otlp_span = OtlpSpan {
                 trace_id: vec![1; 16],
                 span_id: vec![2; 8],
@@ -810,11 +912,11 @@ mod tests {
             assert!(span.scope_attributes.is_empty());
             assert_eq!(span.scope_dropped_attributes_count, 0);
 
-            assert_eq!(span.trace_id, TraceId([1; 16]));
+            assert_eq!(span.trace_id, TraceId::new([1; 16]));
             assert!(span.trace_state.is_none());
 
-            assert_eq!(span.parent_span_id, Some(BASE64_STANDARD.encode([3; 8])));
-            assert_eq!(span.span_id, BASE64_STANDARD.encode([2; 8]));
+            assert_eq!(span.parent_span_id, Some(SpanId::new([3; 8])));
+            assert_eq!(span.span_id, SpanId::new([2; 8]));
             assert_eq!(span.span_kind, 2);
             assert_eq!(span.span_name, "publish_split");
             assert_eq!(
@@ -822,12 +924,11 @@ mod tests {
                 SpanFingerprint::new(UNKNOWN_SERVICE, SpanKind(2), "publish_split")
             );
             assert_eq!(span.span_start_timestamp_nanos, 1_000_000_001);
-            assert_eq!(span.span_start_timestamp_secs.unwrap(), 1);
             assert_eq!(span.span_end_timestamp_nanos, 1_001_000_002);
             assert_eq!(span.span_duration_millis.unwrap(), 1);
             assert!(span.span_attributes.is_empty());
             assert_eq!(span.span_dropped_attributes_count, 3);
-            assert!(span.span_status.is_none());
+            assert_eq!(span.span_status.code, OtlpStatusCode::Unset);
 
             assert!(span.events.is_empty());
             assert!(span.event_names.is_empty());
@@ -846,8 +947,8 @@ mod tests {
                 dropped_attributes_count: 1,
             };
             let scope = Scope {
-                name: Some("vector.dev".to_string()),
-                version: Some("1.0.0".to_string()),
+                name: Some("opentelemetry-otlp".to_string()),
+                version: Some("0.11.0".to_string()),
                 attributes: HashMap::from_iter([("scope_key".to_string(), json!("scope_value"))]),
                 dropped_attributes_count: 2,
             };
@@ -910,19 +1011,19 @@ mod tests {
             );
             assert_eq!(span.resource_dropped_attributes_count, 1);
 
-            assert_eq!(span.scope_name.unwrap(), "vector.dev");
-            assert_eq!(span.scope_version.unwrap(), "1.0.0");
+            assert_eq!(span.scope_name.unwrap(), "opentelemetry-otlp");
+            assert_eq!(span.scope_version.unwrap(), "0.11.0");
             assert_eq!(
                 span.scope_attributes,
                 HashMap::from_iter([("scope_key".to_string(), json!("scope_value"))])
             );
             assert_eq!(span.scope_dropped_attributes_count, 2);
 
-            assert_eq!(span.trace_id, TraceId([1; 16]));
+            assert_eq!(span.trace_id, TraceId::new([1; 16]));
             assert_eq!(span.trace_state.unwrap(), "key1=value1,key2=value2");
 
-            assert_eq!(span.parent_span_id, Some(BASE64_STANDARD.encode([3; 8])));
-            assert_eq!(span.span_id, BASE64_STANDARD.encode([2; 8]));
+            assert_eq!(span.parent_span_id, Some(SpanId::new([3; 8])));
+            assert_eq!(span.span_id, SpanId::new([2; 8]));
             assert_eq!(span.span_kind, 2);
             assert_eq!(span.span_name, "publish_split");
             assert_eq!(
@@ -930,7 +1031,6 @@ mod tests {
                 SpanFingerprint::new("quickwit", SpanKind(2), "publish_split")
             );
             assert_eq!(span.span_start_timestamp_nanos, 1_000_000_001);
-            assert_eq!(span.span_start_timestamp_secs.unwrap(), 1);
             assert_eq!(span.span_end_timestamp_nanos, 1_001_000_002);
             assert_eq!(span.span_duration_millis.unwrap(), 1);
             assert_eq!(
@@ -938,13 +1038,9 @@ mod tests {
                 HashMap::from_iter([("span_key".to_string(), json!("span_value"))])
             );
             assert_eq!(span.span_dropped_attributes_count, 3);
-            assert_eq!(
-                span.span_status.unwrap(),
-                SpanStatus {
-                    code: 2,
-                    message: Some("An error occurred.".to_string()),
-                }
-            );
+            assert_eq!(span.span_status.code, OtlpStatusCode::Error);
+            assert_eq!(span.span_status.message.unwrap(), "An error occurred.");
+
             assert_eq!(
                 span.events,
                 vec![Event {
@@ -963,9 +1059,11 @@ mod tests {
             assert_eq!(
                 span.links,
                 vec![Link {
-                    link_trace_id: TraceId([4; 16]),
-                    link_span_id: BASE64_STANDARD.encode([5; 8]),
-                    link_trace_state: "link_key1=link_value1,link_key2=link_value2".to_string(),
+                    link_trace_id: TraceId::new([4; 16]),
+                    link_span_id: SpanId::new([5; 8]),
+                    link_trace_state: Some(
+                        "link_key1=link_value1,link_key2=link_value2".to_string()
+                    ),
                     link_attributes: HashMap::from_iter([(
                         "link_key".to_string(),
                         json!("link_value")
@@ -974,6 +1072,158 @@ mod tests {
                 }]
             );
             assert_eq!(span.span_dropped_links_count, 5);
+        }
+    }
+
+    #[test]
+    fn test_span_fingerprint() {
+        let span_fingerprint = SpanFingerprint::new("quickwit", SpanKind(2), "publish_split");
+        assert_eq!(
+            span_fingerprint.as_str(),
+            "quickwit\u{0}2\u{0}publish_split"
+        );
+
+        let start_key_opt = SpanFingerprint::start_key("", None);
+        assert!(start_key_opt.is_none());
+
+        let start_key = SpanFingerprint::start_key("quickwit", None)
+            .map(String::from_utf8)
+            .unwrap()
+            .unwrap();
+        assert_eq!(start_key, "quickwit\u{0}");
+        let end_key = SpanFingerprint::end_key("quickwit", None)
+            .map(String::from_utf8)
+            .unwrap()
+            .unwrap();
+        assert_eq!(end_key, "quickwit\u{1}");
+
+        let start_key = SpanFingerprint::start_key("quickwit", Some(SpanKind::from(1)))
+            .map(String::from_utf8)
+            .unwrap()
+            .unwrap();
+        assert_eq!(start_key, "quickwit\u{0}1\u{0}");
+        let end_key = SpanFingerprint::end_key("quickwit", Some(SpanKind::from(1)))
+            .map(String::from_utf8)
+            .unwrap()
+            .unwrap();
+        assert_eq!(end_key, "quickwit\u{0}1\u{1}");
+    }
+
+    #[test]
+    fn test_span_status_from_otlp() {
+        let otlp_status = OtlpStatus {
+            code: 0,
+            message: "".to_string(),
+        };
+        assert!(SpanStatus::from_otlp(otlp_status).is_unset());
+
+        let otlp_status = OtlpStatus {
+            code: 1,
+            message: "".to_string(),
+        };
+        let span_status = SpanStatus::from_otlp(otlp_status);
+        assert_eq!(span_status.code, OtlpStatusCode::Ok);
+        assert!(span_status.message.is_none());
+
+        let otlp_status = OtlpStatus {
+            code: 2,
+            message: "An error occurred.".to_string(),
+        };
+        let span_status = SpanStatus::from_otlp(otlp_status);
+        assert_eq!(span_status.code, OtlpStatusCode::Error);
+        assert_eq!(span_status.message.unwrap(), "An error occurred.");
+    }
+
+    #[test]
+    fn test_span_serde() {
+        {
+            let expected_span = Span {
+                trace_id: TraceId::new([1; 16]),
+                trace_state: None,
+                service_name: "quickwit".to_string(),
+                resource_attributes: HashMap::new(),
+                resource_dropped_attributes_count: 0,
+                scope_name: None,
+                scope_version: None,
+                scope_attributes: HashMap::new(),
+                scope_dropped_attributes_count: 0,
+                span_id: SpanId::new([2; 8]),
+                span_kind: 0,
+                span_name: "publish_split".to_string(),
+                span_fingerprint: Some(SpanFingerprint::new(
+                    "quickwit",
+                    SpanKind(2),
+                    "publish_splits",
+                )),
+                span_start_timestamp_nanos: 0,
+                span_end_timestamp_nanos: 1_000,
+                span_duration_millis: Some(1),
+                span_attributes: HashMap::new(),
+                span_dropped_attributes_count: 0,
+                span_dropped_events_count: 0,
+                span_dropped_links_count: 0,
+                span_status: SpanStatus::default(),
+                parent_span_id: None,
+                events: Vec::new(),
+                event_names: Vec::new(),
+                links: Vec::new(),
+            };
+            let span_json = serde_json::to_string_pretty(&expected_span).unwrap();
+            let span = serde_json::from_str::<Span>(&span_json).unwrap();
+            assert_eq!(span, expected_span);
+        }
+        {
+            let expected_span = Span {
+                trace_id: TraceId::new([1; 16]),
+                trace_state: Some("key1=value1,key2=value2".to_string()),
+                service_name: "quickwit".to_string(),
+                resource_attributes: HashMap::from([(
+                    "resource_key".to_string(),
+                    json!("resource_value"),
+                )]),
+                resource_dropped_attributes_count: 1,
+                scope_name: Some("scope_name".to_string()),
+                scope_version: Some("scope_version".to_string()),
+                scope_attributes: HashMap::from([("scope_key".to_string(), json!("scope_value"))]),
+                scope_dropped_attributes_count: 1,
+                span_id: SpanId::new([2; 8]),
+                span_kind: 1,
+                span_name: "publish_split".to_string(),
+                span_fingerprint: Some(SpanFingerprint::new(
+                    "quickwit",
+                    SpanKind(2),
+                    "publish_splits",
+                )),
+                span_start_timestamp_nanos: 0,
+                span_end_timestamp_nanos: 1_000,
+                span_duration_millis: Some(1),
+                span_attributes: HashMap::from([("span_key".to_string(), json!("span_value"))]),
+                span_dropped_attributes_count: 1,
+                span_dropped_events_count: 1,
+                span_dropped_links_count: 1,
+                span_status: SpanStatus {
+                    code: OtlpStatusCode::Ok,
+                    message: None,
+                },
+                parent_span_id: Some(SpanId::new([3; 8])),
+                events: vec![Event {
+                    event_timestamp_nanos: 1,
+                    event_name: "event_name".to_string(),
+                    event_attributes: HashMap::new(),
+                    event_dropped_attributes_count: 0,
+                }],
+                event_names: vec!["event_name".to_string()],
+                links: vec![Link {
+                    link_trace_id: TraceId::new([1; 16]),
+                    link_span_id: SpanId::new([4; 8]),
+                    link_trace_state: None,
+                    link_attributes: HashMap::new(),
+                    link_dropped_attributes_count: 0,
+                }],
+            };
+            let span_json = serde_json::to_string_pretty(&expected_span).unwrap();
+            let span = serde_json::from_str::<Span>(&span_json).unwrap();
+            assert_eq!(span, expected_span);
         }
     }
 }

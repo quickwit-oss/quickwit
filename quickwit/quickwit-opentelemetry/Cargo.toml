@@ -24,8 +24,11 @@ tracing = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
 quickwit-actors = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-metastore = { workspace = true, features = ["testsuite"] }

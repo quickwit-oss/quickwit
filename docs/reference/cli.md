@@ -302,12 +302,18 @@ By default, Quickwit's indexer will work with a heap of 2 GiB of memory. Learn h
 quickwit index ingest
     --index <index>
     [--input-path <input-path>]
+    [--batch-size-limit <batch-size-limit>]
+    [--wait]
+    [--force]
 ```
 
 *Options*
 
 `--index` ID of the target index \
 `--input-path` Location of the input file. \
+`--batch-size-limit` Size limit of each submitted document batch. \
+`--wait` Wait for all documents to be commited and available for search before exiting \
+`--force` Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting \
 
 *Examples*
 

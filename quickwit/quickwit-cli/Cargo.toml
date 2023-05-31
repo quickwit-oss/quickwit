@@ -22,8 +22,8 @@ path = "src/generate_markdown.rs"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 atty = { workspace = true }
-bytes = { workspace = true }
 byte-unit = { workspace = true }
+bytes = { workspace = true }
 chitchat = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
@@ -34,10 +34,10 @@ humantime = { workspace = true }
 indicatif = { workspace = true }
 itertools = { workspace = true }
 once_cell = { workspace = true }
+openssl-probe = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
 opentelemetry-jaeger = { workspace = true }
 opentelemetry-otlp = { workspace = true }
-openssl-probe = { workspace = true, optional = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
@@ -56,7 +56,6 @@ tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 quickwit-actors = { workspace = true }
-quickwit-rest-client = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
@@ -66,6 +65,7 @@ quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-rest-client = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
 quickwit-storage = { workspace = true }
@@ -86,31 +86,29 @@ ci-test = []
 openssl-support = ["openssl-probe"]
 tokio-console = ["console-subscriber"]
 release-feature-set = [
-  "quickwit-metastore/postgres",
-  "quickwit-metastore/azure",
+  "jemalloc",
+  "openssl-support",
   "quickwit-indexing/kafka",
   "quickwit-indexing/kinesis",
   "quickwit-indexing/pulsar",
-  "openssl-support",
-  "jemalloc",
+  "quickwit-metastore/azure",
+  "quickwit-metastore/postgres",
 ]
-
 release-feature-vendored-set = [
-  "quickwit-metastore/postgres",
-  "quickwit-metastore/azure",
+  "jemalloc",
+  "openssl-support",
+  "quickwit-indexing/kinesis",
+  "quickwit-indexing/pulsar",
   "quickwit-indexing/vendored-kafka",
-  "quickwit-indexing/kinesis",
-  "quickwit-indexing/pulsar",
-  "openssl-support",
-  "jemalloc",
-]
-
-release-macos-feature-vendored-set = [
-  "quickwit-metastore/postgres",
   "quickwit-metastore/azure",
-  "quickwit-indexing/vendored-kafka-macos",
+  "quickwit-metastore/postgres",
+]
+release-macos-feature-vendored-set = [
+  "jemalloc",
+  "openssl-support",
   "quickwit-indexing/kinesis",
   "quickwit-indexing/pulsar",
-  "openssl-support",
-  "jemalloc",
+  "quickwit-indexing/vendored-kafka-macos",
+  "quickwit-metastore/azure",
+  "quickwit-metastore/postgres",
 ]

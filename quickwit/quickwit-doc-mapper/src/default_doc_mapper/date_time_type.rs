@@ -18,14 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use indexmap::IndexSet;
+use quickwit_datetime::{DateTimeInputFormat, DateTimeOutputFormat};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::Value as TantivyValue;
-use tantivy::{DatePrecision as DateTimePrecision, DateTime};
-use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
+use tantivy::DatePrecision as DateTimePrecision;
 
-use super::date_time_format::{DateTimeInputFormat, DateTimeOutputFormat};
-use super::date_time_parsing::{parse_date_time_int, parse_date_time_str};
 use super::default_as_true;
 
 /// A struct holding DateTime field options.
@@ -79,10 +77,10 @@ impl QuickwitDateTimeOptions {
                 let timestamp = number.as_i64().ok_or_else(|| {
                     format!("Failed to parse datetime. Expected an integer, got `{number:?}`.")
                 })?;
-                parse_date_time_int(timestamp, &self.input_formats.0)?
+                quickwit_datetime::parse_date_time_int(timestamp, &self.input_formats.0)?
             }
             JsonValue::String(date_time_str) => {
-                parse_date_time_str(&date_time_str, &self.input_formats.0)?
+                quickwit_datetime::parse_date_time_str(&date_time_str, &self.input_formats.0)?
             }
             _ => {
                 return Err(format!(
@@ -92,31 +90,6 @@ impl QuickwitDateTimeOptions {
             }
         };
         Ok(TantivyValue::Date(date_time))
-    }
-
-    pub(crate) fn format_to_json(&self, date_time: DateTime) -> Result<JsonValue, String> {
-        let date = date_time.into_utc();
-        let format_result = match &self.output_format {
-            DateTimeOutputFormat::Rfc3339 => date.format(&Rfc3339).map(JsonValue::String),
-            DateTimeOutputFormat::Iso8601 => date.format(&Iso8601::DEFAULT).map(JsonValue::String),
-            DateTimeOutputFormat::Rfc2822 => date.format(&Rfc2822).map(JsonValue::String),
-            DateTimeOutputFormat::Strptime(strftime_parser) => strftime_parser
-                .format_date_time(&date)
-                .map(JsonValue::String),
-            DateTimeOutputFormat::TimestampSecs => {
-                Ok(JsonValue::Number(date_time.into_timestamp_secs().into()))
-            }
-            DateTimeOutputFormat::TimestampMillis => {
-                Ok(JsonValue::Number(date_time.into_timestamp_millis().into()))
-            }
-            DateTimeOutputFormat::TimestampMicros => {
-                Ok(JsonValue::Number(date_time.into_timestamp_micros().into()))
-            }
-            DateTimeOutputFormat::TimestampNanos => {
-                Ok(JsonValue::Number(date_time.into_timestamp_nanos().into()))
-            }
-        };
-        format_result.map_err(|error| error.to_string())
     }
 }
 

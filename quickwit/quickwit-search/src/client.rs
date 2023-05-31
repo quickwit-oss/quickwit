@@ -33,6 +33,7 @@ use quickwit_proto::{tonic, LeafSearchStreamResponse, SpanContextInterceptor};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Channel;
 use tonic::Request;
+use tower::timeout::Timeout;
 use tracing::*;
 
 use crate::error::parse_grpc_error;
@@ -44,7 +45,7 @@ enum SearchServiceClientImpl {
     Local(Arc<dyn SearchService>),
     Grpc(
         quickwit_proto::search_service_client::SearchServiceClient<
-            InterceptedService<Channel, SpanContextInterceptor>,
+            InterceptedService<Timeout<Channel>, SpanContextInterceptor>,
         >,
     ),
 }
@@ -78,7 +79,7 @@ impl ServiceClient for SearchServiceClient {
     }
 
     async fn build_client(grpc_addr: SocketAddr) -> anyhow::Result<Self> {
-        create_search_service_client(grpc_addr).await
+        Ok(create_search_client_from_grpc_addr(grpc_addr))
     }
 
     fn grpc_addr(&self) -> SocketAddr {
@@ -90,7 +91,7 @@ impl SearchServiceClient {
     /// Create a search service client instance given a gRPC client and gRPC address.
     pub fn from_grpc_client(
         client: quickwit_proto::search_service_client::SearchServiceClient<
-            InterceptedService<Channel, SpanContextInterceptor>,
+            InterceptedService<Timeout<Channel>, SpanContextInterceptor>,
         >,
         grpc_addr: SocketAddr,
     ) -> Self {
@@ -111,6 +112,12 @@ impl SearchServiceClient {
     /// Return the grpc_addr the underlying client connects to.
     pub fn grpc_addr(&self) -> SocketAddr {
         self.grpc_addr
+    }
+
+    /// Returns whether the underlying client is local or remote.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn is_local(&self) -> bool {
+        matches!(self.client_impl, SearchServiceClientImpl::Local(_))
     }
 
     /// Perform root search.
@@ -240,24 +247,33 @@ impl SearchServiceClient {
     }
 }
 
-/// Creates a [`SearchServiceClient`] with SocketAddr as an argument.
-/// It will try to reconnect to the node automatically.
-pub async fn create_search_service_client(
-    grpc_addr: SocketAddr,
-) -> anyhow::Result<SearchServiceClient> {
+/// Creates a [`SearchServiceClient`] from a socket address.
+/// The underlying channel connects lazily and is set up to time out after 5 seconds. It reconnects
+/// automatically should the connection be dropped.
+pub fn create_search_client_from_grpc_addr(grpc_addr: SocketAddr) -> SearchServiceClient {
     let uri = Uri::builder()
         .scheme("http")
         .authority(grpc_addr.to_string().as_str())
         .path_and_query("/")
-        .build()?;
-    // Create a channel with connect_lazy to automatically reconnect to the node.
-    let channel = Endpoint::from(uri)
-        .connect_timeout(Duration::from_secs(5))
-        .connect_lazy();
+        .build()
+        .expect("The URI should be well-formed.");
+    let channel = Endpoint::from(uri).connect_lazy();
+    let timeout_channel = Timeout::new(channel, Duration::from_secs(5));
+    let client = quickwit_proto::search_service_client::SearchServiceClient::with_interceptor(
+        timeout_channel,
+        SpanContextInterceptor,
+    );
+    SearchServiceClient::from_grpc_client(client, grpc_addr)
+}
+
+/// Creates a [`SearchServiceClient`] from a pre-established connection (channel).
+pub fn create_search_client_from_channel(
+    grpc_addr: SocketAddr,
+    channel: Timeout<Channel>,
+) -> SearchServiceClient {
     let client = quickwit_proto::search_service_client::SearchServiceClient::with_interceptor(
         channel,
         SpanContextInterceptor,
     );
-    let client = SearchServiceClient::from_grpc_client(client, grpc_addr);
-    Ok(client)
+    SearchServiceClient::from_grpc_client(client, grpc_addr)
 }

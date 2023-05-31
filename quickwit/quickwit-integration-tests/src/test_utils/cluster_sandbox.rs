@@ -27,6 +27,7 @@ use futures_util::future;
 use itertools::Itertools;
 use quickwit_actors::ActorExitStatus;
 use quickwit_common::new_coolid;
+use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::test_utils::{wait_for_server_ready, wait_until_predicate};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_common::uri::Uri as QuickwitUri;
@@ -112,12 +113,12 @@ pub async fn ingest_with_retry(
 ) -> anyhow::Result<()> {
     wait_until_predicate(
         || {
-            let commit_type_clone = commit_type.clone();
+            let commit_type_clone = commit_type;
             let ingest_source_clone = ingest_source.clone();
             async move {
                 // Index one record.
                 if let Err(err) = client
-                    .ingest(index_id, ingest_source_clone, None, commit_type_clone)
+                    .ingest(index_id, ingest_source_clone, None, None, commit_type_clone)
                     .await
                 {
                     debug!("Failed to index into {} due to error: {}", index_id, err);
@@ -143,10 +144,16 @@ impl ClusterSandbox {
         // There is exactly one node.
         let node_config = node_configs[0].clone();
         let node_config_clone = node_config.clone();
+        let runtimes_config = RuntimesConfig::light_for_tests();
         let shutdown_trigger = ClusterShutdownTrigger::new();
         let shutdown_signal = shutdown_trigger.shutdown_signal();
         let join_handles = vec![tokio::spawn(async move {
-            let result = serve_quickwit(node_config_clone.quickwit_config, shutdown_signal).await?;
+            let result = serve_quickwit(
+                node_config_clone.quickwit_config,
+                runtimes_config,
+                shutdown_signal,
+            )
+            .await?;
             Result::<_, anyhow::Error>::Ok(result)
         })];
         wait_for_server_ready(node_config.quickwit_config.grpc_listen_addr).await?;
@@ -170,14 +177,19 @@ impl ClusterSandbox {
     ) -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
+        let runtimes_config = RuntimesConfig::light_for_tests();
         let mut join_handles = Vec::new();
         let shutdown_trigger = ClusterShutdownTrigger::new();
         for node_config in node_configs.iter() {
             let node_config_clone = node_config.clone();
             let shutdown_signal = shutdown_trigger.shutdown_signal();
             join_handles.push(tokio::spawn(async move {
-                let result =
-                    serve_quickwit(node_config_clone.quickwit_config, shutdown_signal).await?;
+                let result = serve_quickwit(
+                    node_config_clone.quickwit_config,
+                    runtimes_config,
+                    shutdown_signal,
+                )
+                .await?;
                 Result::<_, anyhow::Error>::Ok(result)
             }));
         }

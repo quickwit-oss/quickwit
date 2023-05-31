@@ -40,7 +40,7 @@ use tracing::*;
 use super::collector::{PartionnedFastFieldCollector, PartitionValues};
 use super::FastFieldCollector;
 use crate::filters::{create_timestamp_filter_builder, TimestampFilterBuilder};
-use crate::leaf::{open_index_with_caches, warmup};
+use crate::leaf::{open_index_with_caches, rewrite_start_end_time_bounds, warmup};
 use crate::service::SearcherContext;
 use crate::{Result, SearchError};
 
@@ -110,7 +110,7 @@ async fn leaf_search_stream_single_split(
     searcher_context: Arc<SearcherContext>,
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
-    stream_request: SearchStreamRequest,
+    mut stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
     let _leaf_split_stream_permit = searcher_context
@@ -118,6 +118,11 @@ async fn leaf_search_stream_single_split(
         .acquire()
         .await
         .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+    rewrite_start_end_time_bounds(
+        &mut stream_request.start_timestamp,
+        &mut stream_request.end_timestamp,
+        &split,
+    );
 
     let index = open_index_with_caches(&searcher_context, storage, &split, true).await?;
     let split_schema = index.schema();

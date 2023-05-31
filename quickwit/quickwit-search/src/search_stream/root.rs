@@ -30,8 +30,8 @@ use tokio_stream::StreamMap;
 use tracing::*;
 
 use crate::cluster_client::ClusterClient;
-use crate::root::SearchJob;
-use crate::{list_relevant_splits, SearchError, SearchJobPlacer, SearchServiceClient};
+use crate::root::{refine_start_end_timestamp_from_ast, SearchJob};
+use crate::{list_relevant_splits, SearchError, SearchJobPlacer};
 
 /// Perform a distributed search stream.
 #[instrument(skip(metastore, cluster_client, search_job_placer))]
@@ -59,6 +59,15 @@ pub async fn root_search_stream(
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
     let query_ast_resolved = query_ast.parse_user_query(doc_mapper.default_search_fields())?;
 
+    if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
+        refine_start_end_timestamp_from_ast(
+            &query_ast_resolved,
+            timestamp_field,
+            &mut search_stream_request.start_timestamp,
+            &mut search_stream_request.end_timestamp,
+        );
+    }
+
     // Validates the query by effectively building it against the current schema.
     doc_mapper.query(doc_mapper.schema(), &query_ast_resolved, true)?;
     search_stream_request.query_ast = serde_json::to_string(&query_ast_resolved)?;
@@ -72,13 +81,12 @@ pub async fn root_search_stream(
 
     let index_uri: &Uri = &index_config.index_uri;
     let leaf_search_jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
-
-    let assigned_leaf_search_jobs: Vec<(SearchServiceClient, Vec<SearchJob>)> =
-        search_job_placer.assign_jobs(leaf_search_jobs, &HashSet::default())?;
-    debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
+    let assigned_leaf_search_jobs = search_job_placer
+        .assign_jobs(leaf_search_jobs, &HashSet::default())
+        .await?;
 
     let mut stream_map: StreamMap<usize, _> = StreamMap::new();
-    for (leaf_ord, (client, client_jobs)) in assigned_leaf_search_jobs.into_iter().enumerate() {
+    for (leaf_ord, (client, client_jobs)) in assigned_leaf_search_jobs.enumerate() {
         let leaf_request: LeafSearchStreamRequest = jobs_to_leaf_request(
             &search_stream_request,
             &doc_mapper_str,
@@ -111,16 +119,14 @@ fn jobs_to_leaf_request(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
-    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::{qast_helper, OutputFormat};
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
     use super::*;
-    use crate::MockSearchService;
+    use crate::{searcher_pool_for_test, MockSearchService};
 
     #[tokio::test]
     async fn test_root_search_stream_single_split() -> anyhow::Result<()> {
@@ -160,13 +166,9 @@ mod tests {
         );
         // The test will hang on indefinitely if we don't drop the receiver.
         drop(result_sender);
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(mock_search_service),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
 
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let result: Vec<Bytes> =
             root_search_stream(request, &metastore, cluster_client, &search_job_placer)
@@ -218,12 +220,9 @@ mod tests {
         );
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(mock_search_service),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let stream =
             root_search_stream(request, &metastore, cluster_client, &search_job_placer).await?;
@@ -280,12 +279,9 @@ mod tests {
             );
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(mock_search_service),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let stream =
             root_search_stream(request, &metastore, cluster_client, &search_job_placer).await?;
@@ -310,12 +306,8 @@ mod tests {
             .expect_list_splits()
             .returning(|_filter| Ok(vec![mock_split("split")]));
 
-        let client_pool =
-            ServiceClientPool::for_clients_list(vec![SearchServiceClient::from_service(
-                Arc::new(MockSearchService::new()),
-                ([127, 0, 0, 1], 1000).into(),
-            )]);
-        let search_job_placer = SearchJobPlacer::new(client_pool);
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
 
         assert!(root_search_stream(
             quickwit_proto::SearchStreamRequest {

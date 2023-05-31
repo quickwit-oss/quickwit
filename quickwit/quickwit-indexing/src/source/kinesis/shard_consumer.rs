@@ -21,9 +21,9 @@ use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use aws_sdk_kinesis::types::Record;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox};
 use quickwit_aws::retry::RetryParams;
-use rusoto_kinesis::{KinesisClient, Record};
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::mpsc;
 
@@ -71,7 +71,7 @@ pub(super) struct ShardConsumer {
     /// recent) record in the shard.
     shutdown_at_shard_eof: bool,
     state: ShardConsumerState,
-    kinesis_client: KinesisClient,
+    kinesis_client: aws_sdk_kinesis::Client,
     sink: mpsc::Sender<ShardConsumerMessage>,
     retry_params: RetryParams,
 }
@@ -92,7 +92,7 @@ impl ShardConsumer {
         shard_id: String,
         from_sequence_number_exclusive: Option<String>,
         shutdown_at_shard_eof: bool,
-        kinesis_client: KinesisClient,
+        kinesis_client: aws_sdk_kinesis::Client,
         sink: mpsc::Sender<ShardConsumerMessage>,
         retry_params: RetryParams,
     ) -> Self {
@@ -193,21 +193,21 @@ impl Handler<Loop> for ShardConsumer {
             self.state.lag_millis = response.millis_behind_latest;
             self.state.next_shard_iterator = response.next_shard_iterator;
 
-            if !response.records.is_empty() {
-                self.state.current_sequence_number = response
-                    .records
+            let response_records = response.records.unwrap_or_default();
+            if !response_records.is_empty() {
+                self.state.current_sequence_number = response_records
                     .last()
-                    .map(|record| record.sequence_number.clone());
-                self.state.num_bytes_processed += response
-                    .records
+                    .and_then(|record| record.sequence_number.clone());
+                self.state.num_bytes_processed += response_records
                     .iter()
-                    .map(|record| record.data.len() as u64)
+                    .flat_map(|record| record.data())
+                    .map(|record| record.as_ref().len() as u64)
                     .sum::<u64>();
-                self.state.num_records_processed += response.records.len() as u64;
+                self.state.num_records_processed += response_records.len() as u64;
 
                 let message = ShardConsumerMessage::Records {
                     shard_id: self.shard_id.clone(),
-                    records: response.records,
+                    records: response_records,
                     lag_millis: response.millis_behind_latest,
                 };
                 self.send_message(ctx, message).await?;
@@ -216,8 +216,14 @@ impl Handler<Loop> for ShardConsumer {
                 let shard_ids: Vec<String> = children
                     .into_iter()
                     // Filter out duplicate message when two shards are merged.
-                    .filter(|child| child.parent_shards.first() == Some(&self.shard_id))
-                    .map(|child| child.shard_id)
+                    .filter(|child| {
+                        if let Some(parent_shards) = child.parent_shards() {
+                            parent_shards.first() == Some(&self.shard_id)
+                        } else {
+                            false
+                        }
+                    })
+                    .flat_map(|child| child.shard_id)
                     .collect();
                 if !shard_ids.is_empty() {
                     let message = ShardConsumerMessage::ChildShards(shard_ids);

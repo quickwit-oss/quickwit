@@ -162,7 +162,7 @@ fn about_text() -> String {
     let mut about_text = String::from(
         "Sub-second search & analytics engine on cloud storage.\n  Find more information at https://quickwit.io/docs\n\n",
     );
-    if quickwit_telemetry::is_telemetry_enabled() {
+    if !quickwit_telemetry::is_telemetry_disabled() {
         about_text += "Telemetry: enabled";
     }
     about_text
@@ -174,6 +174,7 @@ mod tests {
     use std::str::FromStr;
     use std::time::Duration;
 
+    use byte_unit::Byte;
     use quickwit_cli::cli::{build_cli, CliCommand};
     use quickwit_cli::index::{
         ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, IndexCliCommand,
@@ -278,14 +279,22 @@ mod tests {
                     cluster_endpoint,
                     index_id,
                     input_path_opt: None,
+                    batch_size_limit_opt: None,
                     commit_type: CommitType::Auto,
                 })) if &index_id == "wikipedia"
                        && cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
         ));
 
         let app = build_cli().no_binary_name(true);
-        let matches =
-            app.try_get_matches_from(["index", "ingest", "--index", "wikipedia", "--force"])?;
+        let matches = app.try_get_matches_from([
+            "index",
+            "ingest",
+            "--index",
+            "wikipedia",
+            "--batch-size-limit",
+            "8MB",
+            "--force",
+        ])?;
         let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
@@ -294,14 +303,23 @@ mod tests {
                     cluster_endpoint,
                     index_id,
                     input_path_opt: None,
+                    batch_size_limit_opt: Some(batch_size_limit),
                     commit_type: CommitType::Force,
                 })) if &index_id == "wikipedia"
                         && cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+                        && batch_size_limit == Byte::from_str("8MB").unwrap()
         ));
 
         let app = build_cli().no_binary_name(true);
-        let matches =
-            app.try_get_matches_from(["index", "ingest", "--index", "wikipedia", "--wait"])?;
+        let matches = app.try_get_matches_from([
+            "index",
+            "ingest",
+            "--index",
+            "wikipedia",
+            "--batch-size-limit",
+            "4KB",
+            "--wait",
+        ])?;
         let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
@@ -310,9 +328,11 @@ mod tests {
                     cluster_endpoint,
                     index_id,
                     input_path_opt: None,
+                    batch_size_limit_opt: Some(batch_size_limit),
                     commit_type: CommitType::WaitFor,
                 })) if &index_id == "wikipedia"
                         && cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+                        && batch_size_limit == Byte::from_str("4KB").unwrap()
         ));
 
         let app = build_cli().no_binary_name(true);

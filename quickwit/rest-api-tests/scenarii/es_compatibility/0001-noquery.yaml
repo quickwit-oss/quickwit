@@ -1,5 +1,4 @@
 # This tests a simple request with no queries.
-method: [GET, POST]
 expected:
   hits:
     total:

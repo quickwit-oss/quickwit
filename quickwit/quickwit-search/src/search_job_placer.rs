@@ -17,17 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::cmp::Reverse;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 
 use anyhow::bail;
 use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
-use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
-use tracing::error;
 
-use crate::SearchServiceClient;
+use crate::{SearchServiceClient, SearcherPool};
 
 /// Job.
 /// The unit in which distributed search is performed.
@@ -35,13 +33,22 @@ use crate::SearchServiceClient;
 /// The `split_id` is used to define an affinity between a leaf nodes and a job.
 /// The `cost` is used to spread the work evenly amongst nodes.
 pub trait Job {
-    /// SplitId of the split that is targeted.
+    /// Split ID of the targeted split.
     fn split_id(&self) -> &str;
+
     /// Estimation of the load associated with running a given job.
     ///
-    /// A list of job will be assigned to leaf nodes in a way that spread
+    /// A list of jobs will be assigned to leaf nodes in a way that spread
     /// the sum of cost evenly.
-    fn cost(&self) -> u32;
+    fn cost(&self) -> usize;
+
+    /// Compares the cost of two jobs in reverse order, breaking ties by split ID.
+    fn compare_cost(&self, other: &Self) -> Ordering {
+        self.cost()
+            .cmp(&other.cost())
+            .reverse()
+            .then_with(|| self.split_id().cmp(other.split_id()))
+    }
 }
 
 /// Search job placer.
@@ -49,36 +56,13 @@ pub trait Job {
 #[derive(Clone, Default)]
 pub struct SearchJobPlacer {
     /// Search clients pool.
-    clients_pool: ServiceClientPool<SearchServiceClient>,
+    searcher_pool: SearcherPool,
 }
 
 impl SearchJobPlacer {
     /// Returns an [`SearchJobPlacer`] from a search service client pool.
-    pub fn new(clients_pool: ServiceClientPool<SearchServiceClient>) -> Self {
-        Self { clients_pool }
-    }
-
-    /// Returns a copy of the entire clients map.
-    pub fn clients(&self) -> HashMap<SocketAddr, SearchServiceClient> {
-        self.clients_pool.all()
-    }
-}
-
-fn job_order_key<J: Job>(job: &J) -> (Reverse<u32>, &str) {
-    (Reverse(job.cost()), job.split_id())
-}
-
-/// Node is a utility struct used to represent a rendez-vous hashing node.
-/// It's used to track the load and the computed hash for a given key
-#[derive(Clone, Debug)]
-struct Node {
-    pub peer_grpc_addr: SocketAddr,
-    pub load: u64,
-}
-
-impl Hash for Node {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.peer_grpc_addr.hash(state);
+    pub fn new(searcher_pool: SearcherPool) -> Self {
+        Self { searcher_pool }
     }
 }
 
@@ -87,213 +71,186 @@ impl SearchJobPlacer {
     /// Returns a list of pair (SocketAddr, `Vec<Job>`)
     ///
     /// When exclude_addresses filters all clients it is ignored.
-    pub fn assign_jobs<J: Job>(
+    pub async fn assign_jobs<J: Job>(
         &self,
         mut jobs: Vec<J>,
-        exclude_addresses: &HashSet<SocketAddr>,
-    ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<J>)>> {
-        let mut splits_groups: HashMap<SocketAddr, Vec<J>> = HashMap::new();
+        excluded_addrs: &HashSet<SocketAddr>,
+    ) -> anyhow::Result<impl Iterator<Item = (SearchServiceClient, Vec<J>)>> {
+        let num_nodes = self.searcher_pool.len().await;
 
-        // Distribute using rendez-vous hashing
-        let mut nodes: Vec<Node> = Vec::new();
-        let mut socket_to_client: HashMap<SocketAddr, SearchServiceClient> = Default::default();
+        let mut candidate_nodes: Vec<CandidateNodes> = self
+            .searcher_pool
+            .all()
+            .await
+            .into_iter()
+            .filter(|(grpc_addr, _)| {
+                excluded_addrs.is_empty()
+                    || excluded_addrs.len() == num_nodes
+                    || !excluded_addrs.contains(grpc_addr)
+            })
+            .map(|(grpc_addr, client)| CandidateNodes {
+                grpc_addr,
+                client,
+                load: 0,
+            })
+            .collect();
 
-        {
-            // TODO optimize the case where there are few jobs and many clients.
-            let clients = self.clients();
-
-            // when exclude_addresses excludes all addresses we discard it
-            let empty_set = HashSet::default();
-            let exclude_addresses_if_not_saturated = if exclude_addresses.len() == clients.len() {
-                &empty_set
-            } else {
-                exclude_addresses
-            };
-
-            for (grpc_addr, client) in clients
-                .into_iter()
-                .filter(|(grpc_addr, _)| !exclude_addresses_if_not_saturated.contains(grpc_addr))
-            {
-                nodes.push(Node {
-                    peer_grpc_addr: grpc_addr,
-                    load: 0,
-                });
-                socket_to_client.insert(grpc_addr, client);
-            }
+        if candidate_nodes.is_empty() {
+            bail!(
+                "Failed to assign search jobs. There are no available searcher nodes in the pool."
+            );
         }
+        jobs.sort_unstable_by(Job::compare_cost);
 
-        if nodes.is_empty() {
-            bail!("No search node available.");
-        }
-
-        // Sort job
-        jobs.sort_by(|left, right| {
-            // sort_by_key does not work here unfortunately
-            job_order_key(left).cmp(&job_order_key(right))
-        });
+        let mut job_assignments: HashMap<SocketAddr, (SearchServiceClient, Vec<J>)> =
+            HashMap::with_capacity(num_nodes);
 
         for job in jobs {
-            sort_by_rendez_vous_hash(&mut nodes, job.split_id());
-            // choose one of the the first two nodes based on least loaded
-            let chosen_node_index: usize = if nodes.len() >= 2 {
-                usize::from(nodes[0].load > nodes[1].load)
+            sort_by_rendez_vous_hash(&mut candidate_nodes, job.split_id());
+            // Select the least loaded node.
+            let chosen_node_idx = if candidate_nodes.len() >= 2 {
+                usize::from(candidate_nodes[0].load > candidate_nodes[1].load)
             } else {
                 0
             };
+            let chosen_node = &mut candidate_nodes[chosen_node_idx];
+            chosen_node.load += job.cost();
 
-            // update node load for next round
-            nodes[chosen_node_index].load += job.cost() as u64;
-
-            let chosen_leaf_grpc_addr: SocketAddr = nodes[chosen_node_index].peer_grpc_addr;
-            splits_groups
-                .entry(chosen_leaf_grpc_addr)
-                .or_insert_with(Vec::new)
+            job_assignments
+                .entry(chosen_node.grpc_addr)
+                .or_insert_with(|| (chosen_node.client.clone(), Vec::new()))
+                .1
                 .push(job);
         }
-
-        let mut client_to_jobs = Vec::new();
-        for (socket_addr, jobs) in splits_groups {
-            // Removing the client in order to ensure a 1:1 cardinality on grpc_addr and clients
-            if let Some(client) = socket_to_client.remove(&socket_addr) {
-                client_to_jobs.push((client, jobs));
-            } else {
-                error!("Client is missing. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-            }
-        }
-
-        Ok(client_to_jobs)
+        Ok(job_assignments.into_values())
     }
 
-    /// Assigns one job to a client.
-    pub fn assign_job<J: Job>(
+    /// Assigns a single job to a client.
+    pub async fn assign_job<J: Job>(
         &self,
         job: J,
-        excluded_addresses: &HashSet<SocketAddr>,
+        excluded_addrs: &HashSet<SocketAddr>,
     ) -> anyhow::Result<SearchServiceClient> {
-        self.assign_jobs(vec![job], excluded_addresses)?
-            .into_iter()
+        let client = self
+            .assign_jobs(vec![job], excluded_addrs)
+            .await?
             .next()
             .map(|(client, _jobs)| client)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "`assign_jobs` with {} excluded addresses failed to return at least one \
-                     client.",
-                    excluded_addresses.len()
-                )
-            })
+            .expect("`assign_jobs` should return at least one client or fail.");
+        Ok(client)
     }
 }
+
+#[derive(Debug, Clone)]
+struct CandidateNodes {
+    pub grpc_addr: SocketAddr,
+    pub client: SearchServiceClient,
+    pub load: usize,
+}
+
+impl Hash for CandidateNodes {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.grpc_addr.hash(state);
+    }
+}
+
+impl PartialEq for CandidateNodes {
+    fn eq(&self, other: &Self) -> bool {
+        self.grpc_addr == other.grpc_addr
+    }
+}
+
+impl Eq for CandidateNodes {}
 
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
     use std::net::SocketAddr;
-    use std::sync::Arc;
-    use std::time::Duration;
 
-    use chitchat::transport::{ChannelTransport, Transport};
-    use itertools::Itertools;
-    use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster};
-    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
-
-    use crate::client::create_search_service_client;
     use crate::root::SearchJob;
-    use crate::SearchJobPlacer;
-
-    async fn create_cluster_simple_for_test(
-        transport: &dyn Transport,
-    ) -> anyhow::Result<Arc<Cluster>> {
-        let cluster = create_cluster_for_test(Vec::new(), &["searcher"], transport, true).await?;
-        cluster
-            .wait_for_ready_members(|members| members.len() == 1, Duration::from_secs(5))
-            .await?;
-        Ok(Arc::new(cluster))
-    }
+    use crate::{searcher_pool_for_test, MockSearchService, SearchJobPlacer, SearcherPool};
 
     #[tokio::test]
-    async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_simple_for_test(&transport).await?;
-        let ready_member_watcher = cluster.ready_members_watcher().await;
-        let job_placer = SearchJobPlacer::new(
-            ServiceClientPool::create_and_update_members(ready_member_watcher)
+    async fn test_search_job_placer() {
+        {
+            let searcher_pool = SearcherPool::default();
+            let search_job_placer = SearchJobPlacer::new(searcher_pool);
+            assert!(search_job_placer
+                .assign_jobs::<SearchJob>(Vec::new(), &HashSet::new())
                 .await
-                .unwrap(),
-        );
-        tokio::time::sleep(Duration::from_millis(1)).await;
-        let clients = job_placer.clients();
-        let addrs: Vec<SocketAddr> = clients.into_keys().collect();
-        let expected_addrs = vec![grpc_addr_from_listen_addr_for_test(
-            cluster.gossip_listen_addr(),
-        )];
-        assert_eq!(addrs, expected_addrs);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_search_job_placer_multiple_nodes() -> anyhow::Result<()> {
-        let transport = ChannelTransport::default();
-        let cluster1 = create_cluster_simple_for_test(&transport).await?;
-        let node_1 = cluster1.gossip_listen_addr().to_string();
-        let cluster2 =
-            create_cluster_for_test(vec![node_1], &["searcher"], &transport, true).await?;
-
-        cluster1
-            .wait_for_ready_members(|members| members.len() == 2, Duration::from_secs(5))
-            .await?;
-
-        let job_placer = SearchJobPlacer::new(
-            ServiceClientPool::create_and_update_members(cluster1.ready_members_watcher().await)
-                .await
-                .unwrap(),
-        );
-        tokio::time::sleep(Duration::from_millis(1)).await;
-        let clients = job_placer.clients();
-
-        let addrs: Vec<SocketAddr> = clients.into_keys().sorted().collect();
-        let mut expected_addrs = vec![
-            grpc_addr_from_listen_addr_for_test(cluster1.gossip_listen_addr()),
-            grpc_addr_from_listen_addr_for_test(cluster2.gossip_listen_addr()),
-        ];
-        expected_addrs.sort();
-        assert_eq!(addrs, expected_addrs);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_search_job_placer_single_node_assign_jobs() -> anyhow::Result<()> {
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_simple_for_test(&transport).await?;
-        let ready_members_watcher = cluster.ready_members_watcher().await;
-        let job_placer = SearchJobPlacer::new(
-            ServiceClientPool::create_and_update_members(ready_members_watcher)
-                .await
-                .unwrap(),
-        );
-        tokio::time::sleep(Duration::from_millis(1)).await;
-        let jobs = vec![
-            SearchJob::for_test("split1", 1),
-            SearchJob::for_test("split2", 2),
-            SearchJob::for_test("split3", 3),
-            SearchJob::for_test("split4", 4),
-        ];
-        let assigned_jobs = job_placer.assign_jobs(jobs, &HashSet::default())?;
-        let expected_assigned_jobs = vec![(
-            create_search_service_client(grpc_addr_from_listen_addr_for_test(
-                cluster.gossip_listen_addr(),
-            ))
-            .await?,
-            vec![
-                SearchJob::for_test("split4", 4),
-                SearchJob::for_test("split3", 3),
-                SearchJob::for_test("split2", 2),
+                .is_err());
+        }
+        {
+            let searcher_pool =
+                searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
+            let search_job_placer = SearchJobPlacer::new(searcher_pool);
+            let jobs = vec![
                 SearchJob::for_test("split1", 1),
-            ],
-        )];
-        assert_eq!(
-            assigned_jobs.get(0).unwrap().1,
-            expected_assigned_jobs.get(0).unwrap().1
-        );
-        Ok(())
+                SearchJob::for_test("split2", 2),
+                SearchJob::for_test("split3", 3),
+                SearchJob::for_test("split4", 4),
+            ];
+            let assigned_jobs: Vec<(SocketAddr, Vec<SearchJob>)> = search_job_placer
+                .assign_jobs(jobs, &HashSet::default())
+                .await
+                .unwrap()
+                .map(|(client, jobs)| (client.grpc_addr(), jobs))
+                .collect();
+            let expected_searcher_addr: SocketAddr = ([127, 0, 0, 1], 1001).into();
+            let expected_assigned_jobs = vec![(
+                expected_searcher_addr,
+                vec![
+                    SearchJob::for_test("split4", 4),
+                    SearchJob::for_test("split3", 3),
+                    SearchJob::for_test("split2", 2),
+                    SearchJob::for_test("split1", 1),
+                ],
+            )];
+            assert_eq!(assigned_jobs, expected_assigned_jobs);
+        }
+        {
+            let searcher_pool = searcher_pool_for_test([
+                ("127.0.0.1:1001", MockSearchService::new()),
+                ("127.0.0.1:1002", MockSearchService::new()),
+            ]);
+            let search_job_placer = SearchJobPlacer::new(searcher_pool);
+            let jobs = vec![
+                SearchJob::for_test("split1", 1),
+                SearchJob::for_test("split2", 2),
+                SearchJob::for_test("split3", 3),
+                SearchJob::for_test("split4", 4),
+                SearchJob::for_test("split5", 5),
+                SearchJob::for_test("split6", 6),
+            ];
+            let mut assigned_jobs: Vec<(SocketAddr, Vec<SearchJob>)> = search_job_placer
+                .assign_jobs(jobs, &HashSet::default())
+                .await
+                .unwrap()
+                .map(|(client, jobs)| (client.grpc_addr(), jobs))
+                .collect();
+            assigned_jobs.sort_unstable_by_key(|(node_uid, _)| *node_uid);
+
+            let expected_searcher_addr_1: SocketAddr = ([127, 0, 0, 1], 1001).into();
+            let expected_searcher_addr_2: SocketAddr = ([127, 0, 0, 1], 1002).into();
+            let expected_assigned_jobs = vec![
+                (
+                    expected_searcher_addr_1,
+                    vec![
+                        SearchJob::for_test("split6", 6),
+                        SearchJob::for_test("split3", 3),
+                        SearchJob::for_test("split1", 1),
+                    ],
+                ),
+                (
+                    expected_searcher_addr_2,
+                    vec![
+                        SearchJob::for_test("split5", 5),
+                        SearchJob::for_test("split4", 4),
+                        SearchJob::for_test("split2", 2),
+                    ],
+                ),
+            ];
+            assert_eq!(assigned_jobs, expected_assigned_jobs);
+        }
     }
 }

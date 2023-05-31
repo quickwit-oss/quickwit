@@ -20,17 +20,18 @@
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::IndexUid;
 use tantivy::TrackedObject;
 use tracing::Span;
 
 use crate::merge_policy::MergeOperation;
-use crate::models::{PublishLock, ScratchDirectory, SplitAttrs};
+use crate::models::{PublishLock, SplitAttrs};
 
 pub struct PackagedSplit {
     pub split_attrs: SplitAttrs,
-    pub split_scratch_directory: ScratchDirectory,
+    pub split_scratch_directory: TempDirectory,
     pub tags: BTreeSet<String>,
     pub split_files: Vec<std::path::PathBuf>,
     pub hotcache_bytes: Vec<u8>,
