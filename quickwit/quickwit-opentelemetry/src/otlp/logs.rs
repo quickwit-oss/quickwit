@@ -117,7 +117,7 @@ indexing_settings:
   commit_timeout_secs: 5
 
 search_settings:
-  default_search_fields: []
+  default_search_fields: [body.message]
 "#;
 
 pub type Base64 = String;
