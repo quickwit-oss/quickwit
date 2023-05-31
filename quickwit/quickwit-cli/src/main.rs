@@ -33,7 +33,6 @@ use quickwit_cli::{
 };
 use quickwit_common::RED_COLOR;
 use quickwit_serve::BuildInfo;
-use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::Level;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
@@ -121,7 +120,6 @@ async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
     openssl_probe::init_ssl_cert_env_vars();
 
-    let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
     let build_info = BuildInfo::get();
     let version_text = format!(
@@ -151,8 +149,7 @@ async fn main_impl() -> anyhow::Result<()> {
     } else {
         0
     };
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code }).await;
-    telemetry_handle.terminate_telemetry().await;
+
     global::shutdown_tracer_provider();
     std::process::exit(return_code)
 }
