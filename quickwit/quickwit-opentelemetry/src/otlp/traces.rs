@@ -22,7 +22,6 @@ use std::collections::{BTreeSet, HashMap};
 use std::str::FromStr;
 
 use async_trait::async_trait;
-use base64::prelude::{Engine, BASE64_STANDARD};
 use quickwit_common::uri::Uri;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
 use quickwit_ingest::{
@@ -34,6 +33,7 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
 };
 use quickwit_proto::opentelemetry::proto::common::v1::InstrumentationScope;
 use quickwit_proto::opentelemetry::proto::resource::v1::Resource as OtlpResource;
+use quickwit_proto::opentelemetry::proto::trace::v1::span::Link as OtlpLink;
 use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
 use quickwit_proto::opentelemetry::proto::trace::v1::{Span as OtlpSpan, Status as OtlpStatus};
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,7 @@ use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
-use crate::otlp::{extract_attributes, TraceId};
+use crate::otlp::{extract_attributes, SpanId, TraceId};
 
 pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_6";
 
@@ -56,8 +56,7 @@ doc_mapping:
   mode: strict
   field_mappings:
     - name: trace_id
-      type: text
-      tokenizer: raw
+      type: bytes
       fast: true
     - name: trace_state
       type: text
@@ -84,8 +83,7 @@ doc_mapping:
       type: u64
       indexed: false
     - name: span_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: span_kind
       type: u64
     - name: span_name
@@ -128,7 +126,7 @@ doc_mapping:
       type: json
       indexed: true
     - name: parent_span_id
-      type: text
+      type: bytes
       indexed: false
     - name: events
       type: array<json>
@@ -153,8 +151,6 @@ indexing_settings:
 search_settings:
   default_search_fields: []
 "#;
-
-pub type B64SpanId = String; // A base64-encoded 8-byte array.
 
 fn is_zero(count: &u32) -> bool {
     *count == 0
@@ -182,7 +178,7 @@ pub struct Span {
     #[serde(default)]
     #[serde(skip_serializing_if = "is_zero")]
     pub scope_dropped_attributes_count: u32,
-    pub span_id: B64SpanId,
+    pub span_id: SpanId,
     #[serde(default)]
     #[serde(skip_serializing_if = "is_zero")]
     pub span_kind: u32,
@@ -209,7 +205,7 @@ pub struct Span {
     #[serde(skip_serializing_if = "SpanStatus::is_unset")]
     pub span_status: SpanStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_span_id: Option<B64SpanId>,
+    pub parent_span_id: Option<SpanId>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<Event>,
@@ -223,11 +219,10 @@ pub struct Span {
 
 impl Span {
     fn from_otlp(span: OtlpSpan, resource: &Resource, scope: &Scope) -> Result<Self, Status> {
-        let trace_id = TraceId::try_from(span.trace_id)
-            .map_err(|error| Status::invalid_argument(error.to_string()))?;
-        let span_id = BASE64_STANDARD.encode(span.span_id);
+        let trace_id = TraceId::try_from(span.trace_id)?;
+        let span_id = SpanId::try_from(span.span_id)?;
         let parent_span_id = if !span.parent_span_id.is_empty() {
-            Some(BASE64_STANDARD.encode(span.parent_span_id))
+            Some(SpanId::try_from(span.parent_span_id)?)
         } else {
             None
         };
@@ -259,21 +254,8 @@ impl Span {
         let links: Vec<Link> = span
             .links
             .into_iter()
-            .map(|link| {
-                TraceId::try_from(link.trace_id).map(|link_trace_id| Link {
-                    link_trace_id,
-                    link_trace_state: if !link.trace_state.is_empty() {
-                        Some(link.trace_state)
-                    } else {
-                        None
-                    },
-                    link_span_id: BASE64_STANDARD.encode(link.span_id),
-                    link_attributes: extract_attributes(link.attributes),
-                    link_dropped_attributes_count: link.dropped_attributes_count,
-                })
-            })
-            .collect::<Result<_, _>>()
-            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+            .map(Link::try_from_otlp)
+            .collect::<Result<_, _>>()?;
         let trace_state = if span.trace_state.is_empty() {
             None
         } else {
@@ -300,7 +282,7 @@ impl Span {
             span_dropped_attributes_count: span.dropped_attributes_count,
             span_dropped_events_count: span.dropped_events_count,
             span_dropped_links_count: span.dropped_links_count,
-            span_status: span.status.map(SpanStatus::from).unwrap_or_default(),
+            span_status: span.status.map(SpanStatus::from_otlp).unwrap_or_default(),
             parent_span_id,
             events,
             event_names,
@@ -499,19 +481,8 @@ impl SpanStatus {
     pub fn is_unset(&self) -> bool {
         self.code == OtlpStatusCode::Unset
     }
-}
 
-impl Default for SpanStatus {
-    fn default() -> Self {
-        Self {
-            code: OtlpStatusCode::Unset,
-            message: None,
-        }
-    }
-}
-
-impl From<OtlpStatus> for SpanStatus {
-    fn from(span_status: OtlpStatus) -> Self {
+    fn from_otlp(span_status: OtlpStatus) -> Self {
         if span_status.code == OtlpStatusCode::Ok as i32 {
             Self {
                 code: OtlpStatusCode::Ok,
@@ -529,6 +500,15 @@ impl From<OtlpStatus> for SpanStatus {
             }
         } else {
             Self::default()
+        }
+    }
+}
+
+impl Default for SpanStatus {
+    fn default() -> Self {
+        Self {
+            code: OtlpStatusCode::Unset,
+            message: None,
         }
     }
 }
@@ -607,13 +587,32 @@ pub struct Link {
     pub link_trace_id: TraceId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_trace_state: Option<String>,
-    pub link_span_id: B64SpanId,
+    pub link_span_id: SpanId,
     #[serde(default)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub link_attributes: HashMap<String, JsonValue>,
     #[serde(default)]
     #[serde(skip_serializing_if = "is_zero")]
     pub link_dropped_attributes_count: u32,
+}
+
+impl Link {
+    fn try_from_otlp(link: OtlpLink) -> tonic::Result<Link> {
+        let link_trace_id = TraceId::try_from(link.trace_id)?;
+        let link_span_id = SpanId::try_from(link.span_id)?;
+        let link = Link {
+            link_trace_id,
+            link_trace_state: if !link.trace_state.is_empty() {
+                Some(link.trace_state)
+            } else {
+                None
+            },
+            link_span_id,
+            link_attributes: extract_attributes(link.attributes),
+            link_dropped_attributes_count: link.dropped_attributes_count,
+        };
+        Ok(link)
+    }
 }
 
 struct ParsedSpans {
@@ -913,11 +912,11 @@ mod tests {
             assert!(span.scope_attributes.is_empty());
             assert_eq!(span.scope_dropped_attributes_count, 0);
 
-            assert_eq!(span.trace_id, TraceId([1; 16]));
+            assert_eq!(span.trace_id, TraceId::new([1; 16]));
             assert!(span.trace_state.is_none());
 
-            assert_eq!(span.parent_span_id, Some(BASE64_STANDARD.encode([3; 8])));
-            assert_eq!(span.span_id, BASE64_STANDARD.encode([2; 8]));
+            assert_eq!(span.parent_span_id, Some(SpanId::new([3; 8])));
+            assert_eq!(span.span_id, SpanId::new([2; 8]));
             assert_eq!(span.span_kind, 2);
             assert_eq!(span.span_name, "publish_split");
             assert_eq!(
@@ -1020,11 +1019,11 @@ mod tests {
             );
             assert_eq!(span.scope_dropped_attributes_count, 2);
 
-            assert_eq!(span.trace_id, TraceId([1; 16]));
+            assert_eq!(span.trace_id, TraceId::new([1; 16]));
             assert_eq!(span.trace_state.unwrap(), "key1=value1,key2=value2");
 
-            assert_eq!(span.parent_span_id, Some(BASE64_STANDARD.encode([3; 8])));
-            assert_eq!(span.span_id, BASE64_STANDARD.encode([2; 8]));
+            assert_eq!(span.parent_span_id, Some(SpanId::new([3; 8])));
+            assert_eq!(span.span_id, SpanId::new([2; 8]));
             assert_eq!(span.span_kind, 2);
             assert_eq!(span.span_name, "publish_split");
             assert_eq!(
@@ -1060,8 +1059,8 @@ mod tests {
             assert_eq!(
                 span.links,
                 vec![Link {
-                    link_trace_id: TraceId([4; 16]),
-                    link_span_id: BASE64_STANDARD.encode([5; 8]),
+                    link_trace_id: TraceId::new([4; 16]),
+                    link_span_id: SpanId::new([5; 8]),
                     link_trace_state: Some(
                         "link_key1=link_value1,link_key2=link_value2".to_string()
                     ),
@@ -1116,13 +1115,13 @@ mod tests {
             code: 0,
             message: "".to_string(),
         };
-        assert!(SpanStatus::from(otlp_status).is_unset());
+        assert!(SpanStatus::from_otlp(otlp_status).is_unset());
 
         let otlp_status = OtlpStatus {
             code: 1,
             message: "".to_string(),
         };
-        let span_status = SpanStatus::from(otlp_status);
+        let span_status = SpanStatus::from_otlp(otlp_status);
         assert_eq!(span_status.code, OtlpStatusCode::Ok);
         assert!(span_status.message.is_none());
 
@@ -1130,7 +1129,7 @@ mod tests {
             code: 2,
             message: "An error occurred.".to_string(),
         };
-        let span_status = SpanStatus::from(otlp_status);
+        let span_status = SpanStatus::from_otlp(otlp_status);
         assert_eq!(span_status.code, OtlpStatusCode::Error);
         assert_eq!(span_status.message.unwrap(), "An error occurred.");
     }
@@ -1148,7 +1147,7 @@ mod tests {
                 scope_version: None,
                 scope_attributes: HashMap::new(),
                 scope_dropped_attributes_count: 0,
-                span_id: BASE64_STANDARD.encode([2; 8]),
+                span_id: SpanId::new([2; 8]),
                 span_kind: 0,
                 span_name: "publish_split".to_string(),
                 span_fingerprint: Some(SpanFingerprint::new(
@@ -1187,7 +1186,7 @@ mod tests {
                 scope_version: Some("scope_version".to_string()),
                 scope_attributes: HashMap::from([("scope_key".to_string(), json!("scope_value"))]),
                 scope_dropped_attributes_count: 1,
-                span_id: BASE64_STANDARD.encode([2; 8]),
+                span_id: SpanId::new([2; 8]),
                 span_kind: 1,
                 span_name: "publish_split".to_string(),
                 span_fingerprint: Some(SpanFingerprint::new(
@@ -1206,7 +1205,7 @@ mod tests {
                     code: OtlpStatusCode::Ok,
                     message: None,
                 },
-                parent_span_id: Some(BASE64_STANDARD.encode([3; 8])),
+                parent_span_id: Some(SpanId::new([3; 8])),
                 events: vec![Event {
                     event_timestamp_nanos: 1,
                     event_name: "event_name".to_string(),
@@ -1216,7 +1215,7 @@ mod tests {
                 event_names: vec!["event_name".to_string()],
                 links: vec![Link {
                     link_trace_id: TraceId::new([1; 16]),
-                    link_span_id: BASE64_STANDARD.encode([4; 8]),
+                    link_span_id: SpanId::new([4; 8]),
                     link_trace_state: None,
                     link_attributes: HashMap::new(),
                     link_dropped_attributes_count: 0,

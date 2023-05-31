@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::OnceCell;
+use quickwit_common::runtimes::RuntimesConfig;
 use serde::Serialize;
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -86,15 +87,25 @@ impl BuildInfo {
 pub struct RuntimeInfo {
     pub num_cpus_logical: usize,
     pub num_cpus_physical: usize,
+    pub num_threads_blocking: usize,
+    pub num_threads_non_blocking: usize,
 }
 
 impl RuntimeInfo {
     /// Returns the properties of the node.
     pub fn get() -> &'static Self {
         static INSTANCE: OnceCell<RuntimeInfo> = OnceCell::new();
-        INSTANCE.get_or_init(|| Self {
-            num_cpus_logical: num_cpus::get(),
-            num_cpus_physical: num_cpus::get_physical(),
+
+        INSTANCE.get_or_init(|| {
+            let num_cpus_logical = num_cpus::get();
+            let runtimes_config = RuntimesConfig::with_num_cpus(num_cpus_logical);
+
+            Self {
+                num_cpus_logical,
+                num_cpus_physical: num_cpus::get_physical(),
+                num_threads_blocking: runtimes_config.num_threads_blocking,
+                num_threads_non_blocking: runtimes_config.num_threads_non_blocking,
+            }
         })
     }
 }

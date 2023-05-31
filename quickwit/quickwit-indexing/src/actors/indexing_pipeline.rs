@@ -48,6 +48,8 @@ use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionCont
 use crate::split_store::IndexingSplitStore;
 use crate::SplitsUpdateMailbox;
 
+const OBSERVE_INTERVAL: Duration = Duration::from_secs(10);
+
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 
 /// Calculates the wait time based on retry count.
@@ -332,6 +334,7 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
+            self.params.cooperative_indexing_permits.clone(),
             index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = ctx
@@ -449,7 +452,7 @@ impl Handler<Observe> for IndexingPipeline {
                 .set_generation(self.statistics.generation)
                 .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
         }
-        ctx.schedule_self_msg(Duration::from_secs(1), Observe).await;
+        ctx.schedule_self_msg(OBSERVE_INTERVAL, Observe).await;
         Ok(())
     }
 }
@@ -528,6 +531,7 @@ pub struct IndexingPipelineParams {
     pub split_store: IndexingSplitStore,
     pub max_concurrent_split_uploads_index: usize,
     pub max_concurrent_split_uploads_merge: usize,
+    pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
     pub merge_planner_mailbox: Mailbox<MergePlanner>,
 }
 
@@ -638,6 +642,7 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
+            cooperative_indexing_permits: None,
             merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
@@ -729,6 +734,7 @@ mod tests {
             split_store,
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
+            cooperative_indexing_permits: None,
             merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
@@ -802,6 +808,7 @@ mod tests {
             split_store,
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
+            cooperative_indexing_permits: None,
             merge_planner_mailbox: merge_planner_mailbox.clone(),
         };
         let indexing_pipeline = IndexingPipeline::new(indexing_pipeline_params);
@@ -917,6 +924,7 @@ mod tests {
             split_store,
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
+            cooperative_indexing_permits: None,
             merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);

@@ -33,6 +33,7 @@ use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
+use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_common::{GREEN_COLOR, RED_COLOR};
 use quickwit_config::service::QuickwitService;
@@ -319,11 +320,16 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
-    start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
+    let runtimes_config = RuntimesConfig::default();
+    start_actor_runtimes(
+        runtimes_config,
+        &HashSet::from_iter([QuickwitService::Indexer]),
+    )?;
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
         indexer_config,
+        runtimes_config.num_threads_blocking,
         cluster,
         metastore,
         None,
@@ -410,12 +416,17 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         .resolve(&config.metastore_uri)
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
-    start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
+    let runtimes_config = RuntimesConfig::default();
+    start_actor_runtimes(
+        runtimes_config,
+        &HashSet::from_iter([QuickwitService::Indexer]),
+    )?;
     let universe = Universe::new();
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
         indexer_config,
+        runtimes_config.num_threads_blocking,
         cluster,
         metastore,
         None,

@@ -26,7 +26,7 @@ use itertools::Itertools;
 use quickwit_opentelemetry::otlp::TraceId;
 use serde::{Deserialize, Serialize};
 use tantivy::collector::{Collector, SegmentCollector};
-use tantivy::columnar::StrColumn;
+use tantivy::columnar::BytesColumn;
 use tantivy::fastfield::Column;
 use tantivy::{DateTime, DocId, Score, SegmentReader};
 
@@ -154,7 +154,7 @@ impl Collector for FindTraceIdsCollector {
     ) -> tantivy::Result<Self::Child> {
         let trace_id_column = segment_reader
             .fast_fields()
-            .str(&self.trace_id_field_name)?
+            .bytes(&self.trace_id_field_name)?
             .ok_or_else(|| {
                 let err_msg = format!(
                     "Failed to find column for trace_id field `{}`",
@@ -205,7 +205,7 @@ fn merge_segment_fruits(mut segment_fruits: Vec<Vec<Span>>, num_traces: usize) -
 }
 
 pub struct FindTraceIdsSegmentCollector {
-    trace_id_column: StrColumn,
+    trace_id_column: BytesColumn,
     span_timestamp_column: Column<DateTime>,
     select_trace_ids: SelectTraceIds,
 }
@@ -233,7 +233,7 @@ impl SegmentCollector for FindTraceIdsSegmentCollector {
     }
 
     fn harvest(self) -> Self::Fruit {
-        let mut buffer = String::with_capacity(TraceId::BASE64_LENGTH);
+        let mut buffer = Vec::with_capacity(TraceId::BASE64_LENGTH);
         self.select_trace_ids
             .harvest()
             .into_iter()
@@ -241,13 +241,11 @@ impl SegmentCollector for FindTraceIdsSegmentCollector {
                 let span_timestamp = trace_id_term_ord.span_timestamp;
                 let found_term = self
                     .trace_id_column
-                    .ord_to_str(trace_id_term_ord.term_ord, &mut buffer)
+                    .ord_to_bytes(trace_id_term_ord.term_ord, &mut buffer)
                     .expect("Failed to lookup trace ID in the column term dictionary");
                 debug_assert!(found_term);
-                debug_assert_eq!(buffer.len(), TraceId::BASE64_LENGTH);
-                let trace_id = buffer[..]
-                    .parse()
-                    .expect("The term dict should store Base64 trace IDs.");
+                let trace_id = TraceId::try_from(buffer.as_slice())
+                    .expect("The term dict should store valid trace IDs.");
                 Span::new(trace_id, span_timestamp)
             })
             .collect()

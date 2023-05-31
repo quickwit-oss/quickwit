@@ -449,6 +449,7 @@ mod tests {
                 split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
                 split_store_max_num_splits: 10_000,
                 max_concurrent_split_uploads: 8,
+                enable_cooperative_indexing: false,
             }
         );
         assert_eq!(

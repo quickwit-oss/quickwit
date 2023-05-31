@@ -91,6 +91,7 @@ impl TestSandbox {
             build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig::for_test()?;
+        let num_blocking_threads = 1;
         let storage_resolver = StorageUriResolver::for_test();
         let metastore_uri_resolver = MetastoreUriResolver::builder()
             .register(
@@ -111,6 +112,7 @@ impl TestSandbox {
             node_id.to_string(),
             temp_dir.path().to_path_buf(),
             indexer_config,
+            num_blocking_threads,
             cluster,
             metastore.clone(),
             Some(ingest_api_service),
