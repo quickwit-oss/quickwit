@@ -28,7 +28,7 @@ use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
 
-use crate::test_utils::ClusterSandbox;
+use crate::test_utils::{ingest_with_retry, ClusterSandbox};
 
 fn get_ndjson_filepath(ndjson_dataset_filename: &str) -> String {
     format!(
@@ -97,7 +97,7 @@ async fn test_standalone_server() {
             .indexes()
             .create(
                 r#"
-                version: 0.5
+                version: 0.6
                 index_id: my-new-index
                 doc_mapping:
                   field_mappings:
@@ -128,14 +128,7 @@ async fn test_standalone_server() {
                 .num_hits,
             0
         );
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let counters = sandbox
-            .indexer_rest_client
-            .node_stats()
-            .indexing()
-            .await
-            .unwrap();
-        assert_eq!(counters.num_running_pipelines, 1);
+        sandbox.wait_for_indexing_pipelines(1).await.unwrap();
     }
     sandbox.shutdown().await.unwrap();
 }
@@ -153,7 +146,7 @@ async fn test_multi_nodes_cluster() {
     let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
         .await
         .unwrap();
-    sandbox.wait_for_cluster_num_ready_nodes(4).await.unwrap();
+    sandbox.wait_for_cluster_num_ready_nodes(5).await.unwrap();
 
     {
         // Wait for indexer to fully start.
@@ -174,7 +167,7 @@ async fn test_multi_nodes_cluster() {
         .indexes()
         .create(
             r#"
-            version: 0.5
+            version: 0.6
             index_id: my-new-multi-node-index
             doc_mapping:
               field_mappings:
@@ -197,14 +190,7 @@ async fn test_multi_nodes_cluster() {
         .unwrap());
 
     // Wait until indexing pipelines are started.
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let indexing_service_counters = sandbox
-        .indexer_rest_client
-        .node_stats()
-        .indexing()
-        .await
-        .unwrap();
-    assert_eq!(indexing_service_counters.num_running_pipelines, 1);
+    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
 
     // Check search is working.
     let search_response_empty = sandbox
@@ -223,16 +209,14 @@ async fn test_multi_nodes_cluster() {
     // Check that ingest request send to searcher is forwarded to indexer and thus indexed.
     let ndjson_filepath = get_ndjson_filepath("documents_to_ingest.json");
     let ingest_source = IngestSource::File(PathBuf::from_str(&ndjson_filepath).unwrap());
-    sandbox
-        .searcher_rest_client
-        .ingest(
-            "my-new-multi-node-index",
-            ingest_source,
-            None,
-            CommitType::Auto,
-        )
-        .await
-        .unwrap();
+    ingest_with_retry(
+        &sandbox.searcher_rest_client,
+        "my-new-multi-node-index",
+        ingest_source,
+        CommitType::Auto,
+    )
+    .await
+    .unwrap();
     // Wait until split is commited and search.
     tokio::time::sleep(Duration::from_secs(4)).await;
     let search_response_one_hit = sandbox

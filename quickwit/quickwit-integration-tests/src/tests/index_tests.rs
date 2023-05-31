@@ -17,14 +17,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::Duration;
+
 use bytes::Bytes;
+use quickwit_common::test_utils::wait_until_predicate;
+use quickwit_indexing::actors::INDEXING_DIR_NAME;
+use quickwit_janitor::actors::DELETE_SERVICE_TASK_DIR_NAME;
 use quickwit_metastore::SplitState;
-use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
 use serde_json::json;
 
-use crate::test_utils::ClusterSandbox;
+use crate::ingest_json;
+use crate::test_utils::{ingest_with_retry, ClusterSandbox};
 
 #[tokio::test]
 async fn test_restarting_standalone_server() {
@@ -33,7 +38,7 @@ async fn test_restarting_standalone_server() {
     let index_id = "test-index-with-restarting";
     let index_config = Bytes::from(format!(
         r#"
-            version: 0.5
+            version: 0.6
             index_id: {}
             doc_mapping:
                 field_mappings:
@@ -65,27 +70,25 @@ async fn test_restarting_standalone_server() {
     // TODO: there should be a better way to do this.
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
 
-    let old_incarnation_id = sandbox
+    let old_uid = sandbox
         .indexer_rest_client
         .indexes()
         .get(index_id)
         .await
         .unwrap()
-        .incarnation_id;
+        .index_uid;
 
     // Index one record.
-    sandbox
-        .indexer_rest_client
-        .ingest(
-            index_id,
-            IngestSource::Bytes(json!({"body": "first record"}).to_string().into()),
-            None,
-            CommitType::Force,
-        )
-        .await
-        .unwrap();
+    ingest_with_retry(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "first record"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
 
-    // Delete the indexq
+    // Delete the index
     sandbox
         .indexer_rest_client
         .indexes()
@@ -103,43 +106,41 @@ async fn test_restarting_standalone_server() {
 
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
 
-    let new_incarnation_id = sandbox
+    let new_uid = sandbox
         .indexer_rest_client
         .indexes()
         .get(index_id)
         .await
         .unwrap()
-        .incarnation_id;
-    assert_ne!(old_incarnation_id, new_incarnation_id);
+        .index_uid;
+    assert_ne!(old_uid.incarnation_id(), new_uid.incarnation_id());
 
     // Index a couple of records to create 2 additional splits.
+    ingest_with_retry(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "second record"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
     sandbox
         .indexer_rest_client
         .ingest(
             index_id,
-            IngestSource::Bytes(json!({"body": "second record"}).to_string().into()),
+            ingest_json!({"body": "third record"}),
+            None,
             None,
             CommitType::Force,
         )
         .await
         .unwrap();
-
     sandbox
         .indexer_rest_client
         .ingest(
             index_id,
-            IngestSource::Bytes(json!({"body": "third record"}).to_string().into()),
+            ingest_json!({"body": "fourth record"}),
             None,
-            CommitType::Force,
-        )
-        .await
-        .unwrap();
-
-    sandbox
-        .indexer_rest_client
-        .ingest(
-            index_id,
-            IngestSource::Bytes(json!({"body": "fourth record"}).to_string().into()),
             None,
             CommitType::Force,
         )
@@ -163,7 +164,7 @@ async fn test_restarting_standalone_server() {
     // Wait for splits to merge, since we created 3 splits and merge factor is 3,
     // we should get 1 published split with no staged splits eventually.
     sandbox
-        .wait_for_published_splits(
+        .wait_for_splits(
             index_id,
             Some(vec![SplitState::Published, SplitState::Staged]),
             1,
@@ -171,5 +172,243 @@ async fn test_restarting_standalone_server() {
         .await
         .unwrap();
 
+    // Check that we have one directory
+    let path = sandbox
+        .node_configs
+        .first()
+        .unwrap()
+        .quickwit_config
+        .data_dir_path
+        .clone();
+    let delete_service_path = path.join(DELETE_SERVICE_TASK_DIR_NAME);
+    let indexing_path = path.join(INDEXING_DIR_NAME);
+
+    assert_eq!(delete_service_path.read_dir().unwrap().count(), 1);
+    assert_eq!(indexing_path.read_dir().unwrap().count(), 1);
+
+    // Delete the index
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .delete(index_id, false)
+        .await
+        .unwrap();
+
+    // Wait to make sure all directories are cleaned up
+    wait_until_predicate(
+        || {
+            let delete_service_path = delete_service_path.clone();
+            let indexing_path = indexing_path.clone();
+            async move {
+                delete_service_path.read_dir().unwrap().count() == 0
+                    && indexing_path.read_dir().unwrap().count() == 0
+            }
+        },
+        Duration::from_secs(10),
+        Duration::from_millis(100),
+    )
+    .await
+    .unwrap();
+
     sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_commit_modes() {
+    quickwit_common::setup_logging_for_tests();
+    let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
+    let index_id = "test_commit_modes_index";
+
+    // Create index
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(
+            r#"
+            version: 0.6
+            index_id: test_commit_modes_index
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+              merge_policy:
+                type: stable_log
+                merge_factor: 4
+                max_merge_factor: 4
+
+            "#
+            .into(),
+            quickwit_config::ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    // Test force commit
+    ingest_with_retry(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "force"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        sandbox
+            .searcher_rest_client
+            .search(
+                index_id,
+                SearchRequestQueryString {
+                    query: "body:force".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .num_hits,
+        1
+    );
+
+    // Test wait_for commit
+    sandbox
+        .indexer_rest_client
+        .ingest(
+            index_id,
+            ingest_json!({"body": "wait"}),
+            None,
+            None,
+            CommitType::WaitFor,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        sandbox
+            .searcher_rest_client
+            .search(
+                index_id,
+                SearchRequestQueryString {
+                    query: "body:wait".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .num_hits,
+        1
+    );
+
+    // Test auto commit
+    sandbox
+        .indexer_rest_client
+        .ingest(
+            index_id,
+            ingest_json!({"body": "auto"}),
+            None,
+            None,
+            CommitType::Auto,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        sandbox
+            .searcher_rest_client
+            .search(
+                index_id,
+                SearchRequestQueryString {
+                    query: "body:auto".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .num_hits,
+        0
+    );
+
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    assert_eq!(
+        sandbox
+            .searcher_rest_client
+            .search(
+                index_id,
+                SearchRequestQueryString {
+                    query: "body:auto".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .num_hits,
+        1
+    );
+
+    // Clean up
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_shutdown() {
+    quickwit_common::setup_logging_for_tests();
+    let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
+    let index_id = "test_commit_modes_index";
+
+    // Create index
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(
+            r#"
+            version: 0.6
+            index_id: test_commit_modes_index
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+            "#
+            .into(),
+            quickwit_config::ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    // Ensure that the index is ready to accept records.
+    ingest_with_retry(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "one"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+
+    // Test force commit
+    sandbox
+        .indexer_rest_client
+        .ingest(
+            index_id,
+            ingest_json!({"body": "two"}),
+            None,
+            None,
+            CommitType::Force,
+        )
+        .await
+        .unwrap();
+
+    // The error we are trying to catch here is that the sandbox is getting stuck in
+    // shutdown for 180 seconds if not all services exit cleanly, which in turn manifests
+    // itself with a very slow test that passes. This timeout ensures that the test fails
+    // if the sandbox gets stuck in shutdown.
+    tokio::time::timeout(std::time::Duration::from_secs(10), sandbox.shutdown())
+        .await
+        .unwrap()
+        .unwrap();
 }

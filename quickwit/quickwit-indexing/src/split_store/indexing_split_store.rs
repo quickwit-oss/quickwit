@@ -30,7 +30,7 @@ use quickwit_common::io::{IoControls, IoControlsAccess};
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tantivy::directory::MmapDirectory;
-use tantivy::Directory;
+use tantivy::{Advice, Directory};
 use tracing::{info, info_span, instrument, Instrument};
 
 use super::LocalSplitStore;
@@ -211,7 +211,10 @@ impl IndexingSplitStore {
             .await?
         {
             tracing::Span::current().record("cache_hit", true);
-            let mmap_directory: Box<dyn Directory> = Box::new(MmapDirectory::open(split_path)?);
+            let mmap_directory: Box<dyn Directory> = Box::new(MmapDirectory::open_with_madvice(
+                split_path,
+                Advice::Sequential,
+            )?);
             return Ok(mmap_directory);
         } else {
             tracing::Span::current().record("cache_hit", false);

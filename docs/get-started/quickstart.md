@@ -87,7 +87,7 @@ And here is the complete config:
 #
 # Index config file for stackoverflow dataset.
 #
-version: 0.5
+version: 0.6
 
 index_id: stackoverflow
 
@@ -178,7 +178,7 @@ curl -O https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.tr
 
 ```bash
 # Index our 10k documents.
-./quickwit index ingest --index stackoverflow --input-path stackoverflow.posts.transformed-10000.json
+./quickwit index ingest --index stackoverflow --input-path stackoverflow.posts.transformed-10000.json --force
 ```
 
 </TabItem>
@@ -187,14 +187,14 @@ curl -O https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.tr
 
 ```bash
 # Index our 10k documents.
-curl -XPOST http://127.0.0.1:7280/api/v1/stackoverflow/ingest --data-binary @stackoverflow.posts.transformed-10000.json
+curl -XPOST "http://127.0.0.1:7280/api/v1/stackoverflow/ingest?commit=force" --data-binary @stackoverflow.posts.transformed-10000.json
 ```
 
 </TabItem>
 
 </Tabs>
 
-Wait around 10 seconds and check if it worked by using `search` command:
+As soon as the ingest command finishes you can start querying data by using the following `search` command:
 
 <Tabs>
 
@@ -295,7 +295,7 @@ Run the following command from within Quickwit's installation directory.
 curl -o stackoverflow-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/stackoverflow/index-config.yaml
 ./quickwit index create --index-config ./stackoverflow-index-config.yaml
 curl -O https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.transformed-10000.json
-./quickwit index ingest --index stackoverflow --input-path ./stackoverflow.posts.transformed-10000.json
+./quickwit index ingest --index stackoverflow --input-path ./stackoverflow.posts.transformed-10000.json --force
 ./quickwit index search --index stackoverflow --query "search AND engine"
 ./quickwit index delete --index stackoverflow
 ```

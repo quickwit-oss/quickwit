@@ -1,0 +1,31 @@
+# Delete possibly remaining index
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/gharchive
+status_code: null
+---
+# Create index
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.5"
+  index_id: gharchive
+  doc_mapping:
+    timestamp_field: created_at
+    mode: dynamic
+    field_mappings:
+        - name: created_at
+          type: datetime
+          fast: true
+    dynamic_mapping:
+      expand_dots: true
+      fast: true
+---
+# Ingest documents
+method: POST
+endpoint: _bulk
+params:
+  refresh: "true"
+headers: {"Content-Type": "application/json"}
+body_from_file: gharchive-bulk.json.gz

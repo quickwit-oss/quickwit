@@ -38,7 +38,7 @@ use tracing::error;
 pub const PACKAGE_BIN_NAME: &str = "quickwit";
 
 const DEFAULT_INDEX_CONFIG: &str = r#"
-    version: 0.5
+    version: 0.6
 
     index_id: #index_id
     index_uri: #index_uri
@@ -78,7 +78,7 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
 "#;
 
 const DEFAULT_QUICKWIT_CONFIG: &str = r#"
-    version: 0.5
+    version: 0.6
     metastore_uri: #metastore_uri
     data_dir: #data_dir
     rest_listen_port: #rest_listen_port
@@ -183,7 +183,10 @@ pub enum TestStorageType {
 }
 
 /// Creates all necessary artifacts in a test environment.
-pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
+pub async fn create_test_env(
+    index_id: String,
+    storage_type: TestStorageType,
+) -> anyhow::Result<TestEnv> {
     let temp_dir = tempdir()?;
     let data_dir_path = temp_dir.path().join("data");
     let indexes_dir_path = data_dir_path.join("indexes");
@@ -205,7 +208,7 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
             let metastore_uri =
                 Uri::from_well_formed("s3://quickwit-integration-tests/indexes".to_string());
             let storage: Arc<dyn Storage> =
-                Arc::new(S3CompatibleObjectStorage::from_uri(&metastore_uri)?);
+                Arc::new(S3CompatibleObjectStorage::from_uri(&metastore_uri).await?);
             (metastore_uri, storage)
         }
     };

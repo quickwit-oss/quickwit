@@ -22,7 +22,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use once_cell::sync::OnceCell;
 use tokio::runtime::Runtime;
-use tracing::warn;
 
 static RUNTIMES: OnceCell<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceCell::new();
 
@@ -46,15 +45,18 @@ pub enum RuntimeType {
     NonBlocking,
 }
 
-#[derive(Debug)]
-pub struct RuntimesConfiguration {
-    num_threads_non_blocking: usize,
-    num_threads_blocking: usize,
+#[derive(Debug, Clone, Copy)]
+pub struct RuntimesConfig {
+    /// Number of worker threads allocated to the non-blocking runtime.
+    pub num_threads_non_blocking: usize,
+    /// Number of worker threads allocated to the blocking runtime.
+    pub num_threads_blocking: usize,
 }
 
-impl RuntimesConfiguration {
-    fn light_for_tests() -> RuntimesConfiguration {
-        RuntimesConfiguration {
+impl RuntimesConfig {
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn light_for_tests() -> RuntimesConfig {
+        RuntimesConfig {
             num_threads_blocking: 1,
             num_threads_non_blocking: 1,
         }
@@ -66,21 +68,21 @@ impl RuntimesConfiguration {
         // On the other hand the blocking actors are cpu intensive. We allocate
         // almost all of the threads to them.
         let num_threads_blocking = (num_cpus - num_threads_non_blocking).max(1);
-        RuntimesConfiguration {
+        RuntimesConfig {
             num_threads_non_blocking,
             num_threads_blocking,
         }
     }
 }
 
-impl Default for RuntimesConfiguration {
-    fn default() -> RuntimesConfiguration {
+impl Default for RuntimesConfig {
+    fn default() -> Self {
         let num_cpus = num_cpus::get();
-        RuntimesConfiguration::with_num_cpus(num_cpus)
+        Self::with_num_cpus(num_cpus)
     }
 }
 
-fn start_runtimes(config: RuntimesConfiguration) -> HashMap<RuntimeType, Runtime> {
+fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
     let mut runtimes = HashMap::default();
     let blocking_runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(config.num_threads_blocking)
@@ -107,8 +109,8 @@ fn start_runtimes(config: RuntimesConfiguration) -> HashMap<RuntimeType, Runtime
     runtimes
 }
 
-pub fn initialize_runtimes(runtime_config: RuntimesConfiguration) -> anyhow::Result<()> {
-    RUNTIMES.get_or_init(|| start_runtimes(runtime_config));
+pub fn initialize_runtimes(runtimes_config: RuntimesConfig) -> anyhow::Result<()> {
+    RUNTIMES.get_or_init(|| start_runtimes(runtimes_config));
     Ok(())
 }
 
@@ -116,10 +118,15 @@ impl RuntimeType {
     pub fn get_runtime_handle(self) -> tokio::runtime::Handle {
         RUNTIMES
             .get_or_init(|| {
-                warn!(
-                    "Starting tokio actor runtimes for tests! (this should only happen in tests.)"
-                );
-                start_runtimes(RuntimesConfiguration::light_for_tests())
+                #[cfg(any(test, feature = "testsuite"))]
+                {
+                    tracing::warn!("Starting Tokio actor runtimes for tests.");
+                    start_runtimes(RuntimesConfig::light_for_tests())
+                }
+                #[cfg(not(any(test, feature = "testsuite")))]
+                {
+                    panic!("Tokio runtimes not initialized. Please, report this issue on GitHub: https://github.com/quickwit-oss/quickwit/issues.");
+                }
             })
             .get(&self)
             .unwrap()
@@ -134,21 +141,21 @@ mod tests {
 
     #[test]
     fn test_runtimes_config_default() {
-        let runtime_default = RuntimesConfiguration::default();
+        let runtime_default = RuntimesConfig::default();
         assert!(runtime_default.num_threads_non_blocking <= runtime_default.num_threads_blocking);
         assert!(runtime_default.num_threads_non_blocking <= 2);
     }
 
     #[test]
     fn test_runtimes_with_given_num_cpus_10() {
-        let runtime = RuntimesConfiguration::with_num_cpus(10);
+        let runtime = RuntimesConfig::with_num_cpus(10);
         assert_eq!(runtime.num_threads_blocking, 8);
         assert_eq!(runtime.num_threads_non_blocking, 2);
     }
 
     #[test]
     fn test_runtimes_with_given_num_cpus_3() {
-        let runtime = RuntimesConfiguration::with_num_cpus(3);
+        let runtime = RuntimesConfig::with_num_cpus(3);
         assert_eq!(runtime.num_threads_blocking, 2);
         assert_eq!(runtime.num_threads_non_blocking, 1);
     }

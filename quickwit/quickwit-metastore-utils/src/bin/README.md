@@ -17,7 +17,7 @@ To get that, simply run:
 A minimal `quickwit.yaml` to run against the postgres could be
 
 ```yaml
-version: "0.5"
+version: "0.6"
 metastore_uri: postgres://quickwit-dev:quickwit-dev@localhost/quickwit-metastore-dev
 ```
 

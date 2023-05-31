@@ -20,8 +20,8 @@
 use std::collections::HashMap;
 
 use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_proto::IndexUid;
 use serde::{self, Deserialize, Serialize};
-use ulid::Ulid;
 
 use crate::checkpoint::IndexCheckpoint;
 use crate::split_metadata::utc_now_timestamp;
@@ -30,15 +30,16 @@ use crate::IndexMetadata;
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexMetadata {
-    #[serde(rename = "0.5")]
-    // Retro compatibility with 0.4.
+    #[serde(rename = "0.6")]
+    // Retro compatibility.
+    #[serde(alias = "0.5")]
     #[serde(alias = "0.4")]
-    V0_5(IndexMetadataV0_5),
+    V0_6(IndexMetadataV0_6),
 }
 
 impl From<IndexMetadata> for VersionedIndexMetadata {
     fn from(index_metadata: IndexMetadata) -> Self {
-        VersionedIndexMetadata::V0_5(index_metadata.into())
+        VersionedIndexMetadata::V0_6(index_metadata.into())
     }
 }
 
@@ -49,16 +50,16 @@ impl TryFrom<VersionedIndexMetadata> for IndexMetadata {
         match index_metadata {
             // When we have more than one version, you should chain version conversion.
             // ie. Implement conversion from V_k -> V_{k+1}
-            VersionedIndexMetadata::V0_5(v3) => v3.try_into(),
+            VersionedIndexMetadata::V0_6(v6) => v6.try_into(),
         }
     }
 }
 
-impl From<IndexMetadata> for IndexMetadataV0_5 {
+impl From<IndexMetadata> for IndexMetadataV0_6 {
     fn from(index_metadata: IndexMetadata) -> Self {
         let sources: Vec<SourceConfig> = index_metadata.sources.values().cloned().collect();
         Self {
-            incarnation_id: index_metadata.incarnation_id,
+            index_uid: index_metadata.index_uid,
             index_config: index_metadata.index_config,
             checkpoint: index_metadata.checkpoint,
             create_timestamp: index_metadata.create_timestamp,
@@ -68,11 +69,11 @@ impl From<IndexMetadata> for IndexMetadataV0_5 {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
-pub(crate) struct IndexMetadataV0_5 {
+pub(crate) struct IndexMetadataV0_6 {
     #[schema(value_type = String)]
     // Defaults to nil for backward compatibility.
-    #[serde(default)]
-    pub incarnation_id: Ulid,
+    #[serde(default, alias = "index_id")]
+    pub index_uid: IndexUid,
     #[schema(value_type = VersionedIndexConfig)]
     pub index_config: IndexConfig,
     #[schema(value_type = Object)]
@@ -83,22 +84,26 @@ pub(crate) struct IndexMetadataV0_5 {
     pub sources: Vec<SourceConfig>,
 }
 
-impl TryFrom<IndexMetadataV0_5> for IndexMetadata {
+impl TryFrom<IndexMetadataV0_6> for IndexMetadata {
     type Error = anyhow::Error;
 
-    fn try_from(v0_5: IndexMetadataV0_5) -> anyhow::Result<Self> {
+    fn try_from(v0_6: IndexMetadataV0_6) -> anyhow::Result<Self> {
         let mut sources: HashMap<String, SourceConfig> = Default::default();
-        for source in v0_5.sources {
+        for source in v0_6.sources {
             if sources.contains_key(&source.source_id) {
                 anyhow::bail!("Source `{}` is defined more than once", source.source_id);
             }
             sources.insert(source.source_id.clone(), source);
         }
         Ok(Self {
-            incarnation_id: v0_5.incarnation_id,
-            index_config: v0_5.index_config,
-            checkpoint: v0_5.checkpoint,
-            create_timestamp: v0_5.create_timestamp,
+            index_uid: if v0_6.index_uid.is_empty() {
+                v0_6.index_config.index_id.clone().into()
+            } else {
+                v0_6.index_uid
+            },
+            index_config: v0_6.index_config,
+            checkpoint: v0_6.checkpoint,
+            create_timestamp: v0_6.create_timestamp,
             sources,
         })
     }

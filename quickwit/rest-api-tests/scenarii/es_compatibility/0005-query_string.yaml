@@ -1,0 +1,33 @@
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "type:PushEvent AND actor.login:jadonk"
+expected:
+  hits:
+    total:
+      value: 2
+    hits:
+      $expect: "len(val) == 2"
+---
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "PushEvent"
+      fields: ["type"]
+expected:
+  hits:
+    total:
+      value: 60
+---
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "PushEvent"
+      fields: "type"
+status_code: 400

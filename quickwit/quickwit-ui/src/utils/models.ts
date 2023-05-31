@@ -46,6 +46,7 @@ export type Entry = {
 }
 
 export const DATE_TIME_WITH_SECONDS_FORMAT = "YYYY/MM/DD HH:mm:ss";
+export const DATE_TIME_WITH_MILLISECONDS_FORMAT = "YYYY/MM/DD HH:mm:ss.SSS";
 
 // Returns a flatten array of fields and nested fields found in the given `FieldMapping` array. 
 export function getAllFields(field_mappings: Array<FieldMapping>): Field[] {
@@ -150,6 +151,7 @@ export type SplitMetadata = {
   split_id: string;
   split_state: string;
   num_docs: number;
+  uncompressed_docs_size_in_bytes: number;
   time_range: null | Range;
   update_timestamp: number;
   version: number;

@@ -1,0 +1,108 @@
+# Motivated by #3249
+json:
+  query:
+      match_all: {}
+expected:
+  hits:
+    total:
+      value: 100
+---
+json:
+  query:
+      bool:
+        filter:
+          - match_all: {}
+expected:
+  hits:
+    total:
+      value: 100
+---
+json:
+  query:
+      bool: {}
+expected:
+  hits:
+    total:
+      value: 100
+---
+json:
+  query:
+      bool:
+        must_not:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 100
+---
+json:
+  query:
+      bool:
+        must_not:
+          - {"query_string": {"query": "type:PushEvent AND actor.login:jadonk"}}
+expected:
+  hits:
+    total:
+      value: 98
+---
+# Silly edge case 1
+json:
+  query:
+      bool:
+        should:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 0
+---
+# Silly edge case 2
+json:
+  query:
+      bool:
+        should:
+          - match_none: {}
+        must_not:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 0
+---
+# Silly edge case 3
+json:
+  query:
+      bool:
+        must_not:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 100
+---
+# Silly edge case 4
+json:
+  query:
+      bool:
+        must:
+          - match_all: {}
+        should:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 100
+---
+# Silly edge case 4
+json:
+  query:
+      bool:
+        filter:
+          - match_all: {}
+        should:
+          - match_none: {}
+expected:
+  hits:
+    total:
+      value: 100
+

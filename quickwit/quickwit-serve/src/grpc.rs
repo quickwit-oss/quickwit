@@ -19,8 +19,9 @@
 
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use futures::Future;
+use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
 use quickwit_control_plane::control_plane_service_grpc_server::ControlPlaneServiceGrpcServer;
 use quickwit_control_plane::ControlPlaneServiceGrpcServerAdapter;
@@ -29,7 +30,7 @@ use quickwit_ingest::ingest_service_grpc_server::IngestServiceGrpcServer;
 use quickwit_ingest::IngestServiceGrpcServerAdapter;
 use quickwit_jaeger::JaegerService;
 use quickwit_metastore::GrpcMetastoreAdapter;
-use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTraceService};
+use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::indexing_api::indexing_service_server::IndexingServiceServer;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::metastore_api::metastore_api_service_server::MetastoreApiServiceServer;
@@ -45,14 +46,12 @@ use crate::search_api::GrpcSearchAdapter;
 use crate::QuickwitServices;
 
 /// Starts gRPC services given a gRPC address.
-pub(crate) async fn start_grpc_server<F>(
+pub(crate) async fn start_grpc_server(
     grpc_listen_addr: SocketAddr,
-    services: &QuickwitServices,
-    shutdown_signal: F,
-) -> anyhow::Result<()>
-where
-    F: Future<Output = ()>,
-{
+    services: Arc<QuickwitServices>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
     let mut server = Server::builder();
 
@@ -106,8 +105,10 @@ where
     {
         enabled_grpc_services.insert("otlp-trace");
         let ingest_service = services.ingest_service.clone();
-        let trace_service = TraceServiceServer::new(OtlpGrpcTraceService::new(ingest_service))
-            .accept_compressed(CompressionEncoding::Gzip);
+        let commit_type_opt = None;
+        let trace_service =
+            TraceServiceServer::new(OtlpGrpcTracesService::new(ingest_service, commit_type_opt))
+                .accept_compressed(CompressionEncoding::Gzip);
         Some(trace_service)
     } else {
         None
@@ -154,9 +155,13 @@ where
         .add_optional_service(search_grpc_service)
         .add_optional_service(jaeger_grpc_service);
 
-    info!(enabled_grpc_services=?enabled_grpc_services, grpc_listen_addr=?grpc_listen_addr, "Starting gRPC server.");
-    server_router
-        .serve_with_shutdown(grpc_listen_addr, shutdown_signal)
-        .await?;
+    info!(
+        enabled_grpc_services=?enabled_grpc_services,
+        grpc_listen_addr=?grpc_listen_addr,
+        "Starting gRPC server listening on {grpc_listen_addr}."
+    );
+    let serve_fut = server_router.serve_with_shutdown(grpc_listen_addr, shutdown_signal);
+    let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
+    serve_res?;
     Ok(())
 }

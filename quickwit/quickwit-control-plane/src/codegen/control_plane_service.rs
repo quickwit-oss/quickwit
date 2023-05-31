@@ -33,9 +33,22 @@ impl ControlPlaneServiceClient {
     {
         Self { inner: Box::new(instance) }
     }
-    pub fn from_channel(
-        channel: tower::timeout::Timeout<tonic::transport::Channel>,
-    ) -> Self {
+    pub fn from_channel<C>(channel: C) -> Self
+    where
+        C: tower::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<hyper::Body>,
+                Error = quickwit_common::tower::BoxError,
+            > + std::fmt::Debug + Clone + Send + Sync + 'static,
+        <C as tower::Service<
+            http::Request<tonic::body::BoxBody>,
+        >>::Future: std::future::Future<
+                Output = Result<
+                    http::Response<hyper::Body>,
+                    quickwit_common::tower::BoxError,
+                >,
+            > + Send + 'static,
+    {
         ControlPlaneServiceClient::new(
             ControlPlaneServiceGrpcClientAdapter::new(
                 control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
@@ -46,7 +59,7 @@ impl ControlPlaneServiceClient {
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
-        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         ControlPlaneServiceMailbox<A>: ControlPlaneService,
     {
         ControlPlaneServiceClient::new(ControlPlaneServiceMailbox::new(mailbox))
@@ -120,6 +133,7 @@ impl ControlPlaneService for ControlPlaneServiceTowerBlock {
 }
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerBlockBuilder {
+    #[allow(clippy::type_complexity)]
     notify_index_change_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn ControlPlaneService>,
@@ -133,12 +147,12 @@ impl ControlPlaneServiceTowerBlockBuilder {
     pub fn shared_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn ControlPlaneService>> + Clone + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 NotifyIndexChangeRequest,
                 Response = NotifyIndexChangeResponse,
                 Error = crate::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
     {
         self
             .notify_index_change_layer = Some(
@@ -149,12 +163,12 @@ impl ControlPlaneServiceTowerBlockBuilder {
     pub fn notify_index_change_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
-        L::Service: Service<
+        L::Service: tower::Service<
                 NotifyIndexChangeRequest,
                 Response = NotifyIndexChangeResponse,
                 Error = crate::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
     {
         self
             .notify_index_change_layer = Some(
@@ -168,10 +182,22 @@ impl ControlPlaneServiceTowerBlockBuilder {
     {
         self.build_from_boxed(Box::new(instance))
     }
-    pub fn build_from_channel<T>(
-        self,
-        channel: tower::timeout::Timeout<tonic::transport::Channel>,
-    ) -> ControlPlaneServiceClient {
+    pub fn build_from_channel<T, C>(self, channel: C) -> ControlPlaneServiceClient
+    where
+        C: tower::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<hyper::Body>,
+                Error = quickwit_common::tower::BoxError,
+            > + std::fmt::Debug + Clone + Send + Sync + 'static,
+        <C as tower::Service<
+            http::Request<tonic::body::BoxBody>,
+        >>::Future: std::future::Future<
+                Output = Result<
+                    http::Response<hyper::Body>,
+                    quickwit_common::tower::BoxError,
+                >,
+            > + Send + 'static,
+    {
         self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_channel(channel)))
     }
     pub fn build_from_mailbox<A>(
@@ -179,7 +205,7 @@ impl ControlPlaneServiceTowerBlockBuilder {
         mailbox: quickwit_actors::Mailbox<A>,
     ) -> ControlPlaneServiceClient
     where
-        A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+        A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         ControlPlaneServiceMailbox<A>: ControlPlaneService,
     {
         self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_mailbox(mailbox)))
@@ -240,11 +266,11 @@ use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for ControlPlaneServiceMailbox<A>
 where
     A: quickwit_actors::Actor
-        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send + Sync
+        + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send
         + 'static,
     M: std::fmt::Debug + Send + Sync + 'static,
-    T: Send + Sync + 'static,
-    E: std::fmt::Debug + Send + Sync + 'static,
+    T: Send + 'static,
+    E: std::fmt::Debug + Send + 'static,
     crate::ControlPlaneError: From<quickwit_actors::AskError<E>>,
 {
     type Response = T;
@@ -344,7 +370,7 @@ for ControlPlaneServiceGrpcServerAdapter {
             .notify_index_change(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(Into::into)
+            .map_err(|error| error.into())
     }
 }
 /// Generated client implementations.
@@ -360,7 +386,7 @@ pub mod control_plane_service_grpc_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -418,6 +444,22 @@ pub mod control_plane_service_grpc_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         /// / Notify the Control Plane that a change on an index occurred. The change
         /// / can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
         /// Note(fmassot): it's not very clear for a user to know which change triggers a control plane notification.
@@ -427,7 +469,10 @@ pub mod control_plane_service_grpc_client {
         pub async fn notify_index_change(
             &mut self,
             request: impl tonic::IntoRequest<super::NotifyIndexChangeRequest>,
-        ) -> Result<tonic::Response<super::NotifyIndexChangeResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::NotifyIndexChangeResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -441,7 +486,15 @@ pub mod control_plane_service_grpc_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/control_plane_service.ControlPlaneService/notifyIndexChange",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "control_plane_service.ControlPlaneService",
+                        "notifyIndexChange",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -461,13 +514,18 @@ pub mod control_plane_service_grpc_server {
         async fn notify_index_change(
             &self,
             request: tonic::Request<super::NotifyIndexChangeRequest>,
-        ) -> Result<tonic::Response<super::NotifyIndexChangeResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::NotifyIndexChangeResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct ControlPlaneServiceGrpcServer<T: ControlPlaneServiceGrpc> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: ControlPlaneServiceGrpc> ControlPlaneServiceGrpcServer<T> {
@@ -480,6 +538,8 @@ pub mod control_plane_service_grpc_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -503,6 +563,22 @@ pub mod control_plane_service_grpc_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>>
     for ControlPlaneServiceGrpcServer<T>
@@ -517,7 +593,7 @@ pub mod control_plane_service_grpc_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -539,7 +615,7 @@ pub mod control_plane_service_grpc_server {
                             &mut self,
                             request: tonic::Request<super::NotifyIndexChangeRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).notify_index_change(request).await
                             };
@@ -548,6 +624,8 @@ pub mod control_plane_service_grpc_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -557,6 +635,10 @@ pub mod control_plane_service_grpc_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -585,12 +667,14 @@ pub mod control_plane_service_grpc_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: ControlPlaneServiceGrpc> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {

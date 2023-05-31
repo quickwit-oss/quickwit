@@ -25,7 +25,7 @@ As a user, you need to precisely define the list of fields to be ingested by Qui
 For instance, a reasonable mapping for an application log could be:
 
 ```yaml title=my_strict_index.yaml
-version: 0.5
+version: 0.6
 
 index_id: my_strict_index
 
@@ -70,7 +70,7 @@ By default, this catch-all configuration indexes and stores all of these fields,
 A minimalist, yet perfectly valid and useful index configuration is then:
 
 ```yaml title=my_dynamic_index.yaml
-version: 0.5
+version: 0.6
 index_id: my_dynamic_index
 doc_mapping:
   mode: dynamic
@@ -115,7 +115,7 @@ Each event type comes with its own set of attributes. Declaring our mapping as t
 Instead, we can cherry-pick the fields that are common to all of the logs, and rely on dynamic mode to handle the rest.
 
 ```yaml title=my_dynamic_index.yaml
-version: 0.5
+version: 0.6
 index_id: my_dynamic_index
 doc_mapping:
   mode: dynamic
@@ -149,7 +149,7 @@ Execute the following commands to create the index, ingest a few documents and s
 
 ```bash
 cat << EOF > my_dynamic_index.yaml
-version: 0.5
+version: 0.6
 index_id: my_dynamic_index
 doc_mapping:
   mode: dynamic
@@ -183,7 +183,7 @@ cat << EOF > my_logs.json
 EOF
 
 # Ingest documents.
-./quickwit index ingest --index my_dynamic_index --input-path my_logs.json 
+./quickwit index ingest --index my_dynamic_index --input-path my_logs.json --force
 
 # Execute search query.
 ./quickwit index search --index my_dynamic_index --query "event_type:order AND cart.product_id:120391
@@ -219,7 +219,7 @@ Quickwit 0.3 introduced a JSON field type to handle this use case.
 A good index configuration here could be:
 
 ```yaml title=otel_logs.yaml
-version: 0.5
+version: 0.6
 index_id: otel_logs
 doc_mapping:
   mode: dynamic
@@ -276,7 +276,7 @@ cat << EOF > otel_logs.json
 EOF
 
 # Ingest documents.
-./quickwit index ingest --index otel_logs --input-path otel_logs.json
+./quickwit index ingest --index otel_logs --input-path otel_logs.json --force
 
 # Execute search query.
 ./quickwit index search --index otel_logs --query "merge AND service:donut_shop"

@@ -36,6 +36,7 @@ use quickwit_config::{PulsarSourceAuth, PulsarSourceParams};
 use quickwit_metastore::checkpoint::{
     PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
+use quickwit_proto::IndexUid;
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::Mutex;
 use tokio::time;
@@ -106,9 +107,9 @@ impl PulsarSource {
         params: PulsarSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
-        let subscription_name = subscription_name(&ctx.index_id, &ctx.source_config.source_id);
+        let subscription_name = subscription_name(&ctx.index_uid, &ctx.source_config.source_id);
         info!(
-            index_id=%ctx.index_id,
+            index_id=%ctx.index_uid.index_id(),
             source_id=%ctx.source_config.source_id,
             topics=?params.topics,
             subscription_name=%subscription_name,
@@ -285,7 +286,7 @@ impl Source for PulsarSource {
 
     fn observable_state(&self) -> JsonValue {
         json!({
-            "index_id": self.ctx.index_id,
+            "index_id": self.ctx.index_uid.index_id(),
             "source_id": self.ctx.source_config.source_id,
             "topics": self.params.topics,
             "subscription_name": self.subscription_name,
@@ -453,8 +454,8 @@ pub(crate) async fn check_connectivity(params: &PulsarSourceParams) -> anyhow::R
     Ok(())
 }
 
-fn subscription_name(index_id: &str, source_id: &str) -> String {
-    format!("quickwit-{index_id}-{source_id}")
+fn subscription_name(index_uid: &IndexUid, source_id: &str) -> String {
+    format!("quickwit-{index_uid}-{source_id}")
 }
 
 #[cfg(all(test, feature = "pulsar-broker-tests"))]
@@ -468,7 +469,7 @@ mod pulsar_broker_tests {
     use futures::future::join_all;
     use quickwit_actors::{ActorHandle, Inbox, Universe, HEARTBEAT};
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
+    use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpointDelta,
     };
@@ -513,18 +514,18 @@ mod pulsar_broker_tests {
         index_id: &str,
         source_id: &str,
         partition_deltas: &[(&str, Position, Position)],
-    ) {
+    ) -> IndexUid {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(index_id, &index_uri);
-        metastore.create_index(index_config).await.unwrap();
+        let index_uid = metastore.create_index(index_config).await.unwrap();
 
         if partition_deltas.is_empty() {
-            return;
+            return index_uid;
         }
         let split_id = new_split_id();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
         metastore
-            .stage_splits(index_id, vec![split_metadata])
+            .stage_splits(index_uid.clone(), vec![split_metadata])
             .await
             .unwrap();
 
@@ -543,9 +544,10 @@ mod pulsar_broker_tests {
             source_delta,
         };
         metastore
-            .publish_splits(index_id, &[&split_id], &[], Some(index_delta))
+            .publish_splits(index_uid.clone(), &[&split_id], &[], Some(index_delta))
             .await
             .unwrap();
+        index_uid
     }
 
     fn get_source_config<S: AsRef<str>>(
@@ -564,6 +566,7 @@ mod pulsar_broker_tests {
                 authentication: None,
             }),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         (source_id, source_config)
     }
@@ -705,13 +708,13 @@ mod pulsar_broker_tests {
     async fn create_source(
         universe: &Universe,
         metastore: Arc<dyn Metastore>,
-        index_id: &str,
+        index_uid: IndexUid,
         source_config: SourceConfig,
         start_checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<(ActorHandle<SourceActor>, Inbox<DocProcessor>)> {
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_id,
+            index_uid,
             PathBuf::from("./queues"),
             source_config,
         );
@@ -824,6 +827,7 @@ mod pulsar_broker_tests {
         let topic = append_random_suffix("test-pulsar-source-topic");
 
         let index_id = append_random_suffix("test-pulsar-source-index");
+        let index_uid = IndexUid::new(&index_id);
         let (_source_id, source_config) = get_source_config([&topic]);
         let params = if let SourceParams::Pulsar(params) = source_config.clone().source_params {
             params
@@ -833,7 +837,7 @@ mod pulsar_broker_tests {
 
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            &index_id,
+            index_uid,
             PathBuf::from("./queues"),
             source_config,
         );
@@ -908,12 +912,12 @@ mod pulsar_broker_tests {
         let index_id = append_random_suffix("test-pulsar-source--topic-ingestion--index");
         let (source_id, source_config) = get_source_config([&topic]);
 
-        setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
         let (source_handle, doc_processor_inbox) = create_source(
             &universe,
             metastore,
-            &index_id,
+            index_uid.clone(),
             source_config,
             SourceCheckpoint::default(),
         )
@@ -946,7 +950,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription_name": subscription_name(&index_id, &source_id),
+            "subscription_name": subscription_name(&index_uid, &source_id),
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
@@ -965,12 +969,12 @@ mod pulsar_broker_tests {
         let index_id = append_random_suffix("test-pulsar-source--topic-ingestion--index");
         let (source_id, source_config) = get_source_config([&topic1, &topic2]);
 
-        setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
         let (source_handle, doc_processor_inbox) = create_source(
             &universe,
             metastore,
-            &index_id,
+            index_uid.clone(),
             source_config,
             SourceCheckpoint::default(),
         )
@@ -999,7 +1003,6 @@ mod pulsar_broker_tests {
         assert!(!messages.is_empty());
 
         let batch = merge_doc_batches(messages);
-        dbg!(&batch.docs, &combined_messages);
         assert_eq!(batch.docs, combined_messages);
         assert_eq!(
             batch.checkpoint_delta,
@@ -1014,7 +1017,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic1, topic2],
-            "subscription_name": subscription_name(&index_id, &source_id),
+            "subscription_name": subscription_name(&index_uid, &source_id),
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 20,
@@ -1034,12 +1037,12 @@ mod pulsar_broker_tests {
         let (source_id, source_config) = get_source_config([&topic]);
 
         create_partitioned_topic(&topic, 2).await;
-        setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
         let (source_handle, doc_processor_inbox) = create_source(
             &universe,
             metastore,
-            &index_id,
+            index_uid.clone(),
             source_config,
             SourceCheckpoint::default(),
         )
@@ -1068,7 +1071,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription_name": subscription_name(&index_id, &source_id),
+            "subscription_name": subscription_name(&index_uid, &source_id),
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
@@ -1088,7 +1091,7 @@ mod pulsar_broker_tests {
         let (source_id, source_config) = get_source_config([&topic]);
 
         create_partitioned_topic(&topic, 2).await;
-        setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
         let topic_partition_1 = format!("{topic}-partition-0");
         let topic_partition_2 = format!("{topic}-partition-1");
@@ -1096,7 +1099,7 @@ mod pulsar_broker_tests {
         let (source_handle1, doc_processor_inbox1) = create_source(
             &universe,
             metastore.clone(),
-            &index_id,
+            index_uid.clone(),
             source_config.clone(),
             SourceCheckpoint::default(),
         )
@@ -1106,7 +1109,7 @@ mod pulsar_broker_tests {
         let (source_handle2, doc_processor_inbox2) = create_source(
             &universe,
             metastore,
-            &index_id,
+            index_uid.clone(),
             source_config,
             SourceCheckpoint::default(),
         )
@@ -1151,7 +1154,7 @@ mod pulsar_broker_tests {
             "index_id": index_id,
             "source_id": source_id,
             "topics": vec![topic],
-            "subscription_name": subscription_name(&index_id, &source_id),
+            "subscription_name": subscription_name(&index_uid, &source_id),
             "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
@@ -1175,7 +1178,7 @@ mod pulsar_broker_tests {
         let (source_id, source_config) = get_source_config([&topic]);
 
         create_partitioned_topic(&topic, 2).await;
-        setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
         let topic_partition_1 = format!("{topic}-partition-0");
         let topic_partition_2 = format!("{topic}-partition-1");
@@ -1183,7 +1186,7 @@ mod pulsar_broker_tests {
         let (_source_handle1, doc_processor_inbox1) = create_source(
             &universe,
             metastore.clone(),
-            &index_id,
+            index_uid.clone(),
             source_config.clone(),
             SourceCheckpoint::default(),
         )
@@ -1195,7 +1198,7 @@ mod pulsar_broker_tests {
             let (source_handle2, _) = create_source(
                 &universe,
                 metastore.clone(),
-                &index_id,
+                index_uid.clone(),
                 source_config.clone(),
                 SourceCheckpoint::default(),
             )

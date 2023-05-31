@@ -8,7 +8,10 @@ pub struct CreateIndexRequest {
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CreateIndexResponse {}
+pub struct CreateIndexResponse {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -25,7 +28,7 @@ pub struct ListIndexesMetadatasResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteIndexRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -54,7 +57,7 @@ pub struct IndexMetadataResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAllSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -75,7 +78,7 @@ pub struct ListSplitsResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StageSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub split_metadata_list_serialized_json: ::prost::alloc::string::String,
 }
@@ -84,7 +87,7 @@ pub struct StageSplitsRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublishSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "2")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, repeated, tag = "3")]
@@ -99,7 +102,7 @@ pub struct PublishSplitsRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MarkSplitsForDeletionRequest {
     #[prost(string, tag = "2")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -108,7 +111,7 @@ pub struct MarkSplitsForDeletionRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSplitsRequest {
     #[prost(string, tag = "2")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -121,7 +124,7 @@ pub struct SplitResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddSourceRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_config_serialized_json: ::prost::alloc::string::String,
 }
@@ -130,7 +133,7 @@ pub struct AddSourceRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ToggleSourceRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(bool, tag = "3")]
@@ -141,7 +144,7 @@ pub struct ToggleSourceRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSourceRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
 }
@@ -150,7 +153,7 @@ pub struct DeleteSourceRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetSourceCheckpointRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
 }
@@ -176,7 +179,7 @@ pub struct DeleteTask {
 pub struct DeleteQuery {
     /// Index ID.
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     #[prost(int64, optional, tag = "2")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -186,18 +189,16 @@ pub struct DeleteQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_timestamp: ::core::option::Option<i64>,
     /// Query text. The query language is that of tantivy.
-    #[prost(string, tag = "4")]
-    pub query: ::prost::alloc::string::String,
-    /// Search fields.
-    #[prost(string, repeated, tag = "5")]
-    pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Query AST serialized in JSON
+    #[prost(string, tag = "6")]
+    pub query_ast: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSplitsDeleteOpstampRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "2")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(uint64, tag = "3")]
@@ -212,7 +213,7 @@ pub struct UpdateSplitsDeleteOpstampResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LastDeleteOpstampRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -226,7 +227,7 @@ pub struct LastDeleteOpstampResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListStaleSplitsRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(uint64, tag = "2")]
     pub delete_opstamp: u64,
     #[prost(uint64, tag = "3")]
@@ -237,7 +238,7 @@ pub struct ListStaleSplitsRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksRequest {
     #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(uint64, tag = "2")]
     pub opstamp_start: u64,
 }
@@ -261,7 +262,7 @@ pub mod metastore_api_service_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -317,11 +318,30 @@ pub mod metastore_api_service_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         /// Creates an index.
         pub async fn create_index(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateIndexRequest>,
-        ) -> Result<tonic::Response<super::CreateIndexResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::CreateIndexResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -335,13 +355,24 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/create_index",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "create_index",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Gets an index metadata.
         pub async fn index_metadata(
             &mut self,
             request: impl tonic::IntoRequest<super::IndexMetadataRequest>,
-        ) -> Result<tonic::Response<super::IndexMetadataResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::IndexMetadataResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -355,13 +386,21 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/index_metadata",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "index_metadata",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Gets an indexes metadatas.
         pub async fn list_indexes_metadatas(
             &mut self,
             request: impl tonic::IntoRequest<super::ListIndexesMetadatasRequest>,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<super::ListIndexesMetadatasResponse>,
             tonic::Status,
         > {
@@ -378,13 +417,24 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/list_indexes_metadatas",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "list_indexes_metadatas",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Deletes an index
         pub async fn delete_index(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteIndexRequest>,
-        ) -> Result<tonic::Response<super::DeleteIndexResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteIndexResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -398,13 +448,24 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/delete_index",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "delete_index",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Gets all splits from index.
         pub async fn list_all_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListAllSplitsRequest>,
-        ) -> Result<tonic::Response<super::ListSplitsResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::ListSplitsResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -418,13 +479,24 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/list_all_splits",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "list_all_splits",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Gets splits from index.
         pub async fn list_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListSplitsRequest>,
-        ) -> Result<tonic::Response<super::ListSplitsResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::ListSplitsResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -438,13 +510,21 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/list_splits",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "list_splits",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Stages several splits.
         pub async fn stage_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::StageSplitsRequest>,
-        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -458,13 +538,21 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/stage_splits",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "stage_splits",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Publishes split.
         pub async fn publish_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::PublishSplitsRequest>,
-        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -478,13 +566,21 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/publish_splits",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "publish_splits",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Marks splits for deletion.
         pub async fn mark_splits_for_deletion(
             &mut self,
             request: impl tonic::IntoRequest<super::MarkSplitsForDeletionRequest>,
-        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -498,13 +594,21 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/mark_splits_for_deletion",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "mark_splits_for_deletion",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Deletes splits.
         pub async fn delete_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteSplitsRequest>,
-        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -518,13 +622,21 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/delete_splits",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "delete_splits",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Adds source.
         pub async fn add_source(
             &mut self,
             request: impl tonic::IntoRequest<super::AddSourceRequest>,
-        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -538,13 +650,21 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/add_source",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "add_source",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Toggles source.
         pub async fn toggle_source(
             &mut self,
             request: impl tonic::IntoRequest<super::ToggleSourceRequest>,
-        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -558,13 +678,21 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/toggle_source",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "toggle_source",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Removes source.
         pub async fn delete_source(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteSourceRequest>,
-        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -578,13 +706,21 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/delete_source",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "delete_source",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Resets source checkpoint.
         pub async fn reset_source_checkpoint(
             &mut self,
             request: impl tonic::IntoRequest<super::ResetSourceCheckpointRequest>,
-        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -598,13 +734,24 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/reset_source_checkpoint",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "reset_source_checkpoint",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Gets last opstamp for a given `index_id`.
         pub async fn last_delete_opstamp(
             &mut self,
             request: impl tonic::IntoRequest<super::LastDeleteOpstampRequest>,
-        ) -> Result<tonic::Response<super::LastDeleteOpstampResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::LastDeleteOpstampResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -618,13 +765,21 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/last_delete_opstamp",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "last_delete_opstamp",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Creates a delete task.
         pub async fn create_delete_task(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteQuery>,
-        ) -> Result<tonic::Response<super::DeleteTask>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::DeleteTask>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -638,13 +793,21 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/create_delete_task",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "create_delete_task",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Updates splits `delete_opstamp`.
         pub async fn update_splits_delete_opstamp(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateSplitsDeleteOpstampRequest>,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<super::UpdateSplitsDeleteOpstampResponse>,
             tonic::Status,
         > {
@@ -661,13 +824,24 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/update_splits_delete_opstamp",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "update_splits_delete_opstamp",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// Lists delete tasks with `delete_task.opstamp` > `opstamp_start` for a given `index_id`.
         pub async fn list_delete_tasks(
             &mut self,
             request: impl tonic::IntoRequest<super::ListDeleteTasksRequest>,
-        ) -> Result<tonic::Response<super::ListDeleteTasksResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::ListDeleteTasksResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -681,13 +855,24 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/list_delete_tasks",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "list_delete_tasks",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         /// / Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
         pub async fn list_stale_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListStaleSplitsRequest>,
-        ) -> Result<tonic::Response<super::ListSplitsResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::ListSplitsResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -701,7 +886,15 @@ pub mod metastore_api_service_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/list_stale_splits",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit_metastore_api.MetastoreApiService",
+                        "list_stale_splits",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -716,87 +909,108 @@ pub mod metastore_api_service_server {
         async fn create_index(
             &self,
             request: tonic::Request<super::CreateIndexRequest>,
-        ) -> Result<tonic::Response<super::CreateIndexResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::CreateIndexResponse>,
+            tonic::Status,
+        >;
         /// Gets an index metadata.
         async fn index_metadata(
             &self,
             request: tonic::Request<super::IndexMetadataRequest>,
-        ) -> Result<tonic::Response<super::IndexMetadataResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::IndexMetadataResponse>,
+            tonic::Status,
+        >;
         /// Gets an indexes metadatas.
         async fn list_indexes_metadatas(
             &self,
             request: tonic::Request<super::ListIndexesMetadatasRequest>,
-        ) -> Result<tonic::Response<super::ListIndexesMetadatasResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::ListIndexesMetadatasResponse>,
+            tonic::Status,
+        >;
         /// Deletes an index
         async fn delete_index(
             &self,
             request: tonic::Request<super::DeleteIndexRequest>,
-        ) -> Result<tonic::Response<super::DeleteIndexResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteIndexResponse>,
+            tonic::Status,
+        >;
         /// Gets all splits from index.
         async fn list_all_splits(
             &self,
             request: tonic::Request<super::ListAllSplitsRequest>,
-        ) -> Result<tonic::Response<super::ListSplitsResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::ListSplitsResponse>,
+            tonic::Status,
+        >;
         /// Gets splits from index.
         async fn list_splits(
             &self,
             request: tonic::Request<super::ListSplitsRequest>,
-        ) -> Result<tonic::Response<super::ListSplitsResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::ListSplitsResponse>,
+            tonic::Status,
+        >;
         /// Stages several splits.
         async fn stage_splits(
             &self,
             request: tonic::Request<super::StageSplitsRequest>,
-        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status>;
         /// Publishes split.
         async fn publish_splits(
             &self,
             request: tonic::Request<super::PublishSplitsRequest>,
-        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status>;
         /// Marks splits for deletion.
         async fn mark_splits_for_deletion(
             &self,
             request: tonic::Request<super::MarkSplitsForDeletionRequest>,
-        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status>;
         /// Deletes splits.
         async fn delete_splits(
             &self,
             request: tonic::Request<super::DeleteSplitsRequest>,
-        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status>;
         /// Adds source.
         async fn add_source(
             &self,
             request: tonic::Request<super::AddSourceRequest>,
-        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status>;
         /// Toggles source.
         async fn toggle_source(
             &self,
             request: tonic::Request<super::ToggleSourceRequest>,
-        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status>;
         /// Removes source.
         async fn delete_source(
             &self,
             request: tonic::Request<super::DeleteSourceRequest>,
-        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status>;
         /// Resets source checkpoint.
         async fn reset_source_checkpoint(
             &self,
             request: tonic::Request<super::ResetSourceCheckpointRequest>,
-        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status>;
         /// Gets last opstamp for a given `index_id`.
         async fn last_delete_opstamp(
             &self,
             request: tonic::Request<super::LastDeleteOpstampRequest>,
-        ) -> Result<tonic::Response<super::LastDeleteOpstampResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::LastDeleteOpstampResponse>,
+            tonic::Status,
+        >;
         /// Creates a delete task.
         async fn create_delete_task(
             &self,
             request: tonic::Request<super::DeleteQuery>,
-        ) -> Result<tonic::Response<super::DeleteTask>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::DeleteTask>, tonic::Status>;
         /// Updates splits `delete_opstamp`.
         async fn update_splits_delete_opstamp(
             &self,
             request: tonic::Request<super::UpdateSplitsDeleteOpstampRequest>,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<super::UpdateSplitsDeleteOpstampResponse>,
             tonic::Status,
         >;
@@ -804,18 +1018,26 @@ pub mod metastore_api_service_server {
         async fn list_delete_tasks(
             &self,
             request: tonic::Request<super::ListDeleteTasksRequest>,
-        ) -> Result<tonic::Response<super::ListDeleteTasksResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::ListDeleteTasksResponse>,
+            tonic::Status,
+        >;
         /// / Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
         async fn list_stale_splits(
             &self,
             request: tonic::Request<super::ListStaleSplitsRequest>,
-        ) -> Result<tonic::Response<super::ListSplitsResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::ListSplitsResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct MetastoreApiServiceServer<T: MetastoreApiService> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: MetastoreApiService> MetastoreApiServiceServer<T> {
@@ -828,6 +1050,8 @@ pub mod metastore_api_service_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -851,6 +1075,22 @@ pub mod metastore_api_service_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for MetastoreApiServiceServer<T>
     where
@@ -864,7 +1104,7 @@ pub mod metastore_api_service_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -886,7 +1126,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::CreateIndexRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).create_index(request).await
                             };
@@ -895,6 +1135,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -904,6 +1146,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -926,7 +1172,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::IndexMetadataRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).index_metadata(request).await
                             };
@@ -935,6 +1181,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -944,6 +1192,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -966,7 +1218,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::ListIndexesMetadatasRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).list_indexes_metadatas(request).await
                             };
@@ -975,6 +1227,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -984,6 +1238,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1006,7 +1264,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::DeleteIndexRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).delete_index(request).await
                             };
@@ -1015,6 +1273,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1024,6 +1284,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1046,7 +1310,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::ListAllSplitsRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).list_all_splits(request).await
                             };
@@ -1055,6 +1319,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1064,6 +1330,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1086,13 +1356,15 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::ListSplitsRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).list_splits(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1102,6 +1374,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1124,7 +1400,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::StageSplitsRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).stage_splits(request).await
                             };
@@ -1133,6 +1409,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1142,6 +1420,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1164,7 +1446,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::PublishSplitsRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).publish_splits(request).await
                             };
@@ -1173,6 +1455,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1182,6 +1466,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1206,7 +1494,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::MarkSplitsForDeletionRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).mark_splits_for_deletion(request).await
                             };
@@ -1215,6 +1503,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1224,6 +1514,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1246,7 +1540,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::DeleteSplitsRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).delete_splits(request).await
                             };
@@ -1255,6 +1549,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1264,6 +1560,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1286,13 +1586,15 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::AddSourceRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).add_source(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1302,6 +1604,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1324,7 +1630,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::ToggleSourceRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).toggle_source(request).await
                             };
@@ -1333,6 +1639,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1342,6 +1650,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1364,7 +1676,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::DeleteSourceRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).delete_source(request).await
                             };
@@ -1373,6 +1685,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1382,6 +1696,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1406,7 +1724,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::ResetSourceCheckpointRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).reset_source_checkpoint(request).await
                             };
@@ -1415,6 +1733,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1424,6 +1744,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1446,7 +1770,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::LastDeleteOpstampRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).last_delete_opstamp(request).await
                             };
@@ -1455,6 +1779,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1464,6 +1790,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1486,7 +1816,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::DeleteQuery>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).create_delete_task(request).await
                             };
@@ -1495,6 +1825,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1504,6 +1836,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1531,7 +1867,7 @@ pub mod metastore_api_service_server {
                                 super::UpdateSplitsDeleteOpstampRequest,
                             >,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).update_splits_delete_opstamp(request).await
                             };
@@ -1540,6 +1876,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1549,6 +1887,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1571,7 +1913,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::ListDeleteTasksRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).list_delete_tasks(request).await
                             };
@@ -1580,6 +1922,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1589,6 +1933,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1611,7 +1959,7 @@ pub mod metastore_api_service_server {
                             &mut self,
                             request: tonic::Request<super::ListStaleSplitsRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).list_stale_splits(request).await
                             };
@@ -1620,6 +1968,8 @@ pub mod metastore_api_service_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1629,6 +1979,10 @@ pub mod metastore_api_service_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1657,12 +2011,14 @@ pub mod metastore_api_service_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: MetastoreApiService> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {

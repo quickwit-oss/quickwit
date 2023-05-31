@@ -22,7 +22,7 @@ First, let's create a schemaless index.
 ```bash
 # Create the index config file.
 cat << EOF > stackoverflow-schemaless-config.yaml
-version: 0.5
+version: 0.6
 index_id: stackoverflow-schemaless
 doc_mapping:
   mode: dynamic
@@ -48,10 +48,10 @@ You can ingest data either with the CLI or with cURL. The CLI is more convenient
 
 ```bash
 # Ingest the first 10_000 Stackoverflow posts articles with the CLI...
-./quickwit index ingest --index stackoverflow-schemaless --input-path stackoverflow.posts.transformed-10000.json
+./quickwit index ingest --index stackoverflow-schemaless --input-path stackoverflow.posts.transformed-10000.json --force
 
 # OR with cURL.
-curl -XPOST -H 'Content-Type: application/json' 'http://localhost:7280/api/v1/stackoverflow-schemaless/ingest' --data-binary @stackoverflow.posts.transformed-10000.json
+curl -XPOST -H 'Content-Type: application/json' 'http://localhost:7280/api/v1/stackoverflow-schemaless/ingest?commit=force' --data-binary @stackoverflow.posts.transformed-10000.json
 ```
 
 ## Execute search queries

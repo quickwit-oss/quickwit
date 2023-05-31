@@ -1,0 +1,161 @@
+json:
+  query:
+    range:
+      actor.id:
+        gte: 10791466
+expected:
+  hits:
+    total:
+      value: 2
+      relation: "eq"
+---
+json:
+  query:
+    range:
+      actor.id:
+        gt: 10791466
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+json:
+  query:
+    range:
+      actor.id:
+        lt: 10791466
+expected:
+  hits:
+    total:
+      value: 98
+      relation: "eq"
+---
+json:
+  query:
+    range:
+      actor.id:
+        lte: 10791466
+expected:
+  hits:
+    total:
+      value: 99
+      relation: "eq"
+---
+json:
+  query:
+    range:
+      actor.id:
+        gt: 467872
+expected:
+  hits:
+    total:
+      value: 84
+      relation: "eq"
+---
+json:
+  query:
+    range:
+      actor.id:
+        gte: 467872
+expected:
+  hits:
+    total:
+      value: 85
+      relation: "eq"
+---
+json:
+  query:
+    range:
+      actor.id:
+        lte: 467872
+expected:
+  hits:
+    total:
+      value: 16
+      relation: "eq"
+---
+json:
+  query:
+    range:
+      actor.id:
+        gt: 467872
+        lt: 10791466
+expected:
+  hits:
+    total:
+      value: 82
+      relation: "eq"
+---
+# Missing in some documents
+json:
+  query:
+    range:
+      payload.size:
+        gte: 2
+expected:
+  hits:
+    total:
+      value: 13
+      relation: "eq"
+---
+# Field not present in all documents
+json:
+  query:
+    range:
+      payload.size:
+        lt: 2
+expected:
+  hits:
+    total:
+      value: 47
+      relation: "eq"
+---
+# Timestamp field
+json:
+  query:
+    range:
+      created_at:
+        lt: "2015-02-01T00:00:13Z"
+        gte: "2015-02-01T00:00:10Z"
+expected:
+  hits:
+    total:
+      value: 44
+      relation: "eq"
+---
+# Timestamp field using timestamp
+json:
+  query:
+    range:
+      created_at:
+        lt: 1422748813000
+expected:
+  hits:
+    total:
+      value: 86
+      relation: "eq"
+---
+# Timestamp field
+json:
+  query:
+    range:
+      created_at:
+        gte: "2015-02-01T00:00:10Z"
+expected:
+  hits:
+    total:
+      value: 58
+      relation: "eq"
+---
+# Timestamp field
+json:
+  query:
+    range:
+      created_at:
+        lt: "2015-02-01T00:00:13Z"
+expected:
+  hits:
+    total:
+      value: 86
+      relation: "eq"

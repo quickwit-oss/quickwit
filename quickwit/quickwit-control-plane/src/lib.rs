@@ -82,11 +82,12 @@ impl From<AskError<ControlPlaneError>> for ControlPlaneError {
 /// Starts the Control Plane.
 pub async fn start_control_plane_service(
     universe: &Universe,
-    cluster: Arc<Cluster>,
+    cluster: Cluster,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<IndexingScheduler>> {
+    let ready_members_watcher = cluster.ready_members_watcher().await;
     let indexing_service_client_pool =
-        ServiceClientPool::create_and_update_members(cluster.ready_member_change_watcher()).await?;
+        ServiceClientPool::create_and_update_members(ready_members_watcher).await?;
     let scheduler = IndexingScheduler::new(cluster, metastore, indexing_service_client_pool);
     let (scheduler_mailbox, _) = universe.spawn_builder().spawn(scheduler);
     Ok(scheduler_mailbox)
@@ -128,6 +129,7 @@ impl EventSubscriber<MetastoreEvent> for ControlPlaneServiceClient {
 #[cfg(test)]
 mod tests {
     use quickwit_config::SourceConfig;
+    use quickwit_proto::IndexUid;
 
     use super::*;
 
@@ -139,20 +141,22 @@ mod tests {
 
         let mut control_plane = ControlPlaneServiceClient::new(mock);
 
+        let index_uid = IndexUid::new("test-index");
+
         let event = MetastoreEvent::AddSource {
-            index_id: "test-index".to_string(),
+            index_uid: index_uid.clone(),
             source_config: SourceConfig::for_test("test-source", SourceParams::IngestApi),
         };
         control_plane.handle_event(event).await;
 
         let event = MetastoreEvent::AddSource {
-            index_id: "test-index".to_string(),
+            index_uid: index_uid.clone(),
             source_config: SourceConfig::for_test("test-source", SourceParams::file("test-file")),
         };
         control_plane.handle_event(event).await;
 
         let event = MetastoreEvent::AddSource {
-            index_id: "test-index".to_string(),
+            index_uid: index_uid.clone(),
             source_config: SourceConfig::for_test("test-source", SourceParams::IngestCli),
         };
         control_plane.handle_event(event).await;

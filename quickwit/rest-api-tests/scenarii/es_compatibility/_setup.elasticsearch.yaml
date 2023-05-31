@@ -1,0 +1,93 @@
+# Delete possibly remaining index
+method: DELETE
+endpoint: gharchive
+status_code: null
+---
+# Create index
+method: PUT
+endpoint: gharchive
+json: {
+  "mappings": {
+    "properties": {
+      "id": {
+        "type": "text",
+        "store": true,
+        "norms": false,
+        "index_options": "docs"
+      },
+      "type": {
+        "type": "text",
+        "store": true,
+        "norms": false,
+        "index_options": "docs",
+        "fielddata": true
+      },
+      "actor": {
+        "properties": {
+          "id": {
+            "type": "long",
+            "store": true
+          },
+          "login": {
+            "type": "text",
+            "store": true,
+            "norms": false,
+            "index_options": "docs"
+          },
+          "gravatar_id": {
+            "type": "text",
+            "store": true,
+            "norms": false,
+            "index_options": "docs"
+          },
+          "url": {
+            "type": "text",
+            "store": true,
+            "norms": false,
+            "index_options": "docs"
+          },
+          "avatar_url": {
+            "type": "text",
+            "store": true,
+            "norms": false,
+            "index_options": "docs"
+          }
+        }
+      },
+      "repo": {
+        "properties": {
+          "id": {
+            "type": "long",
+            "store": true
+          },
+          "name": {
+            "type": "text",
+            "store": true
+          },
+          "url": {
+            "type": "text",
+            "store": true,
+            "norms": false,
+            "index_options": "docs"
+          }
+        }
+      },
+      "payload": {
+        "type": "object"
+      },
+      "created_at": {
+        "type": "date",
+        "store": true
+      }
+    }
+  }
+}
+---
+# Ingest documents
+method: POST
+endpoint: _bulk
+params:
+  refresh: "true"
+headers: {"Content-Type": "application/json"}
+body_from_file: gharchive-bulk.json.gz
+

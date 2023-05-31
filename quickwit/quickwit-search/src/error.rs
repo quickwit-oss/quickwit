@@ -40,7 +40,7 @@ pub enum SearchError {
     InvalidAggregationRequest(String),
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
-    #[error("Invalid query: {0}")]
+    #[error("{0}")]
     InvalidQuery(String),
 }
 
@@ -72,6 +72,12 @@ pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
 impl From<TantivyError> for SearchError {
     fn from(tantivy_err: TantivyError) -> Self {
         SearchError::InternalError(format!("{tantivy_err}"))
+    }
+}
+
+impl From<postcard::Error> for SearchError {
+    fn from(error: postcard::Error) -> Self {
+        SearchError::InternalError(format!("Postcard error: {error}"))
     }
 }
 
@@ -107,6 +113,12 @@ impl From<MetastoreError> for SearchError {
 impl From<JoinError> for SearchError {
     fn from(join_error: JoinError) -> SearchError {
         SearchError::InternalError(format!("Spawned task in root join failed: {join_error}"))
+    }
+}
+
+impl From<std::convert::Infallible> for SearchError {
+    fn from(infallible: std::convert::Infallible) -> SearchError {
+        match infallible {}
     }
 }
 

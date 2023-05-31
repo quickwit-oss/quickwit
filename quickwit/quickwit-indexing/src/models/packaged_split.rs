@@ -20,16 +20,18 @@
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+use quickwit_proto::IndexUid;
 use tantivy::TrackedObject;
 use tracing::Span;
 
 use crate::merge_policy::MergeOperation;
-use crate::models::{PublishLock, ScratchDirectory, SplitAttrs};
+use crate::models::{PublishLock, SplitAttrs};
 
 pub struct PackagedSplit {
     pub split_attrs: SplitAttrs,
-    pub split_scratch_directory: ScratchDirectory,
+    pub split_scratch_directory: TempDirectory,
     pub tags: BTreeSet<String>,
     pub split_files: Vec<std::path::PathBuf>,
     pub hotcache_bytes: Vec<u8>,
@@ -81,7 +83,7 @@ impl PackagedSplitBatch {
         assert_eq!(
             splits
                 .iter()
-                .map(|split| split.split_attrs.pipeline_id.index_config_id.clone())
+                .map(|split| split.split_attrs.pipeline_id.index_uid.clone())
                 .collect::<HashSet<_>>()
                 .len(),
             1,
@@ -96,17 +98,10 @@ impl PackagedSplitBatch {
         }
     }
 
-    pub fn index_id(&self) -> String {
+    pub fn index_uid(&self) -> IndexUid {
         self.splits
             .get(0)
-            .map(|split| {
-                split
-                    .split_attrs
-                    .pipeline_id
-                    .index_config_id
-                    .index_id
-                    .clone()
-            })
+            .map(|split| split.split_attrs.pipeline_id.index_uid.clone())
             .unwrap()
     }
 

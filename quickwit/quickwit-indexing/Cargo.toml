@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-indexing"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -10,6 +10,10 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
+aws-config = { workspace = true, optional = true }
+aws-smithy-client = { workspace = true, optional = true }
+aws-sdk-kinesis = { workspace = true, optional = true }
+
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
@@ -27,9 +31,8 @@ once_cell = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
 pulsar = { workspace = true, optional = true }
+quickwit-query = { workspace = true }
 rdkafka = { workspace = true, optional = true }
-rusoto_core = { workspace = true, optional = true }
-rusoto_kinesis = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }
@@ -41,7 +44,6 @@ tokio-stream = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
-value = { workspace = true }
 vrl = { workspace = true }
 vrl-stdlib = { workspace = true }
 
@@ -63,11 +65,15 @@ kafka = ["rdkafka", "backoff"]
 kafka-broker-tests = []
 vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored", "rdkafka/gssapi-vendored"]
 vendored-kafka-macos = ["kafka", "libz-sys/static", "openssl/vendored"]
-kinesis = ["rusoto_core", "rusoto_kinesis", "quickwit-aws/kinesis"]
+kinesis = ["aws-config", "aws-smithy-client", "aws-sdk-kinesis", "quickwit-aws/kinesis"]
 kinesis-localstack-tests = []
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
-testsuite = ["quickwit-actors/testsuite"]
+testsuite = [
+  "quickwit-actors/testsuite",
+  "quickwit-cluster/testsuite",
+  "quickwit-common/testsuite",
+]
 
 [dev-dependencies]
 bytes = { workspace = true }

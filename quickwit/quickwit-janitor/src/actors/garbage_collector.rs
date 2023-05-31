@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::StreamExt;
+use futures::{stream, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_metastore::Metastore;
@@ -32,11 +32,13 @@ use tracing::{error, info};
 
 use crate::garbage_collection::run_garbage_collect;
 
-const RUN_INTERVAL: Duration = Duration::from_secs(60); // 1 minutes
+const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
+
 /// Staged files needs to be deleted if there was a failure.
 /// TODO ideally we want clean up all staged splits every time we restart the indexing pipeline, but
 /// the grace period strategy should do the job for the moment.
 const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60 * 24); // 24 hours
+
 /// We cannot safely delete splits right away as a in-flight queries could actually
 /// have selected this split.
 /// We deal this probably by introducing a grace period. A split is first marked as delete,
@@ -45,7 +47,7 @@ const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60 * 24); // 24 h
 /// This duration is controlled by `DELETION_GRACE_PERIOD`.
 const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(120); // 2 min
 
-const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
+const MAX_CONCURRENT_GC_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct GarbageCollectorCounters {
@@ -90,53 +92,46 @@ impl GarbageCollector {
         info!("garbage-collect-operation");
         self.counters.num_passes += 1;
 
-        let index_metadatas = match self.metastore.list_indexes_metadatas().await {
+        let indexes = match self.metastore.list_indexes_metadatas().await {
             Ok(metadatas) => metadatas,
             Err(error) => {
                 error!(error=?error, "Failed to list indexes from the metastore.");
                 return;
             }
         };
-        info!(index_ids=%index_metadatas.iter().map(|im| im.index_id()).join(", "), "Garbage collecting indexes.");
+        info!(index_ids=%indexes.iter().map(|im| im.index_id()).join(", "), "Garbage collecting indexes.");
 
-        let index_ids_to_storage_iter = index_metadatas
-            .into_iter()
-            .filter_map(|index_metadata| {
-                let index_uri = index_metadata.index_uri();
-                match self.storage_resolver.resolve(index_uri) {
-                    Ok(storage) => Some((index_metadata.index_id().to_string(), storage)),
-                    Err(error) => {
-                        self.counters.num_failed_storage_resolution += 1;
-                        error!(index=%index_metadata.index_id(), error=?error, "Failed to resolve the index storage Uri.");
-                        None
-                    },
+        let mut gc_futures = stream::iter(indexes).map(|index| {
+            let metastore = self.metastore.clone();
+            let storage_resolver = self.storage_resolver.clone();
+            async move {
+            let index_uri = index.index_uri();
+            let storage = match storage_resolver.resolve(index_uri).await {
+                Ok(storage) => storage,
+                Err(error) => {
+                    error!(index=%index.index_id(), error=?error, "Failed to resolve the index storage Uri.");
+                    return None;
                 }
-            });
+            };
+            let index_uid = index.index_uid;
+            let gc_res = run_garbage_collect(
+                index_uid.clone(),
+                storage,
+                metastore,
+                STAGED_GRACE_PERIOD,
+                DELETION_GRACE_PERIOD,
+                false,
+                Some(ctx),
+            ).await;
+            Some((index_uid, gc_res))
+        }}).buffer_unordered(MAX_CONCURRENT_GC_TASKS);
 
-        let run_gc_tasks: Vec<_> = index_ids_to_storage_iter
-            .map(|(index_id, storage)| {
-                let moved_metastore = self.metastore.clone();
-                async move {
-                    let run_gc_result = run_garbage_collect(
-                        &index_id,
-                        storage,
-                        moved_metastore,
-                        STAGED_GRACE_PERIOD,
-                        DELETION_GRACE_PERIOD,
-                        false,
-                        Some(ctx),
-                    )
-                    .await;
-
-                    (index_id, run_gc_result)
-                }
-            })
-            .collect();
-
-        let mut stream =
-            tokio_stream::iter(run_gc_tasks).buffer_unordered(MAX_CONCURRENT_STORAGE_REQUESTS);
-        while let Some((index_id, run_gc_result)) = stream.next().await {
-            let deleted_file_entries = match run_gc_result {
+        while let Some(gc_future_res) = gc_futures.next().await {
+            let Some((index_uid, gc_res)) = gc_future_res else {
+                self.counters.num_failed_storage_resolution += 1;
+                continue;
+            };
+            let deleted_file_entries = match gc_res {
                 Ok(removal_info) => {
                     self.counters.num_successful_gc_run_on_index += 1;
                     self.counters.num_failed_splits += removal_info.failed_split_ids.len();
@@ -144,11 +139,10 @@ impl GarbageCollector {
                 }
                 Err(error) => {
                     self.counters.num_failed_gc_run_on_index += 1;
-                    error!(index_id=%index_id, error=?error, "Failed to run garbage collection on index.");
+                    error!(index_id=%index_uid.index_id(), error=?error, "Failed to run garbage collection on index.");
                     continue;
                 }
             };
-
             if !deleted_file_entries.is_empty() {
                 let num_deleted_splits = deleted_file_entries.len();
                 let deleted_files: HashSet<&str> = deleted_file_entries
@@ -157,13 +151,12 @@ impl GarbageCollector {
                     .take(5)
                     .collect();
                 info!(
-                    index_id=%index_id,
+                    index_id=%index_uid.index_id(),
                     num_deleted_splits=num_deleted_splits,
                     "Janitor deleted {:?} and {} other splits.",
                     deleted_files,
                     num_deleted_splits,
                 );
-
                 self.counters.num_deleted_files += deleted_file_entries.len();
                 self.counters.num_deleted_bytes += deleted_file_entries
                     .iter()
@@ -264,9 +257,8 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(2)
-            .returning(|query: ListSplitsQuery<'_>| {
-                assert_eq!(query.index_id, "test-index");
-
+            .returning(|query: ListSplitsQuery| {
+                assert_eq!(query.index_uid.to_string(), "test-index:1111111111111");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -294,17 +286,16 @@ mod tests {
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(1)
-            .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "test-index");
+            .returning(|index_uid, split_ids| {
+                assert_eq!(index_uid.to_string(), "test-index:1111111111111");
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
         mock_metastore
             .expect_delete_splits()
             .times(1)
-            .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "test-index");
-
+            .returning(|index_uid, split_ids| {
+                assert_eq!(index_uid.to_string(), "test-index:1111111111111");
                 let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b", "c"]);
                 assert_eq!(split_ids, expected_split_ids);
@@ -313,7 +304,7 @@ mod tests {
             });
 
         let result = run_garbage_collect(
-            "test-index",
+            "test-index:1111111111111".to_string().into(),
             Arc::new(mock_storage),
             Arc::new(mock_metastore),
             STAGED_GRACE_PERIOD,
@@ -342,7 +333,7 @@ mod tests {
             .expect_list_splits()
             .times(2)
             .returning(|query| {
-                assert_eq!(query.index_id, "test-index");
+                assert_eq!(query.index_uid.index_id(), "test-index");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -355,16 +346,16 @@ mod tests {
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(1)
-            .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "test-index");
+            .returning(|index_uid, split_ids| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
         mock_metastore
             .expect_delete_splits()
             .times(1)
-            .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "test-index");
+            .returning(|index_uid, split_ids| {
+                assert_eq!(index_uid.index_id(), "test-index");
 
                 let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b", "c"]);
@@ -403,7 +394,7 @@ mod tests {
             .expect_list_splits()
             .times(6)
             .returning(|query| {
-                assert_eq!(query.index_id, "test-index");
+                assert_eq!(query.index_uid.index_id(), "test-index");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -416,16 +407,16 @@ mod tests {
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(3)
-            .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "test-index");
+            .returning(|index_uid, split_ids| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
         mock_metastore
             .expect_delete_splits()
             .times(3)
-            .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "test-index");
+            .returning(|index_uid, split_ids| {
+                assert_eq!(index_uid.index_id(), "test-index");
 
                 let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
@@ -550,9 +541,9 @@ mod tests {
             .expect_list_splits()
             .times(3)
             .returning(|query| {
-                assert!(["test-index-1", "test-index-2"].contains(&query.index_id));
+                assert!(["test-index-1", "test-index-2"].contains(&query.index_uid.index_id()));
 
-                if query.index_id == "test-index-2" {
+                if query.index_uid.index_id() == "test-index-2" {
                     return Err(MetastoreError::DbError {
                         message: "fail to delete".to_string(),
                     });
@@ -570,8 +561,8 @@ mod tests {
         mock_metastore
             .expect_mark_splits_for_deletion()
             .once()
-            .returning(|index_id, split_ids| {
-                assert!(["test-index-1", "test-index-2"].contains(&index_id));
+            .returning(|index_uid, split_ids| {
+                assert!(["test-index-1", "test-index-2"].contains(&index_uid.index_id()));
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
@@ -619,7 +610,7 @@ mod tests {
             .expect_list_splits()
             .times(4)
             .returning(|query| {
-                assert!(["test-index-1", "test-index-2"].contains(&query.index_id));
+                assert!(["test-index-1", "test-index-2"].contains(&query.index_uid.index_id()));
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -632,15 +623,15 @@ mod tests {
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(2)
-            .returning(|index_id, split_ids| {
-                assert!(["test-index-1", "test-index-2"].contains(&index_id));
+            .returning(|index_uid, split_ids| {
+                assert!(["test-index-1", "test-index-2"].contains(&index_uid.index_id()));
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
         mock_metastore
             .expect_delete_splits()
             .times(2)
-            .returning(|index_id, split_ids| {
+            .returning(|index_uid, split_ids| {
                 let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
 
@@ -649,7 +640,7 @@ mod tests {
                 // This should not cause the whole run to fail and return an error,
                 // instead this should simply get logged and return the list of splits
                 // which have successfully been deleted.
-                if index_id == "test-index-2" {
+                if index_uid.index_id() == "test-index-2" {
                     Err(MetastoreError::DbError {
                         message: "fail to delete".to_string(),
                     })

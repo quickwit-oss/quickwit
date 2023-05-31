@@ -226,22 +226,24 @@ quickwit run --service metastore --config=./config/quickwit.yaml
 quickwit index describe --endpoint=http://127.0.0.1:7280 --index wikipedia
 
 1. General infos
-===============================================================================
-Index id:                           wikipedia
-Index uri:                          file:///home/quickwit-indices/qwdata/indexes/wikipedia
-Number of published splits:         1
-Number of published documents:      300000
-Size of published splits:           448 MB
+---------------------------------------------+---------------------------------------------------------
+Index ID:                                    | wikipedia
+Index URI:                                   | file:///home/quickwit-indices/qwdata/indexes/wikipedia
+Number of published documents:               | 300000
+Size of published documents (uncompressed):  | 33.73 MB 
+Number of published splits:                  | 1
+Size of published splits:                    | 24.07 MB
+Timestamp field:                             | Field does not exist for the index.                                     
+Timestamp range:                             | Range does not exist for the index. 
 
-2. Statistics on splits
-===============================================================================
-Document count stats:
-Mean ± σ in [min … max]:            300000 ± 0 in [300000 … 300000]
-Quantiles [1%, 25%, 50%, 75%, 99%]: [300000, 300000, 300000, 300000, 300000]
-
-Size in MB stats:
-Mean ± σ in [min … max]:            448 ± 0 in [448 … 448]
-Quantiles [1%, 25%, 50%, 75%, 99%]: [448, 448, 448, 448, 448]
+Document count stats (published)                                                                                        
+Mean ± σ in [min … max]:                     | 15000 ± 5000 in [10000 … 20000]                                         
+Quantiles [1%, 25%, 50%, 75%, 99%]:          | [10100, 15000, 15000, 17500, 17500]                                     
+                                                                                                                        
+                                                                                                                        
+Size in MB stats (published)                                                                                            
+Mean ± σ in [min … max]:                     | 12.037121 ± 3.802938 in [8 … 15]                                        
+Quantiles [1%, 25%, 50%, 75%, 99%]:          | [8.310242, 12.037121, 12.037121, 13.93859, 13.93859] 
 
 ```
 
@@ -300,12 +302,18 @@ By default, Quickwit's indexer will work with a heap of 2 GiB of memory. Learn h
 quickwit index ingest
     --index <index>
     [--input-path <input-path>]
+    [--batch-size-limit <batch-size-limit>]
+    [--wait]
+    [--force]
 ```
 
 *Options*
 
 `--index` ID of the target index \
 `--input-path` Location of the input file. \
+`--batch-size-limit` Size limit of each submitted document batch. \
+`--wait` Wait for all documents to be commited and available for search before exiting \
+`--force` Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting \
 
 *Examples*
 
@@ -667,6 +675,7 @@ Indexes NDJSON documents locally.
 quickwit tool local-ingest
     --index <index>
     [--input-path <input-path>]
+    [--input-format <input-format>]
     [--overwrite]
     [--transform-script <transform-script>]
     [--keep-cache]
@@ -676,6 +685,7 @@ quickwit tool local-ingest
 
 `--index` ID of the target index \
 `--input-path` Location of the input file. \
+`--input-format` Format of the input data. \
 `--overwrite` Overwrites pre-existing index. \
 `--transform-script` VRL program to transform docs before ingesting. \
 `--keep-cache` Does not clear local cache directory upon completion. \

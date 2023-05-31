@@ -1,0 +1,57 @@
+params:
+  q: type:PushEvent
+expected:
+  hits:
+    total:
+      value: 60
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 10"
+---
+# Testing size.
+params:
+  q: type:PushEvent
+  size: 3
+expected:
+  hits:
+    total:
+      value: 60
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 3"
+---
+# Query string takes priority over query defined in body
+params:
+  # this overrides the query sent in body
+  q: type:PushEvent
+  size: 3
+json:
+  query:
+    term:
+      type:
+        value: "whatever"
+expected:
+  hits:
+    total:
+      value: 60
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 3"
+---
+params:
+  # this overrides the query sent in body
+  size: 3
+json:
+  query:
+    term:
+      type:
+        value: "PushEvent"
+        # By default case_insensitive is false and prevents matching
+        # case_insensitive: false
+expected:
+  hits:
+    total:
+      value: 0
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 0"

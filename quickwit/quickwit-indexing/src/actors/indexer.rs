@@ -21,6 +21,7 @@ use std::collections::hash_map::Entry;
 use std::num::NonZeroU32;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -28,25 +29,30 @@ use byte_unit::Byte;
 use fail::fail_point;
 use fnv::FnvHashMap;
 use itertools::Itertools;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, Command, Handler, Mailbox, QueueCapacity,
+};
 use quickwit_common::io::IoControls;
 use quickwit_common::runtimes::RuntimeType;
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
-use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
+use quickwit_query::get_quickwit_tokenizer_manager;
 use serde::Serialize;
 use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{DateTime, IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{info, info_span, warn, Span};
 use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingPipelineId,
-    NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, ScratchDirectory,
+    NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock,
 };
 
 // Random partition id used to gather partitions exceeding the maximum number of partitions.
@@ -73,12 +79,13 @@ pub struct IndexerCounters {
 struct IndexerState {
     pipeline_id: IndexingPipelineId,
     metastore: Arc<dyn Metastore>,
-    indexing_directory: ScratchDirectory,
+    indexing_directory: TempDirectory,
     indexing_settings: IndexingSettings,
     publish_lock: PublishLock,
     schema: Schema,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
+    cooperative_indexing_permits: Option<Arc<Semaphore>>,
 }
 
 impl IndexerState {
@@ -91,12 +98,12 @@ impl IndexerState {
         let index_builder = IndexBuilder::new()
             .settings(self.index_settings.clone())
             .schema(self.schema.clone())
-            .tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+            .tokenizers(get_quickwit_tokenizer_manager().clone());
 
         let io_controls = IoControls::default()
             .set_progress(ctx.progress().clone())
             .set_kill_switch(ctx.kill_switch().clone())
-            .set_index_and_component(&self.pipeline_id.index_config_id.index_id, "indexer");
+            .set_index_and_component(self.pipeline_id.index_uid.index_id(), "indexer");
 
         let indexed_split = IndexedSplitBuilder::new_in_dir(
             self.pipeline_id.clone(),
@@ -107,8 +114,8 @@ impl IndexerState {
             io_controls,
         )?;
         info!(
-            split_id = indexed_split.split_id(),
-            partition_id = partition_id,
+            split_id=%indexed_split.split_id(),
+            partition_id=%partition_id,
             "new-split"
         );
         Ok(indexed_split)
@@ -157,28 +164,42 @@ impl IndexerState {
         &self,
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<IndexingWorkbench> {
+        let workbench_id = Ulid::new();
+        let batch_parent_span = info_span!(target: "quickwit-indexing", "index-doc-batches",
+            index_id=%self.pipeline_id.index_uid.index_id(),
+            source_id=%self.pipeline_id.source_id,
+            pipeline_ord=%self.pipeline_id.pipeline_ord,
+            workbench_id=%workbench_id,
+        );
+        let indexing_span = info_span!(parent: batch_parent_span.id(), "indexer");
+        let indexing_permit =
+            if let Some(cooperative_indexing_permits) = &self.cooperative_indexing_permits {
+                let indexing_permit: OwnedSemaphorePermit = ctx
+                    .protect_future(cooperative_indexing_permits.clone().acquire_owned())
+                    .await
+                    .expect("The semaphore should never be closed.");
+                Some(indexing_permit)
+            } else {
+                None
+            };
         let last_delete_opstamp = ctx
             .protect_future(
                 self.metastore
-                    .last_delete_opstamp(&self.pipeline_id.index_config_id.index_id),
+                    .last_delete_opstamp(self.pipeline_id.index_uid.clone()),
             )
             .await?;
-        let batch_parent_span = info_span!(target: "quickwit-indexing", "index_batch",
-            index_id=%self.pipeline_id.index_config_id.index_id,
-            source_id=%self.pipeline_id.source_id,
-            pipeline_ord=%self.pipeline_id.pipeline_ord
-        );
-        let indexing_span = info_span!(parent: batch_parent_span.id(), "indexer");
         let workbench = IndexingWorkbench {
+            workbench_id,
+            create_instant: Instant::now(),
             batch_parent_span,
             _indexing_span: indexing_span,
-            workbench_id: Ulid::new(),
             indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
             other_indexed_split_opt: None,
             checkpoint_delta: IndexCheckpointDelta {
                 source_id: self.pipeline_id.source_id.clone(),
                 source_delta: SourceCheckpointDelta::default(),
             },
+            indexing_permit,
             publish_lock: self.publish_lock.clone(),
             last_delete_opstamp,
             memory_usage: Byte::from_bytes(0),
@@ -215,7 +236,7 @@ impl IndexerState {
 
     async fn index_batch(
         &self,
-        batch: PreparedDocBatch,
+        batch: ProcessedDocBatch,
         indexing_workbench_opt: &mut Option<IndexingWorkbench>,
         counters: &mut IndexerCounters,
         ctx: &ActorContext<Indexer>,
@@ -232,6 +253,8 @@ impl IndexerState {
             .get_or_create_workbench(indexing_workbench_opt, ctx)
             .await?;
         if publish_lock.is_dead() {
+            // Release indexing permit early.
+            indexing_workbench_opt.take();
             return Ok(());
         }
         checkpoint_delta
@@ -240,7 +263,7 @@ impl IndexerState {
             .context("Batch delta does not follow indexer checkpoint")?;
         let mut memory_usage_delta: u64 = 0;
         for doc in batch.docs {
-            let PreparedDoc {
+            let ProcessedDoc {
                 doc,
                 timestamp_opt,
                 partition,
@@ -278,6 +301,7 @@ impl IndexerState {
 /// A workbench hosts the set of `IndexedSplit` that are being built.
 struct IndexingWorkbench {
     workbench_id: Ulid,
+    create_instant: Instant,
     // This span is used for the entire lifetime of the splits batch creations
     // This span is meant to be passed through the pipeline.
     batch_parent_span: Span,
@@ -288,6 +312,7 @@ struct IndexingWorkbench {
     other_indexed_split_opt: Option<IndexedSplitBuilder>,
 
     checkpoint_delta: IndexCheckpointDelta,
+    indexing_permit: Option<OwnedSemaphorePermit>,
     publish_lock: PublishLock,
     // On workbench creation, we fetch from the metastore the last delete task opstamp.
     // We use this value to set the `delete_opstamp` of the workbench splits.
@@ -326,6 +351,30 @@ impl Actor for Indexer {
     #[inline]
     fn yield_after_each_message(&self) -> bool {
         false
+    }
+
+    async fn on_drained_messages(
+        &mut self,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if self.indexer_state.cooperative_indexing_permits.is_none() {
+            return Ok(());
+        }
+        let Some(indexing_workbench) = &self.indexing_workbench_opt else {
+            return Ok(());
+        };
+        let elapsed = indexing_workbench.create_instant.elapsed();
+        self.send_to_serializer(CommitTrigger::Drained, ctx).await?;
+
+        let commit_timeout = self.indexer_state.indexing_settings.commit_timeout();
+        if elapsed >= commit_timeout {
+            return Ok(());
+        }
+        // Time to take a nap.
+        let sleep_for = commit_timeout - elapsed;
+        ctx.schedule_self_msg(sleep_for, Command::Resume).await;
+        self.handle(Command::Pause, ctx).await?;
+        Ok(())
     }
 
     async fn finalize(
@@ -376,12 +425,12 @@ impl Handler<CommitTimeout> for Indexer {
 }
 
 #[async_trait]
-impl Handler<PreparedDocBatch> for Indexer {
+impl Handler<ProcessedDocBatch> for Indexer {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        doc_batch: PreparedDocBatch,
+        doc_batch: ProcessedDocBatch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.index_batch(doc_batch, ctx).await
@@ -409,8 +458,9 @@ impl Indexer {
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<dyn DocMapper>,
         metastore: Arc<dyn Metastore>,
-        indexing_directory: ScratchDirectory,
+        indexing_directory: TempDirectory,
         indexing_settings: IndexingSettings,
+        cooperative_indexing_permits: Option<Arc<Semaphore>>,
         index_serializer_mailbox: Mailbox<IndexSerializer>,
     ) -> Self {
         let schema = doc_mapper.schema();
@@ -421,19 +471,19 @@ impl Indexer {
             docstore_blocksize: indexing_settings.docstore_blocksize,
             docstore_compression,
             docstore_compress_dedicated_thread: true,
-            sort_by_field: None,
+            ..Default::default()
         };
-        let publish_lock = PublishLock::default();
         Self {
             indexer_state: IndexerState {
                 pipeline_id,
                 metastore: metastore.clone(),
                 indexing_directory,
                 indexing_settings,
-                publish_lock,
+                publish_lock: PublishLock::default(),
                 schema,
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
+                cooperative_indexing_permits,
             },
             index_serializer_mailbox,
             indexing_workbench_opt: None,
@@ -451,7 +501,7 @@ impl Indexer {
 
     async fn index_batch(
         &mut self,
-        batch: PreparedDocBatch,
+        batch: ProcessedDocBatch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("indexer:batch:before");
@@ -488,20 +538,22 @@ impl Indexer {
         commit_trigger: CommitTrigger,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
-        let IndexingWorkbench {
+        let Some(IndexingWorkbench {
             indexed_splits,
             other_indexed_split_opt,
             checkpoint_delta,
             publish_lock,
             batch_parent_span,
+            indexing_permit,
             ..
-        } = if let Some(indexing_workbench) = self.indexing_workbench_opt.take() {
-            indexing_workbench
-        } else {
+        }) = self.indexing_workbench_opt.take() else {
             return Ok(());
         };
+        // Dropping the indexing permit explicitly here for enhanced readability.
+        drop(indexing_permit);
 
         let mut splits: Vec<IndexedSplitBuilder> = indexed_splits.into_values().collect();
+
         if let Some(other_split) = other_indexed_split_opt {
             splits.push(other_split)
         }
@@ -513,12 +565,7 @@ impl Indexer {
                 ctx.send_message(
                     &self.index_serializer_mailbox,
                     EmptySplit {
-                        index_id: self
-                            .indexer_state
-                            .pipeline_id
-                            .index_config_id
-                            .index_id
-                            .clone(),
+                        index_uid: self.indexer_state.pipeline_id.index_uid.clone(),
                         batch_parent_span,
                         checkpoint_delta,
                         publish_lock,
@@ -558,12 +605,12 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-    use quickwit_metastore::{IndexConfigId, MockMetastore};
+    use quickwit_metastore::MockMetastore;
+    use quickwit_proto::IndexUid;
     use tantivy::{doc, DateTime};
 
     use super::*;
     use crate::actors::indexer::{record_timestamp, IndexerCounters};
-    use crate::models::ScratchDirectory;
 
     #[test]
     fn test_record_timestamp() {
@@ -595,9 +642,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_indexer_trigger_on_target_num_docs() -> anyhow::Result<()> {
+    async fn test_indexer_triggers_commit_on_target_num_docs() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -607,17 +654,18 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = ScratchDirectory::for_test();
+        let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
         let universe = Universe::with_accelerated_time();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
         metastore
             .expect_last_delete_opstamp()
             .times(2)
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 Ok(last_delete_opstamp)
             });
         metastore.expect_publish_splits().never();
@@ -627,13 +675,14 @@ mod tests {
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
+            None,
             index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
+            .send_message(ProcessedDocBatch {
                 docs: vec![
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"this is a test document",
                             timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -642,7 +691,7 @@ mod tests {
                         partition: 1,
                         num_bytes: 30,
                     },
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 2",
                             timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -657,9 +706,9 @@ mod tests {
             })
             .await?;
         indexer_mailbox
-            .send_message(PreparedDocBatch {
+            .send_message(ProcessedDocBatch {
                 docs: vec![
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 3",
                             timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435i64)
@@ -668,7 +717,7 @@ mod tests {
                         partition: 1,
                         num_bytes: 30,
                     },
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"this is a test document 4",
                             timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -683,8 +732,8 @@ mod tests {
             })
             .await?;
         indexer_mailbox
-            .send_message(PreparedDocBatch {
-                docs: vec![PreparedDoc {
+            .send_message(ProcessedDocBatch {
+                docs: vec![ProcessedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
                         timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -728,10 +777,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_indexer_trigger_on_memory_limit() -> anyhow::Result<()> {
-        let universe = Universe::with_accelerated_time();
+    async fn test_indexer_triggers_commit_on_memory_limit() -> anyhow::Result<()> {
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -740,16 +789,17 @@ mod tests {
         let last_delete_opstamp = 10;
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
-        let indexing_directory = ScratchDirectory::for_test();
+        let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.resources.heap_size = Byte::from_bytes(5_000_000);
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
         metastore
             .expect_last_delete_opstamp()
             .times(1..=2)
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 Ok(last_delete_opstamp)
             });
         metastore.expect_publish_splits().never();
@@ -759,6 +809,7 @@ mod tests {
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
+            None,
             index_serializer_mailbox,
         );
         let (indexer_mailbox, _indexer_handle) = universe.spawn_builder().spawn(indexer);
@@ -769,7 +820,7 @@ mod tests {
                 write!(&mut body, "{val} ").unwrap();
             }
             let num_bytes = body.len() * 2;
-            PreparedDoc {
+            ProcessedDoc {
                 doc: doc!(body_field=>body),
                 timestamp_opt: None,
                 partition: 0,
@@ -778,7 +829,7 @@ mod tests {
         };
         for i in 0..10_000 {
             indexer_mailbox
-                .send_message(PreparedDocBatch {
+                .send_message(ProcessedDocBatch {
                     docs: vec![make_doc(i)],
                     checkpoint_delta: SourceCheckpointDelta::from_range(i..i + 1),
                     force_commit: false,
@@ -803,10 +854,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_indexer_on_timeout() -> anyhow::Result<()> {
-        let universe = Universe::with_accelerated_time();
+    async fn test_indexer_triggers_commit_on_timeout() -> anyhow::Result<()> {
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -816,15 +867,16 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = ScratchDirectory::for_test();
-        let indexing_settings = IndexingSettings::for_test();
+        let indexing_directory = TempDirectory::for_test();
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.commit_timeout_secs = 1;
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
         metastore
             .expect_last_delete_opstamp()
-            .once()
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 Ok(last_delete_opstamp)
             });
         metastore.expect_publish_splits().never();
@@ -834,12 +886,96 @@ mod tests {
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
+            None,
+            index_serializer_mailbox,
+        );
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+        tokio::task::spawn({
+            let indexer_mailbox = indexer_mailbox.clone();
+            async move {
+                let mut position = 0;
+                while indexer_mailbox
+                    .send_message(ProcessedDocBatch {
+                        docs: vec![ProcessedDoc {
+                            doc: doc!(
+                                body_field=>"this is a test document",
+                                timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
+                            ),
+                            timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
+                            partition: 1,
+                            num_bytes: 30,
+                        }],
+                        force_commit: false,
+                        checkpoint_delta: SourceCheckpointDelta::from_range(position..position + 1),
+                    })
+                    .await
+                    .is_ok()
+                {
+                    position += 1;
+                }
+            }
+        });
+        universe.sleep(Duration::from_secs(3)).await;
+
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        assert!(indexer_counters.num_splits_emitted > 0);
+        assert!(indexer_counters.num_split_batches_emitted > 0);
+
+        let indexed_serializer_messages: Vec<IndexedSplitBatchBuilder> =
+            index_serializer_inbox.drain_for_test_typed();
+        assert!(!indexed_serializer_messages.is_empty());
+        assert_eq!(
+            indexed_serializer_messages[0].commit_trigger,
+            CommitTrigger::Timeout
+        );
+        assert!(
+            indexed_serializer_messages[0].splits[0]
+                .split_attrs
+                .num_docs
+                > 0
+        );
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_triggers_commit_on_drained_mailbox() -> anyhow::Result<()> {
+        let universe = Universe::new();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new("test-index"),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let last_delete_opstamp = 10;
+        let schema = doc_mapper.schema();
+        let body_field = schema.get_field("body").unwrap();
+        let timestamp_field = schema.get_field("timestamp").unwrap();
+        let indexing_directory = TempDirectory::for_test();
+        let indexing_settings = IndexingSettings::for_test();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_uid| {
+                assert_eq!(index_uid.index_id(), "test-index");
+                Ok(last_delete_opstamp)
+            });
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            Arc::new(metastore),
+            indexing_directory,
+            indexing_settings,
+            Some(Arc::new(Semaphore::new(1))),
             index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
-                docs: vec![PreparedDoc {
+            .send_message(ProcessedDocBatch {
+                docs: vec![ProcessedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
                         timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
@@ -853,17 +989,8 @@ mod tests {
             })
             .await
             .unwrap();
-        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
-        assert_eq!(
-            indexer_counters,
-            IndexerCounters {
-                num_splits_emitted: 0,
-                num_split_batches_emitted: 0,
-                num_docs_in_workbench: 1,
-            }
-        );
-        universe.sleep(Duration::from_secs(61)).await;
-        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        universe.sleep(Duration::from_secs(3)).await;
+        let indexer_counters = indexer_handle.observe().await.state;
         assert_eq!(
             indexer_counters,
             IndexerCounters {
@@ -877,24 +1004,18 @@ mod tests {
         assert_eq!(indexed_split_batches.len(), 1);
         assert_eq!(
             indexed_split_batches[0].commit_trigger,
-            CommitTrigger::Timeout
+            CommitTrigger::Drained
         );
         assert_eq!(indexed_split_batches[0].splits[0].split_attrs.num_docs, 1);
-        assert_eq!(
-            indexed_split_batches[0].splits[0]
-                .split_attrs
-                .delete_opstamp,
-            last_delete_opstamp
-        );
         universe.assert_quit().await;
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_indexer_eof() -> anyhow::Result<()> {
+    async fn test_indexer_triggers_commit_on_quit() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -903,15 +1024,16 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = ScratchDirectory::for_test();
+        let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
         metastore
             .expect_last_delete_opstamp()
             .once()
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 Ok(10)
             });
         metastore.expect_publish_splits().never();
@@ -921,12 +1043,13 @@ mod tests {
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
+            None,
             index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
-                docs: vec![PreparedDoc {
+            .send_message(ProcessedDocBatch {
+                docs: vec![ProcessedDoc {
                     doc: doc!(
                         body_field=>"this is a test document 5",
                         timestamp_field=> DateTime::from_timestamp_secs(1_662_529_435)
@@ -973,7 +1096,7 @@ mod tests {
     async fn test_indexer_partitioning() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -985,15 +1108,16 @@ mod tests {
         let tenant_field = schema.get_field("tenant").unwrap();
         let body_field = schema.get_field("body").unwrap();
 
-        let indexing_directory = ScratchDirectory::for_test();
+        let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
         metastore
             .expect_last_delete_opstamp()
             .once()
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 Ok(10)
             });
         metastore.expect_publish_splits().never();
@@ -1003,13 +1127,14 @@ mod tests {
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
+            None,
             index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
+            .send_message(ProcessedDocBatch {
                 docs: vec![
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"doc 2",
                             tenant_field=>"tenant_1",
@@ -1018,7 +1143,7 @@ mod tests {
                         partition: 1,
                         num_bytes: 30,
                     },
-                    PreparedDoc {
+                    ProcessedDoc {
                         doc: doc!(
                             body_field=>"doc 2",
                             tenant_field=>"tenant_2",
@@ -1070,7 +1195,7 @@ mod tests {
     async fn test_indexer_exceeding_max_num_partitions() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1078,14 +1203,14 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = ScratchDirectory::for_test();
+        let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
             .times(1)
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 Ok(10)
             });
         metastore.expect_publish_splits().never();
@@ -1096,14 +1221,15 @@ mod tests {
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
+            None,
             index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
         for partition in 0..100 {
             indexer_mailbox
-                .send_message(PreparedDocBatch {
-                    docs: vec![PreparedDoc {
+                .send_message(ProcessedDocBatch {
+                    docs: vec![ProcessedDoc {
                         doc: doc!(body_field=>"doc {i}"),
                         timestamp_opt: None,
                         partition,
@@ -1142,7 +1268,7 @@ mod tests {
     async fn test_indexer_propagates_publish_lock() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1150,15 +1276,15 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = ScratchDirectory::for_test();
+        let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
             .times(2)
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 Ok(10)
             });
         metastore.expect_publish_splits().never();
@@ -1169,6 +1295,7 @@ mod tests {
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
+            None,
             index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
@@ -1182,8 +1309,8 @@ mod tests {
                 .await
                 .unwrap();
             indexer_mailbox
-                .send_message(PreparedDocBatch {
-                    docs: vec![PreparedDoc {
+                .send_message(ProcessedDocBatch {
+                    docs: vec![ProcessedDoc {
                         doc: doc!(body_field=>"doc 1"),
                         timestamp_opt: None,
                         partition: 0,
@@ -1216,7 +1343,7 @@ mod tests {
     async fn test_indexer_ignores_messages_when_publish_lock_is_dead() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1224,15 +1351,15 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = ScratchDirectory::for_test();
+        let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
             .times(1)
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 Ok(10)
             });
         metastore.expect_publish_splits().never();
@@ -1243,6 +1370,7 @@ mod tests {
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
+            None,
             index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
@@ -1255,8 +1383,8 @@ mod tests {
         indexer_handle.process_pending_and_observe().await;
         publish_lock.kill().await;
         indexer_mailbox
-            .send_message(PreparedDocBatch {
-                docs: vec![PreparedDoc {
+            .send_message(ProcessedDocBatch {
+                docs: vec![ProcessedDoc {
                     doc: doc!(body_field=>"doc 1"),
                     timestamp_opt: None,
                     partition: 0,
@@ -1283,7 +1411,7 @@ mod tests {
     async fn test_indexer_honors_batch_commit_request() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1291,14 +1419,14 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = ScratchDirectory::for_test();
+        let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_last_delete_opstamp()
             .times(1)
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 Ok(10)
             });
         metastore.expect_publish_splits().never();
@@ -1309,12 +1437,13 @@ mod tests {
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
+            None,
             index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
-                docs: vec![PreparedDoc {
+            .send_message(ProcessedDocBatch {
+                docs: vec![ProcessedDoc {
                     doc: doc!(body_field=>"doc 1"),
                     timestamp_opt: None,
                     partition: 0,
@@ -1346,14 +1475,14 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_checkpoint_on_all_failed_docs() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
-        let indexing_directory = ScratchDirectory::for_test();
+        let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let commit_timeout = indexing_settings.commit_timeout();
         let universe = Universe::with_accelerated_time();
@@ -1367,8 +1496,8 @@ mod tests {
             });
         metastore
             .expect_last_delete_opstamp()
-            .returning(move |index_id| {
-                assert_eq!("test-index", index_id);
+            .returning(move |index_uid| {
+                assert_eq!(index_uid.index_id(), "test-index");
                 Ok(last_delete_opstamp)
             });
         let indexer = Indexer::new(
@@ -1377,18 +1506,19 @@ mod tests {
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
+            None,
             index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
-            .send_message(PreparedDocBatch {
+            .send_message(ProcessedDocBatch {
                 docs: Vec::new(),
                 checkpoint_delta: SourceCheckpointDelta::from_range(4..6),
                 force_commit: false,
             })
             .await?;
         indexer_mailbox
-            .send_message(PreparedDocBatch {
+            .send_message(ProcessedDocBatch {
                 docs: Vec::new(),
                 checkpoint_delta: SourceCheckpointDelta::from_range(6..8),
                 force_commit: false,
@@ -1411,7 +1541,7 @@ mod tests {
             index_serializer_inbox.drain_for_test_typed();
         assert_eq!(index_serializer_messages.len(), 1);
         let update = index_serializer_messages.into_iter().next().unwrap();
-        assert_eq!(update.index_id, "test-index");
+        assert_eq!(update.index_uid.index_id(), "test-index");
         assert_eq!(
             update.checkpoint_delta,
             IndexCheckpointDelta::for_test("test-source", 4..8)

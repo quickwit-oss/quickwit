@@ -28,7 +28,7 @@ use std::{fmt, io};
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use bytes::Bytes;
-use clap::{arg, Arg, ArgMatches, Command};
+use clap::{arg, Arg, ArgAction, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -46,7 +46,6 @@ use quickwit_rest_client::rest_client::{CommitType, IngestEvent, QuickwitClient,
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortByField};
 use quickwit_storage::load_file;
-use quickwit_telemetry::payload::TelemetryEvent;
 use reqwest::Url;
 use tabled::object::{Columns, Segment};
 use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
@@ -56,7 +55,7 @@ use tracing::{debug, Level};
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{cluster_endpoint_arg, make_table, prompt_confirmation, THROUGHPUT_WINDOW_SIZE};
 
-pub fn build_index_command<'a>() -> Command<'a> {
+pub fn build_index_command() -> Command {
     Command::new("index")
         .about("Manages indexes: creates, deletes, ingests, searches, describes...")
         .arg(cluster_endpoint_arg())
@@ -65,7 +64,9 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .display_order(1)
                 .about("Creates an index from an index config file.")
                 .args(&[
-                    arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file."),
+                    arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file.")
+                        .display_order(1)
+                        .required(true),
                     arg!(--overwrite "Overwrites pre-existing index. This will delete all existing data stored at `index-uri` before creating a new index.")
                         .required(false),
                 ])
@@ -78,7 +79,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .long_about("Deletes all its splits and resets its checkpoint. This operation is destructive and cannot be undone, proceed with caution.")
                 .args(&[
                     arg!(--index <INDEX> "Index ID")
-                        .display_order(1),
+                        .display_order(1)
+                        .required(true),
                 ])
             )
         .subcommand(
@@ -89,7 +91,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .long_about("Deletes an index. This operation is destructive and cannot be undone, proceed with caution.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
-                        .display_order(1),
+                        .display_order(1)
+                        .required(true),
                     arg!(--"dry-run" "Executes the command in dry run mode and only displays the list of splits candidates for deletion.")
                         .required(false),
                 ])
@@ -101,7 +104,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .long_about("Displays descriptive statistics of an index. Displayed statistics are: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
-                        .display_order(1),
+                        .required(true),
                 ])
             )
         .subcommand(
@@ -118,19 +121,22 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .long_about("Reads NDJSON documents from a file or streamed from stdin and sends them into ingest API.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
-                        .display_order(1),
+                        .display_order(1)
+                        .required(true),
                     arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
+                        .required(false),
+                    arg!(--"batch-size-limit" <BATCH_SIZE_LIMIT> "Size limit of each submitted document batch.")
                         .required(false),
                     Arg::new("wait")
                         .long("wait")
                         .short('w')
                         .help("Wait for all documents to be commited and available for search before exiting")
-                        .takes_value(false),
+                        .action(ArgAction::SetTrue),
                     Arg::new("force")
                         .long("force")
                         .short('f')
                         .help("Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting")
-                        .takes_value(false)
+                        .action(ArgAction::SetTrue)
                         .conflicts_with("wait"),
                 ])
             )
@@ -140,8 +146,11 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .about("Searches an index.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
-                        .display_order(1),
-                    arg!(--query <QUERY> "Query expressed in natural query language ((barack AND obama) OR \"president of united states\"). Learn more on https://quickwit.io/docs/reference/search-language."),
+                        .display_order(1)
+                        .required(true),
+                    arg!(--query <QUERY> "Query expressed in natural query language ((barack AND obama) OR \"president of united states\"). Learn more on https://quickwit.io/docs/reference/search-language.")
+                        .display_order(2)
+                        .required(true),
                     arg!(--aggregation <AGG> "JSON serialized aggregation request in tantivy/elasticsearch format.")
                         .required(false),
                     arg!(--"max-hits" <MAX_HITS> "Maximum number of hits returned.")
@@ -151,16 +160,16 @@ pub fn build_index_command<'a>() -> Command<'a> {
                         .default_value("0")
                         .required(false),
                     arg!(--"search-fields" <FIELD_NAME> "List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. \"field1 field2\". ")
-                        .multiple_values(true)
+                        .num_args(1..)
                         .required(false),
                     arg!(--"snippet-fields" <FIELD_NAME> "List of fields that Quickwit will return snippet highlight on. Space-separated list, e.g. \"field1 field2\". ")
-                        .multiple_values(true)
+                        .num_args(1..)
                         .required(false),
                     arg!(--"start-timestamp" <TIMESTAMP> "Filters out documents before that timestamp (time-series indexes only).")
                         .required(false),
                     arg!(--"end-timestamp" <TIMESTAMP> "Filters out documents after that timestamp (time-series indexes only).")
                         .required(false),
-                    arg!(--"sort-by-score" "Setting this flag calculates and sorts documents by their BM25 score.")
+                    arg!(--"sort-by-score" "Sorts documents by their BM25 score.")
                         .required(false),
                 ])
             )
@@ -193,6 +202,7 @@ pub struct IngestDocsArgs {
     pub cluster_endpoint: Url,
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
+    pub batch_size_limit_opt: Option<Byte>,
     pub commit_type: CommitType,
 }
 
@@ -243,11 +253,11 @@ impl IndexCliCommand {
         }
     }
 
-    pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
-            .subcommand()
-            .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
-        match subcommand {
+            .remove_subcommand()
+            .context("Failed to parse index subcommand.")?;
+        match subcommand.as_str() {
             "clear" => Self::parse_clear_args(submatches),
             "create" => Self::parse_create_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
@@ -255,20 +265,19 @@ impl IndexCliCommand {
             "ingest" => Self::parse_ingest_args(submatches),
             "list" => Self::parse_list_args(submatches),
             "search" => Self::parse_search_args(submatches),
-            _ => bail!("Index subcommand `{}` is not implemented.", subcommand),
+            _ => bail!("Unknown index subcommand `{subcommand}`."),
         }
     }
 
-    fn parse_clear_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_clear_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .expect("`index` is a required arg.")
-            .to_string();
-        let assume_yes = matches.is_present("yes");
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
+        let assume_yes = matches.get_flag("yes");
         Ok(Self::Clear(ClearIndexArgs {
             cluster_endpoint,
             index_id,
@@ -276,17 +285,17 @@ impl IndexCliCommand {
         }))
     }
 
-    fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_create_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         let index_config_uri = matches
-            .value_of("index-config")
-            .map(Uri::from_str)
-            .expect("`index-config` is a required arg.")?;
-        let overwrite = matches.is_present("overwrite");
-        let assume_yes = matches.is_present("yes");
+            .remove_one::<String>("index-config")
+            .map(|uri| Uri::from_str(&uri))
+            .expect("`index-config` should be a required arg.")?;
+        let overwrite = matches.get_flag("overwrite");
+        let assume_yes = matches.get_flag("yes");
 
         Ok(Self::Create(CreateIndexArgs {
             cluster_endpoint,
@@ -296,94 +305,100 @@ impl IndexCliCommand {
         }))
     }
 
-    fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_describe_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .expect("`index` is a required arg.")
-            .to_string();
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
         Ok(Self::Describe(DescribeIndexArgs {
             cluster_endpoint,
             index_id,
         }))
     }
 
-    fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_list_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         Ok(Self::List(ListIndexesArgs { cluster_endpoint }))
     }
 
-    fn parse_ingest_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_ingest_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .expect("`index` is a required arg.")
-            .to_string();
-        let input_path_opt = if let Some(input_path) = matches.value_of("input-path") {
-            Uri::from_str(input_path)?
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
+        let input_path_opt = if let Some(input_path) = matches.remove_one::<String>("input-path") {
+            Uri::from_str(&input_path)?
                 .filepath()
                 .map(|path| path.to_path_buf())
         } else {
             None
         };
-        let commit_type = match (matches.is_present("wait"), matches.is_present("force")) {
+
+        let batch_size_limit_opt = matches
+            .remove_one::<String>("batch-size-limit")
+            .map(Byte::from_str)
+            .transpose()?;
+        let commit_type = match (matches.get_flag("wait"), matches.get_flag("force")) {
             (false, false) => CommitType::Auto,
             (false, true) => CommitType::Force,
             (true, false) => CommitType::WaitFor,
-            (true, true) => bail!("Can't specify both --wait and --force"),
+            (true, true) => bail!("`--wait` and `--force` are mutually exclusive options."),
         };
 
         Ok(Self::Ingest(IngestDocsArgs {
             cluster_endpoint,
             index_id,
             input_path_opt,
+            batch_size_limit_opt,
             commit_type,
         }))
     }
 
-    fn parse_search_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_search_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
-            .value_of("index")
-            .expect("`index` is a required arg.")
-            .to_string();
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
         let query = matches
-            .value_of("query")
-            .context("`query` is a required arg.")?
-            .to_string();
-        let aggregation = matches.value_of("aggregation").map(|el| el.to_string());
+            .remove_one::<String>("query")
+            .context("`query` should be a required arg.")?;
+        let aggregation = matches.remove_one::<String>("aggregation");
 
-        let max_hits = matches.value_of_t::<usize>("max-hits")?;
-        let start_offset = matches.value_of_t::<usize>("start-offset")?;
+        let max_hits = matches
+            .remove_one::<String>("max-hits")
+            .expect("`max-hits` should have a default value.")
+            .parse()?;
+        let start_offset = matches
+            .remove_one::<String>("start-offset")
+            .expect("`start-offset` should have a default value.")
+            .parse()?;
         let search_fields = matches
-            .values_of("search-fields")
-            .map(|values| values.map(|value| value.to_string()).collect());
+            .remove_many::<String>("search-fields")
+            .map(|values| values.collect());
         let snippet_fields = matches
-            .values_of("snippet-fields")
-            .map(|values| values.map(|value| value.to_string()).collect());
-        let sort_by_score = matches.is_present("sort-by-score");
-        let start_timestamp = if matches.is_present("start-timestamp") {
-            Some(matches.value_of_t::<i64>("start-timestamp")?)
-        } else {
-            None
-        };
-        let end_timestamp = if matches.is_present("end-timestamp") {
-            Some(matches.value_of_t::<i64>("end-timestamp")?)
-        } else {
-            None
-        };
+            .remove_many::<String>("snippet-fields")
+            .map(|values| values.collect());
+        let sort_by_score = matches.get_flag("sort-by-score");
+        let start_timestamp = matches
+            .remove_one::<String>("start-timestamp")
+            .map(|ts| ts.parse())
+            .transpose()?;
+        let end_timestamp = matches
+            .remove_one::<String>("end-timestamp")
+            .map(|ts| ts.parse())
+            .transpose()?;
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         Ok(Self::Search(SearchIndexArgs {
             index_id,
             query,
@@ -399,17 +414,16 @@ impl IndexCliCommand {
         }))
     }
 
-    fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_delete_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let cluster_endpoint = matches
-            .value_of("endpoint")
-            .map(Url::from_str)
-            .expect("`endpoint` is a required arg.")?;
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
         let index_id = matches
-            .value_of("index")
-            .expect("`index` is a required arg.")
-            .to_string();
-        let dry_run = matches.is_present("dry-run");
-        let assume_yes = matches.is_present("yes");
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
+        let dry_run = matches.get_flag("dry-run");
+        let assume_yes = matches.get_flag("yes");
         Ok(Self::Delete(DeleteIndexArgs {
             index_id,
             dry_run,
@@ -454,7 +468,6 @@ pub async fn clear_index_cli(args: ClearIndexArgs) -> anyhow::Result<()> {
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "create-index");
     println!("❯ Creating index...");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
     let file_content = load_file(&args.index_config_uri).await?;
     let config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
     let transport = Transport::new(args.cluster_endpoint);
@@ -534,8 +547,9 @@ pub struct IndexStats {
     pub index_id: String,
     pub index_uri: Uri,
     pub num_published_splits: usize,
+    pub size_published_splits: Byte,
     pub num_published_docs: u64,
-    pub size_published_docs: Byte,
+    pub size_published_docs_uncompressed: Byte,
     pub timestamp_field_name: Option<String>,
     pub timestamp_range: Option<(i64, i64)>,
     pub num_docs_descriptive: Option<DescriptiveStats>,
@@ -549,9 +563,12 @@ impl Tabled for IndexStats {
         vec![
             self.index_id.clone(),
             self.index_uri.to_string(),
-            self.num_published_splits.to_string(),
             self.num_published_docs.to_string(),
-            self.size_published_docs
+            self.size_published_docs_uncompressed
+                .get_appropriate_unit(false)
+                .to_string(),
+            self.num_published_splits.to_string(),
+            self.size_published_splits
                 .get_appropriate_unit(false)
                 .to_string(),
             display_option_in_table(&self.timestamp_field_name),
@@ -563,8 +580,9 @@ impl Tabled for IndexStats {
         vec![
             "Index ID: ".to_string(),
             "Index URI: ".to_string(),
-            "Number of published splits: ".to_string(),
             "Number of published documents: ".to_string(),
+            "Size of published documents (uncompressed): ".to_string(),
+            "Number of published splits: ".to_string(),
             "Size of published splits: ".to_string(),
             "Timestamp field: ".to_string(),
             "Timestamp range: ".to_string(),
@@ -607,11 +625,14 @@ impl IndexStats {
 
         let splits_bytes = published_splits
             .iter()
-            .filter(|split| split.split_state == SplitState::Published)
             .map(|split| split.split_metadata.footer_offsets.end)
             .sorted()
             .collect_vec();
-        let total_bytes = splits_bytes.iter().sum::<u64>();
+        let total_num_bytes = splits_bytes.iter().sum::<u64>();
+        let total_uncompressed_num_bytes = published_splits
+            .iter()
+            .map(|split| split.split_metadata.uncompressed_docs_size_in_bytes)
+            .sum::<u64>();
 
         let timestamp_range = if index_metadata
             .index_config()
@@ -652,8 +673,9 @@ impl IndexStats {
             index_id: index_config.index_id.clone(),
             index_uri: index_config.index_uri.clone(),
             num_published_splits: published_splits.len(),
+            size_published_splits: Byte::from(total_num_bytes),
             num_published_docs: total_num_docs,
-            size_published_docs: Byte::from(total_bytes),
+            size_published_docs_uncompressed: Byte::from(total_uncompressed_num_bytes),
             timestamp_field_name: index_config.doc_mapping.timestamp_field,
             timestamp_range,
             num_docs_descriptive,
@@ -775,7 +797,6 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     } else {
         println!("❯ Ingesting documents from stdin.");
     }
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
     let progress_bar = match &args.input_path_opt {
         Some(filepath) => {
             let file_len = std::fs::metadata(filepath).context("File not found")?.len();
@@ -802,10 +823,14 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         Some(filepath) => IngestSource::File(filepath),
         None => IngestSource::Stdin,
     };
+    let batch_size_limit_opt = args
+        .batch_size_limit_opt
+        .map(|batch_size_limit| batch_size_limit.get_bytes() as usize);
     qw_client
         .ingest(
             &args.index_id,
             ingest_source,
+            batch_size_limit_opt,
             Some(&update_progress_bar),
             args.commit_type,
         )
@@ -873,7 +898,6 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     }
 
     println!("❯ Deleting index...");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
     let endpoint =
         Url::parse(args.cluster_endpoint.as_str()).context("Failed to parse cluster endpoint.")?;
     let transport = Transport::new(endpoint);
@@ -1114,10 +1138,12 @@ mod test {
         let index_uri = "s3://some-test-bucket";
 
         let index_metadata = IndexMetadata::for_test(&index_id, index_uri);
-        let split_metadata_1 =
+        let mut split_metadata_1 =
             split_metadata_for_test(&split_id_1, 100_000, 1111..=2222, 15_000_000);
-        let split_metadata_2 =
+        split_metadata_1.uncompressed_docs_size_in_bytes = 19_000_000;
+        let mut split_metadata_2 =
             split_metadata_for_test(&split_id_2, 100_000, 1000..=3000, 30_000_000);
+        split_metadata_2.uncompressed_docs_size_in_bytes = 36_000_000;
 
         let split_data_1 = Split {
             split_metadata: split_metadata_1,
@@ -1138,8 +1164,15 @@ mod test {
         assert_eq!(index_stats.index_id, index_id);
         assert_eq!(index_stats.index_uri.as_str(), index_uri);
         assert_eq!(index_stats.num_published_splits, 1);
+        assert_eq!(
+            index_stats.size_published_splits,
+            Byte::from(15_000_000usize)
+        );
         assert_eq!(index_stats.num_published_docs, 100_000);
-        assert_eq!(index_stats.size_published_docs, Byte::from(15_000_000usize));
+        assert_eq!(
+            index_stats.size_published_docs_uncompressed,
+            Byte::from(19_000_000usize)
+        );
         assert_eq!(
             index_stats.timestamp_field_name,
             Some("timestamp".to_string())

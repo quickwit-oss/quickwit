@@ -27,6 +27,7 @@ use quickwit_actors::{
     SpawnContext, Supervisable,
 };
 use quickwit_common::io::IoControls;
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitState};
@@ -38,7 +39,7 @@ use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
 use crate::actors::{MergeExecutor, MergePlanner, Packager, Publisher, Uploader, UploaderType};
 use crate::merge_policy::MergePolicy;
-use crate::models::{IndexingPipelineId, MergeStatistics, Observe, ScratchDirectory};
+use crate::models::{IndexingPipelineId, MergeStatistics, Observe};
 use crate::split_store::IndexingSplitStore;
 
 pub struct MergePipelineHandles {
@@ -184,20 +185,20 @@ impl MergePipeline {
     }
 
     // TODO: Should return an error saying whether we can retry or not.
-    #[instrument(name="spawn_merge_pipeline", level="info", skip_all, fields(index=%self.params.pipeline_id.index_config_id.index_id, gen=self.generation()))]
+    #[instrument(name="spawn_merge_pipeline", level="info", skip_all, fields(index=%self.params.pipeline_id.index_uid.index_id(), gen=self.generation()))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         self.statistics.num_spawn_attempts += 1;
         self.kill_switch = ctx.kill_switch().child();
 
         info!(
-            index_id=%self.params.pipeline_id.index_config_id.index_id,
+            index_id=%self.params.pipeline_id.index_uid.index_id(),
             source_id=%self.params.pipeline_id.source_id,
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
             root_dir=%self.params.indexing_directory.path().display(),
             merge_policy=?self.params.merge_policy,
             "Spawning merge pipeline.",
         );
-        let query = ListSplitsQuery::for_index(&self.params.pipeline_id.index_config_id.index_id)
+        let query = ListSplitsQuery::for_index(self.params.pipeline_id.index_uid.clone())
             .with_split_state(SplitState::Published);
         let published_splits = ctx
             .protect_future(self.params.metastore.list_splits(query))
@@ -249,7 +250,7 @@ impl MergePipeline {
         let split_downloader_io_controls = IoControls::default()
             .set_throughput_limit(max_merge_write_throughput)
             .set_index_and_component(
-                self.params.pipeline_id.index_config_id.index_id.as_str(),
+                self.params.pipeline_id.index_uid.index_id(),
                 "split_downloader_merge",
             );
 
@@ -257,10 +258,7 @@ impl MergePipeline {
         // This is how cloning the `IoControls` works.
         let merge_executor_io_controls = split_downloader_io_controls
             .clone()
-            .set_index_and_component(
-                self.params.pipeline_id.index_config_id.index_id.as_str(),
-                "merger",
-            );
+            .set_index_and_component(self.params.pipeline_id.index_uid.index_id(), "merger");
 
         let merge_executor = MergeExecutor::new(
             self.params.pipeline_id.clone(),
@@ -287,7 +285,7 @@ impl MergePipeline {
                 crate::metrics::INDEXER_METRICS
                     .backpressure_micros
                     .with_label_values([
-                        self.params.pipeline_id.index_config_id.index_id.as_str(),
+                        self.params.pipeline_id.index_uid.index_id(),
                         "MergeSplitDownloader",
                     ]),
             )
@@ -430,7 +428,7 @@ impl Handler<Spawn> for MergePipeline {
 pub struct MergePipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
-    pub indexing_directory: ScratchDirectory,
+    pub indexing_directory: TempDirectory,
     pub metastore: Arc<dyn Metastore>,
     pub split_store: IndexingSplitStore,
     pub merge_policy: Arc<dyn MergePolicy>,
@@ -443,13 +441,15 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{ActorExitStatus, Universe};
+    use quickwit_common::temp_dir::TempDirectory;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
-    use quickwit_metastore::{IndexConfigId, MockMetastore};
+    use quickwit_metastore::MockMetastore;
+    use quickwit_proto::IndexUid;
     use quickwit_storage::RamStorage;
 
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
     use crate::merge_policy::default_merge_policy;
-    use crate::models::{IndexingPipelineId, ScratchDirectory};
+    use crate::models::IndexingPipelineId;
     use crate::IndexingSplitStore;
 
     #[tokio::test]
@@ -461,7 +461,7 @@ mod tests {
             .returning(|_| Ok(Vec::new()));
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -471,7 +471,7 @@ mod tests {
         let pipeline_params = MergePipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
-            indexing_directory: ScratchDirectory::for_test(),
+            indexing_directory: TempDirectory::for_test(),
             metastore: Arc::new(metastore),
             split_store,
             merge_policy: default_merge_policy(),

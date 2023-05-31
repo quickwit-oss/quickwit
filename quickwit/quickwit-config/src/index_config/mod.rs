@@ -427,7 +427,7 @@ impl TestableForRegression for IndexConfig {
             store_source: true,
             mode: ModeType::Dynamic,
             dynamic_mapping: None,
-            partition_key: Some("tenant".to_string()),
+            partition_key: Some("tenant_id".to_string()),
             max_num_partitions: NonZeroU32::new(100).unwrap(),
             timestamp_field: Some("timestamp".to_string()),
         };
@@ -676,7 +676,7 @@ mod tests {
     #[should_panic(expected = "empty URI")]
     fn test_config_validates_uris() {
         let config_yaml = r#"
-            version: 0.5
+            version: 0.6
             index_id: hdfs-logs
             index_uri: ''
             doc_mapping: {}
@@ -687,7 +687,7 @@ mod tests {
     #[test]
     fn test_minimal_index_config_default_lenient() {
         let config_yaml = r#"
-            version: 0.5
+            version: 0.6
             index_id: hdfs-logs
             index_uri: "s3://my-index"
             doc_mapping: {}
@@ -704,7 +704,7 @@ mod tests {
     #[test]
     fn test_index_config_with_malformed_maturation_duration() {
         let config_yaml = r#"
-            version: 0.5
+            version: 0.6
             index_id: hdfs-logs
             index_uri: "s3://my-index"
             doc_mapping: {}

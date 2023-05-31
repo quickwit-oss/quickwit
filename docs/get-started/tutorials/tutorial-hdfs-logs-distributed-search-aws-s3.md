@@ -57,7 +57,7 @@ Now we can create a Quickwit config file.
 
 ```bash
 # Create Quickwit config file.
-echo "version: 0.5
+echo "version: 0.6
 node_id: searcher-1
 listen_address: 0.0.0.0
 metastore_uri: ${S3_PATH}
@@ -70,7 +70,7 @@ default_index_root_uri: ${S3_PATH}
 > # config.yaml
 > node_id: searcher-1
 > listen_address: 0.0.0.0
-> version: 0.5
+> version: 0.6
 > metastore_uri: ${S3_PATH}
 > default_index_root_uri: ${S3_PATH}
 >```
@@ -95,7 +95,7 @@ used by Quickwit for [splits pruning](../../overview/architecture) at query time
 Check out the [index config docs](../../configuration/index-config) for more details.
 
 ```yaml title="hdfs_logs_index_config.yaml"
-version: 0.5
+version: 0.6
 
 index_id: hdfs-logs
 
@@ -195,7 +195,7 @@ export IP_NODE_1={first-ec2-instance-public-ip}
 
 ```bash
 # configuration for our second node
-echo "version: 0.5
+echo "version: 0.6
 node_id: searcher-2
 metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
@@ -210,7 +210,7 @@ peer_seeds:
 
 ```bash
 # configuration for our third node
-echo "version: 0.5
+echo "version: 0.6
 node_id: searcher-3
 listen_address: 0.0.0.0
 peer_seeds:

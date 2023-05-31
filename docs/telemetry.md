@@ -16,7 +16,7 @@ export QW_DISABLE_TELEMETRY=1
 Look at `--help` command output to check whether telemetry is enabled or not:
 ```bash
 quickwit --help
-Quickwit 0.5.0
+Quickwit 0.6.0
 Sub-second search & analytics engine on cloud storage.
   Find more information at https://quickwit.io/docs
 

@@ -30,7 +30,7 @@ mod fetch_docs;
 mod filters;
 mod find_trace_ids_collector;
 mod leaf;
-mod query_dsl;
+mod leaf_cache;
 mod retry;
 mod root;
 mod search_job_placer;
@@ -40,47 +40,53 @@ mod service;
 mod thread_pool;
 
 mod metrics;
+
 #[cfg(test)]
 mod tests;
 
 pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
+use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
-use root::validate_request;
+use quickwit_query::query_ast::QueryAst;
+use root::{finalize_aggregation, validate_request};
 use service::SearcherContext;
-use tantivy::aggregation::AggregationLimits;
-use tantivy::query::Query as TantivyQuery;
 use tantivy::schema::NamedFieldDocument;
 
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
 
-use std::cmp::Reverse;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::Context;
 pub use find_trace_ids_collector::FindTraceIdsCollector;
 use itertools::Itertools;
-use quickwit_config::{build_doc_mapper, QuickwitConfig, SearcherConfig};
+use quickwit_config::{build_doc_mapper, SearcherConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
-use quickwit_proto::{Hit, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
+use quickwit_proto::{
+    Hit, IndexUid, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+};
 use quickwit_storage::StorageUriResolver;
-use tantivy::aggregation::agg_result::AggregationResults;
-use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::DocAddress;
 
-pub use crate::client::{create_search_service_client, SearchServiceClient};
+pub use crate::client::{
+    create_search_client_from_channel, create_search_client_from_grpc_addr, SearchServiceClient,
+};
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::{leaf_list_terms, leaf_search};
 pub use crate::root::{jobs_to_leaf_request, root_list_terms, root_search, SearchJob};
-pub use crate::search_job_placer::SearchJobPlacer;
+pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 use crate::thread_pool::run_cpu_intensive;
+
+/// A pool of searcher clients identified by their gRPC socket address.
+pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
 
 /// GlobalDocAddress serves as a hit address.
 #[derive(Clone, Eq, Debug, PartialEq, Hash, Ord, PartialOrd)]
@@ -101,28 +107,30 @@ impl GlobalDocAddress {
     }
 }
 
-fn partial_hit_sorting_key(partial_hit: &PartialHit) -> (Reverse<u64>, GlobalDocAddress) {
-    (
-        Reverse(partial_hit.sorting_field_value),
-        GlobalDocAddress::from_partial_hit(partial_hit),
-    )
-}
-
 fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAndFooterOffsets {
     SplitIdAndFooterOffsets {
         split_id: split_metadata.split_id.clone(),
         split_footer_start: split_metadata.footer_offsets.start,
         split_footer_end: split_metadata.footer_offsets.end,
+        timestamp_start: split_metadata
+            .time_range
+            .as_ref()
+            .map(|time_range| *time_range.start()),
+        timestamp_end: split_metadata
+            .time_range
+            .as_ref()
+            .map(|time_range| *time_range.end()),
     }
 }
 
 /// Extract the list of relevant splits for a given search request.
 async fn list_relevant_splits(
+    // TODO: switch search request to index_uid and remove this.
+    index_uid: IndexUid,
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
 ) -> crate::Result<Vec<SplitMetadata>> {
-    let mut query = ListSplitsQuery::for_index(&search_request.index_id)
-        .with_split_state(SplitState::Published);
+    let mut query = ListSplitsQuery::for_index(index_uid).with_split_state(SplitState::Published);
 
     if let Some(start_ts) = search_request.start_timestamp {
         query = query.with_time_range_start_gte(start_ts);
@@ -132,7 +140,13 @@ async fn list_relevant_splits(
         query = query.with_time_range_end_lt(end_ts);
     }
 
-    if let Some(tags_filter) = extract_tags_from_query(&search_request.query)? {
+    let query_ast: QueryAst = serde_json::from_str(&search_request.query_ast).map_err(|_| {
+        SearchError::InternalError(format!(
+            "Failed to deserialize query_ast: `{}`",
+            search_request.query_ast
+        ))
+    })?;
+    if let Some(tags_filter) = extract_tags_from_query(query_ast) {
         query = query.with_tags_filter(tags_filter);
     }
 
@@ -162,40 +176,41 @@ fn convert_document_to_json_string(
 /// Performs a search on the current node.
 /// See also `[distributed_search]`.
 pub async fn single_node_search(
-    search_request: &SearchRequest,
+    mut search_request: SearchRequest,
     metastore: &dyn Metastore,
     storage_resolver: StorageUriResolver,
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
-    let index_config = metastore
-        .index_metadata(&search_request.index_id)
-        .await?
-        .into_index_config();
+    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+    let index_uid = index_metadata.index_uid.clone();
+    let index_config = index_metadata.into_index_config();
 
-    // This should never happen.
-    //
-    // The IndexConfig object has an option because it is used both
-    // as the index config the user supplies. After validation however,
-    // it should contain an `index_uri`.
-    //
-    // TODO see if it can be improved.
-    let index_storage = storage_resolver.resolve(&index_config.index_uri)?;
-    let metas = list_relevant_splits(search_request, metastore).await?;
-    let split_metadata: Vec<SplitIdAndFooterOffsets> =
-        metas.iter().map(extract_split_and_footer_offsets).collect();
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
             SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
-    validate_request(search_request)?;
+    let query_ast: QueryAst = serde_json::from_str(&search_request.query_ast)?;
+    let query_ast_resolved: QueryAst =
+        query_ast.parse_user_query(doc_mapper.default_search_fields())?;
+    search_request.query_ast = serde_json::to_string(&query_ast_resolved)?;
 
-    // Validates the query by effectively building it against the current schema.
-    doc_mapper.query(doc_mapper.schema(), search_request)?;
+    let index_storage = storage_resolver.resolve(&index_config.index_uri).await?;
+    let metas = list_relevant_splits(index_uid, &search_request, metastore).await?;
+    let split_metadata: Vec<SplitIdAndFooterOffsets> =
+        metas.iter().map(extract_split_and_footer_offsets).collect();
+    validate_request(&*doc_mapper, &search_request)?;
+
+    // Verifying that the query is valid.
+    doc_mapper
+        .query(doc_mapper.schema(), &query_ast_resolved, true)
+        .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
+
     let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
+
     let leaf_search_response = leaf_search(
         searcher_context.clone(),
-        search_request,
+        &search_request,
         index_storage.clone(),
         &split_metadata[..],
         doc_mapper.clone(),
@@ -204,7 +219,7 @@ pub async fn single_node_search(
     .context("Failed to perform leaf search.")?;
 
     let search_request_opt = if !search_request.snippet_fields.is_empty() {
-        Some(search_request)
+        Some(&search_request)
     } else {
         None
     };
@@ -229,30 +244,18 @@ pub async fn single_node_search(
         })
         .collect();
     let elapsed = start_instant.elapsed();
-    let aggregation = if let Some(intermediate_aggregation_result) =
-        leaf_search_response.intermediate_aggregation_result
-    {
-        let aggregations: QuickwitAggregations =
-            serde_json::from_str(search_request.aggregation_request.as_ref().expect(
-                "Aggregation should be present since we are processing an intermediate \
-                 aggregation result.",
-            ))?;
-        match aggregations {
-            QuickwitAggregations::FindTraceIdsAggregation(_) => {
-                // There is nothing to merge here because there is only one leaf response.
-                Some(intermediate_aggregation_result)
-            }
-            QuickwitAggregations::TantivyAggregations(aggregations) => {
-                let res: IntermediateAggregationResults =
-                    serde_json::from_str(&intermediate_aggregation_result)?;
-                let res: AggregationResults =
-                    res.into_final_result(aggregations, &AggregationLimits::default())?;
-                Some(serde_json::to_string(&res)?)
-            }
-        }
-    } else {
-        None
-    };
+
+    let aggregations: Option<QuickwitAggregations> = search_request
+        .aggregation_request
+        .as_ref()
+        .map(|agg| serde_json::from_str(agg))
+        .transpose()?;
+
+    let aggregation = finalize_aggregation(
+        leaf_search_response.intermediate_aggregation_result,
+        aggregations,
+        &searcher_context,
+    )?;
     Ok(SearchResponse {
         aggregation,
         num_hits: leaf_search_response.num_hits,
@@ -268,7 +271,7 @@ pub async fn single_node_search(
 
 /// Starts a search node, aka a `searcher`.
 pub async fn start_searcher_service(
-    quickwit_config: &QuickwitConfig,
+    searcher_config: SearcherConfig,
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
     search_job_placer: SearchJobPlacer,
@@ -279,7 +282,7 @@ pub async fn start_searcher_service(
         storage_uri_resolver,
         cluster_client,
         search_job_placer,
-        quickwit_config.searcher_config.clone(),
+        searcher_config,
     ));
     Ok(search_service)
 }
@@ -299,4 +302,23 @@ macro_rules! encode_term_for_test {
     ($value:expr) => {
         encode_term_for_test!(0, $value)
     };
+}
+
+/// Creates a `SearcherPool` for tests from an iterator of socket addresses and mock search
+/// services.
+#[cfg(any(test, feature = "testsuite"))]
+pub fn searcher_pool_for_test(
+    iter: impl IntoIterator<Item = (&'static str, MockSearchService)>,
+) -> SearcherPool {
+    SearcherPool::from_iter(
+        iter.into_iter()
+            .map(|(grpc_addr_str, mock_search_service)| {
+                let grpc_addr: SocketAddr = grpc_addr_str
+                    .parse()
+                    .expect("The gRPC address should be valid socket address.");
+                let client =
+                    SearchServiceClient::from_service(Arc::new(mock_search_service), grpc_addr);
+                (grpc_addr, client)
+            }),
+    )
 }

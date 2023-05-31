@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-jaeger"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -30,10 +30,22 @@ quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
 
 [dev-dependencies]
+tempfile = { workspace = true }
+time = { workspace = true }
+
+quickwit-actors = { workspace = true }
+quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-cluster = { workspace = true }
+quickwit-grpc-clients = { workspace = true }
+quickwit-indexing = { workspace = true, features = ["testsuite"] }
+quickwit-ingest = { workspace = true }
+quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-search = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true }
 
 [features]
 testsuite = []

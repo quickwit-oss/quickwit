@@ -26,7 +26,16 @@ Sub-second search & analytics engine on cloud storage
 </h4>
 <br/>
 
-<b> Quickwit 0.5 is now released. Check out our [blog post](https://quickwit.io/blog/quickwit-0.5/) to discover the new features.</b>
+<b>Quickwit 0.6 is around the corner and is set to redefine your search experience on multi-terabyte datasets with a host of powerful features!</b>
+
+Sneak peek of the 0.6 release:
+- Explore 16TB (~5.2 billion events) of the GitHub Archive dataset stored on Amazon S3 with just one server.
+- Elasticsearch query language support.
+- [Grafana plugin](https://github.com/quickwit-oss/quickwit-datasource) with support for Explore, Dashboards and Alerts.
+- And more :)
+
+Stay tuned for the official release in two weeks.
+
 
 ![Quickwit Distributed Tracing](./docs/assets/images/quickwit-overview-light.svg#gh-light-mode-only)![Quickwit Distributed Tracing](./docs/assets/images/quickwit-overview-dark.svg#gh-dark-mode-only)
 
@@ -110,7 +119,7 @@ We also provide a commercial license for enterprises to provide support and a vo
 
 ### Is it possible to setup Quickwit for a High Availability (HA)?
 
-HA is available for search, for indexing it's available only with a Kafka source. 
+HA is available for search, for indexing it's available only with a Kafka source.
 
 ### What is Quickwit's business model?
 

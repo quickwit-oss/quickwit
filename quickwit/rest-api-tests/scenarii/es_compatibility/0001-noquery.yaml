@@ -1,0 +1,6 @@
+# This tests a simple request with no queries.
+expected:
+  hits:
+    total:
+      value: 100
+      relation: "eq"

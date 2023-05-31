@@ -22,11 +22,12 @@
 #![allow(rustdoc::invalid_html_tags)]
 
 use anyhow::anyhow;
-use anyhow::Context;
 use ulid::Ulid;
 mod quickwit;
 mod quickwit_indexing_api;
 mod quickwit_metastore_api;
+pub use partial_hit::SortValue;
+use std::cmp::Ordering;
 
 pub mod indexing_api {
     pub use crate::quickwit_indexing_api::*;
@@ -111,6 +112,7 @@ use ::opentelemetry::propagation::Injector;
 pub use quickwit::*;
 use quickwit_indexing_api::IndexingTask;
 use quickwit_metastore_api::DeleteQuery;
+use quickwit_query::query_ast::QueryAst;
 pub use tonic;
 use tonic::codegen::http;
 use tonic::service::Interceptor;
@@ -131,6 +133,7 @@ pub enum ServiceErrorCode {
     RateLimited,
     Unavailable,
     UnsupportedMediaType,
+    NotSupportedYet, //< Used for API that is available in elasticsearch but is not yet available in Quickwit.
 }
 
 impl ServiceErrorCode {
@@ -143,6 +146,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::RateLimited => tonic::Code::ResourceExhausted,
             ServiceErrorCode::Unavailable => tonic::Code::Unavailable,
             ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
+            ServiceErrorCode::NotSupportedYet => tonic::Code::Unimplemented,
         }
     }
     pub fn to_http_status_code(self) -> http::StatusCode {
@@ -154,6 +158,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::RateLimited => http::StatusCode::TOO_MANY_REQUESTS,
             ServiceErrorCode::Unavailable => http::StatusCode::SERVICE_UNAVAILABLE,
             ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ServiceErrorCode::NotSupportedYet => http::StatusCode::NOT_IMPLEMENTED,
         }
     }
 }
@@ -181,34 +186,56 @@ pub fn convert_to_grpc_result<T, E: ServiceError>(
         .map_err(|error| error.grpc_error())
 }
 
-impl From<SearchStreamRequest> for SearchRequest {
-    fn from(item: SearchStreamRequest) -> Self {
-        Self {
-            index_id: item.index_id,
-            query: item.query,
-            search_fields: item.search_fields,
-            snippet_fields: item.snippet_fields,
-            start_timestamp: item.start_timestamp,
-            end_timestamp: item.end_timestamp,
-            max_hits: 0,
-            start_offset: 0,
-            sort_by_field: None,
-            sort_order: None,
-            aggregation_request: None,
-        }
+impl TryFrom<SearchStreamRequest> for SearchRequest {
+
+    type Error = anyhow::Error;
+
+    fn try_from(search_stream_req: SearchStreamRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            index_id: search_stream_req.index_id,
+            query_ast: search_stream_req.query_ast,
+            snippet_fields: search_stream_req.snippet_fields,
+            start_timestamp: search_stream_req.start_timestamp,
+            end_timestamp: search_stream_req.end_timestamp,
+            .. Default::default()
+        })
     }
 }
 
-impl From<DeleteQuery> for SearchRequest {
-    fn from(delete_query: DeleteQuery) -> Self {
-        Self {
-            index_id: delete_query.index_id,
-            query: delete_query.query,
+impl TryFrom<DeleteQuery> for SearchRequest {
+    type Error = anyhow::Error;
+
+    fn try_from(delete_query: DeleteQuery) -> anyhow::Result<Self> {
+        let index_uid: IndexUid = delete_query.index_uid.into();
+        Ok(Self {
+            index_id: index_uid.index_id().to_string(),
+            query_ast: delete_query.query_ast,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,
-            search_fields: delete_query.search_fields,
-            ..Default::default()
-        }
+            .. Default::default()
+        })
+    }
+}
+
+impl SearchRequest {
+    pub fn time_range(&self) -> impl std::ops::RangeBounds<i64> {
+        use std::ops::Bound;
+        (
+            self.start_timestamp
+                .map_or(Bound::Unbounded, Bound::Included),
+            self.end_timestamp.map_or(Bound::Unbounded, Bound::Excluded),
+        )
+    }
+}
+
+impl SplitIdAndFooterOffsets {
+    pub fn time_range(&self) -> impl std::ops::RangeBounds<i64> {
+        use std::ops::Bound;
+        (
+            self.timestamp_start
+                .map_or(Bound::Unbounded, Bound::Included),
+            self.timestamp_end.map_or(Bound::Unbounded, Bound::Included),
+        )
     }
 }
 
@@ -297,12 +324,66 @@ pub fn set_parent_span_from_request_metadata(request_metadata: &tonic::metadata:
     Span::current().set_parent(parent_cx);
 }
 
+/// Index identifiers that uniquely identify not only the index, but also
+/// its incarnation allowing to distinguish between deleted and recreated indexes.
+/// It is represented as a stiring in index_id:incarnation_id format.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Hash)]
+pub struct IndexUid(String);
+
+impl IndexUid {
+    /// Creates a new index uid form index_id and incarnation_id
+    pub fn new(index_id: impl Into<String>) -> Self {
+        Self::from_parts(index_id, &Ulid::new().to_string()[..13])
+    }
+
+    pub fn from_parts(index_id: impl Into<String>, incarnation_id: impl Into<String>) -> Self {
+        let incarnation_id = incarnation_id.into();
+        let index_id = index_id.into();
+        if incarnation_id.is_empty() {
+            Self(index_id)
+        } else {
+            Self(format!("{index_id}:{incarnation_id}"))
+        }
+    }
+
+    pub fn index_id(&self) -> &str {
+        self.0.split(':').next().unwrap()
+    }
+
+    pub fn incarnation_id(&self) -> &str {
+        if let Some(incarnation_id) = self.0.split(':').nth(1) {
+            incarnation_id
+        } else {
+            ""
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl From<IndexUid> for String {
+    fn from(val: IndexUid) -> Self {
+        val.0
+    }
+}
+
+impl fmt::Display for IndexUid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for IndexUid {
+    fn from(index_uid: String) -> Self {
+        IndexUid(index_uid)
+    }
+}
+
 impl ToString for IndexingTask {
     fn to_string(&self) -> String {
-        format!(
-            "{}:{}:{}",
-            self.index_id, self.source_id, self.incarnation_id
-        )
+        format!("{}:{}", self.index_uid, self.source_id)
     }
 }
 
@@ -310,49 +391,139 @@ impl TryFrom<&str> for IndexingTask {
     type Error = anyhow::Error;
 
     fn try_from(index_task_str: &str) -> anyhow::Result<IndexingTask> {
-        let mut iter = index_task_str.split(':');
-        let index_id = iter.next().ok_or_else(|| {
-            anyhow!(
-                "Invalid index task format, cannot find index_id in `{}`",
-                index_task_str
-            )
-        })?;
+        let mut iter = index_task_str.rsplit(':');
         let source_id = iter.next().ok_or_else(|| {
             anyhow!(
                 "Invalid index task format, cannot find source_id in `{}`",
                 index_task_str
             )
         })?;
-        let incarnation_id = if let Some(incarnation_id_str) = iter.next() {
-            Ulid::from_string(incarnation_id_str).with_context(|| {
-                format!(
-                    "Invalid index task format, cannot parse incarnation_id in `{}`",
-                    index_task_str
-                )
-            })?
+        let part1 = iter.next().ok_or_else(|| {
+            anyhow!(
+                "Invalid index task format, cannot find index_id in `{}`",
+                index_task_str
+            )
+        })?;
+        if let Some(part2) = iter.next() {
+            Ok(IndexingTask {
+                index_uid: format!("{}:{}", part2, part1),
+                source_id: source_id.to_string(),
+            })
         } else {
-            Ulid::default()
-        };
-        Ok(IndexingTask {
-            index_id: index_id.to_string(),
-            source_id: source_id.to_string(),
-            incarnation_id: incarnation_id.to_string(),
-        })
+            Ok(IndexingTask {
+                index_uid: part1.to_string(),
+                source_id: source_id.to_string(),
+            })
+        }
+    }
+}
+
+/// Parses a user query and returns a JSON query AST.
+///
+/// The resulting query does not include `UserInputQuery` nodes.
+/// The resolution assumes that there are no default search fields
+/// in the doc mapper.
+///
+/// # Panics
+///
+/// Panics if the user text is invalid.
+pub fn qast_helper(user_text: &str, default_fields: &[&'static str]) -> String {
+    let default_fields: Vec<String> = default_fields
+        .iter()
+        .map(|default_field| default_field.to_string())
+        .collect();
+    let ast: QueryAst = query_ast_from_user_text(user_text, Some(default_fields))
+        .parse_user_query(&[])
+        .expect("The user query should be valid.");
+    serde_json::to_string(&ast).expect("The query AST should be JSON serializable.")
+}
+
+/// Creates a QueryAST with a single UserInputQuery node.
+///
+/// Disclaimer:
+/// At this point the query has not been parsed.
+///
+/// The actual parsing is meant to happen on a root node,
+/// `default_fields` can be passed to decide which field should be search
+/// if not specified specifically in the user query (e.g. hello as opposed to "body:hello").
+///
+/// If it is not supplied, the docmapper search fields are meant to be used.
+///
+/// If no boolean operator is specified, the default is `AND` (contrary to the Elasticsearch default).
+pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<String>>) -> QueryAst {
+    quickwit_query::query_ast::UserInputQuery {
+        user_text: user_text.to_string(),
+        default_fields,
+        default_operator: quickwit_query::BooleanOperand::And,
+    }
+    .into()
+}
+
+// !!! Disclaimer !!!
+//
+// Prost imposes the PartialEq derived implementation.
+// This is terrible because this means Eq, PartialEq are not really in line with Ord's implementation.
+// if in presence of NaN.
+
+impl Eq for SortValue {}
+
+impl Ord for SortValue {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // We make sure to end up with a total order.
+        match (*self, *other) {
+            // Same types.
+            (SortValue::U64(left), SortValue::U64(right)) => left.cmp(&right),
+            (SortValue::I64(left), SortValue::I64(right)) => left.cmp(&right),
+            (SortValue::F64(left), SortValue::F64(right)) => {
+                if left.is_nan() {
+                    if right.is_nan() {
+                        Ordering::Equal
+                    } else {
+                        Ordering::Less
+                    }
+                } else if right.is_nan() {
+                    Ordering::Greater
+                } else {
+                    left.partial_cmp(&right).unwrap_or(Ordering::Less)
+                }
+            }
+            (SortValue::Boolean(left), SortValue::Boolean(right)) => left.cmp(&right),
+            // We half the logic by making sure we keep
+            // the "stronger" type on the left.
+            (SortValue::U64(left), SortValue::I64(right)) => {
+                if left > i64::MAX as u64 {
+                    return Ordering::Greater;
+                }
+                (left as i64).cmp(&right)
+            }
+            (SortValue::F64(left), _) if left.is_nan() => Ordering::Less,
+            (SortValue::F64(left), SortValue::U64(right)) => {
+                left.partial_cmp(&(right as f64)).unwrap_or(Ordering::Less)
+            }
+            (SortValue::F64(left), SortValue::I64(right)) => {
+                left.partial_cmp(&(right as f64)).unwrap_or(Ordering::Less)
+            }
+            (SortValue::Boolean(left), right) => SortValue::U64(left as u64).cmp(&right),
+            (left, right) => right.cmp(&left).reverse(),
+        }
+    }
+}
+
+impl PartialOrd for SortValue {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ulid::Ulid;
 
     #[test]
     fn test_indexing_task_serialization() {
-        let incarnation_id = Ulid::new();
         let original = IndexingTask {
-            index_id: "test-index".to_string(),
+            index_uid: "test-index:123456".to_string(),
             source_id: "test-source".to_string(),
-            incarnation_id: incarnation_id.to_string(),
         };
 
         let serialized = original.to_string();
@@ -365,9 +536,8 @@ mod tests {
         assert_eq!(
             IndexingTask::try_from("foo:bar").unwrap(),
             IndexingTask {
-                index_id: "foo".to_string(),
+                index_uid: "foo".to_string(),
                 source_id: "bar".to_string(),
-                incarnation_id: Ulid::default().to_string(),
             }
         );
     }
@@ -375,18 +545,53 @@ mod tests {
     #[test]
     fn test_indexing_task_serialization_errors() {
         assert_eq!(
-            "Invalid index task format, cannot find source_id in ``",
+            "Invalid index task format, cannot find index_id in ``",
             IndexingTask::try_from("").unwrap_err().to_string()
         );
         assert_eq!(
-            "Invalid index task format, cannot find source_id in `foo`",
+            "Invalid index task format, cannot find index_id in `foo`",
             IndexingTask::try_from("foo").unwrap_err().to_string()
         );
+    }
+
+    #[test]
+    fn test_index_uid_parsing() {
+        assert_eq!("foo", IndexUid::from("foo".to_string()).index_id());
+        assert_eq!("foo", IndexUid::from("foo:bar".to_string()).index_id());
+        assert_eq!("", IndexUid::from("foo".to_string()).incarnation_id());
         assert_eq!(
-            "Invalid index task format, cannot parse incarnation_id in `foo:bar:baz`",
-            IndexingTask::try_from("foo:bar:baz")
-                .unwrap_err()
-                .to_string()
+            "bar",
+            IndexUid::from("foo:bar".to_string()).incarnation_id()
+        );
+    }
+
+    #[test]
+    fn test_index_uid_roundtrip() {
+        assert_eq!("foo", IndexUid::from("foo".to_string()).to_string());
+        assert_eq!("foo:bar", IndexUid::from("foo:bar".to_string()).to_string());
+    }
+
+    #[test]
+    fn test_index_uid_roundtrip_using_parts() {
+        assert_eq!("foo", index_uid_roundtrip_using_parts("foo"));
+        assert_eq!("foo:bar", index_uid_roundtrip_using_parts("foo:bar"));
+    }
+
+    fn index_uid_roundtrip_using_parts(index_uid: &str) -> String {
+        let index_uid = IndexUid::from(index_uid.to_string());
+        let index_id = index_uid.index_id();
+        let incarnation_id = index_uid.incarnation_id();
+        let index_uid_from_parts = IndexUid::from_parts(index_id, incarnation_id);
+        index_uid_from_parts.to_string()
+    }
+
+    #[test]
+    fn test_query_ast_from_user_text_default_as_and() {
+        let ast = query_ast_from_user_text("hello you", None);
+        let QueryAst::UserInput(input_query) = ast else { panic!() };
+        assert_eq!(
+            input_query.default_operator,
+            quickwit_query::BooleanOperand::And
         );
     }
 }

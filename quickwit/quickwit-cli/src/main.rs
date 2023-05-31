@@ -29,12 +29,11 @@ use quickwit_cli::cli::{build_cli, CliCommand};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::{
-    QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
+    busy_detector, QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
 };
 use quickwit_common::RED_COLOR;
-use quickwit_serve::{quickwit_build_info, QuickwitBuildInfo};
+use quickwit_serve::BuildInfo;
 use quickwit_telemetry::payload::TelemetryEvent;
-use tonic::metadata::MetadataMap;
 use tracing::Level;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
@@ -43,7 +42,7 @@ use tracing_subscriber::EnvFilter;
 fn setup_logging_and_tracing(
     level: Level,
     ansi: bool,
-    build_info: &QuickwitBuildInfo,
+    build_info: &BuildInfo,
 ) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
     {
@@ -83,16 +82,11 @@ fn setup_logging_and_tracing(
             .try_init()
             .context("Failed to set up tracing.")?;
     } else if std::env::var_os(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY).is_some() {
-        let mut metadata_map = MetadataMap::with_capacity(2);
-        metadata_map.insert("version", build_info.version.parse()?);
-        metadata_map.insert("commit", build_info.commit_short_hash.parse()?);
-
-        let otlp_exporter = opentelemetry_otlp::new_exporter()
-            .tonic()
-            .with_env()
-            .with_metadata(metadata_map);
-        let trace_config = trace::config()
-            .with_resource(Resource::new([KeyValue::new("service.name", "quickwit")]));
+        let otlp_exporter = opentelemetry_otlp::new_exporter().tonic().with_env();
+        let trace_config = trace::config().with_resource(Resource::new([
+            KeyValue::new("service.name", "quickwit"),
+            KeyValue::new("service.version", build_info.version.clone()),
+        ]));
         let tracer = opentelemetry_otlp::new_pipeline()
             .tracing()
             .with_exporter(otlp_exporter)
@@ -129,18 +123,17 @@ async fn main_impl() -> anyhow::Result<()> {
 
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
-    let build_info = quickwit_build_info();
+    let build_info = BuildInfo::get();
     let version_text = format!(
         "{} ({} {})",
         build_info.version, build_info.commit_short_hash, build_info.build_date
     );
 
-    let app = build_cli()
-        .about(about_text.as_str())
-        .version(version_text.as_str());
+    let app = build_cli().about(about_text).version(version_text);
     let matches = app.get_matches();
+    let ansi = !matches.get_flag("no-color");
 
-    let command = match CliCommand::parse_cli_args(&matches) {
+    let command = match CliCommand::parse_cli_args(matches) {
         Ok(command) => command,
         Err(err) => {
             eprintln!("Failed to parse command arguments: {err:?}");
@@ -151,11 +144,7 @@ async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
-    setup_logging_and_tracing(
-        command.default_log_level(),
-        !matches.is_present("no-color"),
-        build_info,
-    )?;
+    setup_logging_and_tracing(command.default_log_level(), ansi, build_info)?;
     let return_code: i32 = if let Err(err) = command.execute().await {
         eprintln!("{} Command failed: {:?}\n", "✘".color(RED_COLOR), err);
         1
@@ -168,81 +157,12 @@ async fn main_impl() -> anyhow::Result<()> {
     std::process::exit(return_code)
 }
 
-mod busy_detector {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::Instant;
-
-    use once_cell::sync::Lazy;
-    use tracing::warn;
-
-    // we need that time reference to use an atomic and not a mutex for LAST_UNPARK
-    static TIME_REF: Lazy<Instant> = Lazy::new(Instant::now);
-
-    const ALLOWED_DELAY_MICROS: u64 = 5000;
-    const WARN_SUPPRESSION_MICROS: u64 = 30_000_000;
-
-    // LAST_UNPARK_TIMESTAMP and NEXT_WARN_TIMESTAMP are semantically micro-second
-    // precision timestamps, but we use atomics to allow accessing them without locks.
-    thread_local!(static LAST_UNPARK_TIMESTAMP: AtomicU64 = AtomicU64::new(0));
-    static NEXT_WARN_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
-    static SUPPRESSED_WARN_COUNT: AtomicU64 = AtomicU64::new(0);
-
-    pub fn thread_unpark() {
-        LAST_UNPARK_TIMESTAMP.with(|time| {
-            let now = Instant::now()
-                .checked_duration_since(*TIME_REF)
-                .unwrap_or_default();
-            time.store(now.as_micros() as u64, Ordering::Relaxed);
-        })
-    }
-
-    pub fn thread_park() {
-        LAST_UNPARK_TIMESTAMP.with(|time| {
-            let now = Instant::now()
-                .checked_duration_since(*TIME_REF)
-                .unwrap_or_default();
-            let now = now.as_micros() as u64;
-            let delta = now - time.load(Ordering::Relaxed);
-            if delta > ALLOWED_DELAY_MICROS {
-                emit_warn(delta, now);
-            }
-        })
-    }
-
-    fn emit_warn(delta: u64, now: u64) {
-        if NEXT_WARN_TIMESTAMP
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next_warn| {
-                if next_warn < now {
-                    Some(now + WARN_SUPPRESSION_MICROS)
-                } else {
-                    None
-                }
-            })
-            .is_err()
-        {
-            // a warn was emited recently, don't emit log for this one
-            SUPPRESSED_WARN_COUNT.fetch_add(1, Ordering::Relaxed);
-            return;
-        }
-
-        let suppressed = SUPPRESSED_WARN_COUNT.swap(0, Ordering::Relaxed);
-        if suppressed == 0 {
-            warn!("Thread wasn't parked for {delta}µs, is the runtime too busy?");
-        } else {
-            warn!(
-                "Thread wasn't parked for {delta}µs, is the runtime too busy? ({suppressed} \
-                 similar messages suppressed)"
-            );
-        }
-    }
-}
-
 /// Return the about text with telemetry info.
 fn about_text() -> String {
     let mut about_text = String::from(
         "Sub-second search & analytics engine on cloud storage.\n  Find more information at https://quickwit.io/docs\n\n",
     );
-    if quickwit_telemetry::is_telemetry_enabled() {
+    if !quickwit_telemetry::is_telemetry_disabled() {
         about_text += "Telemetry: enabled";
     }
     about_text
@@ -254,6 +174,7 @@ mod tests {
     use std::str::FromStr;
     use std::time::Duration;
 
+    use byte_unit::Byte;
     use quickwit_cli::cli::{build_cli, CliCommand};
     use quickwit_cli::index::{
         ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, IndexCliCommand,
@@ -264,6 +185,7 @@ mod tests {
         ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, MergeArgs, ToolCliCommand,
     };
     use quickwit_common::uri::Uri;
+    use quickwit_config::SourceInputFormat;
     use quickwit_rest_client::rest_client::CommitType;
     use reqwest::Url;
 
@@ -273,7 +195,7 @@ mod tests {
         let matches = app
             .try_get_matches_from(["index", "clear", "--index", "wikipedia"])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
             cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
             index_id: "wikipedia".to_string(),
@@ -285,7 +207,7 @@ mod tests {
         let matches = app
             .try_get_matches_from(["index", "clear", "--index", "wikipedia", "--yes"])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
             cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
             index_id: "wikipedia".to_string(),
@@ -304,7 +226,7 @@ mod tests {
         let app = build_cli().no_binary_name(true);
         let matches =
             app.try_get_matches_from(["index", "create", "--index-config", "index-conf.yaml"])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_index_config_uri = Uri::from_str(&format!(
             "file://{}/index-conf.yaml",
             std::env::current_dir().unwrap().display()
@@ -326,7 +248,7 @@ mod tests {
             "index-conf.yaml",
             "--overwrite",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
             cluster_endpoint: Url::from_str("http://127.0.0.1:7280").unwrap(),
             index_config_uri: expected_index_config_uri,
@@ -349,7 +271,7 @@ mod tests {
             "--endpoint",
             "http://127.0.0.1:8000",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
@@ -357,15 +279,23 @@ mod tests {
                     cluster_endpoint,
                     index_id,
                     input_path_opt: None,
+                    batch_size_limit_opt: None,
                     commit_type: CommitType::Auto,
                 })) if &index_id == "wikipedia"
                        && cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
         ));
 
         let app = build_cli().no_binary_name(true);
-        let matches =
-            app.try_get_matches_from(["index", "ingest", "--index", "wikipedia", "--force"])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let matches = app.try_get_matches_from([
+            "index",
+            "ingest",
+            "--index",
+            "wikipedia",
+            "--batch-size-limit",
+            "8MB",
+            "--force",
+        ])?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
@@ -373,15 +303,24 @@ mod tests {
                     cluster_endpoint,
                     index_id,
                     input_path_opt: None,
+                    batch_size_limit_opt: Some(batch_size_limit),
                     commit_type: CommitType::Force,
                 })) if &index_id == "wikipedia"
                         && cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+                        && batch_size_limit == Byte::from_str("8MB").unwrap()
         ));
 
         let app = build_cli().no_binary_name(true);
-        let matches =
-            app.try_get_matches_from(["index", "ingest", "--index", "wikipedia", "--wait"])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let matches = app.try_get_matches_from([
+            "index",
+            "ingest",
+            "--index",
+            "wikipedia",
+            "--batch-size-limit",
+            "4KB",
+            "--wait",
+        ])?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
@@ -389,9 +328,11 @@ mod tests {
                     cluster_endpoint,
                     index_id,
                     input_path_opt: None,
+                    batch_size_limit_opt: Some(batch_size_limit),
                     commit_type: CommitType::WaitFor,
                 })) if &index_id == "wikipedia"
                         && cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+                        && batch_size_limit == Byte::from_str("4KB").unwrap()
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -406,7 +347,7 @@ mod tests {
             ])
             .unwrap_err()
             .kind(),
-            clap::ErrorKind::ArgumentConflict
+            clap::error::ErrorKind::ArgumentConflict
         );
         Ok(())
     }
@@ -424,11 +365,13 @@ mod tests {
                 "/config.yaml",
                 "--overwrite",
                 "--keep-cache",
+                "--input-format",
+                "plain",
                 "--transform-script",
                 ".message = downcase(string!(.message))",
             ])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         println!("{command:?}");
         assert!(matches!(
             command,
@@ -437,6 +380,7 @@ mod tests {
                     config_uri,
                     index_id,
                     input_path_opt: None,
+                    input_format,
                     overwrite,
                     vrl_script: Some(vrl_script),
                     clear_cache,
@@ -445,6 +389,7 @@ mod tests {
                        && vrl_script == ".message = downcase(string!(.message))"
                        && overwrite
                        && !clear_cache
+                       && input_format == SourceInputFormat::PlainText,
         ));
     }
 
@@ -459,7 +404,7 @@ mod tests {
             "--query",
             "Barack Obama",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
@@ -498,7 +443,7 @@ mod tests {
             "--snippet-fields",
             "body",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let _cluster_endpoint = Uri::from_str("http://127.0.0.1:7280").unwrap();
         assert!(matches!(
             command,
@@ -528,7 +473,7 @@ mod tests {
         let matches = app
             .try_get_matches_from(["index", "delete", "--index", "wikipedia"])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Delete(DeleteIndexArgs {
@@ -542,7 +487,7 @@ mod tests {
         let matches = app
             .try_get_matches_from(["index", "delete", "--index", "wikipedia", "--dry-run"])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Delete(DeleteIndexArgs {
@@ -559,7 +504,7 @@ mod tests {
         let matches = app
             .try_get_matches_from(["index", "describe", "--index", "wikipedia"])
             .unwrap();
-        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Describe(DescribeIndexArgs {
@@ -580,7 +525,7 @@ mod tests {
             "--split",
             "ABC",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::Describe(DescribeSplitArgs {
@@ -608,7 +553,7 @@ mod tests {
             "--config",
             "/config.yaml",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Tool(ToolCliCommand::ExtractSplit(ExtractSplitArgs {
@@ -632,7 +577,7 @@ mod tests {
             "--config",
             "/config.yaml",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Tool(ToolCliCommand::GarbageCollect(GarbageCollectIndexArgs {
@@ -655,7 +600,7 @@ mod tests {
             "/config.yaml",
             "--dry-run",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
@@ -682,7 +627,7 @@ mod tests {
             "--config",
             "/config.yaml",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
+        let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(
             command,
             CliCommand::Tool(ToolCliCommand::Merge(MergeArgs {

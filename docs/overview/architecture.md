@@ -90,7 +90,7 @@ Any search node can handle any search request. A node that receives a query will
 
 - Get the index metadata from the metastore and identify the splits relevant to the query.
 - Distributes the split workload among the nodes of the cluster. These nodes are assuming the role of leaf nodes.
-- Returns aggregated results.
+- Waits for results from leaf nodes, merges them, and returns the aggregated results.
 
 **Stateless nodes**
 
@@ -109,8 +109,8 @@ Learn more about query internals on the [querying doc page](./concepts/querying.
 
 The control plane service schedules indexing tasks to indexers. The scheduling is executed when the scheduler receives external or internal events and on certains conditions:
 
-- The scehduler listens to metastore events source create, delete, toggle, or index delete. On each of these events, it will schedule a new plan, named the `desired plan` and send indexing tasks to indexers.
-- Every `HEARTBEAT` (3 seconds), the scheduler controls if the `desired plan` and the indexing tasks running on indexers are in sync. If not, it will reapply the desired plan to indexers.
+- The scehduler listens to metastore events: source create, delete, toggle, or index delete. On each of these events, it will schedule a new plan, named the `desired plan` and send indexing tasks to the indexers.
+- On every `HEARTBEAT` (3 seconds), the scheduler controls if the `desired plan` and the indexing tasks running on indexers are in sync. If not, it will reapply the desired plan to indexers.
 - Every minute, the scheduler rebuilds a plan with the latest metastore state, and if it differs from the last applied plan, it will apply the new one. This is necessary as the scheduler may have not received all metastore events due to network issues.
 
 ### Janitor

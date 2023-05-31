@@ -31,24 +31,25 @@ use quickwit_actors::{
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
+use quickwit_common::temp_dir;
 use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
 use quickwit_ingest::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUEUES_DIR_NAME};
-use quickwit_metastore::{IndexConfigId, IndexMetadata, Metastore, MetastoreError};
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
-use quickwit_proto::{ServiceError, ServiceErrorCode};
+use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
-use ulid::Ulid;
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
 use crate::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingPipelineId, Observe, ObservePipeline,
-    ScratchDirectory, SpawnPipeline, WeakScratchDirectory,
+    SpawnPipeline,
 };
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
@@ -105,18 +106,16 @@ pub struct IndexingServiceCounters {
     pub num_delete_queue_failures: usize,
 }
 
-type SourceId = String;
-
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct MergePipelineId {
-    index_id: IndexConfigId,
+    index_uid: IndexUid,
     source_id: String,
 }
 
 impl<'a> From<&'a IndexingPipelineId> for MergePipelineId {
     fn from(pipeline_id: &'a IndexingPipelineId) -> Self {
         MergePipelineId {
-            index_id: pipeline_id.index_config_id.clone(),
+            index_uid: pipeline_id.index_uid.clone(),
             source_id: pipeline_id.source_id.clone(),
         }
     }
@@ -129,25 +128,28 @@ struct MergePipelineHandle {
 
 pub struct IndexingService {
     node_id: String,
-    data_dir_path: PathBuf,
-    cluster: Arc<Cluster>,
+    indexing_root_directory: PathBuf,
+    queue_dir_path: PathBuf,
+    cluster: Cluster,
     metastore: Arc<dyn Metastore>,
     ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     counters: IndexingServiceCounters,
-    indexing_directories: HashMap<(IndexConfigId, SourceId), WeakScratchDirectory>,
     local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
+    cooperative_indexing_permits: Option<Arc<Semaphore>>,
 }
 
 impl IndexingService {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         node_id: String,
         data_dir_path: PathBuf,
         indexer_config: IndexerConfig,
-        cluster: Arc<Cluster>,
+        num_blocking_threads: usize,
+        cluster: Cluster,
         metastore: Arc<dyn Metastore>,
         ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
         storage_resolver: StorageUriResolver,
@@ -159,9 +161,18 @@ impl IndexingService {
         let split_cache_dir_path = get_cache_directory_path(&data_dir_path);
         let local_split_store =
             LocalSplitStore::open(split_cache_dir_path, split_store_space_quota).await?;
+        let indexing_root_directory =
+            temp_dir::create_or_purge_directory(&data_dir_path.join(INDEXING_DIR_NAME)).await?;
+        let queue_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
+        let cooperative_indexing_permits = if indexer_config.enable_cooperative_indexing {
+            Some(Arc::new(Semaphore::new(num_blocking_threads)))
+        } else {
+            None
+        };
         Ok(Self {
             node_id,
-            data_dir_path,
+            indexing_root_directory,
+            queue_dir_path,
             cluster,
             metastore,
             ingest_api_service_opt,
@@ -169,9 +180,9 @@ impl IndexingService {
             local_split_store: Arc::new(local_split_store),
             indexing_pipeline_handles: Default::default(),
             counters: Default::default(),
-            indexing_directories: HashMap::new(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
             merge_pipeline_handles: HashMap::new(),
+            cooperative_indexing_permits,
         })
     }
 
@@ -183,7 +194,7 @@ impl IndexingService {
             .indexing_pipeline_handles
             .remove(pipeline_id)
             .ok_or_else(|| IndexingServiceError::MissingPipeline {
-                index_id: pipeline_id.index_config_id.index_id.clone(),
+                index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id.clone(),
             })?;
         self.counters.num_running_pipelines -= 1;
@@ -198,7 +209,7 @@ impl IndexingService {
             .merge_pipeline_handles
             .remove(pipeline_id)
             .ok_or_else(|| IndexingServiceError::MissingPipeline {
-                index_id: pipeline_id.index_id.index_id.clone(),
+                index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id.clone(),
             })?;
         self.counters.num_running_merge_pipelines -= 1;
@@ -213,7 +224,7 @@ impl IndexingService {
             .indexing_pipeline_handles
             .get(pipeline_id)
             .ok_or_else(|| IndexingServiceError::MissingPipeline {
-                index_id: pipeline_id.index_config_id.index_id.clone(),
+                index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id.clone(),
             })?;
         let observation = pipeline_handle.observe().await;
@@ -229,13 +240,13 @@ impl IndexingService {
     ) -> Result<IndexingPipelineId, IndexingServiceError> {
         let index_metadata = self.metastore.index_metadata(index_id.as_str()).await?;
         let pipeline_id = IndexingPipelineId {
-            index_config_id: index_metadata.index_config_id(),
+            index_uid: index_metadata.index_uid,
             source_id: source_config.source_id.clone(),
             node_id: self.node_id.clone(),
             pipeline_ord,
         };
         let index_config = self
-            .index_metadata(ctx, &pipeline_id.index_config_id.index_id)
+            .index_metadata(ctx, pipeline_id.index_uid.index_id())
             .await?
             .into_index_config();
         self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config)
@@ -252,17 +263,22 @@ impl IndexingService {
     ) -> Result<(), IndexingServiceError> {
         if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
             return Err(IndexingServiceError::PipelineAlreadyExists {
-                index_id: pipeline_id.index_config_id.index_id,
+                index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id,
                 pipeline_ord: pipeline_id.pipeline_ord,
             });
         }
-        let indexing_dir_path = self.data_dir_path.join(INDEXING_DIR_NAME);
-        let indexing_directory = self
-            .get_or_create_indexing_directory(&pipeline_id, indexing_dir_path)
+        let indexing_directory = temp_dir::Builder::default()
+            .join(pipeline_id.index_uid.index_id())
+            .join(pipeline_id.index_uid.incarnation_id())
+            .join(&pipeline_id.source_id)
+            .join(&pipeline_id.pipeline_ord.to_string())
+            .tempdir_in(&self.indexing_root_directory)
+            .map_err(|error| IndexingServiceError::StorageError(error.into()))?;
+        let storage = self
+            .storage_resolver
+            .resolve(&index_config.index_uri)
             .await?;
-        let storage = self.storage_resolver.resolve(&index_config.index_uri)?;
-        let queues_dir_path = self.data_dir_path.join(QUEUES_DIR_NAME);
         let merge_policy =
             crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
         let split_store = IndexingSplitStore::new(
@@ -308,7 +324,8 @@ impl IndexingService {
             split_store,
             max_concurrent_split_uploads_index,
             max_concurrent_split_uploads_merge,
-            queues_dir_path,
+            queues_dir_path: self.queue_dir_path.clone(),
+            cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
             merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
@@ -336,7 +353,7 @@ impl IndexingService {
                     ActorState::Idle | ActorState::Paused | ActorState::Processing => true,
                     ActorState::Success => {
                         info!(
-                            index_id=%pipeline_id.index_config_id.index_id,
+                            index_id=%pipeline_id.index_uid.index_id(),
                             source_id=%pipeline_id.source_id,
                             pipeline_ord=%pipeline_id.pipeline_ord,
                             "Indexing pipeline exited successfully."
@@ -349,7 +366,7 @@ impl IndexingService {
                         // This should never happen: Indexing Pipelines are not supposed to fail,
                         // and are themselves in charge of supervising the pipeline actors.
                         error!(
-                            index_id=%pipeline_id.index_config_id.index_id,
+                            index_id=%pipeline_id.index_uid.index_id(),
                             source_id=%pipeline_id.source_id,
                             pipeline_ord=%pipeline_id.pipeline_ord,
                             "Indexing pipeline exited with failure. This should never happen."
@@ -378,7 +395,7 @@ impl IndexingService {
                 // We kill the merge pipeline to avoid waiting a merge operation to finish as it can
                 // be long.
                 info!(
-                    index_id=%merge_pipeline_id_to_shut_down.index_id.index_id,
+                    index_id=%merge_pipeline_id_to_shut_down.index_uid.index_id(),
                     source_id=%merge_pipeline_id_to_shut_down.source_id,
                     "No more indexing pipeline on this index and source, killing merge pipeline."
                 );
@@ -393,35 +410,6 @@ impl IndexingService {
         self.counters.num_running_merge_pipelines = self.merge_pipeline_handles.len();
         self.update_cluster_running_indexing_tasks().await;
         Ok(())
-    }
-
-    async fn get_or_create_indexing_directory(
-        &mut self,
-        pipeline_id: &IndexingPipelineId,
-        indexing_dir_path: PathBuf,
-    ) -> Result<ScratchDirectory, IndexingServiceError> {
-        let key = (
-            pipeline_id.index_config_id.clone(),
-            pipeline_id.source_id.clone(),
-        );
-        if let Some(indexing_directory) = self
-            .indexing_directories
-            .get(&key)
-            .and_then(WeakScratchDirectory::upgrade)
-        {
-            return Ok(indexing_directory);
-        }
-        let indexing_directory_path = indexing_dir_path
-            .join(&pipeline_id.index_config_id.index_id)
-            .join(pipeline_id.index_config_id.incarnation_id.to_string())
-            .join(&pipeline_id.source_id);
-        let indexing_directory = ScratchDirectory::create_in_dir(indexing_directory_path)
-            .await
-            .map_err(IndexingServiceError::InvalidParams)?;
-
-        self.indexing_directories
-            .insert(key, indexing_directory.downgrade());
-        Ok(indexing_directory)
     }
 
     async fn get_or_create_merge_pipeline(
@@ -465,11 +453,7 @@ impl IndexingService {
             let pipeline_ord = pipeline_ordinals.entry(indexing_task).or_insert(0);
             let pipeline_id = IndexingPipelineId {
                 node_id: self.node_id.clone(),
-                index_config_id: IndexConfigId {
-                    index_id: indexing_task.index_id.clone(),
-                    incarnation_id: Ulid::from_string(indexing_task.incarnation_id.as_str())
-                        .expect("Malformed incarnation_id"),
-                },
+                index_uid: IndexUid::from(indexing_task.index_uid.to_string()),
                 source_id: indexing_task.source_id.clone(),
                 pipeline_ord: *pipeline_ord,
             };
@@ -518,13 +502,13 @@ impl IndexingService {
         // We fetch the new indexes metadata.
         let indexes_metadata_futures = added_pipeline_ids
             .iter()
-            // No need to emit two request for the same `index_config_id`
-            .unique_by(|pipeline_id| pipeline_id.index_config_id.clone())
-            .map(|pipeline_id| self.index_metadata(ctx, &pipeline_id.index_config_id.index_id));
+            // No need to emit two request for the same `index_uid`
+            .unique_by(|pipeline_id| pipeline_id.index_uid.clone())
+            .map(|pipeline_id| self.index_metadata(ctx, pipeline_id.index_uid.index_id()));
         let indexes_metadata = try_join_all(indexes_metadata_futures).await?;
-        let indexes_metadata_by_index_id: HashMap<IndexConfigId, IndexMetadata> = indexes_metadata
+        let indexes_metadata_by_index_id: HashMap<IndexUid, IndexMetadata> = indexes_metadata
             .into_iter()
-            .map(|index_metadata| (index_metadata.index_config_id(), index_metadata))
+            .map(|index_metadata| (index_metadata.index_uid.clone(), index_metadata))
             .collect();
 
         let mut failed_spawning_pipeline_ids: Vec<IndexingPipelineId> = Vec::new();
@@ -534,7 +518,7 @@ impl IndexingService {
             info!(pipeline_id=?new_pipeline_id, "Spawning indexing pipeline.");
 
             if let Some(index_metadata) =
-                indexes_metadata_by_index_id.get(&new_pipeline_id.index_config_id)
+                indexes_metadata_by_index_id.get(&new_pipeline_id.index_uid)
             {
                 if let Some(source_config) = index_metadata.sources.get(&new_pipeline_id.source_id)
                 {
@@ -556,9 +540,8 @@ impl IndexingService {
                 }
             } else {
                 error!(
-                    "Failed to spawn pipeline: index {} with incarnation id {} no longer exists.",
-                    &new_pipeline_id.index_config_id.index_id,
-                    &new_pipeline_id.index_config_id.incarnation_id
+                    "Failed to spawn pipeline: index {} no longer exists.",
+                    &new_pipeline_id.index_uid.to_string()
                 );
                 failed_spawning_pipeline_ids.push(new_pipeline_id.clone());
             }
@@ -609,17 +592,12 @@ impl IndexingService {
             .indexing_pipeline_handles
             .keys()
             .map(|pipeline_id| IndexingTask {
-                index_id: pipeline_id.index_config_id.index_id.clone(),
+                index_uid: pipeline_id.index_uid.to_string(),
                 source_id: pipeline_id.source_id.clone(),
-                incarnation_id: pipeline_id.index_config_id.incarnation_id.to_string(),
             })
             // Sort indexing tasks so it's more readable for debugging purpose.
             .sorted_by(|left, right| {
-                (&left.index_id, &left.source_id, &left.incarnation_id).cmp(&(
-                    &right.index_id,
-                    &right.source_id,
-                    &right.incarnation_id,
-                ))
+                (&left.index_uid, &left.source_id).cmp(&(&right.index_uid, &right.source_id))
             })
             .collect_vec();
 
@@ -813,6 +791,7 @@ impl Handler<Healthz> for IndexingService {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
+    use std::path::Path;
     use std::time::Duration;
 
     use chitchat::transport::ChannelTransport;
@@ -820,7 +799,9 @@ mod tests {
     use quickwit_cluster::create_cluster_for_test;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{IngestApiConfig, SourceConfig, SourceParams, VecSourceParams};
+    use quickwit_config::{
+        IngestApiConfig, SourceConfig, SourceInputFormat, SourceParams, VecSourceParams,
+    };
     use quickwit_ingest::{init_ingest_api, CreateQueueIfNotExistsRequest};
     use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore};
     use quickwit_proto::indexing_api::IndexingTask;
@@ -828,13 +809,13 @@ mod tests {
     use super::*;
 
     async fn spawn_indexing_service(
+        data_dir_path: &Path,
         universe: &Universe,
         metastore: Arc<dyn Metastore>,
-        cluster: Arc<Cluster>,
+        cluster: Cluster,
     ) -> (Mailbox<IndexingService>, ActorHandle<IndexingService>) {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
+        let num_blocking_threads = 1;
         let storage_resolver = StorageUriResolver::for_test();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         let ingest_api_service =
@@ -843,8 +824,9 @@ mod tests {
                 .unwrap();
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
-            data_dir_path,
+            data_dir_path.to_path_buf(),
             indexer_config,
+            num_blocking_threads,
             cluster,
             metastore,
             Some(ingest_api_service),
@@ -859,11 +841,9 @@ mod tests {
     async fn test_indexing_service_spawn_observe_detach() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
@@ -874,15 +854,15 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        metastore.create_index(index_config).await.unwrap();
+        let index_uid = metastore.create_index(index_config).await.unwrap();
         metastore
-            .add_source(&index_id, SourceConfig::ingest_api_default())
+            .add_source(index_uid.clone(), SourceConfig::ingest_api_default())
             .await
             .unwrap();
         let universe = Universe::with_accelerated_time();
+        let temp_dir = tempfile::tempdir().unwrap();
         let (indexing_service, indexing_service_handle) =
-            spawn_indexing_service(&universe, metastore, cluster).await;
-
+            spawn_indexing_service(temp_dir.path(), &universe, metastore, cluster).await;
         let observation = indexing_service_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_failed_pipelines, 0);
@@ -896,6 +876,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         let spawn_pipeline_msg = SpawnPipeline {
             index_id: index_id.clone(),
@@ -910,7 +891,7 @@ mod tests {
             .ask_for_res(spawn_pipeline_msg)
             .await
             .unwrap_err();
-        assert_eq!(pipeline_id.index_config_id.index_id, index_id);
+        assert_eq!(pipeline_id.index_uid.index_id(), index_id);
         assert_eq!(pipeline_id.source_id, source_config_0.source_id);
         assert_eq!(pipeline_id.node_id, "test-node");
         assert_eq!(pipeline_id.pipeline_ord, 0);
@@ -957,11 +938,9 @@ mod tests {
     async fn test_indexing_service_supervise_pipelines() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
@@ -975,8 +954,9 @@ mod tests {
         metastore.create_index(index_config).await.unwrap();
 
         let universe = Universe::new();
+        let temp_dir = tempfile::tempdir().unwrap();
         let (indexing_service, indexing_server_handle) =
-            spawn_indexing_service(&universe, metastore, cluster).await;
+            spawn_indexing_service(temp_dir.path(), &universe, metastore, cluster).await;
 
         // Test `supervise_pipelines`
         let source_config = SourceConfig {
@@ -990,6 +970,7 @@ mod tests {
                 partition: "0".to_string(),
             }),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         indexing_service
             .ask_for_res(SpawnPipeline {
@@ -1015,11 +996,9 @@ mod tests {
     async fn test_indexing_service_apply_plan() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
@@ -1030,14 +1009,20 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        metastore.create_index(index_config).await.unwrap();
+        let index_uid = metastore.create_index(index_config).await.unwrap();
         metastore
-            .add_source(&index_id, SourceConfig::ingest_api_default())
+            .add_source(index_uid.clone(), SourceConfig::ingest_api_default())
             .await
             .unwrap();
         let universe = Universe::new();
-        let (indexing_service, indexing_service_handle) =
-            spawn_indexing_service(&universe, metastore.clone(), cluster.clone()).await;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let (indexing_service, indexing_service_handle) = spawn_indexing_service(
+            temp_dir.path(),
+            &universe,
+            metastore.clone(),
+            cluster.clone(),
+        )
+        .await;
 
         // Test `apply plan`.
         let source_config_1 = SourceConfig {
@@ -1047,23 +1032,21 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         metastore
-            .add_source(&index_id, source_config_1.clone())
+            .add_source(index_uid.clone(), source_config_1.clone())
             .await
             .unwrap();
         let metadata = metastore.index_metadata(index_id.as_str()).await.unwrap();
-        let incarnation_id = metadata.incarnation_id.to_string();
         let indexing_tasks = vec![
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
         ];
         indexing_service
@@ -1085,32 +1068,29 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         metastore
-            .add_source(&index_id, source_config_2.clone())
+            .add_source(index_uid.clone(), source_config_2.clone())
             .await
             .unwrap();
 
         let indexing_tasks = vec![
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: source_config_2.source_id.clone(),
-                incarnation_id: incarnation_id.clone(),
             },
         ];
         indexing_service
@@ -1127,26 +1107,36 @@ mod tests {
             4
         );
 
-        let self_member = &cluster.ready_members_from_chitchat_state().await[0];
+        cluster
+            .wait_for_ready_members(
+                |members| {
+                    members
+                        .iter()
+                        .any(|member| member.indexing_tasks.len() == indexing_tasks.len())
+                },
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+
+        let self_member = &cluster.ready_members().await[0];
+
         assert_eq!(
             HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
             HashSet::from_iter(indexing_tasks.iter())
         );
         let indexing_tasks = vec![
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
-                incarnation_id: incarnation_id.clone(),
             },
             IndexingTask {
-                index_id: index_id.to_string(),
+                index_uid: metadata.index_uid.to_string(),
                 source_id: source_config_2.source_id.clone(),
-                incarnation_id: incarnation_id.clone(),
             },
         ];
         indexing_service
@@ -1159,15 +1149,30 @@ mod tests {
         assert_eq!(indexing_service_obs.num_running_pipelines, 3);
         assert_eq!(indexing_service_obs.num_deleted_queues, 0);
         assert_eq!(indexing_service_obs.num_delete_queue_failures, 0);
+
         indexing_service_handle.process_pending_and_observe().await;
-        let self_member = &cluster.ready_members_from_chitchat_state().await[0];
+
+        cluster
+            .wait_for_ready_members(
+                |members| {
+                    members
+                        .iter()
+                        .any(|member| member.indexing_tasks.len() == indexing_tasks.len())
+                },
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+
+        let self_member = &cluster.ready_members().await[0];
+
         assert_eq!(
             HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
             HashSet::from_iter(indexing_tasks.iter())
         );
 
         // Delete index and apply empty plan
-        metastore.delete_index(&index_id).await.unwrap();
+        metastore.delete_index(index_uid).await.unwrap();
         indexing_service
             .ask_for_res(ApplyIndexingPlanRequest {
                 indexing_tasks: Vec::new(),
@@ -1186,11 +1191,9 @@ mod tests {
     async fn test_indexing_service_shut_down_merge_pipeline_when_no_indexing_pipeline() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
@@ -1208,10 +1211,11 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
-        metastore.create_index(index_config).await.unwrap();
+        let index_uid = metastore.create_index(index_config).await.unwrap();
         metastore
-            .add_source(&index_id, source_config.clone())
+            .add_source(index_uid.clone(), source_config.clone())
             .await
             .unwrap();
 
@@ -1219,6 +1223,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
+        let num_blocking_threads = 1;
         let storage_resolver = StorageUriResolver::for_test();
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
@@ -1230,6 +1235,7 @@ mod tests {
             "test-node".to_string(),
             data_dir_path,
             indexer_config,
+            num_blocking_threads,
             cluster.clone(),
             metastore.clone(),
             Some(ingest_api_service),
@@ -1311,11 +1317,9 @@ mod tests {
     async fn test_indexing_service_does_not_shut_down_pipelines_on_indexing_pipeline_freeze() {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let index_id = append_random_suffix("test-indexing-service-indexing-pipeline-timeout");
         let index_uri = format!("ram:///indexes/{index_id}");
         let mut index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
@@ -1326,6 +1330,7 @@ mod tests {
             enabled: true,
             source_params: SourceParams::void(),
             transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
         index_metadata
             .sources
@@ -1340,8 +1345,9 @@ mod tests {
             .returning(move |_| Ok(index_metadata.clone()));
         metastore.expect_list_splits().returning(|_| Ok(Vec::new()));
         let universe = Universe::new();
+        let temp_dir = tempfile::tempdir().unwrap();
         let (indexing_service, indexing_service_handle) =
-            spawn_indexing_service(&universe, Arc::new(metastore), cluster).await;
+            spawn_indexing_service(temp_dir.path(), &universe, Arc::new(metastore), cluster).await;
         let _pipeline_id = indexing_service
             .ask_for_res(SpawnPipeline {
                 index_id: index_id.clone(),
@@ -1378,17 +1384,15 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
         let transport = ChannelTransport::default();
-        let cluster = Arc::new(
-            create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-                .await
-                .unwrap(),
-        );
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
             .await
             .unwrap();
-        metastore.create_index(index_config).await.unwrap();
+        let index_uid = metastore.create_index(index_config).await.unwrap();
 
         // Setup ingest api objects
         let universe = Universe::with_accelerated_time();
@@ -1409,11 +1413,13 @@ mod tests {
         // Setup `IndexingService`
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
+        let num_blocking_threads = 1;
         let storage_resolver = StorageUriResolver::for_test();
         let mut indexing_server = IndexingService::new(
             "test-ingest-api-gc-node".to_string(),
             data_dir_path,
             indexer_config,
+            num_blocking_threads,
             cluster.clone(),
             metastore.clone(),
             Some(ingest_api_service.clone()),
@@ -1425,7 +1431,7 @@ mod tests {
         indexing_server.run_ingest_api_queues_gc().await.unwrap();
         assert_eq!(indexing_server.counters.num_deleted_queues, 0);
 
-        metastore.delete_index(&index_id).await.unwrap();
+        metastore.delete_index(index_uid).await.unwrap();
 
         indexing_server.run_ingest_api_queues_gc().await.unwrap();
         assert_eq!(indexing_server.counters.num_deleted_queues, 1);

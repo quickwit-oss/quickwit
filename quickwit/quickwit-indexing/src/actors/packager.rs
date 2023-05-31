@@ -28,6 +28,7 @@ use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use quickwit_doc_mapper::NamedField;
@@ -46,7 +47,6 @@ const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")
 use crate::actors::Uploader;
 use crate::models::{
     EmptySplit, IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch,
-    ScratchDirectory,
 };
 
 /// The role of the packager is to get an index writer and
@@ -188,7 +188,7 @@ impl Handler<EmptySplit> for Packager {
 /// returns true iff merge is required to reach a state where
 fn list_split_files(
     segment_metas: &[SegmentMeta],
-    scratch_directory: &ScratchDirectory,
+    scratch_directory: &TempDirectory,
 ) -> io::Result<Vec<PathBuf>> {
     let mut index_files = vec![scratch_directory.path().join("meta.json")];
 
@@ -335,20 +335,19 @@ mod tests {
     use std::ops::RangeInclusive;
 
     use quickwit_actors::{ObservationType, Universe};
-    use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-    use quickwit_metastore::IndexConfigId;
+    use quickwit_proto::IndexUid;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, Index};
     use tracing::Span;
 
     use super::*;
-    use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
+    use crate::models::{IndexingPipelineId, PublishLock, SplitAttrs};
 
     fn make_indexed_split_for_test(
         segment_timestamps: &[DateTime],
     ) -> anyhow::Result<IndexedSplit> {
-        let split_scratch_directory = ScratchDirectory::for_test();
+        let split_scratch_directory = TempDirectory::for_test();
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
         let timestamp_field = schema_builder.add_u64_field("timestamp", FAST);
@@ -364,7 +363,7 @@ mod tests {
             schema_builder.add_bool_field("tag_bool", NumericOptions::default().set_indexed());
         let schema = schema_builder.build();
         let mut index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
-        index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+        index.set_tokenizers(quickwit_query::get_quickwit_tokenizer_manager().clone());
         let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
         let mut timerange_opt: Option<RangeInclusive<DateTime>> = None;
         let mut num_docs = 0;
@@ -395,7 +394,7 @@ mod tests {
         }
         index_writer.commit()?;
         let pipeline_id = IndexingPipelineId {
-            index_config_id: IndexConfigId::for_test("test-index"),
+            index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,

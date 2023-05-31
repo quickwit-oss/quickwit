@@ -128,6 +128,7 @@ curl -XPOST "http://localhost:4318/v1/logs" -H "Content-Type: application/json" 
          "log_records": [
            {
              "time_unix_nano": "1678974011000000000",
+             "observed_time_unix_nano": "1678974011000000000",
              "name": "test",
              "severity_text": "INFO"
            }

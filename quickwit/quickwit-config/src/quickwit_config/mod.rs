@@ -52,9 +52,15 @@ pub struct IndexerConfig {
     /// Protocol (OTLP).
     #[serde(default = "IndexerConfig::default_enable_otlp_endpoint")]
     pub enable_otlp_endpoint: bool,
+    #[serde(default = "IndexerConfig::default_enable_cooperative_indexing")]
+    pub enable_cooperative_indexing: bool,
 }
 
 impl IndexerConfig {
+    fn default_enable_cooperative_indexing() -> bool {
+        false
+    }
+
     fn default_enable_otlp_endpoint() -> bool {
         !(cfg!(feature = "test") || cfg!(feature = "testsuite"))
     }
@@ -74,6 +80,7 @@ impl IndexerConfig {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> anyhow::Result<Self> {
         let indexer_config = IndexerConfig {
+            enable_cooperative_indexing: false,
             enable_otlp_endpoint: true,
             split_store_max_num_bytes: Byte::from_bytes(1_000_000),
             split_store_max_num_splits: 3,
@@ -86,6 +93,7 @@ impl IndexerConfig {
 impl Default for IndexerConfig {
     fn default() -> Self {
         Self {
+            enable_cooperative_indexing: Self::default_enable_cooperative_indexing(),
             enable_otlp_endpoint: Self::default_enable_otlp_endpoint(),
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
@@ -101,6 +109,7 @@ pub struct SearcherConfig {
     pub aggregation_bucket_limit: u32,
     pub fast_field_cache_capacity: Byte,
     pub split_footer_cache_capacity: Byte,
+    pub partial_request_cache_capacity: Byte,
     pub max_num_concurrent_split_searches: usize,
     pub max_num_concurrent_split_streams: usize,
 }
@@ -110,6 +119,7 @@ impl Default for SearcherConfig {
         Self {
             fast_field_cache_capacity: Byte::from_bytes(1_000_000_000), // 1G
             split_footer_cache_capacity: Byte::from_bytes(500_000_000), // 500M
+            partial_request_cache_capacity: Byte::from_bytes(64_000_000), // 64M
             max_num_concurrent_split_streams: 100,
             max_num_concurrent_split_searches: 100,
             aggregation_memory_limit: Byte::from_bytes(500_000_000), // 500M

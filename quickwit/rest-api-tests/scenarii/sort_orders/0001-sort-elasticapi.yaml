@@ -1,0 +1,38 @@
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/sortorder/_search
+json:
+  query:
+    match_all: {}
+  sort:
+    - count: {"order" : "desc"}
+expected:
+  hits:
+    total:
+      value: 5
+      relation: "eq"
+    hits:
+      - fields: { "count": 15, "id": 2 }
+      - fields: { "count": 10, "id": 1 }
+      - fields: {"count": -2.5, "id": 4}
+      - fields: { "id": 5 }
+      - fields: { "id": 3 }
+---
+endpoint: _elastic/sortorder/_search
+json:
+  query:
+    match_all: {}
+  sort:
+    - count: {"order" : "asc"}
+expected:
+  hits:
+    total:
+      value: 5
+      relation: "eq"
+    hits:
+      - fields: {"count": -2.5, "id": 4}
+      - fields: {"count": 10, "id": 1 }
+      - fields: {"count": 15, "id": 2 }
+      - fields: {"id": 3}
+      - fields: {"id": 5}

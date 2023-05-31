@@ -1,0 +1,67 @@
+json:
+  query:
+    match:
+      type:
+        query:  PushEvent
+expected:
+  hits:
+    total:
+      value: 60
+---
+json:
+  query:
+    match:
+      # It is strangely possible to supply the
+      # query directly as a string.
+      type: PushEvent
+expected:
+  hits:
+    total:
+      value: 60
+---
+json:
+  query:
+    match:
+      type: "," # this will result in a zero-ter query
+expected:
+  hits:
+    total:
+      value: 0
+---
+json:
+  query:
+    match:
+      type:
+        query: ", " # this will result in a zero term query.
+        zero_terms_query: all
+expected:
+  hits:
+    total:
+      value: 100
+---
+json:
+  query:
+    match:
+      payload.commits.message:
+        query: "intial commit" # by default this is a disjunction
+expected:
+  hits:
+    total:
+      value: 6
+---
+json:
+  query:
+    match:
+      payload.commits.message:
+        query: "intial commit" # by default this is a disjunction
+        operator: AND
+expected:
+  hits:
+    total:
+      value: 1
+
+
+
+
+
+

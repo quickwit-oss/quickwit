@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-telemetry"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -24,3 +24,6 @@ reqwest = { workspace = true }
 # This is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.
 encoding_rs = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

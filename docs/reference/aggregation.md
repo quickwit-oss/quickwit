@@ -64,7 +64,7 @@ Request
 Response
 ```json
 ...
-"aggs": {
+"aggregations": {
     "sites_and_aqi": {
       "buckets": [
         {
@@ -91,6 +91,7 @@ Response
 
  - Bucket
     - [Histogram](#histogram)
+    - [DateHistogram](#date-histogram)
     - [Range](#range)
     - [Terms](#terms)
 - Metric
@@ -100,6 +101,7 @@ Response
     - [Min](#min)
     - [Stats](#stats)
     - [Sum](#sum)
+    - [Percentiles](#percentiles)
 
 
 ## Bucket Aggregations
@@ -116,10 +118,12 @@ Example request, histogram with stats in each bucket:
 
 #### Aggregating on datetime fields
 
-Fields of type `datetime` are handled the same way as any numeric field. However, all values in the requests such as intervals, offsets, bounds, and range boundaries need to be expressed in microseconds.
+See [`DateHistogram`](date-histogram) for more convenient API for `datetime` fields.
 
-Histogram with one bucket per day on a `datetime` field. `interval` needs to be provided in microseconds. 
-In the following example, we grouped documents per day (`1 day = 86400000000 microseconds`).
+Fields of type `datetime` are handled the same way as any numeric field. However, all values in the requests such as intervals, offsets, bounds, and range boundaries need to be expressed in milliseconds.
+
+Histogram with one bucket per day on a `datetime` field. `interval` needs to be provided in milliseconds. 
+In the following example, we grouped documents per day (`1 day = 86400000 milliseconds`).
 The returned format is currently fixed at `Rfc3339`.
 
 ##### Request
@@ -131,7 +135,7 @@ The returned format is currently fixed at `Rfc3339`.
     "datetime_histogram":{
       "histogram":{
         "field": "datetime",
-        "interval": 86400000000
+        "interval": 86400000
       }
     }
   }
@@ -196,7 +200,7 @@ The value range of the buckets can bet extended via extended_bounds or limit the
 
 The field to aggregate on. 
 
-Currently this aggregation only works on single value fast fields of type `u64`, `f64`, `i64`, and `datetime`.
+Currently this aggregation only works on fast fields of type `u64`, `f64`, `i64`, and `datetime`.
 
 ###### **keyed**
 
@@ -283,6 +287,104 @@ Cannot be set in conjunction with `min_doc_count` > 0, since the empty buckets f
 }
 ```
 
+### DateHistogram
+
+DateHistogram is similar to `Histogram`, but it can only be used with [datetime type](../configuration/index-config#datetime-type) and provides a more convenient API to define intervals.
+
+Like the histogram, values are rounded down into the closest bucket.
+
+The returned format is currently fixed at `Rfc3339`.
+
+##### Limitations
+Only fixed time intervals via the `fixed_interval` parameter are supported. 
+The parameters `interval` and `calendar_interval` are unsupported.
+
+##### Request
+```json skip
+{
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "sales_over_time": {
+            "date_histogram": {
+                "field": "sold_at",
+                "fixed_interval": "30d"
+                "offset": "-4d"
+            }
+        }
+    }
+}
+```
+##### Response
+
+```json skip
+{
+    ...
+    "aggregations": {
+        "sales_over_time" : {
+            "buckets" : [{
+                "key_as_string" : "2015-01-01T00:00:00Z",
+                "key" : 1420070400000,
+                "doc_count" : 4
+            }]
+        }
+    }
+}
+```
+
+
+#### Parameters
+
+###### **field**
+
+The field to aggregate on. 
+
+Currently this aggregation only works on fast fields of type `datetime`.
+
+###### **keyed**
+
+Change response format from an array to a hashmap, `key` in the bucket will be the `key` in the hashmap.
+
+###### **interval**
+
+The interval to chunk your data range. Each bucket spans a value range of [0..interval). Must be larger than 0.
+
+Fixed intervals are configured with the `fixed_interval` parameter.
+Fixed intervals are a fixed number of SI units and
+never deviate, regardless of where they fall on the calendar. One second is always
+composed of 1000ms. This allows fixed intervals to be specified in any multiple of the
+supported units. However, it means fixed intervals cannot express other units such as
+months, since the duration of a month is not a fixed quantity. Attempting to specify a
+calendar interval like month or quarter will return an Error.
+
+The accepted units for fixed intervals are:
+* `ms`: milliseconds
+* `s`: seconds. Defined as 1000 milliseconds each.
+* `m`: minutes. Defined as 60 seconds each (60_000 milliseconds).
+* `h`: hours. Defined as 60 minutes each (3_600_000 milliseconds).
+* `d`: days. Defined as 24 hours (86_400_000 milliseconds).
+
+Fractional time values are not supported, but this can be addressed by shifting to another
+time unit (e.g., `1.5h` could instead be specified as `90m`).
+
+###### **offset**
+
+Intervals implicitly defines an absolute grid of buckets `[interval * k, interval * (k + 1))`.
+Offset makes it possible to shift this grid into `[offset + interval * k, offset + interval (k + 1))`. Offset has to be in the range [0, interval).
+
+This is especially useful when using `fixed_interval`, to shift the first bucket e.g. at the start of the year.
+
+The `offset` parameter is has the same syntax as the `fixed_interval` parameter, but also allows for negative values.
+
+###### **min_doc_count**
+
+The minimum number of documents in a bucket to be returned. Defaults to 0.
+
+###### **hard_bounds**
+Same as in [`Histogram`](#hard_bounds) but `min` and `max` parameters need to be set as timestamp with milliseconds precision.
+
+###### **extended_bounds**
+Same as in [`Histogram`](#extended_bounds) but `min` and `max` parameters need to be set as timestamp with milliseconds precision.
 
 ### Range
 
@@ -290,56 +392,73 @@ Provide user-defined buckets to aggregate on. Two special buckets will automatic
 The provided buckets have to be continuous. During the aggregation, the values extracted from the fast_field field will be checked against each bucket range.
 Note that this aggregation includes the from value and excludes the to value for each range.
 
+#### Limitations/Compatibility
+
+Overlapping ranges are not yet supported.
+
+##### Request
 ```json skip
 {
     "query": "*",
     "max_hits": 0,
     "aggs": {
-        "my_ranges": {
+        "my_scores": {
             "field": "score",
             "ranges": [
-                { "to": 3.0 },
-                { "from": 3.0, "to": 7.0 },
-                { "from": 7.0, "to": 20.0 },
-                { "from": 20.0 }
+                { "to": 3.0, "key": "low" },
+                { "from": 3.0, "to": 7.0, "key": "medium-low" },
+                { "from": 7.0, "to": 20.0, "key": "medium-high" },
+                { "from": 20.0, "key": "high" }
             ]
         }
     }
 }
 ```
 
-#### Limitations/Compatibility
+##### Response
 
-Overlapping ranges are not yet supported.
+```json skip
+{
+    ...
+    "aggregations": {
+        "my_scores" : {
+            "buckets": [
+                {"key": "low", "doc_count": 0, "to": 3.0},
+                {"key": "medium-low", "doc_count": 10, "from": 3.0, "to": 7.0},
+                {"key": "medium-high", "doc_count": 10, "from": 7.0, "to": 20.0},
+                {"key": "high", "doc_count": 80, "from": 20.0}
+            ]
+        }
+    }
+}
+```
 
 #### Parameters
 
 ###### **keyed**
 
 Change response format from an array to a hashmap, the serialized range will be the `key` in the hashmap.
+If a custom `key` is provided, it will be used instead.
 
 ###### **field**
 
 The field to aggregate on. 
 
-Currently this aggregation only works on single value fast fields of type `u64`, `f64`, `i64`, and `datetime`.
+Currently this aggregation only works on fast fields of type `u64`, `f64`, `i64`, and `datetime`.
 
 ###### **ranges**
 
 The list of buckets, with `from` and `to` values. 
-The from value is inclusive in the range.
-The to value is not inclusive in the range.
+The `from` value is inclusive in the range.
+The `to` value is not inclusive in the range.
+`key` is optional, and will be used as the bucket key in the response.
 
 The first bucket can omit the `from` value, and the last bucket the `to` value.
 Note that this aggregation includes the `from` value and excludes the `to` value for each range. Extra buckets will be created until the first `to`, and last `from`, if necessary.
 
-
 ### Terms
 
 Creates a bucket for every unique term and counts the number of occurrences.
-
-Note that `doc_count` in the response buckets equals term count here.
-If the text is untokenized and single value, that means one term per document and therefore it is in fact doc count.
 
 Request
 ```json skip
@@ -357,7 +476,7 @@ Request
 Response
 ```json
 ...
-"aggs": {
+"aggregations": {
     "genres": {
         "doc_count_error_upper_bound": 0,   
         "sum_other_doc_count": 0,           
@@ -397,7 +516,7 @@ into `split_size`.
 
 The field to aggregate on.
 
-Currently this aggregation only works on fast `text` fields.
+Currently term aggregation only works on fast fields of type `text`, `f64`, `i64` and `u64`.
 
 ###### **size**
 
@@ -505,7 +624,7 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
     "hits": [],
     "elapsed_time_micros": 101942,
     "errors": [],
-    "aggs": {
+    "aggregations": {
         "average_price": {
             "value": 133.7
         }
@@ -538,7 +657,7 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
     "hits": [],
     "elapsed_time_micros": 102956,
     "errors": [],
-    "aggs": {
+    "aggregations": {
         "price_count": {
             "value": 9582098
         }
@@ -571,7 +690,7 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
     "hits": [],
     "elapsed_time_micros": 101543,
     "errors": [],
-    "aggs": {
+    "aggregations": {
         "max_price": {
             "value": 1353.23
         }
@@ -604,7 +723,7 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
     "hits": [],
     "elapsed_time_micros": 102342,
     "errors": [],
-    "aggs": {
+    "aggregations": {
         "min_price": {
             "value": 0.01
         }
@@ -639,7 +758,7 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
     "hits": [],
     "elapsed_time_micros": 65297,
     "errors": [],
-    "aggs": {
+    "aggregations": {
         "timestamp_stats": {
             "avg": 1462320207.9803998,
             "count": 10000783,
@@ -677,10 +796,69 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
     "hits": [],
     "elapsed_time_micros": 101142,
     "errors": [],
-    "aggs": {
+    "aggregations": {
         "total_price": {
             "value": 12966782476.54
         }
     }
 }
 ```
+
+
+### Percentiles
+The percentiles aggregation is a useful tool for understanding the distribution of a data set.
+It calculates the values below which a given percentage of the data falls.
+For instance, the 95th percentile indicates the value below which 95% of the data points can be found.
+
+This aggregation can be particularly interesting for analyzing website or service response times.
+For example, if the 95th percentile website load time is significantly higher than the median, this indicates
+that a small percentage of users are experiencing much slower load times than the majority.
+
+To use the percentiles aggregation, you'll need to provide a field to aggregate on. 
+In the case of website load times, this would typically be a field containing the duration of time it takes for the site to load.
+
+**Request**
+```json skip
+{
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "loading_times": {
+            "percentiles": {
+                "field": "load_time"
+                "percents": [90, 95, 99]
+            }
+        }
+    }
+}
+```
+
+**Response**
+```JSON
+{
+    "num_hits": 9582098,
+    "hits": [],
+    "elapsed_time_micros": 101142,
+    "errors": [],
+    "aggregations": {
+        "loading_times": {
+            "values": {
+                "90.0": 33.4,
+                "95.0": 83.4,
+                "99.0": 230.3
+            }
+        }
+    }
+}
+```
+
+`percents` may be omitted, it will default to `[1, 5, 25, 50 (median), 75, 95, and 99]`.
+
+#### Estimating Percentiles
+
+While percentiles provide valuable insights into the distribution of data, it's important to understand that they are often estimates.
+This is because calculating exact percentiles for large data sets can be computationally expensive and time-consuming.
+
+
+
+

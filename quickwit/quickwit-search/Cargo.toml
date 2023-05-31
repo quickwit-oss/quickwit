@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-search"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -21,6 +21,8 @@ itertools = { workspace = true }
 lru = { workspace = true }
 mockall = { workspace = true }
 once_cell = { workspace = true }
+postcard = { workspace = true }
+prost = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -30,6 +32,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
+tower = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 opentelemetry = { workspace = true }
@@ -44,6 +47,7 @@ quickwit-grpc-clients = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true }
 quickwit-storage = { workspace = true }
 
 [dev-dependencies]

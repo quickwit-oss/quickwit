@@ -28,7 +28,7 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use once_cell::sync::Lazy;
 use quickwit_common::run_checklist;
-use quickwit_common::runtimes::RuntimesConfiguration;
+use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig, DEFAULT_QW_CONFIG_PATH};
@@ -44,6 +44,7 @@ pub mod cli;
 pub mod index;
 #[cfg(feature = "jemalloc")]
 pub mod jemalloc;
+pub mod metrics;
 pub mod service;
 pub mod source;
 pub mod split;
@@ -63,7 +64,7 @@ pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
 /// Regular expression representing a valid duration with unit.
 pub const DURATION_WITH_UNIT_PATTERN: &str = r#"^(\d{1,3})(s|m|h|d)$"#;
 
-fn config_cli_arg<'a>() -> Arg<'a> {
+fn config_cli_arg() -> Arg {
     Arg::new("config")
         .long("config")
         .help("Config file location")
@@ -73,7 +74,7 @@ fn config_cli_arg<'a>() -> Arg<'a> {
         .display_order(1)
 }
 
-fn cluster_endpoint_arg<'a>() -> Arg<'a> {
+fn cluster_endpoint_arg() -> Arg {
     arg!(--"endpoint" <QW_CLUSTER_ENDPOINT> "Quickwit cluster endpoint.")
         .default_value("http://127.0.0.1:7280")
         .env("QW_CLUSTER_ENDPOINT")
@@ -101,13 +102,15 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
     }
 }
 
-pub fn start_actor_runtimes(services: &HashSet<QuickwitService>) -> anyhow::Result<()> {
+pub fn start_actor_runtimes(
+    runtimes_config: RuntimesConfig,
+    services: &HashSet<QuickwitService>,
+) -> anyhow::Result<()> {
     if services.contains(&QuickwitService::Indexer)
         || services.contains(&QuickwitService::Janitor)
         || services.contains(&QuickwitService::ControlPlane)
     {
-        let runtime_configuration = RuntimesConfiguration::default();
-        quickwit_common::runtimes::initialize_runtimes(runtime_configuration)
+        quickwit_common::runtimes::initialize_runtimes(runtimes_config)
             .context("Failed to start actor runtimes.")?;
     }
     Ok(())
@@ -140,7 +143,9 @@ pub async fn run_index_checklist(
 
     let index_metadata = metastore.index_metadata(index_id).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let storage = storage_uri_resolver.resolve(index_metadata.index_uri())?;
+    let storage = storage_uri_resolver
+        .resolve(index_metadata.index_uri())
+        .await?;
     checks.push(("storage", storage.check_connectivity().await));
 
     if let Some(source_config) = source_to_check {
@@ -194,6 +199,90 @@ fn prompt_confirmation(prompt: &str, default: bool) -> bool {
     } else {
         println!("Aborting.");
         false
+    }
+}
+
+pub mod busy_detector {
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::time::Instant;
+
+    use once_cell::sync::Lazy;
+    use tracing::debug;
+
+    use crate::metrics::CLI_METRICS;
+
+    // we need that time reference to use an atomic and not a mutex for LAST_UNPARK
+    static TIME_REF: Lazy<Instant> = Lazy::new(Instant::now);
+    static ENABLED: AtomicBool = AtomicBool::new(false);
+
+    const ALLOWED_DELAY_MICROS: u64 = 5000;
+    const DEBUG_SUPPRESSION_MICROS: u64 = 30_000_000;
+
+    // LAST_UNPARK_TIMESTAMP and NEXT_DEBUG_TIMESTAMP are semantically micro-second
+    // precision timestamps, but we use atomics to allow accessing them without locks.
+    thread_local!(static LAST_UNPARK_TIMESTAMP: AtomicU64 = AtomicU64::new(0));
+    static NEXT_DEBUG_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
+    static SUPPRESSED_DEBUG_COUNT: AtomicU64 = AtomicU64::new(0);
+
+    pub fn set_enabled(enabled: bool) {
+        ENABLED.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn thread_unpark() {
+        LAST_UNPARK_TIMESTAMP.with(|time| {
+            let now = Instant::now()
+                .checked_duration_since(*TIME_REF)
+                .unwrap_or_default();
+            time.store(now.as_micros() as u64, Ordering::Relaxed);
+        })
+    }
+
+    pub fn thread_park() {
+        if !ENABLED.load(Ordering::Relaxed) {
+            return;
+        }
+
+        LAST_UNPARK_TIMESTAMP.with(|time| {
+            let now = Instant::now()
+                .checked_duration_since(*TIME_REF)
+                .unwrap_or_default();
+            let now = now.as_micros() as u64;
+            let delta = now - time.load(Ordering::Relaxed);
+            CLI_METRICS
+                .thread_unpark_duration_microseconds
+                .with_label_values([])
+                .observe(delta as f64);
+            if delta > ALLOWED_DELAY_MICROS {
+                emit_debug(delta, now);
+            }
+        })
+    }
+
+    fn emit_debug(delta: u64, now: u64) {
+        if NEXT_DEBUG_TIMESTAMP
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next_debug| {
+                if next_debug < now {
+                    Some(now + DEBUG_SUPPRESSION_MICROS)
+                } else {
+                    None
+                }
+            })
+            .is_err()
+        {
+            // a debug was emited recently, don't emit log for this one
+            SUPPRESSED_DEBUG_COUNT.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+
+        let suppressed = SUPPRESSED_DEBUG_COUNT.swap(0, Ordering::Relaxed);
+        if suppressed == 0 {
+            debug!("Thread wasn't parked for {delta}µs, is the runtime too busy?");
+        } else {
+            debug!(
+                "Thread wasn't parked for {delta}µs, is the runtime too busy? ({suppressed} \
+                 similar messages suppressed)"
+            );
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-config"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial license, contact hello@quickwit.io
@@ -24,8 +24,8 @@ once_cell = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
 serde_with = { workspace = true }
+serde_yaml = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
 utoipa = { workspace = true }
@@ -35,8 +35,8 @@ vrl-stdlib = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 
-[features]
-testsuite = []
-
 [dev-dependencies]
 tokio = { workspace = true }
+
+[features]
+testsuite = []

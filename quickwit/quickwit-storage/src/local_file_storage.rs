@@ -316,7 +316,7 @@ impl Storage for LocalFileStorage {
                 if metadata.is_file() {
                     Ok(metadata.len())
                 } else {
-                    Err(StorageErrorKind::DoesNotExist.with_error(anyhow::anyhow!(
+                    Err(StorageErrorKind::NotFound.with_error(anyhow::anyhow!(
                         "File `{}` is actually a directory.",
                         path.display()
                     )))
@@ -324,7 +324,7 @@ impl Storage for LocalFileStorage {
             }
             Err(err) => {
                 if err.kind() == ErrorKind::NotFound {
-                    Err(StorageErrorKind::DoesNotExist.with_error(err))
+                    Err(StorageErrorKind::NotFound.with_error(err))
                 } else {
                     Err(err.into())
                 }
@@ -337,12 +337,13 @@ impl Storage for LocalFileStorage {
 #[derive(Clone, Debug, Default)]
 pub struct LocalFileStorageFactory {}
 
+#[async_trait]
 impl StorageFactory for LocalFileStorageFactory {
     fn protocol(&self) -> Protocol {
         Protocol::File
     }
 
-    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = LocalFileStorage::from_uri(uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
@@ -384,23 +385,25 @@ mod tests {
         assert_eq!(exist_error.kind(), StorageErrorKind::Unauthorized);
     }
 
-    #[test]
-    fn test_local_file_storage_factory() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_local_file_storage_factory() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let index_uri =
             Uri::from_well_formed(format!("file://{}/foo/bar", temp_dir.path().display()));
         let local_file_storage_factory = LocalFileStorageFactory::default();
-        let local_file_storage = local_file_storage_factory.resolve(&index_uri)?;
+        let local_file_storage = local_file_storage_factory.resolve(&index_uri).await?;
         assert_eq!(local_file_storage.uri(), &index_uri);
 
         let err = local_file_storage_factory
             .resolve(&Uri::from_well_formed("s3://foo/bar"))
+            .await
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let err = local_file_storage_factory
             .resolve(&Uri::from_well_formed("s3://"))
+            .await
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));

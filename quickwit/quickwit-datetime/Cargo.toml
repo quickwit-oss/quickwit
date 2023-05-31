@@ -1,0 +1,19 @@
+[package]
+name = "quickwit-datetime"
+version = "0.6.0"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
+license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
+description = "Datetime Util crate of quickwit"
+repository = "https://github.com/quickwit-oss/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+
+[dependencies]
+itertools = { workspace = true }
+ouroboros = "0.15.5"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tantivy = { workspace = true }
+time = { workspace = true }
+time-fmt = "0.3.8"

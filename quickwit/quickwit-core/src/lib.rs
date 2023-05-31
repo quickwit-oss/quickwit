@@ -21,10 +21,7 @@
 
 mod index;
 
-pub use index::{
-    clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
-    IndexServiceError,
-};
+pub use index::{clear_cache_directory, validate_storage_uri, IndexService, IndexServiceError};
 
 #[cfg(test)]
 mod tests {
@@ -55,7 +52,7 @@ mod tests {
         ]).await?;
         let splits = test_sandbox
             .metastore()
-            .list_all_splits(index_id)
+            .list_all_splits(test_sandbox.index_uid())
             .await?
             .into_iter()
             .map(|metadata| metadata.split_metadata)

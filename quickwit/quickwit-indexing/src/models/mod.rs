@@ -27,11 +27,10 @@ mod merge_planner_message;
 mod merge_scratch;
 mod merge_statistics;
 mod packaged_split;
-mod prepared_doc;
+mod processed_doc;
 mod publish_lock;
 mod publisher_message;
 mod raw_doc_batch;
-mod scratch_directory;
 mod split_attrs;
 
 pub use indexed_split::{
@@ -47,11 +46,10 @@ pub use merge_planner_message::NewSplits;
 pub use merge_scratch::MergeScratch;
 pub use merge_statistics::MergeStatistics;
 pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
-pub use prepared_doc::{PreparedDoc, PreparedDocBatch};
+pub use processed_doc::{ProcessedDoc, ProcessedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};
 pub use publisher_message::SplitsUpdate;
 pub use raw_doc_batch::RawDocBatch;
-pub use scratch_directory::{ScratchDirectory, WeakScratchDirectory};
 pub use split_attrs::{create_split_metadata, SplitAttrs};
 
 #[derive(Clone, Copy, Debug)]
