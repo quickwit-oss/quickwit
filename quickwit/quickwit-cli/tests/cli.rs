@@ -42,7 +42,7 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_common::ChecklistError;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::CLI_INGEST_SOURCE_ID;
+use quickwit_config::{SourceInputFormat, CLI_INGEST_SOURCE_ID};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError, SplitState};
 use serde_json::{json, Number, Value};
 use tokio::time::{sleep, Duration};
@@ -64,6 +64,7 @@ async fn local_ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Res
         config_uri: test_env.config_uri.clone(),
         index_id: test_env.index_id.clone(),
         input_path_opt: Some(input_path.to_path_buf()),
+        input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: true,
         vrl_script: None,
@@ -169,6 +170,7 @@ async fn test_cmd_ingest_on_non_existing_index() {
         config_uri: test_env.config_uri,
         index_id: "index-does-not-exist".to_string(),
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
+        input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: true,
         vrl_script: None,
@@ -198,6 +200,7 @@ async fn test_ingest_docs_cli_keep_cache() {
         config_uri: test_env.config_uri,
         index_id,
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
+        input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: false,
         vrl_script: None,
@@ -224,6 +227,7 @@ async fn test_ingest_docs_cli() {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
+        input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: true,
         vrl_script: None,
@@ -252,6 +256,7 @@ async fn test_ingest_docs_cli() {
         config_uri: test_env.config_uri,
         index_id: test_env.index_id,
         input_path_opt: Some(test_env.data_dir_path.join("file-does-not-exist.json")),
+        input_format: SourceInputFormat::Json,
         overwrite: false,
         clear_cache: true,
         vrl_script: None,
