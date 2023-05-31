@@ -18,109 +18,36 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::str::FromStr;
 
-use base64::display::Base64Display;
-use base64::engine::GeneralPurpose;
-use base64::prelude::{Engine, BASE64_STANDARD};
 use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpValue;
 use quickwit_proto::opentelemetry::proto::common::v1::{
     AnyValue as OtlpAnyValue, ArrayValue as OtlpArrayValue, KeyValue as OtlpKeyValue,
 };
-use serde::{self, de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Number as JsonNumber, Value as JsonValue};
 
 mod logs;
 mod metrics;
+mod span_id;
+mod trace_id;
 mod traces;
 
 pub use logs::{OtlpGrpcLogsService, OTEL_LOGS_INDEX_ID};
+pub use span_id::{SpanId, TryFromSpanIdError};
+pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
     Event, Link, OtlpGrpcTracesService, Span, SpanFingerprint, SpanKind, SpanStatus,
     OTEL_TRACES_INDEX_ID,
 };
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct TraceId([u8; 16]);
-
-impl TraceId {
-    pub const BASE64_LENGTH: usize = 24;
-
-    pub fn new(bytes: [u8; 16]) -> Self {
-        Self(bytes)
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-
-    pub fn to_vec(&self) -> Vec<u8> {
-        self.0.to_vec()
-    }
-
-    pub fn base64_display(&self) -> Base64Display<'_, '_, GeneralPurpose> {
-        Base64Display::new(&self.0, &BASE64_STANDARD)
+impl From<TryFromSpanIdError> for tonic::Status {
+    fn from(error: TryFromSpanIdError) -> Self {
+        tonic::Status::invalid_argument(error.to_string())
     }
 }
 
-impl Serialize for TraceId {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let b64trace_id = BASE64_STANDARD.encode(self.0);
-        serializer.serialize_str(&b64trace_id)
-    }
-}
-
-impl<'de> Deserialize<'de> for TraceId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(de::Error::custom)
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum TryFromTraceIdError {
-    #[error("Trace ID must be 16 bytes long, got {0}.")]
-    InvalidLength(usize),
-    #[error("Invalid Base64 trace ID: {0}.")]
-    InvalidBase64(#[from] base64::DecodeError),
-}
-
-impl TryFrom<&[u8]> for TraceId {
-    type Error = TryFromTraceIdError;
-
-    fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
-        let trace_id = slice
-            .try_into()
-            .map_err(|_| TryFromTraceIdError::InvalidLength(slice.len()))?;
-        Ok(TraceId(trace_id))
-    }
-}
-
-impl TryFrom<Vec<u8>> for TraceId {
-    type Error = TryFromTraceIdError;
-
-    fn try_from(vec: Vec<u8>) -> Result<Self, Self::Error> {
-        Self::try_from(&vec[..])
-    }
-}
-
-impl FromStr for TraceId {
-    type Err = TryFromTraceIdError;
-
-    fn from_str(b64_trace_id: &str) -> Result<Self, Self::Err> {
-        if b64_trace_id.len() != Self::BASE64_LENGTH {
-            return Err(TryFromTraceIdError::from(
-                base64::DecodeError::InvalidLength,
-            ));
-        }
-        let mut trace_id = [0u8; 16];
-        BASE64_STANDARD
-            // Using the unchecked version here because otherwise the engine gets the wrong size
-            // estimate and fails.
-            .decode_slice_unchecked(b64_trace_id, &mut trace_id)?;
-        Ok(TraceId(trace_id))
+impl From<TryFromTraceIdError> for tonic::Status {
+    fn from(error: TryFromTraceIdError) -> Self {
+        tonic::Status::invalid_argument(error.to_string())
     }
 }
 
@@ -200,39 +127,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-
-    #[test]
-    fn test_trace_id_serde() {
-        let expected_trace_id = TraceId([1; 16]);
-        let trace_id_json = serde_json::to_string(&expected_trace_id).unwrap();
-        assert_eq!(trace_id_json, r#""AQEBAQEBAQEBAQEBAQEBAQ==""#);
-
-        let trace_id = serde_json::from_str::<TraceId>(&trace_id_json).unwrap();
-        assert_eq!(trace_id, expected_trace_id,);
-    }
-
-    #[test]
-    fn test_trace_id_try_from() {
-        let expected_trace_id = TraceId([1; 16]);
-        let trace_id_json = serde_json::to_string(&expected_trace_id).unwrap();
-        assert_eq!(trace_id_json, r#""AQEBAQEBAQEBAQEBAQEBAQ==""#);
-
-        let trace_id = serde_json::from_str::<TraceId>(&trace_id_json).unwrap();
-        assert_eq!(trace_id, expected_trace_id,);
-    }
-
-    #[test]
-    fn test_trace_id_from_str() {
-        let expected_trace_id = TraceId([1; 16]);
-        let trace_id: TraceId = "AQEBAQEBAQEBAQEBAQEBAQ==".parse().unwrap();
-        assert_eq!(trace_id, expected_trace_id);
-
-        let error = "AQEBAQEBAQEBAQEBAQEBAQEB==".parse::<TraceId>().unwrap_err();
-        assert!(matches!(
-            error,
-            TryFromTraceIdError::InvalidBase64(base64::DecodeError::InvalidLength)
-        ));
-    }
 
     #[test]
     fn test_to_json_value() {

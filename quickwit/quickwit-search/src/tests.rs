@@ -1586,8 +1586,7 @@ async fn test_single_node_find_trace_ids_collector() {
     let doc_mapping_yaml = r#"
             field_mappings:
               - name: trace_id
-                type: text
-                tokenizer: raw
+                type: bytes
                 fast: true
               - name: span_timestamp_secs
                 type: datetime
