@@ -14,11 +14,11 @@ When ingesting a time series dataset, splits have a `start_timestamp` and `end_t
 - `start_timestamp`: lowest timestamp seen on indexed documents in the split.
 - `end_timestamp`: highest timestamp seen on indexed documents in the split.
 
-Quickwit's technique consists of taking advantage of the fact that most time series queries filter on time range. By specifying a `start_timestamp` and/or `end_timestamp` for a query, Quickwit can use the split metadata to prune splits not satisfying this time range, therefore skipping the need to examining unnecessarily more splits.
+Quickwit's technique consists of taking advantage of the fact that most time series queries filter on time range. By specifying a `start_timestamp` and/or `end_timestamp` for a query, Quickwit can use the split metadata to prune splits not satisfying this time range, therefore skipping the need to examine unnecessarily more splits.
 
 ## How to use it
 
-To take advantage of timestamp pruning feature, you will first need to configure the `timestamp_field` on your index [doc-mapper configuration](https://quickwit.io/docs/configuration/index-config#doc-mapping). Needless to say that the configured field should have the correct type (`datetime`).
+To take advantage of timestamp pruning feature, you will first need to configure a `timestamp_field` on your index [doc-mapper configuration](https://quickwit.io/docs/configuration/index-config#doc-mapping). Needless to say that the configured field should have the correct type (`datetime`).
 
 ```yaml
 version: 0.5 # File format version.
@@ -52,32 +52,25 @@ search_settings:
   default_search_fields: [severity_text, body]
 ```
 
-Then you will have to set the timestamp pruning [query parameters](https://quickwit.io/docs/reference/rest-api#parameters-1) when searching your index.
+Once that's done, timestamp prunning will kick in whenever you reference the timestamp field in a query. It is also possible to explicitly triger timestamp prunning by setting the corresponding [query parameters](https://quickwit.io/docs/reference/rest-api#parameters-1) when searching your index.
+
+### Referencing the timestamp field in a query
+
+Please note that when referencing the timestamp field in a query, only the folowing datetime formats are supported: `Rfc3339`, `Rfc2822`, `Timestamp`, `%Y-%m-%d %H:%M:%S.%f`, `%Y-%m-%d %H:%M:%S`, `%Y-%m-%d`, and `%Y/%m/%d`.
+
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+-d '{"query": "severity_text:ERROR AND timestamp:[2002-10-02T15:00:00Z TO 2002-10-02T18:00:00Z]"}' \
+http://127.0.0.1:7280/api/v1/hdfs/search
+ ```
+
+### Using the search query parameters
 
 - `start_timestamp`: A timestamp in seconds that restricts search to documents with a `timestamp` >= `start_timestamp`.
 - `end_timestamp` : A timestamp in seconds that restricts search to documents with a `timestamp` < `end_timestamp`.
 
 ```bash
 curl -X POST -H 'Content-Type: application/json' \
--d '{"query": "severity_text:ERROR AND timestamp:[2002-10-02T15:00:00Z TO 2002-10-02T18:00:00Z]", "start_timestamp":1680879600, "end_timestamp":1680890400}' \
+-d '{"query": "severity_text:ERROR", "start_timestamp":1680879600 "end_timestamp":1680890400}' \
 http://127.0.0.1:7280/api/v1/hdfs/search
  ```
-
-:::caution
-Using timestamp pruning should be explicitly requested by specifying the aforementioned search query parameters. Contrary to what you might expect, timestamp pruning does not kick in when using solely the timestamp field in your search query. 
-Aside from other pruning techniques employed in Quickwit, the following query for example will examine all splits in the index, because it does not specifies any timestamp query parameter. 
-
-```bash
-curl -X POST -H 'Content-Type: application/json' \
--d '{"query": "severity_text:error AND timestamp:[2002-10-02T15:00:00Z TO 2002-10-02T18:00:00Z]"}' \
-http://127.0.0.1:7280/api/v1/hdfs/search
-```
-:::
-
-We understand that it's not convenient:
-
-- To use another set of parameters to take advantage of timestamp pruning. Extracting these from the search query feels more natural.
-- To specify timestamp pruning parameters only in timestamp `seconds`. Supporting other datetime formats would yield a better user experience.
-
-These are known [issues](https://github.com/quickwit-oss/quickwit/issues/3169) we intend to address in an up-coming version of Quickwit.
-
