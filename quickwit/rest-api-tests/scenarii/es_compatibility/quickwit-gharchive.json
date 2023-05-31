@@ -13,7 +13,8 @@
     ],
     "dynamic_mapping": {
       "expand_dots": true,
-      "fast": true
+      "fast": true,
+      "record": "position"
     }
   }
 }
