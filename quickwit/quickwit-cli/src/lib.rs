@@ -35,6 +35,7 @@ use quickwit_config::service::QuickwitService;
 use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig, DEFAULT_QW_CONFIG_PATH};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
+use quickwit_rest_client::models::Timeout;
 use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use regex::Regex;
@@ -105,9 +106,9 @@ pub struct ClientArgs {
     pub cluster_endpoint: Url,
     /// The outer option represents the presense of the argument,
     /// the inner option represents the presence of timeout.
-    pub connect_timeout: Option<Option<Duration>>,
-    pub timeout: Option<Option<Duration>>,
-    pub commit_timeout: Option<Option<Duration>>,
+    pub connect_timeout: Option<Timeout>,
+    pub timeout: Option<Timeout>,
+    pub commit_timeout: Option<Timeout>,
 }
 
 impl Default for ClientArgs {
@@ -219,12 +220,12 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
     }
 }
 
-pub fn parse_duration_or_none(duration_with_unit_str: &str) -> anyhow::Result<Option<Duration>> {
+pub fn parse_duration_or_none(duration_with_unit_str: &str) -> anyhow::Result<Timeout> {
     if duration_with_unit_str == "none" {
-        Ok(None)
+        Ok(Timeout::none())
     } else {
         parse_duration_with_unit(duration_with_unit_str)
-            .map(Some)
+            .map(Timeout::new)
             .map_err(|_| anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]|none`"))
     }
 }
@@ -417,6 +418,8 @@ pub mod busy_detector {
 mod tests {
     use std::time::Duration;
 
+    use quickwit_rest_client::models::Timeout;
+
     use super::{parse_duration_or_none, parse_duration_with_unit};
 
     #[test]
@@ -442,8 +445,11 @@ mod tests {
 
     #[test]
     fn test_parse_duration_or_none() -> anyhow::Result<()> {
-        assert_eq!(parse_duration_or_none("8s")?, Some(Duration::from_secs(8)));
-        assert_eq!(parse_duration_or_none("none")?, None);
+        assert_eq!(parse_duration_or_none("1s")?, Timeout::from_secs(1));
+        assert_eq!(parse_duration_or_none("2m")?, Timeout::from_mins(2));
+        assert_eq!(parse_duration_or_none("3h")?, Timeout::from_hours(3));
+        assert_eq!(parse_duration_or_none("4d")?, Timeout::from_days(4));
+        assert_eq!(parse_duration_or_none("none")?, Timeout::none());
         assert!(parse_duration_or_none("something").is_err());
         Ok(())
     }

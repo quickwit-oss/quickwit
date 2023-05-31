@@ -186,6 +186,7 @@ mod tests {
     };
     use quickwit_cli::ClientArgs;
     use quickwit_common::uri::Uri;
+    use quickwit_rest_client::models::Timeout;
     use quickwit_rest_client::rest_client::CommitType;
     use reqwest::Url;
 
@@ -368,8 +369,8 @@ mod tests {
                     commit_type: CommitType::Auto,
                 })) if &index_id == "wikipedia"
                         && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
-                        && client_args.timeout == Some(Some(Duration::from_secs(10)))
-                        && client_args.connect_timeout == Some(Some(Duration::from_secs(2)))
+                        && client_args.timeout == Some(Timeout::from_secs(10))
+                        && client_args.connect_timeout == Some(Timeout::from_secs(2))
                         && client_args.commit_timeout.is_none()
         ));
 
@@ -399,9 +400,9 @@ mod tests {
                     commit_type: CommitType::WaitFor,
                 })) if &index_id == "wikipedia"
                         && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
-                        && client_args.timeout == Some(None)
-                        && client_args.connect_timeout == Some(Some(Duration::from_secs(15)))
-                        && client_args.commit_timeout == Some(Some(Duration::from_secs(60 * 60 * 4)))
+                        && client_args.timeout == Some(Timeout::none())
+                        && client_args.connect_timeout == Some(Timeout::from_secs(15))
+                        && client_args.commit_timeout == Some(Timeout::from_hours(4))
         ));
 
         let app = build_cli().no_binary_name(true);

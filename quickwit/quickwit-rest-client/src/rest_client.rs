@@ -34,17 +34,17 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::error::Error;
-use crate::models::{ApiResponse, IngestSource};
+use crate::models::{ApiResponse, IngestSource, Timeout};
 use crate::BatchLineReader;
 
 pub const DEFAULT_BASE_URL: &str = "http://127.0.0.1:7280";
 pub const DEFAULT_CONTENT_TYPE: &str = "application/json";
 pub const INGEST_CONTENT_LENGTH_LIMIT: usize = 10 * 1024 * 1024; // 10MiB
-pub const DEFAULT_CLIENT_CONNECT_TIMEOUT: Option<Duration> = Some(Duration::from_secs(5));
-pub const DEFAULT_CLIENT_TIMEOUT: Option<Duration> = Some(Duration::from_secs(10));
-pub const DEFAULT_CLIENT_SEARCH_TIMEOUT: Option<Duration> = Some(Duration::from_secs(60));
-pub const DEFAULT_CLIENT_INGEST_TIMEOUT: Option<Duration> = Some(Duration::from_secs(60));
-pub const DEFAULT_CLIENT_COMMIT_TIMEOUT: Option<Duration> = Some(Duration::from_secs(1800));
+pub const DEFAULT_CLIENT_CONNECT_TIMEOUT: Timeout = Timeout::from_secs(5);
+pub const DEFAULT_CLIENT_TIMEOUT: Timeout = Timeout::from_secs(10);
+pub const DEFAULT_CLIENT_SEARCH_TIMEOUT: Timeout = Timeout::from_mins(1);
+pub const DEFAULT_CLIENT_INGEST_TIMEOUT: Timeout = Timeout::from_mins(1);
+pub const DEFAULT_CLIENT_COMMIT_TIMEOUT: Timeout = Timeout::from_mins(30);
 
 struct Transport {
     base_url: Url,
@@ -53,14 +53,14 @@ struct Transport {
 }
 
 impl Transport {
-    fn new(endpoint: Url, connect_timeout: Option<Duration>) -> Self {
+    fn new(endpoint: Url, connect_timeout: Timeout) -> Self {
         let base_url = endpoint;
         let api_url = base_url
             .join("api/v1/")
             .expect("Endpoint should not be malformed.");
         let mut client_builder = ClientBuilder::new();
-        if let Some(connect_timeout) = connect_timeout {
-            client_builder = client_builder.connect_timeout(connect_timeout);
+        if let Some(duration) = connect_timeout.as_duration_opt() {
+            client_builder = client_builder.connect_timeout(duration);
         }
         Self {
             base_url,
@@ -77,7 +77,7 @@ impl Transport {
         header_map: Option<HeaderMap>,
         query_string: Option<&Q>,
         body: Option<Bytes>,
-        timeout: Option<Duration>,
+        timeout: Timeout,
     ) -> Result<ApiResponse, Error> {
         let url = if path.starts_with('/') {
             self.base_url.join(path)
@@ -86,8 +86,8 @@ impl Transport {
         }
         .map_err(|error| Error::UrlParse(error.to_string()))?;
         let mut request_builder = self.client.request(method, url);
-        if let Some(timeout) = timeout {
-            request_builder = request_builder.timeout(timeout);
+        if let Some(duration) = timeout.as_duration_opt() {
+            request_builder = request_builder.timeout(duration);
         }
         let mut request_headers = HeaderMap::new();
         request_headers.insert(CONTENT_TYPE, HeaderValue::from_static(DEFAULT_CONTENT_TYPE));
@@ -111,15 +111,15 @@ pub struct QuickwitClientBuilder {
     /// Base url for the client
     base_url: Url,
     /// Connection timeout.
-    connect_timeout: Option<Duration>,
+    connect_timeout: Timeout,
     /// Timeout for most operations except search and ingest.
-    timeout: Option<Duration>,
+    timeout: Timeout,
     /// Timeout for search operations.
-    search_timeout: Option<Duration>,
+    search_timeout: Timeout,
     /// Timeout for the ingest operations with auto commit.
-    ingest_timeout: Option<Duration>,
+    ingest_timeout: Timeout,
     /// Timeout for the ingest operations that require waiting for commit.
-    commit_timeout: Option<Duration>,
+    commit_timeout: Timeout,
 }
 
 impl QuickwitClientBuilder {
@@ -134,27 +134,27 @@ impl QuickwitClientBuilder {
         }
     }
 
-    pub fn connect_timeout(mut self, timeout: Option<Duration>) -> Self {
+    pub fn connect_timeout(mut self, timeout: Timeout) -> Self {
         self.connect_timeout = timeout;
         self
     }
 
-    pub fn timeout(mut self, timeout: Option<Duration>) -> Self {
+    pub fn timeout(mut self, timeout: Timeout) -> Self {
         self.timeout = timeout;
         self
     }
 
-    pub fn search_timeout(mut self, timeout: Option<Duration>) -> Self {
+    pub fn search_timeout(mut self, timeout: Timeout) -> Self {
         self.search_timeout = timeout;
         self
     }
 
-    pub fn ingest_timeout(mut self, timeout: Option<Duration>) -> Self {
+    pub fn ingest_timeout(mut self, timeout: Timeout) -> Self {
         self.ingest_timeout = timeout;
         self
     }
 
-    pub fn commit_timeout(mut self, timeout: Option<Duration>) -> Self {
+    pub fn commit_timeout(mut self, timeout: Timeout) -> Self {
         self.commit_timeout = timeout;
         self
     }
@@ -175,22 +175,22 @@ impl QuickwitClientBuilder {
 pub struct QuickwitClient {
     transport: Transport,
     /// Timeout for all operations except search and ingest.
-    timeout: Option<Duration>,
+    timeout: Timeout,
     /// Timeout for search operations.
-    search_timeout: Option<Duration>,
+    search_timeout: Timeout,
     /// Timeout for the ingest operations.
-    ingest_timeout: Option<Duration>,
+    ingest_timeout: Timeout,
     /// Timeout for the ingest operations that require waiting for commit.
-    commit_timeout: Option<Duration>,
+    commit_timeout: Timeout,
 }
 
 impl QuickwitClient {
     fn new(
         transport: Transport,
-        timeout: Option<Duration>,
-        search_timeout: Option<Duration>,
-        ingest_timeout: Option<Duration>,
-        commit_timeout: Option<Duration>,
+        timeout: Timeout,
+        search_timeout: Timeout,
+        ingest_timeout: Timeout,
+        commit_timeout: Timeout,
     ) -> Self {
         Self {
             transport,
@@ -316,11 +316,11 @@ pub enum IngestEvent {
 /// Client for indexes APIs.
 pub struct IndexClient<'a> {
     transport: &'a Transport,
-    timeout: Option<Duration>,
+    timeout: Timeout,
 }
 
 impl<'a> IndexClient<'a> {
-    fn new(transport: &'a Transport, timeout: Option<Duration>) -> Self {
+    fn new(transport: &'a Transport, timeout: Timeout) -> Self {
         Self { transport, timeout }
     }
 
@@ -396,12 +396,12 @@ impl<'a> IndexClient<'a> {
 /// Client for splits APIs.
 pub struct SplitClient<'a, 'b> {
     transport: &'a Transport,
-    timeout: Option<Duration>,
+    timeout: Timeout,
     index_id: &'b str,
 }
 
 impl<'a, 'b> SplitClient<'a, 'b> {
-    fn new(transport: &'a Transport, timeout: Option<Duration>, index_id: &'b str) -> Self {
+    fn new(transport: &'a Transport, timeout: Timeout, index_id: &'b str) -> Self {
         Self {
             transport,
             timeout,
@@ -448,12 +448,12 @@ impl<'a, 'b> SplitClient<'a, 'b> {
 /// Client for source APIs.
 pub struct SourceClient<'a, 'b> {
     transport: &'a Transport,
-    timeout: Option<Duration>,
+    timeout: Timeout,
     index_id: &'b str,
 }
 
 impl<'a, 'b> SourceClient<'a, 'b> {
-    fn new(transport: &'a Transport, timeout: Option<Duration>, index_id: &'b str) -> Self {
+    fn new(transport: &'a Transport, timeout: Timeout, index_id: &'b str) -> Self {
         Self {
             transport,
             timeout,
@@ -555,11 +555,11 @@ impl<'a, 'b> SourceClient<'a, 'b> {
 /// Client for Cluster APIs.
 pub struct ClusterClient<'a> {
     transport: &'a Transport,
-    timeout: Option<Duration>,
+    timeout: Timeout,
 }
 
 impl<'a> ClusterClient<'a> {
-    fn new(transport: &'a Transport, timeout: Option<Duration>) -> Self {
+    fn new(transport: &'a Transport, timeout: Timeout) -> Self {
         Self { transport, timeout }
     }
 
@@ -576,11 +576,11 @@ impl<'a> ClusterClient<'a> {
 /// Client for Node-level Stats APIs.
 pub struct NodeStatsClient<'a> {
     transport: &'a Transport,
-    timeout: Option<Duration>,
+    timeout: Timeout,
 }
 
 impl<'a> NodeStatsClient<'a> {
-    fn new(transport: &'a Transport, timeout: Option<Duration>) -> Self {
+    fn new(transport: &'a Transport, timeout: Timeout) -> Self {
         Self { transport, timeout }
     }
 
@@ -597,11 +597,11 @@ impl<'a> NodeStatsClient<'a> {
 /// Client for Node-level Health APIs.
 pub struct NodeHealthClient<'a> {
     transport: &'a Transport,
-    timeout: Option<Duration>,
+    timeout: Timeout,
 }
 
 impl<'a> NodeHealthClient<'a> {
-    fn new(transport: &'a Transport, timeout: Option<Duration>) -> Self {
+    fn new(transport: &'a Transport, timeout: Timeout) -> Self {
         Self { transport, timeout }
     }
 
