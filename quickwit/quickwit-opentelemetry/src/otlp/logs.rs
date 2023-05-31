@@ -21,7 +21,6 @@ use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
 use std::collections::{BTreeSet, HashMap};
 
 use async_trait::async_trait;
-use base64::prelude::{Engine, BASE64_STANDARD};
 use quickwit_common::uri::Uri;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
 use quickwit_ingest::{
@@ -37,7 +36,7 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
-use super::{parse_log_record_body, TraceId};
+use super::{parse_log_record_body, SpanId, TraceId};
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
@@ -81,11 +80,9 @@ doc_mapping:
       type: u64
       indexed: false
     - name: trace_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: span_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: trace_flags
       type: u64
       indexed: false
@@ -120,8 +117,6 @@ search_settings:
   default_search_fields: []
 "#;
 
-pub type Base64 = String;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LogRecord {
     pub timestamp_nanos: u64,
@@ -133,7 +128,7 @@ pub struct LogRecord {
     pub attributes: HashMap<String, JsonValue>,
     pub dropped_attributes_count: u32,
     pub trace_id: Option<TraceId>,
-    pub span_id: Option<Base64>,
+    pub span_id: Option<SpanId>,
     pub trace_flags: Option<u32>,
     pub resource_attributes: HashMap<String, JsonValue>,
     pub resource_dropped_attributes_count: u32,
@@ -302,14 +297,14 @@ impl OtlpGrpcLogsService {
                     let observed_timestamp_nanos = log_record.observed_time_unix_nano;
 
                     let trace_id = if log_record.trace_id.iter().any(|&byte| byte != 0) {
-                        let b64trace_id = TraceId::try_from(log_record.trace_id)
-                            .map_err(|error| Status::invalid_argument(error.to_string()))?;
-                        Some(b64trace_id)
+                        let trace_id = TraceId::try_from(log_record.trace_id)?;
+                        Some(trace_id)
                     } else {
                         None
                     };
                     let span_id = if log_record.span_id.iter().any(|&byte| byte != 0) {
-                        Some(BASE64_STANDARD.encode(log_record.span_id))
+                        let span_id = SpanId::try_from(log_record.span_id)?;
+                        Some(span_id)
                     } else {
                         None
                     };
