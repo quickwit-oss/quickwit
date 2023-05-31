@@ -1,0 +1,38 @@
+# Delete possibly remaining index
+method: DELETE
+endpoint: indexes/defaultsearchfields
+status_code: null
+---
+# Create index
+method: POST
+endpoint: indexes/
+json:
+  version: "0.6"
+  index_id: defaultsearchfields
+  doc_mapping:
+    mode: dynamic
+    field_mappings:
+      - name: id
+        type: u64
+      - name: inner_json
+        type: json
+      - name: regular_field
+        type: text
+    dynamic_mapping:
+      expand_dots: true
+      fast: true
+  search_settings:
+    default_search_fields:
+      - regular_field
+      - some_dynamic_field
+      - inner_json.somefieldinjson
+
+---
+method: POST
+endpoint: defaultsearchfields/ingest
+params:
+  commit: force
+ndjson:
+  - {"id": 1, "some_dynamic_field": "hello"}
+  - {"id": 2, "inner_json": {"somefieldinjson": "allo"}}
+  - {"id": 3, "regular_field": "bonjour"}

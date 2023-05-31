@@ -175,8 +175,9 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             if default_search_field_names.contains(default_search_field_name) {
                 bail!("Duplicated default search field: `{}`", default_search_field_name)
             }
+            let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).ok();
             let (default_search_field, _json_path) = schema
-                .find_field(default_search_field_name)
+                .find_field_with_default(default_search_field_name, dynamic_field)
                 .with_context(|| format!("Unknown default search field: `{default_search_field_name}`"))?;
             if !schema.get_field_entry(default_search_field).is_indexed() {
                 bail!(
