@@ -24,14 +24,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use base64::prelude::{Engine, BASE64_STANDARD};
 use itertools::Itertools;
 use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
-    Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint, SpanKind as QwSpanKind,
-    SpanStatus as QwSpanStatus, TraceId, OTEL_TRACES_INDEX_ID,
+    Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint, SpanId,
+    SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId, OTEL_TRACES_INDEX_ID,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -290,7 +289,7 @@ impl JaegerService {
         let num_traces = trace_ids.len() as u64;
         let mut query = BoolQuery::default();
 
-        for trace_id in trace_ids.iter() {
+        for trace_id in trace_ids {
             let value = trace_id.base64_display().to_string();
             let term_query = TermQuery {
                 field: "trace_id".to_string(),
@@ -699,8 +698,6 @@ fn build_aggregations_query(num_traces: usize) -> String {
 
 fn qw_span_to_jaeger_span(qw_span_json: &str) -> Result<JaegerSpan, Status> {
     let mut qw_span: QwSpan = json_deserialize(qw_span_json, "span")?;
-    let trace_id = qw_span.trace_id.to_vec();
-    let span_id = base64_decode(qw_span.span_id.as_bytes(), "span ID")?;
 
     let start_time = Some(to_well_known_timestamp(qw_span.span_start_timestamp_nanos));
     let duration = Some(to_well_known_duration(
@@ -729,11 +726,11 @@ fn qw_span_to_jaeger_span(qw_span_json: &str) -> Result<JaegerSpan, Status> {
     inject_span_status_tags(&mut tags, qw_span.span_status);
 
     let references =
-        otlp_links_to_jaeger_references(&trace_id, qw_span.parent_span_id, qw_span.links)?;
+        otlp_links_to_jaeger_references(&qw_span.trace_id, qw_span.parent_span_id, qw_span.links)?;
 
     let span = JaegerSpan {
-        trace_id,
-        span_id,
+        trace_id: qw_span.trace_id.to_vec(),
+        span_id: qw_span.span_id.to_vec(),
         operation_name: qw_span.span_name,
         references,
         flags: 0, // TODO
@@ -933,18 +930,20 @@ fn otlp_attributes_to_jaeger_tags(
     Ok(tags)
 }
 
+/// Converts OpenTelemetry links to Jaeger span references.
+/// <https://opentelemetry.io/docs/specs/otel/trace/sdk_exporters/jaeger/#links>
 fn otlp_links_to_jaeger_references(
-    trace_id: &[u8],
-    parent_span_id_opt: Option<String>,
+    trace_id: &TraceId,
+    parent_span_id_opt: Option<SpanId>,
     links: Vec<QwLink>,
 ) -> Result<Vec<JaegerSpanRef>, Status> {
     let mut references = Vec::with_capacity(parent_span_id_opt.is_some() as usize + links.len());
 
+    // <https://opentelemetry.io/docs/specs/otel/trace/sdk_exporters/jaeger/#parent-id>
     if let Some(parent_span_id) = parent_span_id_opt {
-        let parent_span_id = base64_decode(parent_span_id.as_bytes(), "parent span ID")?;
         let reference = JaegerSpanRef {
             trace_id: trace_id.to_vec(),
-            span_id: parent_span_id,
+            span_id: parent_span_id.to_vec(),
             ref_type: JaegerSpanRefType::ChildOf as i32,
         };
         references.push(reference);
@@ -953,7 +952,7 @@ fn otlp_links_to_jaeger_references(
     // Parent ID, if any."
     for link in links {
         let trace_id = link.link_trace_id.to_vec();
-        let span_id = base64_decode(link.link_span_id.as_bytes(), "link span ID")?;
+        let span_id = link.link_span_id.to_vec();
         let reference = JaegerSpanRef {
             trace_id,
             span_id,
@@ -1009,18 +1008,6 @@ fn collect_trace_ids(trace_ids_json: &str) -> Result<(Vec<TraceId>, TimeInterval
         end = end.max(trace_id.span_timestamp.into_timestamp_secs());
     }
     Ok((trace_ids, start..=end))
-}
-
-fn base64_decode(encoded: &[u8], label: &'static str) -> Result<Vec<u8>, Status> {
-    match BASE64_STANDARD.decode(encoded) {
-        Ok(decoded) => Ok(decoded),
-        Err(error) => {
-            error!("Failed to base64 decode {label}: {error:?}",);
-            Err(Status::internal(format!(
-                "Failed to base64 decode: {error:?}"
-            )))
-        }
-    }
 }
 
 fn json_deserialize<'a, T>(json: &'a str, label: &'static str) -> Result<T, Status>
@@ -2113,7 +2100,7 @@ mod tests {
             scope_version: Some("1.0.0".to_string()),
             scope_attributes: HashMap::from_iter([("scope_key".to_string(), json!("scope_value"))]),
             scope_dropped_attributes_count: 2,
-            span_id: BASE64_STANDARD.encode([2; 8]),
+            span_id: SpanId::new([2; 8]),
             span_kind: 2,
             span_name: "publish_split".to_string(),
             span_fingerprint: Some(SpanFingerprint::new("quickwit", 2.into(), "publish_split")),
@@ -2128,7 +2115,7 @@ mod tests {
                 code: OtlpStatusCode::Error,
                 message: Some("An error occurred.".to_string()),
             },
-            parent_span_id: Some(BASE64_STANDARD.encode([3; 8])),
+            parent_span_id: Some(SpanId::new([3; 8])),
             events: vec![QwEvent {
                 event_timestamp_nanos: 1000500003,
                 event_name: "event_name".to_string(),
@@ -2142,7 +2129,7 @@ mod tests {
             links: vec![QwLink {
                 link_trace_id: TraceId::new([4; 16]),
                 link_trace_state: Some("link_key1=link_value1,link_key2=link_value2".to_string()),
-                link_span_id: BASE64_STANDARD.encode([5; 8]),
+                link_span_id: SpanId::new([5; 8]),
                 link_attributes: HashMap::from_iter([(
                     "link_key".to_string(),
                     json!("link_value"),
@@ -2320,16 +2307,17 @@ mod tests {
 
     #[test]
     fn test_otlp_links_to_jaeger_references() {
-        let parent_span_id = BASE64_STANDARD.encode([3; 8]);
+        let trace_id = TraceId::new([1; 16]);
+        let parent_span_id = SpanId::new([3; 8]);
         let links = vec![QwLink {
             link_trace_id: TraceId::new([4; 16]),
             link_trace_state: Some("link_key1=link_value1,link_key2=link_value2".to_string()),
-            link_span_id: BASE64_STANDARD.encode([5; 8]),
+            link_span_id: SpanId::new([5; 8]),
             link_attributes: HashMap::from_iter([("link_key".to_string(), json!("link_value"))]),
             link_dropped_attributes_count: 7,
         }];
         let jaeger_references =
-            otlp_links_to_jaeger_references(&[1; 16], Some(parent_span_id), links).unwrap();
+            otlp_links_to_jaeger_references(&trace_id, Some(parent_span_id), links).unwrap();
         assert_eq!(
             jaeger_references,
             vec![
