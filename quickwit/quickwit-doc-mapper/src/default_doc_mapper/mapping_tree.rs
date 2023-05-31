@@ -200,9 +200,6 @@ fn extract_json_val(
 fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue> {
     match (&value, leaf_type) {
         (TantivyValue::Str(_), LeafType::Text(_))
-        | (TantivyValue::I64(_), LeafType::I64(_))
-        | (TantivyValue::U64(_), LeafType::U64(_))
-        | (TantivyValue::F64(_), LeafType::F64(_))
         | (TantivyValue::Bool(_), LeafType::Bool(_))
         | (TantivyValue::IpAddr(_), LeafType::IpAddr(_))
         | (TantivyValue::Bytes(_), LeafType::Bytes(_))
@@ -210,6 +207,15 @@ fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue>
             let json_value =
                 serde_json::to_value(&value).expect("Json serialization should never fail.");
             Some(json_value)
+        }
+        (TantivyValue::I64(value), LeafType::I64(numeric_options)) => {
+            Some(numeric_options.format_i64_to_json(*value))
+        }
+        (TantivyValue::U64(value), LeafType::U64(numeric_options)) => {
+            Some(numeric_options.format_u64_to_json(*value))
+        }
+        (TantivyValue::F64(value), LeafType::F64(numeric_options)) => {
+            Some(numeric_options.format_f64_to_json(*value))
         }
         (TantivyValue::Date(date_time), LeafType::DateTime(date_time_options)) => {
             let json_value = date_time_options
@@ -683,10 +689,11 @@ mod tests {
     use tantivy::{DateTime, Document};
     use time::macros::datetime;
 
-    use super::{LeafType, MappingLeaf};
+    use super::{value_to_json, LeafType, MappingLeaf};
     use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::default_doc_mapper::field_mapping_entry::{
-        QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitTextOptions,
+        NumericFormat, QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitNumericOptions,
+        QuickwitTextOptions,
     };
     use crate::Cardinality;
 
@@ -1215,5 +1222,60 @@ mod tests {
                 b"this is a base64 encoded string"
             ]
         )
+    }
+
+    #[test]
+    fn test_serialize_numbers() {
+        let number_out = QuickwitNumericOptions::default();
+        let str_out = QuickwitNumericOptions {
+            output_format: NumericFormat::DecimalStr,
+            ..QuickwitNumericOptions::default()
+        };
+        let hex_out = QuickwitNumericOptions {
+            output_format: NumericFormat::Hex,
+            ..QuickwitNumericOptions::default()
+        };
+
+        // u64
+        assert_eq!(
+            value_to_json(TantivyValue::U64(20), &LeafType::U64(number_out.clone())).unwrap(),
+            serde_json::json!(20u64)
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::U64(20), &LeafType::U64(str_out.clone())).unwrap(),
+            serde_json::json!("20")
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::U64(20), &LeafType::U64(hex_out.clone())).unwrap(),
+            serde_json::json!("14")
+        );
+
+        // i64
+        assert_eq!(
+            value_to_json(TantivyValue::I64(-1), &LeafType::I64(number_out.clone())).unwrap(),
+            serde_json::json!(-1i64)
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::I64(-1), &LeafType::I64(str_out.clone())).unwrap(),
+            serde_json::json!("-1")
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::I64(-1), &LeafType::I64(hex_out.clone())).unwrap(),
+            serde_json::json!("ffffffffffffffff")
+        );
+
+        // f64
+        assert_eq!(
+            value_to_json(TantivyValue::F64(1.0), &LeafType::F64(number_out)).unwrap(),
+            serde_json::json!(1.0)
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::F64(1.5), &LeafType::F64(str_out)).unwrap(),
+            serde_json::json!("1.5")
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::F64(-0.0), &LeafType::F64(hex_out)).unwrap(),
+            serde_json::json!("8000000000000000")
+        );
     }
 }

@@ -102,6 +102,32 @@ pub struct QuickwitNumericOptions {
     pub output_format: NumericFormat,
 }
 
+impl QuickwitNumericOptions {
+    pub fn format_i64_to_json(&self, value: i64) -> serde_json::Value {
+        match self.output_format {
+            NumericFormat::Decimal => value.into(),
+            NumericFormat::DecimalStr => value.to_string().into(),
+            NumericFormat::Hex => format!("{value:x}").into(),
+        }
+    }
+
+    pub fn format_u64_to_json(&self, value: u64) -> serde_json::Value {
+        match self.output_format {
+            NumericFormat::Decimal => value.into(),
+            NumericFormat::DecimalStr => value.to_string().into(),
+            NumericFormat::Hex => format!("{value:x}").into(),
+        }
+    }
+
+    pub fn format_f64_to_json(&self, value: f64) -> serde_json::Value {
+        match self.output_format {
+            NumericFormat::Decimal => value.into(),
+            NumericFormat::DecimalStr => value.to_string().into(),
+            NumericFormat::Hex => format!("{:x}", value.to_bits()).into(),
+        }
+    }
+}
+
 impl Default for QuickwitNumericOptions {
     fn default() -> Self {
         Self {
