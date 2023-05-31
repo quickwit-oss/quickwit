@@ -104,8 +104,6 @@ fn client_args() -> Vec<Arg> {
 #[derive(Debug, Eq, PartialEq)]
 pub struct ClientArgs {
     pub cluster_endpoint: Url,
-    /// The outer option represents the presense of the argument,
-    /// the inner option represents the presence of timeout.
     pub connect_timeout: Option<Timeout>,
     pub timeout: Option<Timeout>,
     pub commit_timeout: Option<Timeout>,
