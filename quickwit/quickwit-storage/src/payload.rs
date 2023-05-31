@@ -21,7 +21,7 @@ use std::io;
 use std::ops::Range;
 
 use async_trait::async_trait;
-use rusoto_core::ByteStream;
+use aws_smithy_http::byte_stream::ByteStream;
 use tantivy::directory::OwnedBytes;
 
 #[async_trait]

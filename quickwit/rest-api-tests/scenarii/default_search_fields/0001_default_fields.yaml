@@ -1,0 +1,26 @@
+endpoint: defaultsearchfields/search
+params:
+  query: hello
+expected:
+  num_hits: 1
+  hits:
+    - id: 1
+      some_dynamic_field: hello
+---
+endpoint: defaultsearchfields/search
+params:
+  query: allo
+expected:
+  num_hits: 1
+  hits:
+    - id: 2
+      inner_json: {'somefieldinjson': 'allo'}
+---
+endpoint: defaultsearchfields/search
+params:
+  query: bonjour
+expected:
+  num_hits: 1
+  hits:
+    - id: 3
+      regular_field: bonjour

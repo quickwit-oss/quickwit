@@ -304,6 +304,7 @@ pub mod status {
     /// For the semantics of status codes see
     /// <https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/trace/api.md#set-status>
     #[derive(Serialize, Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[derive(
         Clone,
         Copy,

@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use once_cell::sync::OnceCell;
 use quickwit_common::uri::{Protocol, Uri};
 
@@ -57,12 +58,13 @@ pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
 
 /// A storage factory builds a [`Storage`] object from an URI.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
+#[async_trait]
 pub trait StorageFactory: Send + Sync + 'static {
     /// Returns the protocol handled by the storage factory.
     fn protocol(&self) -> Protocol;
 
     /// Returns the appropriate [`Storage`] object for the URI.
-    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError>;
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError>;
 }
 
 /// A storage factory implementation for handling not supported features.
@@ -71,12 +73,13 @@ pub struct UnsupportedStorage {
     protocol: Protocol,
 }
 
+#[async_trait]
 impl StorageFactory for UnsupportedStorage {
     fn protocol(&self) -> Protocol {
         self.protocol
     }
 
-    fn resolve(&self, _: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(&self, _: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         Err(StorageResolverError::ProtocolUnsupported {
             protocol: self.protocol.to_string(),
         })
@@ -138,14 +141,14 @@ impl StorageUriResolver {
     }
 
     /// Resolves the given URI.
-    pub fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    pub async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let resolver = self
             .per_protocol_resolver
             .get(&uri.protocol())
             .ok_or_else(|| StorageResolverError::ProtocolUnsupported {
                 protocol: uri.protocol().to_string(),
             })?;
-        let storage = resolver.resolve(uri)?;
+        let storage = resolver.resolve(uri).await?;
         Ok(storage)
     }
 }
@@ -179,7 +182,9 @@ mod tests {
             .register(file_storage_factory)
             .register(ram_storage_factory)
             .build();
-        let storage = storage_resolver.resolve(&Uri::from_well_formed("ram:///".to_string()))?;
+        let storage = storage_resolver
+            .resolve(&Uri::from_well_formed("ram:///".to_string()))
+            .await?;
         let data = storage.get_all(Path::new("hello")).await?;
         assert_eq!(&data[..], b"hello_content_second");
         Ok(())
@@ -210,20 +215,21 @@ mod tests {
             .register(first_ram_storage_factory)
             .register(second_ram_storage_factory)
             .build();
-        let storage =
-            storage_resolver.resolve(&Uri::from_well_formed("ram:///home".to_string()))?;
+        let storage = storage_resolver
+            .resolve(&Uri::from_well_formed("ram:///home".to_string()))
+            .await?;
         let data = storage.get_all(Path::new("hello")).await?;
         assert_eq!(&data[..], b"hello_content_second");
         Ok(())
     }
 
-    #[test]
-    fn test_storage_resolver_unsupported_protocol() {
+    #[tokio::test]
+    async fn test_storage_resolver_unsupported_protocol() {
         let storage_resolver = StorageUriResolver::for_test();
         let storage_uri =
             Uri::from_well_formed("postgresql://localhost:5432/metastore".to_string());
         assert!(matches!(
-            storage_resolver.resolve(&storage_uri),
+            storage_resolver.resolve(&storage_uri).await,
             Err(crate::StorageResolverError::ProtocolUnsupported { protocol }) if protocol == "postgresql"
         ));
     }

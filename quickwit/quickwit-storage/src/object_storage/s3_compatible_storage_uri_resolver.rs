@@ -19,8 +19,8 @@
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use quickwit_common::uri::{Protocol, Uri};
-pub use rusoto_core::Region;
 
 use crate::{
     DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,
@@ -30,13 +30,14 @@ use crate::{
 #[derive(Default)]
 pub struct S3CompatibleObjectStorageFactory;
 
+#[async_trait]
 impl StorageFactory for S3CompatibleObjectStorageFactory {
     fn protocol(&self) -> Protocol {
         Protocol::S3
     }
 
-    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let storage = S3CompatibleObjectStorage::from_uri(uri)?;
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+        let storage = S3CompatibleObjectStorage::from_uri(uri).await?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
 }

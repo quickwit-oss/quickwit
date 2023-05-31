@@ -245,7 +245,7 @@ def main():
         prog="rest-api-test",
         description="Runs a set of calls against a REST API and checks for conditions over the results."
     )
-    arg_parser.add_argument("--engine", help="Targetted engine (elastic/quickwit).", default="elasticsearch")
+    arg_parser.add_argument("--engine", help="Targetted engine (elastic/quickwit).", default="quickwit")
     arg_parser.add_argument("--test", help="Specific prefix to select the tests to run. If not specified, all tests are run.", nargs="*")
     parsed_args = arg_parser.parse_args()
     scenario_filepaths = glob.glob("scenarii/**/*.yaml", recursive=True)

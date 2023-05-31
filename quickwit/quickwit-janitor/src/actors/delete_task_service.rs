@@ -60,7 +60,7 @@ impl DeleteTaskService {
     ) -> anyhow::Result<Self> {
         let delete_service_task_path = data_dir_path.join(DELETE_SERVICE_TASK_DIR_NAME);
         let delete_service_task_dir =
-            temp_dir::create_clean_directory(delete_service_task_path.as_path()).await?;
+            temp_dir::create_or_purge_directory(delete_service_task_path.as_path()).await?;
         Ok(Self {
             metastore,
             search_job_placer,
@@ -149,7 +149,7 @@ impl DeleteTaskService {
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         let index_uri = index_config.index_uri.clone();
-        let index_storage = self.storage_resolver.resolve(&index_uri)?;
+        let index_storage = self.storage_resolver.resolve(&index_uri).await?;
         let index_metadata = self
             .metastore
             .index_metadata(index_config.index_id.as_str())

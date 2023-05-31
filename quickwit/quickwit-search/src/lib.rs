@@ -195,7 +195,7 @@ pub async fn single_node_search(
         query_ast.parse_user_query(doc_mapper.default_search_fields())?;
     search_request.query_ast = serde_json::to_string(&query_ast_resolved)?;
 
-    let index_storage = storage_resolver.resolve(&index_config.index_uri)?;
+    let index_storage = storage_resolver.resolve(&index_config.index_uri).await?;
     let metas = list_relevant_splits(index_uid, &search_request, metastore).await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();

@@ -27,14 +27,16 @@ use tokio::fs;
 use crate::ignore_error_kind;
 
 const MAX_LENGTH: usize = 255;
+
 const SEPARATOR: char = '%';
+
 const NUM_RAND_CHARS: usize = 6;
 
 /// Creates the specified directory. If the directory already exists, deletes its contents.
-pub async fn create_clean_directory(path: &Path) -> io::Result<PathBuf> {
+pub async fn create_or_purge_directory(path: &Path) -> io::Result<PathBuf> {
     // Delete if exists and recreate scratch directory.
-    ignore_error_kind!(io::ErrorKind::NotFound, fs::remove_dir_all(&path).await)?;
-    fs::create_dir_all(&path).await?;
+    ignore_error_kind!(io::ErrorKind::NotFound, fs::remove_dir_all(path).await)?;
+    fs::create_dir_all(path).await?;
     Ok(path.to_path_buf())
 }
 
@@ -423,8 +425,9 @@ mod tests {
         let mut directories = Vec::new();
         let mut paths = Vec::new();
         let temp_dir = Builder::default().tempdir().unwrap();
-        // Try creating the maximum number of directories for a single random byte a-z,A-Z,0-9
-        for _ in 0..62 {
+        // Try creating the maximum number of directories for a single random byte
+        // On case-insensitive filesystems we can only have 36 different directories a-z,0-9
+        for _ in 0..36 {
             let dir = Builder::default()
                 .join("test")
                 .rand_bytes(1)

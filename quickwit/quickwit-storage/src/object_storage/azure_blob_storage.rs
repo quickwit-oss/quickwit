@@ -57,12 +57,13 @@ use crate::{
 #[derive(Default)]
 pub struct AzureBlobStorageFactory;
 
+#[async_trait]
 impl StorageFactory for AzureBlobStorageFactory {
     fn protocol(&self) -> Protocol {
         Protocol::Azure
     }
 
-    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = AzureBlobStorage::from_uri(uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
@@ -339,7 +340,7 @@ impl Storage for AzureBlobStorage {
             .into_future()
             .await
             .map_err(|err| AzureErrorWrapper::from(err).into());
-        ignore_error_kind!(StorageErrorKind::DoesNotExist, delete_res)?;
+        ignore_error_kind!(StorageErrorKind::NotFound, delete_res)?;
         Ok(())
     }
 
@@ -547,7 +548,7 @@ impl From<AzureErrorWrapper> for StorageError {
     fn from(err: AzureErrorWrapper) -> Self {
         match err.inner.kind() {
             ErrorKind::HttpResponse { status, .. } => match status {
-                StatusCode::NotFound => StorageErrorKind::DoesNotExist.with_error(err),
+                StatusCode::NotFound => StorageErrorKind::NotFound.with_error(err),
                 _ => StorageErrorKind::Service.with_error(err),
             },
             ErrorKind::Io => StorageErrorKind::Io.with_error(err),

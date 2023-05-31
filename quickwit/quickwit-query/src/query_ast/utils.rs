@@ -17,34 +17,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::net::IpAddr;
-use std::str::FromStr;
-
-use base64::engine::DecodePaddingMode;
-use base64::Engine;
 use tantivy::json_utils::{convert_to_fast_value_and_get_term, JsonTermWriter};
 use tantivy::query::TermQuery as TantivyTermQuery;
 use tantivy::schema::{
-    Field, FieldEntry, FieldType, IndexRecordOption, IntoIpv6Addr, JsonObjectOptions,
-    Schema as TantivySchema, Type,
+    Field, FieldEntry, FieldType, IndexRecordOption, JsonObjectOptions, Schema as TantivySchema,
+    Type,
 };
-use tantivy::time::format_description::well_known::Rfc3339;
-use tantivy::time::OffsetDateTime;
-use tantivy::{DateTime as TantivyDateTime, Term};
+use tantivy::Term;
 
+use crate::json_literal::InterpretUserInput;
 use crate::query_ast::full_text_query::FullTextParams;
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::InvalidQuery;
 
 const DYNAMIC_FIELD_NAME: &str = "_dynamic";
-
-/// Lenient base64 engine that allow user to use padding or not.
-pub const LENIENT_BASE64_ENGINE: base64::engine::GeneralPurpose =
-    base64::engine::GeneralPurpose::new(
-        &base64::alphabet::STANDARD,
-        base64::engine::GeneralPurposeConfig::new()
-            .with_decode_padding_mode(DecodePaddingMode::Indifferent),
-    );
 
 fn make_term_query(term: Term) -> TantivyQueryAst {
     TantivyTermQuery::new(term, IndexRecordOption::WithFreqs).into()
@@ -94,11 +80,17 @@ pub(crate) fn full_text_query(
     compute_query_with_field(field, field_entry, path, text_query, full_text_params)
 }
 
-fn parse_val<T: FromStr>(value: &str, field_name: &str) -> Result<T, InvalidQuery> {
-    T::from_str(value).map_err(|_| InvalidQuery::InvalidSearchTerm {
-        expected_value_type: std::any::type_name::<T>(),
+fn parse_value_from_user_text<'a, T: InterpretUserInput<'a>>(
+    text: &'a str,
+    field_name: &str,
+) -> Result<T, InvalidQuery> {
+    if let Some(parsed_value) = T::interpret_str(text) {
+        return Ok(parsed_value);
+    }
+    Err(InvalidQuery::InvalidSearchTerm {
+        expected_value_type: T::name(),
         field_name: field_name.to_string(),
-        value: value.to_string(),
+        value: text.to_string(),
     })
 }
 
@@ -112,35 +104,28 @@ fn compute_query_with_field(
     let field_type = field_entry.field_type();
     match field_type {
         FieldType::U64(_) => {
-            let val = parse_val::<u64>(value, field_entry.name())?;
+            let val = parse_value_from_user_text::<u64>(value, field_entry.name())?;
             let term = Term::from_field_u64(field, val);
             Ok(make_term_query(term))
         }
         FieldType::I64(_) => {
-            let val = parse_val::<i64>(value, field_entry.name())?;
+            let val = parse_value_from_user_text::<i64>(value, field_entry.name())?;
             let term = Term::from_field_i64(field, val);
             Ok(make_term_query(term))
         }
         FieldType::F64(_) => {
-            let val = parse_val::<f64>(value, field_entry.name())?;
+            let val = parse_value_from_user_text::<f64>(value, field_entry.name())?;
             let term = Term::from_field_f64(field, val);
             Ok(make_term_query(term))
         }
         FieldType::Bool(_) => {
-            let val = parse_val::<bool>(value, field_entry.name())?;
-            let term = Term::from_field_bool(field, val);
+            let bool_val = parse_value_from_user_text(value, field_entry.name())?;
+            let term = Term::from_field_bool(field, bool_val);
             Ok(make_term_query(term))
         }
         FieldType::Date(_) => {
-            // TODO handle input format.
-            let Ok(dt) = OffsetDateTime::parse(value, &Rfc3339) else {
-                return Err(InvalidQuery::InvalidSearchTerm {
-                    expected_value_type: "datetime",
-                    field_name: field_entry.name().to_string(),
-                    value: value.to_string()
-                });
-            };
-            let term = Term::from_field_date(field, TantivyDateTime::from_utc(dt));
+            let dt = parse_value_from_user_text(value, field_entry.name())?;
+            let term = Term::from_field_date(field, dt);
             Ok(make_term_query(term))
         }
         FieldType::Str(text_options) => {
@@ -155,12 +140,7 @@ fn compute_query_with_field(
             full_text_params.make_query(terms, text_field_indexing.index_option())
         }
         FieldType::IpAddr(_) => {
-            let ip_addr = IpAddr::from_str(value).map_err(|_| InvalidQuery::InvalidSearchTerm {
-                expected_value_type: "ip_address",
-                field_name: field_entry.name().to_string(),
-                value: value.to_string(),
-            })?;
-            let ip_v6 = ip_addr.into_ipv6_addr();
+            let ip_v6 = parse_value_from_user_text(value, field_entry.name())?;
             let term = Term::from_field_ip_addr(field, ip_v6);
             Ok(make_term_query(term))
         }
@@ -175,14 +155,7 @@ fn compute_query_with_field(
             "Facets are not supported in Quickwit.".to_string(),
         )),
         FieldType::Bytes(_) => {
-            let mut buffer = Vec::with_capacity(value.len() * 3 / 4);
-            LENIENT_BASE64_ENGINE
-                .decode_vec(value, &mut buffer)
-                .map_err(|_| InvalidQuery::InvalidSearchTerm {
-                    expected_value_type: "base64 bytess",
-                    field_name: field_entry.name().to_string(),
-                    value: value.to_string(),
-                })?;
+            let buffer: Vec<u8> = parse_value_from_user_text(value, field_entry.name())?;
             let term = Term::from_field_bytes(field, &buffer[..]);
             Ok(make_term_query(term))
         }
