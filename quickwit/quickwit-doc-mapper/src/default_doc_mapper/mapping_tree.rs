@@ -64,9 +64,15 @@ impl LeafType {
                     Err(format!("Expected JSON string, got `{json_val}`."))
                 }
             }
-            LeafType::I64(_) => i64::from_json(json_val),
-            LeafType::U64(_) => u64::from_json(json_val),
-            LeafType::F64(_) => f64::from_json(json_val),
+            LeafType::I64(numeric_options) => {
+                numeric_options.input_formats.parse_json_i64(&json_val)
+            }
+            LeafType::U64(numeric_options) => {
+                numeric_options.input_formats.parse_json_u64(&json_val)
+            }
+            LeafType::F64(numeric_options) => {
+                numeric_options.input_formats.parse_json_f64(&json_val)
+            }
             LeafType::Bool(_) => {
                 if let JsonValue::Bool(val) = json_val {
                     Ok(TantivyValue::Bool(val))
@@ -775,6 +781,44 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_u64_str_mapping() {
+        let leaf = LeafType::U64(QuickwitNumericOptions::default());
+        assert_eq!(
+            leaf.value_from_json(json!("20")).unwrap(),
+            TantivyValue::U64(20u64)
+        );
+    }
+
+    #[test]
+    fn test_parse_u64_invalid_str_mapping() {
+        let leaf = LeafType::U64(QuickwitNumericOptions::default());
+        assert_eq!(
+            leaf.value_from_json(json!("20a")).err().unwrap(),
+            "No format matched input value `\"20a\"`."
+        );
+    }
+
+    #[test]
+    fn test_parse_u64_hex_mapping() {
+        let leaf = LeafType::U64(QuickwitNumericOptions {
+            input_formats: vec![std::str::FromStr::from_str("hex").unwrap()].into(),
+            ..QuickwitNumericOptions::default()
+        });
+        assert_eq!(
+            leaf.value_from_json(json!("20a")).unwrap(),
+            TantivyValue::U64(0x20a)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("0x20a")).unwrap(),
+            TantivyValue::U64(0x20a)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("0x20g")).err().unwrap(),
+            "No format matched input value `\"0x20g\"`."
+        );
+    }
+
+    #[test]
     fn test_parse_u64_negative_should_error() {
         let leaf = LeafType::U64(QuickwitNumericOptions::default());
         assert_eq!(
@@ -789,6 +833,60 @@ mod tests {
         assert_eq!(
             leaf.value_from_json(json!(20u64)).unwrap(),
             TantivyValue::I64(20i64)
+        );
+    }
+
+    #[test]
+    fn test_parse_i64_str_mapping() {
+        let leaf = LeafType::I64(QuickwitNumericOptions::default());
+        assert_eq!(
+            leaf.value_from_json(json!("20")).unwrap(),
+            TantivyValue::I64(20i64)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("-20")).unwrap(),
+            TantivyValue::I64(-20i64)
+        );
+    }
+
+    #[test]
+    fn test_parse_i64_invalid_str_mapping() {
+        let leaf = LeafType::I64(QuickwitNumericOptions::default());
+        assert_eq!(
+            leaf.value_from_json(json!("20a")).err().unwrap(),
+            "No format matched input value `\"20a\"`."
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("20a")).err().unwrap(),
+            "No format matched input value `\"20a\"`."
+        );
+    }
+
+    #[test]
+    fn test_parse_i64_hex_mapping() {
+        let leaf = LeafType::I64(QuickwitNumericOptions {
+            input_formats: vec![std::str::FromStr::from_str("hex").unwrap()].into(),
+            ..QuickwitNumericOptions::default()
+        });
+        assert_eq!(
+            leaf.value_from_json(json!("20a")).unwrap(),
+            TantivyValue::I64(0x20a)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("0x20a")).unwrap(),
+            TantivyValue::I64(0x20a)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("ffffffffffffffff")).unwrap(),
+            TantivyValue::I64(-1)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("0xffffffffffffffff")).unwrap(),
+            TantivyValue::I64(-1)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("0x20g")).err().unwrap(),
+            "No format matched input value `\"0x20g\"`."
         );
     }
 
@@ -817,6 +915,52 @@ mod tests {
         assert_eq!(
             leaf.value_from_json(json!(4_000u64)).unwrap(),
             TantivyValue::F64(4_000f64)
+        );
+    }
+
+    #[test]
+    fn test_parse_f64_str_mapping() {
+        let leaf = LeafType::F64(QuickwitNumericOptions::default());
+        assert_eq!(
+            leaf.value_from_json(json!("20")).unwrap(),
+            TantivyValue::F64(20f64)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("20.5")).unwrap(),
+            TantivyValue::F64(20.5f64)
+        );
+    }
+
+    #[test]
+    fn test_parse_f64_invalid_str_mapping() {
+        let leaf = LeafType::F64(QuickwitNumericOptions::default());
+        assert_eq!(
+            leaf.value_from_json(json!("20a")).err().unwrap(),
+            "No format matched input value `\"20a\"`."
+        );
+    }
+
+    #[test]
+    fn test_parse_f64_hex_mapping() {
+        let leaf = LeafType::F64(QuickwitNumericOptions {
+            input_formats: vec![std::str::FromStr::from_str("hex").unwrap()].into(),
+            ..QuickwitNumericOptions::default()
+        });
+        assert_eq!(
+            leaf.value_from_json(json!("0")).unwrap(),
+            TantivyValue::F64(0.0)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("8000000000000000")).unwrap(),
+            TantivyValue::F64(-0.0)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("0x7ff0000000000000")).unwrap(),
+            TantivyValue::F64(f64::INFINITY)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("0x20g")).err().unwrap(),
+            "No format matched input value `\"0x20g\"`."
         );
     }
 
@@ -957,7 +1101,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             parse_err.to_string(),
-            "The field `root.my_field` could not be parsed: Expected JSON number, got `[1,2]`."
+            "The field `root.my_field` could not be parsed: No format matched input value `[1,2]`."
         );
     }
 

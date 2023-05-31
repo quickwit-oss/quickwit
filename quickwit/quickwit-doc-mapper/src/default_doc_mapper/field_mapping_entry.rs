@@ -25,7 +25,10 @@ use indexmap::IndexSet;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
-use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type};
+use tantivy::schema::{
+    IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
+    Value as TantivyValue,
+};
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::{default_as_true, FieldMappingType};
@@ -113,7 +116,40 @@ impl Default for QuickwitNumericOptions {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct NumericInputFormats(Vec<NumericFormat>);
+pub struct NumericInputFormats(pub Vec<NumericFormat>);
+
+impl NumericInputFormats {
+    pub fn parse_json_i64(&self, value: &serde_json::Value) -> Result<TantivyValue, String> {
+        for format in &self.0 {
+            if let Some(result) = format.parse_json_i64(value)? {
+                return Ok(result);
+            }
+        }
+        Err(format!("No format matched input value `{value}`."))
+    }
+    pub fn parse_json_u64(&self, value: &serde_json::Value) -> Result<TantivyValue, String> {
+        for format in &self.0 {
+            if let Some(result) = format.parse_json_u64(value)? {
+                return Ok(result);
+            }
+        }
+        Err(format!("No format matched input value `{value}`."))
+    }
+    pub fn parse_json_f64(&self, value: &serde_json::Value) -> Result<TantivyValue, String> {
+        for format in &self.0 {
+            if let Some(result) = format.parse_json_f64(value)? {
+                return Ok(result);
+            }
+        }
+        Err(format!("No format matched input value `{value}`."))
+    }
+}
+
+impl From<Vec<NumericFormat>> for NumericInputFormats {
+    fn from(formats: Vec<NumericFormat>) -> Self {
+        Self(formats)
+    }
+}
 
 impl<'de> Deserialize<'de> for NumericInputFormats {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -158,6 +194,76 @@ impl NumericFormat {
             NumericFormat::DecimalStr => "decimal_str",
             NumericFormat::Hex => "hex",
         }
+    }
+
+    pub fn parse_json_i64(
+        &self,
+        value: &serde_json::Value,
+    ) -> Result<Option<TantivyValue>, String> {
+        let number = match self {
+            NumericFormat::Decimal if value.is_number() => {
+                Some(value.as_i64().ok_or_else(|| {
+                    format!("Expected i64, got inconvertible JSON number `{value}`.")
+                })?)
+            }
+            NumericFormat::DecimalStr => value.as_str().and_then(|val| str::parse::<i64>(val).ok()),
+            NumericFormat::Hex => value.as_str().and_then(|mut val| {
+                if val.starts_with("0x") || val.starts_with("0X") {
+                    val = &val[2..];
+                }
+                // we parse a u64 and cast it to i64 so 0xFF..F reads as -1, not a Positive
+                // Overflow error
+                u64::from_str_radix(val, 16).map(|val| val as i64).ok()
+            }),
+            NumericFormat::Decimal => None,
+        };
+        Ok(number.map(Into::into))
+    }
+
+    pub fn parse_json_u64(
+        &self,
+        value: &serde_json::Value,
+    ) -> Result<Option<TantivyValue>, String> {
+        let number = match self {
+            NumericFormat::Decimal if value.is_number() => {
+                Some(value.as_u64().ok_or_else(|| {
+                    format!("Expected u64, got inconvertible JSON number `{value}`.")
+                })?)
+            }
+            NumericFormat::DecimalStr => value.as_str().and_then(|val| str::parse::<u64>(val).ok()),
+            NumericFormat::Hex => value.as_str().and_then(|mut val| {
+                if val.starts_with("0x") || val.starts_with("0X") {
+                    val = &val[2..];
+                }
+                u64::from_str_radix(val, 16).ok()
+            }),
+            NumericFormat::Decimal => None,
+        };
+        Ok(number.map(Into::into))
+    }
+
+    pub fn parse_json_f64(
+        &self,
+        value: &serde_json::Value,
+    ) -> Result<Option<TantivyValue>, String> {
+        let number = match self {
+            NumericFormat::Decimal if value.is_number() => {
+                Some(value.as_f64().ok_or_else(|| {
+                    format!("Expected f64, got inconvertible JSON number `{value}`.")
+                })?)
+            }
+            NumericFormat::DecimalStr => value.as_str().and_then(|val| str::parse::<f64>(val).ok()),
+            NumericFormat::Hex => value.as_str().and_then(|mut val| {
+                if val.starts_with("0x") || val.starts_with("0X") {
+                    val = &val[2..];
+                }
+                // we accept the raw representation of floats, such that 0x7ff0000000000000==+Inf
+                // TODO: should we really allow ±inf and NaN?
+                u64::from_str_radix(val, 16).map(f64::from_bits).ok()
+            }),
+            NumericFormat::Decimal => None,
+        };
+        Ok(number.map(Into::into))
     }
 }
 
