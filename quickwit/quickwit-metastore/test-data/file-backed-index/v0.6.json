@@ -61,7 +61,7 @@
         ],
         "max_num_partitions": 100,
         "mode": "dynamic",
-        "partition_key": "tenant",
+        "partition_key": "tenant_id",
         "store_source": true,
         "tag_fields": [
           "log_level",

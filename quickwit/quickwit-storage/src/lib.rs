@@ -88,7 +88,7 @@ pub async fn load_file(uri: &Uri) -> anyhow::Result<OwnedBytes> {
     let parent = uri
         .parent()
         .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
-    let storage = quickwit_storage_uri_resolver().resolve(&parent)?;
+    let storage = quickwit_storage_uri_resolver().resolve(&parent).await?;
     let file_name = uri
         .file_name()
         .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
@@ -144,7 +144,7 @@ pub(crate) mod test_suite {
             .get_slice(Path::new("missingfile"), 0..3)
             .await
             .map_err(|err| err.kind());
-        assert!(matches!(err, Err(StorageErrorKind::DoesNotExist)));
+        assert!(matches!(err, Err(StorageErrorKind::NotFound)));
         Ok(())
     }
 
@@ -173,7 +173,7 @@ pub(crate) mod test_suite {
 
     async fn test_write_and_cp(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("write_and_cp");
-        let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
+        let payload_bytes = b"abcdefghijklmnopqrstuvwxyz";
         storage
             .put(test_path, Box::new(payload_bytes.to_vec()))
             .await?;
@@ -188,10 +188,11 @@ pub(crate) mod test_suite {
 
     async fn test_write_and_delete(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("write_and_delete");
-        let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
+        let payload_bytes = b"abcdefghijklmnopqrstuvwxyz";
         storage
             .put(test_path, Box::new(payload_bytes.to_vec()))
             .await?;
+        assert!(storage.exists(test_path).await?);
         storage.delete(test_path).await?;
         assert!(!storage.exists(test_path).await?);
         Ok(())
@@ -219,7 +220,7 @@ pub(crate) mod test_suite {
 
     async fn test_file_size(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("write_for_filesize");
-        let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
+        let payload_bytes = b"abcdefghijklmnopqrstuvwxyz";
         storage
             .put(test_path, Box::new(payload_bytes.to_vec()))
             .await?;
@@ -250,7 +251,7 @@ pub(crate) mod test_suite {
         storage: &mut dyn Storage,
     ) -> anyhow::Result<()> {
         let test_path = Path::new("foo/bar/write_and_delete_with_separator");
-        let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
+        let payload_bytes = b"abcdefghijklmnopqrstuvwxyz";
         storage
             .put(test_path, Box::new(payload_bytes.to_vec()))
             .await?;

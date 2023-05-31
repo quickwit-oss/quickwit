@@ -1,0 +1,35 @@
+# Delete possibly remaining index
+method: DELETE
+endpoint: indexes/sortorder
+status_code: null
+---
+# Create index
+method: POST
+endpoint: indexes/
+json:
+  version: "0.6"
+  index_id: sortorder
+  doc_mapping:
+    mode: dynamic
+    dynamic_mapping:
+      fast: true
+---
+# Ingest documents
+method: POST
+endpoint: sortorder/ingest
+params:
+  commit: force
+ndjson:
+  - {"count": 10, "id": 1}
+  - {"count": 15, "id": 2}
+  - {"id": 3}
+---
+# Ingest documents split #2
+method: POST
+endpoint: sortorder/ingest
+params:
+  commit: force
+ndjson:
+  - {"count": -2.5, "id": 4}
+  - {"id": 5}
+

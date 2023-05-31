@@ -28,13 +28,15 @@ use thiserror::Error;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum StorageErrorKind {
     /// The target index does not exist.
-    DoesNotExist,
+    NotFound,
     /// The request credentials do not allow for this operation.
     Unauthorized,
     /// A third-party service forbids this operation, or is misconfigured.
     Service,
     /// Any generic internal error.
     InternalError,
+    /// A timeout occured during the operation.
+    Timeout,
     /// Io error.
     Io,
 }
@@ -63,11 +65,10 @@ pub enum StorageResolverError {
 
 impl StorageErrorKind {
     /// Creates a StorageError.
-    pub fn with_error<E>(self, source: E) -> StorageError
-    where anyhow::Error: From<E> {
+    pub fn with_error(self, source: impl Into<anyhow::Error>) -> StorageError {
         StorageError {
             kind: self,
-            source: Arc::new(From::from(source)),
+            source: Arc::new(source.into()),
         }
     }
 }
@@ -75,15 +76,16 @@ impl StorageErrorKind {
 impl From<StorageError> for io::Error {
     fn from(storage_err: StorageError) -> Self {
         let io_error_kind = match storage_err.kind() {
-            StorageErrorKind::DoesNotExist => io::ErrorKind::NotFound,
+            StorageErrorKind::NotFound => io::ErrorKind::NotFound,
             _ => io::ErrorKind::Other,
         };
+        // TODO: This is swallowing the context of the source error.
         io::Error::new(io_error_kind, storage_err.source.to_string())
     }
 }
 
 /// Generic StorageError.
-#[derive(Clone, Debug, Error)]
+#[derive(Debug, Clone, Error)]
 #[error("StorageError(kind={kind:?}, source={source})")]
 #[allow(missing_docs)]
 pub struct StorageError {
@@ -101,7 +103,7 @@ impl StorageError {
     where C: fmt::Display + Send + Sync + 'static {
         StorageError {
             kind: self.kind,
-            source: Arc::new(anyhow::anyhow!("{} Ctx:{}", self.source.to_string(), ctx)),
+            source: Arc::new(anyhow::anyhow!("{ctx}").context(self.source)),
         }
     }
 
@@ -114,7 +116,7 @@ impl StorageError {
 impl From<io::Error> for StorageError {
     fn from(err: io::Error) -> StorageError {
         match err.kind() {
-            io::ErrorKind::NotFound => StorageErrorKind::DoesNotExist.with_error(err),
+            io::ErrorKind::NotFound => StorageErrorKind::NotFound.with_error(err),
             _ => StorageErrorKind::Io.with_error(err),
         }
     }
@@ -123,7 +125,7 @@ impl From<io::Error> for StorageError {
 impl From<OpenDirectoryError> for StorageError {
     fn from(err: OpenDirectoryError) -> StorageError {
         match err {
-            OpenDirectoryError::DoesNotExist(_) => StorageErrorKind::DoesNotExist.with_error(err),
+            OpenDirectoryError::DoesNotExist(_) => StorageErrorKind::NotFound.with_error(err),
             _ => StorageErrorKind::Io.with_error(err),
         }
     }
@@ -132,7 +134,7 @@ impl From<OpenDirectoryError> for StorageError {
 impl From<OpenReadError> for StorageError {
     fn from(err: OpenReadError) -> StorageError {
         match err {
-            OpenReadError::FileDoesNotExist(_) => StorageErrorKind::DoesNotExist.with_error(err),
+            OpenReadError::FileDoesNotExist(_) => StorageErrorKind::NotFound.with_error(err),
             _ => StorageErrorKind::Io.with_error(err),
         }
     }

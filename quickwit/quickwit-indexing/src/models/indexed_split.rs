@@ -21,6 +21,7 @@ use std::fmt;
 use std::path::Path;
 
 use quickwit_common::io::IoControls;
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::IndexUid;
 use tantivy::directory::MmapDirectory;
@@ -29,20 +30,20 @@ use tracing::{instrument, Span};
 
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperation;
-use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
+use crate::models::{IndexingPipelineId, PublishLock, SplitAttrs};
 use crate::new_split_id;
 
 pub struct IndexedSplitBuilder {
     pub split_attrs: SplitAttrs,
     pub index_writer: tantivy::SingleSegmentIndexWriter,
-    pub split_scratch_directory: ScratchDirectory,
+    pub split_scratch_directory: TempDirectory,
     pub controlled_directory_opt: Option<ControlledDirectory>,
 }
 
 pub struct IndexedSplit {
     pub split_attrs: SplitAttrs,
     pub index: tantivy::Index,
-    pub split_scratch_directory: ScratchDirectory,
+    pub split_scratch_directory: TempDirectory,
     pub controlled_directory_opt: Option<ControlledDirectory>,
 }
 
@@ -56,7 +57,7 @@ impl fmt::Debug for IndexedSplit {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("IndexedSplit")
-            .field("id", &self.split_attrs.split_id)
+            .field("split_id", &self.split_attrs.split_id)
             .field("dir", &self.split_scratch_directory.path())
             .field("num_docs", &self.split_attrs.num_docs)
             .finish()
@@ -67,7 +68,7 @@ impl fmt::Debug for IndexedSplitBuilder {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("IndexedSplitBuilder")
-            .field("id", &self.split_attrs.split_id)
+            .field("split_id", &self.split_attrs.split_id)
             .field("dir", &self.split_scratch_directory.path())
             .field("num_docs", &self.split_attrs.num_docs)
             .finish()
@@ -79,7 +80,7 @@ impl IndexedSplitBuilder {
         pipeline_id: IndexingPipelineId,
         partition_id: u64,
         last_delete_opstamp: u64,
-        scratch_directory: ScratchDirectory,
+        scratch_directory: TempDirectory,
         index_builder: IndexBuilder,
         io_controls: IoControls,
     ) -> anyhow::Result<Self> {
@@ -89,7 +90,7 @@ impl IndexedSplitBuilder {
         let split_id = new_split_id();
         let split_scratch_directory_prefix = format!("split-{split_id}-");
         let split_scratch_directory =
-            scratch_directory.named_temp_child(split_scratch_directory_prefix)?;
+            scratch_directory.named_temp_child(&split_scratch_directory_prefix)?;
         let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
         let box_mmap_directory = Box::new(mmap_directory);
 
@@ -164,11 +165,12 @@ pub struct IndexedSplitBatch {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommitTrigger {
-    Timeout,
+    Drained,
+    ForceCommit,
+    MemoryLimit,
     NoMoreDocs,
     NumDocsLimit,
-    MemoryLimit,
-    ForceCommit,
+    Timeout,
 }
 
 #[derive(Debug)]

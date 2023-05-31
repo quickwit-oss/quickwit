@@ -167,7 +167,8 @@ impl SearchService for SearchServiceImpl {
         info!(index=?search_request.index_id, splits=?leaf_search_request.split_offsets, "leaf_search");
         let storage = self
             .storage_uri_resolver
-            .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))?;
+            .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))
+            .await?;
         let split_ids = leaf_search_request.split_offsets;
         let doc_mapper = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
 
@@ -189,7 +190,8 @@ impl SearchService for SearchServiceImpl {
     ) -> crate::Result<FetchDocsResponse> {
         let storage = self
             .storage_uri_resolver
-            .resolve(&Uri::from_well_formed(fetch_docs_request.index_uri))?;
+            .resolve(&Uri::from_well_formed(fetch_docs_request.index_uri))
+            .await?;
         let search_request_opt = fetch_docs_request.search_request.as_ref();
         let doc_mapper = deserialize_doc_mapper(&fetch_docs_request.doc_mapper)?;
         let fetch_docs_response = fetch_docs(
@@ -229,7 +231,8 @@ impl SearchService for SearchServiceImpl {
         info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_offsets, "leaf_search");
         let storage = self
             .storage_uri_resolver
-            .resolve(&Uri::from_well_formed(leaf_stream_request.index_uri))?;
+            .resolve(&Uri::from_well_formed(leaf_stream_request.index_uri))
+            .await?;
         let doc_mapper = deserialize_doc_mapper(&leaf_stream_request.doc_mapper)?;
         let leaf_receiver = leaf_search_stream(
             self.searcher_context.clone(),
@@ -268,7 +271,8 @@ impl SearchService for SearchServiceImpl {
          "leaf_search");
         let storage = self
             .storage_uri_resolver
-            .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))?;
+            .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))
+            .await?;
         let split_ids = leaf_search_request.split_offsets;
 
         let leaf_search_response = leaf_list_terms(

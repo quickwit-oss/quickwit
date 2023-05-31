@@ -22,10 +22,11 @@ use std::str::FromStr;
 
 use clap::{arg, ArgAction, ArgMatches, Command};
 use itertools::Itertools;
+use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_serve::serve_quickwit;
-use quickwit_telemetry::payload::TelemetryEvent;
+use quickwit_telemetry::payload::{RunCommandInfo, TelemetryEvent};
 use tokio::signal;
 use tracing::debug;
 
@@ -80,16 +81,25 @@ impl RunCliCommand {
             tracing::info!(services = %services.iter().join(", "), "Setting services from override.");
             config.enabled_services = services.clone();
         }
-        let telemetry_event = TelemetryEvent::RunService(config.enabled_services.iter().join(","));
+        let telemetry_event = TelemetryEvent::RunCommand(RunCommandInfo::new(
+            config
+                .enabled_services
+                .iter()
+                .map(|service| service.to_string())
+                .collect(),
+            config.indexer_config.enable_otlp_endpoint,
+            config.jaeger_config.enable_endpoint,
+        ));
         quickwit_telemetry::send_telemetry_event(telemetry_event).await;
         // TODO move in serve quickwit?
-        start_actor_runtimes(&config.enabled_services)?;
+        let runtimes_config = RuntimesConfig::default();
+        start_actor_runtimes(runtimes_config, &config.enabled_services)?;
         let shutdown_signal = Box::pin(async move {
             signal::ctrl_c()
                 .await
                 .expect("Registering a signal handler for SIGINT should not fail.");
         });
-        let _ = serve_quickwit(config, shutdown_signal).await?;
+        let _ = serve_quickwit(config, runtimes_config, shutdown_signal).await?;
         Ok(())
     }
 }

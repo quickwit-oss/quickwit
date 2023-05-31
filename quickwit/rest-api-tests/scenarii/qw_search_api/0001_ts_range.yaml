@@ -1,0 +1,36 @@
+# This tests a simple request with no queries.
+endpoint: simple/search
+params:
+  query: "*"
+  start_timestamp: 1684993001
+  end_timestamp: 1684993002
+expected:
+  num_hits: 1
+---
+endpoint: simple/search
+params:
+  query: "*"
+  start_timestamp: 1684993002
+  end_timestamp: 1684993004
+expected:
+  num_hits: 2
+---
+endpoint: simple/search
+params:
+  query: "*"
+  start_timestamp: 1684993002
+  end_timestamp: 1684993004
+expected:
+  num_hits: 2
+---
+endpoint: simple/search
+params:
+  query: "ts:>=2023/05/25"
+expected:
+  num_hits: 4
+---
+endpoint: simple/search
+params:
+  query: "ts:>=1684993002 AND ts:<1684993004"
+expected:
+  num_hits: 2

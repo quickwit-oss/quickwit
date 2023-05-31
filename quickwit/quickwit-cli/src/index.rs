@@ -46,7 +46,6 @@ use quickwit_rest_client::rest_client::{CommitType, IngestEvent, QuickwitClient,
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortByField};
 use quickwit_storage::load_file;
-use quickwit_telemetry::payload::TelemetryEvent;
 use reqwest::Url;
 use tabled::object::{Columns, Segment};
 use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
@@ -126,6 +125,8 @@ pub fn build_index_command() -> Command {
                         .required(true),
                     arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
                         .required(false),
+                    arg!(--"batch-size-limit" <BATCH_SIZE_LIMIT> "Size limit of each submitted document batch.")
+                        .required(false),
                     Arg::new("wait")
                         .long("wait")
                         .short('w')
@@ -201,6 +202,7 @@ pub struct IngestDocsArgs {
     pub cluster_endpoint: Url,
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
+    pub batch_size_limit_opt: Option<Byte>,
     pub commit_type: CommitType,
 }
 
@@ -340,6 +342,11 @@ impl IndexCliCommand {
         } else {
             None
         };
+
+        let batch_size_limit_opt = matches
+            .remove_one::<String>("batch-size-limit")
+            .map(Byte::from_str)
+            .transpose()?;
         let commit_type = match (matches.get_flag("wait"), matches.get_flag("force")) {
             (false, false) => CommitType::Auto,
             (false, true) => CommitType::Force,
@@ -351,6 +358,7 @@ impl IndexCliCommand {
             cluster_endpoint,
             index_id,
             input_path_opt,
+            batch_size_limit_opt,
             commit_type,
         }))
     }
@@ -460,7 +468,6 @@ pub async fn clear_index_cli(args: ClearIndexArgs) -> anyhow::Result<()> {
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(args=?args, "create-index");
     println!("❯ Creating index...");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
     let file_content = load_file(&args.index_config_uri).await?;
     let config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
     let transport = Transport::new(args.cluster_endpoint);
@@ -790,7 +797,6 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     } else {
         println!("❯ Ingesting documents from stdin.");
     }
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
     let progress_bar = match &args.input_path_opt {
         Some(filepath) => {
             let file_len = std::fs::metadata(filepath).context("File not found")?.len();
@@ -817,10 +823,14 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         Some(filepath) => IngestSource::File(filepath),
         None => IngestSource::Stdin,
     };
+    let batch_size_limit_opt = args
+        .batch_size_limit_opt
+        .map(|batch_size_limit| batch_size_limit.get_bytes() as usize);
     qw_client
         .ingest(
             &args.index_id,
             ingest_source,
+            batch_size_limit_opt,
             Some(&update_progress_bar),
             args.commit_type,
         )
@@ -888,7 +898,6 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     }
 
     println!("❯ Deleting index...");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
     let endpoint =
         Url::parse(args.cluster_endpoint.as_str()).context("Failed to parse cluster endpoint.")?;
     let transport = Transport::new(endpoint);

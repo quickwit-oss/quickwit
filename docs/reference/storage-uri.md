@@ -68,18 +68,20 @@ The region or custom endpoint will be detected using the first successful method
 - `AWS_DEFAULT_REGION` environment variable
 - `AWS_REGION` environment variable
 - Amazon’s instance metadata API [https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html)
+- If none of the above methods are provided, Quickwit will default to `us-east-1`.
 
 ## S3-compatible Object Storage
 
 Quickwit can target other S3-compatible storage.
 This is done by setting an endpoint url in the `QW_S3_ENDPOINT` environment variable.
 
-Depending on the object storage, you will also need to set the region.
+Depending on the object storage, you will also need to set the region and force path-style access (Things like self-hosted MinIO instances, which are not behind a domain name.)
 
 Example:
 
 ```bash
 export QW_S3_ENDPOINT=http://localhost:9000/
+export QW_S3_FORCE_PATH_STYLE_ACCESS=true
 ```
 
 ### Google Cloud Storage
@@ -114,6 +116,7 @@ Example for a local garage server:
 
 ```bash
 export QW_S3_ENDPOINT=http://127.0.0.1:3900
+export QW_S3_FORCE_PATH_STYLE_ACCESS=true
 export AWS_REGION=garage
 ```
 

@@ -145,7 +145,7 @@ pub mod span_writer_plugin_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -201,11 +201,30 @@ pub mod span_writer_plugin_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         /// spanstore/Writer
         pub async fn write_span(
             &mut self,
             request: impl tonic::IntoRequest<super::WriteSpanRequest>,
-        ) -> Result<tonic::Response<super::WriteSpanResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::WriteSpanResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -219,12 +238,20 @@ pub mod span_writer_plugin_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.SpanWriterPlugin/WriteSpan",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("jaeger.storage.v1.SpanWriterPlugin", "WriteSpan"),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn close(
             &mut self,
             request: impl tonic::IntoRequest<super::CloseWriterRequest>,
-        ) -> Result<tonic::Response<super::CloseWriterResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::CloseWriterResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -238,7 +265,10 @@ pub mod span_writer_plugin_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.SpanWriterPlugin/Close",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("jaeger.storage.v1.SpanWriterPlugin", "Close"));
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -255,7 +285,7 @@ pub mod streaming_span_writer_plugin_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -313,10 +343,29 @@ pub mod streaming_span_writer_plugin_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         pub async fn write_span_stream(
             &mut self,
             request: impl tonic::IntoStreamingRequest<Message = super::WriteSpanRequest>,
-        ) -> Result<tonic::Response<super::WriteSpanResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::WriteSpanResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -330,9 +379,15 @@ pub mod streaming_span_writer_plugin_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.StreamingSpanWriterPlugin/WriteSpanStream",
             );
-            self.inner
-                .client_streaming(request.into_streaming_request(), path, codec)
-                .await
+            let mut req = request.into_streaming_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "jaeger.storage.v1.StreamingSpanWriterPlugin",
+                        "WriteSpanStream",
+                    ),
+                );
+            self.inner.client_streaming(req, path, codec).await
         }
     }
 }
@@ -349,7 +404,7 @@ pub mod span_reader_plugin_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -405,11 +460,27 @@ pub mod span_reader_plugin_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         /// spanstore/Reader
         pub async fn get_trace(
             &mut self,
             request: impl tonic::IntoRequest<super::GetTraceRequest>,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::SpansResponseChunk>>,
             tonic::Status,
         > {
@@ -426,12 +497,20 @@ pub mod span_reader_plugin_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.SpanReaderPlugin/GetTrace",
             );
-            self.inner.server_streaming(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("jaeger.storage.v1.SpanReaderPlugin", "GetTrace"),
+                );
+            self.inner.server_streaming(req, path, codec).await
         }
         pub async fn get_services(
             &mut self,
             request: impl tonic::IntoRequest<super::GetServicesRequest>,
-        ) -> Result<tonic::Response<super::GetServicesResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::GetServicesResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -445,12 +524,20 @@ pub mod span_reader_plugin_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.SpanReaderPlugin/GetServices",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("jaeger.storage.v1.SpanReaderPlugin", "GetServices"),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn get_operations(
             &mut self,
             request: impl tonic::IntoRequest<super::GetOperationsRequest>,
-        ) -> Result<tonic::Response<super::GetOperationsResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::GetOperationsResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -464,12 +551,20 @@ pub mod span_reader_plugin_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.SpanReaderPlugin/GetOperations",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "jaeger.storage.v1.SpanReaderPlugin",
+                        "GetOperations",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn find_traces(
             &mut self,
             request: impl tonic::IntoRequest<super::FindTracesRequest>,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::SpansResponseChunk>>,
             tonic::Status,
         > {
@@ -486,12 +581,20 @@ pub mod span_reader_plugin_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.SpanReaderPlugin/FindTraces",
             );
-            self.inner.server_streaming(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("jaeger.storage.v1.SpanReaderPlugin", "FindTraces"),
+                );
+            self.inner.server_streaming(req, path, codec).await
         }
         pub async fn find_trace_i_ds(
             &mut self,
             request: impl tonic::IntoRequest<super::FindTraceIDsRequest>,
-        ) -> Result<tonic::Response<super::FindTraceIDsResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::FindTraceIDsResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -505,7 +608,12 @@ pub mod span_reader_plugin_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.SpanReaderPlugin/FindTraceIDs",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("jaeger.storage.v1.SpanReaderPlugin", "FindTraceIDs"),
+                );
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -522,7 +630,7 @@ pub mod archive_span_writer_plugin_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -580,11 +688,30 @@ pub mod archive_span_writer_plugin_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         /// spanstore/Writer
         pub async fn write_archive_span(
             &mut self,
             request: impl tonic::IntoRequest<super::WriteSpanRequest>,
-        ) -> Result<tonic::Response<super::WriteSpanResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::WriteSpanResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -598,7 +725,15 @@ pub mod archive_span_writer_plugin_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.ArchiveSpanWriterPlugin/WriteArchiveSpan",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "jaeger.storage.v1.ArchiveSpanWriterPlugin",
+                        "WriteArchiveSpan",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -615,7 +750,7 @@ pub mod archive_span_reader_plugin_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -673,11 +808,27 @@ pub mod archive_span_reader_plugin_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         /// spanstore/Reader
         pub async fn get_archive_trace(
             &mut self,
             request: impl tonic::IntoRequest<super::GetTraceRequest>,
-        ) -> Result<
+        ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::SpansResponseChunk>>,
             tonic::Status,
         > {
@@ -694,7 +845,15 @@ pub mod archive_span_reader_plugin_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.ArchiveSpanReaderPlugin/GetArchiveTrace",
             );
-            self.inner.server_streaming(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "jaeger.storage.v1.ArchiveSpanReaderPlugin",
+                        "GetArchiveTrace",
+                    ),
+                );
+            self.inner.server_streaming(req, path, codec).await
         }
     }
 }
@@ -711,7 +870,7 @@ pub mod dependencies_reader_plugin_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -769,11 +928,30 @@ pub mod dependencies_reader_plugin_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         /// dependencystore/Reader
         pub async fn get_dependencies(
             &mut self,
             request: impl tonic::IntoRequest<super::GetDependenciesRequest>,
-        ) -> Result<tonic::Response<super::GetDependenciesResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::GetDependenciesResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -787,7 +965,15 @@ pub mod dependencies_reader_plugin_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.DependenciesReaderPlugin/GetDependencies",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "jaeger.storage.v1.DependenciesReaderPlugin",
+                        "GetDependencies",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -804,7 +990,7 @@ pub mod plugin_capabilities_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -860,10 +1046,29 @@ pub mod plugin_capabilities_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         pub async fn capabilities(
             &mut self,
             request: impl tonic::IntoRequest<super::CapabilitiesRequest>,
-        ) -> Result<tonic::Response<super::CapabilitiesResponse>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::CapabilitiesResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -877,7 +1082,15 @@ pub mod plugin_capabilities_client {
             let path = http::uri::PathAndQuery::from_static(
                 "/jaeger.storage.v1.PluginCapabilities/Capabilities",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "jaeger.storage.v1.PluginCapabilities",
+                        "Capabilities",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -892,17 +1105,25 @@ pub mod span_writer_plugin_server {
         async fn write_span(
             &self,
             request: tonic::Request<super::WriteSpanRequest>,
-        ) -> Result<tonic::Response<super::WriteSpanResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::WriteSpanResponse>,
+            tonic::Status,
+        >;
         async fn close(
             &self,
             request: tonic::Request<super::CloseWriterRequest>,
-        ) -> Result<tonic::Response<super::CloseWriterResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::CloseWriterResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct SpanWriterPluginServer<T: SpanWriterPlugin> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: SpanWriterPlugin> SpanWriterPluginServer<T> {
@@ -915,6 +1136,8 @@ pub mod span_writer_plugin_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -938,6 +1161,22 @@ pub mod span_writer_plugin_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for SpanWriterPluginServer<T>
     where
@@ -951,7 +1190,7 @@ pub mod span_writer_plugin_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -973,13 +1212,15 @@ pub mod span_writer_plugin_server {
                             &mut self,
                             request: tonic::Request<super::WriteSpanRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).write_span(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -989,6 +1230,10 @@ pub mod span_writer_plugin_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1011,13 +1256,15 @@ pub mod span_writer_plugin_server {
                             &mut self,
                             request: tonic::Request<super::CloseWriterRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).close(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1027,6 +1274,10 @@ pub mod span_writer_plugin_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1055,12 +1306,14 @@ pub mod span_writer_plugin_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: SpanWriterPlugin> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -1082,13 +1335,18 @@ pub mod streaming_span_writer_plugin_server {
         async fn write_span_stream(
             &self,
             request: tonic::Request<tonic::Streaming<super::WriteSpanRequest>>,
-        ) -> Result<tonic::Response<super::WriteSpanResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::WriteSpanResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct StreamingSpanWriterPluginServer<T: StreamingSpanWriterPlugin> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: StreamingSpanWriterPlugin> StreamingSpanWriterPluginServer<T> {
@@ -1101,6 +1359,8 @@ pub mod streaming_span_writer_plugin_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -1124,6 +1384,22 @@ pub mod streaming_span_writer_plugin_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>>
     for StreamingSpanWriterPluginServer<T>
@@ -1138,7 +1414,7 @@ pub mod streaming_span_writer_plugin_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -1162,7 +1438,7 @@ pub mod streaming_span_writer_plugin_server {
                                 tonic::Streaming<super::WriteSpanRequest>,
                             >,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).write_span_stream(request).await
                             };
@@ -1171,6 +1447,8 @@ pub mod streaming_span_writer_plugin_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1180,6 +1458,10 @@ pub mod streaming_span_writer_plugin_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.client_streaming(method, req).await;
                         Ok(res)
@@ -1208,12 +1490,14 @@ pub mod streaming_span_writer_plugin_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: StreamingSpanWriterPlugin> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -1235,7 +1519,7 @@ pub mod span_reader_plugin_server {
     pub trait SpanReaderPlugin: Send + Sync + 'static {
         /// Server streaming response type for the GetTrace method.
         type GetTraceStream: futures_core::Stream<
-                Item = Result<super::SpansResponseChunk, tonic::Status>,
+                Item = std::result::Result<super::SpansResponseChunk, tonic::Status>,
             >
             + Send
             + 'static;
@@ -1243,35 +1527,46 @@ pub mod span_reader_plugin_server {
         async fn get_trace(
             &self,
             request: tonic::Request<super::GetTraceRequest>,
-        ) -> Result<tonic::Response<Self::GetTraceStream>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<Self::GetTraceStream>, tonic::Status>;
         async fn get_services(
             &self,
             request: tonic::Request<super::GetServicesRequest>,
-        ) -> Result<tonic::Response<super::GetServicesResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::GetServicesResponse>,
+            tonic::Status,
+        >;
         async fn get_operations(
             &self,
             request: tonic::Request<super::GetOperationsRequest>,
-        ) -> Result<tonic::Response<super::GetOperationsResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::GetOperationsResponse>,
+            tonic::Status,
+        >;
         /// Server streaming response type for the FindTraces method.
         type FindTracesStream: futures_core::Stream<
-                Item = Result<super::SpansResponseChunk, tonic::Status>,
+                Item = std::result::Result<super::SpansResponseChunk, tonic::Status>,
             >
             + Send
             + 'static;
         async fn find_traces(
             &self,
             request: tonic::Request<super::FindTracesRequest>,
-        ) -> Result<tonic::Response<Self::FindTracesStream>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<Self::FindTracesStream>, tonic::Status>;
         async fn find_trace_i_ds(
             &self,
             request: tonic::Request<super::FindTraceIDsRequest>,
-        ) -> Result<tonic::Response<super::FindTraceIDsResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::FindTraceIDsResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct SpanReaderPluginServer<T: SpanReaderPlugin> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: SpanReaderPlugin> SpanReaderPluginServer<T> {
@@ -1284,6 +1579,8 @@ pub mod span_reader_plugin_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -1307,6 +1604,22 @@ pub mod span_reader_plugin_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for SpanReaderPluginServer<T>
     where
@@ -1320,7 +1633,7 @@ pub mod span_reader_plugin_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -1343,13 +1656,15 @@ pub mod span_reader_plugin_server {
                             &mut self,
                             request: tonic::Request<super::GetTraceRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).get_trace(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1359,6 +1674,10 @@ pub mod span_reader_plugin_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
                         Ok(res)
@@ -1381,7 +1700,7 @@ pub mod span_reader_plugin_server {
                             &mut self,
                             request: tonic::Request<super::GetServicesRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).get_services(request).await
                             };
@@ -1390,6 +1709,8 @@ pub mod span_reader_plugin_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1399,6 +1720,10 @@ pub mod span_reader_plugin_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1421,7 +1746,7 @@ pub mod span_reader_plugin_server {
                             &mut self,
                             request: tonic::Request<super::GetOperationsRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).get_operations(request).await
                             };
@@ -1430,6 +1755,8 @@ pub mod span_reader_plugin_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1439,6 +1766,10 @@ pub mod span_reader_plugin_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1462,13 +1793,15 @@ pub mod span_reader_plugin_server {
                             &mut self,
                             request: tonic::Request<super::FindTracesRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).find_traces(request).await };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1478,6 +1811,10 @@ pub mod span_reader_plugin_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
                         Ok(res)
@@ -1500,7 +1837,7 @@ pub mod span_reader_plugin_server {
                             &mut self,
                             request: tonic::Request<super::FindTraceIDsRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).find_trace_i_ds(request).await
                             };
@@ -1509,6 +1846,8 @@ pub mod span_reader_plugin_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1518,6 +1857,10 @@ pub mod span_reader_plugin_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1546,12 +1889,14 @@ pub mod span_reader_plugin_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: SpanReaderPlugin> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -1574,13 +1919,18 @@ pub mod archive_span_writer_plugin_server {
         async fn write_archive_span(
             &self,
             request: tonic::Request<super::WriteSpanRequest>,
-        ) -> Result<tonic::Response<super::WriteSpanResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::WriteSpanResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct ArchiveSpanWriterPluginServer<T: ArchiveSpanWriterPlugin> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: ArchiveSpanWriterPlugin> ArchiveSpanWriterPluginServer<T> {
@@ -1593,6 +1943,8 @@ pub mod archive_span_writer_plugin_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -1616,6 +1968,22 @@ pub mod archive_span_writer_plugin_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>>
     for ArchiveSpanWriterPluginServer<T>
@@ -1630,7 +1998,7 @@ pub mod archive_span_writer_plugin_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -1652,7 +2020,7 @@ pub mod archive_span_writer_plugin_server {
                             &mut self,
                             request: tonic::Request<super::WriteSpanRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).write_archive_span(request).await
                             };
@@ -1661,6 +2029,8 @@ pub mod archive_span_writer_plugin_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1670,6 +2040,10 @@ pub mod archive_span_writer_plugin_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -1698,12 +2072,14 @@ pub mod archive_span_writer_plugin_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: ArchiveSpanWriterPlugin> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -1725,7 +2101,7 @@ pub mod archive_span_reader_plugin_server {
     pub trait ArchiveSpanReaderPlugin: Send + Sync + 'static {
         /// Server streaming response type for the GetArchiveTrace method.
         type GetArchiveTraceStream: futures_core::Stream<
-                Item = Result<super::SpansResponseChunk, tonic::Status>,
+                Item = std::result::Result<super::SpansResponseChunk, tonic::Status>,
             >
             + Send
             + 'static;
@@ -1733,13 +2109,18 @@ pub mod archive_span_reader_plugin_server {
         async fn get_archive_trace(
             &self,
             request: tonic::Request<super::GetTraceRequest>,
-        ) -> Result<tonic::Response<Self::GetArchiveTraceStream>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<Self::GetArchiveTraceStream>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct ArchiveSpanReaderPluginServer<T: ArchiveSpanReaderPlugin> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: ArchiveSpanReaderPlugin> ArchiveSpanReaderPluginServer<T> {
@@ -1752,6 +2133,8 @@ pub mod archive_span_reader_plugin_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -1775,6 +2158,22 @@ pub mod archive_span_reader_plugin_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>>
     for ArchiveSpanReaderPluginServer<T>
@@ -1789,7 +2188,7 @@ pub mod archive_span_reader_plugin_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -1812,7 +2211,7 @@ pub mod archive_span_reader_plugin_server {
                             &mut self,
                             request: tonic::Request<super::GetTraceRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).get_archive_trace(request).await
                             };
@@ -1821,6 +2220,8 @@ pub mod archive_span_reader_plugin_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1830,6 +2231,10 @@ pub mod archive_span_reader_plugin_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
                         Ok(res)
@@ -1858,12 +2263,14 @@ pub mod archive_span_reader_plugin_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: ArchiveSpanReaderPlugin> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -1887,13 +2294,18 @@ pub mod dependencies_reader_plugin_server {
         async fn get_dependencies(
             &self,
             request: tonic::Request<super::GetDependenciesRequest>,
-        ) -> Result<tonic::Response<super::GetDependenciesResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::GetDependenciesResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct DependenciesReaderPluginServer<T: DependenciesReaderPlugin> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: DependenciesReaderPlugin> DependenciesReaderPluginServer<T> {
@@ -1906,6 +2318,8 @@ pub mod dependencies_reader_plugin_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -1929,6 +2343,22 @@ pub mod dependencies_reader_plugin_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>>
     for DependenciesReaderPluginServer<T>
@@ -1943,7 +2373,7 @@ pub mod dependencies_reader_plugin_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -1965,7 +2395,7 @@ pub mod dependencies_reader_plugin_server {
                             &mut self,
                             request: tonic::Request<super::GetDependenciesRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).get_dependencies(request).await
                             };
@@ -1974,6 +2404,8 @@ pub mod dependencies_reader_plugin_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -1983,6 +2415,10 @@ pub mod dependencies_reader_plugin_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -2011,12 +2447,14 @@ pub mod dependencies_reader_plugin_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: DependenciesReaderPlugin> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
@@ -2039,13 +2477,18 @@ pub mod plugin_capabilities_server {
         async fn capabilities(
             &self,
             request: tonic::Request<super::CapabilitiesRequest>,
-        ) -> Result<tonic::Response<super::CapabilitiesResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::CapabilitiesResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct PluginCapabilitiesServer<T: PluginCapabilities> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: PluginCapabilities> PluginCapabilitiesServer<T> {
@@ -2058,6 +2501,8 @@ pub mod plugin_capabilities_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -2081,6 +2526,22 @@ pub mod plugin_capabilities_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for PluginCapabilitiesServer<T>
     where
@@ -2094,7 +2555,7 @@ pub mod plugin_capabilities_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -2116,7 +2577,7 @@ pub mod plugin_capabilities_server {
                             &mut self,
                             request: tonic::Request<super::CapabilitiesRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
+                            let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 (*inner).capabilities(request).await
                             };
@@ -2125,6 +2586,8 @@ pub mod plugin_capabilities_server {
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -2134,6 +2597,10 @@ pub mod plugin_capabilities_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -2162,12 +2629,14 @@ pub mod plugin_capabilities_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: PluginCapabilities> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {

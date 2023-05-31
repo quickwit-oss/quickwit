@@ -28,7 +28,7 @@ pub(crate) mod sink;
 use once_cell::sync::OnceCell;
 
 use crate::payload::TelemetryEvent;
-pub use crate::sender::is_telemetry_enabled;
+pub use crate::sender::is_telemetry_disabled;
 use crate::sender::{TelemetryLoopHandle, TelemetrySender};
 
 pub fn start_telemetry_loop() -> TelemetryLoopHandle {

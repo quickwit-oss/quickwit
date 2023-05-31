@@ -19,6 +19,7 @@ itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 nom = { workspace = true }
 once_cell = { workspace = true }
+quickwit-datetime = { workspace = true }
 quickwit-query = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
@@ -26,9 +27,6 @@ serde_json = { workspace = true }
 siphasher = { workspace = true }
 tantivy = { workspace = true }
 thiserror = { workspace = true }
-time = { workspace = true }
-time-fmt = "0.3.8"
-ouroboros = "0.15.5"
 tracing = { workspace = true }
 typetag = { workspace = true }
 utoipa = { workspace = true }
@@ -39,6 +37,7 @@ quickwit-proto = { workspace = true }
 proptest = { workspace = true }
 criterion = { workspace = true }
 matches = { workspace = true }
+time = { workspace = true }
 
 [features]
 testsuite = []

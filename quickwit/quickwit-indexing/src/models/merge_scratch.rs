@@ -17,10 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_common::temp_dir::TempDirectory;
 use tantivy::{Directory, TrackedObject};
 
 use crate::merge_policy::MergeOperation;
-use crate::models::ScratchDirectory;
 
 #[derive(Debug)]
 pub struct MergeScratch {
@@ -28,7 +28,7 @@ pub struct MergeScratch {
     /// See planners docs to understand the usage.
     pub merge_operation: TrackedObject<MergeOperation>,
     /// Scratch directory for computing the merge.
-    pub merge_scratch_directory: ScratchDirectory,
-    pub downloaded_splits_directory: ScratchDirectory,
+    pub merge_scratch_directory: TempDirectory,
+    pub downloaded_splits_directory: TempDirectory,
     pub tantivy_dirs: Vec<Box<dyn Directory>>,
 }
