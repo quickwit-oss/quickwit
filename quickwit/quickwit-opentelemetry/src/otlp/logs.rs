@@ -61,8 +61,6 @@ doc_mapping:
       type: datetime
       input_formats: [unix_timestamp]
       output_format: unix_timestamp_nanos
-      indexed: false
-      fast: false
     - name: service_name
       type: text
       tokenizer: raw
@@ -120,7 +118,7 @@ search_settings:
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LogRecord {
     pub timestamp_nanos: u64,
-    pub observed_timestamp_nanos: u64,
+    pub observed_timestamp_nanos: Option<u64>,
     pub service_name: String,
     pub severity_text: Option<String>,
     pub severity_number: i32,
@@ -293,9 +291,15 @@ impl OtlpGrpcLogsService {
                 for log_record in scope_log.log_records {
                     num_log_records += 1;
 
-                    let timestamp_nanos = log_record.time_unix_nano;
-                    let observed_timestamp_nanos = log_record.observed_time_unix_nano;
-
+                    if log_record.time_unix_nano == 0 {
+                        num_parse_errors += 1;
+                        continue;
+                    }
+                    let observed_timestamp_nanos = if log_record.observed_time_unix_nano != 0 {
+                        Some(log_record.observed_time_unix_nano)
+                    } else {
+                        None
+                    };
                     let trace_id = if log_record.trace_id.iter().any(|&byte| byte != 0) {
                         let trace_id = TraceId::try_from(log_record.trace_id)?;
                         Some(trace_id)
@@ -321,7 +325,7 @@ impl OtlpGrpcLogsService {
                     let dropped_attributes_count = log_record.dropped_attributes_count;
 
                     let log_record = LogRecord {
-                        timestamp_nanos,
+                        timestamp_nanos: log_record.time_unix_nano,
                         observed_timestamp_nanos,
                         service_name: service_name.clone(),
                         severity_text,
