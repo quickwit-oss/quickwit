@@ -230,15 +230,32 @@ fn validate_tag_and_insert(
             let tokenizer_opt = options
                 .get_indexing_options()
                 .map(|text_options| text_options.tokenizer());
-
             if tokenizer_opt != Some(QuickwitTextTokenizer::Raw.get_name()) {
                 bail!("Tags collection is only allowed on text fields with the `raw` tokenizer.");
             }
         }
-        FieldType::Bytes(_) => {
-            bail!("Tags collection is not allowed on `bytes` fields.")
+        FieldType::U64(_) | FieldType::I64(_) => {
+            // u64 and i64 are accepted as tags.
         }
-        _ => (),
+        _ => {
+            // We avoid the bytes / bool / f64 types,
+            // as they are generally speaking poor tags and we want to avoid
+            // bugs associated to the multiplicity of their representation.
+            //
+            // (Tags are relying heavily on string manipulation and we want to
+            // avoid a "ZRP because you searched you searched for 0.100 instead of 0.1",
+            // or `myflag:1`, `myflag:True` instead of `myflag:true`.
+            bail!(
+                "Tags collection is not allowed on `{}` fields.",
+                field_type.value_type().name()
+            )
+        }
+    }
+    if !field_type.is_indexed() {
+        bail!(
+            "Tag fields are required to be indexed. (`{}` is not configured as indexed).",
+            tag_field_name
+        )
     }
     tag_field_names.insert(tag_field_name.clone());
     Ok(())
