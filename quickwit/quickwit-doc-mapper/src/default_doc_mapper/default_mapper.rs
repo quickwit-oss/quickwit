@@ -182,17 +182,20 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         }
 
         // Resolve tag fields
-        let mut tag_field_names: BTreeSet<String> = Default::default();
+        let mut tag_field_names: BTreeSet<String> = builder.tag_fields.iter().cloned().collect();
         for tag_field_name in &builder.tag_fields {
-            validate_tag_and_insert(tag_field_name, &mut tag_field_names, &schema)?;
+            validate_tag(tag_field_name, &schema)?;
         }
 
-        let partition_key = RoutingExpr::new(builder.partition_key.as_deref().unwrap_or(""))
-            .context("Failed to interpret the partition key.")?;
-        // partition key fields should be considered as tags
-        for partition_key_field in &partition_key.field_names() {
-            if !tag_field_names.contains(partition_key_field) {
-                validate_tag_and_insert(partition_key_field, &mut tag_field_names, &schema)?;
+        let partition_key_expr: &str = builder.partition_key.as_deref().unwrap_or("");
+        let partition_key = RoutingExpr::new(partition_key_expr).with_context(|| {
+            format!("Failed to interpret the partition key: `{partition_key_expr}`")
+        })?;
+
+        // If valid, partition key fields should be considered as tags.
+        for partition_key in partition_key.field_names() {
+            if validate_tag(&partition_key, &schema).is_ok() {
+                tag_field_names.insert(partition_key);
             }
         }
 
@@ -213,14 +216,13 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
     }
 }
 
-fn validate_tag_and_insert(
-    tag_field_name: &String,
-    tag_field_names: &mut BTreeSet<String>,
-    schema: &Schema,
-) -> Result<(), anyhow::Error> {
-    if tag_field_names.contains(tag_field_name) {
-        bail!("Duplicated tag field: `{}`", tag_field_name)
-    }
+/// Checks that a given field name is a valid candidate for a tag.
+///
+/// The conditions are:
+/// - the field must be str, u64, or i64
+/// - if str, the field must use the `raw` tokenizer for indexing.
+/// - the field must be indexed.
+fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Error> {
     let field = schema
         .get_field(tag_field_name)
         .with_context(|| format!("Unknown tag field: `{tag_field_name}`"))?;
@@ -247,7 +249,7 @@ fn validate_tag_and_insert(
             // or `myflag:1`, `myflag:True` instead of `myflag:true`.
             bail!(
                 "Tags collection is not allowed on `{}` fields.",
-                field_type.value_type().name()
+                field_type.value_type().name().to_lowercase()
             )
         }
     }
@@ -257,7 +259,6 @@ fn validate_tag_and_insert(
             tag_field_name
         )
     }
-    tag_field_names.insert(tag_field_name.clone());
     Ok(())
 }
 

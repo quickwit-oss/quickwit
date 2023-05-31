@@ -128,7 +128,7 @@ impl RoutingExpr {
         if let Some(inner) = self.inner_opt.as_ref() {
             inner.field_names()
         } else {
-            vec![]
+            Vec::new()
         }
     }
 }
