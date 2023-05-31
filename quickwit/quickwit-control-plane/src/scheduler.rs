@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, HEARTBEAT};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::SourceConfig;
@@ -42,10 +42,21 @@ use crate::indexing_plan::{
 };
 use crate::{NotifyIndexChangeRequest, NotifyIndexChangeResponse};
 
+/// Interval between two controls (or checks) of the desired plan VS running plan.
+const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(500)
+} else {
+    Duration::from_secs(3)
+};
+
+/// Interval between two scheduling of indexing plans. No need to be faster than the
+/// control plan loop.
+// Note: it's currently not possible to define a const duration with
+// `CONTROL_PLAN_LOOP_INTERVAL * number`.
 const REFRESH_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_secs(3)
 } else {
-    Duration::from_secs(60 * 5)
+    Duration::from_secs(60)
 };
 
 const MIN_DURATION_BETWEEN_SCHEDULING: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -87,15 +98,15 @@ pub struct IndexingSchedulerState {
 ///   TODO(fmassot): to avoid a scheduling on each [`RefreshPlanLoop`], we can store in the
 ///   scheduler state a metastore version number that will be compared to the number stored in the
 ///   metastore itself.
-/// - [`ControlPlanLoop`]: this event is scheduled every [`HEARTBEAT`] and control if the `desired
-///   plan`, that is the last applied [`PhysicalIndexingPlan`] by the scheduler, and the `running
-///   plan`, that is the indexing tasks running on all indexers and retrieved from the chitchat
-///   state, are the same:
+/// - [`ControlPlanLoop`]: this event is scheduled every [`CONTROL_PLAN_LOOP_INTERVAL`] and control
+///   if the `desired plan`, that is the last applied [`PhysicalIndexingPlan`] by the scheduler, and
+///   the `running plan`, that is the indexing tasks running on all indexers and retrieved from the
+///   chitchat state, are the same:
 ///   - if node IDs are different, the scheduler will trigger a scheduling.
 ///   - if indexing tasks are different, the scheduler will apply again the last applied plan.
 ///
 /// Finally, in order to give the time for each indexer to run their indexing tasks, the control
-/// phase will wait at least [`MIN_DURATION_BETWEEN_SCHEDULING`] before comparing the desired
+/// plase will wait at least [`MIN_DURATION_BETWEEN_SCHEDULING`] before comparing the desired
 /// plan with the running plan.
 pub struct IndexingScheduler {
     cluster: Cluster,
@@ -132,7 +143,8 @@ impl Actor for IndexingScheduler {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.handle(RefreshPlanLoop, ctx).await?;
-        ctx.schedule_self_msg(HEARTBEAT, ControlPlanLoop).await;
+        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
+            .await;
         Ok(())
     }
 }
@@ -327,7 +339,8 @@ impl Handler<ControlPlanLoop> for IndexingScheduler {
         if let Err(error) = self.control_running_plan().await {
             error!("Error when controlling the running plan: `{}`.", error);
         }
-        ctx.schedule_self_msg(HEARTBEAT, ControlPlanLoop).await;
+        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
+            .await;
         Ok(())
     }
 }
@@ -520,7 +533,7 @@ mod tests {
     use std::time::Duration;
 
     use chitchat::transport::ChannelTransport;
-    use quickwit_actors::{ActorHandle, Inbox, Universe, HEARTBEAT};
+    use quickwit_actors::{ActorHandle, Inbox, Universe};
     use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster};
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::service::QuickwitService;
@@ -532,7 +545,7 @@ mod tests {
     use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
     use serde_json::json;
 
-    use super::IndexingScheduler;
+    use super::{IndexingScheduler, CONTROL_PLAN_LOOP_INTERVAL};
     use crate::scheduler::{
         get_indexing_plans_diff, MIN_DURATION_BETWEEN_SCHEDULING, REFRESH_PLAN_LOOP_INTERVAL,
     };
@@ -625,10 +638,10 @@ mod tests {
         assert!(scheduler_state.last_applied_physical_plan.is_some());
         assert_eq!(indexing_service_inbox_messages.len(), 1);
 
-        // After a HEARTBEAT, the control loop will check if the desired plan is running on the
-        // indexer. As chitchat state of the indexer is not updated (we did not
-        // instantiate a indexing service for that), the control loop will apply again the
-        // same plan.
+        // After a CONTROL_PLAN_LOOP_INTERVAL, the control loop will check if the desired plan is
+        // running on the indexer. As chitchat state of the indexer is not updated (we did
+        // not instantiate a indexing service for that), the control loop will apply again
+        // the same plan.
         // Check first the plan is not updated before `MIN_DURATION_BETWEEN_SCHEDULING`.
         tokio::time::sleep(MIN_DURATION_BETWEEN_SCHEDULING.mul_f32(0.5)).await;
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
@@ -689,7 +702,7 @@ mod tests {
         let indexing_service_inbox = indexing_service_inboxes[0].clone();
 
         // No indexer.
-        universe.sleep(HEARTBEAT).await;
+        universe.sleep(CONTROL_PLAN_LOOP_INTERVAL).await;
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
         let indexing_service_inbox_messages =
             indexing_service_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
@@ -777,7 +790,7 @@ mod tests {
                     scheduler_state.num_schedule_indexing_plan == 1
                 }
             },
-            HEARTBEAT * 4,
+            CONTROL_PLAN_LOOP_INTERVAL * 4,
             Duration::from_millis(100),
         )
         .await
@@ -799,8 +812,9 @@ mod tests {
             .await
             .unwrap();
 
-        // Wait 2 heartbeats again and check the scheduler will not apply the plan several times.
-        universe.sleep(HEARTBEAT * 2).await;
+        // Wait 2 CONTROL_PLAN_LOOP_INTERVAL again and check the scheduler will not apply the plan
+        // several times.
+        universe.sleep(CONTROL_PLAN_LOOP_INTERVAL * 2).await;
         let scheduler_state = scheduler_handler_arc.process_pending_and_observe().await;
         assert_eq!(scheduler_state.num_schedule_indexing_plan, 1);
 
@@ -833,7 +847,7 @@ mod tests {
                     scheduler_state.num_schedule_indexing_plan == 2
                 }
             },
-            HEARTBEAT * 10,
+            CONTROL_PLAN_LOOP_INTERVAL * 10,
             Duration::from_millis(100),
         )
         .await

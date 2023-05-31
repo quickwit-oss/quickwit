@@ -186,6 +186,7 @@ mod tests {
     };
     use quickwit_cli::ClientArgs;
     use quickwit_common::uri::Uri;
+    use quickwit_config::SourceInputFormat;
     use quickwit_rest_client::models::Timeout;
     use quickwit_rest_client::rest_client::CommitType;
     use reqwest::Url;
@@ -435,6 +436,8 @@ mod tests {
                 "/config.yaml",
                 "--overwrite",
                 "--keep-cache",
+                "--input-format",
+                "plain",
                 "--transform-script",
                 ".message = downcase(string!(.message))",
             ])
@@ -448,6 +451,7 @@ mod tests {
                     config_uri,
                     index_id,
                     input_path_opt: None,
+                    input_format,
                     overwrite,
                     vrl_script: Some(vrl_script),
                     clear_cache,
@@ -456,6 +460,7 @@ mod tests {
                        && vrl_script == ".message = downcase(string!(.message))"
                        && overwrite
                        && !clear_cache
+                       && input_format == SourceInputFormat::PlainText,
         ));
     }
 

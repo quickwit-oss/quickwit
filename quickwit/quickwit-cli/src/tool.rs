@@ -72,6 +72,9 @@ pub fn build_tool_command() -> Command {
                         .required(true),
                     arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
                         .required(false),
+                    arg!(--"input-format" <INPUT_FORMAT> "Format of the input data.")
+                        .default_value("json")
+                        .required(false),
                     arg!(--overwrite "Overwrites pre-existing index.")
                         .required(false),
                     arg!(--"transform-script" <SCRIPT> "VRL program to transform docs before ingesting.")
@@ -129,6 +132,7 @@ pub struct LocalIngestDocsArgs {
     pub config_uri: Uri,
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
+    pub input_format: SourceInputFormat,
     pub overwrite: bool,
     pub vrl_script: Option<String>,
     pub clear_cache: bool,
@@ -194,6 +198,12 @@ impl ToolCliCommand {
         } else {
             None
         };
+
+        let input_format = matches
+            .remove_one::<String>("input-format")
+            .map(|input_format| SourceInputFormat::from_str(&input_format))
+            .expect("`input-format` should have a default value.")
+            .map_err(|err| anyhow::anyhow!(err))?;
         let overwrite = matches.get_flag("overwrite");
         let vrl_script = matches.remove_one::<String>("transform-script");
         let clear_cache = !matches.get_flag("keep-cache");
@@ -202,6 +212,7 @@ impl ToolCliCommand {
             config_uri,
             index_id,
             input_path_opt,
+            input_format,
             overwrite,
             vrl_script,
             clear_cache,
@@ -301,7 +312,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         enabled: true,
         source_params,
         transform_config,
-        input_format: SourceInputFormat::Json,
+        input_format: args.input_format,
     };
     run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source_config)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();

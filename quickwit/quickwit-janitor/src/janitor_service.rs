@@ -19,7 +19,7 @@
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Healthz, Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz,
 };
 use serde_json::{json, Value as JsonValue};
 
@@ -44,27 +44,10 @@ impl JanitorService {
         }
     }
 
-    fn supervisables(&self) -> Vec<&dyn Supervisable> {
-        vec![
-            &self.delete_task_service_handle,
-            &self.garbage_collector_handle,
-            &self.retention_policy_executor_handle,
-        ]
-    }
-
-    // CAUTION: if you ever add a supervisor to this actor, make sure the healthz probe no longer
-    // calls this method and share the health via a watch channel instead.
-    fn harvest_health(&self) -> Health {
-        let mut janitor_health = Health::Healthy;
-
-        for supervisable in self.supervisables() {
-            let actor_health = supervisable.harvest_health();
-
-            if actor_health != Health::Healthy {
-                janitor_health = actor_health;
-            }
-        }
-        janitor_health
+    fn is_healthy(&self) -> bool {
+        self.delete_task_service_handle.state() != ActorState::Failure
+            && self.garbage_collector_handle.state() != ActorState::Failure
+            && self.retention_policy_executor_handle.state() != ActorState::Failure
     }
 }
 
@@ -90,6 +73,6 @@ impl Handler<Healthz> for JanitorService {
         _message: Healthz,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.harvest_health() == Health::Healthy)
+        Ok(self.is_healthy())
     }
 }
