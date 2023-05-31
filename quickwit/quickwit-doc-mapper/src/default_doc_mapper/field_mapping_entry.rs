@@ -640,11 +640,11 @@ fn deserialize_mapping_type(
         }
         Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
         Type::Bytes => {
-            let numeric_options: QuickwitBytesOptions = serde_json::from_value(json)?;
-            if numeric_options.fast && cardinality == Cardinality::MultiValues {
+            let bytes_options: QuickwitBytesOptions = serde_json::from_value(json)?;
+            if bytes_options.fast && cardinality == Cardinality::MultiValues {
                 bail!("fast field is not allowed for array<bytes>.");
             }
-            Ok(FieldMappingType::Bytes(numeric_options, cardinality))
+            Ok(FieldMappingType::Bytes(bytes_options, cardinality))
         }
         Type::Json => {
             let json_options: QuickwitJsonOptions = serde_json::from_value(json)?;
