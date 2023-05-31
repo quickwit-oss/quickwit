@@ -21,10 +21,14 @@ use std::convert::TryFrom;
 use std::str::FromStr;
 
 use anyhow::bail;
+use base64::prelude::{Engine, BASE64_STANDARD};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
-use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type};
+use tantivy::schema::{
+    IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
+    Value as TantivyValue,
+};
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::{default_as_true, FieldMappingType};
@@ -152,13 +156,34 @@ impl BinaryFormat {
     }
 
     pub fn format_to_json(&self, value: &[u8]) -> JsonValue {
-        use base64::Engine;
         match self {
-            BinaryFormat::Base64 => base64::engine::general_purpose::STANDARD
-                .encode(value)
-                .into(),
+            BinaryFormat::Base64 => BASE64_STANDARD.encode(value).into(),
             BinaryFormat::Hex => hex::encode(value).into(),
         }
+    }
+
+    pub fn parse_json(&self, json_val: JsonValue) -> Result<TantivyValue, String> {
+        let byte_str = if let JsonValue::String(byte_str) = json_val {
+            byte_str
+        } else {
+            return Err(format!(
+                "Expected {} string, got `{json_val}`.",
+                self.as_str()
+            ));
+        };
+        let payload = match self {
+            BinaryFormat::Base64 => {
+                BASE64_STANDARD
+                    .decode(&byte_str)
+                    .map_err(|base64_decode_err| {
+                        format!("Expected base64 string, got `{byte_str}`: {base64_decode_err}")
+                    })?
+            }
+            BinaryFormat::Hex => hex::decode(&byte_str).map_err(|hex_decode_err| {
+                format!("Expected hex string, got `{byte_str}`: {hex_decode_err}")
+            })?,
+        };
+        Ok(TantivyValue::Bytes(payload))
     }
 }
 

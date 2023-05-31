@@ -23,7 +23,6 @@ use std::net::IpAddr;
 use std::str::FromStr;
 
 use anyhow::bail;
-use base64::prelude::{Engine, BASE64_STANDARD};
 use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
@@ -85,19 +84,7 @@ impl LeafType {
                 }
             }
             LeafType::DateTime(date_time_options) => date_time_options.parse_json(json_val),
-            LeafType::Bytes(_) => {
-                let base64_str = if let JsonValue::String(base64_str) = json_val {
-                    base64_str
-                } else {
-                    return Err(format!("Expected base64 string, got `{json_val}`."));
-                };
-                let payload = BASE64_STANDARD
-                    .decode(&base64_str)
-                    .map_err(|base64_decode_err| {
-                        format!("Expected Base64 string, got `{base64_str}`: {base64_decode_err}")
-                    })?;
-                Ok(TantivyValue::Bytes(payload))
-            }
+            LeafType::Bytes(binary_options) => binary_options.input_format.parse_json(json_val),
             LeafType::Json(_) => {
                 if let JsonValue::Object(json_obj) = json_val {
                     Ok(TantivyValue::JsonObject(json_obj))
@@ -1027,6 +1014,20 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_bytes_hex() {
+        let typ = LeafType::Bytes(QuickwitBytesOptions {
+            input_format: BinaryFormat::Hex,
+            ..QuickwitBytesOptions::default()
+        });
+        let value = typ
+            .value_from_json(json!(
+                "7468697320697320612068657820656e636f64656420737472696e67"
+            ))
+            .unwrap();
+        assert_eq!(value.as_bytes().unwrap(), b"this is a hex encoded string");
+    }
+
+    #[test]
     fn test_parse_bytes_number_should_err() {
         let typ = LeafType::Bytes(QuickwitBytesOptions::default());
         let error = typ.value_from_json(json!(2u64)).err().unwrap();
@@ -1039,7 +1040,7 @@ mod tests {
         let error = typ.value_from_json(json!("dEwerwer#!%")).err().unwrap();
         assert_eq!(
             error,
-            "Expected Base64 string, got `dEwerwer#!%`: Invalid byte 35, offset 8."
+            "Expected base64 string, got `dEwerwer#!%`: Invalid byte 35, offset 8."
         );
     }
 
