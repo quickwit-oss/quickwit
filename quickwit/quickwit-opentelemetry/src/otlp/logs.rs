@@ -36,7 +36,7 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
-use super::{parse_log_record_body, SpanId, TraceId};
+use super::{is_zero, parse_log_record_body, SpanId, TraceId};
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
@@ -118,21 +118,51 @@ search_settings:
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LogRecord {
     pub timestamp_nanos: u64,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_timestamp_nanos: Option<u64>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub service_name: String,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub severity_text: Option<String>,
     pub severity_number: i32,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub attributes: HashMap<String, JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
     pub dropped_attributes_count: u32,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<TraceId>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub span_id: Option<SpanId>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_flags: Option<u32>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub resource_attributes: HashMap<String, JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
     pub resource_dropped_attributes_count: u32,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scope_name: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scope_version: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub scope_attributes: HashMap<String, JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
     pub scope_dropped_attributes_count: u32,
 }
 
