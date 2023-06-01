@@ -20,9 +20,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler};
 use quickwit_common::temp_dir::{self};
 use quickwit_config::IndexConfig;
 use quickwit_metastore::Metastore;
@@ -35,6 +36,14 @@ use tracing::{error, info, warn};
 use super::delete_task_pipeline::DeleteTaskPipeline;
 
 pub const DELETE_SERVICE_TASK_DIR_NAME: &str = "delete_task_service";
+
+const UPDATE_PIPELINES_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(200)
+} else {
+    // Each update triggers a call to the metastore. Deletes are not frequent operation and
+    // it's fine to wait a bit before updating the pipelines.
+    Duration::from_secs(30)
+};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DeleteTaskServiceState {
@@ -87,7 +96,7 @@ impl Actor for DeleteTaskService {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        self.handle(SuperviseLoop, ctx).await?;
+        self.handle(UpdatePipelines, ctx).await?;
         Ok(())
     }
 }
@@ -171,35 +180,35 @@ impl DeleteTaskService {
 }
 
 #[derive(Debug)]
-struct SuperviseLoop;
+struct UpdatePipelines;
 
 #[async_trait]
-impl Handler<SuperviseLoop> for DeleteTaskService {
+impl Handler<UpdatePipelines> for DeleteTaskService {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        _: SuperviseLoop,
+        _: UpdatePipelines,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let result = self.update_pipeline_handles(ctx).await;
         if let Err(error) = result {
             error!("Delete task pipelines update failed: {}", error);
         }
-        ctx.schedule_self_msg(HEARTBEAT, SuperviseLoop).await;
+        ctx.schedule_self_msg(UPDATE_PIPELINES_INTERVAL, UpdatePipelines)
+            .await;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::HEARTBEAT;
     use quickwit_indexing::TestSandbox;
     use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_search::{searcher_pool_for_test, MockSearchService, SearchJobPlacer};
     use quickwit_storage::StorageUriResolver;
 
-    use super::DeleteTaskService;
+    use super::{DeleteTaskService, UPDATE_PIPELINES_INTERVAL};
 
     #[tokio::test]
     async fn test_delete_task_service() -> anyhow::Result<()> {
@@ -255,7 +264,10 @@ mod tests {
             1
         );
         metastore.delete_index(index_uid.clone()).await.unwrap();
-        test_sandbox.universe().sleep(HEARTBEAT * 2).await;
+        test_sandbox
+            .universe()
+            .sleep(UPDATE_PIPELINES_INTERVAL * 2)
+            .await;
         let state_after_deletion = delete_task_service_handler
             .process_pending_and_observe()
             .await;
@@ -264,7 +276,10 @@ mod tests {
             .universe()
             .get_one::<DeleteTaskService>()
             .is_some());
-        let actors_observations = test_sandbox.universe().observe(HEARTBEAT).await;
+        let actors_observations = test_sandbox
+            .universe()
+            .observe(UPDATE_PIPELINES_INTERVAL)
+            .await;
         assert!(
             actors_observations
                 .into_iter()

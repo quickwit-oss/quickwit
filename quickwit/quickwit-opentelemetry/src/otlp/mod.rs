@@ -120,6 +120,10 @@ pub(crate) fn parse_log_record_body(body: OtlpAnyValue) -> Option<JsonValue> {
     })
 }
 
+fn is_zero(count: &u32) -> bool {
+    *count == 0
+}
+
 #[cfg(test)]
 mod tests {
     use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;

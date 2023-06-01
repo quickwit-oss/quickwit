@@ -471,7 +471,7 @@ impl Handler<Supervise> for IndexingPipeline {
                 Health::Healthy => {}
                 Health::FailureOrUnhealthy => {
                     self.terminate().await;
-                    ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
+                    ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
                         .await;
                 }
                 Health::Success => {
@@ -479,7 +479,7 @@ impl Handler<Supervise> for IndexingPipeline {
                 }
             }
         }
-        ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, Supervise)
+        ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, Supervise)
             .await;
         Ok(())
     }
@@ -823,7 +823,7 @@ mod tests {
         let indexer = universe.get::<Indexer>().into_iter().next().unwrap();
         let _ = indexer.ask(Command::Quit).await;
         for _ in 0..10 {
-            universe.sleep(quickwit_actors::HEARTBEAT).await;
+            universe.sleep(*quickwit_actors::HEARTBEAT).await;
             // Check indexing pipeline has restarted.
             let obs = indexing_pipeline_handler
                 .process_pending_and_observe()

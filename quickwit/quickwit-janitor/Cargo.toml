@@ -41,6 +41,9 @@ quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
 
+[features]
+testsuite = []
+
 [dev-dependencies]
 mockall = "0.11"
 tempfile = "3"
