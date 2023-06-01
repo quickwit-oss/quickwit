@@ -353,6 +353,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
                 type: text
                 tokenizer: raw
             timestamp_field: ts
+            mode: lenient
         "#;
     let indexing_settings_json = r#"{}"#;
     let test_sandbox = TestSandbox::create(
@@ -533,10 +534,13 @@ async fn single_node_search_sort_by_field(
 }
 
 #[tokio::test]
-async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
-    single_node_search_sort_by_field("temperature", false).await?;
-    single_node_search_sort_by_field("_score", true).await?;
-    Ok(())
+async fn test_single_node_sorting_with_query_fieldnorms_enabled() -> anyhow::Result<()> {
+    single_node_search_sort_by_field("_score", true).await
+}
+
+#[tokio::test]
+async fn test_single_node_sorting_with_query_fieldnorms_disabled() -> anyhow::Result<()> {
+    single_node_search_sort_by_field("temperature", false).await
 }
 
 #[tokio::test]
