@@ -31,8 +31,9 @@ use tokio::sync::RwLock;
 
 use crate::prefix_storage::add_prefix_to_storage;
 use crate::storage::{BulkDeleteError, SendableAsync};
-use crate::storage_factory::StorageFactory;
-use crate::{OwnedBytes, Storage, StorageErrorKind, StorageResolverError, StorageResult};
+use crate::{
+    OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
+};
 
 /// In Ram implementation of quickwit's storage.
 ///

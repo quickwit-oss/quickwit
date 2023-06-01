@@ -28,10 +28,9 @@ use quickwit_config::{StorageBackend, StorageConfig, StorageConfigs};
 
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
-use crate::storage_factory::StorageFactory;
 #[cfg(feature = "azure")]
 use crate::AzureBlobStorageFactory;
-use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
+use crate::{S3CompatibleObjectStorageFactory, Storage, StorageFactory, StorageResolverError};
 
 type FactoryAndConfig = (Box<dyn StorageFactory>, StorageConfig);
 

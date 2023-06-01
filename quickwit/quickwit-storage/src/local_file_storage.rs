@@ -35,10 +35,9 @@ use tokio::io::AsyncWriteExt;
 use tracing::warn;
 
 use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
-use crate::storage_factory::StorageFactory;
 use crate::{
-    DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResolverError,
-    StorageResult,
+    DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory,
+    StorageResolverError, StorageResult,
 };
 
 /// File system compatible storage implementation.
