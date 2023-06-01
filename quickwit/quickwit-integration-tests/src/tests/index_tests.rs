@@ -17,10 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use bytes::Bytes;
 use quickwit_common::test_utils::wait_until_predicate;
+use quickwit_config::service::QuickwitService;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_janitor::actors::DELETE_SERVICE_TASK_DIR_NAME;
 use quickwit_metastore::SplitState;
@@ -347,6 +349,114 @@ async fn test_commit_modes() {
             .num_hits,
         1
     );
+
+    // Clean up
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_very_large_index_name() {
+    quickwit_common::setup_logging_for_tests();
+    let nodes_services = vec![
+        HashSet::from_iter([QuickwitService::Searcher]),
+        HashSet::from_iter([QuickwitService::Metastore]),
+        HashSet::from_iter([QuickwitService::Indexer]),
+        HashSet::from_iter([QuickwitService::ControlPlane]),
+        HashSet::from_iter([QuickwitService::Janitor]),
+    ];
+    let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
+        .await
+        .unwrap();
+    sandbox.wait_for_cluster_num_ready_nodes(5).await.unwrap();
+
+    let index_id = "its_very_very_very_very_very_very_very_very_very_very_very_\
+    very_very_very_very_very_very_very_very_very_very_very_very_very_very_very_\
+    very_very_very_very_very_very_very_very_very_very_very_very_very_very_very_\
+    very_very_very_very_very_very_index_large_name";
+    assert_eq!(index_id.len(), 255);
+    let oversized_index_id = format!("{index_id}1");
+    // Create index
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(
+            format!(
+                r#"
+                version: 0.6
+                index_id: {index_id}
+                doc_mapping:
+                  field_mappings:
+                    - name: body
+                      type: text
+                "#,
+            )
+            .into(),
+            quickwit_config::ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    // Test force commit
+    ingest_with_retry(
+        &sandbox.indexer_rest_client,
+        index_id,
+        ingest_json!({"body": "force"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        sandbox
+            .searcher_rest_client
+            .search(
+                index_id,
+                SearchRequestQueryString {
+                    query: "body:force".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .num_hits,
+        1
+    );
+
+    // Delete the index
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .delete(index_id, false)
+        .await
+        .unwrap();
+
+    // Try to create an index with a very long name
+    let error = sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(
+            format!(
+                r#"
+                    version: 0.6
+                    index_id: {oversized_index_id}
+                    doc_mapping:
+                      field_mappings:
+                        - name: body
+                          type: text
+                    "#,
+            )
+            .into(),
+            quickwit_config::ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().ends_with(
+        "is invalid. Identifiers must match the following regular expression: \
+         `^[a-zA-Z][a-zA-Z0-9-_]{2,254}$`..)"
+    ));
 
     // Clean up
     sandbox.shutdown().await.unwrap();

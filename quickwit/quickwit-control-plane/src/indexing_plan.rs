@@ -386,7 +386,9 @@ mod tests {
         let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
         let mut source_configs_map = HashMap::new();
         let index_source_id = IndexSourceId {
-            index_uid: "one-source-index:1111111111111".to_string().into(),
+            index_uid: "one-source-index:11111111111111111111111111"
+                .to_string()
+                .into(),
             source_id: "source-0".to_string(),
         };
         source_configs_map.insert(
@@ -421,7 +423,9 @@ mod tests {
         let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
         let mut source_configs_map = HashMap::new();
         let index_source_id = IndexSourceId {
-            index_uid: "ingest-api-index:1111111111111".to_string().into(),
+            index_uid: "ingest-api-index:11111111111111111111111111"
+                .to_string()
+                .into(),
             source_id: INGEST_API_SOURCE_ID.to_string(),
         };
         source_configs_map.insert(
@@ -456,15 +460,21 @@ mod tests {
         let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
         let mut source_configs_map = HashMap::new();
         let file_index_source_id = IndexSourceId {
-            index_uid: "one-source-index:1111111111111".to_string().into(),
+            index_uid: "one-source-index:11111111111111111111111111"
+                .to_string()
+                .into(),
             source_id: "file-source".to_string(),
         };
         let cli_ingest_index_source_id = IndexSourceId {
-            index_uid: "second-source-index:1111111111111".to_string().into(),
+            index_uid: "second-source-index:11111111111111111111111111"
+                .to_string()
+                .into(),
             source_id: CLI_INGEST_SOURCE_ID.to_string(),
         };
         let kafka_index_source_id = IndexSourceId {
-            index_uid: "third-source-index:1111111111111".to_string().into(),
+            index_uid: "third-source-index:11111111111111111111111111"
+                .to_string()
+                .into(),
             source_id: "kafka-source".to_string(),
         };
         source_configs_map.insert(
@@ -519,11 +529,11 @@ mod tests {
         let source_2 = "0";
         let mut source_configs_map = HashMap::new();
         let kafka_index_source_id_1 = IndexSourceId {
-            index_uid: IndexUid::from_parts(index_1, "1111111111111"),
+            index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111"),
             source_id: source_1.to_string(),
         };
         let kafka_index_source_id_2 = IndexSourceId {
-            index_uid: IndexUid::from_parts(index_2, "1111111111111"),
+            index_uid: IndexUid::from_parts(index_2, "11111111111111111111111111"),
             source_id: source_2.to_string(),
         };
         source_configs_map.insert(
@@ -553,15 +563,21 @@ mod tests {
         let mut indexing_tasks = Vec::new();
         for _ in 0..3 {
             indexing_tasks.push(IndexingTask {
-                index_uid: IndexUid::from_parts(index_1.to_string(), "1111111111111".to_string())
-                    .to_string(),
+                index_uid: IndexUid::from_parts(
+                    index_1.to_string(),
+                    "11111111111111111111111111".to_string(),
+                )
+                .to_string(),
                 source_id: source_1.to_string(),
             });
         }
         for _ in 0..2 {
             indexing_tasks.push(IndexingTask {
-                index_uid: IndexUid::from_parts(index_2.to_string(), "1111111111111".to_string())
-                    .to_string(),
+                index_uid: IndexUid::from_parts(
+                    index_2.to_string(),
+                    "11111111111111111111111111".to_string(),
+                )
+                .to_string(),
                 source_id: source_2.to_string(),
             });
         }
@@ -605,7 +621,7 @@ mod tests {
         let source_1 = "source-1";
         let mut source_configs_map = HashMap::new();
         let kafka_index_source_id_1 = IndexSourceId {
-            index_uid: IndexUid::from_parts(index_1, "1111111111111"),
+            index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111"),
             source_id: source_1.to_string(),
         };
         source_configs_map.insert(
@@ -622,11 +638,11 @@ mod tests {
         );
         let indexing_tasks = vec![
             IndexingTask {
-                index_uid: IndexUid::from_parts(index_1, "1111111111111").to_string(),
+                index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111").to_string(),
                 source_id: source_1.to_string(),
             },
             IndexingTask {
-                index_uid: IndexUid::from_parts(index_1, "1111111111111").to_string(),
+                index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111").to_string(),
                 source_id: source_1.to_string(),
             },
         ];

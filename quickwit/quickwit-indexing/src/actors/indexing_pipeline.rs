@@ -593,7 +593,7 @@ mod tests {
         metastore
             .expect_stage_splits()
             .withf(|index_uid, _metadata| -> bool {
-                index_uid.to_string() == "test-index:1111111111111"
+                index_uid.to_string() == "test-index:11111111111111111111111111"
             })
             .returning(|_, _| Ok(()));
         metastore
@@ -601,7 +601,7 @@ mod tests {
             .withf(
                 |index_uid, splits, replaced_splits, checkpoint_delta_opt| -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_uid.to_string() == "test-index:1111111111111"
+                    index_uid.to_string() == "test-index:11111111111111111111111111"
                         && checkpoint_delta.source_id == "test-source"
                         && splits.len() == 1
                         && replaced_splits.is_empty()
@@ -613,7 +613,7 @@ mod tests {
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_uid: "test-index:1111111111111".to_string().into(),
+            index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -685,14 +685,16 @@ mod tests {
             });
         metastore
             .expect_stage_splits()
-            .withf(|index_uid, _metadata| index_uid.to_string() == "test-index:1111111111111")
+            .withf(|index_uid, _metadata| {
+                index_uid.to_string() == "test-index:11111111111111111111111111"
+            })
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
             .withf(
                 |index_uid, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_uid.to_string() == "test-index:1111111111111"
+                    index_uid.to_string() == "test-index:11111111111111111111111111"
                         && splits.len() == 1
                         && replaced_split_ids.is_empty()
                         && checkpoint_delta.source_id == "test-source"
@@ -705,7 +707,7 @@ mod tests {
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_uid: "test-index:1111111111111".to_string().into(),
+            index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -864,7 +866,7 @@ mod tests {
             .withf(
                 |index_uid, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_uid.to_string() == "test-index:1111111111111"
+                    index_uid.to_string() == "test-index:11111111111111111111111111"
                         && splits.is_empty()
                         && replaced_split_ids.is_empty()
                         && checkpoint_delta.source_id == "test-source"
@@ -877,7 +879,7 @@ mod tests {
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
-            index_uid: "test-index:1111111111111".to_string().into(),
+            index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,

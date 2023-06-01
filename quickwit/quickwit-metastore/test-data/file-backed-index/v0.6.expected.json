@@ -3,7 +3,7 @@
     {
       "create_timestamp": 0,
       "delete_query": {
-        "index_uid": "index:1111111111111",
+        "index_uid": "index:11111111111111111111111111",
         "query_ast": "{\"type\":\"bool\",\"must\":[{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Harry\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}}},{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Potter\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}}}]}"
       },
       "opstamp": 10
@@ -98,7 +98,7 @@
       },
       "version": "0.6"
     },
-    "index_uid": "test:1111111111111",
+    "index_uid": "test:11111111111111111111111111",
     "sources": [
       {
         "desired_num_pipelines": 2,
@@ -127,7 +127,7 @@
         "end": 2000,
         "start": 1000
       },
-      "index_uid": "my-index:1111111111111",
+      "index_uid": "my-index:11111111111111111111111111",
       "node_id": "node",
       "num_docs": 12303,
       "num_merge_ops": 3,
