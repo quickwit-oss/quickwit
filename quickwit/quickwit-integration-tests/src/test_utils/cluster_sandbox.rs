@@ -373,7 +373,7 @@ pub fn build_node_configs(
         let mut config = QuickwitConfig::for_test();
         config.enabled_services = node_services.clone();
         config.cluster_id = cluster_id.clone();
-        config.node_id = format!("test-node-{}", node_idx);
+        config.node_id = format!("test-node-{node_idx}");
         config.data_dir_path = root_data_dir.join(&config.node_id);
         config.metastore_uri =
             QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/metastore")).unwrap();

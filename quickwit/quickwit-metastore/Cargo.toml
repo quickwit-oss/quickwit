@@ -33,11 +33,9 @@ tracing = { workspace = true }
 utoipa = { workspace = true }
 ulid = { workspace = true, features = ["serde"] }
 
-quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
-quickwit-grpc-clients = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
 
@@ -52,7 +50,6 @@ tempfile = { workspace = true }
 
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
-quickwit-grpc-clients = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]

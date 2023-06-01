@@ -187,7 +187,7 @@ pub fn get_quickwit_tokenizer_manager() -> &'static TokenizerManager {
     /// Quickwits default tokenizer
     static QUICKWIT_TOKENIZER_MANAGER: Lazy<TokenizerManager> =
         Lazy::new(create_quickwit_tokenizer_manager);
-    QUICKWIT_TOKENIZER_MANAGER.borrow()
+    &QUICKWIT_TOKENIZER_MANAGER
 }
 
 pub fn get_quickwit_fastfield_normalizer_manager() -> &'static TokenizerManager {

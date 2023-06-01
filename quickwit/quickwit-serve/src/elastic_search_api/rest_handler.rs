@@ -131,10 +131,7 @@ fn build_request_for_es_api(
 
     if sort_fields.len() >= 2 {
         return Err(ElasticSearchError::from(SearchError::InvalidArgument(
-            format!(
-                "Only one search field is supported at the moment. Got {:?}",
-                sort_fields
-            ),
+            format!("Only one search field is supported at the moment. Got {sort_fields:?}"),
         )));
     }
 

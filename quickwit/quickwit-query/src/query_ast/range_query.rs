@@ -367,7 +367,7 @@ mod tests {
             .unwrap()
             .simplify();
         let leaf = tantivy_ast.as_leaf().unwrap();
-        let leaf_str = format!("{:?}", leaf);
+        let leaf_str = format!("{leaf:?}");
         assert_eq!(leaf_str, expected);
     }
 

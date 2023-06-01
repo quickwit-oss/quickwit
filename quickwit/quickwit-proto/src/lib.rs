@@ -406,7 +406,7 @@ impl TryFrom<&str> for IndexingTask {
         })?;
         if let Some(part2) = iter.next() {
             Ok(IndexingTask {
-                index_uid: format!("{}:{}", part2, part1),
+                index_uid: format!("{part2}:{part1}"),
                 source_id: source_id.to_string(),
             })
         } else {
