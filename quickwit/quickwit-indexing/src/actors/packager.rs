@@ -364,6 +364,9 @@ mod tests {
         let schema = schema_builder.build();
         let mut index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
         index.set_tokenizers(quickwit_query::get_quickwit_tokenizer_manager().clone());
+        index.set_fast_field_tokenizers(
+            quickwit_query::get_quickwit_fastfield_normalizer_manager().clone(),
+        );
         let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
         let mut timerange_opt: Option<RangeInclusive<DateTime>> = None;
         let mut num_docs = 0;

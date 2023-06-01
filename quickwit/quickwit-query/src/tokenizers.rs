@@ -28,22 +28,52 @@ use tantivy::tokenizer::{
 
 fn create_quickwit_tokenizer_manager() -> TokenizerManager {
     let raw_tokenizer = TextAnalyzer::builder(RawTokenizer)
-        .filter(RemoveLongFilter::limit(100))
+        .filter(RemoveLongFilter::limit(255))
+        .build();
+
+    let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
+        .filter(RemoveLongFilter::limit(255))
+        .filter(LowerCaser)
+        .build();
+
+    let tokenizer_manager = TokenizerManager::new();
+    tokenizer_manager.register("raw", raw_tokenizer);
+    tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
+
+    tokenizer_manager.register(
+        "default",
+        TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer)
+            .filter(RemoveLongFilter::limit(255))
+            .filter(LowerCaser)
+            .build(),
+    );
+    tokenizer_manager.register(
+        "en_stem",
+        TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer)
+            .filter(RemoveLongFilter::limit(255))
+            .filter(LowerCaser)
+            .filter(tantivy::tokenizer::Stemmer::new(
+                tantivy::tokenizer::Language::English,
+            ))
+            .build(),
+    );
+
+    tokenizer_manager
+}
+
+fn create_quickwit_fastfield_normalizer_manager() -> TokenizerManager {
+    let raw_tokenizer = TextAnalyzer::builder(RawTokenizer)
+        .filter(RemoveLongFilter::limit(255))
         .build();
 
     let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer)
         .filter(LowerCaser)
+        .filter(RemoveLongFilter::limit(255))
         .build();
 
-    let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
-        .filter(RemoveLongFilter::limit(40))
-        .filter(LowerCaser)
-        .build();
-
-    let tokenizer_manager = TokenizerManager::default();
+    let tokenizer_manager = TokenizerManager::new();
     tokenizer_manager.register("raw", raw_tokenizer);
     tokenizer_manager.register("lowercase", lower_case_tokenizer);
-    tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
     tokenizer_manager
 }
 
@@ -160,6 +190,12 @@ pub fn get_quickwit_tokenizer_manager() -> &'static TokenizerManager {
     QUICKWIT_TOKENIZER_MANAGER.borrow()
 }
 
+pub fn get_quickwit_fastfield_normalizer_manager() -> &'static TokenizerManager {
+    static QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER: Lazy<TokenizerManager> =
+        Lazy::new(create_quickwit_fastfield_normalizer_manager);
+    QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER.borrow()
+}
+
 #[cfg(test)]
 mod tests {
     use tantivy::tokenizer::Token;
@@ -173,15 +209,15 @@ mod tests {
         a strong wind is coming
         sand in my face
         "#;
-        let my_long_text = "a text, that is just too long, no one will type it, no one will like \
-                            it, no one shall find it. I just need some more chars, now you may \
-                            not pass.";
 
         let tokenizer = get_quickwit_tokenizer_manager().get("raw").unwrap();
         let mut haiku_stream = tokenizer.token_stream(my_haiku);
         assert!(haiku_stream.advance());
         assert!(!haiku_stream.advance());
-        assert!(!tokenizer.token_stream(my_long_text).advance());
+        let my_too_long_text = vec!["a".repeat(255)].join("");
+        assert!(!tokenizer.token_stream(&my_too_long_text).advance());
+        let my_long_text = vec!["a".repeat(254)].join("");
+        assert!(tokenizer.token_stream(&my_long_text).advance());
     }
 
     #[test]

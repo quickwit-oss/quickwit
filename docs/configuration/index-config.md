@@ -115,6 +115,8 @@ type: text
 tokenizer: default
 record: position
 fieldnorms: true
+fast:
+  normalizer: lowercase
 ```
 
 **Parameters for text field**
@@ -126,17 +128,24 @@ fieldnorms: true
 | `tokenizer` | Name of the `Tokenizer`. ([See tokenizers](#description-of-available-tokenizers)) for a list of available tokenizers.  | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 | `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |
-| `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids and the dictionary. The effective cardinality depends on the tokenizer. The default behaviour for `true` is to store the original text unchanged. The tokenizer on the fast field is seperately configured. It can be configured via `{"tokenizer": "lowercase"}`. ([See tokenizers](#description-of-available-tokenizers)) for a list of available tokenizers. | `false` |
+| `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids and the dictionary. The default behaviour for `true` is to store the original text unchanged. The normalizers on the fast field is seperately configured. It can be configured via `normalizer: lowercase`. ([See normalizers](#description-of-available-normalizers)) for a list of available normalizers. | `false` |
 
 #### **Description of available tokenizers**
 
 | Tokenizer     | Description   |
 | ------------- | ------------- |
-| `raw`         | Does not process nor tokenize text  |
-| `default`     | Chops the text on according to whitespace and punctuation, removes tokens that are too long, and converts to lowercase |
-| `en_stem`     |  Like `default`, but also applies stemming on the resulting tokens  |
+| `raw`         | Does not process nor tokenize text. Filters out tokens larger than 255 bytes.  |
+| `default`     | Chops the text on according to whitespace and punctuation, removes tokens that are too long, and converts to lowercase. Filters out tokens larger than 255 bytes. |
+| `en_stem`     |  Like `default`, but also applies stemming on the resulting tokens. Filters out tokens larger than 255 bytes.  |
 | `chinese_compatible` |  Chop between each CJK character in addition to what `default` does. Should be used with `record: position` to be able to properly search |
 | `lowercase` |  Applies a lowercase transformation on the text. It does not tokenize the text. |
+
+#### **Description of available normalizers**
+
+| Normalizer     | Description   |
+| ------------- | ------------- |
+| `raw`         | Does not process nor tokenize text. Filters token larger than 255 bytes.  |
+| `lowercase` |  Applies a lowercase transformation on the text. Filters token larger than 255 bytes. |
 
 **Description of record options**
 
@@ -312,6 +321,8 @@ stored: true
 indexed: true
 tokenizer: "default"
 expand_dots: false
+fast: 
+  normalizer: lowercase
 ```
 
 **Parameters for JSON field**
@@ -321,7 +332,7 @@ expand_dots: false
 | `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
-| `fast`   | Whether value is fast | `false` |
+| `fast`     | Whether value is stored in a fast field. The default behaviour for text in the JSON is to store the text unchanged. An normalizer can be configured via `normalizer: lowercase`. ([See normalizers](#description-of-available-normalizers)) for a list of available normalizers. | `true` |
 | `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `default` |
 | `record`    | **Only affects strings in the json object**. Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 | `expand_dots`    | If true, json keys containing a `.` should be expanded. For instance, if `expand_dots` is set to true, `{"k8s.node.id": "node-2"}` will be indexed as if it was `{"k8s": {"node": {"id": "node2"}}}`. The benefit is that escaping the `.` will not be required at query time. In other words, `k8s.node.id:node2` will match the document. This does not impact the way the document is stored.  | `true` |

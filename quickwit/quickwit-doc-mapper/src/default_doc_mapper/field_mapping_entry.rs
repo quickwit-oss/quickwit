@@ -221,9 +221,6 @@ pub enum QuickwitTextTokenizer {
     StemEn,
     #[serde(rename = "chinese_compatible")]
     Chinese,
-    #[serde(rename = "lowercase")]
-    /// Does not tokenize, only lowercases the text.
-    Lowercase,
 }
 
 impl QuickwitTextTokenizer {
@@ -233,7 +230,23 @@ impl QuickwitTextTokenizer {
             QuickwitTextTokenizer::Default => "default",
             QuickwitTextTokenizer::StemEn => "en_stem",
             QuickwitTextTokenizer::Chinese => "chinese_compatible",
-            QuickwitTextTokenizer::Lowercase => "lowercase",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub enum QuickwitTextNormalizer {
+    #[serde(rename = "raw")]
+    Raw,
+    #[serde(rename = "lowercase")]
+    Lowercase,
+}
+
+impl QuickwitTextNormalizer {
+    pub fn get_name(&self) -> &str {
+        match self {
+            QuickwitTextNormalizer::Raw => "raw",
+            QuickwitTextNormalizer::Lowercase => "lowercase",
         }
     }
 }
@@ -262,11 +275,11 @@ pub struct QuickwitTextOptions {
     pub fast: FastFieldOptions,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(untagged)]
 pub enum FastFieldOptions {
     IsEnabled(bool),
-    EnabledWithTokenizer { tokenizer: String },
+    EnabledWithNormalizer { normalizer: QuickwitTextNormalizer },
 }
 
 impl Default for FastFieldOptions {
@@ -299,8 +312,8 @@ impl From<QuickwitTextOptions> for TextOptions {
             FastFieldOptions::IsEnabled(true) => {
                 text_options = text_options.set_fast(None);
             }
-            FastFieldOptions::EnabledWithTokenizer { tokenizer } => {
-                text_options = text_options.set_fast(Some(tokenizer));
+            FastFieldOptions::EnabledWithNormalizer { normalizer } => {
+                text_options = text_options.set_fast(Some(normalizer.get_name()));
             }
             FastFieldOptions::IsEnabled(false) => {}
         }
@@ -342,7 +355,7 @@ pub enum IndexRecordOptionSchema {
 ///
 /// `QuickwitJsonOptions` is also used to configure
 /// the dynamic mapping.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitJsonOptions {
     /// Optional description of JSON object.
@@ -373,7 +386,7 @@ pub struct QuickwitJsonOptions {
     pub expand_dots: bool,
     /// If true, the json object will be stored in columnar format.
     #[serde(default)]
-    pub fast: bool,
+    pub fast: FastFieldOptions,
 }
 
 impl Default for QuickwitJsonOptions {
@@ -385,7 +398,7 @@ impl Default for QuickwitJsonOptions {
             record: None,
             stored: true,
             expand_dots: true,
-            fast: false,
+            fast: FastFieldOptions::default(),
         }
     }
 }
@@ -411,8 +424,14 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
         if quickwit_json_options.expand_dots {
             json_options = json_options.set_expand_dots_enabled();
         }
-        if quickwit_json_options.fast {
-            json_options = json_options.set_fast();
+        match &quickwit_json_options.fast {
+            FastFieldOptions::IsEnabled(true) => {
+                json_options = json_options.set_fast(None);
+            }
+            FastFieldOptions::EnabledWithNormalizer { normalizer } => {
+                json_options = json_options.set_fast(Some(normalizer.get_name()));
+            }
+            FastFieldOptions::IsEnabled(false) => {}
         }
         json_options
     }
@@ -575,7 +594,7 @@ mod tests {
     use crate::default_doc_mapper::field_mapping_entry::{
         QuickwitJsonOptions, QuickwitTextOptions, QuickwitTextTokenizer,
     };
-    use crate::default_doc_mapper::FieldMappingType;
+    use crate::default_doc_mapper::{FastFieldOptions, FieldMappingType};
     use crate::Cardinality;
 
     #[test]
@@ -721,7 +740,7 @@ mod tests {
         assert_eq!(
             mapping_entry.unwrap_err().to_string(),
             "Error while parsing field `my_field_name`: unknown variant `notexist`, expected one \
-             of `raw`, `default`, `en_stem`, `chinese_compatible`, `lowercase`"
+             of `raw`, `default`, `en_stem`, `chinese_compatible`"
                 .to_string()
         );
         Ok(())
@@ -1194,13 +1213,13 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_text_fast_field_tokenizer() {
+    fn test_parse_text_fast_field_normalizer() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
                 "name": "my_field_name",
                 "type": "text",
-                "fast": {"tokenizer": "lowercase"}
+                "fast": {"normalizer": "lowercase"}
             }
             "#,
         )
@@ -1211,7 +1230,7 @@ mod tests {
             json!({
                 "name": "my_field_name",
                 "type": "text",
-                "fast": {"tokenizer": "lowercase"},
+                "fast": {"normalizer": "lowercase"},
                 "stored": true,
                 "indexed": true,
                 "fieldnorms": false,
@@ -1391,7 +1410,7 @@ mod tests {
             tokenizer: None,
             record: None,
             stored: true,
-            fast: false,
+            fast: FastFieldOptions::IsEnabled(false),
             expand_dots: true,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field");
@@ -1434,7 +1453,7 @@ mod tests {
             record: None,
             stored: false,
             expand_dots: true,
-            fast: false,
+            fast: FastFieldOptions::IsEnabled(false),
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field_multi");
         assert!(

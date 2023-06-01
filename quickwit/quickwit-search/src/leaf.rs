@@ -119,6 +119,9 @@ pub(crate) async fn open_index_with_caches(
     };
     let mut index = Index::open(hot_directory)?;
     index.set_tokenizers(quickwit_query::get_quickwit_tokenizer_manager().clone());
+    index.set_fast_field_tokenizers(
+        quickwit_query::get_quickwit_fastfield_normalizer_manager().clone(),
+    );
     Ok(index)
 }
 

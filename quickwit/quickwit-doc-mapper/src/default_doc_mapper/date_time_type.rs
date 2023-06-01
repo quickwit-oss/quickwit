@@ -22,7 +22,7 @@ use quickwit_datetime::{DateTimeInputFormat, DateTimeOutputFormat};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::Value as TantivyValue;
-use tantivy::DatePrecision as DateTimePrecision;
+use tantivy::DateTimePrecision;
 
 use super::default_as_true;
 
