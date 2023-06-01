@@ -23,8 +23,9 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{StorageBackend, StorageConfig};
 
-use crate::storage_factory::StorageFactory;
-use crate::{DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageResolverError};
+use crate::{
+    DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,
+};
 
 /// S3 compatible object storage resolver.
 #[derive(Default)]

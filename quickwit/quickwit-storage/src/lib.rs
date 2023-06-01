@@ -74,7 +74,8 @@ pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::storage::MockStorage;
 #[cfg(any(test, feature = "testsuite"))]
-pub use self::storage_factory::{MockStorageFactory, StorageFactory, UnsupportedStorage};
+pub use self::storage_factory::MockStorageFactory;
+pub use self::storage_factory::{StorageFactory, UnsupportedStorage};
 pub use self::storage_resolver::StorageResolver;
 #[cfg(feature = "testsuite")]
 pub use self::test_suite::{
