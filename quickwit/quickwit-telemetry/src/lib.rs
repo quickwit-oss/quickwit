@@ -39,7 +39,7 @@ static TELEMETRY_SENDER: OnceCell<TelemetrySender> = OnceCell::new();
 pub fn start_telemetry_loop(quickwit_info: QuickwitTelemetryInfo) -> Option<TelemetryLoopHandle> {
     let telemetry_sender =
         TELEMETRY_SENDER.get_or_init(|| TelemetrySender::from_quickwit_info(quickwit_info));
-    // This should not happened... unless telemetry is enabled and you are running tests in parallel
+    // This should not happen... unless telemetry is enabled and you are running tests in parallel
     // in the same process.
     if telemetry_sender.loop_started() {
         info!("Telemetry loop already started. Please disable telemetry during tests.");

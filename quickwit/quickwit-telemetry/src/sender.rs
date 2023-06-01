@@ -258,7 +258,7 @@ impl TelemetrySender {
     }
 
     pub fn loop_started(&self) -> bool {
-        self.inner.is_started.load(Ordering::SeqCst)
+        self.inner.is_started.load(Ordering::Relaxed)
     }
 
     pub fn start_loop(&self) -> TelemetryLoopHandle {
