@@ -27,6 +27,7 @@ pub(crate) mod sink;
 
 use once_cell::sync::OnceCell;
 use payload::QuickwitTelemetryInfo;
+use tracing::info;
 
 use crate::payload::TelemetryEvent;
 pub use crate::sender::is_telemetry_disabled;
@@ -34,10 +35,17 @@ use crate::sender::{TelemetryLoopHandle, TelemetrySender};
 
 static TELEMETRY_SENDER: OnceCell<TelemetrySender> = OnceCell::new();
 
-pub fn start_telemetry_loop(quickwit_info: QuickwitTelemetryInfo) -> TelemetryLoopHandle {
+/// Returns a `TelemetryLoopHandle` if the telemetry loop is not yet started.
+pub fn start_telemetry_loop(quickwit_info: QuickwitTelemetryInfo) -> Option<TelemetryLoopHandle> {
     let telemetry_sender =
         TELEMETRY_SENDER.get_or_init(|| TelemetrySender::from_quickwit_info(quickwit_info));
-    telemetry_sender.start_loop()
+    // This should not happen... unless telemetry is enabled and you are running tests in parallel
+    // in the same process.
+    if telemetry_sender.loop_started() {
+        info!("Telemetry loop already started. Please disable telemetry during tests.");
+        return None;
+    }
+    Some(telemetry_sender.start_loop())
 }
 
 /// Sends a telemetry event to Quickwit's server via HTTP.

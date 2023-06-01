@@ -83,7 +83,7 @@ impl RunCliCommand {
             tracing::info!(services = %services.iter().join(", "), "Setting services from override.");
             config.enabled_services = services.clone();
         }
-        let telemetry_handle =
+        let telemetry_handle_opt =
             quickwit_telemetry::start_telemetry_loop(quickwit_telemetry_info(&config));
         quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
         // TODO move in serve quickwit?
@@ -107,7 +107,9 @@ impl RunCliCommand {
             Err(_) => 1,
         };
         quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code }).await;
-        telemetry_handle.terminate_telemetry().await;
+        if let Some(telemetry_handle) = telemetry_handle_opt {
+            telemetry_handle.terminate_telemetry().await;
+        }
         serve_result?;
         Ok(())
     }

@@ -12,6 +12,7 @@ on:
       - "!quickwit/quickwit-ui/**"
 env:
   CARGO_INCREMENTAL: 0
+  QW_DISABLE_TELEMETRY: 1
   RUST_BACKTRACE: 1
   RUSTFLAGS: -Dwarnings
   RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links

@@ -257,6 +257,10 @@ impl TelemetrySender {
         }
     }
 
+    pub fn loop_started(&self) -> bool {
+        self.inner.is_started.load(Ordering::Relaxed)
+    }
+
     pub fn start_loop(&self) -> TelemetryLoopHandle {
         let (terminate_command_tx, mut terminate_command_rx) = oneshot::channel();
         if self.inner.is_disabled() {
