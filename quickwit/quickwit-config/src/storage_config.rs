@@ -237,9 +237,9 @@ impl fmt::Debug for AzureStorageConfig {
 #[serde(deny_unknown_fields)]
 pub struct S3StorageConfig {
     #[serde(default)]
-    access_key_id: Option<String>,
+    pub access_key_id: Option<String>,
     #[serde(default)]
-    secret_access_key: Option<String>,
+    pub secret_access_key: Option<String>,
     #[serde(default)]
     pub region: Option<String>,
     #[serde(default)]

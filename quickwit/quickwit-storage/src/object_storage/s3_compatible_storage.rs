@@ -86,7 +86,6 @@ impl fmt::Debug for S3CompatibleObjectStorage {
 async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     let aws_config = get_aws_config().await;
     let mut s3_config = aws_sdk_s3::Config::builder().region(aws_config.region().cloned());
-    // aws_sdk_s3::Config::builder().region(cfg.region().cloned());
     s3_config.set_retry_config(aws_config.retry_config().cloned());
     s3_config.set_credentials_provider(aws_config.credentials_provider().cloned());
     s3_config.set_http_connector(aws_config.http_connector().cloned());
