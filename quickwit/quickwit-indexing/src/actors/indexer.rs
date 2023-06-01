@@ -388,8 +388,9 @@ impl Actor for Indexer {
             | ActorExitStatus::Failure(_)
             | ActorExitStatus::Panicked => return Ok(()),
             ActorExitStatus::Quit | ActorExitStatus::Success => {
-                self.send_to_serializer(CommitTrigger::NoMoreDocs, ctx)
-                    .await?;
+                let _ = self
+                    .send_to_serializer(CommitTrigger::NoMoreDocs, ctx)
+                    .await;
             }
         }
         Ok(())
