@@ -21,6 +21,7 @@ json:
     dynamic_mapping:
       expand_dots: true
       fast: true
+      record: position
 ---
 # Ingest documents
 method: POST

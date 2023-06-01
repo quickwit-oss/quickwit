@@ -19,7 +19,9 @@
 
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::user_input_query::UserInputQuery;
-use crate::query_ast::{BoolQuery, FullTextQuery, QueryAst, RangeQuery, TermQuery, TermSetQuery};
+use crate::query_ast::{
+    BoolQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, TermQuery, TermSetQuery,
+};
 
 /// Simple trait to implement a Visitor over the QueryAst.
 pub trait QueryAstVisitor<'a> {
@@ -31,6 +33,9 @@ pub trait QueryAstVisitor<'a> {
             QueryAst::Term(term_query) => self.visit_term(term_query),
             QueryAst::TermSet(term_set_query) => self.visit_term_set(term_set_query),
             QueryAst::FullText(full_text_query) => self.visit_full_text(full_text_query),
+            QueryAst::PhrasePrefix(phrase_prefix_query) => {
+                self.visit_phrase_prefix(phrase_prefix_query)
+            }
             QueryAst::Range(range_query) => self.visit_range(range_query),
             QueryAst::MatchAll => self.visit_match_all(),
             QueryAst::MatchNone => self.visit_match_none(),
@@ -61,6 +66,13 @@ pub trait QueryAstVisitor<'a> {
     }
 
     fn visit_full_text(&mut self, _full_text: &'a FullTextQuery) -> Result<(), Self::Err> {
+        Ok(())
+    }
+
+    fn visit_phrase_prefix(
+        &mut self,
+        _phrase_query: &'a PhrasePrefixQuery,
+    ) -> Result<(), Self::Err> {
         Ok(())
     }
 

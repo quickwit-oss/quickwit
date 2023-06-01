@@ -19,12 +19,17 @@
 
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
+use std::ops::Bound;
 
-use quickwit_query::query_ast::{QueryAst, QueryAstVisitor, RangeQuery, TermSetQuery};
+use quickwit_query::query_ast::{
+    PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery, TermSetQuery,
+};
+use quickwit_query::InvalidQuery;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
+use tantivy::Term;
 
-use crate::{QueryParserError, WarmupInfo};
+use crate::{QueryParserError, TermRange, WarmupInfo};
 
 #[derive(Default)]
 struct RangeQueryFields {
@@ -56,6 +61,7 @@ pub(crate) fn build_query(
     let query = query_ast.build_tantivy_query(&schema, search_fields, with_validation)?;
 
     let term_set_query_fields = extract_term_set_query_fields(query_ast);
+    let term_ranges_grouped_by_field = extract_phrase_prefix_term_ranges(query_ast, &schema)?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
     query.query_terms(&mut |term, need_position| {
@@ -71,6 +77,7 @@ pub(crate) fn build_query(
         term_dict_field_names: term_set_query_fields.clone(),
         posting_field_names: term_set_query_fields,
         terms_grouped_by_field,
+        term_ranges_grouped_by_field,
         fast_field_names,
         ..WarmupInfo::default()
     };
@@ -100,6 +107,70 @@ fn extract_term_set_query_fields(query_ast: &QueryAst) -> HashSet<String> {
         .visit(query_ast)
         .expect("Extracting term set queries's field should never return an error.");
     visitor.term_dict_fields_to_warm_up
+}
+
+fn prefix_term_to_range(prefix: Term) -> (Bound<Term>, Bound<Term>) {
+    let mut end_bound = prefix.serialized_term().to_vec();
+    while !end_bound.is_empty() {
+        let last_byte = end_bound.last_mut().unwrap();
+        if *last_byte != u8::MAX {
+            *last_byte += 1;
+            return (
+                Bound::Included(prefix),
+                Bound::Excluded(Term::wrap(end_bound)),
+            );
+        }
+        end_bound.pop();
+    }
+    // prefix is something like [255, 255, ..]
+    (Bound::Included(prefix), Bound::Unbounded)
+}
+
+struct ExtractPhrasePrefixTermRanges<'a> {
+    schema: &'a Schema,
+    term_ranges_to_warm_up: HashMap<Field, HashMap<TermRange, bool>>,
+}
+
+impl<'a> ExtractPhrasePrefixTermRanges<'a> {
+    fn with_schema(schema: &'a Schema) -> Self {
+        ExtractPhrasePrefixTermRanges {
+            schema,
+            term_ranges_to_warm_up: HashMap::new(),
+        }
+    }
+}
+
+impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPhrasePrefixTermRanges<'b> {
+    type Err = InvalidQuery;
+
+    fn visit_phrase_prefix(
+        &mut self,
+        phrase_prefix: &'a PhrasePrefixQuery,
+    ) -> Result<(), Self::Err> {
+        let (field, terms) = phrase_prefix.get_terms(self.schema)?;
+        if let Some((_, term)) = terms.last() {
+            let (start, end) = prefix_term_to_range(term.clone());
+            let term_range = TermRange {
+                start,
+                end,
+                limit: Some(phrase_prefix.max_expansions as u64),
+            };
+            self.term_ranges_to_warm_up
+                .entry(field)
+                .or_default()
+                .insert(term_range, true);
+        }
+        Ok(())
+    }
+}
+
+fn extract_phrase_prefix_term_ranges(
+    query_ast: &QueryAst,
+    schema: &Schema,
+) -> anyhow::Result<HashMap<Field, HashMap<TermRange, bool>>> {
+    let mut visitor = ExtractPhrasePrefixTermRanges::with_schema(schema);
+    visitor.visit(query_ast)?;
+    Ok(visitor.term_ranges_to_warm_up)
 }
 
 #[cfg(test)]
