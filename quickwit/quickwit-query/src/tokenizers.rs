@@ -36,7 +36,7 @@ fn create_quickwit_tokenizer_manager() -> TokenizerManager {
         .filter(LowerCaser)
         .build();
 
-    let tokenizer_manager = TokenizerManager::default();
+    let tokenizer_manager = TokenizerManager::new();
     tokenizer_manager.register("raw", raw_tokenizer);
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
 
