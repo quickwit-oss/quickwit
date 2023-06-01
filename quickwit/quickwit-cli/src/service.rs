@@ -25,8 +25,9 @@ use itertools::Itertools;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
+use quickwit_config::QuickwitConfig;
 use quickwit_serve::serve_quickwit;
-use quickwit_telemetry::payload::{RunCommandInfo, TelemetryEvent};
+use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tokio::signal;
 use tracing::debug;
 
@@ -74,23 +75,16 @@ impl RunCliCommand {
 
     pub async fn execute(&self) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
-        let mut config = load_quickwit_config(&self.config_uri).await?;
         crate::busy_detector::set_enabled(true);
 
+        let mut config = load_quickwit_config(&self.config_uri).await?;
         if let Some(services) = &self.services {
             tracing::info!(services = %services.iter().join(", "), "Setting services from override.");
             config.enabled_services = services.clone();
         }
-        let telemetry_event = TelemetryEvent::RunCommand(RunCommandInfo::new(
-            config
-                .enabled_services
-                .iter()
-                .map(|service| service.to_string())
-                .collect(),
-            config.indexer_config.enable_otlp_endpoint,
-            config.jaeger_config.enable_endpoint,
-        ));
-        quickwit_telemetry::send_telemetry_event(telemetry_event).await;
+        let telemetry_handle =
+            quickwit_telemetry::start_telemetry_loop(quickwit_telemetry_info(&config));
+        quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
         // TODO move in serve quickwit?
         let runtimes_config = RuntimesConfig::default();
         start_actor_runtimes(runtimes_config, &config.enabled_services)?;
@@ -99,9 +93,43 @@ impl RunCliCommand {
                 .await
                 .expect("Registering a signal handler for SIGINT should not fail.");
         });
-        let _ = serve_quickwit(config, runtimes_config, shutdown_signal).await?;
+        let serve_result = serve_quickwit(config, runtimes_config, shutdown_signal).await;
+        let return_code = match serve_result {
+            Ok(_) => 0,
+            Err(_) => 1,
+        };
+        quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code }).await;
+        telemetry_handle.terminate_telemetry().await;
+        serve_result?;
         Ok(())
     }
+}
+
+fn quickwit_telemetry_info(config: &QuickwitConfig) -> QuickwitTelemetryInfo {
+    let mut features = HashSet::new();
+    if config.indexer_config.enable_otlp_endpoint {
+        features.insert(QuickwitFeature::Otlp);
+    }
+    if config.jaeger_config.enable_endpoint {
+        features.insert(QuickwitFeature::Jaeger);
+    }
+    // The metastore URI is only relevant if the metastore is enabled.
+    if config
+        .enabled_services
+        .contains(&QuickwitService::Metastore)
+    {
+        if config.metastore_uri.protocol().is_postgresql() {
+            features.insert(QuickwitFeature::PostgresqMetastore);
+        } else {
+            features.insert(QuickwitFeature::FileBackedMetastore);
+        }
+    }
+    let services = config
+        .enabled_services
+        .iter()
+        .map(|service| service.to_string())
+        .collect();
+    QuickwitTelemetryInfo::new(services, features)
 }
 
 #[cfg(test)]
