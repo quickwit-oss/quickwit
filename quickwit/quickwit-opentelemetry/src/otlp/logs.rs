@@ -21,7 +21,6 @@ use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
 use std::collections::{BTreeSet, HashMap};
 
 use async_trait::async_trait;
-use base64::prelude::{Engine, BASE64_STANDARD};
 use quickwit_common::uri::Uri;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
 use quickwit_ingest::{
@@ -37,7 +36,7 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
-use super::{parse_log_record_body, TraceId};
+use super::{is_zero, parse_log_record_body, SpanId, TraceId};
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
@@ -62,8 +61,6 @@ doc_mapping:
       type: datetime
       input_formats: [unix_timestamp]
       output_format: unix_timestamp_nanos
-      indexed: false
-      fast: false
     - name: service_name
       type: text
       tokenizer: raw
@@ -81,11 +78,9 @@ doc_mapping:
       type: u64
       indexed: false
     - name: trace_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: span_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: trace_flags
       type: u64
       indexed: false
@@ -120,26 +115,54 @@ search_settings:
   default_search_fields: [body.message]
 "#;
 
-pub type Base64 = String;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LogRecord {
     pub timestamp_nanos: u64,
-    pub observed_timestamp_nanos: u64,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_timestamp_nanos: Option<u64>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub service_name: String,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub severity_text: Option<String>,
     pub severity_number: i32,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub attributes: HashMap<String, JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
     pub dropped_attributes_count: u32,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<TraceId>,
-    pub span_id: Option<Base64>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_id: Option<SpanId>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_flags: Option<u32>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub resource_attributes: HashMap<String, JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
     pub resource_dropped_attributes_count: u32,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scope_name: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scope_version: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub scope_attributes: HashMap<String, JsonValue>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_zero")]
     pub scope_dropped_attributes_count: u32,
 }
 
@@ -298,18 +321,24 @@ impl OtlpGrpcLogsService {
                 for log_record in scope_log.log_records {
                     num_log_records += 1;
 
-                    let timestamp_nanos = log_record.time_unix_nano;
-                    let observed_timestamp_nanos = log_record.observed_time_unix_nano;
-
+                    if log_record.time_unix_nano == 0 {
+                        num_parse_errors += 1;
+                        continue;
+                    }
+                    let observed_timestamp_nanos = if log_record.observed_time_unix_nano != 0 {
+                        Some(log_record.observed_time_unix_nano)
+                    } else {
+                        None
+                    };
                     let trace_id = if log_record.trace_id.iter().any(|&byte| byte != 0) {
-                        let b64trace_id = TraceId::try_from(log_record.trace_id)
-                            .map_err(|error| Status::invalid_argument(error.to_string()))?;
-                        Some(b64trace_id)
+                        let trace_id = TraceId::try_from(log_record.trace_id)?;
+                        Some(trace_id)
                     } else {
                         None
                     };
                     let span_id = if log_record.span_id.iter().any(|&byte| byte != 0) {
-                        Some(BASE64_STANDARD.encode(log_record.span_id))
+                        let span_id = SpanId::try_from(log_record.span_id)?;
+                        Some(span_id)
                     } else {
                         None
                     };
@@ -326,7 +355,7 @@ impl OtlpGrpcLogsService {
                     let dropped_attributes_count = log_record.dropped_attributes_count;
 
                     let log_record = LogRecord {
-                        timestamp_nanos,
+                        timestamp_nanos: log_record.time_unix_nano,
                         observed_timestamp_nanos,
                         service_name: service_name.clone(),
                         severity_text,
