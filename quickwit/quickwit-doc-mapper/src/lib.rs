@@ -38,7 +38,8 @@ pub use default_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType, QuickwitJsonOptions,
 };
 use default_doc_mapper::{
-    FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
+    FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,
+    QuickwitTextNormalizer, QuickwitTextTokenizer,
 };
 pub use doc_mapper::{DocMapper, JsonObject, NamedField, TermRange, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
@@ -61,6 +62,8 @@ pub(crate) enum Cardinality {
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(
     QuickwitJsonOptions,
+    FastFieldOptions,
+    QuickwitTextNormalizer,
     ModeType,
     QuickwitTextTokenizer,
     IndexRecordOptionSchema,

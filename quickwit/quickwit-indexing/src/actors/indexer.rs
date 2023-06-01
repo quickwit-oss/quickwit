@@ -39,7 +39,7 @@ use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
-use quickwit_query::get_quickwit_tokenizer_manager;
+use quickwit_query::{get_quickwit_fastfield_normalizer_manager, get_quickwit_tokenizer_manager};
 use serde::Serialize;
 use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
@@ -98,7 +98,8 @@ impl IndexerState {
         let index_builder = IndexBuilder::new()
             .settings(self.index_settings.clone())
             .schema(self.schema.clone())
-            .tokenizers(get_quickwit_tokenizer_manager().clone());
+            .tokenizers(get_quickwit_tokenizer_manager().clone())
+            .fast_field_tokenizers(get_quickwit_fastfield_normalizer_manager().clone());
 
         let io_controls = IoControls::default()
             .set_progress(ctx.progress().clone())
