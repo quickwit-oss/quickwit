@@ -20,9 +20,13 @@
 use std::convert::TryFrom;
 
 use anyhow::bail;
+use base64::prelude::{Engine, BASE64_STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use tantivy::schema::{IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type};
+use tantivy::schema::{
+    IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
+    Value as TantivyValue,
+};
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::{default_as_true, FieldMappingType};
@@ -100,6 +104,85 @@ impl Default for QuickwitNumericOptions {
             stored: true,
             fast: false,
         }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct QuickwitBytesOptions {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default = "default_as_true")]
+    pub stored: bool,
+    #[serde(default = "default_as_true")]
+    pub indexed: bool,
+    #[serde(default)]
+    pub fast: bool,
+    #[serde(default)]
+    pub input_format: BinaryFormat,
+    #[serde(default)]
+    pub output_format: BinaryFormat,
+}
+
+impl Default for QuickwitBytesOptions {
+    fn default() -> Self {
+        Self {
+            description: None,
+            indexed: true,
+            stored: true,
+            fast: false,
+            input_format: BinaryFormat::default(),
+            output_format: BinaryFormat::default(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BinaryFormat {
+    #[default]
+    Base64,
+    Hex,
+}
+
+impl BinaryFormat {
+    pub fn as_str(&self) -> &str {
+        match self {
+            BinaryFormat::Base64 => "base64",
+            BinaryFormat::Hex => "hex",
+        }
+    }
+
+    pub fn format_to_json(&self, value: &[u8]) -> JsonValue {
+        match self {
+            BinaryFormat::Base64 => BASE64_STANDARD.encode(value).into(),
+            BinaryFormat::Hex => hex::encode(value).into(),
+        }
+    }
+
+    pub fn parse_json(&self, json_val: JsonValue) -> Result<TantivyValue, String> {
+        let byte_str = if let JsonValue::String(byte_str) = json_val {
+            byte_str
+        } else {
+            return Err(format!(
+                "Expected {} string, got `{json_val}`.",
+                self.as_str()
+            ));
+        };
+        let payload = match self {
+            BinaryFormat::Base64 => {
+                BASE64_STANDARD
+                    .decode(&byte_str)
+                    .map_err(|base64_decode_err| {
+                        format!("Expected base64 string, got `{byte_str}`: {base64_decode_err}")
+                    })?
+            }
+            BinaryFormat::Hex => hex::decode(&byte_str).map_err(|hex_decode_err| {
+                format!("Expected hex string, got `{byte_str}`: {hex_decode_err}")
+            })?,
+        };
+        Ok(TantivyValue::Bytes(payload))
     }
 }
 
@@ -393,7 +476,7 @@ fn deserialize_mapping_type(
         }
         Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
         Type::Bytes => {
-            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            let numeric_options: QuickwitBytesOptions = serde_json::from_value(json)?;
             if numeric_options.fast && cardinality == Cardinality::MultiValues {
                 bail!("fast field is not allowed for array<bytes>.");
             }
@@ -455,9 +538,9 @@ fn typed_mapping_to_json_params(
         FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
         FieldMappingType::U64(options, _)
         | FieldMappingType::I64(options, _)
-        | FieldMappingType::Bytes(options, _)
         | FieldMappingType::F64(options, _)
         | FieldMappingType::Bool(options, _) => serialize_to_map(&options),
+        FieldMappingType::Bytes(options, _) => serialize_to_map(&options),
         FieldMappingType::IpAddr(options, _) => serialize_to_map(&options),
         FieldMappingType::DateTime(date_time_options, _) => serialize_to_map(&date_time_options),
         FieldMappingType::Json(json_options, _) => serialize_to_map(&json_options),
@@ -920,7 +1003,7 @@ mod tests {
                 "type": "i64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
             })
         );
         Ok(())
@@ -1006,7 +1089,7 @@ mod tests {
                 "type":"u64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
             })
         );
     }
@@ -1030,7 +1113,7 @@ mod tests {
                 "type":"f64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
             })
         );
     }
@@ -1054,7 +1137,7 @@ mod tests {
                 "type": "bool",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
             })
         );
     }
@@ -1222,7 +1305,9 @@ mod tests {
             r#"
             {
                 "name": "my_field_name",
-                "type": "bytes"
+                "type": "bytes",
+                "input_format": "hex",
+                "output_format": "base64"
             }
             "#,
         )
@@ -1236,6 +1321,8 @@ mod tests {
                 "stored": true,
                 "indexed": true,
                 "fast": false,
+                "input_format": "hex",
+                "output_format": "base64"
             })
         );
     }
@@ -1260,6 +1347,8 @@ mod tests {
                 "stored": true,
                 "indexed": true,
                 "fast": false,
+                "input_format": "base64",
+                "output_format": "base64"
             })
         );
     }
@@ -1375,7 +1464,7 @@ mod tests {
                 "type": "i64",
                 "stored": true,
                 "fast": false,
-                "indexed": true
+                "indexed": true,
             })
         );
     }
