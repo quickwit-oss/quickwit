@@ -80,6 +80,7 @@ pub use self::storage_resolver::StorageResolver;
 #[cfg(feature = "testsuite")]
 pub use self::test_suite::{
     storage_test_multi_part_upload, storage_test_single_part_upload, storage_test_suite,
+    test_write_and_bulk_delete,
 };
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
@@ -204,16 +205,20 @@ pub(crate) mod test_suite {
         assert!(storage.exists(test_path).await?);
         storage.delete(test_path).await?;
         assert!(!storage.exists(test_path).await?);
+        storage.delete(test_path).await?;
         Ok(())
     }
 
-    async fn test_write_and_bulk_delete(storage: &mut dyn Storage) -> anyhow::Result<()> {
+    /// Tests `Storage::bulk_delete`.
+    pub async fn test_write_and_bulk_delete(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_paths = [
             Path::new("foo"),
             Path::new("bar"),
+            Path::new("qux"),
+            Path::new("baz"),
             Path::new("file-does-not-exist"),
         ];
-        for test_path in &test_paths[0..2] {
+        for test_path in &test_paths[0..4] {
             storage
                 .put(Path::new(test_path), Box::new(b"123".to_vec()))
                 .await?;
