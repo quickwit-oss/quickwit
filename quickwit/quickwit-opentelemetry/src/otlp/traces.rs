@@ -42,6 +42,7 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
+use super::is_zero;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
 
@@ -151,10 +152,6 @@ indexing_settings:
 search_settings:
   default_search_fields: []
 "#;
-
-fn is_zero(count: &u32) -> bool {
-    *count == 0
-}
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Span {

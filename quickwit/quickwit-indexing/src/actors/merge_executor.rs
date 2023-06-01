@@ -35,8 +35,8 @@ use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::metastore_api::DeleteTask;
-use quickwit_query::get_quickwit_tokenizer_manager;
 use quickwit_query::query_ast::QueryAst;
+use quickwit_query::{get_quickwit_fastfield_normalizer_manager, get_quickwit_tokenizer_manager};
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::{Advice, DateTime, Directory, Index, IndexMeta, SegmentId, SegmentReader};
 use tokio::runtime::Handle;
@@ -367,6 +367,7 @@ impl MergeExecutor {
         let mut merged_index = Index::open(controlled_directory.clone())?;
         ctx.record_progress();
         merged_index.set_tokenizers(get_quickwit_tokenizer_manager().clone());
+        merged_index.set_fast_field_tokenizers(get_quickwit_fastfield_normalizer_manager().clone());
 
         ctx.record_progress();
 
@@ -512,6 +513,7 @@ impl MergeExecutor {
 fn open_index<T: Into<Box<dyn Directory>>>(directory: T) -> tantivy::Result<Index> {
     let mut index = Index::open(directory)?;
     index.set_tokenizers(get_quickwit_tokenizer_manager().clone());
+    index.set_fast_field_tokenizers(get_quickwit_fastfield_normalizer_manager().clone());
     Ok(index)
 }
 

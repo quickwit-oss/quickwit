@@ -20,6 +20,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::num::NonZeroU32;
+use std::ops::Bound;
 
 use anyhow::Context;
 use dyn_clone::{clone_trait_object, DynClone};
@@ -157,6 +158,17 @@ pub struct NamedField {
 
 clone_trait_object!(DocMapper);
 
+/// Bounds for a range of terms, with an optional max count of terms being matched.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TermRange {
+    /// Start of the range
+    pub start: Bound<Term>,
+    /// End of the range
+    pub end: Bound<Term>,
+    /// Max number of matched terms
+    pub limit: Option<u64>,
+}
+
 /// Information about what a DocMapper think should be warmed up before
 /// running the query.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -171,8 +183,10 @@ pub struct WarmupInfo {
     pub fast_field_names: HashSet<String>,
     /// Whether to warmup field norms. Used mostly for scoring.
     pub field_norms: bool,
-    /// Terms to warmup, and, whether their position is needed too.
+    /// Terms to warmup, and whether their position is needed too.
     pub terms_grouped_by_field: HashMap<Field, HashMap<Term, bool>>,
+    /// Term ranges to warmup, and whether their position is needed too.
+    pub term_ranges_grouped_by_field: HashMap<Field, HashMap<TermRange, bool>>,
 }
 
 impl WarmupInfo {
@@ -193,12 +207,22 @@ impl WarmupInfo {
                 *sub_map.entry(term).or_default() |= include_position;
             }
         }
+
+        // this merge is suboptimal in case of overlapping range with no limit.
+        for (field, term_range_and_pos) in other.term_ranges_grouped_by_field.into_iter() {
+            let sub_map = self.term_ranges_grouped_by_field.entry(field).or_default();
+
+            for (term_range, include_position) in term_range_and_pos.into_iter() {
+                *sub_map.entry(term_range).or_default() |= include_position;
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
+    use std::ops::Bound;
 
     use quickwit_proto::query_ast_from_user_text;
     use quickwit_query::query_ast::UserInputQuery;
@@ -208,7 +232,7 @@ mod tests {
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
     use crate::{
         Cardinality, DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, DocParsingError,
-        FieldMappingEntry, ModeType, WarmupInfo, DYNAMIC_FIELD_NAME,
+        FieldMappingEntry, ModeType, TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -386,6 +410,23 @@ mod tests {
         result
     }
 
+    fn hashmap_ranges(elements: &[(u32, &str, bool)]) -> HashMap<Field, HashMap<TermRange, bool>> {
+        let mut result: HashMap<Field, HashMap<TermRange, bool>> = HashMap::new();
+        for (field, term, pos) in elements {
+            let field = Field::from_field_id(*field);
+            let term = Term::from_field_text(field, term);
+            // this is a 1 element bound, but it's enought for testing.
+            let range = TermRange {
+                start: Bound::Included(term.clone()),
+                end: Bound::Included(term),
+                limit: None,
+            };
+            *result.entry(field).or_default().entry(range).or_default() |= pos;
+        }
+
+        result
+    }
+
     #[test]
     fn test_warmup_info_merge() {
         let wi_base = WarmupInfo {
@@ -394,6 +435,10 @@ mod tests {
             fast_field_names: hashset(&["fast1", "fast2"]),
             field_norms: false,
             terms_grouped_by_field: hashmap(&[(1, "term1", false), (1, "term2", false)]),
+            term_ranges_grouped_by_field: hashmap_ranges(&[
+                (2, "term1", false),
+                (2, "term2", false),
+            ]),
         };
 
         // merging with default has no impact
@@ -408,6 +453,10 @@ mod tests {
             fast_field_names: hashset(&["fast2", "fast3"]),
             field_norms: true,
             terms_grouped_by_field: hashmap(&[(2, "term1", false), (1, "term2", true)]),
+            term_ranges_grouped_by_field: hashmap_ranges(&[
+                (3, "term1", false),
+                (2, "term2", true),
+            ]),
         };
         wi_base.merge(wi_2.clone());
 
@@ -425,8 +474,8 @@ mod tests {
         );
         assert!(wi_base.field_norms);
 
-        let expected = [(1, "term1", false), (1, "term2", true), (2, "term1", false)];
-        for (field, term, pos) in expected {
+        let expected_terms = [(1, "term1", false), (1, "term2", true), (2, "term1", false)];
+        for (field, term, pos) in expected_terms {
             let field = Field::from_field_id(field);
             let term = Term::from_field_text(field, term);
 
@@ -436,6 +485,27 @@ mod tests {
                     .get(&field)
                     .unwrap()
                     .get(&term)
+                    .unwrap(),
+                pos
+            );
+        }
+
+        let expected_ranges = [(2, "term1", false), (2, "term2", true), (3, "term1", false)];
+        for (field, term, pos) in expected_ranges {
+            let field = Field::from_field_id(field);
+            let term = Term::from_field_text(field, term);
+            let range = TermRange {
+                start: Bound::Included(term.clone()),
+                end: Bound::Included(term),
+                limit: None,
+            };
+
+            assert_eq!(
+                *wi_base
+                    .term_ranges_grouped_by_field
+                    .get(&field)
+                    .unwrap()
+                    .get(&range)
                     .unwrap(),
                 pos
             );

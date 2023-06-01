@@ -1,0 +1,35 @@
+method: [GET]
+json:
+  query:
+    match_phrase_prefix:
+      payload.pull_request.body:
+        query: "p"
+expected:
+  hits:
+    total:
+      value: 2
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    match_phrase_prefix:
+      payload.pull_request.body:
+        query: "to p"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    match_phrase_prefix:
+      payload.pull_request.body:
+        query: "be to p"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
