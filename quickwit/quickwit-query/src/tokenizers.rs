@@ -32,13 +32,32 @@ fn create_quickwit_tokenizer_manager() -> TokenizerManager {
         .build();
 
     let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
-        .filter(RemoveLongFilter::limit(40))
+        .filter(RemoveLongFilter::limit(255))
         .filter(LowerCaser)
         .build();
 
     let tokenizer_manager = TokenizerManager::default();
     tokenizer_manager.register("raw", raw_tokenizer);
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
+
+    tokenizer_manager.register(
+        "default",
+        TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer)
+            .filter(RemoveLongFilter::limit(255))
+            .filter(LowerCaser)
+            .build(),
+    );
+    tokenizer_manager.register(
+        "en_stem",
+        TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer)
+            .filter(RemoveLongFilter::limit(255))
+            .filter(LowerCaser)
+            .filter(tantivy::tokenizer::Stemmer::new(
+                tantivy::tokenizer::Language::English,
+            ))
+            .build(),
+    );
+
     tokenizer_manager
 }
 
