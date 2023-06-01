@@ -376,9 +376,9 @@ field_mappings:
 The `mode` describes how Quickwit should behave when it receives a field that is not defined in the field mapping.
 
 Quickwit offers you three different modes:
-- `lenient` (default value): unmapped fields are dismissed by Quickwit.
+- `dynamic` (default value): unmapped fields are gathered by Quickwit and handled as defined in the `dynamic_mapping` parameter.
+- `lenient`: unmapped fields are dismissed by Quickwit.
 - `strict`: if a document contains a field that is not mapped, quickwit will dismiss it, and count it as an error.
-- `dynamic`: unmapped fields are gathered by Quickwit and handled as defined in the `dynamic_mapping` parameter.
 
 #### Dynamic Mapping
 
@@ -409,12 +409,13 @@ For instance, in a entirely schemaless settings, a minimal index configuration c
 ```yaml
 version: 0.6
 index_id: my-dynamic-index
-# note we did not map anything.
 doc_mapping:
-  mode: dynamic
+    # If you have a timestamp field, it is important to tell quickwit about it.
+    timestamp_field: unix_timestamp
+    # mode: dynamic #< Commented out, as dynamic is the default mode.
 ```
 
-We could then index a complex document like the following:
+With such a simple configuration, we can index a complex document like the following:
 
 ```json
 {
@@ -568,7 +569,8 @@ This section describes search settings for a given index.
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `default_search_fields`      | Default list of fields that will be used for search.   | `None` |
+| `default_search_fields`      | Default list of fields that will be used for search. The field names in this list may be declared
+explicitly in the schema, or may refer to a field captured by the dynamic mode.   | `None` |
 
 ## Retention policy
 

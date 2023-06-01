@@ -215,7 +215,7 @@ impl Source for KinesisSource {
         let mut docs = Vec::new();
         let mut checkpoint_delta = SourceCheckpointDelta::default();
 
-        let deadline = time::sleep(quickwit_actors::HEARTBEAT / 2);
+        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
         tokio::pin!(deadline);
 
         loop {

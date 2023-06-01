@@ -183,6 +183,7 @@ mod tests {
               - name: ts
                 type: i64
                 fast: true
+            mode: lenient
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
             .await

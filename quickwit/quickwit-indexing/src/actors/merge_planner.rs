@@ -283,7 +283,7 @@ impl Handler<RefreshMetric> for MergePlanner {
                 self.pipeline_id.source_id.as_str(),
             ])
             .set(self.ongoing_merge_operations_inventory.list().len() as i64);
-        ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, RefreshMetric)
+        ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, RefreshMetric)
             .await;
         Ok(())
     }

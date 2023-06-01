@@ -499,7 +499,7 @@ mod tests {
         let schema = doc_mapper.schema();
         // 8 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
-        assert_eq!(document.len(), 15);
+        assert_eq!(document.len(), 16);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
         document.field_values().iter().for_each(|field_value| {

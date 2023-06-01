@@ -29,60 +29,55 @@ use quickwit_metastore::{IndexMetadata, Split};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
-use reqwest::{Client, Method, StatusCode, Url};
+use reqwest::{Client, ClientBuilder, Method, StatusCode, Url};
 use serde::Serialize;
 use serde_json::json;
 
 use crate::error::Error;
-use crate::models::{ApiResponse, IngestSource};
+use crate::models::{ApiResponse, IngestSource, Timeout};
 use crate::BatchLineReader;
 
 pub const DEFAULT_BASE_URL: &str = "http://127.0.0.1:7280";
 pub const DEFAULT_CONTENT_TYPE: &str = "application/json";
 pub const INGEST_CONTENT_LENGTH_LIMIT: usize = 10 * 1024 * 1024; // 10MiB
+pub const DEFAULT_CLIENT_CONNECT_TIMEOUT: Timeout = Timeout::from_secs(5);
+pub const DEFAULT_CLIENT_TIMEOUT: Timeout = Timeout::from_secs(10);
+pub const DEFAULT_CLIENT_SEARCH_TIMEOUT: Timeout = Timeout::from_mins(1);
+pub const DEFAULT_CLIENT_INGEST_TIMEOUT: Timeout = Timeout::from_mins(1);
+pub const DEFAULT_CLIENT_COMMIT_TIMEOUT: Timeout = Timeout::from_mins(30);
 
-pub struct Transport {
+struct Transport {
     base_url: Url,
     api_url: Url,
     client: Client,
 }
 
-impl Default for Transport {
-    fn default() -> Self {
-        let base_url = Url::parse(DEFAULT_BASE_URL).unwrap();
-        Self::new(base_url)
-    }
-}
-
 impl Transport {
-    pub fn new(endpoint: Url) -> Self {
+    fn new(endpoint: Url, connect_timeout: Timeout) -> Self {
         let base_url = endpoint;
         let api_url = base_url
             .join("api/v1/")
             .expect("Endpoint should not be malformed.");
+        let mut client_builder = ClientBuilder::new();
+        if let Some(duration) = connect_timeout.as_duration_opt() {
+            client_builder = client_builder.connect_timeout(duration);
+        }
         Self {
             base_url,
             api_url,
-            client: Client::new(),
+            client: client_builder.build().expect("Client should be built."),
         }
     }
 
-    pub fn base_url(&self) -> &Url {
-        &self.base_url
-    }
-
-    pub fn api_url(&self) -> &Url {
-        &self.api_url
-    }
-
     /// Creates an asynchronous request that can be awaited
-    pub async fn send<Q: Serialize + ?Sized>(
+    async fn send<Q: Serialize + ?Sized>(
         &self,
         method: Method,
         path: &str,
         header_map: Option<HeaderMap>,
         query_string: Option<&Q>,
         body: Option<Bytes>,
+        timeout: Timeout,
     ) -> Result<ApiResponse, Error> {
         let url = if path.starts_with('/') {
             self.base_url.join(path)
@@ -91,7 +86,9 @@ impl Transport {
         }
         .map_err(|error| Error::UrlParse(error.to_string()))?;
         let mut request_builder = self.client.request(method, url);
-        request_builder = request_builder.timeout(Duration::from_secs(10));
+        if let Some(duration) = timeout.as_duration_opt() {
+            request_builder = request_builder.timeout(duration);
+        }
         let mut request_headers = HeaderMap::new();
         request_headers.insert(CONTENT_TYPE, HeaderValue::from_static(DEFAULT_CONTENT_TYPE));
         if let Some(header_map_val) = header_map {
@@ -110,14 +107,98 @@ impl Transport {
     }
 }
 
+pub struct QuickwitClientBuilder {
+    /// Base url for the client
+    base_url: Url,
+    /// Connection timeout.
+    connect_timeout: Timeout,
+    /// Timeout for most operations except search and ingest.
+    timeout: Timeout,
+    /// Timeout for search operations.
+    search_timeout: Timeout,
+    /// Timeout for the ingest operations with auto commit.
+    ingest_timeout: Timeout,
+    /// Timeout for the ingest operations that require waiting for commit.
+    commit_timeout: Timeout,
+}
+
+impl QuickwitClientBuilder {
+    pub fn new(endpoint: Url) -> Self {
+        QuickwitClientBuilder {
+            base_url: endpoint,
+            connect_timeout: DEFAULT_CLIENT_CONNECT_TIMEOUT,
+            timeout: DEFAULT_CLIENT_TIMEOUT,
+            search_timeout: DEFAULT_CLIENT_SEARCH_TIMEOUT,
+            ingest_timeout: DEFAULT_CLIENT_INGEST_TIMEOUT,
+            commit_timeout: DEFAULT_CLIENT_COMMIT_TIMEOUT,
+        }
+    }
+
+    pub fn connect_timeout(mut self, timeout: Timeout) -> Self {
+        self.connect_timeout = timeout;
+        self
+    }
+
+    pub fn timeout(mut self, timeout: Timeout) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn search_timeout(mut self, timeout: Timeout) -> Self {
+        self.search_timeout = timeout;
+        self
+    }
+
+    pub fn ingest_timeout(mut self, timeout: Timeout) -> Self {
+        self.ingest_timeout = timeout;
+        self
+    }
+
+    pub fn commit_timeout(mut self, timeout: Timeout) -> Self {
+        self.commit_timeout = timeout;
+        self
+    }
+
+    pub fn build(self) -> QuickwitClient {
+        let transport = Transport::new(self.base_url, self.connect_timeout);
+        QuickwitClient::new(
+            transport,
+            self.timeout,
+            self.search_timeout,
+            self.ingest_timeout,
+            self.commit_timeout,
+        )
+    }
+}
+
 /// Root client for top level APIs.
 pub struct QuickwitClient {
     transport: Transport,
+    /// Timeout for all operations except search and ingest.
+    timeout: Timeout,
+    /// Timeout for search operations.
+    search_timeout: Timeout,
+    /// Timeout for the ingest operations.
+    ingest_timeout: Timeout,
+    /// Timeout for the ingest operations that require waiting for commit.
+    commit_timeout: Timeout,
 }
 
 impl QuickwitClient {
-    pub fn new(transport: Transport) -> Self {
-        Self { transport }
+    fn new(
+        transport: Transport,
+        timeout: Timeout,
+        search_timeout: Timeout,
+        ingest_timeout: Timeout,
+        commit_timeout: Timeout,
+    ) -> Self {
+        Self {
+            transport,
+            timeout,
+            search_timeout,
+            ingest_timeout,
+            commit_timeout,
+        }
     }
 
     pub async fn search(
@@ -133,34 +214,41 @@ impl QuickwitClient {
         let body = Bytes::from(bytes);
         let response = self
             .transport
-            .send::<()>(Method::POST, &path, None, None, Some(body))
+            .send::<()>(
+                Method::POST,
+                &path,
+                None,
+                None,
+                Some(body),
+                self.search_timeout,
+            )
             .await?;
         let search_response = response.deserialize().await?;
         Ok(search_response)
     }
 
     pub fn indexes(&self) -> IndexClient {
-        IndexClient::new(&self.transport)
+        IndexClient::new(&self.transport, self.timeout)
     }
 
     pub fn splits<'a, 'b: 'a>(&'a self, index_id: &'b str) -> SplitClient {
-        SplitClient::new(&self.transport, index_id)
+        SplitClient::new(&self.transport, self.timeout, index_id)
     }
 
     pub fn sources<'a, 'b: 'a>(&'a self, index_id: &'b str) -> SourceClient {
-        SourceClient::new(&self.transport, index_id)
+        SourceClient::new(&self.transport, self.timeout, index_id)
     }
 
     pub fn cluster(&self) -> ClusterClient {
-        ClusterClient::new(&self.transport)
+        ClusterClient::new(&self.transport, self.timeout)
     }
 
     pub fn node_stats(&self) -> NodeStatsClient {
-        NodeStatsClient::new(&self.transport)
+        NodeStatsClient::new(&self.transport, self.timeout)
     }
 
     pub fn node_health(&self) -> NodeHealthClient {
-        NodeHealthClient::new(&self.transport)
+        NodeHealthClient::new(&self.transport, self.timeout)
     }
 
     pub async fn ingest(
@@ -182,12 +270,13 @@ impl QuickwitClient {
         };
         while let Some(batch) = batch_reader.next_batch().await? {
             loop {
-                let query_params = if !batch_reader.has_next() {
-                    last_block_commit.to_query_parameter()
-                } else {
-                    None
-                };
-
+                let (query_params, timeout) =
+                    if !batch_reader.has_next() && last_block_commit != CommitType::Auto {
+                        (last_block_commit.to_query_parameter(), self.commit_timeout)
+                    } else {
+                        (None, self.ingest_timeout)
+                    };
+                tracing::warn!("Ingesting {} bytes", batch.len());
                 let response = self
                     .transport
                     .send(
@@ -196,6 +285,7 @@ impl QuickwitClient {
                         None,
                         query_params,
                         Some(batch.clone()),
+                        timeout,
                     )
                     .await?;
 
@@ -226,11 +316,12 @@ pub enum IngestEvent {
 /// Client for indexes APIs.
 pub struct IndexClient<'a> {
     transport: &'a Transport,
+    timeout: Timeout,
 }
 
 impl<'a> IndexClient<'a> {
-    pub fn new(transport: &'a Transport) -> Self {
-        Self { transport }
+    fn new(transport: &'a Transport, timeout: Timeout) -> Self {
+        Self { transport, timeout }
     }
 
     pub async fn create(
@@ -248,6 +339,7 @@ impl<'a> IndexClient<'a> {
                 Some(header_map),
                 Some(&[("overwrite", overwrite)]),
                 Some(body),
+                self.timeout,
             )
             .await?;
         let index_metadata = response.deserialize().await?;
@@ -257,7 +349,7 @@ impl<'a> IndexClient<'a> {
     pub async fn list(&self) -> Result<Vec<IndexMetadata>, Error> {
         let response = self
             .transport
-            .send::<()>(Method::GET, "indexes", None, None, None)
+            .send::<()>(Method::GET, "indexes", None, None, None, self.timeout)
             .await?;
         let indexes_metadatas = response.deserialize().await?;
         Ok(indexes_metadatas)
@@ -267,7 +359,7 @@ impl<'a> IndexClient<'a> {
         let path = format!("indexes/{index_id}");
         let response = self
             .transport
-            .send::<()>(Method::GET, &path, None, None, None)
+            .send::<()>(Method::GET, &path, None, None, None, self.timeout)
             .await?;
         let index_metadata = response.deserialize().await?;
         Ok(index_metadata)
@@ -277,7 +369,7 @@ impl<'a> IndexClient<'a> {
         let path = format!("indexes/{index_id}/clear");
         let response = self
             .transport
-            .send::<()>(Method::PUT, &path, None, None, None)
+            .send::<()>(Method::PUT, &path, None, None, None, self.timeout)
             .await?;
         response.check().await?;
         Ok(())
@@ -293,6 +385,7 @@ impl<'a> IndexClient<'a> {
                 None,
                 Some(&[("dry_run", dry_run)]),
                 None,
+                self.timeout,
             )
             .await?;
         let file_entries = response.deserialize().await?;
@@ -303,13 +396,15 @@ impl<'a> IndexClient<'a> {
 /// Client for splits APIs.
 pub struct SplitClient<'a, 'b> {
     transport: &'a Transport,
+    timeout: Timeout,
     index_id: &'b str,
 }
 
 impl<'a, 'b> SplitClient<'a, 'b> {
-    pub fn new(transport: &'a Transport, index_id: &'b str) -> Self {
+    fn new(transport: &'a Transport, timeout: Timeout, index_id: &'b str) -> Self {
         Self {
             transport,
+            timeout,
             index_id,
         }
     }
@@ -331,6 +426,7 @@ impl<'a, 'b> SplitClient<'a, 'b> {
                 None,
                 Some(&list_splits_query_params),
                 None,
+                self.timeout,
             )
             .await?;
         let splits = response.deserialize().await?;
@@ -342,7 +438,7 @@ impl<'a, 'b> SplitClient<'a, 'b> {
         let body = Bytes::from(serde_json::to_vec(&json!({ "split_ids": split_ids }))?);
         let response = self
             .transport
-            .send::<()>(Method::PUT, &path, None, None, Some(body))
+            .send::<()>(Method::PUT, &path, None, None, Some(body), self.timeout)
             .await?;
         response.check().await?;
         Ok(())
@@ -352,13 +448,15 @@ impl<'a, 'b> SplitClient<'a, 'b> {
 /// Client for source APIs.
 pub struct SourceClient<'a, 'b> {
     transport: &'a Transport,
+    timeout: Timeout,
     index_id: &'b str,
 }
 
 impl<'a, 'b> SourceClient<'a, 'b> {
-    pub fn new(transport: &'a Transport, index_id: &'b str) -> Self {
+    fn new(transport: &'a Transport, timeout: Timeout, index_id: &'b str) -> Self {
         Self {
             transport,
+            timeout,
             index_id,
         }
     }
@@ -381,6 +479,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
                 Some(header_map),
                 None,
                 Some(body),
+                self.timeout,
             )
             .await?;
         let source_config = response.deserialize().await?;
@@ -391,7 +490,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
         let path = format!("{}/{source_id}", self.sources_root_url());
         let response = self
             .transport
-            .send::<()>(Method::GET, &path, None, None, None)
+            .send::<()>(Method::GET, &path, None, None, None, self.timeout)
             .await?;
         let source_config = response.deserialize().await?;
         Ok(source_config)
@@ -409,6 +508,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
                 None,
                 None,
                 Some(Bytes::from(json_bytes)),
+                self.timeout,
             )
             .await?;
         response.check().await?;
@@ -419,7 +519,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
         let path = format!("{}/{source_id}/reset-checkpoint", self.sources_root_url());
         let response = self
             .transport
-            .send::<()>(Method::PUT, &path, None, None, None)
+            .send::<()>(Method::PUT, &path, None, None, None, self.timeout)
             .await?;
         response.check().await?;
         Ok(())
@@ -428,7 +528,14 @@ impl<'a, 'b> SourceClient<'a, 'b> {
     pub async fn list(&self) -> Result<Vec<SourceConfig>, Error> {
         let response = self
             .transport
-            .send::<()>(Method::GET, &self.sources_root_url(), None, None, None)
+            .send::<()>(
+                Method::GET,
+                &self.sources_root_url(),
+                None,
+                None,
+                None,
+                self.timeout,
+            )
             .await?;
         let source_configs = response.deserialize().await?;
         Ok(source_configs)
@@ -438,7 +545,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
         let path = format!("{}/{source_id}", self.sources_root_url());
         let response = self
             .transport
-            .send::<()>(Method::DELETE, &path, None, None, None)
+            .send::<()>(Method::DELETE, &path, None, None, None, self.timeout)
             .await?;
         response.check().await?;
         Ok(())
@@ -448,17 +555,18 @@ impl<'a, 'b> SourceClient<'a, 'b> {
 /// Client for Cluster APIs.
 pub struct ClusterClient<'a> {
     transport: &'a Transport,
+    timeout: Timeout,
 }
 
 impl<'a> ClusterClient<'a> {
-    pub fn new(transport: &'a Transport) -> Self {
-        Self { transport }
+    fn new(transport: &'a Transport, timeout: Timeout) -> Self {
+        Self { transport, timeout }
     }
 
     pub async fn snapshot(&self) -> Result<ClusterSnapshot, Error> {
         let response = self
             .transport
-            .send::<()>(Method::GET, "cluster", None, None, None)
+            .send::<()>(Method::GET, "cluster", None, None, None, self.timeout)
             .await?;
         let cluster_snapshot = response.deserialize().await?;
         Ok(cluster_snapshot)
@@ -468,17 +576,18 @@ impl<'a> ClusterClient<'a> {
 /// Client for Node-level Stats APIs.
 pub struct NodeStatsClient<'a> {
     transport: &'a Transport,
+    timeout: Timeout,
 }
 
 impl<'a> NodeStatsClient<'a> {
-    pub fn new(transport: &'a Transport) -> Self {
-        Self { transport }
+    fn new(transport: &'a Transport, timeout: Timeout) -> Self {
+        Self { transport, timeout }
     }
 
     pub async fn indexing(&self) -> Result<IndexingServiceCounters, Error> {
         let response = self
             .transport
-            .send::<()>(Method::GET, "indexing", None, None, None)
+            .send::<()>(Method::GET, "indexing", None, None, None, self.timeout)
             .await?;
         let indexing_stats = response.deserialize().await?;
         Ok(indexing_stats)
@@ -488,18 +597,19 @@ impl<'a> NodeStatsClient<'a> {
 /// Client for Node-level Health APIs.
 pub struct NodeHealthClient<'a> {
     transport: &'a Transport,
+    timeout: Timeout,
 }
 
 impl<'a> NodeHealthClient<'a> {
-    pub fn new(transport: &'a Transport) -> Self {
-        Self { transport }
+    fn new(transport: &'a Transport, timeout: Timeout) -> Self {
+        Self { transport, timeout }
     }
 
     /// Returns true if the node is healthy, returns false or an error otherwise.
     pub async fn is_live(&self) -> Result<bool, Error> {
         let response = self
             .transport
-            .send::<()>(Method::GET, "/health/livez", None, None, None)
+            .send::<()>(Method::GET, "/health/livez", None, None, None, self.timeout)
             .await?;
         let result: bool = response.deserialize().await?;
         Ok(result)
@@ -509,7 +619,14 @@ impl<'a> NodeHealthClient<'a> {
     pub async fn is_ready(&self) -> Result<bool, Error> {
         let response = self
             .transport
-            .send::<()>(Method::GET, "/health/readyz", None, None, None)
+            .send::<()>(
+                Method::GET,
+                "/health/readyz",
+                None,
+                None,
+                None,
+                self.timeout,
+            )
             .await?;
         let result: bool = response.deserialize().await?;
         Ok(result)
@@ -548,28 +665,15 @@ mod test {
     };
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{QuickwitClient, Transport};
     use crate::error::Error;
     use crate::models::IngestSource;
-
-    #[test]
-    fn test_transport_urls() {
-        let transport = Transport::default();
-        assert_eq!(
-            transport.base_url(),
-            &Url::parse("http://127.0.0.1:7280/").unwrap()
-        );
-        assert_eq!(
-            transport.api_url(),
-            &Url::parse("http://127.0.0.1:7280/api/v1/").unwrap()
-        );
-    }
+    use crate::rest_client::QuickwitClientBuilder;
 
     #[tokio::test]
     async fn test_client_no_server() {
         let port = quickwit_common::net::find_available_tcp_port().unwrap();
         let server_url = Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
-        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
         let error = qw_client.indexes().list().await.unwrap_err();
 
         assert!(matches!(error, Error::Client(_)));
@@ -580,7 +684,7 @@ mod test {
     async fn test_search_endpoint() {
         let mock_server = MockServer::start().await;
         let server_url = Url::parse(&mock_server.uri()).unwrap();
-        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
         // Search
         let search_query_params = SearchRequestQueryString {
             ..Default::default()
@@ -622,7 +726,7 @@ mod test {
     async fn test_ingest_endpoint() {
         let mock_server = MockServer::start().await;
         let server_url = Url::parse(&mock_server.uri()).unwrap();
-        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
         let ndjson_filepath = get_ndjson_filepath("documents_to_ingest.json");
         let mut buffer = Vec::new();
         File::open(&ndjson_filepath)
@@ -659,7 +763,7 @@ mod test {
     async fn test_ingest_endpoint_with_force_commit() {
         let mock_server = MockServer::start().await;
         let server_url = Url::parse(&mock_server.uri()).unwrap();
-        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
         let ndjson_filepath = get_ndjson_filepath("documents_to_ingest.json");
         let mut buffer = Vec::new();
         File::open(&ndjson_filepath)
@@ -687,7 +791,7 @@ mod test {
     async fn test_ingest_endpoint_with_wait_for_commit() {
         let mock_server = MockServer::start().await;
         let server_url = Url::parse(&mock_server.uri()).unwrap();
-        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
         let ndjson_filepath = get_ndjson_filepath("documents_to_ingest.json");
         let mut buffer = Vec::new();
         File::open(&ndjson_filepath)
@@ -715,7 +819,7 @@ mod test {
     async fn test_ingest_endpoint_should_return_api_error() {
         let mock_server = MockServer::start().await;
         let server_url = Url::parse(&mock_server.uri()).unwrap();
-        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
         let ndjson_filepath = get_ndjson_filepath("documents_to_ingest.json");
         let mut buffer = Vec::new();
         File::open(&ndjson_filepath)
@@ -752,7 +856,7 @@ mod test {
     async fn test_indexes_endpoints() {
         let mock_server = MockServer::start().await;
         let server_url = Url::parse(&mock_server.uri()).unwrap();
-        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
         // GET indexes
         Mock::given(method("GET"))
@@ -857,7 +961,7 @@ mod test {
     async fn test_splits_endpoints() {
         let mock_server = MockServer::start().await;
         let server_url = Url::parse(&mock_server.uri()).unwrap();
-        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
         let split = mock_split("split-1");
         // GET splits
         let list_splits_params = ListSplitsQueryParams {
@@ -914,7 +1018,7 @@ mod test {
     async fn test_sources_endpoints() {
         let mock_server = MockServer::start().await;
         let server_url = Url::parse(&mock_server.uri()).unwrap();
-        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
         let source_config = SourceConfig::ingest_api_default();
         // POST create source with toml
         Mock::given(method("POST"))
@@ -1038,7 +1142,7 @@ mod test {
     async fn test_health_endpoints() {
         let mock_server = MockServer::start().await;
         let server_url = Url::parse(&mock_server.uri()).unwrap();
-        let qw_client = QuickwitClient::new(Transport::new(server_url));
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
 
         assert!(qw_client.node_health().is_live().await.is_err());
         assert!(qw_client.node_health().is_ready().await.is_err());

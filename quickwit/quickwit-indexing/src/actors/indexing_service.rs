@@ -710,7 +710,7 @@ impl Handler<SuperviseLoop> for IndexingService {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.handle_supervise().await?;
-        ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, SuperviseLoop)
+        ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, SuperviseLoop)
             .await;
         Ok(())
     }
@@ -1267,12 +1267,12 @@ mod tests {
         pipeline.quit().await;
 
         // Let the service cleanup the merge pipelines.
-        universe.sleep(HEARTBEAT).await;
+        universe.sleep(*HEARTBEAT).await;
 
         let observation = indexing_server_handle.process_pending_and_observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_running_merge_pipelines, 0);
-        universe.sleep(HEARTBEAT).await;
+        universe.sleep(*HEARTBEAT).await;
         // Check that the merge pipeline is also shut down as they are no more indexing pipeilne on
         // the index.
         assert!(universe.get_one::<MergePipeline>().is_none());
@@ -1290,7 +1290,7 @@ mod tests {
             _: FreezePipeline,
             _ctx: &ActorContext<Self>,
         ) -> Result<Self::Reply, ActorExitStatus> {
-            tokio::time::sleep(HEARTBEAT * 5).await;
+            tokio::time::sleep(*HEARTBEAT * 5).await;
             Ok(())
         }
     }
@@ -1368,7 +1368,7 @@ mod tests {
             .send_message(FreezePipeline)
             .await
             .unwrap();
-        universe.sleep(HEARTBEAT * 5).await;
+        universe.sleep(*HEARTBEAT * 5).await;
         // Check that indexing and merge pipelines are still running.
         let observation = indexing_service_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 1);
