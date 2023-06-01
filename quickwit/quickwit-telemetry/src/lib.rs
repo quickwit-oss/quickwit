@@ -52,7 +52,9 @@ pub fn start_telemetry_loop(quickwit_info: QuickwitTelemetryInfo) -> TelemetryLo
 /// We voluntarily use an enum here to make it easier for reader
 /// to audit the type of information that is send home.
 pub async fn send_telemetry_event(event: TelemetryEvent) {
-    TELEMETRY_SENDER.get().map(|sender| sender.send(event));
+    if let Some(telemetry_sender) = TELEMETRY_SENDER.get() {
+        telemetry_sender.send(event).await;
+    }
 }
 
 /// This environment variable can be set to disable sending telemetry events.
