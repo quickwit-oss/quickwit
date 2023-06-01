@@ -12,6 +12,7 @@ on:
       - quickwit/quickwit-*/**
 
 env:
+  QW_DISABLE_TELEMETRY: 1
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
   CARGO_INCREMENTAL: 0
   AWS_REGION: "us-east-1"
