@@ -26,7 +26,7 @@ use quickwit_common::FileEntry;
 use quickwit_config::QuickwitConfig;
 use quickwit_metastore::Metastore;
 use quickwit_search::SearchJobPlacer;
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::StorageResolver;
 use tracing::info;
 
 pub mod actors;
@@ -53,10 +53,10 @@ pub async fn start_janitor_service(
     config: &QuickwitConfig,
     metastore: Arc<dyn Metastore>,
     search_job_placer: SearchJobPlacer,
-    storage_uri_resolver: StorageUriResolver,
+    storage_resolver: StorageResolver,
 ) -> anyhow::Result<Mailbox<JanitorService>> {
     info!("Starting janitor service.");
-    let garbage_collector = GarbageCollector::new(metastore.clone(), storage_uri_resolver.clone());
+    let garbage_collector = GarbageCollector::new(metastore.clone(), storage_resolver.clone());
     let (_, garbage_collector_handle) = universe.spawn_builder().spawn(garbage_collector);
 
     let retention_policy_executor = RetentionPolicyExecutor::new(metastore.clone());
@@ -66,7 +66,7 @@ pub async fn start_janitor_service(
     let delete_task_service = DeleteTaskService::new(
         metastore,
         search_job_placer,
-        storage_uri_resolver,
+        storage_resolver,
         config.data_dir_path.clone(),
         config.indexer_config.max_concurrent_split_uploads,
     )

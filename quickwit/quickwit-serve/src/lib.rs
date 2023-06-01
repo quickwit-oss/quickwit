@@ -71,15 +71,15 @@ use quickwit_ingest::{
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
-    quickwit_metastore_uri_resolver, Metastore, MetastoreError, MetastoreEvent,
-    MetastoreEventPublisher, MetastoreGrpcClient, RetryingMetastore,
+    Metastore, MetastoreError, MetastoreEvent, MetastoreEventPublisher, MetastoreGrpcClient,
+    MetastoreResolver, RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_search::{
     create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
     SearchServiceClient, SearcherPool,
 };
-use quickwit_storage::{quickwit_storage_uri_resolver, StorageUriResolver};
+use quickwit_storage::StorageResolver;
 use tokio::sync::oneshot;
 use tower::timeout::Timeout;
 use tower::ServiceBuilder;
@@ -149,11 +149,12 @@ async fn balance_channel_for_service(
 pub async fn serve_quickwit(
     config: QuickwitConfig,
     runtimes_config: RuntimesConfig,
+    storage_resolver: StorageResolver,
+    metastore_resolver: MetastoreResolver,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
     let universe = Universe::new();
     let event_broker = EventBroker::default();
-    let storage_resolver = quickwit_storage_uri_resolver().clone();
     let cluster =
         quickwit_cluster::start_cluster_service(&config, &config.enabled_services).await?;
 
@@ -163,9 +164,7 @@ pub async fn serve_quickwit(
         .enabled_services
         .contains(&QuickwitService::Metastore)
     {
-        let metastore = quickwit_metastore_uri_resolver()
-            .resolve(&config.metastore_uri)
-            .await?;
+        let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
         Arc::new(MetastoreEventPublisher::new(
             metastore,
             event_broker.clone(),
@@ -470,7 +469,7 @@ async fn setup_searcher(
     searcher_config: SearcherConfig,
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     metastore: Arc<dyn Metastore>,
-    storage_resolver: StorageUriResolver,
+    storage_resolver: StorageResolver,
 ) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>)> {
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
@@ -686,7 +685,7 @@ mod tests {
         let metastore = metastore_for_test();
         let (change_stream_tx, change_stream_rx) = mpsc::unbounded_channel();
         let change_stream = UnboundedReceiverStream::new(change_stream_rx);
-        let storage_resolver = quickwit_storage_uri_resolver().clone();
+        let storage_resolver = StorageResolver::unconfigured();
         let (search_job_placer, _searcher_service) =
             setup_searcher(searcher_config, change_stream, metastore, storage_resolver)
                 .await

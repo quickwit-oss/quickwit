@@ -31,7 +31,7 @@ use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, Teleme
 use tokio::signal;
 use tracing::debug;
 
-use crate::{config_cli_arg, load_quickwit_config, start_actor_runtimes};
+use crate::{config_cli_arg, get_resolvers, load_node_config, start_actor_runtimes};
 
 pub fn build_run_command() -> Command {
     Command::new("run")
@@ -75,9 +75,10 @@ impl RunCliCommand {
 
     pub async fn execute(&self) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
+        let mut config = load_node_config(&self.config_uri).await?;
+        let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
         crate::busy_detector::set_enabled(true);
 
-        let mut config = load_quickwit_config(&self.config_uri).await?;
         if let Some(services) = &self.services {
             tracing::info!(services = %services.iter().join(", "), "Setting services from override.");
             config.enabled_services = services.clone();
@@ -93,7 +94,14 @@ impl RunCliCommand {
                 .await
                 .expect("Registering a signal handler for SIGINT should not fail.");
         });
-        let serve_result = serve_quickwit(config, runtimes_config, shutdown_signal).await;
+        let serve_result = serve_quickwit(
+            config,
+            runtimes_config,
+            storage_resolver,
+            metastore_resolver,
+            shutdown_signal,
+        )
+        .await;
         let return_code = match serve_result {
             Ok(_) => 0,
             Err(_) => 1,

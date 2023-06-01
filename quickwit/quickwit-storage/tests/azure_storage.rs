@@ -53,7 +53,7 @@ async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
         max_num_parts: 10_000,
         multipart_threshold_num_bytes: 10_000_000,
         max_object_num_bytes: 5_000_000_000_000,
-        max_concurrent_upload: 100,
+        max_concurrent_uploads: 100,
     });
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await

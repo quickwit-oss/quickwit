@@ -28,7 +28,7 @@ use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::{validate_identifier, ConfigFormat, SourceConfig};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
-use quickwit_storage::load_file;
+use quickwit_storage::{load_file, StorageResolver};
 use serde_json::Value as JsonValue;
 use tabled::{Table, Tabled};
 use tracing::debug;
@@ -328,7 +328,8 @@ impl SourceCliCommand {
 async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
     debug!(args=?args, "create-source");
     println!("❯ Creating source...");
-    let source_config_content = load_file(&args.source_config_uri).await?;
+    let storage_resolver = StorageResolver::unconfigured();
+    let source_config_content = load_file(&storage_resolver, &args.source_config_uri).await?;
     let config_format = ConfigFormat::sniff_from_uri(&args.source_config_uri)?;
     let qw_client = args.client_args.client();
     qw_client

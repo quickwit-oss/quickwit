@@ -45,7 +45,7 @@ impl<W: AsyncWrite + Send + Unpin> SendableAsync for W {}
 /// these intermediate directories.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
-pub trait Storage: Send + Sync + 'static {
+pub trait Storage: fmt::Debug + Send + Sync + 'static {
     /// Check storage connection if applicable
     async fn check_connectivity(&self) -> anyhow::Result<()>;
 

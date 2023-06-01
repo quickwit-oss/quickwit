@@ -38,6 +38,7 @@ use quickwit_aws::get_aws_config;
 use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
+use quickwit_config::S3StorageConfig;
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Semaphore;
@@ -69,6 +70,7 @@ pub struct S3CompatibleObjectStorage {
     prefix: PathBuf,
     multipart_policy: MultiPartPolicy,
     retry_params: RetryParams,
+    disable_multi_object_delete_requests: bool,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -81,7 +83,7 @@ impl fmt::Debug for S3CompatibleObjectStorage {
     }
 }
 
-async fn create_s3_client() -> S3Client {
+async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     let aws_config = get_aws_config().await;
     let mut s3_config = aws_sdk_s3::Config::builder().region(aws_config.region().cloned());
     // aws_sdk_s3::Config::builder().region(cfg.region().cloned());
@@ -91,7 +93,7 @@ async fn create_s3_client() -> S3Client {
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
     s3_config.set_credentials_cache(aws_config.credentials_cache().cloned());
     s3_config.set_sleep_impl(Some(Arc::new(quickwit_aws::TokioSleep::default())));
-    s3_config.set_force_path_style(quickwit_aws::should_use_path_style_s3_access());
+    s3_config.set_force_path_style(Some(s3_storage_config.force_path_style_access));
 
     // We have a custom endpoint set, otherwise we let the SDK set it.
     if let Some(endpoint) = quickwit_aws::get_s3_endpoint() {
@@ -106,13 +108,16 @@ async fn create_s3_client() -> S3Client {
 
 impl S3CompatibleObjectStorage {
     /// Creates an object storage given a region and a bucket name.
-    pub async fn new(uri: Uri, bucket: String) -> Result<Self, StorageResolverError> {
-        let s3_client = create_s3_client().await;
+    pub async fn new(
+        s3_storage_config: &S3StorageConfig,
+        uri: Uri,
+        bucket: String,
+    ) -> Result<Self, StorageResolverError> {
+        let s3_client = create_s3_client(s3_storage_config).await;
         let retry_params = RetryParams {
             max_attempts: 3,
             ..Default::default()
         };
-
         Ok(Self {
             s3_client,
             uri,
@@ -120,15 +125,21 @@ impl S3CompatibleObjectStorage {
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
             retry_params,
+            disable_multi_object_delete_requests: s3_storage_config
+                .disable_multi_object_delete_requests,
         })
     }
 
     /// Creates an object storage given a region and an uri.
-    pub async fn from_uri(uri: &Uri) -> Result<Self, StorageResolverError> {
-        let (bucket, path) = parse_s3_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
-            message: format!("S3 URI `{uri}` is invalid."),
+    pub async fn from_uri(
+        s3_storage_config: &S3StorageConfig,
+        uri: &Uri,
+    ) -> Result<Self, StorageResolverError> {
+        let (bucket, path) = parse_s3_uri(uri).ok_or_else(|| {
+            let message = format!("Failed to extract bucket and key from S3 uri: {uri}");
+            StorageResolverError::InvalidUri(message)
         })?;
-        let storage = Self::new(uri.clone(), bucket).await?;
+        let storage = Self::new(s3_storage_config, uri.clone(), bucket).await?;
         Ok(storage.with_prefix(&path))
     }
 
@@ -144,6 +155,7 @@ impl S3CompatibleObjectStorage {
             prefix: prefix.to_path_buf(),
             multipart_policy: self.multipart_policy,
             retry_params: self.retry_params,
+            disable_multi_object_delete_requests: self.disable_multi_object_delete_requests,
         }
     }
 
@@ -163,14 +175,15 @@ pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
             Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<path>.+))?").unwrap()
         })
         .captures(uri.as_str())
-        .and_then(|cap| {
-            cap.name("bucket").map(|bucket_match| {
+        .and_then(|captures| {
+            captures.name("bucket").map(|bucket_match| {
                 (
                     bucket_match.as_str().to_string(),
-                    cap.name("path").map_or_else(
-                        || PathBuf::from(""),
-                        |path_match| PathBuf::from(path_match.as_str()),
-                    ),
+                    captures
+                        .name("path")
+                        .map_or_else(PathBuf::new, |path_match| {
+                            PathBuf::from(path_match.as_str())
+                        }),
                 )
             })
         })
@@ -375,7 +388,7 @@ impl S3CompatibleObjectStorage {
         let parts = self
             .create_multipart_requests(payload.clone(), total_len, part_len)
             .await?;
-        let max_concurrent_upload = self.multipart_policy.max_concurrent_upload();
+        let max_concurrent_upload = self.multipart_policy.max_concurrent_uploads();
         let completed_parts_res: StorageResult<Vec<CompletedPart>> =
             stream::iter(parts.into_iter().map(|part| {
                 let payload = payload.clone();
@@ -481,6 +494,128 @@ impl S3CompatibleObjectStorage {
         download_all(get_object_output.body, &mut buf).await?;
         Ok(buf)
     }
+
+    /// Bulk delete implementation based on the DeleteObject API:
+    /// <https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html>
+    async fn bulk_delete_single<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        let mut successes = Vec::with_capacity(paths.len());
+        let mut failures = HashMap::new();
+
+        let futures = paths
+            .iter()
+            .map(|path| async move {
+                let delete_res = self.delete(path).await;
+                (path, delete_res)
+            })
+            .collect::<Vec<_>>();
+        let mut stream = futures::stream::iter(futures).buffer_unordered(100);
+
+        while let Some((path, delete_res)) = stream.next().await {
+            match delete_res {
+                Ok(_) => successes.push(path.to_path_buf()),
+                Err(error) => {
+                    let failure = DeleteFailure {
+                        error: Some(error),
+                        ..Default::default()
+                    };
+                    failures.insert(path.to_path_buf(), failure);
+                }
+            };
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(BulkDeleteError {
+                successes,
+                failures,
+                ..Default::default()
+            })
+        }
+    }
+
+    /// Bulk delete implementation based on the DeleteObjects API, also called Multi-Object Delete
+    /// API: <https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html>
+    async fn bulk_delete_multi<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
+        let mut error = None;
+        let mut successes = Vec::with_capacity(paths.len());
+        let mut failures = HashMap::new();
+        let mut unattempted = Vec::new();
+
+        #[cfg(test)]
+        const MAX_NUM_KEYS: usize = 3;
+
+        #[cfg(not(test))]
+        const MAX_NUM_KEYS: usize = 1_000;
+
+        for chunk in paths.chunks(MAX_NUM_KEYS) {
+            if error.is_some() {
+                unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
+                continue;
+            }
+            let objects: Vec<ObjectIdentifier> = chunk
+                .iter()
+                .map(|path| ObjectIdentifier::builder().key(self.key(path)).build())
+                .collect();
+            let delete = Delete::builder().set_objects(Some(objects)).build();
+            let delete_objects_res = retry(&self.retry_params, || async {
+                self.s3_client
+                    .delete_objects()
+                    .bucket(self.bucket.clone())
+                    .delete(delete.clone())
+                    .send()
+                    .await
+            })
+            .await;
+
+            match delete_objects_res {
+                Ok(delete_objects_output) => {
+                    if let Some(deleted_objects) = delete_objects_output.deleted {
+                        for deleted_object in deleted_objects {
+                            if let Some(key) = deleted_object.key {
+                                let path = self.relative_path(&key);
+                                successes.push(path);
+                            }
+                        }
+                    }
+                    if let Some(s3_errors) = delete_objects_output.errors {
+                        for s3_error in s3_errors {
+                            if let Some(key) = s3_error.key {
+                                let path = self.relative_path(&key);
+                                match s3_error.code {
+                                    Some(code) if code == "NoSuchKey" => {
+                                        successes.push(path);
+                                    }
+                                    _ => {
+                                        let failure = DeleteFailure {
+                                            code: s3_error.code,
+                                            message: s3_error.message,
+                                            ..Default::default()
+                                        };
+                                        failures.insert(path, failure);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(delete_objects_error) => {
+                    error = Some(delete_objects_error.into());
+                    unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
+                }
+            }
+        }
+        if error.is_none() && failures.is_empty() {
+            Ok(())
+        } else {
+            Err(BulkDeleteError {
+                error,
+                successes,
+                failures,
+                unattempted,
+            })
+        }
+    }
 }
 
 async fn download_all(byte_stream: ByteStream, output: &mut Vec<u8>) -> io::Result<()> {
@@ -560,84 +695,10 @@ impl Storage for S3CompatibleObjectStorage {
     }
 
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
-        let _permit = REQUEST_SEMAPHORE.acquire().await;
-        let mut error = None;
-        let mut successes = Vec::with_capacity(paths.len());
-        let mut failures = HashMap::new();
-        let mut unattempted = Vec::new();
-
-        #[cfg(test)]
-        const MAX_NUM_KEYS: usize = 3;
-
-        #[cfg(not(test))]
-        const MAX_NUM_KEYS: usize = 1_000;
-
-        for chunk in paths.chunks(MAX_NUM_KEYS) {
-            if error.is_some() {
-                unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
-                continue;
-            }
-            let objects: Vec<ObjectIdentifier> = chunk
-                .iter()
-                .map(|path| ObjectIdentifier::builder().key(self.key(path)).build())
-                .collect();
-            let delete = Delete::builder().set_objects(Some(objects)).build();
-            let delete_objects_res = retry(&self.retry_params, || async {
-                self.s3_client
-                    .delete_objects()
-                    .bucket(self.bucket.clone())
-                    .delete(delete.clone())
-                    .send()
-                    .await
-            })
-            .await;
-
-            match delete_objects_res {
-                Ok(delete_objects_output) => {
-                    if let Some(deleted_objects) = delete_objects_output.deleted {
-                        for deleted_object in deleted_objects {
-                            if let Some(key) = deleted_object.key {
-                                let path = self.relative_path(&key);
-                                successes.push(path);
-                            }
-                        }
-                    }
-                    if let Some(s3_errors) = delete_objects_output.errors {
-                        for s3_error in s3_errors {
-                            if let Some(key) = s3_error.key {
-                                let path = self.relative_path(&key);
-                                match s3_error.code {
-                                    Some(code) if code == "NoSuchKey" => {
-                                        successes.push(path);
-                                    }
-                                    _ => {
-                                        let failure = DeleteFailure {
-                                            code: s3_error.code,
-                                            message: s3_error.message,
-                                            ..Default::default()
-                                        };
-                                        failures.insert(path, failure);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(delete_objects_error) => {
-                    error = Some(delete_objects_error.into());
-                    unattempted.extend(chunk.iter().map(|path| path.to_path_buf()));
-                }
-            }
-        }
-        if error.is_none() && failures.is_empty() {
-            Ok(())
+        if self.disable_multi_object_delete_requests {
+            self.bulk_delete_single(paths).await
         } else {
-            Err(BulkDeleteError {
-                error,
-                successes,
-                failures,
-                unattempted,
-            })
+            self.bulk_delete_multi(paths).await
         }
     }
 
@@ -785,6 +846,7 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
+            disable_multi_object_delete_requests: false,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -869,6 +931,7 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
+            disable_multi_object_delete_requests: false,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[

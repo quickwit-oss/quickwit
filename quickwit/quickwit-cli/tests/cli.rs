@@ -21,7 +21,6 @@
 
 mod helpers;
 
-use std::collections::HashSet;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -33,7 +32,6 @@ use quickwit_cli::index::{
     create_index_cli, delete_index_cli, search_index, CreateIndexArgs, DeleteIndexArgs,
     SearchIndexArgs,
 };
-use quickwit_cli::service::RunCliCommand;
 use quickwit_cli::tool::{
     garbage_collect_index_cli, local_ingest_docs_cli, GarbageCollectIndexArgs, LocalIngestDocsArgs,
 };
@@ -42,13 +40,12 @@ use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_common::ChecklistError;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::{SourceInputFormat, CLI_INGEST_SOURCE_ID};
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError, SplitState};
+use quickwit_metastore::{MetastoreError, MetastoreResolver, SplitState};
 use serde_json::{json, Number, Value};
 use tokio::time::{sleep, Duration};
 
-use crate::helpers::{create_test_env, wait_port_ready, PACKAGE_BIN_NAME};
+use crate::helpers::{create_test_env, PACKAGE_BIN_NAME};
 
 async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
     let args = CreateIndexArgs {
@@ -248,7 +245,6 @@ async fn test_ingest_docs_cli() {
     let splits: Vec<_> = test_env
         .metastore()
         .await
-        .unwrap()
         .list_all_splits(index_uid)
         .await
         .unwrap();
@@ -537,14 +533,16 @@ async fn test_delete_index_cli_dry_run() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    let refresh_metastore = |metastore| {
+    let refresh_metastore = |metastore| async {
         // In this test we rely on the file backed metastore
         // and the file backed metastore caches results.
         // Therefore we need to force reading the disk to fetch updates.
         //
         // We do that by dropping and recreating our metastore.
         drop(metastore);
-        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+        MetastoreResolver::unconfigured()
+            .resolve(&test_env.metastore_uri)
+            .await
     };
 
     let create_delete_args = |dry_run| DeleteIndexArgs {
@@ -557,7 +555,7 @@ async fn test_delete_index_cli_dry_run() {
         assume_yes: true,
     };
 
-    let metastore = quickwit_metastore_uri_resolver()
+    let metastore = MetastoreResolver::unconfigured()
         .resolve(&test_env.metastore_uri)
         .await
         .unwrap();
@@ -609,13 +607,7 @@ async fn test_delete_index_cli() {
 
     delete_index_cli(args).await.unwrap();
 
-    assert!(test_env
-        .metastore()
-        .await
-        .unwrap()
-        .index_metadata(&test_env.index_id)
-        .await
-        .is_err());
+    assert!(test_env.index_metadata().await.is_err());
 }
 
 #[tokio::test]
@@ -632,19 +624,21 @@ async fn test_garbage_collect_cli_no_grace() {
         .await
         .unwrap();
 
-    let metastore = quickwit_metastore_uri_resolver()
+    let metastore = MetastoreResolver::unconfigured()
         .resolve(&test_env.metastore_uri)
         .await
         .unwrap();
 
-    let refresh_metastore = |metastore| {
+    let refresh_metastore = |metastore| async {
         // In this test we rely on the file backed metastore and write on
         // a different process. The file backed metastore caches results.
         // Therefore we need to force reading the disk.
         //
         // We do that by dropping and recreating our metastore.
         drop(metastore);
-        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+        MetastoreResolver::unconfigured()
+            .resolve(&test_env.metastore_uri)
+            .await
     };
 
     let create_gc_args = |dry_run| GarbageCollectIndexArgs {
@@ -732,14 +726,16 @@ async fn test_garbage_collect_index_cli() {
         .await
         .unwrap();
 
-    let refresh_metastore = |metastore| {
+    let refresh_metastore = |metastore| async {
         // In this test we rely on the file backed metastore and
         // modify it but the file backed metastore caches results.
         // Therefore we need to force reading the disk to update split info.
         //
         // We do that by dropping and recreating our metastore.
         drop(metastore);
-        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+        MetastoreResolver::unconfigured()
+            .resolve(&test_env.metastore_uri)
+            .await
     };
 
     let create_gc_args = |grace_period_secs| GarbageCollectIndexArgs {
@@ -749,7 +745,7 @@ async fn test_garbage_collect_index_cli() {
         dry_run: false,
     };
 
-    let metastore = quickwit_metastore_uri_resolver()
+    let metastore = MetastoreResolver::unconfigured()
         .resolve(&test_env.metastore_uri)
         .await
         .unwrap();
@@ -841,19 +837,6 @@ async fn test_all_local_index() {
         .await
         .unwrap();
 
-    // serve & api-search
-    let run_cli_command = RunCliCommand {
-        config_uri: test_env.config_uri.clone(),
-        services: Some(HashSet::from([
-            QuickwitService::Searcher,
-            QuickwitService::Metastore,
-        ])),
-    };
-
-    let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
-
-    wait_port_ready(test_env.rest_listen_port).await.unwrap();
-
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.rest_listen_port, test_env.index_id
@@ -864,8 +847,7 @@ async fn test_all_local_index() {
     .await
     .unwrap();
 
-    let result: Value =
-        serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
+    let result: Value = serde_json::from_str(&query_response).unwrap();
     assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
     let search_stream_response = reqwest::get(format!(
@@ -880,8 +862,6 @@ async fn test_all_local_index() {
     .unwrap();
     assert_eq!(search_stream_response, "72057597000000\n72057608000000\n");
 
-    service_task.abort();
-
     let args = DeleteIndexArgs {
         client_args: ClientArgs {
             cluster_endpoint: test_env.cluster_endpoint.clone(),
@@ -891,7 +871,6 @@ async fn test_all_local_index() {
         dry_run: false,
         assume_yes: true,
     };
-
     delete_index_cli(args).await.unwrap();
 
     let metadata_file_exists = test_env
@@ -938,19 +917,6 @@ async fn test_all_with_s3_localstack_cli() {
     let search_res = search_index(args).await.unwrap();
     assert_eq!(search_res.num_hits, 2);
 
-    // serve & api-search
-    // TODO: ditto.
-    let run_cli_command = RunCliCommand {
-        config_uri: test_env.config_uri.clone(),
-        services: Some(HashSet::from([
-            QuickwitService::Searcher,
-            QuickwitService::Metastore,
-        ])),
-    };
-    let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
-
-    wait_port_ready(test_env.rest_listen_port).await.unwrap();
-
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.rest_listen_port, test_env.index_id,
@@ -961,11 +927,8 @@ async fn test_all_with_s3_localstack_cli() {
     .await
     .unwrap();
 
-    let result: Value =
-        serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
+    let result: Value = serde_json::from_str(&query_response).unwrap();
     assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
-
-    service_task.abort();
 
     let args = DeleteIndexArgs {
         client_args: ClientArgs {

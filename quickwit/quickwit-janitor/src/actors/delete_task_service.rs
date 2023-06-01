@@ -29,7 +29,7 @@ use quickwit_config::IndexConfig;
 use quickwit_metastore::Metastore;
 use quickwit_proto::IndexUid;
 use quickwit_search::SearchJobPlacer;
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::StorageResolver;
 use serde::Serialize;
 use tracing::{error, info, warn};
 
@@ -53,7 +53,7 @@ pub struct DeleteTaskServiceState {
 pub struct DeleteTaskService {
     metastore: Arc<dyn Metastore>,
     search_job_placer: SearchJobPlacer,
-    storage_resolver: StorageUriResolver,
+    storage_resolver: StorageResolver,
     delete_service_task_dir: PathBuf,
     pipeline_handles_by_index_uid: HashMap<IndexUid, ActorHandle<DeleteTaskPipeline>>,
     max_concurrent_split_uploads: usize,
@@ -63,7 +63,7 @@ impl DeleteTaskService {
     pub async fn new(
         metastore: Arc<dyn Metastore>,
         search_job_placer: SearchJobPlacer,
-        storage_resolver: StorageUriResolver,
+        storage_resolver: StorageResolver,
         data_dir_path: PathBuf,
         max_concurrent_split_uploads: usize,
     ) -> anyhow::Result<Self> {
@@ -206,7 +206,7 @@ mod tests {
     use quickwit_indexing::TestSandbox;
     use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_search::{searcher_pool_for_test, MockSearchService, SearchJobPlacer};
-    use quickwit_storage::StorageUriResolver;
+    use quickwit_storage::StorageResolver;
 
     use super::{DeleteTaskService, UPDATE_PIPELINES_INTERVAL};
 
@@ -233,7 +233,7 @@ mod tests {
         let delete_task_service = DeleteTaskService::new(
             metastore.clone(),
             search_job_placer,
-            StorageUriResolver::for_test(),
+            StorageResolver::unconfigured(),
             data_dir_path,
             4,
         )

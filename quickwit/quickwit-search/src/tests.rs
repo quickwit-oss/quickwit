@@ -66,7 +66,7 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
     let single_node_result = single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await?;
     assert_eq!(single_node_result.num_hits, 1);
@@ -112,7 +112,7 @@ async fn test_single_node_termset() -> anyhow::Result<()> {
     let single_node_result = single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await?;
     assert_eq!(single_node_result.num_hits, 1);
@@ -153,7 +153,7 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
     let single_node_result = single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await?;
     assert_eq!(single_node_result.num_hits, 2);
@@ -192,7 +192,7 @@ async fn slop_search_and_check(
     let single_node_result = single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await?;
     assert_eq!(
@@ -312,7 +312,7 @@ async fn test_single_node_several_splits() -> anyhow::Result<()> {
     let single_node_result = single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await?;
     assert_eq!(single_node_result.num_hits, 20);
@@ -385,7 +385,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     let single_node_response = single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await?;
     assert_eq!(single_node_response.num_hits, 10);
@@ -406,7 +406,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     let single_node_response = single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await?;
     assert_eq!(single_node_response.num_hits, 19);
@@ -426,7 +426,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     let single_node_response = single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await;
     assert!(single_node_response.is_err());
@@ -510,7 +510,7 @@ async fn single_node_search_sort_by_field(
     match single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await
     {
@@ -590,9 +590,9 @@ async fn test_sort_bm25() {
             ..Default::default()
         };
         let metastore = test_sandbox.metastore();
-        let storage_uri_resolver = test_sandbox.storage_uri_resolver();
+        let storage_resolver = test_sandbox.storage_resolver();
         async move {
-            single_node_search(search_request, &*metastore, storage_uri_resolver)
+            single_node_search(search_request, &*metastore, storage_resolver)
                 .await
                 .unwrap()
                 .hits
@@ -675,9 +675,9 @@ async fn test_sort_by_static_and_dynamic_field() {
             ..Default::default()
         };
         let metastore = test_sandbox.metastore();
-        let storage_uri_resolver = test_sandbox.storage_uri_resolver();
+        let storage_resolver = test_sandbox.storage_resolver();
         async move {
-            let search_resp = single_node_search(search_request, &*metastore, storage_uri_resolver)
+            let search_resp = single_node_search(search_request, &*metastore, storage_resolver)
                 .await
                 .unwrap();
             assert_eq!(search_resp.num_hits, 4);
@@ -759,7 +759,7 @@ async fn test_single_node_invalid_sorting_with_query() {
     let single_node_response = single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await;
     assert!(single_node_response.is_err());
@@ -1192,7 +1192,7 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
     let single_node_result = single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await?;
     let agg_res_json: JsonValue = serde_json::from_str(&single_node_result.aggregation.unwrap())?;
@@ -1265,7 +1265,7 @@ async fn test_single_node_aggregation_missing_fast_field() {
     let single_node_result = single_node_search(
         search_request,
         &*test_sandbox.metastore(),
-        test_sandbox.storage_uri_resolver(),
+        test_sandbox.storage_resolver(),
     )
     .await
     .unwrap();
@@ -1307,7 +1307,7 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
         let single_node_result = single_node_search(
             search_request,
             &*test_sandbox.metastore(),
-            test_sandbox.storage_uri_resolver(),
+            test_sandbox.storage_resolver(),
         )
         .await?;
         assert_eq!(single_node_result.num_hits, 6);
@@ -1323,7 +1323,7 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
         let single_node_result = single_node_search(
             search_request,
             &*test_sandbox.metastore(),
-            test_sandbox.storage_uri_resolver(),
+            test_sandbox.storage_resolver(),
         )
         .await?;
         assert_eq!(single_node_result.num_hits, 1);
@@ -1382,7 +1382,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
         let single_node_result = single_node_search(
             search_request,
             &*test_sandbox.metastore(),
-            test_sandbox.storage_uri_resolver(),
+            test_sandbox.storage_resolver(),
         )
         .await?;
         assert_eq!(single_node_result.num_hits, 2);
@@ -1398,7 +1398,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
         let single_node_result = single_node_search(
             search_request,
             &*test_sandbox.metastore(),
-            test_sandbox.storage_uri_resolver(),
+            test_sandbox.storage_resolver(),
         )
         .await?;
         assert_eq!(single_node_result.num_hits, 3);
@@ -1414,7 +1414,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
         let single_node_result = single_node_search(
             search_request,
             &*test_sandbox.metastore(),
-            test_sandbox.storage_uri_resolver(),
+            test_sandbox.storage_resolver(),
         )
         .await?;
         assert_eq!(single_node_result.num_hits, 3);
@@ -1430,7 +1430,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
         let single_node_result = single_node_search(
             search_request,
             &*test_sandbox.metastore(),
-            test_sandbox.storage_uri_resolver(),
+            test_sandbox.storage_resolver(),
         )
         .await?;
         assert_eq!(single_node_result.num_hits, 3);
@@ -1446,7 +1446,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
         let single_node_result = single_node_search(
             search_request,
             &*test_sandbox.metastore(),
-            test_sandbox.storage_uri_resolver(),
+            test_sandbox.storage_resolver(),
         )
         .await?;
         assert_eq!(single_node_result.num_hits, 4);
@@ -1636,7 +1636,7 @@ async fn test_single_node_find_trace_ids_collector() {
         let single_node_result = single_node_search(
             search_request,
             &*test_sandbox.metastore(),
-            test_sandbox.storage_uri_resolver(),
+            test_sandbox.storage_resolver(),
         )
         .await
         .unwrap();

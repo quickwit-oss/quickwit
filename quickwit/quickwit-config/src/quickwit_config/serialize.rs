@@ -31,10 +31,11 @@ use tracing::{info, warn};
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
+use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
     validate_identifier, validate_node_id, ConfigFormat, IndexerConfig, IngestApiConfig,
-    JaegerConfig, QuickwitConfig, SearcherConfig,
+    JaegerConfig, MetastoreConfigs, QuickwitConfig, SearcherConfig,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
@@ -181,6 +182,12 @@ struct QuickwitConfigBuilder {
     #[serde(default)]
     #[serde_as(deserialize_as = "serde_with::OneOrMany<_>")]
     rest_cors_allow_origins: Vec<String>,
+    #[serde(rename = "storage")]
+    #[serde(default)]
+    storage_configs: StorageConfigs,
+    #[serde(rename = "metastore")]
+    #[serde(default)]
+    metastore_configs: MetastoreConfigs,
     #[serde(rename = "indexer")]
     #[serde(default)]
     indexer_config: IndexerConfig,
@@ -257,6 +264,8 @@ impl QuickwitConfigBuilder {
             .resolve_optional(env_vars)?
             .unwrap_or_else(|| default_index_root_uri(&data_dir_uri));
 
+        self.storage_configs.validate()?;
+
         let quickwit_config = QuickwitConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id: self.node_id.resolve(env_vars)?,
@@ -271,6 +280,8 @@ impl QuickwitConfigBuilder {
             metastore_uri,
             default_index_root_uri,
             rest_cors_allow_origins: self.rest_cors_allow_origins,
+            metastore_configs: self.metastore_configs,
+            storage_configs: self.storage_configs,
             indexer_config: self.indexer_config,
             searcher_config: self.searcher_config,
             ingest_api_config: self.ingest_api_config,
@@ -315,6 +326,8 @@ impl Default for QuickwitConfigBuilder {
             metastore_uri: ConfigValue::none(),
             default_index_root_uri: ConfigValue::none(),
             rest_cors_allow_origins: Vec::new(),
+            storage_configs: StorageConfigs::default(),
+            metastore_configs: MetastoreConfigs::default(),
             indexer_config: IndexerConfig::default(),
             searcher_config: SearcherConfig::default(),
             ingest_api_config: IngestApiConfig::default(),
@@ -367,6 +380,8 @@ pub fn quickwit_config_for_test() -> QuickwitConfig {
         metastore_uri,
         default_index_root_uri,
         rest_cors_allow_origins: Vec::new(),
+        storage_configs: StorageConfigs::default(),
+        metastore_configs: MetastoreConfigs::default(),
         indexer_config: IndexerConfig::default(),
         searcher_config: SearcherConfig::default(),
         ingest_api_config: IngestApiConfig::default(),
@@ -442,10 +457,27 @@ mod tests {
             "postgres://username:password@host:port/db"
         );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes");
+
+        let azure_storage_config = config.storage_configs.find_azure().unwrap();
+        assert_eq!(
+            azure_storage_config.account_name.as_ref().unwrap(),
+            "quickwit-dev"
+        );
+
+        let s3_storage_config = config.storage_configs.find_s3().unwrap();
+        assert_eq!(
+            s3_storage_config.endpoint.as_ref().unwrap(),
+            "http://localhost:4566"
+        );
+        assert!(s3_storage_config.force_path_style_access);
+
+        let postgres_config = config.metastore_configs.find_postgres().unwrap();
+        assert_eq!(postgres_config.max_num_connections.get(), 12);
+
         assert_eq!(
             config.indexer_config,
             IndexerConfig {
-                enable_otlp_endpoint: false,
+                enable_otlp_endpoint: true,
                 split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
                 split_store_max_num_splits: 10_000,
                 max_concurrent_split_uploads: 8,
@@ -467,7 +499,7 @@ mod tests {
         assert_eq!(
             config.jaeger_config,
             JaegerConfig {
-                enable_endpoint: false,
+                enable_endpoint: true,
                 lookback_period_hours: NonZeroU64::new(24).unwrap(),
                 max_trace_duration_secs: NonZeroU64::new(600).unwrap(),
                 max_fetch_spans: NonZeroU64::new(1_000).unwrap(),

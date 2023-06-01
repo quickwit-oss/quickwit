@@ -34,10 +34,10 @@ use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig, DEFAULT_QW_CONFIG_PATH};
 use quickwit_indexing::check_source_connectivity;
-use quickwit_metastore::quickwit_metastore_uri_resolver;
+use quickwit_metastore::{Metastore, MetastoreResolver};
 use quickwit_rest_client::models::Timeout;
 use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
-use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
+use quickwit_storage::{load_file, StorageResolver};
 use regex::Regex;
 use reqwest::Url;
 use tabled::object::Rows;
@@ -242,39 +242,60 @@ pub fn start_actor_runtimes(
     Ok(())
 }
 
-async fn load_quickwit_config(config_uri: &Uri) -> anyhow::Result<QuickwitConfig> {
-    let config_content = load_file(config_uri)
+/// Loads a node config located at `config_uri` with the default storage configuration.
+async fn load_node_config(config_uri: &Uri) -> anyhow::Result<QuickwitConfig> {
+    let config_content = load_file(&StorageResolver::unconfigured(), config_uri)
         .await
-        .context("Failed to load quickwit config.")?;
+        .context("Failed to load node config.")?;
     let config_format = ConfigFormat::sniff_from_uri(config_uri)?;
     let config = QuickwitConfig::load(config_format, config_content.as_slice())
         .await
-        .with_context(|| format!("Failed to deserialize quickwit config `{config_uri}`."))?;
-    info!(config_uri=%config_uri, config=?config, "Loaded Quickwit config.");
+        .with_context(|| format!("Failed to parse node config `{config_uri}`."))?;
+    info!(config_uri=%config_uri, config=?config, "Loaded node config.");
     Ok(config)
+}
+
+async fn get_resolvers(config: &QuickwitConfig) -> (StorageResolver, MetastoreResolver) {
+    // The CLI tests rely on the unconfigured singleton resolvers, so it's better to return them if
+    // the storage and metastore configs are not set.
+    let storage_resolver = if config.storage_configs.is_empty() {
+        StorageResolver::unconfigured()
+    } else {
+        StorageResolver::configured(&config.storage_configs)
+    };
+    let metastore_resolver = if config.metastore_configs.is_empty() {
+        MetastoreResolver::unconfigured()
+    } else {
+        MetastoreResolver::configured(storage_resolver.clone(), &config.metastore_configs)
+    };
+    (storage_resolver, metastore_resolver)
 }
 
 /// Runs connectivity checks for a given `metastore_uri` and `index_id`.
 /// Optionally, it takes a `SourceConfig` that will be checked instead
 /// of the index's sources.
 pub async fn run_index_checklist(
-    metastore_uri: &Uri,
+    metastore: &dyn Metastore,
+    storage_resolver: &StorageResolver,
     index_id: &str,
-    source_to_check: Option<&SourceConfig>,
+    source_config_opt: Option<&SourceConfig>,
 ) -> anyhow::Result<()> {
     let mut checks: Vec<(&str, anyhow::Result<()>)> = Vec::new();
-    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
+
+    // The metastore is file-backed, so we must check the storage first.
+    if !metastore.uri().protocol().is_database() {
+        let metastore_storage = storage_resolver.resolve(metastore.uri()).await?;
+        checks.push((
+            "metastore storage",
+            metastore_storage.check_connectivity().await,
+        ));
+    }
     checks.push(("metastore", metastore.check_connectivity().await));
-
     let index_metadata = metastore.index_metadata(index_id).await?;
-    let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let storage = storage_uri_resolver
-        .resolve(index_metadata.index_uri())
-        .await?;
-    checks.push(("storage", storage.check_connectivity().await));
+    let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;
+    checks.push(("index storage", index_storage.check_connectivity().await));
 
-    if let Some(source_config) = source_to_check {
+    if let Some(source_config) = source_config_opt {
         checks.push((
             source_config.source_id.as_str(),
             check_source_connectivity(source_config).await,

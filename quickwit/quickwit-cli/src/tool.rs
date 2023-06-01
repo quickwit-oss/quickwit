@@ -47,13 +47,12 @@ use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
 use quickwit_indexing::IndexingPipeline;
-use quickwit_metastore::quickwit_metastore_uri_resolver;
-use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
+use quickwit_storage::{BundleStorage, Storage};
 use thousands::Separable;
 use tracing::{debug, info};
 
 use crate::{
-    config_cli_arg, load_quickwit_config, parse_duration_with_unit, run_index_checklist,
+    config_cli_arg, get_resolvers, load_node_config, parse_duration_with_unit, run_index_checklist,
     start_actor_runtimes, THROUGHPUT_WINDOW_SIZE,
 };
 
@@ -295,7 +294,9 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     debug!(args=?args, "local-ingest-docs");
     println!("❯ Ingesting documents locally...");
 
-    let config = load_quickwit_config(&args.config_uri).await?;
+    let config = load_node_config(&args.config_uri).await?;
+    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
 
     let source_params = if let Some(filepath) = args.input_path_opt.as_ref() {
         SourceParams::file(filepath)
@@ -307,21 +308,23 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .map(|vrl_script| TransformConfig::new(vrl_script, None));
     let source_config = SourceConfig {
         source_id: CLI_INGEST_SOURCE_ID.to_string(),
-        max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-        desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+        max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 is always non-zero."),
+        desired_num_pipelines: NonZeroUsize::new(1).expect("1 is always non-zero."),
         enabled: true,
         source_params,
         transform_config,
         input_format: args.input_format,
     };
-    run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source_config)).await?;
-    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri)
-        .await?;
+    run_index_checklist(
+        &*metastore,
+        &storage_resolver,
+        &args.index_id,
+        Some(&source_config),
+    )
+    .await?;
 
     if args.overwrite {
-        let index_service = IndexService::from_config(config.clone()).await?;
+        let index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
         index_service.clear_index(&args.index_id).await?;
     }
     // The indexing service needs to update its cluster chitchat state so that the control plane is
@@ -344,7 +347,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         cluster,
         metastore,
         None,
-        quickwit_storage_uri_resolver().clone(),
+        storage_resolver,
     )
     .await?;
     let universe = Universe::new();
@@ -413,26 +416,23 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
 pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     debug!(args=?args, "run-merge-operations");
     println!("❯ Merging splits locally...");
-    let config = load_quickwit_config(&args.config_uri).await?;
-    run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
-    let indexer_config = IndexerConfig {
-        ..Default::default()
-    };
+    let config = load_node_config(&args.config_uri).await?;
+    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
+    run_index_checklist(&*metastore, &storage_resolver, &args.index_id, None).await?;
     // The indexing service needs to update its cluster chitchat state so that the control plane is
     // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
     // and avoid impacting potential control plane running on the cluster.
     let cluster = create_empty_cluster(&config).await?;
-    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri)
-        .await?;
-    let storage_resolver = quickwit_storage_uri_resolver().clone();
     let runtimes_config = RuntimesConfig::default();
     start_actor_runtimes(
         runtimes_config,
         &HashSet::from_iter([QuickwitService::Indexer]),
     )?;
     let universe = Universe::new();
+    let indexer_config = IndexerConfig {
+        ..Default::default()
+    };
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
@@ -500,8 +500,10 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     debug!(args=?args, "garbage-collect-index");
     println!("❯ Garbage collecting index...");
 
-    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
-    let index_service = IndexService::from_config(quickwit_config.clone()).await?;
+    let config = load_node_config(&args.config_uri).await?;
+    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
+    let index_service = IndexService::new(metastore, storage_resolver);
     let removal_info = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;
@@ -562,16 +564,11 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     debug!(args=?args, "extract-split");
     println!("❯ Extracting split...");
 
-    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
-    let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri)
-        .await?;
+    let config = load_node_config(&args.config_uri).await?;
+    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let index_storage = storage_uri_resolver
-        .resolve(index_metadata.index_uri())
-        .await?;
+    let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
     let split_data = index_storage.get_all(split_file.as_path()).await?;
     let (_hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data_with_owned_bytes(

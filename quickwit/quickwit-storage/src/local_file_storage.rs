@@ -28,15 +28,17 @@ use async_trait::async_trait;
 use futures::future::{BoxFuture, FutureExt};
 use futures::StreamExt;
 use quickwit_common::ignore_error_kind;
-use quickwit_common::uri::{Protocol, Uri};
+use quickwit_common::uri::Uri;
+use quickwit_config::{StorageBackend, StorageConfig};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tracing::warn;
 
 use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
+use crate::storage_factory::StorageFactory;
 use crate::{
-    DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory,
-    StorageResolverError, StorageResult,
+    DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResolverError,
+    StorageResult,
 };
 
 /// File system compatible storage implementation.
@@ -68,8 +70,9 @@ impl LocalFileStorage {
                 uri: uri.clone(),
                 root: root.to_path_buf(),
             })
-            .ok_or_else(|| StorageResolverError::InvalidUri {
-                message: format!("URI `{uri}` is not a valid file URI."),
+            .ok_or_else(|| {
+                let message = format!("URI `{uri}` is not a valid file URI.");
+                StorageResolverError::InvalidUri(message)
             })
     }
 
@@ -335,15 +338,19 @@ impl Storage for LocalFileStorage {
 
 /// A File storage resolver
 #[derive(Clone, Debug, Default)]
-pub struct LocalFileStorageFactory {}
+pub struct LocalFileStorageFactory;
 
 #[async_trait]
 impl StorageFactory for LocalFileStorageFactory {
-    fn protocol(&self) -> Protocol {
-        Protocol::File
+    fn backend(&self) -> StorageBackend {
+        StorageBackend::File
     }
 
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(
+        &self,
+        _storage_config: &StorageConfig,
+        uri: &Uri,
+    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = LocalFileStorage::from_uri(uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
@@ -353,6 +360,8 @@ impl StorageFactory for LocalFileStorageFactory {
 mod tests {
 
     use std::str::FromStr;
+
+    use quickwit_config::FileStorageConfig;
 
     use super::*;
     use crate::test_suite::storage_test_suite;
@@ -387,22 +396,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_file_storage_factory() -> anyhow::Result<()> {
+        let storage_config = FileStorageConfig::default().into();
         let temp_dir = tempfile::tempdir()?;
         let index_uri =
             Uri::from_well_formed(format!("file://{}/foo/bar", temp_dir.path().display()));
         let local_file_storage_factory = LocalFileStorageFactory::default();
-        let local_file_storage = local_file_storage_factory.resolve(&index_uri).await?;
+        let local_file_storage = local_file_storage_factory
+            .resolve(&storage_config, &index_uri)
+            .await?;
         assert_eq!(local_file_storage.uri(), &index_uri);
 
         let err = local_file_storage_factory
-            .resolve(&Uri::from_well_formed("s3://foo/bar"))
+            .resolve(&storage_config, &Uri::from_well_formed("s3://foo/bar"))
             .await
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let err = local_file_storage_factory
-            .resolve(&Uri::from_well_formed("s3://"))
+            .resolve(&storage_config, &Uri::from_well_formed("s3://"))
             .await
             .err()
             .unwrap();

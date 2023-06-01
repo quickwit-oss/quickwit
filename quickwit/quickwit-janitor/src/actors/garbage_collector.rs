@@ -26,7 +26,7 @@ use futures::{stream, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_metastore::Metastore;
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::StorageResolver;
 use serde::Serialize;
 use tracing::{error, info};
 
@@ -73,12 +73,12 @@ struct Loop;
 /// An actor for collecting garbage periodically from an index.
 pub struct GarbageCollector {
     metastore: Arc<dyn Metastore>,
-    storage_resolver: StorageUriResolver,
+    storage_resolver: StorageResolver,
     counters: GarbageCollectorCounters,
 }
 
 impl GarbageCollector {
-    pub fn new(metastore: Arc<dyn Metastore>, storage_resolver: StorageUriResolver) -> Self {
+    pub fn new(metastore: Arc<dyn Metastore>, storage_resolver: StorageResolver) -> Self {
         Self {
             metastore,
             storage_resolver,
@@ -327,7 +327,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_garbage_collect_calls_dependencies_appropriately() {
-        let storage_resolver = StorageUriResolver::for_test();
+        let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_list_indexes_metadatas()
@@ -388,7 +388,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_garbage_collect_get_calls_repeatedly() {
-        let storage_resolver = StorageUriResolver::for_test();
+        let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_list_indexes_metadatas()
@@ -474,7 +474,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_garbage_collect_get_called_repeatedly_on_failure() {
-        let storage_resolver = StorageUriResolver::for_test();
+        let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_list_indexes_metadatas()
@@ -505,7 +505,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_garbage_collect_fails_to_resolve_storage() {
-        let storage_resolver = StorageUriResolver::for_test();
+        let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_list_indexes_metadatas()
@@ -535,7 +535,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_garbage_collect_fails_to_run_gc_on_one_index() {
-        let storage_resolver = StorageUriResolver::for_test();
+        let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_list_indexes_metadatas()
@@ -604,7 +604,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_garbage_collect_fails_to_run_delete_on_one_index() {
-        let storage_resolver = StorageUriResolver::for_test();
+        let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_list_indexes_metadatas()

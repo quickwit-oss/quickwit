@@ -43,15 +43,20 @@ pub enum StorageErrorKind {
 
 /// Generic Storage Resolver Error.
 #[allow(missing_docs)]
-#[derive(Error, Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, thiserror::Error, Serialize, Deserialize)]
 pub enum StorageResolverError {
-    /// The input is not a valid URI.
-    /// A protocol is required for the URI.
-    #[error("Invalid format for URI: required: `{message}`")]
-    InvalidUri { message: String },
-    /// The protocol is not supported by this resolver.
-    #[error("Unsupported protocol: `{protocol}`")]
-    ProtocolUnsupported { protocol: String },
+    /// The storage config is invalid.
+    #[error("Invalid storage config: `{0}`")]
+    InvalidConfig(String),
+
+    /// The URI does not contain sufficient information to connect to the storage.
+    #[error("Invalid storage URI: `{0}`")]
+    InvalidUri(String),
+
+    /// The requested backend is unsupported or unavailable.
+    #[error("Unsupported storage backend: `{0}`")]
+    UnsupportedBackend(String),
+
     /// The URI is valid, and is meant to be handled by this resolver,
     /// but the resolver failed to actually connect to the storage.
     /// e.g. Connection error, credential error, incompatible version,

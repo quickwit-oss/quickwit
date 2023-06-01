@@ -24,7 +24,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use once_cell::sync::OnceCell;
 use quickwit_common::uri::Uri;
-use quickwit_storage::{quickwit_storage_uri_resolver, StorageResolverError, StorageUriResolver};
+use quickwit_config::{MetastoreBackend, MetastoreConfig};
+use quickwit_storage::{StorageResolver, StorageResolverError};
 use regex::Regex;
 use tokio::sync::Mutex;
 use tracing::debug;
@@ -37,28 +38,18 @@ use crate::{
 /// A file-backed metastore factory.
 ///
 /// The implementation ensures that there is only
-/// one living instance of `FileBasedMetastore` per metastore-uri.
+/// one living instance of `FileBasedMetastore` per metastore URI.
 /// As a result, within a same process as long as we keep a single
 /// FileBasedMetastoreFactory, it is safe to use the file based
 /// metastore, even from different threads.
 #[derive(Clone)]
 pub struct FileBackedMetastoreFactory {
-    storage_uri_resolver: StorageUriResolver,
+    storage_resolver: StorageResolver,
     // We almost never garbage collect the dangling Weak pointers
     // here. This is judged to not be much of a problem however.
     //
     // In a normal run, this cache will contain a single Metastore.
     cache: Arc<Mutex<HashMap<Uri, Weak<dyn Metastore>>>>,
-}
-
-impl Default for FileBackedMetastoreFactory {
-    fn default() -> Self {
-        let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
-        FileBackedMetastoreFactory {
-            storage_uri_resolver,
-            cache: Default::default(),
-        }
-    }
 }
 
 fn extract_polling_interval_from_uri(uri: &str) -> (String, Option<Duration>) {
@@ -80,11 +71,10 @@ fn extract_polling_interval_from_uri(uri: &str) -> (String, Option<Duration>) {
 }
 
 impl FileBackedMetastoreFactory {
-    /// Builds a FileBackedMetastoreFactory wrapping a given storage uri resolver.
-    #[cfg(any(test, feature = "testsuite"))]
-    pub fn new(storage_uri_resolver: StorageUriResolver) -> FileBackedMetastoreFactory {
-        FileBackedMetastoreFactory {
-            storage_uri_resolver,
+    /// Creates a new [`FileBackedMetastoreFactory`].
+    pub fn new(storage_resolver: StorageResolver) -> Self {
+        Self {
+            storage_resolver,
             cache: Default::default(),
         }
     }
@@ -113,7 +103,15 @@ impl FileBackedMetastoreFactory {
 
 #[async_trait]
 impl MetastoreFactory for FileBackedMetastoreFactory {
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+    fn backend(&self) -> MetastoreBackend {
+        MetastoreBackend::File
+    }
+
+    async fn resolve(
+        &self,
+        _metastore_config: &MetastoreConfig,
+        uri: &Uri,
+    ) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
         let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri.as_str());
         let uri = Uri::from_well_formed(uri_stripped);
         if let Some(metastore) = self.get_from_cache(&uri).await {
@@ -122,15 +120,18 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
         }
         debug!("metastore not found in cache");
         let storage = self
-            .storage_uri_resolver
+            .storage_resolver
             .resolve(&uri)
             .await
             .map_err(|err| match err {
-                StorageResolverError::InvalidUri { message } => {
+                StorageResolverError::InvalidConfig(message) => {
+                    MetastoreResolverError::InvalidConfig(message)
+                }
+                StorageResolverError::InvalidUri(message) => {
                     MetastoreResolverError::InvalidUri(message)
                 }
-                StorageResolverError::ProtocolUnsupported { protocol } => {
-                    MetastoreResolverError::ProtocolUnsupported(protocol)
+                StorageResolverError::UnsupportedBackend(message) => {
+                    MetastoreResolverError::UnsupportedBackend(message)
                 }
                 StorageResolverError::FailedToOpenStorage { kind, message } => {
                     MetastoreResolverError::FailedToOpenMetastore(MetastoreError::InternalError {

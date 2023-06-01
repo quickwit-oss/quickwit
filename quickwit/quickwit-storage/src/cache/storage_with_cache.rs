@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
@@ -32,6 +33,12 @@ use crate::{OwnedBytes, Storage, StorageResult};
 pub struct StorageWithCache {
     pub storage: Arc<dyn Storage>,
     pub cache: Arc<dyn Cache>,
+}
+
+impl fmt::Debug for StorageWithCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StorageWithCache").finish()
+    }
 }
 
 #[async_trait]

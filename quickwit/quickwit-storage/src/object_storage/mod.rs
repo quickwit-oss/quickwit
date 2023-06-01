@@ -21,12 +21,12 @@ mod error;
 
 mod s3_compatible_storage;
 pub use self::s3_compatible_storage::S3CompatibleObjectStorage;
-pub use self::s3_compatible_storage_uri_resolver::S3CompatibleObjectStorageFactory;
+pub use self::s3_compatible_storage_resolver::S3CompatibleObjectStorageFactory;
 
 mod policy;
 pub use crate::object_storage::policy::MultiPartPolicy;
 
-mod s3_compatible_storage_uri_resolver;
+mod s3_compatible_storage_resolver;
 
 #[cfg(feature = "azure")]
 mod azure_blob_storage;

@@ -49,6 +49,7 @@ mod payload;
 mod prefix_storage;
 mod ram_storage;
 mod split;
+mod storage_factory;
 mod storage_resolver;
 mod versioned_component;
 
@@ -73,10 +74,8 @@ pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::storage::MockStorage;
 #[cfg(any(test, feature = "testsuite"))]
-pub use self::storage_resolver::MockStorageFactory;
-pub use self::storage_resolver::{
-    quickwit_storage_uri_resolver, StorageFactory, StorageUriResolver,
-};
+pub use self::storage_factory::{MockStorageFactory, StorageFactory, UnsupportedStorage};
+pub use self::storage_resolver::StorageResolver;
 #[cfg(feature = "testsuite")]
 pub use self::test_suite::{
     storage_test_multi_part_upload, storage_test_single_part_upload, storage_test_suite,
@@ -84,11 +83,14 @@ pub use self::test_suite::{
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 /// Loads an entire local or remote file into memory.
-pub async fn load_file(uri: &Uri) -> anyhow::Result<OwnedBytes> {
+pub async fn load_file(
+    storage_resolver: &StorageResolver,
+    uri: &Uri,
+) -> anyhow::Result<OwnedBytes> {
     let parent = uri
         .parent()
         .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
-    let storage = quickwit_storage_uri_resolver().resolve(&parent).await?;
+    let storage = storage_resolver.resolve(&parent).await?;
     let file_name = uri
         .file_name()
         .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
@@ -115,13 +117,19 @@ pub use for_test::storage_for_test;
 mod tests {
     use std::str::FromStr;
 
+    use quickwit_config::FileStorageConfig;
+
     use super::*;
 
     #[tokio::test]
     async fn test_load_file() {
+        let storage_resolver = StorageResolver::builder()
+            .register(LocalFileStorageFactory, FileStorageConfig::default().into())
+            .build()
+            .unwrap();
         let expected_bytes = tokio::fs::read_to_string("Cargo.toml").await.unwrap();
         assert_eq!(
-            load_file(&Uri::from_str("Cargo.toml").unwrap())
+            load_file(&storage_resolver, &Uri::from_str("Cargo.toml").unwrap())
                 .await
                 .unwrap()
                 .as_slice(),

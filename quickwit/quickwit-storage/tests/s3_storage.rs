@@ -29,14 +29,17 @@ async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
 
     use anyhow::Context;
     use quickwit_common::uri::Uri;
+    use quickwit_config::S3StorageConfig;
     use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
 
     let _ = tracing_subscriber::fmt::try_init();
+    let s3_storage_config = S3StorageConfig::default();
     let storage_uri = Uri::from_well_formed("s3://quickwit-integration-tests");
-    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri).await?;
+    let mut object_storage =
+        S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri).await?;
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
 
-    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)
+    let mut object_storage = S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri)
         .await?
         .with_prefix(Path::new("test-s3-compatible-storage"));
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
@@ -48,7 +51,7 @@ async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
         max_num_parts: 10_000,
         multipart_threshold_num_bytes: 10_000_000,
         max_object_num_bytes: 5_000_000_000_000,
-        max_concurrent_upload: 100,
+        max_concurrent_uploads: 100,
     });
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await

@@ -35,7 +35,8 @@ use tracing::warn;
 
 use crate::quickwit_config::serialize::load_quickwit_config_with_env;
 use crate::service::QuickwitService;
-use crate::ConfigFormat;
+use crate::storage_config::StorageConfigs;
+use crate::{ConfigFormat, MetastoreConfigs};
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
 
@@ -62,7 +63,14 @@ impl IndexerConfig {
     }
 
     fn default_enable_otlp_endpoint() -> bool {
-        !(cfg!(feature = "test") || cfg!(feature = "testsuite"))
+        #[cfg(any(test, feature = "testsuite"))]
+        {
+            false
+        }
+        #[cfg(not(any(test, feature = "testsuite")))]
+        {
+            true
+        }
     }
 
     fn default_max_concurrent_split_uploads() -> usize {
@@ -179,7 +187,14 @@ impl JaegerConfig {
     }
 
     fn default_enable_endpoint() -> bool {
-        !(cfg!(feature = "test") || cfg!(feature = "testsuite"))
+        #[cfg(any(test, feature = "testsuite"))]
+        {
+            false
+        }
+        #[cfg(not(any(test, feature = "testsuite")))]
+        {
+            true
+        }
     }
 
     fn default_lookback_period_hours() -> NonZeroU64 {
@@ -221,6 +236,8 @@ pub struct QuickwitConfig {
     pub metastore_uri: Uri,
     pub default_index_root_uri: Uri,
     pub rest_cors_allow_origins: Vec<String>,
+    pub storage_configs: StorageConfigs,
+    pub metastore_configs: MetastoreConfigs,
     pub indexer_config: IndexerConfig,
     pub searcher_config: SearcherConfig,
     pub ingest_api_config: IngestApiConfig,
@@ -267,6 +284,12 @@ impl QuickwitConfig {
             )
         }
         Ok(peer_seed_addrs)
+    }
+
+    pub fn redact(&mut self) {
+        self.metastore_uri.redact();
+        self.storage_configs.redact();
+        self.metastore_configs.redact();
     }
 
     #[cfg(any(test, feature = "testsuite"))]
