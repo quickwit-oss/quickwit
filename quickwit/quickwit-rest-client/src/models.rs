@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use bytes::Bytes;
 use reqwest::StatusCode;
@@ -76,4 +77,60 @@ pub enum IngestSource {
     Bytes(Bytes),
     File(PathBuf),
     Stdin,
+}
+
+/// A structure that represent a timeout. Unlike Duration it can also represent an infinite or no
+/// timeout value.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)]
+pub struct Timeout {
+    duration: Duration,
+}
+
+const SECS_PER_MIN: u64 = 60;
+const MINS_PER_HOUR: u64 = 60;
+const HOURS_PER_DAY: u64 = 24;
+
+impl Timeout {
+    /// Creates a new timeout from duration
+    pub const fn new(duration: Duration) -> Timeout {
+        Timeout { duration }
+    }
+
+    /// Creates a new timeout from seconds
+    pub const fn from_secs(secs: u64) -> Timeout {
+        Timeout {
+            duration: Duration::from_secs(secs),
+        }
+    }
+
+    /// Creates a new timeout from minutes
+    pub const fn from_mins(mins: u64) -> Timeout {
+        Self::from_secs(mins * SECS_PER_MIN)
+    }
+
+    /// Creates a new timeout from hours
+    pub const fn from_hours(hours: u64) -> Timeout {
+        Self::from_secs(hours * SECS_PER_MIN * MINS_PER_HOUR)
+    }
+
+    /// Creates a new timeout from days
+    pub const fn from_days(days: u64) -> Timeout {
+        Self::from_secs(days * SECS_PER_MIN * MINS_PER_HOUR * HOURS_PER_DAY)
+    }
+
+    /// Creates a new infinite timeout
+    pub const fn none() -> Timeout {
+        Timeout {
+            duration: Duration::MAX,
+        }
+    }
+
+    /// Converts timeout into Some(Duration) or None if it is infinite.
+    pub fn as_duration_opt(&self) -> Option<Duration> {
+        if self.duration != Duration::MAX {
+            Some(self.duration)
+        } else {
+            None
+        }
+    }
 }

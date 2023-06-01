@@ -38,7 +38,7 @@ impl Source for VoidSource {
         _: &Mailbox<DocProcessor>,
         _: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        tokio::time::sleep(HEARTBEAT / 2).await;
+        tokio::time::sleep(*HEARTBEAT / 2).await;
         Ok(Duration::default())
     }
 

@@ -376,7 +376,7 @@ impl Handler<Supervise> for MergePipeline {
                 Health::Healthy => {}
                 Health::FailureOrUnhealthy => {
                     self.terminate().await;
-                    ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
+                    ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
                         .await;
                 }
                 Health::Success => {
@@ -384,7 +384,7 @@ impl Handler<Supervise> for MergePipeline {
                 }
             }
         }
-        ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, Supervise)
+        ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, Supervise)
             .await;
         Ok(())
     }

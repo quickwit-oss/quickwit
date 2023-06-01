@@ -675,6 +675,7 @@ Indexes NDJSON documents locally.
 quickwit tool local-ingest
     --index <index>
     [--input-path <input-path>]
+    [--input-format <input-format>]
     [--overwrite]
     [--transform-script <transform-script>]
     [--keep-cache]
@@ -684,6 +685,7 @@ quickwit tool local-ingest
 
 `--index` ID of the target index \
 `--input-path` Location of the input file. \
+`--input-format` Format of the input data. \
 `--overwrite` Overwrites pre-existing index. \
 `--transform-script` VRL program to transform docs before ingesting. \
 `--keep-cache` Does not clear local cache directory upon completion. \

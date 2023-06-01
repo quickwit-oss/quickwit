@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::env;
 use std::time::UNIX_EPOCH;
 
@@ -27,7 +28,9 @@ use uuid::Uuid;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TelemetryPayload {
     /// Client information. See details in `[ClientInformation]`.
-    pub client_information: ClientInformation,
+    pub client_info: ClientInfo,
+    /// Quickwit information. See details in `[QuickwitInfo]`.
+    pub quickwit_info: QuickwitTelemetryInfo,
     pub events: Vec<EventWithTimestamp>,
     /// Represents the number of events that where drops due to the
     /// combination of the `TELEMETRY_PUSH_COOLDOWN` and `MAX_EVENT_IN_QUEUE`.
@@ -67,7 +70,7 @@ impl From<TelemetryEvent> for EventWithTimestamp {
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum TelemetryEvent {
-    RunCommand(RunCommandInfo),
+    RunCommand,
     /// EndCommand (with the return code).
     EndCommand {
         return_code: i32,
@@ -78,34 +81,49 @@ pub enum TelemetryEvent {
     UiIndexPageLoad,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RunCommandInfo {
-    services: Vec<String>,
-    otlp_endpoint_enabled: bool,
-    jaeger_endpoint_enabled: bool,
-}
-impl RunCommandInfo {
-    pub fn new(
-        services: Vec<String>,
-        otlp_endpoint_enabled: bool,
-        jaeger_endpoint_enabled: bool,
-    ) -> Self {
-        Self {
-            services,
-            otlp_endpoint_enabled,
-            jaeger_endpoint_enabled,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ClientInformation {
+pub struct ClientInfo {
     session_uuid: uuid::Uuid,
-    quickwit_version: String,
     os: String,
     arch: String,
     hashed_host_username: String,
     kubernetes: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QuickwitTelemetryInfo {
+    pub version: String,
+    pub services: HashSet<String>,
+    pub features: HashSet<QuickwitFeature>,
+}
+
+impl QuickwitTelemetryInfo {
+    pub fn new(services: HashSet<String>, features: HashSet<QuickwitFeature>) -> Self {
+        Self {
+            features,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            services,
+        }
+    }
+}
+
+impl Default for QuickwitTelemetryInfo {
+    fn default() -> Self {
+        Self {
+            features: HashSet::new(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            services: HashSet::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum QuickwitFeature {
+    FileBackedMetastore,
+    PostgresqMetastore,
+    Otlp,
+    Jaeger,
 }
 
 fn hashed_host_username() -> String {
@@ -118,11 +136,10 @@ fn hashed_host_username() -> String {
     format!("{digest:x}")
 }
 
-impl Default for ClientInformation {
-    fn default() -> ClientInformation {
-        ClientInformation {
+impl Default for ClientInfo {
+    fn default() -> ClientInfo {
+        ClientInfo {
             session_uuid: Uuid::new_v4(),
-            quickwit_version: env!("CARGO_PKG_VERSION").to_string(),
             os: env::consts::OS.to_string(),
             arch: env::consts::ARCH.to_string(),
             hashed_host_username: hashed_host_username(),

@@ -127,6 +127,7 @@ curl -XPOST "http://localhost:4318/v1/traces" -H "Content-Type: application/json
          "spans": [
            {
              "time_unix_nano": "1678974011000000000",
+             "observed_time_unix_nano": "1678974011000000000",
              "start_time_unix_nano": "1678974011000000000",
              "end_time_unix_nano": "1678974021000000000",
              "trace_id": "3c191d03fa8be0653c191d03fa8be065",

@@ -46,6 +46,7 @@ export type Entry = {
 }
 
 export const DATE_TIME_WITH_SECONDS_FORMAT = "YYYY/MM/DD HH:mm:ss";
+export const DATE_TIME_WITH_MILLISECONDS_FORMAT = "YYYY/MM/DD HH:mm:ss.SSS";
 
 // Returns a flatten array of fields and nested fields found in the given `FieldMapping` array. 
 export function getAllFields(field_mappings: Array<FieldMapping>): Field[] {
