@@ -19,6 +19,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.6.0] - 2023-06-03
+
+### Added
+- New columnar format:
+    - Fast fields can now have any cardinality (Optional, Multivalued, restricted). In fact cardinality is now only used to format the output.
+    - Dynamic Fields are now fast fields.
+- Elasticsearch/Opensearch compatible API.
+- String fast fields now can be normalized.
+- Various parameters of object storages can now be configured.
+- The ingest API makes it possible to force a commit
+- Ability to parse non-JSON data using VRL to extract some structure from documents.
+- Object storage can now use the .
+- <Aggregation additions>
+- Added support for Prefix Phrase query.
+- The query language now supports different date formats.
+
+### Fixed
+- Major bug fix that required to restart quickwit when deleting and recreating an index with the same name.
+- The number of concurrent GET requests to object stores is now limited. This fixes a bug observed with when requested a lot of documents from MinIO.
+- Quickwit now searches into resource attributes when receiving a Jaeger request carrying tags
+- Object storage can be figured to:
+    - avoid Bulk delete API (workaround for Google Cloud Storage)
+    - Use virtual-host style addresses (workaround for Alibaba Object Storage Service)
+
+### Changed
+- Datetime now have up to a nanosecond precision.
+- By default, quickwit now uses the node's hostname as the default node ID
+- By default, Quickwit is in dynamic mode and all dynamic fields are marked as fast fields.
+- Various performance/compression improvements
+
 ## [0.5.0] - 2023-03-16
 
 ### Added
