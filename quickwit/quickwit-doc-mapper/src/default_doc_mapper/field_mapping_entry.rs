@@ -18,12 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::convert::TryFrom;
-use std::str::FromStr;
 
 use anyhow::bail;
 use base64::prelude::{Engine, BASE64_STANDARD};
-use serde::de::Error;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
     IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
@@ -140,7 +138,8 @@ impl Default for QuickwitBytesOptions {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Default)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BinaryFormat {
     #[default]
     Base64,
@@ -184,37 +183,6 @@ impl BinaryFormat {
             })?,
         };
         Ok(TantivyValue::Bytes(payload))
-    }
-}
-
-impl FromStr for BinaryFormat {
-    type Err = String;
-
-    fn from_str(bytes_format_str: &str) -> Result<Self, Self::Err> {
-        let bytes_format = match bytes_format_str.to_lowercase().as_str() {
-            "base64" => BinaryFormat::Base64,
-            "hex" => BinaryFormat::Hex,
-            _ => {
-                return Err(format!("Unknown byte format: `{bytes_format_str}`."));
-            }
-        };
-        Ok(bytes_format)
-    }
-}
-
-impl Serialize for BinaryFormat {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for BinaryFormat {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
-        let bytes_format_str: String = Deserialize::deserialize(deserializer)?;
-        let bytes_format = bytes_format_str.parse().map_err(D::Error::custom)?;
-        Ok(bytes_format)
     }
 }
 
