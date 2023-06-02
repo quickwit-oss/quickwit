@@ -25,27 +25,28 @@
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
-    use std::path::Path;
+    use std::path::PathBuf;
 
     use anyhow::Context;
     use azure_storage_blobs::prelude::ClientBuilder;
+    use quickwit_common::rand::append_random_suffix;
     use quickwit_storage::{AzureBlobStorage, MultiPartPolicy};
     let _ = tracing_subscriber::fmt::try_init();
 
     // Setup container.
-    const CONTAINER: &str = "quickwit";
-    let container_client = ClientBuilder::emulator().container_client(CONTAINER);
+    let container_name = append_random_suffix("quickwit").to_lowercase();
+    let container_client = ClientBuilder::emulator().container_client(&container_name);
     container_client.create().into_future().await?;
 
-    let mut object_storage = AzureBlobStorage::new_emulated(CONTAINER);
+    let mut object_storage = AzureBlobStorage::new_emulated(&container_name);
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
 
-    let mut object_storage = AzureBlobStorage::new_emulated(CONTAINER).with_prefix(Path::new(
-        "/integration-tests/test-azure-compatible-storage",
-    ));
+    let mut object_storage = AzureBlobStorage::new_emulated(&container_name).with_prefix(
+        PathBuf::from("/integration-tests/test-azure-compatible-storage"),
+    );
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
-        .context("test_single_part_upload")?;
+        .context("Test single-part upload failed.")?;
 
     object_storage.set_policy(MultiPartPolicy {
         // On azure, block size is limited between 64KB and 100MB.
@@ -57,10 +58,9 @@ async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
     });
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await
-        .context("test_multi_part_upload")?;
+        .context("Test multipart upload failed.")?;
 
     // Teardown container.
     container_client.delete().into_future().await?;
-
     Ok(())
 }
