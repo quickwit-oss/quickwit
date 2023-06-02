@@ -18,15 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::fmt::{self};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{env, io};
+use std::{env, fmt, io};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use aws_sdk_s3::error::SdkError;
+use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
 use aws_sdk_s3::Client as S3Client;
@@ -86,22 +85,18 @@ impl fmt::Debug for S3CompatibleObjectStorage {
 async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     let aws_config = get_aws_config().await;
     let mut s3_config = aws_sdk_s3::Config::builder().region(aws_config.region().cloned());
-    // aws_sdk_s3::Config::builder().region(cfg.region().cloned());
+
     s3_config.set_retry_config(aws_config.retry_config().cloned());
     s3_config.set_credentials_provider(aws_config.credentials_provider().cloned());
     s3_config.set_http_connector(aws_config.http_connector().cloned());
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
     s3_config.set_credentials_cache(aws_config.credentials_cache().cloned());
     s3_config.set_sleep_impl(Some(Arc::new(quickwit_aws::TokioSleep::default())));
-    s3_config.set_force_path_style(Some(s3_storage_config.force_path_style_access));
+    s3_config.set_force_path_style(s3_storage_config.force_path_style_access());
 
-    // We have a custom endpoint set, otherwise we let the SDK set it.
-    if let Some(endpoint) = quickwit_aws::get_s3_endpoint() {
+    if let Some(endpoint) = s3_storage_config.endpoint() {
         info!(endpoint=%endpoint, "Using custom S3 endpoint.");
-        s3_config
-            .set_endpoint_url(Some(endpoint))
-            .set_force_path_style(Some(true));
-    } else {
+        s3_config.set_endpoint_url(Some(endpoint));
     }
     S3Client::from_conf(s3_config.build())
 }
@@ -682,7 +677,7 @@ impl Storage for S3CompatibleObjectStorage {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();
         let key = self.key(path);
-        retry(&self.retry_params, || async {
+        let delete_res = retry(&self.retry_params, || async {
             self.s3_client
                 .delete_object()
                 .bucket(&bucket)
@@ -690,8 +685,13 @@ impl Storage for S3CompatibleObjectStorage {
                 .send()
                 .await
         })
-        .await?;
-        Ok(())
+        .await;
+
+        match delete_res {
+            Ok(_) => Ok(()),
+            Err(error) if error.code() == Some("NoSuchKey") => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
@@ -862,7 +862,103 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_s3_compatible_storage_bulk_delete() {
+    async fn test_s3_compatible_storage_bulk_delete_single() {
+        let client = TestConnection::new(vec![
+            (
+                http::Request::builder()
+                    .body(SdkBody::from(Body::empty()))
+                    .unwrap(),
+                http::Response::builder()
+                    .body(SdkBody::from(Body::empty()))
+                    .unwrap(),
+            ),
+            (
+                http::Request::builder()
+                    .body(SdkBody::from(Body::empty()))
+                    .unwrap(),
+                http::Response::builder()
+                    .body(SdkBody::from(Body::empty()))
+                    .unwrap(),
+            ),
+        ]);
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+        let config = aws_sdk_s3::Config::builder()
+            .region(Some(Region::new("Foo")))
+            .http_connector(client.clone())
+            .credentials_provider(credentials)
+            .build();
+        let s3_client = S3Client::from_conf(config);
+        let uri = Uri::for_test("s3://bucket/indexes");
+        let bucket = "bucket".to_string();
+        let prefix = PathBuf::new();
+
+        let s3_storage = S3CompatibleObjectStorage {
+            s3_client,
+            uri,
+            bucket,
+            prefix,
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params: RetryParams::default(),
+            disable_multi_object_delete_requests: true,
+        };
+        let _ = s3_storage
+            .bulk_delete(&[Path::new("foo"), Path::new("bar")])
+            .await;
+
+        let requests = client.requests();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0]
+            .actual
+            .uri()
+            .to_string()
+            .ends_with("DeleteObject"));
+    }
+
+    #[tokio::test]
+    async fn test_s3_compatible_storage_bulk_delete_multi() {
+        let client = TestConnection::new(vec![(
+            http::Request::builder()
+                .body(SdkBody::from(Body::empty()))
+                .unwrap(),
+            http::Response::builder()
+                .body(SdkBody::from(Body::empty()))
+                .unwrap(),
+        )]);
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+        let config = aws_sdk_s3::Config::builder()
+            .region(Some(Region::new("Foo")))
+            .http_connector(client.clone())
+            .credentials_provider(credentials)
+            .build();
+        let s3_client = S3Client::from_conf(config);
+        let uri = Uri::for_test("s3://bucket/indexes");
+        let bucket = "bucket".to_string();
+        let prefix = PathBuf::new();
+
+        let s3_storage = S3CompatibleObjectStorage {
+            s3_client,
+            uri,
+            bucket,
+            prefix,
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params: RetryParams::default(),
+            disable_multi_object_delete_requests: false,
+        };
+        let _ = s3_storage
+            .bulk_delete(&[Path::new("foo"), Path::new("bar")])
+            .await;
+
+        let requests = client.requests();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0]
+            .actual
+            .uri()
+            .to_string()
+            .ends_with("DeleteObjects"));
+    }
+
+    #[tokio::test]
+    async fn test_s3_compatible_storage_bulk_delete_multi_errors() {
         let client = TestConnection::new(vec![
             (
                 // This is quite fragile, currently this is *not* validated by the SDK
@@ -913,13 +1009,12 @@ mod tests {
             ),
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
-
-        let cfg = aws_sdk_s3::Config::builder()
+        let config = aws_sdk_s3::Config::builder()
             .region(Some(Region::new("Foo")))
             .http_connector(client)
             .credentials_provider(credentials)
             .build();
-        let s3_client = S3Client::from_conf(cfg);
+        let s3_client = S3Client::from_conf(config);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
         let prefix = PathBuf::new();
@@ -965,7 +1060,6 @@ mod tests {
             ]
         );
         let delete_objects_error = bulk_delete_error.error.unwrap();
-        dbg!(&delete_objects_error.to_string());
         assert!(delete_objects_error.to_string().contains("MalformedXML"));
     }
 }
