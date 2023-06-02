@@ -434,7 +434,7 @@ mod tests {
 
     use quickwit_proto::query_ast_from_user_text;
     use serde_json::{self, json, Value as JsonValue};
-    use tantivy::schema::{FieldType, Type, Value as TantivyValue};
+    use tantivy::schema::{FieldType, IndexRecordOption, Type, Value as TantivyValue};
 
     use super::DefaultDocMapper;
     use crate::{
@@ -1240,5 +1240,44 @@ mod tests {
             default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
             r#"TermQuery(Term(field=1, type=Str, "toto"))"#
         );
+    }
+
+    #[test]
+    fn test_doc_mapper_default_tokenizers() {
+        let doc_mapper: DefaultDocMapper = serde_json::from_str(
+            r#"{
+            "field_mappings": [
+                {"name": "json_field", "type": "json"},
+                {"name": "text_field", "type": "text"}
+            ]
+        }"#,
+        )
+        .unwrap();
+        let schema = doc_mapper.schema();
+
+        {
+            let json_field = schema.get_field("json_field").unwrap();
+            let FieldType::JsonObject(json_options) = schema.get_field_entry(json_field).field_type()
+        else { panic!() };
+            let text_indexing_options = json_options.get_text_indexing_options().unwrap();
+            assert_eq!(
+                text_indexing_options.tokenizer(),
+                super::QuickwitTextTokenizer::Raw.get_name()
+            );
+            assert_eq!(
+                text_indexing_options.index_option(),
+                IndexRecordOption::Basic
+            );
+        }
+
+        {
+            let text_field = schema.get_field("text_field").unwrap();
+            let FieldType::Str(text_options) = schema.get_field_entry(text_field).field_type()
+        else { panic!() };
+            assert_eq!(
+                text_options.get_indexing_options().unwrap().tokenizer(),
+                super::QuickwitTextTokenizer::Default.get_name()
+            );
+        }
     }
 }

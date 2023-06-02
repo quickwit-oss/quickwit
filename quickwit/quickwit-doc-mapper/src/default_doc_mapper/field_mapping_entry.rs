@@ -211,7 +211,7 @@ impl Default for QuickwitIpAddrOptions {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub enum QuickwitTextTokenizer {
     #[serde(rename = "raw")]
     Raw,
@@ -414,7 +414,7 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
                 .unwrap_or(IndexRecordOption::Basic);
             let tokenizer = quickwit_json_options
                 .tokenizer
-                .unwrap_or(QuickwitTextTokenizer::Default);
+                .unwrap_or(QuickwitTextTokenizer::Raw);
             let text_field_indexing = TextFieldIndexing::default()
                 .set_tokenizer(tokenizer.get_name())
                 .set_index_option(index_record_option);
@@ -622,13 +622,11 @@ mod tests {
     #[test]
     fn test_tantivy_json_options_from_quickwit_json_options() {
         let tantivy_json_option = JsonObjectOptions::from(QuickwitJsonOptions::default());
-
         assert_eq!(tantivy_json_option.is_stored(), true);
-
         match tantivy_json_option.get_text_indexing_options() {
             Some(text_field_indexing) => {
                 assert_eq!(text_field_indexing.index_option(), IndexRecordOption::Basic);
-                assert_eq!(text_field_indexing.tokenizer(), "default");
+                assert_eq!(text_field_indexing.tokenizer(), "raw");
             }
             _ => panic!("text field indexing is None"),
         }
