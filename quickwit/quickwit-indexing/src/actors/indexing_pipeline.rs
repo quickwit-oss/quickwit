@@ -48,7 +48,7 @@ use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionCont
 use crate::split_store::IndexingSplitStore;
 use crate::SplitsUpdateMailbox;
 
-const OBSERVE_INTERVAL: Duration = Duration::from_secs(10);
+const OBSERVE_INTERVAL: Duration = Duration::from_secs(1);
 
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 
