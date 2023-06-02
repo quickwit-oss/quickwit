@@ -1,6 +1,6 @@
 ---
 title: Command-line options
-sidebar_position: 4
+sidebar_position: 50
 ---
 
 Quickwit command line tool lets you start a Quickwit server and manage indexes (create, delete, ingest), splits and sources (create, delete, toggle). To start a server, `quickwit` needs a [node config file path](../configuration/node-config.md) that you can specify with `QW_CONFIG` environment variable: `export QW_CONFIG=./config/quickwit.yaml`.

@@ -1,6 +1,6 @@
 ---
 title: REST API
-sidebar_position: 1
+sidebar_position: 10
 ---
 
 ## API version
@@ -186,47 +186,6 @@ The response is a JSON object, and the content type is `application/json; charse
 |-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------:|
 | `num_docs_for_processing` | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
 
-### Ingest data with Elasticsearch compatible API
-
-```
-POST api/v1/_bulk -d \
-'{ "create" : { "_index" : "wikipedia", "_id" : "1" } }
-{"url":"https://en.wikipedia.org/wiki?id=1","title":"foo","body":"foo"}
-{ "create" : { "_index" : "wikipedia", "_id" : "2" } }
-{"url":"https://en.wikipedia.org/wiki?id=2","title":"bar","body":"bar"}
-{ "create" : { "_index" : "wikipedia", "_id" : "3" } }
-{"url":"https://en.wikipedia.org/wiki?id=3","title":"baz","body":"baz"}'
-```
-
-Ingest a batch of documents to make them searchable using the [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elasticsearch for indexing. Currently, only the `create` action of the bulk API is supported, all other actions such as `delete` or `update` are ignored.
-
-The [`refresh`](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-refresh.html) parameter is supported.
-
-:::caution
-The quickwit API will not report errors, you need to check the server logs.
-
-In Elasticsearch, the `create` action has a specific behavior when the ingest documents contain an identifier (the `_id` field). It only inserts such a document if it was not inserted before. This is extremely handy to achieve At-Most-Once indexing.
-Quickwit does not have any notion of document id and does not support this feature.
-:::
-
-:::info
-The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
-:::
-
-#### Query parameter
-
-| Variable      | Type       | Description                                                      | Default value |
-|---------------|------------|------------------------------------------------------------------|---------------|
-| `refresh`     | `String`   | The commit behavior: blank string, `true`, `wait_for` or `false` | `false`       |
-
-#### Response
-
-The response is a JSON object, and the content type is `application/json; charset=UTF-8.`
-
-| Field                       | Description                                                                                                                                                              |   Type   |
-|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------:|
-| `num_docs_for_processing` | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
-
 
 ## Index API
 
@@ -342,7 +301,7 @@ The response is the index metadata of the requested index, and the content type 
 | `sources`          | List of the index sources configurations. | `Array<SourceConfig>` |
 
 
-### Describe an index 
+### Describe an index
 
 ```
 GET api/v1/indexes/<index id>/describe

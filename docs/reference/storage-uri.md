@@ -1,6 +1,6 @@
 ---
 title: Storage URI
-sidebar_position: 5
+sidebar_position: 60
 ---
 
 In Quickwit, Storage URIs refer to different kinds of storage.
@@ -127,7 +127,7 @@ We support other S3-compatible storages and are [welcoming PRs](http://github.co
 ## Azure blob storage
 
 Quickwit supports Azure URIs formatted as `azure://{storage-account}/{container}/{prefix}` where:
-- `storage-account` is your Azure storage account name. 
+- `storage-account` is your Azure storage account name.
 - `container` is the container name (or bucket in S3 parlance).
 - `prefix` is optional and can be any prefix.
 

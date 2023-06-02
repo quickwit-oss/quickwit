@@ -1,6 +1,6 @@
 ---
 title: Metrics
-sidebar_position: 6
+sidebar_position: 70
 ---
 
 Quickwit exposes some key metrics via [Prometheus](https://prometheus.io/). You can use any front-end that supports Prometheus to examine the behavior of Quickwit visually.

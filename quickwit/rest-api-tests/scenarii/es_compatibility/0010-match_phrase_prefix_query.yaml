@@ -33,3 +33,33 @@ expected:
     total:
       value: 1
       relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    match_phrase_prefix:
+      payload.commits.message:
+        query: "automated comm"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+    hits:
+      - _source:
+          payload:
+            commits:
+              - message: "automated commit"
+---
+method: [GET]
+json:
+  query:
+    match_phrase_prefix:
+      payload.commits.message:
+        query: "fix"
+        max_expansions: 2
+expected:
+  hits:
+    total:
+      value: 6
+      relation: "eq"
