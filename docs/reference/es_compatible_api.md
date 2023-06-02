@@ -1,7 +1,8 @@
 ---
-title: Elasticsearch/Opensearch compatible API
-sidebar_position: 2
+title: Elasticsearch compatible API
+sidebar_position: 20
 ---
+
 
 In order to facilitate migrations and integrations with existing tools,
 Quickwit offers a Elasticsearch/Opensearch compatible API.
@@ -11,19 +12,18 @@ This API is incomplete. This page lists the available features and endpoints.
 
 All the API endpoints start with the `api/v1/_elastic/` prefix.
 
-### `_bulk`: Batch ingestion endpoint
+### `_bulk` &nbsp; Batch ingestion endpoint
 
 ```
 POST api/v1/_elastic/_bulk
 ```
-or
 ```
 POST api/v1/_elastic/<index>/_bulk
 ```
 
 The _bulk ingestion API makes it possible to index a batch of documents, possibly targetting several indices in the same request.
 
-#### POST payload example
+#### Request Body example
 
 ```json
 { "create" : { "_index" : "wikipedia", "_id" : "1" } }
@@ -69,16 +69,16 @@ The response is a JSON object, and the content type is `application/json; charse
 
 
 
-### `_search`: Index search endpoint
+### `_search` &nbsp; Index search endpoint
 
 ```
-POST api/v1/_elastic/<index_id>/_search"
+POST api/v1/_elastic/<index_id>/_search
 ```
 ```
-GET api/v1/_elastic/<index_id>/_search"
+GET api/v1/_elastic/<index_id>/_search
 ```
 
-#### POST payload example
+#### Request Body example
 
 ```json
 {
@@ -107,7 +107,7 @@ GET api/v1/_elastic/<index_id>/_search"
 }
 ```
 
-Search into a specific index using the [Elasticsearch] search API.
+Search into a specific index using the [Elasticsearch search API](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/search-search.html).
 
 Some of the parameter can be passed as query string parameter, and some via JSON payload.
 If a parameter appears both as a query string parameter and in the JSON payload, the query string parameter value will take priority.
@@ -117,32 +117,31 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 
 | Variable      | Type       | Description                                                      | Default value |
 |---------------|------------|------------------------------------------------------------------|---------------|
-| `default_operator`     | `String`   | The default operator used to combine search terms. It should be `AND` or `OR` | `OR`       |
+| `default_operator`     | `AND` or `OR`  | The default operator used to combine search terms. It should be `AND` or `OR` | `OR`       |
 | `from`     | `Integer`   |  The rank of the first hit to return. This is useful for pagination.  |  0  |
 | `q` | `String` | The | (Optional) |
 | `size` | `Integer` | Number of hits to return. |  10 |
 | `sort` | `String` | (Optional) |
 
-
-#### Request body
+#### Supported Request Body parameters
 
 | Variable      | Type       | Description                                                      | Default value |
 |---------------|------------|------------------------------------------------------------------|---------------|
-| `default_operator`     | `String`   | The default operator used to combine search terms. It should be `AND` or `OR` | `OR`       |
+| `default_operator`     | `"AND"` or `"OR"` | The default operator used to combine search terms. It should be `AND` or `OR` | `OR`       |
 | `from`     | `Integer`   |  The rank of the first hit to return. This is useful for pagination.  |  0  |
-| `query` | `Json object` | Describe the search query. See [Query DSL] | (Optional) |
+| `query` | `Json object` | Describe the search query. See [Query DSL](#query-dsl) | (Optional) |
 | `size` | `Integer` | Number of hits to return. |  10 |
-| `sort` | `Json Array` | Describes how documents should be ranked. | `[]` |
-| `aggs` | `Json object` | Aggregation definition. See [Aggregations]. | `{}` | `
+| `sort` | `JsonObject[]` | Describes how documents should be ranked. | `[]` |
+| `aggs` | `Json object` | Aggregation definition. See [Aggregations](aggregation.md). | `{}` | `
 
 
-### `_msearch`: Multi search API
+### `_msearch` &nbsp; Multi search API
 
 ```
-POST api/v1/_elastic/_msearch"
+POST api/v1/_elastic/_msearch
 ```
 
-### Example POST Request Body
+#### Request Body example
 
 ```json
 {"index": "gharchive" }
@@ -163,35 +162,143 @@ The payload is expected to alternate:
 
 [Elasticsearch Query DSL reference](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl.html).
 
-The following query types are supported:
+The following query types are supported.
 
-### `query_string`: QueryString
+### `query_string`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-query-string-query.html)
 
-### `bool`: Composing queries into Boolean queries
+
+#### Example
+
+```json
+{
+    "query_string": {
+        "query": "bitpacking AND author.login:fulmicoton",
+        "fields": ["payload.description"]
+    }
+}
+```
+
+#### Supported parameters
+
+| Variable      | Type       | Description                                                      | Default value |
+|---------------|------------|------------------------------------------------------------------|---------------|
+| `query`     | `String`   |  Query meant to be parsed | Required       |
+| `fields`     | `String[]` (Optional)   | Default search target fields.  | Required       |
+| `default_operator`     | `"AND"` or `"OR"`   | In the absence of boolean operator defines whether terms should be combined as a conjunction (`AND`) or disjunction (`OR`). | `OR`|
+| `boost`     | `Number`   | Multiplier boost for score computation | 1.0       |
+
+
+### `bool`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-term-query.html)
 
-### `range`: Range queries
+#### Example
+
+```json
+{
+    "bool": {
+        "must": [
+            {"query_string": {"query": "bitpacking"}},
+        ],
+        "must_not": {"term":
+            {"type":
+                {"value": "CommitEvent"}
+            }
+        }
+    }
+}
+```
+
+#### Supported parameters
+
+| Variable      | Type       | Description                                                      | Default value |
+|---------------|------------|------------------------------------------------------------------|---------------|
+| `must`     | `JsonObject[]` (Optional)  |  Sub-queries required to match the document. | [] |
+| `must_not`     | `JsonObject[]` (Optional)   | Sub-queries required to not match the document.  | []       |
+| `should`     | `JsonObject[]` (Optional)   | Sub-queries that should match the documents .| [] |
+| `filter`     | `JsonObject[]` | Like must queries, but the match does not influence the `_score`.  | [] |
+| `boost`     | `Number`   | Multiplier boost for score computation | 1.0       |
+
+### `range`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-range-query.html)
 
-### `match_phrase_queries`: Match phrase queries
+#### Example
 
-[Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query-phrase-prefix.html)
+```json
+{
+    "range": {
+      "my_date_field": {
+        "lt": "2015-02-01T00:00:13Z",
+        "gte": "2015-02-01T00:00:10Z"
+      }
+    }
+}
 
-### `match`: Match queries
+```
+
+#### Supported parameters
+
+| Variable      | Type       | Description                                                      | Default value |
+|---------------|------------|------------------------------------------------------------------|---------------|
+| `gt`     | bool, string, Number (Optional)  |  Greater than | None |
+| `gte`     | bool, string, Number (Optional)  | Greater than or equal  | None  |
+| `lt`     | bool, string, Number (Optional) | Less than | None |
+| `lte`     | bool, string, Number (Optional) | Less than or equal  | None |
+| `boost`     |  `Number`   | Multiplier boost for score computation | 1.0       |
+
+
+### `match`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-match-query.html)
 
-### `term`: Term queries
+#### Example
+
+```json
+{
+    "match": {
+        "type": {
+            "query": "CommitEvent",
+            "zero_terms_query": "all"
+        }
+    }
+}
+```
+
+#### Supported Parameters
+
+| Variable      | Type       | Description                                                      | Default |
+|---------------|------------|------------------------------------------------------------------|---------------|
+| `query`     | String  |  Full-text search query. | None |
+| `operator`  | `"AND"` or `"OR"` | Defines whether all terms should be present (`AND`) or at least one term is sufficien to match (`OR`)  | OR  |
+| `zero_terms_query`  |  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization | `none` |
+| `boost`     |  `Number`   | Multiplier boost for score computation | 1.0       |
+
+
+
+### `match_phrase_queries`
+
+[Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query-phrase-prefix.html)
+
+
+### `term`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-term-query.html)
 
-### `match_all` / `match_none` Match all/no documents
+### `match_all` / `match_none`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-all-query.html)
+
+#### Example
+
+```json
+{"match_all": {}}
+```
+```json
+{"match_none": {}}
+```
 
 
 

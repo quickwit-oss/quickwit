@@ -1,6 +1,6 @@
 ---
 title: Command-line options
-sidebar_position: 4
+sidebar_position: 50
 ---
 
 Quickwit command line tool lets you start a Quickwit server and manage indexes (create, delete, ingest), splits and sources (create, delete, toggle). To start a server, `quickwit` needs a [node config file path](../configuration/node-config.md) that you can specify with `QW_CONFIG` environment variable: `export QW_CONFIG=./config/quickwit.yaml`.
@@ -50,7 +50,7 @@ Starts Quickwit server with all services by default: `indexer`, `searcher`, `met
 
 The indexer service runs indexing pipelines assigned by the control plane.
 
-### Searcher service 
+### Searcher service
 Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
 where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
 The node can optionally join a cluster using the `peer_seeds` parameter.
@@ -78,7 +78,7 @@ Quickwit needs to open the following port for cluster formation and workload dis
 
 If ports are already taken, the serve command will fail.
 :::
-  
+
 `quickwit  run [args]`
 
 *Synopsis*
@@ -126,7 +126,7 @@ The index config lets you define the mapping of your document on the index and h
 If `index-uri` is omitted, `index-uri` will be set to `{default_index_root_uri}/{index}`, more info on [Quickwit config docs](../configuration/node-config.md).
 The command fails if an index already exists unless `overwrite` is passed.
 When `overwrite` is enabled, the command deletes all the files stored at `index-uri` before creating a new index.
-  
+
 `quickwit index create [args]`
 
 *Synopsis*
@@ -156,7 +156,7 @@ quickwit index create --endpoint=http://127.0.0.1:7280 --index-config wikipedia_
 
 ### index clear
 
-Clears an index: deletes all splits and resets checkpoint.  
+Clears an index: deletes all splits and resets checkpoint.
 `quickwit index clear [args]`
 `quickwit index clr [args]`
 
@@ -172,7 +172,7 @@ quickwit index clear
 `--index` Index ID \
 ### index delete
 
-Deletes an index.  
+Deletes an index.
 `quickwit index delete [args]`
 `quickwit index del [args]`
 
@@ -202,7 +202,7 @@ quickwit index delete --index wikipedia --endpoint=http://127.0.0.1:7280
 
 ### index describe
 
-Displays descriptive statistics of an index.  
+Displays descriptive statistics of an index.
 `quickwit index describe [args]`
 
 *Synopsis*
@@ -230,26 +230,26 @@ quickwit index describe --endpoint=http://127.0.0.1:7280 --index wikipedia
 Index ID:                                    | wikipedia
 Index URI:                                   | file:///home/quickwit-indices/qwdata/indexes/wikipedia
 Number of published documents:               | 300000
-Size of published documents (uncompressed):  | 33.73 MB 
+Size of published documents (uncompressed):  | 33.73 MB
 Number of published splits:                  | 1
 Size of published splits:                    | 24.07 MB
-Timestamp field:                             | Field does not exist for the index.                                     
-Timestamp range:                             | Range does not exist for the index. 
+Timestamp field:                             | Field does not exist for the index.
+Timestamp range:                             | Range does not exist for the index.
 
-Document count stats (published)                                                                                        
-Mean ± σ in [min … max]:                     | 15000 ± 5000 in [10000 … 20000]                                         
-Quantiles [1%, 25%, 50%, 75%, 99%]:          | [10100, 15000, 15000, 17500, 17500]                                     
-                                                                                                                        
-                                                                                                                        
-Size in MB stats (published)                                                                                            
-Mean ± σ in [min … max]:                     | 12.037121 ± 3.802938 in [8 … 15]                                        
-Quantiles [1%, 25%, 50%, 75%, 99%]:          | [8.310242, 12.037121, 12.037121, 13.93859, 13.93859] 
+Document count stats (published)
+Mean ± σ in [min … max]:                     | 15000 ± 5000 in [10000 … 20000]
+Quantiles [1%, 25%, 50%, 75%, 99%]:          | [10100, 15000, 15000, 17500, 17500]
+
+
+Size in MB stats (published)
+Mean ± σ in [min … max]:                     | 12.037121 ± 3.802938 in [8 … 15]
+Quantiles [1%, 25%, 50%, 75%, 99%]:          | [8.310242, 12.037121, 12.037121, 13.93859, 13.93859]
 
 ```
 
 ### index list
 
-List indexes.  
+List indexes.
 `quickwit index list [args]`
 `quickwit index ls [args]`
 
@@ -275,7 +275,7 @@ quickwit index list --endpoint=http://127.0.0.1:7280
 # Or with alias.
 quickwit index ls --endpoint=http://127.0.0.1:7280
 
-                                    Indexes                                     
+                                    Indexes
 +-----------+--------------------------------------------------------+
 | Index ID  |                       Index URI                        |
 +-----------+--------------------------------------------------------+
@@ -293,7 +293,7 @@ Indexes a dataset consisting of newline-delimited JSON objects located at `input
 The data is appended to the target index of ID `index` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin.
 Currently, only local datasets are supported.
 By default, Quickwit's indexer will work with a heap of 2 GiB of memory. Learn how to change `heap-size` in the [index config doc page](../configuration/index-config.md).
-  
+
 `quickwit index ingest [args]`
 
 *Synopsis*
@@ -341,7 +341,7 @@ cat wiki-articles-10000.json | quickwit index ingest --endpoint=http://127.0.0.1
 Searches an index with ID `--index` and returns the documents matching the query specified with `--query`.
 More details on the [query language page](query-language.md).
 The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options.
-It's possible to override the default search fields `search-fields` option to define the list of fields that Quickwit will search into if 
+It's possible to override the default search fields `search-fields` option to define the list of fields that Quickwit will search into if
 the user query does not explicitly target a field in the query. Quickwit will return snippets of the matching content when requested via the `snippet-fields` options.
 Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options.
 These timestamp options are useful for boosting query performance when using a time series dataset.
@@ -349,7 +349,7 @@ These timestamp options are useful for boosting query performance when using a t
 :::warning
 The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
 :::
-  
+
 `quickwit index search [args]`
 
 *Synopsis*
@@ -430,7 +430,7 @@ Manages sources: creates, updates, deletes sources...
 
 ### source create
 
-Adds a new source to an index.  
+Adds a new source to an index.
 `quickwit source create [args]`
 
 *Synopsis*
@@ -447,7 +447,7 @@ quickwit source create
 `--source-config` Path to source config file. Please, refer to the documentation for more details. \
 ### source enable
 
-Enables a source for an index.  
+Enables a source for an index.
 `quickwit source enable [args]`
 
 *Synopsis*
@@ -464,7 +464,7 @@ quickwit source enable
 `--source` ID of the source. \
 ### source disable
 
-Disables a source for an index.  
+Disables a source for an index.
 `quickwit source disable [args]`
 
 *Synopsis*
@@ -481,7 +481,7 @@ quickwit source disable
 `--source` ID of the source. \
 ### source ingest-api
 
-Enables/disables the ingest API of an index.  
+Enables/disables the ingest API of an index.
 `quickwit source ingest-api [args]`
 
 *Synopsis*
@@ -500,7 +500,7 @@ quickwit source ingest-api
 `--disable` Disables the ingest API. \
 ### source delete
 
-Deletes a source from an index.  
+Deletes a source from an index.
 `quickwit source delete [args]`
 `quickwit source del [args]`
 
@@ -530,7 +530,7 @@ quickwit source delete --endpoint=http://127.0.0.1:7280 --index wikipedia --sour
 
 ### source describe
 
-Describes a source.  
+Describes a source.
 `quickwit source describe [args]`
 `quickwit source desc [args]`
 
@@ -548,7 +548,7 @@ quickwit source describe
 `--source` ID of the source. \
 ### source list
 
-Lists the sources of an index.  
+Lists the sources of an index.
 `quickwit source list [args]`
 `quickwit source ls [args]`
 
@@ -576,7 +576,7 @@ quickwit source list --endpoint=http://127.0.0.1:7280 --index wikipedia
 
 ### source reset-checkpoint
 
-Resets a source checkpoint.  
+Resets a source checkpoint.
 `quickwit source reset-checkpoint [args]`
 `quickwit source reset [args]`
 
@@ -597,7 +597,7 @@ Manages splits: lists, describes, marks for deletion...
 
 ### split list
 
-Lists the splits of an index.  
+Lists the splits of an index.
 `quickwit split list [args]`
 `quickwit split ls [args]`
 
@@ -623,7 +623,7 @@ quickwit split list
 `--output-format` Output format. Possible values are `table`, `json`, and `pretty_json`. \
 ### split describe
 
-Displays metadata about a split.  
+Displays metadata about a split.
 `quickwit split describe [args]`
 `quickwit split desc [args]`
 
@@ -643,7 +643,7 @@ quickwit split describe
 `--verbose` Displays additional metadata about the hotcache. \
 ### split mark-for-deletion
 
-Marks one or multiple splits of an index for deletion.  
+Marks one or multiple splits of an index for deletion.
 `quickwit split mark-for-deletion [args]`
 `quickwit split mark [args]`
 
@@ -666,7 +666,7 @@ Performs utility operations. Requires a node config.
 
 ### tool local-ingest
 
-Indexes NDJSON documents locally.  
+Indexes NDJSON documents locally.
 `quickwit tool local-ingest [args]`
 
 *Synopsis*
@@ -691,7 +691,7 @@ quickwit tool local-ingest
 `--keep-cache` Does not clear local cache directory upon completion. \
 ### tool extract-split
 
-Downloads and extracts a split to a directory.  
+Downloads and extracts a split to a directory.
 `quickwit tool extract-split [args]`
 
 *Synopsis*
@@ -710,7 +710,7 @@ quickwit tool extract-split
 `--target-dir` Directory to extract the split to. \
 ### tool gc
 
-Garbage collects stale staged splits and splits marked for deletion.  
+Garbage collects stale staged splits and splits marked for deletion.
 :::note
 Intermediate files are created while executing Quickwit commands.
 These intermediate files are always cleaned at the end of each successfully executed command.
