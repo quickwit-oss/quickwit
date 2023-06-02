@@ -7,7 +7,7 @@ json:
   query:
     term:
       type:
-        value: "PushEvent"
+        value: "pushevent"
         case_insensitive: true
 expected:
   hits:
@@ -16,3 +16,34 @@ expected:
       relation: "eq"
     hits:
       $expect: "len(val) == 3"
+---
+params:
+  # this overrides the query sent in body apparently
+  size: 3
+json:
+  query:
+    term:
+      type:
+        value: "pushevent"
+expected:
+  hits:
+    total:
+      value: 60
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 3"
+---
+params:
+  # this overrides the query sent in body apparently
+  size: 3
+json:
+  query:
+    term:
+      type:
+        value: "PushEvent"
+expected:
+  hits:
+    total:
+      value: 0
+      relation: "eq"
+

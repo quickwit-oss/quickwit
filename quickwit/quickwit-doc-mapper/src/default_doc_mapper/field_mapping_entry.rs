@@ -235,10 +235,9 @@ impl QuickwitTextTokenizer {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum QuickwitTextNormalizer {
-    #[serde(rename = "raw")]
     Raw,
-    #[serde(rename = "lowercase")]
     Lowercase,
 }
 
