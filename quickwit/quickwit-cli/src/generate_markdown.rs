@@ -141,7 +141,7 @@ fn markdown_for_command_helper(
                 "".to_string()
             };
             println!(
-                "`--{}` {}{} \\", // Insert line break after option
+                "`--{}` {}{}  ", // Insert line break after option
                 arg.get_id(),
                 arg.get_help().unwrap_or_default(),
                 default
