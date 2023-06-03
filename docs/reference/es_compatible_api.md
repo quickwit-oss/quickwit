@@ -250,6 +250,10 @@ The following query types are supported.
 | `boost`     |  `Number`   | Multiplier boost for score computation | 1.0       |
 
 
+
+
+
+
 ### `match`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-match-query.html)
@@ -278,14 +282,36 @@ The following query types are supported.
 
 
 
+
+
 ### `match_phrase_queries`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query-phrase-prefix.html)
 
 
+
+
+
+
 ### `term`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-term-query.html)
+
+#### Example
+
+```json
+{
+    "term": {
+        "type": {
+            "value": "pushevent"
+        }
+    }
+}
+```
+
+
+
+
 
 ### `match_all` / `match_none`
 
