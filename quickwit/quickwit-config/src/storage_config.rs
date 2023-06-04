@@ -17,8 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::fmt;
 use std::ops::Deref;
+use std::{env, fmt};
 
 use anyhow::ensure;
 use itertools::Itertools;
@@ -237,9 +237,9 @@ impl fmt::Debug for AzureStorageConfig {
 #[serde(deny_unknown_fields)]
 pub struct S3StorageConfig {
     #[serde(default)]
-    access_key_id: Option<String>,
+    pub access_key_id: Option<String>,
     #[serde(default)]
-    secret_access_key: Option<String>,
+    pub secret_access_key: Option<String>,
     #[serde(default)]
     pub region: Option<String>,
     #[serde(default)]
@@ -255,6 +255,14 @@ impl S3StorageConfig {
         if let Some(secret_access_key) = self.secret_access_key.as_mut() {
             *secret_access_key = "***redacted***".to_string();
         }
+    }
+
+    pub fn endpoint(&self) -> Option<String> {
+        env::var("QW_S3_ENDPOINT").ok().or(self.endpoint.clone())
+    }
+
+    pub fn force_path_style_access(&self) -> Option<bool> {
+        Some(env::var("QW_S3_FORCE_PATH_STYLE_ACCESS").is_ok() || self.force_path_style_access)
     }
 }
 

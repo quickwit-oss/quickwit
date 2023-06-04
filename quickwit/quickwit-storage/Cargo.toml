@@ -49,6 +49,7 @@ quickwit-config = { workspace = true }
 [dev-dependencies]
 mockall = { workspace = true }
 proptest = { workspace = true }
+serial_test = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 
