@@ -26,7 +26,7 @@ Sub-second search & analytics engine on cloud storage
 </h4>
 <br/>
 
-<b>Quickwit 0.6 has just been released! Read our [blog post](https://quickwit.io/blog/release-0.6) to learn about the latest powerful features!</b>
+<b>We just released Quickwit 0.6! Read the [blog post](https://quickwit.io/blog/release-0.6) to learn about the latest powerful features!</b>
 
 <br/>
 
@@ -49,7 +49,7 @@ Sub-second search & analytics engine on cloud storage
 - Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, …)
 - Decoupled compute and storage, stateless indexers & searchers
 - [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing & and analytics
-- [Grafana plugin](https://github.com/quickwit-oss/quickwit-datasource)
+- [Grafana data source](https://github.com/quickwit-oss/quickwit-datasource)
 - [Jaeger-native](https://quickwit.io/docs/distributed-tracing/plug-quickwit-to-jaeger)
 - OTEL-native for [logs](https://quickwit.io/docs/log-management/overview) and [traces](https://quickwit.io/docs/distributed-tracing/overview)
 - Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/deployment/kubernetes)
