@@ -69,17 +69,16 @@ pub struct DefaultDocMapperBuilder {
 }
 
 /// `Mode` describing how the unmapped field should be handled.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, Default, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
-#[derive(Default)]
 pub enum ModeType {
     /// Lenient mode: unmapped fields are just ignored.
-    #[default]
     Lenient,
     /// Strict mode: when parsing a document with an unmapped field, an error is yielded.
     Strict,
     /// Dynamic mode: unmapped fields are captured and handled according to the
     /// `dynamic_mapping` configuration.
+    #[default]
     Dynamic,
 }
 
@@ -93,7 +92,7 @@ impl Default for DefaultDocMapperBuilder {
 // By default, in dynamic mode, all fields are fast fields.
 fn default_dynamic_mapping() -> QuickwitJsonOptions {
     QuickwitJsonOptions {
-        fast: true,
+        fast: super::FastFieldOptions::IsEnabled(true),
         ..Default::default()
     }
 }
@@ -135,7 +134,7 @@ mod tests {
         assert!(default_mapper_builder.default_search_fields.is_empty());
         assert!(default_mapper_builder.field_mappings.is_empty());
         assert!(default_mapper_builder.tag_fields.is_empty());
-        assert_eq!(default_mapper_builder.mode, ModeType::Lenient);
+        assert_eq!(default_mapper_builder.mode, ModeType::Dynamic);
         assert!(default_mapper_builder.dynamic_mapping.is_none());
         assert_eq!(default_mapper_builder.store_source, false);
         assert!(default_mapper_builder.timestamp_field.is_none());

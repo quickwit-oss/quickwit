@@ -140,7 +140,7 @@ mod tests {
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
-            &format!("{:?}", leaf),
+            &format!("{leaf:?}"),
             "TermQuery(Term(field=0, type=IpAddr, ::ffff:127.0.0.1))"
         );
     }
@@ -159,7 +159,7 @@ mod tests {
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
-            &format!("{:?}", leaf),
+            &format!("{leaf:?}"),
             "TermQuery(Term(field=0, type=IpAddr, 2001:db8:85a3::8a2e:370:7334))"
         );
     }
@@ -178,7 +178,7 @@ mod tests {
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
-            &format!("{:?}", leaf),
+            &format!("{leaf:?}"),
             "TermQuery(Term(field=0, type=Bytes, [108, 105, 103, 104, 116, 32, 119]))"
         );
     }
@@ -197,7 +197,7 @@ mod tests {
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
-            &format!("{:?}", leaf),
+            &format!("{leaf:?}"),
             "TermQuery(Term(field=0, type=Bytes, [108, 105, 103, 104, 116, 32, 119]))"
         );
     }

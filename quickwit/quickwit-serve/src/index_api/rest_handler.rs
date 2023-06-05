@@ -723,33 +723,16 @@ mod tests {
     use std::ops::{Bound, RangeInclusive};
 
     use assert_json_diff::assert_json_include;
-    use quickwit_common::uri::{Protocol, Uri};
+    use quickwit_common::uri::Uri;
     use quickwit_config::{SourceParams, VecSourceParams};
     use quickwit_indexing::mock_split;
-    use quickwit_metastore::file_backed_metastore::FileBackedMetastoreFactory;
-    use quickwit_metastore::{
-        IndexMetadata, Metastore, MetastoreError, MetastoreUriResolver, MockMetastore,
-    };
-    use quickwit_storage::StorageUriResolver;
+    use quickwit_metastore::{metastore_for_test, IndexMetadata, MetastoreError, MockMetastore};
+    use quickwit_storage::StorageResolver;
     use serde::__private::from_utf8_lossy;
     use serde_json::Value as JsonValue;
 
     use super::*;
     use crate::recover_fn;
-
-    async fn build_metastore_for_test() -> Arc<dyn Metastore> {
-        let storage_resolver = StorageUriResolver::for_test();
-        let metastore_uri_resolver = MetastoreUriResolver::builder()
-            .register(
-                Protocol::Ram,
-                FileBackedMetastoreFactory::new(storage_resolver.clone()),
-            )
-            .build();
-        metastore_uri_resolver
-            .resolve(&Uri::from_well_formed("ram://quickwit-test-indexes"))
-            .await
-            .unwrap()
-    }
 
     #[tokio::test]
     async fn test_get_index() -> anyhow::Result<()> {
@@ -762,7 +745,7 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -787,8 +770,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_non_existing_index() {
-        let metastore = build_metastore_for_test().await;
-        let index_service = IndexService::new(metastore, StorageUriResolver::for_test());
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore, StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -831,7 +814,7 @@ mod tests {
                 })
             })
             .times(2);
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -898,7 +881,7 @@ mod tests {
                 })
             });
 
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -953,7 +936,7 @@ mod tests {
                     cause: "".to_string(),
                 })
             });
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -992,7 +975,7 @@ mod tests {
                 })
             })
             .times(2);
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -1026,7 +1009,7 @@ mod tests {
                 "ram:///indexes/test-index",
             )])
         });
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -1075,7 +1058,7 @@ mod tests {
         metastore
             .expect_reset_source_checkpoint()
             .return_once(|_index_id: IndexUid, _source_id: &str| Ok(()));
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -1118,7 +1101,7 @@ mod tests {
         metastore
             .expect_delete_index()
             .return_once(|_index_uid: IndexUid| Ok(()));
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -1157,8 +1140,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_on_non_existing_index() {
-        let metastore = build_metastore_for_test().await;
-        let index_service = IndexService::new(metastore, StorageUriResolver::for_test());
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore, StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -1174,8 +1157,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_index_with_overwrite() {
-        let metastore = build_metastore_for_test().await;
-        let index_service = IndexService::new(metastore.clone(), StorageUriResolver::for_test());
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut quickwit_config = QuickwitConfig::for_test();
         quickwit_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
@@ -1215,8 +1198,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_delete_index_and_source() {
-        let metastore = build_metastore_for_test().await;
-        let index_service = IndexService::new(metastore.clone(), StorageUriResolver::for_test());
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut quickwit_config = QuickwitConfig::for_test();
         quickwit_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
@@ -1323,8 +1306,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_file_source_returns_405() {
-        let metastore = build_metastore_for_test().await;
-        let index_service = IndexService::new(metastore.clone(), StorageUriResolver::for_test());
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut quickwit_config = QuickwitConfig::for_test();
         quickwit_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
@@ -1345,8 +1328,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_index_with_yaml() {
-        let metastore = build_metastore_for_test().await;
-        let index_service = IndexService::new(metastore.clone(), StorageUriResolver::for_test());
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut quickwit_config = QuickwitConfig::for_test();
         quickwit_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
@@ -1384,8 +1367,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_index_and_source_with_toml() {
-        let metastore = build_metastore_for_test().await;
-        let index_service = IndexService::new(metastore.clone(), StorageUriResolver::for_test());
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut quickwit_config = QuickwitConfig::for_test();
         quickwit_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
@@ -1421,8 +1404,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_index_with_wrong_content_type() {
-        let metastore = build_metastore_for_test().await;
-        let index_service = IndexService::new(metastore.clone(), StorageUriResolver::for_test());
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut quickwit_config = QuickwitConfig::for_test();
         quickwit_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
@@ -1444,7 +1427,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_index_with_bad_config() -> anyhow::Result<()> {
         let metastore = MockMetastore::new();
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -1469,8 +1452,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_source_with_bad_config() {
-        let metastore = build_metastore_for_test().await;
-        let index_service = IndexService::new(metastore, StorageUriResolver::for_test());
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore, StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -1527,7 +1510,7 @@ mod tests {
                     source_id: source_id.to_string(),
                 })
             });
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -1565,7 +1548,7 @@ mod tests {
                 })
             })
             .times(2);
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),
@@ -1612,7 +1595,7 @@ mod tests {
                 })
             },
         );
-        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
             Arc::new(QuickwitConfig::for_test()),

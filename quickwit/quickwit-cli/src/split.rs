@@ -25,19 +25,17 @@ use colored::Colorize;
 use itertools::Itertools;
 use quickwit_common::GREEN_COLOR;
 use quickwit_metastore::{Split, SplitState};
-use quickwit_rest_client::rest_client::{QuickwitClient, Transport};
 use quickwit_serve::ListSplitsQueryParams;
-use reqwest::Url;
 use tabled::{Table, Tabled};
 use time::{format_description, Date, OffsetDateTime, PrimitiveDateTime};
 use tracing::debug;
 
-use crate::{cluster_endpoint_arg, make_table, prompt_confirmation};
+use crate::{client_args, make_table, prompt_confirmation, ClientArgs};
 
 pub fn build_split_command() -> Command {
     Command::new("split")
         .about("Manages splits: lists, describes, marks for deletion...")
-        .arg(cluster_endpoint_arg())
+        .args(client_args())
         .subcommand(
             Command::new("list")
                 .about("Lists the splits of an index.")
@@ -128,7 +126,7 @@ impl FromStr for OutputFormat {
 
 #[derive(Debug, PartialEq)]
 pub struct ListSplitArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub split_states: Option<Vec<SplitState>>,
     pub create_date: Option<OffsetDateTime>,
@@ -140,7 +138,7 @@ pub struct ListSplitArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct MarkForDeletionArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub split_ids: Vec<String>,
     pub assume_yes: bool,
@@ -148,7 +146,7 @@ pub struct MarkForDeletionArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeSplitArgs {
-    pub cluster_endpoint: Url,
+    pub client_args: ClientArgs,
     pub index_id: String,
     pub split_id: String,
     pub verbose: bool,
@@ -175,10 +173,7 @@ impl SplitCliCommand {
     }
 
     fn parse_list_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
@@ -222,7 +217,7 @@ impl SplitCliCommand {
             .unwrap_or(OutputFormat::Table);
 
         Ok(Self::List(ListSplitArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
             split_states,
             start_date,
@@ -234,10 +229,7 @@ impl SplitCliCommand {
     }
 
     fn parse_mark_for_deletion_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
@@ -247,7 +239,7 @@ impl SplitCliCommand {
             .collect();
         let assume_yes = matches.get_flag("yes");
         Ok(Self::MarkForDeletion(MarkForDeletionArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
             split_ids,
             assume_yes,
@@ -261,14 +253,11 @@ impl SplitCliCommand {
         let split_id = matches
             .remove_one::<String>("split")
             .expect("`split` should be a required arg.");
-        let cluster_endpoint = matches
-            .remove_one::<String>("endpoint")
-            .map(|endpoint_str| Url::from_str(&endpoint_str))
-            .expect("`endpoint` should be a required arg.")?;
+        let client_args = ClientArgs::parse(&mut matches)?;
         let verbose = matches.get_flag("verbose");
 
         Ok(Self::Describe(DescribeSplitArgs {
-            cluster_endpoint,
+            client_args,
             index_id,
             split_id,
             verbose,
@@ -286,8 +275,7 @@ impl SplitCliCommand {
 
 async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     debug!(args=?args, "list-split");
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     let list_splits_query_params = ListSplitsQueryParams {
         split_states: args.split_states,
         start_timestamp: args.start_date.map(OffsetDateTime::unix_timestamp),
@@ -322,8 +310,7 @@ async fn mark_splits_for_deletion_cli(args: MarkForDeletionArgs) -> anyhow::Resu
             return Ok(());
         }
     }
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     qw_client
         .splits(&args.index_id)
         .mark_for_deletion(args.split_ids)
@@ -345,8 +332,7 @@ struct FileRow {
 
 async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     debug!(args=?args, "describe-split");
-    let transport = Transport::new(args.cluster_endpoint);
-    let qw_client = QuickwitClient::new(transport);
+    let qw_client = args.client_args.client();
     let list_splits_query_params = ListSplitsQueryParams::default();
     let split = qw_client
         .splits(&args.index_id)
@@ -484,6 +470,7 @@ struct SplitRow {
 
 #[cfg(test)]
 mod tests {
+    use reqwest::Url;
     use time::macros::datetime;
 
     use super::*;
@@ -567,11 +554,11 @@ mod tests {
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::MarkForDeletion(MarkForDeletionArgs {
-                cluster_endpoint,
+                client_args,
                 index_id,
                 split_ids,
                 assume_yes,
-            })) if cluster_endpoint == Url::from_str("https://quickwit-cluster.io").unwrap()
+            })) if client_args.cluster_endpoint == Url::from_str("https://quickwit-cluster.io").unwrap()
                 && index_id == "wikipedia"
                 && split_ids == vec!["split1".to_string(), "split2".to_string()]
                 && assume_yes

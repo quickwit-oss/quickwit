@@ -23,17 +23,16 @@ use std::time::Duration;
 
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_common::FileEntry;
-use quickwit_config::{validate_identifier, IndexConfig, QuickwitConfig, SourceConfig};
+use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_janitor::{
     delete_splits_with_files, run_garbage_collect, SplitDeletionError, SplitRemovalInfo,
 };
 use quickwit_metastore::{
-    quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Metastore, MetastoreError,
-    SplitMetadata, SplitState,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
 };
 use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
-use quickwit_storage::{quickwit_storage_uri_resolver, StorageResolverError, StorageUriResolver};
+use quickwit_storage::{StorageResolver, StorageResolverError};
 use thiserror::Error;
 use tracing::{error, info};
 
@@ -72,25 +71,16 @@ impl ServiceError for IndexServiceError {
 /// Index service responsible for creating, updating and deleting indexes.
 pub struct IndexService {
     metastore: Arc<dyn Metastore>,
-    storage_resolver: StorageUriResolver,
+    storage_resolver: StorageResolver,
 }
 
 impl IndexService {
     /// Creates an `IndexService`.
-    pub fn new(metastore: Arc<dyn Metastore>, storage_resolver: StorageUriResolver) -> Self {
+    pub fn new(metastore: Arc<dyn Metastore>, storage_resolver: StorageResolver) -> Self {
         Self {
             metastore,
             storage_resolver,
         }
-    }
-
-    pub async fn from_config(config: QuickwitConfig) -> anyhow::Result<Self> {
-        let metastore = quickwit_metastore_uri_resolver()
-            .resolve(&config.metastore_uri)
-            .await?;
-        let storage_resolver = quickwit_storage_uri_resolver().clone();
-        let index_service = Self::new(metastore, storage_resolver);
-        Ok(index_service)
     }
 
     pub fn metastore(&self) -> Arc<dyn Metastore> {
@@ -103,7 +93,7 @@ impl IndexService {
         index_config: IndexConfig,
         overwrite: bool,
     ) -> Result<IndexMetadata, IndexServiceError> {
-        validate_storage_uri(quickwit_storage_uri_resolver(), &index_config)
+        validate_storage_uri(&self.storage_resolver, &index_config)
             .await
             .map_err(IndexServiceError::InvalidConfig)?;
 
@@ -353,13 +343,11 @@ pub async fn clear_cache_directory(data_dir_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Resolve storage endpoints to validate.
+/// Validates the storage URI by effectively resolving it.
 pub async fn validate_storage_uri(
-    storage_uri_resolver: &StorageUriResolver,
+    storage_resolver: &StorageResolver,
     index_config: &IndexConfig,
 ) -> anyhow::Result<()> {
-    storage_uri_resolver
-        .resolve(&index_config.index_uri)
-        .await?;
+    storage_resolver.resolve(&index_config.index_uri).await?;
     Ok(())
 }

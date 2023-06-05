@@ -21,7 +21,6 @@
 
 mod helpers;
 
-use std::collections::HashSet;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -33,25 +32,27 @@ use quickwit_cli::index::{
     create_index_cli, delete_index_cli, search_index, CreateIndexArgs, DeleteIndexArgs,
     SearchIndexArgs,
 };
-use quickwit_cli::service::RunCliCommand;
 use quickwit_cli::tool::{
     garbage_collect_index_cli, local_ingest_docs_cli, GarbageCollectIndexArgs, LocalIngestDocsArgs,
 };
+use quickwit_cli::ClientArgs;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_common::ChecklistError;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::{SourceInputFormat, CLI_INGEST_SOURCE_ID};
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError, SplitState};
+use quickwit_metastore::{MetastoreError, MetastoreResolver, SplitState};
 use serde_json::{json, Number, Value};
 use tokio::time::{sleep, Duration};
 
-use crate::helpers::{create_test_env, wait_port_ready, PACKAGE_BIN_NAME};
+use crate::helpers::{create_test_env, PACKAGE_BIN_NAME};
 
 async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
     let args = CreateIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_config_uri: test_env.index_config_uri.clone(),
         overwrite: false,
         assume_yes: true,
@@ -111,7 +112,10 @@ async fn test_cmd_create_no_index_uri() {
 
     let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
     let args = CreateIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_config_uri: index_config_without_uri,
         overwrite: false,
         assume_yes: true,
@@ -136,7 +140,10 @@ async fn test_cmd_create_overwrite() {
 
     let index_config_without_uri = Uri::from_str(&test_env.index_config_without_uri()).unwrap();
     let args = CreateIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_config_uri: index_config_without_uri,
         overwrite: true,
         assume_yes: true,
@@ -238,7 +245,6 @@ async fn test_ingest_docs_cli() {
     let splits: Vec<_> = test_env
         .metastore()
         .await
-        .unwrap()
         .list_all_splits(index_uid)
         .await
         .unwrap();
@@ -284,9 +290,7 @@ fn assert_flexible_json_eq(value_json: &serde_json::Value, expected_json: &serde
             assert_eq!(
                 left_arr.len(),
                 right_arr.len(),
-                "left: {:?} right: {:?}",
-                left_arr,
-                right_arr
+                "left: {left_arr:?} right: {right_arr:?}"
             );
             for i in 0..left_arr.len() {
                 assert_flexible_json_eq(&left_arr[i], &right_arr[i]);
@@ -296,9 +300,7 @@ fn assert_flexible_json_eq(value_json: &serde_json::Value, expected_json: &serde
             assert_eq!(
                 left_obj.len(),
                 right_obj.len(),
-                "left: {:?} right: {:?}",
-                left_obj,
-                right_obj
+                "left: {left_obj:?} right: {right_obj:?}"
             );
             for (k, v) in left_obj {
                 if let Some(right_value) = right_obj.get(k) {
@@ -313,9 +315,7 @@ fn assert_flexible_json_eq(value_json: &serde_json::Value, expected_json: &serde
             let right = right_num.as_f64().unwrap();
             assert!(
                 (left - right).abs() / (1e-32 + left + right).abs() < 1e-4,
-                "left: {:?} right: {:?}",
-                left,
-                right
+                "left: {left:?} right: {right:?}"
             );
         }
         (left, right) => {
@@ -369,7 +369,10 @@ async fn test_cmd_search_aggregation() {
         snippet_fields: None,
         start_timestamp: None,
         end_timestamp: None,
-        cluster_endpoint: test_env.cluster_endpoint,
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint,
+            ..Default::default()
+        },
         sort_by_score: false,
     };
     let search_response = search_index(args).await.unwrap();
@@ -449,7 +452,10 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
         snippet_fields: Some(vec!["event".to_string()]),
         start_timestamp: None,
         end_timestamp: None,
-        cluster_endpoint: test_env.cluster_endpoint,
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint,
+            ..Default::default()
+        },
         sort_by_score: false,
     };
     let search_response = search_index(args).await.unwrap();
@@ -476,7 +482,10 @@ async fn test_search_index_cli() {
     create_logs_index(&test_env).await.unwrap();
 
     let create_search_args = |query: &str| SearchIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id: index_id.clone(),
         query: query.to_string(),
         aggregation: None,
@@ -524,24 +533,29 @@ async fn test_delete_index_cli_dry_run() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    let refresh_metastore = |metastore| {
+    let refresh_metastore = |metastore| async {
         // In this test we rely on the file backed metastore
         // and the file backed metastore caches results.
         // Therefore we need to force reading the disk to fetch updates.
         //
         // We do that by dropping and recreating our metastore.
         drop(metastore);
-        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+        MetastoreResolver::unconfigured()
+            .resolve(&test_env.metastore_uri)
+            .await
     };
 
     let create_delete_args = |dry_run| DeleteIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id: index_id.clone(),
         dry_run,
         assume_yes: true,
     };
 
-    let metastore = quickwit_metastore_uri_resolver()
+    let metastore = MetastoreResolver::unconfigured()
         .resolve(&test_env.metastore_uri)
         .await
         .unwrap();
@@ -582,7 +596,10 @@ async fn test_delete_index_cli() {
         .unwrap();
 
     let args = DeleteIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id: index_id.clone(),
         assume_yes: true,
         dry_run: false,
@@ -590,13 +607,7 @@ async fn test_delete_index_cli() {
 
     delete_index_cli(args).await.unwrap();
 
-    assert!(test_env
-        .metastore()
-        .await
-        .unwrap()
-        .index_metadata(&test_env.index_id)
-        .await
-        .is_err());
+    assert!(test_env.index_metadata().await.is_err());
 }
 
 #[tokio::test]
@@ -613,19 +624,21 @@ async fn test_garbage_collect_cli_no_grace() {
         .await
         .unwrap();
 
-    let metastore = quickwit_metastore_uri_resolver()
+    let metastore = MetastoreResolver::unconfigured()
         .resolve(&test_env.metastore_uri)
         .await
         .unwrap();
 
-    let refresh_metastore = |metastore| {
+    let refresh_metastore = |metastore| async {
         // In this test we rely on the file backed metastore and write on
         // a different process. The file backed metastore caches results.
         // Therefore we need to force reading the disk.
         //
         // We do that by dropping and recreating our metastore.
         drop(metastore);
-        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+        MetastoreResolver::unconfigured()
+            .resolve(&test_env.metastore_uri)
+            .await
     };
 
     let create_gc_args = |dry_run| GarbageCollectIndexArgs {
@@ -686,7 +699,10 @@ async fn test_garbage_collect_cli_no_grace() {
     );
 
     let args = DeleteIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id,
         dry_run: false,
         assume_yes: true,
@@ -710,14 +726,16 @@ async fn test_garbage_collect_index_cli() {
         .await
         .unwrap();
 
-    let refresh_metastore = |metastore| {
+    let refresh_metastore = |metastore| async {
         // In this test we rely on the file backed metastore and
         // modify it but the file backed metastore caches results.
         // Therefore we need to force reading the disk to update split info.
         //
         // We do that by dropping and recreating our metastore.
         drop(metastore);
-        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+        MetastoreResolver::unconfigured()
+            .resolve(&test_env.metastore_uri)
+            .await
     };
 
     let create_gc_args = |grace_period_secs| GarbageCollectIndexArgs {
@@ -727,7 +745,7 @@ async fn test_garbage_collect_index_cli() {
         dry_run: false,
     };
 
-    let metastore = quickwit_metastore_uri_resolver()
+    let metastore = MetastoreResolver::unconfigured()
         .resolve(&test_env.metastore_uri)
         .await
         .unwrap();
@@ -819,19 +837,6 @@ async fn test_all_local_index() {
         .await
         .unwrap();
 
-    // serve & api-search
-    let run_cli_command = RunCliCommand {
-        config_uri: test_env.config_uri.clone(),
-        services: Some(HashSet::from([
-            QuickwitService::Searcher,
-            QuickwitService::Metastore,
-        ])),
-    };
-
-    let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
-
-    wait_port_ready(test_env.rest_listen_port).await.unwrap();
-
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.rest_listen_port, test_env.index_id
@@ -842,8 +847,7 @@ async fn test_all_local_index() {
     .await
     .unwrap();
 
-    let result: Value =
-        serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
+    let result: Value = serde_json::from_str(&query_response).unwrap();
     assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
     let search_stream_response = reqwest::get(format!(
@@ -858,15 +862,15 @@ async fn test_all_local_index() {
     .unwrap();
     assert_eq!(search_stream_response, "72057597000000\n72057608000000\n");
 
-    service_task.abort();
-
     let args = DeleteIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id,
         dry_run: false,
         assume_yes: true,
     };
-
     delete_index_cli(args).await.unwrap();
 
     let metadata_file_exists = test_env
@@ -894,7 +898,10 @@ async fn test_all_with_s3_localstack_cli() {
 
     // Cli search
     let args = SearchIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id: index_id.clone(),
         query: "level:info".to_string(),
         aggregation: None,
@@ -910,19 +917,6 @@ async fn test_all_with_s3_localstack_cli() {
     let search_res = search_index(args).await.unwrap();
     assert_eq!(search_res.num_hits, 2);
 
-    // serve & api-search
-    // TODO: ditto.
-    let run_cli_command = RunCliCommand {
-        config_uri: test_env.config_uri.clone(),
-        services: Some(HashSet::from([
-            QuickwitService::Searcher,
-            QuickwitService::Metastore,
-        ])),
-    };
-    let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
-
-    wait_port_ready(test_env.rest_listen_port).await.unwrap();
-
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.rest_listen_port, test_env.index_id,
@@ -933,14 +927,14 @@ async fn test_all_with_s3_localstack_cli() {
     .await
     .unwrap();
 
-    let result: Value =
-        serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
+    let result: Value = serde_json::from_str(&query_response).unwrap();
     assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
-    service_task.abort();
-
     let args = DeleteIndexArgs {
-        cluster_endpoint: test_env.cluster_endpoint.clone(),
+        client_args: ClientArgs {
+            cluster_endpoint: test_env.cluster_endpoint.clone(),
+            ..Default::default()
+        },
         index_id: index_id.clone(),
         dry_run: false,
         assume_yes: true,

@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
 use std::hash::Hash;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -117,6 +118,12 @@ pub(crate) struct DebouncedStorage<T> {
     // associated
     underlying: Arc<T>,
     slice_debouncer: Arc<AsyncDebouncer<DebouncerKey, StorageResult<OwnedBytes>>>,
+}
+
+impl<T> fmt::Debug for DebouncedStorage<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DebouncedStorage").finish()
+    }
 }
 
 impl<T: Storage> DebouncedStorage<T> {

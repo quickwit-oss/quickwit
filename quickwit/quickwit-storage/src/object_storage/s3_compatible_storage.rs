@@ -18,15 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::fmt::{self};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{env, io};
+use std::{env, fmt, io};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use aws_sdk_s3::error::SdkError;
+use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
 use aws_sdk_s3::Client as S3Client;
@@ -38,6 +37,7 @@ use quickwit_aws::get_aws_config;
 use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
+use quickwit_config::S3StorageConfig;
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Semaphore;
@@ -69,6 +69,7 @@ pub struct S3CompatibleObjectStorage {
     prefix: PathBuf,
     multipart_policy: MultiPartPolicy,
     retry_params: RetryParams,
+    disable_multi_object_delete_requests: bool,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -81,38 +82,37 @@ impl fmt::Debug for S3CompatibleObjectStorage {
     }
 }
 
-async fn create_s3_client() -> S3Client {
+async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     let aws_config = get_aws_config().await;
     let mut s3_config = aws_sdk_s3::Config::builder().region(aws_config.region().cloned());
-    // aws_sdk_s3::Config::builder().region(cfg.region().cloned());
+
     s3_config.set_retry_config(aws_config.retry_config().cloned());
     s3_config.set_credentials_provider(aws_config.credentials_provider().cloned());
     s3_config.set_http_connector(aws_config.http_connector().cloned());
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
     s3_config.set_credentials_cache(aws_config.credentials_cache().cloned());
     s3_config.set_sleep_impl(Some(Arc::new(quickwit_aws::TokioSleep::default())));
-    s3_config.set_force_path_style(quickwit_aws::should_use_path_style_s3_access());
+    s3_config.set_force_path_style(s3_storage_config.force_path_style_access());
 
-    // We have a custom endpoint set, otherwise we let the SDK set it.
-    if let Some(endpoint) = quickwit_aws::get_s3_endpoint() {
+    if let Some(endpoint) = s3_storage_config.endpoint() {
         info!(endpoint=%endpoint, "Using custom S3 endpoint.");
-        s3_config
-            .set_endpoint_url(Some(endpoint))
-            .set_force_path_style(Some(true));
-    } else {
+        s3_config.set_endpoint_url(Some(endpoint));
     }
     S3Client::from_conf(s3_config.build())
 }
 
 impl S3CompatibleObjectStorage {
     /// Creates an object storage given a region and a bucket name.
-    pub async fn new(uri: Uri, bucket: String) -> Result<Self, StorageResolverError> {
-        let s3_client = create_s3_client().await;
+    pub async fn new(
+        s3_storage_config: &S3StorageConfig,
+        uri: Uri,
+        bucket: String,
+    ) -> Result<Self, StorageResolverError> {
+        let s3_client = create_s3_client(s3_storage_config).await;
         let retry_params = RetryParams {
             max_attempts: 3,
             ..Default::default()
         };
-
         Ok(Self {
             s3_client,
             uri,
@@ -120,15 +120,21 @@ impl S3CompatibleObjectStorage {
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
             retry_params,
+            disable_multi_object_delete_requests: s3_storage_config
+                .disable_multi_object_delete_requests,
         })
     }
 
     /// Creates an object storage given a region and an uri.
-    pub async fn from_uri(uri: &Uri) -> Result<Self, StorageResolverError> {
-        let (bucket, path) = parse_s3_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
-            message: format!("S3 URI `{uri}` is invalid."),
+    pub async fn from_uri(
+        s3_storage_config: &S3StorageConfig,
+        uri: &Uri,
+    ) -> Result<Self, StorageResolverError> {
+        let (bucket, path) = parse_s3_uri(uri).ok_or_else(|| {
+            let message = format!("Failed to extract bucket and key from S3 uri: {uri}");
+            StorageResolverError::InvalidUri(message)
         })?;
-        let storage = Self::new(uri.clone(), bucket).await?;
+        let storage = Self::new(s3_storage_config, uri.clone(), bucket).await?;
         Ok(storage.with_prefix(&path))
     }
 
@@ -144,6 +150,7 @@ impl S3CompatibleObjectStorage {
             prefix: prefix.to_path_buf(),
             multipart_policy: self.multipart_policy,
             retry_params: self.retry_params,
+            disable_multi_object_delete_requests: self.disable_multi_object_delete_requests,
         }
     }
 
@@ -163,14 +170,15 @@ pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
             Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<path>.+))?").unwrap()
         })
         .captures(uri.as_str())
-        .and_then(|cap| {
-            cap.name("bucket").map(|bucket_match| {
+        .and_then(|captures| {
+            captures.name("bucket").map(|bucket_match| {
                 (
                     bucket_match.as_str().to_string(),
-                    cap.name("path").map_or_else(
-                        || PathBuf::from(""),
-                        |path_match| PathBuf::from(path_match.as_str()),
-                    ),
+                    captures
+                        .name("path")
+                        .map_or_else(PathBuf::new, |path_match| {
+                            PathBuf::from(path_match.as_str())
+                        }),
                 )
             })
         })
@@ -375,7 +383,7 @@ impl S3CompatibleObjectStorage {
         let parts = self
             .create_multipart_requests(payload.clone(), total_len, part_len)
             .await?;
-        let max_concurrent_upload = self.multipart_policy.max_concurrent_upload();
+        let max_concurrent_upload = self.multipart_policy.max_concurrent_uploads();
         let completed_parts_res: StorageResult<Vec<CompletedPart>> =
             stream::iter(parts.into_iter().map(|part| {
                 let payload = payload.clone();
@@ -481,85 +489,48 @@ impl S3CompatibleObjectStorage {
         download_all(get_object_output.body, &mut buf).await?;
         Ok(buf)
     }
-}
 
-async fn download_all(byte_stream: ByteStream, output: &mut Vec<u8>) -> io::Result<()> {
-    output.clear();
-    let mut body_stream_reader = BufReader::new(byte_stream.into_async_read());
-    let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-    STORAGE_METRICS
-        .object_storage_download_num_bytes
-        .inc_by(num_bytes_copied);
-    // When calling `get_all`, the Vec capacity is not properly set.
-    output.shrink_to_fit();
-    Ok(())
-}
+    /// Bulk delete implementation based on the DeleteObject API:
+    /// <https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html>
+    async fn bulk_delete_single<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        let mut successes = Vec::with_capacity(paths.len());
+        let mut failures = HashMap::new();
 
-#[async_trait]
-impl Storage for S3CompatibleObjectStorage {
-    async fn check_connectivity(&self) -> anyhow::Result<()> {
-        // we ignore error as we never close the semaphore
-        let _permit = REQUEST_SEMAPHORE.acquire().await;
-        self.s3_client
-            .list_objects_v2()
-            .bucket(self.bucket.clone())
-            .max_keys(1)
-            .send()
-            .await?;
-        Ok(())
-    }
+        let futures = paths
+            .iter()
+            .map(|path| async move {
+                let delete_res = self.delete(path).await;
+                (path, delete_res)
+            })
+            .collect::<Vec<_>>();
+        let mut stream = futures::stream::iter(futures).buffer_unordered(100);
 
-    async fn put(
-        &self,
-        path: &Path,
-        payload: Box<dyn crate::PutPayload>,
-    ) -> crate::StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_total.inc();
-        let _permit = REQUEST_SEMAPHORE.acquire().await;
-        let key = self.key(path);
-        let total_len = payload.len();
-        let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
-        if part_num_bytes >= total_len {
-            self.put_single_part(&key, payload, total_len).await?;
-        } else {
-            self.put_multi_part(&key, payload, part_num_bytes, total_len)
-                .await?;
+        while let Some((path, delete_res)) = stream.next().await {
+            match delete_res {
+                Ok(_) => successes.push(path.to_path_buf()),
+                Err(error) => {
+                    let failure = DeleteFailure {
+                        error: Some(error),
+                        ..Default::default()
+                    };
+                    failures.insert(path.to_path_buf(), failure);
+                }
+            };
         }
-        Ok(())
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(BulkDeleteError {
+                successes,
+                failures,
+                ..Default::default()
+            })
+        }
     }
 
-    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
-        let _permit = REQUEST_SEMAPHORE.acquire().await;
-        let get_object_output = retry(&self.retry_params, || {
-            self.create_get_object_request(path, None)
-        })
-        .await?;
-        let mut body_read = BufReader::new(get_object_output.body.into_async_read());
-        let num_bytes_copied = tokio::io::copy_buf(&mut body_read, output).await?;
-        STORAGE_METRICS
-            .object_storage_download_num_bytes
-            .inc_by(num_bytes_copied);
-        output.flush().await?;
-        Ok(())
-    }
-
-    async fn delete(&self, path: &Path) -> StorageResult<()> {
-        let _permit = REQUEST_SEMAPHORE.acquire().await;
-        let bucket = self.bucket.clone();
-        let key = self.key(path);
-        retry(&self.retry_params, || async {
-            self.s3_client
-                .delete_object()
-                .bucket(&bucket)
-                .key(&key)
-                .send()
-                .await
-        })
-        .await?;
-        Ok(())
-    }
-
-    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+    /// Bulk delete implementation based on the DeleteObjects API, also called Multi-Object Delete
+    /// API: <https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html>
+    async fn bulk_delete_multi<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let mut error = None;
         let mut successes = Vec::with_capacity(paths.len());
@@ -638,6 +609,96 @@ impl Storage for S3CompatibleObjectStorage {
                 failures,
                 unattempted,
             })
+        }
+    }
+}
+
+async fn download_all(byte_stream: ByteStream, output: &mut Vec<u8>) -> io::Result<()> {
+    output.clear();
+    let mut body_stream_reader = BufReader::new(byte_stream.into_async_read());
+    let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
+    STORAGE_METRICS
+        .object_storage_download_num_bytes
+        .inc_by(num_bytes_copied);
+    // When calling `get_all`, the Vec capacity is not properly set.
+    output.shrink_to_fit();
+    Ok(())
+}
+
+#[async_trait]
+impl Storage for S3CompatibleObjectStorage {
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
+        // we ignore error as we never close the semaphore
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
+        self.s3_client
+            .list_objects_v2()
+            .bucket(self.bucket.clone())
+            .max_keys(1)
+            .send()
+            .await?;
+        Ok(())
+    }
+
+    async fn put(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+    ) -> crate::StorageResult<()> {
+        crate::STORAGE_METRICS.object_storage_put_total.inc();
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
+        let key = self.key(path);
+        let total_len = payload.len();
+        let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
+        if part_num_bytes >= total_len {
+            self.put_single_part(&key, payload, total_len).await?;
+        } else {
+            self.put_multi_part(&key, payload, part_num_bytes, total_len)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
+        let get_object_output = retry(&self.retry_params, || {
+            self.create_get_object_request(path, None)
+        })
+        .await?;
+        let mut body_read = BufReader::new(get_object_output.body.into_async_read());
+        let num_bytes_copied = tokio::io::copy_buf(&mut body_read, output).await?;
+        STORAGE_METRICS
+            .object_storage_download_num_bytes
+            .inc_by(num_bytes_copied);
+        output.flush().await?;
+        Ok(())
+    }
+
+    async fn delete(&self, path: &Path) -> StorageResult<()> {
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
+        let bucket = self.bucket.clone();
+        let key = self.key(path);
+        let delete_res = retry(&self.retry_params, || async {
+            self.s3_client
+                .delete_object()
+                .bucket(&bucket)
+                .key(&key)
+                .send()
+                .await
+        })
+        .await;
+
+        match delete_res {
+            Ok(_) => Ok(()),
+            Err(error) if error.code() == Some("NoSuchKey") => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        if self.disable_multi_object_delete_requests {
+            self.bulk_delete_single(paths).await
+        } else {
+            self.bulk_delete_multi(paths).await
         }
     }
 
@@ -785,6 +846,7 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
+            disable_multi_object_delete_requests: false,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -800,7 +862,103 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_s3_compatible_storage_bulk_delete() {
+    async fn test_s3_compatible_storage_bulk_delete_single() {
+        let client = TestConnection::new(vec![
+            (
+                http::Request::builder()
+                    .body(SdkBody::from(Body::empty()))
+                    .unwrap(),
+                http::Response::builder()
+                    .body(SdkBody::from(Body::empty()))
+                    .unwrap(),
+            ),
+            (
+                http::Request::builder()
+                    .body(SdkBody::from(Body::empty()))
+                    .unwrap(),
+                http::Response::builder()
+                    .body(SdkBody::from(Body::empty()))
+                    .unwrap(),
+            ),
+        ]);
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+        let config = aws_sdk_s3::Config::builder()
+            .region(Some(Region::new("Foo")))
+            .http_connector(client.clone())
+            .credentials_provider(credentials)
+            .build();
+        let s3_client = S3Client::from_conf(config);
+        let uri = Uri::for_test("s3://bucket/indexes");
+        let bucket = "bucket".to_string();
+        let prefix = PathBuf::new();
+
+        let s3_storage = S3CompatibleObjectStorage {
+            s3_client,
+            uri,
+            bucket,
+            prefix,
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params: RetryParams::default(),
+            disable_multi_object_delete_requests: true,
+        };
+        let _ = s3_storage
+            .bulk_delete(&[Path::new("foo"), Path::new("bar")])
+            .await;
+
+        let requests = client.requests();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0]
+            .actual
+            .uri()
+            .to_string()
+            .ends_with("DeleteObject"));
+    }
+
+    #[tokio::test]
+    async fn test_s3_compatible_storage_bulk_delete_multi() {
+        let client = TestConnection::new(vec![(
+            http::Request::builder()
+                .body(SdkBody::from(Body::empty()))
+                .unwrap(),
+            http::Response::builder()
+                .body(SdkBody::from(Body::empty()))
+                .unwrap(),
+        )]);
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+        let config = aws_sdk_s3::Config::builder()
+            .region(Some(Region::new("Foo")))
+            .http_connector(client.clone())
+            .credentials_provider(credentials)
+            .build();
+        let s3_client = S3Client::from_conf(config);
+        let uri = Uri::for_test("s3://bucket/indexes");
+        let bucket = "bucket".to_string();
+        let prefix = PathBuf::new();
+
+        let s3_storage = S3CompatibleObjectStorage {
+            s3_client,
+            uri,
+            bucket,
+            prefix,
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params: RetryParams::default(),
+            disable_multi_object_delete_requests: false,
+        };
+        let _ = s3_storage
+            .bulk_delete(&[Path::new("foo"), Path::new("bar")])
+            .await;
+
+        let requests = client.requests();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0]
+            .actual
+            .uri()
+            .to_string()
+            .ends_with("DeleteObjects"));
+    }
+
+    #[tokio::test]
+    async fn test_s3_compatible_storage_bulk_delete_multi_errors() {
         let client = TestConnection::new(vec![
             (
                 // This is quite fragile, currently this is *not* validated by the SDK
@@ -851,13 +1009,12 @@ mod tests {
             ),
         ]);
         let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
-
-        let cfg = aws_sdk_s3::Config::builder()
+        let config = aws_sdk_s3::Config::builder()
             .region(Some(Region::new("Foo")))
             .http_connector(client)
             .credentials_provider(credentials)
             .build();
-        let s3_client = S3Client::from_conf(cfg);
+        let s3_client = S3Client::from_conf(config);
         let uri = Uri::for_test("s3://bucket/indexes");
         let bucket = "bucket".to_string();
         let prefix = PathBuf::new();
@@ -869,6 +1026,7 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
+            disable_multi_object_delete_requests: false,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[
@@ -902,7 +1060,6 @@ mod tests {
             ]
         );
         let delete_objects_error = bulk_delete_error.error.unwrap();
-        dbg!(&delete_objects_error.to_string());
         assert!(delete_objects_error.to_string().contains("MalformedXML"));
     }
 }

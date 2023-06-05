@@ -43,7 +43,7 @@ pub(crate) use not_nan_f32::NotNaNf32;
 pub use query_ast::utils::find_field_or_hit_dynamic;
 use serde::{Deserialize, Serialize};
 pub use tantivy::query::Query as TantivyQuery;
-pub use tokenizers::get_quickwit_tokenizer_manager;
+pub use tokenizers::{get_quickwit_fastfield_normalizer_manager, get_quickwit_tokenizer_manager};
 
 #[derive(Serialize, Deserialize, Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub enum BooleanOperand {

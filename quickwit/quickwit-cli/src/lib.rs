@@ -20,10 +20,11 @@
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::HashSet;
+use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
-use clap::{arg, Arg};
+use clap::{arg, Arg, ArgMatches};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use once_cell::sync::Lazy;
@@ -33,9 +34,12 @@ use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig, DEFAULT_QW_CONFIG_PATH};
 use quickwit_indexing::check_source_connectivity;
-use quickwit_metastore::quickwit_metastore_uri_resolver;
-use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
+use quickwit_metastore::{Metastore, MetastoreResolver};
+use quickwit_rest_client::models::Timeout;
+use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
+use quickwit_storage::{load_file, StorageResolver};
 use regex::Regex;
+use reqwest::Url;
 use tabled::object::Rows;
 use tabled::{Alignment, Header, Modify, Style, Table, Tabled};
 use tracing::info;
@@ -74,13 +78,125 @@ fn config_cli_arg() -> Arg {
         .display_order(1)
 }
 
-fn cluster_endpoint_arg() -> Arg {
-    arg!(--"endpoint" <QW_CLUSTER_ENDPOINT> "Quickwit cluster endpoint.")
-        .default_value("http://127.0.0.1:7280")
-        .env("QW_CLUSTER_ENDPOINT")
-        .required(false)
-        .display_order(1)
-        .global(true)
+fn client_args() -> Vec<Arg> {
+    vec![
+        arg!(--"endpoint" <QW_CLUSTER_ENDPOINT> "Quickwit cluster endpoint.")
+            .default_value("http://127.0.0.1:7280")
+            .env("QW_CLUSTER_ENDPOINT")
+            .required(false)
+            .display_order(1)
+            .global(true),
+        Arg::new("timeout")
+            .long("timeout")
+            .help("Duration of the timeout.")
+            .required(false)
+            .global(true)
+            .display_order(2),
+        Arg::new("connect-timeout")
+            .long("connect-timeout")
+            .help("Duration of the connect timeout.")
+            .required(false)
+            .global(true)
+            .display_order(3),
+    ]
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct ClientArgs {
+    pub cluster_endpoint: Url,
+    pub connect_timeout: Option<Timeout>,
+    pub timeout: Option<Timeout>,
+    pub commit_timeout: Option<Timeout>,
+}
+
+impl Default for ClientArgs {
+    fn default() -> Self {
+        Self {
+            cluster_endpoint: Url::parse(DEFAULT_BASE_URL).unwrap(),
+            connect_timeout: None,
+            timeout: None,
+            commit_timeout: None,
+        }
+    }
+}
+
+impl ClientArgs {
+    pub fn client(self) -> QuickwitClient {
+        let mut builder = QuickwitClientBuilder::new(self.cluster_endpoint);
+        if let Some(connect_timeout) = self.connect_timeout {
+            builder = builder.connect_timeout(connect_timeout);
+        }
+        if let Some(timeout) = self.timeout {
+            builder = builder.timeout(timeout);
+        }
+        builder.build()
+    }
+
+    pub fn search_client(self) -> QuickwitClient {
+        let mut builder = QuickwitClientBuilder::new(self.cluster_endpoint);
+        if let Some(connect_timeout) = self.connect_timeout {
+            builder = builder.connect_timeout(connect_timeout);
+        }
+        if let Some(timeout) = self.timeout {
+            builder = builder.search_timeout(timeout);
+        }
+        builder.build()
+    }
+
+    pub fn ingest_client(self) -> QuickwitClient {
+        let mut builder = QuickwitClientBuilder::new(self.cluster_endpoint);
+        if let Some(connect_timeout) = self.connect_timeout {
+            builder = builder.connect_timeout(connect_timeout);
+        }
+        if let Some(timeout) = self.timeout {
+            builder = builder.ingest_timeout(timeout);
+        }
+        if let Some(commit_timeout) = self.commit_timeout {
+            builder = builder.commit_timeout(commit_timeout);
+        }
+        builder.build()
+    }
+
+    pub fn parse_for_ingest(matches: &mut ArgMatches) -> anyhow::Result<Self> {
+        Self::parse_inner(matches, true)
+    }
+
+    pub fn parse(matches: &mut ArgMatches) -> anyhow::Result<Self> {
+        Self::parse_inner(matches, false)
+    }
+
+    fn parse_inner(matches: &mut ArgMatches, process_ingest: bool) -> anyhow::Result<Self> {
+        let cluster_endpoint = matches
+            .remove_one::<String>("endpoint")
+            .map(|endpoint_str| Url::from_str(&endpoint_str))
+            .expect("`endpoint` should be a required arg.")?;
+        let connect_timeout =
+            if let Some(duration) = matches.remove_one::<String>("connect-timeout") {
+                Some(parse_duration_or_none(&duration)?)
+            } else {
+                None
+            };
+        let timeout = if let Some(duration) = matches.remove_one::<String>("timeout") {
+            Some(parse_duration_or_none(&duration)?)
+        } else {
+            None
+        };
+        let commit_timeout = if process_ingest {
+            if let Some(duration) = matches.remove_one::<String>("commit-timeout") {
+                Some(parse_duration_or_none(&duration)?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        Ok(Self {
+            cluster_endpoint,
+            connect_timeout,
+            timeout,
+            commit_timeout,
+        })
+    }
 }
 
 /// Parse duration with unit like `1s`, `2m`, `3h`, `5d`.
@@ -102,6 +218,16 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
     }
 }
 
+pub fn parse_duration_or_none(duration_with_unit_str: &str) -> anyhow::Result<Timeout> {
+    if duration_with_unit_str == "none" {
+        Ok(Timeout::none())
+    } else {
+        parse_duration_with_unit(duration_with_unit_str)
+            .map(Timeout::new)
+            .map_err(|_| anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]|none`"))
+    }
+}
+
 pub fn start_actor_runtimes(
     runtimes_config: RuntimesConfig,
     services: &HashSet<QuickwitService>,
@@ -116,39 +242,60 @@ pub fn start_actor_runtimes(
     Ok(())
 }
 
-async fn load_quickwit_config(config_uri: &Uri) -> anyhow::Result<QuickwitConfig> {
-    let config_content = load_file(config_uri)
+/// Loads a node config located at `config_uri` with the default storage configuration.
+async fn load_node_config(config_uri: &Uri) -> anyhow::Result<QuickwitConfig> {
+    let config_content = load_file(&StorageResolver::unconfigured(), config_uri)
         .await
-        .context("Failed to load quickwit config.")?;
+        .context("Failed to load node config.")?;
     let config_format = ConfigFormat::sniff_from_uri(config_uri)?;
     let config = QuickwitConfig::load(config_format, config_content.as_slice())
         .await
-        .with_context(|| format!("Failed to deserialize quickwit config `{config_uri}`."))?;
-    info!(config_uri=%config_uri, config=?config, "Loaded Quickwit config.");
+        .with_context(|| format!("Failed to parse node config `{config_uri}`."))?;
+    info!(config_uri=%config_uri, config=?config, "Loaded node config.");
     Ok(config)
+}
+
+async fn get_resolvers(config: &QuickwitConfig) -> (StorageResolver, MetastoreResolver) {
+    // The CLI tests rely on the unconfigured singleton resolvers, so it's better to return them if
+    // the storage and metastore configs are not set.
+    let storage_resolver = if config.storage_configs.is_empty() {
+        StorageResolver::unconfigured()
+    } else {
+        StorageResolver::configured(&config.storage_configs)
+    };
+    let metastore_resolver = if config.metastore_configs.is_empty() {
+        MetastoreResolver::unconfigured()
+    } else {
+        MetastoreResolver::configured(storage_resolver.clone(), &config.metastore_configs)
+    };
+    (storage_resolver, metastore_resolver)
 }
 
 /// Runs connectivity checks for a given `metastore_uri` and `index_id`.
 /// Optionally, it takes a `SourceConfig` that will be checked instead
 /// of the index's sources.
 pub async fn run_index_checklist(
-    metastore_uri: &Uri,
+    metastore: &dyn Metastore,
+    storage_resolver: &StorageResolver,
     index_id: &str,
-    source_to_check: Option<&SourceConfig>,
+    source_config_opt: Option<&SourceConfig>,
 ) -> anyhow::Result<()> {
     let mut checks: Vec<(&str, anyhow::Result<()>)> = Vec::new();
-    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
+
+    // The metastore is file-backed, so we must check the storage first.
+    if !metastore.uri().protocol().is_database() {
+        let metastore_storage = storage_resolver.resolve(metastore.uri()).await?;
+        checks.push((
+            "metastore storage",
+            metastore_storage.check_connectivity().await,
+        ));
+    }
     checks.push(("metastore", metastore.check_connectivity().await));
-
     let index_metadata = metastore.index_metadata(index_id).await?;
-    let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let storage = storage_uri_resolver
-        .resolve(index_metadata.index_uri())
-        .await?;
-    checks.push(("storage", storage.check_connectivity().await));
+    let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;
+    checks.push(("index storage", index_storage.check_connectivity().await));
 
-    if let Some(source_config) = source_to_check {
+    if let Some(source_config) = source_config_opt {
         checks.push((
             source_config.source_id.as_str(),
             check_source_connectivity(source_config).await,
@@ -290,7 +437,9 @@ pub mod busy_detector {
 mod tests {
     use std::time::Duration;
 
-    use super::parse_duration_with_unit;
+    use quickwit_rest_client::models::Timeout;
+
+    use super::{parse_duration_or_none, parse_duration_with_unit};
 
     #[test]
     fn test_parse_duration_with_unit() -> anyhow::Result<()> {
@@ -310,6 +459,17 @@ mod tests {
         assert!(parse_duration_with_unit("3 d").is_err());
         assert!(parse_duration_with_unit("3").is_err());
         assert!(parse_duration_with_unit("1h30").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_duration_or_none() -> anyhow::Result<()> {
+        assert_eq!(parse_duration_or_none("1s")?, Timeout::from_secs(1));
+        assert_eq!(parse_duration_or_none("2m")?, Timeout::from_mins(2));
+        assert_eq!(parse_duration_or_none("3h")?, Timeout::from_hours(3));
+        assert_eq!(parse_duration_or_none("4d")?, Timeout::from_days(4));
+        assert_eq!(parse_duration_or_none("none")?, Timeout::none());
+        assert!(parse_duration_or_none("something").is_err());
         Ok(())
     }
 }

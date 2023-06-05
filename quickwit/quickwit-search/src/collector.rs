@@ -508,7 +508,7 @@ impl Collector for QuickwitCollector {
 }
 
 fn map_error(err: postcard::Error) -> TantivyError {
-    TantivyError::InternalError(format!("Merge Result Postcard Error: {}", err))
+    TantivyError::InternalError(format!("Merge Result Postcard Error: {err}"))
 }
 
 /// Merges a set of Leaf Results.

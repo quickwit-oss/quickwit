@@ -87,7 +87,7 @@
     },
     "version": "0.6"
   },
-  "index_uid": "test:1111111111111",
+  "index_uid": "test:11111111111111111111111111",
   "sources": [
     {
       "desired_num_pipelines": 2,

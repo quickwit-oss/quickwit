@@ -64,7 +64,7 @@ pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
     /// In reality, some information may be implicitly configured
-    /// in the storage URI resolver: for instance, the Amazon S3 region.
+    /// in the storage resolver: for instance, the Amazon S3 region.
     pub split_id: String,
 
     /// Id of the index this split belongs to.
@@ -177,7 +177,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
         SplitMetadata {
             split_id: "split".to_string(),
-            index_uid: IndexUid::from_parts("my-index", "1111111111111"),
+            index_uid: IndexUid::from_parts("my-index", "11111111111111111111111111"),
             source_id: "source".to_string(),
             node_id: "node".to_string(),
             delete_opstamp: 10,

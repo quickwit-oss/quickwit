@@ -21,16 +21,16 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use predicates::str;
 use quickwit_cli::service::RunCliCommand;
 use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri;
-use quickwit_metastore::{FileBackedMetastore, IndexMetadata, Metastore, MetastoreResult};
-use quickwit_storage::{LocalFileStorage, S3CompatibleObjectStorage, Storage};
+use quickwit_config::service::QuickwitService;
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreResolver};
+use quickwit_storage::{Storage, StorageResolver};
 use reqwest::Url;
 use tempfile::{tempdir, TempDir};
 use tracing::error;
@@ -98,27 +98,6 @@ const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "http
 {"body": "biz", "title": "modern", "url": "https://wiki.com?id=13"}
 "#;
 
-/// Waits until localhost:port is ready. Returns an error if it takes too long.
-pub async fn wait_port_ready(port: u16) -> anyhow::Result<()> {
-    let timer_task = tokio::time::sleep(Duration::from_secs(10));
-    let port_check_task = async {
-        while tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
-            .await
-            .is_err()
-        {
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-    };
-    tokio::select! {
-        _ = timer_task => {
-            bail!("Port took too much time to be ready.")
-        }
-        _ = port_check_task => {
-            Ok(())
-        }
-    }
-}
-
 /// A struct to hold few info about the test environment.
 pub struct TestEnv {
     /// The temporary directory of the test.
@@ -131,6 +110,8 @@ pub struct TestEnv {
     pub resource_files: HashMap<&'static str, PathBuf>,
     /// The metastore URI.
     pub metastore_uri: Uri,
+    pub metastore_resolver: MetastoreResolver,
+    pub metastore: Arc<dyn Metastore>,
     pub config_uri: Uri,
     pub cluster_endpoint: Url,
     pub index_config_uri: Uri,
@@ -138,13 +119,17 @@ pub struct TestEnv {
     pub index_id: String,
     pub index_uri: Uri,
     pub rest_listen_port: u16,
+    pub storage_resolver: StorageResolver,
     pub storage: Arc<dyn Storage>,
 }
 
 impl TestEnv {
     // For cache reason, it's safer to always create an instance and then make your assertions.
-    pub async fn metastore(&self) -> MetastoreResult<FileBackedMetastore> {
-        FileBackedMetastore::try_new(self.storage.clone(), None).await
+    pub async fn metastore(&self) -> Arc<dyn Metastore> {
+        self.metastore_resolver
+            .resolve(&self.metastore_uri)
+            .await
+            .unwrap()
     }
 
     pub fn index_config_without_uri(&self) -> String {
@@ -156,7 +141,7 @@ impl TestEnv {
     pub async fn index_metadata(&self) -> anyhow::Result<IndexMetadata> {
         let index_metadata = self
             .metastore()
-            .await?
+            .await
             .index_metadata(&self.index_id)
             .await?;
         Ok(index_metadata)
@@ -165,11 +150,11 @@ impl TestEnv {
     pub async fn start_server(&self) -> anyhow::Result<()> {
         let run_command = RunCliCommand {
             config_uri: self.config_uri.clone(),
-            services: None,
+            services: Some(QuickwitService::supported_services()),
         };
         tokio::spawn(async move {
             if let Err(error) = run_command.execute().await {
-                error!(err=?error, "Failed to start a quickwit server");
+                error!(err=?error, "Failed to start a quickwit server.");
             }
         });
         wait_for_server_ready(([127, 0, 0, 1], self.rest_listen_port).into()).await?;
@@ -197,21 +182,18 @@ pub async fn create_test_env(
     }
 
     // TODO: refactor when we have a singleton storage resolver.
-    let (metastore_uri, storage) = match storage_type {
+    let metastore_uri = match storage_type {
         TestStorageType::LocalFileSystem => {
-            let metastore_uri =
-                Uri::from_well_formed(format!("file://{}", indexes_dir_path.display()));
-            let storage: Arc<dyn Storage> = Arc::new(LocalFileStorage::from_uri(&metastore_uri)?);
-            (metastore_uri, storage)
+            Uri::from_well_formed(format!("file://{}", indexes_dir_path.display()))
         }
         TestStorageType::S3 => {
-            let metastore_uri =
-                Uri::from_well_formed("s3://quickwit-integration-tests/indexes".to_string());
-            let storage: Arc<dyn Storage> =
-                Arc::new(S3CompatibleObjectStorage::from_uri(&metastore_uri).await?);
-            (metastore_uri, storage)
+            Uri::from_well_formed("s3://quickwit-integration-tests/indexes".to_string())
         }
     };
+    let storage_resolver = StorageResolver::unconfigured();
+    let storage = storage_resolver.resolve(&metastore_uri).await?;
+    let metastore_resolver = MetastoreResolver::unconfigured();
+    let metastore = metastore_resolver.resolve(&metastore_uri).await?;
     let index_uri = metastore_uri.join(&index_id).unwrap();
     let index_config_path = resources_dir_path.join("index_config.yaml");
     fs::write(
@@ -266,12 +248,15 @@ pub async fn create_test_env(
         indexes_dir_path,
         resource_files,
         metastore_uri,
+        metastore_resolver,
+        metastore,
         config_uri,
         cluster_endpoint,
         index_config_uri,
         index_id,
         index_uri,
         rest_listen_port,
+        storage_resolver,
         storage,
     })
 }

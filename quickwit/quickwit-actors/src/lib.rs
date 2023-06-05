@@ -28,7 +28,9 @@
 //! - detect when some task is stuck and does not progress anymore
 
 use std::fmt;
+use std::num::NonZeroU64;
 
+use once_cell::sync::Lazy;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use tokio::time::Duration;
 mod actor;
@@ -59,6 +61,8 @@ pub use observation::{Observation, ObservationType};
 use quickwit_common::KillSwitch;
 pub use spawn_builder::SpawnContext;
 use thiserror::Error;
+use tracing::info;
+use tracing::log::warn;
 pub use universe::Universe;
 
 pub use self::actor_context::ActorContext;
@@ -73,16 +77,42 @@ pub use self::supervisor::{Supervisor, SupervisorState};
 /// If an actor does not advertise a progress within an interval of duration `HEARTBEAT`,
 /// its supervisor will consider it as blocked and will proceed to kill it, as well
 /// as all of the actors all the actors that share the killswitch.
-pub const HEARTBEAT: Duration = if cfg!(any(test, feature = "testsuite")) {
-    // Right now some unit test end when we detect that a
-    // pipeline has terminated, which can require waiting
-    // for a heartbeat.
-    //
-    // We use a shorter heartbeat to reduce the time running unit tests.
-    Duration::from_millis(500)
-} else {
-    Duration::from_secs(3)
-};
+pub static HEARTBEAT: Lazy<Duration> = Lazy::new(heartbeat_from_env_or_default);
+
+/// Returns the actor's heartbeat duration:
+/// - Derived from `QW_ACTOR_HEARTBEAT_SECS` if set and valid.
+/// - Defaults to 30 seconds or 500ms for tests.
+fn heartbeat_from_env_or_default() -> Duration {
+    if cfg!(any(test, feature = "testsuite")) {
+        // Right now some unit test end when we detect that a
+        // pipeline has terminated, which can require waiting
+        // for a heartbeat.
+        //
+        // We use a shorter heartbeat to reduce the time running unit tests.
+        return Duration::from_millis(500);
+    }
+    match std::env::var("QW_ACTOR_HEARTBEAT_SECS") {
+        Ok(actor_hearbeat_secs_str) => {
+            if let Ok(actor_hearbeat_secs) = actor_hearbeat_secs_str.parse::<NonZeroU64>() {
+                info!("Set the actor heartbeat to {actor_hearbeat_secs} seconds.");
+                return Duration::from_secs(actor_hearbeat_secs.get());
+            } else {
+                warn!(
+                    "Failed to parse `QW_ACTOR_HEARTBEAT_SECS={actor_hearbeat_secs_str}` in \
+                     seconds > 0, using default heartbeat (30 seconds)."
+                );
+            };
+        }
+        Err(std::env::VarError::NotUnicode(os_str)) => {
+            warn!(
+                "Failed to parse `QW_ACTOR_HEARTBEAT_SECS={os_str:?}` in a valid unicode string, \
+                 using default heartbeat (30 seconds)."
+            );
+        }
+        Err(std::env::VarError::NotPresent) => {}
+    }
+    Duration::from_secs(30)
+}
 
 /// Time we accept to wait for a new observation.
 ///

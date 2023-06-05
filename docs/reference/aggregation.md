@@ -118,7 +118,7 @@ Example request, histogram with stats in each bucket:
 
 #### Aggregating on datetime fields
 
-See [`DateHistogram`](date-histogram) for more convenient API for `datetime` fields.
+See [`DateHistogram`](#date-histogram) for more convenient API for `datetime` fields.
 
 Fields of type `datetime` are handled the same way as any numeric field. However, all values in the requests such as intervals, offsets, bounds, and range boundaries need to be expressed in milliseconds.
 
@@ -287,9 +287,9 @@ Cannot be set in conjunction with `min_doc_count` > 0, since the empty buckets f
 }
 ```
 
-### DateHistogram
+### Date Histogram
 
-DateHistogram is similar to `Histogram`, but it can only be used with [datetime type](../configuration/index-config#datetime-type) and provides a more convenient API to define intervals.
+`DateHistogram` is similar to `Histogram`, but it can only be used with [datetime type](../configuration/index-config#datetime-type) and provides a more convenient API to define intervals.
 
 Like the histogram, values are rounded down into the closest bucket.
 

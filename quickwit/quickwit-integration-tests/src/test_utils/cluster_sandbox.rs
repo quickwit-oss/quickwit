@@ -33,10 +33,13 @@ use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
-use quickwit_metastore::SplitState;
+use quickwit_metastore::{MetastoreResolver, SplitState};
 use quickwit_rest_client::models::IngestSource;
-use quickwit_rest_client::rest_client::{CommitType, QuickwitClient, Transport, DEFAULT_BASE_URL};
+use quickwit_rest_client::rest_client::{
+    CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
+};
 use quickwit_serve::{serve_quickwit, ListSplitsQueryParams};
+use quickwit_storage::StorageResolver;
 use reqwest::Url;
 use tempfile::TempDir;
 use tokio::sync::watch::{self, Receiver, Sender};
@@ -141,6 +144,8 @@ impl ClusterSandbox {
         let temp_dir = tempfile::tempdir()?;
         let services = QuickwitService::supported_services();
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
+        let storage_resolver = StorageResolver::unconfigured();
+        let metastore_resolver = MetastoreResolver::unconfigured();
         // There is exactly one node.
         let node_config = node_configs[0].clone();
         let node_config_clone = node_config.clone();
@@ -151,6 +156,8 @@ impl ClusterSandbox {
             let result = serve_quickwit(
                 node_config_clone.quickwit_config,
                 runtimes_config,
+                storage_resolver,
+                metastore_resolver,
                 shutdown_signal,
             )
             .await?;
@@ -159,12 +166,14 @@ impl ClusterSandbox {
         wait_for_server_ready(node_config.quickwit_config.grpc_listen_addr).await?;
         Ok(Self {
             node_configs,
-            indexer_rest_client: QuickwitClient::new(Transport::new(transport_url(
+            indexer_rest_client: QuickwitClientBuilder::new(transport_url(
                 node_config.quickwit_config.rest_listen_addr,
-            ))),
-            searcher_rest_client: QuickwitClient::new(Transport::new(transport_url(
+            ))
+            .build(),
+            searcher_rest_client: QuickwitClientBuilder::new(transport_url(
                 node_config.quickwit_config.rest_listen_addr,
-            ))),
+            ))
+            .build(),
             _temp_dir: temp_dir,
             join_handles,
             shutdown_trigger,
@@ -178,19 +187,27 @@ impl ClusterSandbox {
         let temp_dir = tempfile::tempdir()?;
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
         let runtimes_config = RuntimesConfig::light_for_tests();
+        let storage_resolver = StorageResolver::unconfigured();
+        let metastore_resolver = MetastoreResolver::unconfigured();
         let mut join_handles = Vec::new();
         let shutdown_trigger = ClusterShutdownTrigger::new();
         for node_config in node_configs.iter() {
-            let node_config_clone = node_config.clone();
-            let shutdown_signal = shutdown_trigger.shutdown_signal();
-            join_handles.push(tokio::spawn(async move {
-                let result = serve_quickwit(
-                    node_config_clone.quickwit_config,
-                    runtimes_config,
-                    shutdown_signal,
-                )
-                .await?;
-                Result::<_, anyhow::Error>::Ok(result)
+            join_handles.push(tokio::spawn({
+                let node_config = node_config.quickwit_config.clone();
+                let storage_resolver = storage_resolver.clone();
+                let metastore_resolver = metastore_resolver.clone();
+                let shutdown_signal = shutdown_trigger.shutdown_signal();
+                async move {
+                    let result = serve_quickwit(
+                        node_config,
+                        runtimes_config,
+                        storage_resolver,
+                        metastore_resolver,
+                        shutdown_signal,
+                    )
+                    .await?;
+                    Result::<_, anyhow::Error>::Ok(result)
+                }
             }));
         }
         let searcher_config = node_configs
@@ -208,12 +225,14 @@ impl ClusterSandbox {
         tokio::time::sleep(Duration::from_millis(100)).await;
         Ok(Self {
             node_configs,
-            searcher_rest_client: QuickwitClient::new(Transport::new(transport_url(
+            searcher_rest_client: QuickwitClientBuilder::new(transport_url(
                 searcher_config.quickwit_config.rest_listen_addr,
-            ))),
-            indexer_rest_client: QuickwitClient::new(Transport::new(transport_url(
+            ))
+            .build(),
+            indexer_rest_client: QuickwitClientBuilder::new(transport_url(
                 indexer_config.quickwit_config.rest_listen_addr,
-            ))),
+            ))
+            .build(),
             _temp_dir: temp_dir,
             join_handles,
             shutdown_trigger,
@@ -367,7 +386,7 @@ pub fn build_node_configs(
         let mut config = QuickwitConfig::for_test();
         config.enabled_services = node_services.clone();
         config.cluster_id = cluster_id.clone();
-        config.node_id = format!("test-node-{}", node_idx);
+        config.node_id = format!("test-node-{node_idx}");
         config.data_dir_path = root_data_dir.join(&config.node_id);
         config.metastore_uri =
             QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/metastore")).unwrap();

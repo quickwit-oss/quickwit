@@ -12,10 +12,16 @@ on:
       - "!quickwit/quickwit-ui/**"
 env:
   CARGO_INCREMENTAL: 0
+  QW_DISABLE_TELEMETRY: 1
   RUST_BACKTRACE: 1
   RUSTFLAGS: -Dwarnings
   RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links
   TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/quickwit-metastore-dev
+
+# Ensures that we cancel running jobs for the same PR / same workflow.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   tests:

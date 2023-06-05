@@ -333,7 +333,7 @@ pub struct IndexUid(String);
 impl IndexUid {
     /// Creates a new index uid form index_id and incarnation_id
     pub fn new(index_id: impl Into<String>) -> Self {
-        Self::from_parts(index_id, &Ulid::new().to_string()[..13])
+        Self::from_parts(index_id, Ulid::new().to_string())
     }
 
     pub fn from_parts(index_id: impl Into<String>, incarnation_id: impl Into<String>) -> Self {
@@ -406,7 +406,7 @@ impl TryFrom<&str> for IndexingTask {
         })?;
         if let Some(part2) = iter.next() {
             Ok(IndexingTask {
-                index_uid: format!("{}:{}", part2, part1),
+                index_uid: format!("{part2}:{part1}"),
                 source_id: source_id.to_string(),
             })
         } else {

@@ -26,18 +26,26 @@ mod sender;
 pub(crate) mod sink;
 
 use once_cell::sync::OnceCell;
+use payload::QuickwitTelemetryInfo;
+use tracing::info;
 
 use crate::payload::TelemetryEvent;
 pub use crate::sender::is_telemetry_disabled;
 use crate::sender::{TelemetryLoopHandle, TelemetrySender};
 
-pub fn start_telemetry_loop() -> TelemetryLoopHandle {
-    get_telemetry_sender_singleton().start_loop()
-}
+static TELEMETRY_SENDER: OnceCell<TelemetrySender> = OnceCell::new();
 
-fn get_telemetry_sender_singleton() -> &'static TelemetrySender {
-    static INSTANCE: OnceCell<TelemetrySender> = OnceCell::new();
-    INSTANCE.get_or_init(TelemetrySender::default)
+/// Returns a `TelemetryLoopHandle` if the telemetry loop is not yet started.
+pub fn start_telemetry_loop(quickwit_info: QuickwitTelemetryInfo) -> Option<TelemetryLoopHandle> {
+    let telemetry_sender =
+        TELEMETRY_SENDER.get_or_init(|| TelemetrySender::from_quickwit_info(quickwit_info));
+    // This should not happen... unless telemetry is enabled and you are running tests in parallel
+    // in the same process.
+    if telemetry_sender.loop_started() {
+        info!("Telemetry loop already started. Please disable telemetry during tests.");
+        return None;
+    }
+    Some(telemetry_sender.start_loop())
 }
 
 /// Sends a telemetry event to Quickwit's server via HTTP.
@@ -52,7 +60,9 @@ fn get_telemetry_sender_singleton() -> &'static TelemetrySender {
 /// We voluntarily use an enum here to make it easier for reader
 /// to audit the type of information that is send home.
 pub async fn send_telemetry_event(event: TelemetryEvent) {
-    get_telemetry_sender_singleton().send(event).await
+    if let Some(telemetry_sender) = TELEMETRY_SENDER.get() {
+        telemetry_sender.send(event).await;
+    }
 }
 
 /// This environment variable can be set to disable sending telemetry events.

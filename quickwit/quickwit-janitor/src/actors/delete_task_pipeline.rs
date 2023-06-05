@@ -19,11 +19,11 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Supervisor, SupervisorState,
-    HEARTBEAT,
 };
 use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::{self};
@@ -44,6 +44,14 @@ use tokio::join;
 use tracing::info;
 
 use super::delete_task_planner::DeleteTaskPlanner;
+
+const OBSERVE_PIPELINE_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(500)
+} else {
+    // 1 minute.
+    // This is only for observation purpose, not supervision.
+    Duration::from_secs(60)
+};
 
 struct DeletePipelineHandle {
     pub delete_task_planner: ActorHandle<Supervisor<DeleteTaskPlanner>>,
@@ -273,8 +281,8 @@ impl Handler<Observe> for DeleteTaskPipeline {
                 publisher: publisher.state,
             }
         }
-        // Supervisors supervise every `HEARTBEAT`. We can wait a bit more to observe supervisors.
-        ctx.schedule_self_msg(HEARTBEAT, Observe).await;
+        ctx.schedule_self_msg(OBSERVE_PIPELINE_INTERVAL, Observe)
+            .await;
         Ok(())
     }
 }
@@ -282,7 +290,7 @@ impl Handler<Observe> for DeleteTaskPipeline {
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
-    use quickwit_actors::{Handler, HEARTBEAT};
+    use quickwit_actors::Handler;
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_config::merge_policy_config::MergePolicyConfig;
     use quickwit_config::IndexingSettings;
@@ -294,7 +302,7 @@ mod tests {
         searcher_pool_for_test, MockSearchService, SearchError, SearchJobPlacer,
     };
 
-    use super::{ActorContext, ActorExitStatus, DeleteTaskPipeline};
+    use super::{ActorContext, ActorExitStatus, DeleteTaskPipeline, OBSERVE_PIPELINE_INTERVAL};
 
     #[derive(Debug)]
     struct GracefulShutdown;
@@ -384,11 +392,14 @@ mod tests {
 
         let (pipeline_mailbox, pipeline_handler) =
             test_sandbox.universe().spawn_builder().spawn(pipeline);
-        // Insure that the message sent by initialize method is processed.
+        // Ensure that the message sent by initialize method is processed.
         let _ = pipeline_handler.process_pending_and_observe().await.state;
-        // Pipeline will first fail and we need to wait a HEARTBEAT * 2 for the pipeline state to be
-        // updated.
-        test_sandbox.universe().sleep(HEARTBEAT * 2).await;
+        // Pipeline will first fail and we need to wait a OBSERVE_PIPELINE_INTERVAL * some number
+        // for the pipeline state to be updated.
+        test_sandbox
+            .universe()
+            .sleep(OBSERVE_PIPELINE_INTERVAL * 2)
+            .await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
         assert_eq!(pipeline_state.delete_task_planner.num_errors, 1);
         assert_eq!(pipeline_state.downloader.num_errors, 0);
@@ -455,7 +466,10 @@ mod tests {
         let (_pipeline_mailbox, pipeline_handler) =
             test_sandbox.universe().spawn_builder().spawn(pipeline);
         pipeline_handler.quit().await;
-        let observations = test_sandbox.universe().observe(HEARTBEAT).await;
+        let observations = test_sandbox
+            .universe()
+            .observe(OBSERVE_PIPELINE_INTERVAL)
+            .await;
         assert!(observations.into_iter().all(
             |observation| observation.type_name != std::any::type_name::<DeleteTaskPipeline>()
         ));

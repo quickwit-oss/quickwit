@@ -334,7 +334,7 @@ fn _get_hostname(hostname: OsString) -> io::Result<String> {
     } else {
         Err(io::Error::new(
             io::ErrorKind::Other,
-            format!("Invalid hostname: `{}`.", hostname_lossy),
+            format!("Invalid hostname: `{hostname_lossy}`."),
         ))
     }
 }

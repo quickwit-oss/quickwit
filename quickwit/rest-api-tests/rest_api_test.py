@@ -81,7 +81,7 @@ def run_request_step(method, step):
         try:
             check_result(r.json(), expected_resp)
         except Exception as e:
-            print(r.json())
+            print(json.dumps(r.json(), indent=2))
             raise e
 
 def check_result(result, expected, context_path = ""):

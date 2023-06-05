@@ -35,6 +35,7 @@ quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-janitor = { workspace = true }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-search = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true, features = ["testsuite"] }
 quickwit-rest-client = { workspace = true }
 quickwit-serve = { workspace = true }
 quickwit-proto = { workspace = true }

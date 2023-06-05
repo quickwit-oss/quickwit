@@ -37,8 +37,9 @@ use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
 use once_cell::sync::OnceCell;
 use quickwit_aws::retry::{retry, RetryParams, Retryable};
-use quickwit_common::uri::{Protocol, Uri};
+use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
+use quickwit_config::{AzureStorageConfig, StorageBackend, StorageConfig};
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
@@ -53,18 +54,29 @@ use crate::{
     StorageResolverError, StorageResult, STORAGE_METRICS,
 };
 
-/// Azure object storage URI resolver.
+/// Azure object storage resolver.
 #[derive(Default)]
 pub struct AzureBlobStorageFactory;
 
 #[async_trait]
 impl StorageFactory for AzureBlobStorageFactory {
-    fn protocol(&self) -> Protocol {
-        Protocol::Azure
+    fn backend(&self) -> StorageBackend {
+        StorageBackend::Azure
     }
 
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let storage = AzureBlobStorage::from_uri(uri)?;
+    async fn resolve(
+        &self,
+        storage_config: &StorageConfig,
+        uri: &Uri,
+    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
+        let azure_storage_config = storage_config.as_azure().ok_or_else(|| {
+            let message = format!(
+                "Expected Azure storage config, got `{:?}`.",
+                storage_config.backend()
+            );
+            StorageResolverError::InvalidConfig(message)
+        })?;
+        let storage = AzureBlobStorage::from_uri(azure_storage_config, uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
 }
@@ -89,10 +101,10 @@ impl fmt::Debug for AzureBlobStorage {
 
 impl AzureBlobStorage {
     /// Creates an object storage.
-    pub fn new(account: &str, access_key: &str, uri: Uri, container: &str) -> Self {
-        let storage_credentials = StorageCredentials::access_key(account, access_key);
+    pub fn new(account: String, access_key: String, uri: Uri, container_name: String) -> Self {
+        let storage_credentials = StorageCredentials::access_key(account.clone(), access_key);
         let container_client =
-            BlobServiceClient::new(account, storage_credentials).container_client(container);
+            BlobServiceClient::new(account, storage_credentials).container_client(container_name);
         Self {
             container_client,
             uri,
@@ -142,16 +154,25 @@ impl AzureBlobStorage {
     }
 
     /// Builds instance from URI.
-    pub fn from_uri(uri: &Uri) -> Result<AzureBlobStorage, StorageResolverError> {
-        let (account_name, container, path) =
-            parse_azure_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
-                message: format!("Invalid URI: {uri}"),
-            })?;
+    pub fn from_uri(
+        azure_storage_config: &AzureStorageConfig,
+        uri: &Uri,
+    ) -> Result<AzureBlobStorage, StorageResolverError> {
+        let (account_name, container, path) = parse_azure_uri(uri).ok_or_else(|| {
+            let message =
+                format!("Failed to extract account and container names from Azure URI: {uri}");
+            StorageResolverError::InvalidUri(message)
+        })?;
         let access_key = std::env::var("QW_AZURE_ACCESS_KEY")
-            .expect("The `QW_AZURE_ACCESS_KEY` environment variable must be defined.");
-        let azure_compatible_storage =
-            AzureBlobStorage::new(&account_name, &access_key, uri.clone(), &container);
-        Ok(azure_compatible_storage.with_prefix(&path))
+            .ok()
+            .or_else(|| azure_storage_config.access_key.clone())
+            .expect(
+                "Azure account access key should be set in the `QW_AZURE_ACCESS_KEY` env variable \
+                 or in the node's storage config.",
+            );
+        let azure_blob_storage =
+            AzureBlobStorage::new(account_name, access_key, uri.clone(), container);
+        Ok(azure_blob_storage.with_prefix(&path))
     }
 
     /// Returns the blob name (a.k.a blob key).
@@ -251,7 +272,7 @@ impl AzureBlobStorage {
                     .await
                 }
             })
-            .buffer_unordered(self.multipart_policy.max_concurrent_upload());
+            .buffer_unordered(self.multipart_policy.max_concurrent_uploads());
 
         // Concurrently upload block with limit.
         let mut block_list = BlockList::default();

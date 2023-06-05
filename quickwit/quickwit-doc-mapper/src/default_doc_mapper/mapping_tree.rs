@@ -23,7 +23,6 @@ use std::net::IpAddr;
 use std::str::FromStr;
 
 use anyhow::bail;
-use base64::prelude::{Engine, BASE64_STANDARD};
 use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
@@ -35,7 +34,8 @@ use tracing::warn;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
-    QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
+    QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitObjectOptions,
+    QuickwitTextOptions,
 };
 use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
 use crate::{Cardinality, DocParsingError, FieldMappingEntry, ModeType};
@@ -49,7 +49,7 @@ pub enum LeafType {
     Bool(QuickwitNumericOptions),
     IpAddr(QuickwitIpAddrOptions),
     DateTime(QuickwitDateTimeOptions),
-    Bytes(QuickwitNumericOptions),
+    Bytes(QuickwitBytesOptions),
     Json(QuickwitJsonOptions),
 }
 
@@ -84,19 +84,7 @@ impl LeafType {
                 }
             }
             LeafType::DateTime(date_time_options) => date_time_options.parse_json(json_val),
-            LeafType::Bytes(_) => {
-                let base64_str = if let JsonValue::String(base64_str) = json_val {
-                    base64_str
-                } else {
-                    return Err(format!("Expected base64 string, got `{json_val}`."));
-                };
-                let payload = BASE64_STANDARD
-                    .decode(&base64_str)
-                    .map_err(|base64_decode_err| {
-                        format!("Expected Base64 string, got `{base64_str}`: {base64_decode_err}")
-                    })?;
-                Ok(TantivyValue::Bytes(payload))
-            }
+            LeafType::Bytes(binary_options) => binary_options.input_format.parse_json(json_val),
             LeafType::Json(_) => {
                 if let JsonValue::Object(json_obj) = json_val {
                     Ok(TantivyValue::JsonObject(json_obj))
@@ -198,10 +186,13 @@ fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue>
         | (TantivyValue::F64(_), LeafType::F64(_))
         | (TantivyValue::Bool(_), LeafType::Bool(_))
         | (TantivyValue::IpAddr(_), LeafType::IpAddr(_))
-        | (TantivyValue::Bytes(_), LeafType::Bytes(_))
         | (TantivyValue::JsonObject(_), LeafType::Json(_)) => {
             let json_value =
                 serde_json::to_value(&value).expect("Json serialization should never fail.");
+            Some(json_value)
+        }
+        (TantivyValue::Bytes(bytes), LeafType::Bytes(bytes_options)) => {
+            let json_value = bytes_options.output_format.format_to_json(bytes);
             Some(json_value)
         }
         (TantivyValue::Date(date_time), LeafType::DateTime(date_time_options)) => {
@@ -509,7 +500,7 @@ fn get_date_time_options(quickwit_date_time_options: &QuickwitDateTimeOptions) -
     date_time_options.set_precision(quickwit_date_time_options.precision)
 }
 
-fn get_bytes_options(quickwit_numeric_options: &QuickwitNumericOptions) -> BytesOptions {
+fn get_bytes_options(quickwit_numeric_options: &QuickwitBytesOptions) -> BytesOptions {
     let mut bytes_options = BytesOptions::default();
     if quickwit_numeric_options.indexed {
         bytes_options = bytes_options.set_indexed();
@@ -677,10 +668,11 @@ mod tests {
     use tantivy::{DateTime, Document};
     use time::macros::datetime;
 
-    use super::{LeafType, MappingLeaf};
+    use super::{value_to_json, LeafType, MappingLeaf};
     use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::default_doc_mapper::field_mapping_entry::{
-        QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitTextOptions,
+        BinaryFormat, QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitNumericOptions,
+        QuickwitTextOptions,
     };
     use crate::Cardinality;
 
@@ -1011,7 +1003,7 @@ mod tests {
 
     #[test]
     fn test_parse_bytes() {
-        let typ = LeafType::Bytes(QuickwitNumericOptions::default());
+        let typ = LeafType::Bytes(QuickwitBytesOptions::default());
         let value = typ
             .value_from_json(json!("dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw=="))
             .unwrap();
@@ -1022,25 +1014,39 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_bytes_hex() {
+        let typ = LeafType::Bytes(QuickwitBytesOptions {
+            input_format: BinaryFormat::Hex,
+            ..QuickwitBytesOptions::default()
+        });
+        let value = typ
+            .value_from_json(json!(
+                "7468697320697320612068657820656e636f64656420737472696e67"
+            ))
+            .unwrap();
+        assert_eq!(value.as_bytes().unwrap(), b"this is a hex encoded string");
+    }
+
+    #[test]
     fn test_parse_bytes_number_should_err() {
-        let typ = LeafType::Bytes(QuickwitNumericOptions::default());
+        let typ = LeafType::Bytes(QuickwitBytesOptions::default());
         let error = typ.value_from_json(json!(2u64)).err().unwrap();
         assert_eq!(error, "Expected base64 string, got `2`.");
     }
 
     #[test]
     fn test_parse_bytes_invalid_base64() {
-        let typ = LeafType::Bytes(QuickwitNumericOptions::default());
+        let typ = LeafType::Bytes(QuickwitBytesOptions::default());
         let error = typ.value_from_json(json!("dEwerwer#!%")).err().unwrap();
         assert_eq!(
             error,
-            "Expected Base64 string, got `dEwerwer#!%`: Invalid byte 35, offset 8."
+            "Expected base64 string, got `dEwerwer#!%`: Invalid byte 35, offset 8."
         );
     }
 
     #[test]
     fn test_parse_array_of_bytes() {
-        let typ = LeafType::Bytes(QuickwitNumericOptions::default());
+        let typ = LeafType::Bytes(QuickwitBytesOptions::default());
         let field = Field::from_field_id(10);
         let leaf_entry = MappingLeaf {
             field,
@@ -1071,5 +1077,23 @@ mod tests {
                 b"this is a base64 encoded string"
             ]
         )
+    }
+
+    #[test]
+    fn test_serialize_bytes() {
+        let base64 = QuickwitBytesOptions::default();
+        let hex = QuickwitBytesOptions {
+            output_format: BinaryFormat::Hex,
+            ..QuickwitBytesOptions::default()
+        };
+
+        assert_eq!(
+            value_to_json(TantivyValue::Bytes(vec![1, 2, 3]), &LeafType::Bytes(base64)).unwrap(),
+            serde_json::json!("AQID")
+        );
+        assert_eq!(
+            value_to_json(TantivyValue::Bytes(vec![1, 2, 3]), &LeafType::Bytes(hex)).unwrap(),
+            serde_json::json!("010203")
+        );
     }
 }
