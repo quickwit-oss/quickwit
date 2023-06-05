@@ -5,7 +5,7 @@ sidebar_position: 20
 
 
 In order to facilitate migrations and integrations with existing tools,
-Quickwit offers a Elasticsearch/Opensearch compatible API.
+Quickwit offers an Elasticsearch/Opensearch compatible API.
 This API is incomplete. This page lists the available features and endpoints.
 
 ## Supported endpoints
@@ -44,7 +44,7 @@ The [`refresh`](https://www.elastic.co/guide/en/elasticsearch/reference/current/
 :::caution
 The quickwit API will not report errors, you need to check the server logs.
 
-In Elasticsearch, the `create` action has a specific behavior when the ingest documents contain an identifier (the `_id` field). It only inserts such a document if it was not inserted before. This is extremely handy to achieve At-Most-Once indexing.
+In Elasticsearch, the `create` action has a specific behavior when the ingested documents contain an identifier (the `_id` field). It only inserts such a document if it was not inserted before. This is extremely handy to achieve At-Most-Once indexing.
 Quickwit does not have any notion of document id and does not support this feature.
 :::
 
@@ -304,7 +304,7 @@ The following query types are supported.
 | `zero_terms_query`|  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
 | `max_expansions`  |  `Integer` | Number of terms to be match by the prefix matching.               |  50     |
 | `slop`            | `Integer`  | Allows extra tokens between the query tokens.                    |  0      |
-| `analyzer`        | String     | Analyzed meant to cut the query into terms. It is recommended to NOT use this parameter. |  The actual field tokenizer.  |
+| `analyzer`        | String     | Analyzer meant to cut the query into terms. It is recommended to NOT use this parameter. |  The actual field tokenizer.  |
 | `zero_terms_query`  |  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
 
 
@@ -330,7 +330,7 @@ The following query types are supported.
 | Variable          | Type       | Description                                                      | Default |
 |-------------------|------------|------------------------------------------------------------------|---------|
 | `value`           | String     |  Term value. This is the string representation of a token after tokenization.    | -    |
-| `boost`|  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
+| `boost`     |  `Number`   | Multiplier boost for score computation | 1.0       |
 
 ### `match_all` / `match_none`
 
