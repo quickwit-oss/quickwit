@@ -72,9 +72,26 @@ version: 0.6
 #
 # default_index_root_uri: s3://your-bucket/indexes
 #
+# -------------------------------- Storage settings --------------------------------
+#
+# storage:
+#   azure:
+#     account: your-azure-account-name
+#     access_key: ${QW_AZURE_ACCESS_KEY}
+#
+#   s3:
+#     endpoint: ${QW_S3_ENDPOINT:-http://localhost:4566}
+#     force_path_style_access: true
+#     disable_multi_object_delete_requests: true
+#
+# -------------------------------- Metastore settings --------------------------------
+#
+# metastore:
+#   postgres:
+#     max_num_connections: 20
 #
 # -------------------------------- Indexer settings --------------------------------
-#
+
 indexer:
   enable_otlp_endpoint: ${QW_ENABLE_OTLP_ENDPOINT:-true}
 #   split_store_max_num_bytes: 100G
@@ -97,5 +114,6 @@ indexer:
 #   max_num_concurrent_split_searches: 100
 #
 # -------------------------------- Jaeger settings --------------------------------
+
 jaeger:
   enable_endpoint: ${QW_ENABLE_JAEGER_ENDPOINT:-true}
