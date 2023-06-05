@@ -48,7 +48,8 @@ Sub-second search & analytics engine on cloud storage
 - Elasticsearch query language support
 - Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, …)
 - Decoupled compute and storage, stateless indexers & searchers
-- [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing & and analytics
+- [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing
+- Schemaless analytics
 - [Grafana data source](https://github.com/quickwit-oss/quickwit-datasource)
 - [Jaeger-native](https://quickwit.io/docs/distributed-tracing/plug-quickwit-to-jaeger)
 - OTEL-native for [logs](https://quickwit.io/docs/log-management/overview) and [traces](https://quickwit.io/docs/distributed-tracing/overview)
