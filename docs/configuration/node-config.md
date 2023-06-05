@@ -6,12 +6,12 @@ sidebar_position: 1
 The node configuration allows you to customize and optimize the settings for individual nodes in your cluster. It is divided into several sections:
 
 - Common configuration settings: shared top-level properties
-- Storage settings: defined in the `storage` section
-- Metastore settings: defined in the `metastore` section
-- Ingest settings: defined in the `ingest_api` section
-- Indexer settings: defined in the `indexer` section
-- Searcher settings: defined in the `searcher` section
-- Jaeger settings: defined in the `jaeger` section
+- Storage settings: defined in the [storage](#storage-configuration) section
+- Metastore settings: defined in the [metastore](#metastore-configuration) section
+- Ingest settings: defined in the [ingest_api](#ingest-api-configuration) section
+- Indexer settings: defined in the [indexer](#indexer-configuration) section
+- Searcher settings: defined in the [searcher](#searcher-configuration) section
+- Jaeger settings: defined in the [jaeger](#jaeger-configuration) section
 
 A commented example is available here: [quickwit.yaml](https://github.com/quickwit-oss/quickwit/blob/main/config/quickwit.yaml).
 
