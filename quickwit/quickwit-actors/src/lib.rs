@@ -91,21 +91,25 @@ fn heartbeat_from_env_or_default() -> Duration {
         // We use a shorter heartbeat to reduce the time running unit tests.
         return Duration::from_millis(500);
     }
-    if let Ok(actor_hearbeat_secs_str) = std::env::var("QW_ACTOR_HEARTBEAT_SECS") {
-        if let Ok(actor_hearbeat_secs) = actor_hearbeat_secs_str.parse::<NonZeroU64>() {
-            info!("Set the actor heartbeat to {actor_hearbeat_secs} seconds.");
-            return Duration::from_secs(actor_hearbeat_secs.get());
-        } else {
+    match std::env::var("QW_ACTOR_HEARTBEAT_SECS") {
+        Ok(actor_hearbeat_secs_str) => {
+            if let Ok(actor_hearbeat_secs) = actor_hearbeat_secs_str.parse::<NonZeroU64>() {
+                info!("Set the actor heartbeat to {actor_hearbeat_secs} seconds.");
+                return Duration::from_secs(actor_hearbeat_secs.get());
+            } else {
+                warn!(
+                    "Failed to parse `QW_ACTOR_HEARTBEAT_SECS={actor_hearbeat_secs_str}` in \
+                     seconds > 0, using default heartbeat (30 seconds)."
+                );
+            };
+        }
+        Err(std::env::VarError::NotUnicode(os_str)) => {
             warn!(
-                "Failed to parse `QW_ACTOR_HEARTBEAT_SECS={actor_hearbeat_secs_str}` in seconds > \
-                 0, using default heartbeat (30 seconds)."
+                "Failed to parse `QW_ACTOR_HEARTBEAT_SECS={os_str:?}` in a valid unicode string, \
+                 using default heartbeat (30 seconds)."
             );
-        };
-    } else {
-        warn!(
-            "Failed to parse `QW_ACTOR_HEARTBEAT_SECS` in a valid unicode string, using default \
-             heartbeat (30 seconds)."
-        );
+        }
+        Err(std::env::VarError::NotPresent) => {}
     }
     Duration::from_secs(30)
 }

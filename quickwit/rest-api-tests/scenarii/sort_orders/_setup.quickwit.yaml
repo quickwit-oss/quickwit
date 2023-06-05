@@ -12,6 +12,7 @@ json:
   doc_mapping:
     mode: dynamic
     dynamic_mapping:
+      tokenizer: default
       fast: true
 ---
 # Ingest documents

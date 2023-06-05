@@ -1,6 +1,6 @@
 ---
 title: Query language
-sidebar_position: 3
+sidebar_position: 40
 ---
 
 Quickwit uses a query mini-language which is used by providing a `query` parameter to the search endpoints.
@@ -70,8 +70,8 @@ Range queries can only be executed on fields with a fast field. Currently only f
 
 - Inclusive Range: `ip:[127.0.0.1 TO 127.0.0.50]`
 - Exclusive Range: `ip:{127.0.0.1 TO 127.0.0.50}`
-- Unbounded Inclusive Range: `ip:[127.0.0.1 TO *] or ip:>=127.0.0.1` 
-- Unbounded Exclusive Range: `ip:{127.0.0.1 TO *] or ip:>127.0.0.1` 
+- Unbounded Inclusive Range: `ip:[127.0.0.1 TO *] or ip:>=127.0.0.1`
+- Unbounded Exclusive Range: `ip:{127.0.0.1 TO *] or ip:>127.0.0.1`
 
 
 #### Examples:

@@ -20,31 +20,38 @@
 // This file is an integration test that assumes that the environment
 // makes it possible to connect to Amazon S3's quickwit-integration-test bucket.
 
-#[cfg(feature = "testsuite")]
-#[tokio::test]
-#[cfg_attr(not(feature = "ci-test"), ignore)]
-// Weirdly this does not work for localstack. The error messages seem off.
-async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
-    use std::path::Path;
+use std::path::Path;
 
-    use anyhow::Context;
-    use quickwit_common::uri::Uri;
-    use quickwit_config::S3StorageConfig;
-    use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
+use anyhow::Context;
+use quickwit_common::rand::append_random_suffix;
+use quickwit_common::setup_logging_for_tests;
+use quickwit_common::uri::Uri;
+use quickwit_config::S3StorageConfig;
+use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
+use serial_test::serial;
 
-    let _ = tracing_subscriber::fmt::try_init();
-    let s3_storage_config = S3StorageConfig::default();
-    let storage_uri = Uri::from_well_formed("s3://quickwit-integration-tests");
-    let mut object_storage =
-        S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri).await?;
-    quickwit_storage::storage_test_suite(&mut object_storage).await?;
+async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_uri: &str) {
+    setup_logging_for_tests();
+
+    let storage_uri = Uri::from_well_formed(bucket_uri);
+    let mut object_storage = S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri)
+        .await
+        .unwrap();
+
+    quickwit_storage::storage_test_suite(&mut object_storage)
+        .await
+        .context("S3 storage test suite failed.")
+        .unwrap();
 
     let mut object_storage = S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri)
-        .await?
+        .await
+        .unwrap()
         .with_prefix(Path::new("test-s3-compatible-storage"));
+
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
-        .context("test_single_part_upload")?;
+        .context("Test single part upload failed.")
+        .unwrap();
 
     object_storage.set_policy(MultiPartPolicy {
         target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
@@ -53,8 +60,59 @@ async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
         max_object_num_bytes: 5_000_000_000_000,
         max_concurrent_uploads: 100,
     });
+
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await
-        .context("test_multi_part_upload")?;
-    Ok(())
+        .context("Test multi-part upload failed.")
+        .unwrap();
+}
+
+#[cfg(feature = "testsuite")]
+#[tokio::test]
+#[serial]
+#[cfg_attr(not(feature = "ci-test"), ignore)]
+async fn test_suite_on_s3_storage_path_style_access() {
+    let s3_storage_config = S3StorageConfig {
+        force_path_style_access: true,
+        ..Default::default()
+    };
+    let bucket_uri = append_random_suffix("s3://quickwit-integration-tests/test-path-style-access");
+    run_s3_storage_test_suite(s3_storage_config, &bucket_uri).await
+}
+
+#[cfg(feature = "testsuite")]
+#[tokio::test]
+#[serial]
+#[cfg_attr(not(feature = "ci-test"), ignore)]
+async fn test_suite_on_s3_storage_virtual_hosted_style_access() {
+    let s3_storage_config = S3StorageConfig {
+        force_path_style_access: false,
+        ..Default::default()
+    };
+    let bucket_uri =
+        append_random_suffix("s3://quickwit-integration-tests/test-virtual-hosted-style-access");
+    run_s3_storage_test_suite(s3_storage_config, &bucket_uri).await
+}
+
+#[cfg(feature = "testsuite")]
+#[tokio::test]
+#[serial]
+#[cfg_attr(not(feature = "ci-test"), ignore)]
+async fn test_suite_on_s3_storage_bulk_delete_single_object_delete_api() {
+    let s3_storage_config = S3StorageConfig {
+        disable_multi_object_delete_requests: true,
+        ..Default::default()
+    };
+    let bucket_uri = append_random_suffix(
+        "s3://quickwit-integration-tests/test-bulk-delete-single-object-delete-api",
+    );
+    let storage_uri = Uri::from_well_formed(bucket_uri);
+    let mut object_storage = S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri)
+        .await
+        .unwrap();
+
+    quickwit_storage::test_write_and_bulk_delete(&mut object_storage)
+        .await
+        .context("Test bulk delete single-object delete API failed.")
+        .unwrap();
 }

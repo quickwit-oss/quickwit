@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::borrow::Borrow;
 use std::str::CharIndices;
 
 use once_cell::sync::Lazy;
@@ -193,7 +192,7 @@ pub fn get_quickwit_tokenizer_manager() -> &'static TokenizerManager {
 pub fn get_quickwit_fastfield_normalizer_manager() -> &'static TokenizerManager {
     static QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER: Lazy<TokenizerManager> =
         Lazy::new(create_quickwit_fastfield_normalizer_manager);
-    QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER.borrow()
+    &QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER
 }
 
 #[cfg(test)]

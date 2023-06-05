@@ -14,7 +14,7 @@ metastore_uri = "postgres://username:password@host:port/db"
 default_index_root_uri = "s3://quickwit-indexes"
 
 [storage.azure]
-account_name = "quickwit-dev"
+account = "quickwit-dev"
 
 [storage.s3]
 endpoint = "http://localhost:4566"
