@@ -117,9 +117,9 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 
 | Variable      | Type       | Description                                                      | Default value |
 |---------------|------------|------------------------------------------------------------------|---------------|
-| `default_operator`     | `AND` or `OR`  | The default operator used to combine search terms. It should be `AND` or `OR` | `OR`       |
+| `default_operator`     | `AND` or `OR`  | The default operator used to combine search terms. It should be `AND` or `OR`. | `OR`       |
 | `from`     | `Integer`   |  The rank of the first hit to return. This is useful for pagination.  |  0  |
-| `q` | `String` | The | (Optional) |
+| `q` | `String` | The search query. | (Optional) |
 | `size` | `Integer` | Number of hits to return. |  10 |
 | `sort` | `String` | (Optional) |
 
@@ -127,7 +127,7 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 
 | Variable      | Type       | Description                                                      | Default value |
 |---------------|------------|------------------------------------------------------------------|---------------|
-| `default_operator`     | `"AND"` or `"OR"` | The default operator used to combine search terms. It should be `AND` or `OR` | `OR`       |
+| `default_operator`     | `"AND"` or `"OR"` | The default operator used to combine search terms. It should be `AND` or `OR`. | `OR`       |
 | `from`     | `Integer`   |  The rank of the first hit to return. This is useful for pagination.  |  0  |
 | `query` | `Json object` | Describe the search query. See [Query DSL](#query-dsl) | (Optional) |
 | `size` | `Integer` | Number of hits to return. |  10 |
@@ -184,10 +184,10 @@ The following query types are supported.
 
 | Variable      | Type       | Description                                                      | Default value |
 |---------------|------------|------------------------------------------------------------------|---------------|
-| `query`     | `String`   |  Query meant to be parsed | -       |
+| `query`     | `String`   |  Query meant to be parsed. | -       |
 | `fields`     | `String[]` (Optional)   | Default search target fields.  | -       |
 | `default_operator`     | `"AND"` or `"OR"`   | In the absence of boolean operator defines whether terms should be combined as a conjunction (`AND`) or disjunction (`OR`). | `OR`|
-| `boost`     | `Number`   | Multiplier boost for score computation | 1.0       |
+| `boost`     | `Number`   | Multiplier boost for score computation. | 1.0       |
 
 
 ### `bool`
@@ -217,9 +217,9 @@ The following query types are supported.
 |---------------|------------|------------------------------------------------------------------|---------------|
 | `must`     | `JsonObject[]` (Optional)  |  Sub-queries required to match the document. | [] |
 | `must_not`     | `JsonObject[]` (Optional)   | Sub-queries required to not match the document.  | []       |
-| `should`     | `JsonObject[]` (Optional)   | Sub-queries that should match the documents .| [] |
+| `should`     | `JsonObject[]` (Optional)   | Sub-queries that should match the documents. | [] |
 | `filter`     | `JsonObject[]` | Like must queries, but the match does not influence the `_score`.  | [] |
-| `boost`     | `Number`   | Multiplier boost for score computation | 1.0       |
+| `boost`     | `Number`   | Multiplier boost for score computation. | 1.0       |
 
 ### `range`
 
@@ -272,8 +272,8 @@ The following query types are supported.
 | Variable      | Type       | Description                                                      | Default |
 |---------------|------------|------------------------------------------------------------------|---------------|
 | `query`     | String  |  Full-text search query. | - |
-| `operator`  | `"AND"` or `"OR"` | Defines whether all terms should be present (`AND`) or at least one term is sufficien to match (`OR`)  | OR  |
-| `zero_terms_query`  |  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization | `none` |
+| `operator`  | `"AND"` or `"OR"` | Defines whether all terms should be present (`AND`) or if at least one term is sufficient to match (`OR`).  | OR  |
+| `zero_terms_query`  |  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
 | `boost`     |  `Number`   | Multiplier boost for score computation | 1.0       |
 
 
@@ -301,11 +301,11 @@ The following query types are supported.
 | Variable          | Type       | Description                                                      | Default |
 |-------------------|------------|------------------------------------------------------------------|---------|
 | `query`           | String     |  Full-text search query. The last token will be prefix-matched   | -       |
-| `zero_terms_query`|  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization | `none` |
-| `max_expansions`  |  `Integer` | Number of terms to be match by the prefix matching               |  50     |
+| `zero_terms_query`|  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
+| `max_expansions`  |  `Integer` | Number of terms to be match by the prefix matching.               |  50     |
 | `slop`            | `Integer`  | Allows extra tokens between the query tokens.                    |  0      |
 | `analyzer`        | String     | Analyzed meant to cut the query into terms. It is recommended to NOT use this parameter. |  The actual field tokenizer.  |
-| `zero_terms_query`  |  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization | `none` |
+| `zero_terms_query`  |  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
 
 
 ### `term`
@@ -329,8 +329,8 @@ The following query types are supported.
 
 | Variable          | Type       | Description                                                      | Default |
 |-------------------|------------|------------------------------------------------------------------|---------|
-| `value`           | String     |  Term value. This is the string representation of a token after tokenization    | -    |
-| `boost`|  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization | `none` |
+| `value`           | String     |  Term value. This is the string representation of a token after tokenization.    | -    |
+| `boost`|  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
 
 ### `match_all` / `match_none`
 
