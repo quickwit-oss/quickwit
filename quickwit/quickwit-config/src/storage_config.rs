@@ -208,8 +208,11 @@ impl StorageConfig {
 #[serde(deny_unknown_fields)]
 pub struct AzureStorageConfig {
     #[serde(default)]
+    #[serde(rename = "account")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub account_name: Option<String>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub access_key: Option<String>,
 }
 
@@ -305,7 +308,7 @@ mod tests {
 
         let storage_configs_yaml = r#"
                 azure:
-                    account_name: test-account
+                    account: test-account
                 s3:
                     endpoint: http://localhost:4566
             "#;
@@ -383,7 +386,7 @@ mod tests {
     fn test_storage_azure_config_serde() {
         {
             let azure_storage_config_yaml = r#"
-                account_name: test-account
+                account: test-account
             "#;
             let azure_storage_config: AzureStorageConfig =
                 serde_yaml::from_str(azure_storage_config_yaml).unwrap();
@@ -396,7 +399,7 @@ mod tests {
         }
         {
             let azure_storage_config_yaml = r#"
-                account_name: test-account
+                account: test-account
                 access_key: test-access-key
             "#;
             let azure_storage_config: AzureStorageConfig =

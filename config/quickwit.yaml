@@ -76,7 +76,7 @@ version: 0.6
 #
 # storage:
 #   azure:
-#     account_name: your-azure-account-name
+#     account: your-azure-account-name
 #     access_key: ${QW_AZURE_ACCESS_KEY}
 #
 #   s3:
