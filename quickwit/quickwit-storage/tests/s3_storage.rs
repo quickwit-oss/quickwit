@@ -69,7 +69,7 @@ async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_ur
 
 #[cfg(feature = "testsuite")]
 #[tokio::test]
-#[serial]
+// #[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_suite_on_s3_storage_path_style_access() {
     let s3_storage_config = S3StorageConfig {
@@ -82,7 +82,7 @@ async fn test_suite_on_s3_storage_path_style_access() {
 
 #[cfg(feature = "testsuite")]
 #[tokio::test]
-#[serial]
+// #[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_suite_on_s3_storage_virtual_hosted_style_access() {
     let s3_storage_config = S3StorageConfig {
@@ -96,7 +96,7 @@ async fn test_suite_on_s3_storage_virtual_hosted_style_access() {
 
 #[cfg(feature = "testsuite")]
 #[tokio::test]
-#[serial]
+// #[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_suite_on_s3_storage_bulk_delete_single_object_delete_api() {
     let s3_storage_config = S3StorageConfig {
