@@ -26,17 +26,6 @@ Sub-second search & analytics engine on cloud storage
 </h4>
 <br/>
 
-<b>Quickwit 0.6 is around the corner and is set to redefine your search experience on multi-terabyte datasets with a host of powerful features!</b>
-
-Sneak peek of the 0.6 release:
-- Explore 16TB (~5.2 billion events) of the GitHub Archive dataset stored on Amazon S3 with just one server.
-- Elasticsearch query language support.
-- [Grafana plugin](https://github.com/quickwit-oss/quickwit-datasource) with support for Explore, Dashboards and Alerts.
-- And more :)
-
-Stay tuned for the official release in two weeks.
-
-
 ![Quickwit Distributed Tracing](./docs/assets/images/quickwit-overview-light.svg#gh-light-mode-only)![Quickwit Distributed Tracing](./docs/assets/images/quickwit-overview-dark.svg#gh-dark-mode-only)
 
 Quickwit is the fastest search engine on cloud storage. It is a great fit for:

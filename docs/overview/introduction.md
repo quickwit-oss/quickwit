@@ -40,6 +40,8 @@ Check out our guides to see how you can use Quickwit:
 - OTEL-native for [logs](../log-management/overview.md) and [traces](../distributed-tracing/overview.md)
 - [Jaeger-native](../distributed-tracing/plug-quickwit-to-jaeger.md)
 - [RESTful API](../reference/rest-api.md)
+- [Elasticsearch API](../reference/es_compatible_api.md) with ingest and query DSL support.
+- A [Grafana plugin](https://github.com/quickwit-oss/quickwit-datasource) with support for explore, dashboards and alerts.
 
 ### Enterprise-grade features
 
