@@ -9,7 +9,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.5"
+  version: "0.6"
   index_id: gharchive
   doc_mapping:
     timestamp_field: created_at
@@ -20,6 +20,7 @@ json:
           fast: true
     dynamic_mapping:
       expand_dots: true
+      tokenizer: default
       fast:
         normalizer: lowercase
       record: position
