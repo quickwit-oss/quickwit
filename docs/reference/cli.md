@@ -41,10 +41,9 @@ The CLI is structured into high-level commands with subcommands.
 <!--
     Insert auto-generated CLI docs here...
 -->
-
 ## run
+Starts a Quickwit node with all services enabled by default: `indexer`, `searcher`, `metastore`, `control-plane`, and `janitor`.
 
-Starts Quickwit server with all services by default: `indexer`, `searcher`, `metastore`, `control_plane` and `janitor`.
 
 ### Indexer service
 
@@ -91,8 +90,8 @@ quickwit run
 
 *Options*
 
-`--config` Config file location (default: config/quickwit.yaml) \
-`--service` Services (indexer|searcher|janitor|metastore|control_plane) to run. If unspecified, all the supported services are started. \
+`--config` Config file location (default: config/quickwit.yaml)  
+`--service` Services (indexer|searcher|janitor|metastore|control-plane) to run. If unspecified, all the supported services are started.  
 
 *Examples*
 
@@ -139,8 +138,8 @@ quickwit index create
 
 *Options*
 
-`--index-config` Location of the index config file. \
-`--overwrite` Overwrites pre-existing index. This will delete all existing data stored at `index-uri` before creating a new index. \
+`--index-config` Location of the index config file.  
+`--overwrite` Overwrites pre-existing index. This will delete all existing data stored at `index-uri` before creating a new index.  
 
 *Examples*
 
@@ -169,7 +168,7 @@ quickwit index clear
 
 *Options*
 
-`--index` Index ID \
+`--index` Index ID  
 ### index delete
 
 Deletes an index.  
@@ -186,8 +185,8 @@ quickwit index delete
 
 *Options*
 
-`--index` ID of the target index \
-`--dry-run` Executes the command in dry run mode and only displays the list of splits candidates for deletion. \
+`--index` ID of the target index  
+`--dry-run` Executes the command in dry run mode and only displays the list of splits candidates for deletion.  
 
 *Examples*
 
@@ -214,7 +213,7 @@ quickwit index describe
 
 *Options*
 
-`--index` ID of the target index \
+`--index` ID of the target index  
 
 *Examples*
 
@@ -226,24 +225,22 @@ quickwit run --service metastore --config=./config/quickwit.yaml
 quickwit index describe --endpoint=http://127.0.0.1:7280 --index wikipedia
 
 1. General infos
----------------------------------------------+---------------------------------------------------------
-Index ID:                                    | wikipedia
-Index URI:                                   | file:///home/quickwit-indices/qwdata/indexes/wikipedia
-Number of published documents:               | 300000
-Size of published documents (uncompressed):  | 33.73 MB 
-Number of published splits:                  | 1
-Size of published splits:                    | 24.07 MB
-Timestamp field:                             | Field does not exist for the index.                                     
-Timestamp range:                             | Range does not exist for the index. 
+===============================================================================
+Index id:                           wikipedia
+Index uri:                          file:///home/quickwit-indices/qwdata/indexes/wikipedia
+Number of published splits:         1
+Number of published documents:      300000
+Size of published splits:           448 MB
 
-Document count stats (published)                                                                                        
-Mean ± σ in [min … max]:                     | 15000 ± 5000 in [10000 … 20000]                                         
-Quantiles [1%, 25%, 50%, 75%, 99%]:          | [10100, 15000, 15000, 17500, 17500]                                     
-                                                                                                                        
-                                                                                                                        
-Size in MB stats (published)                                                                                            
-Mean ± σ in [min … max]:                     | 12.037121 ± 3.802938 in [8 … 15]                                        
-Quantiles [1%, 25%, 50%, 75%, 99%]:          | [8.310242, 12.037121, 12.037121, 13.93859, 13.93859] 
+2. Statistics on splits
+===============================================================================
+Document count stats:
+Mean ± σ in [min … max]:            300000 ± 0 in [300000 … 300000]
+Quantiles [1%, 25%, 50%, 75%, 99%]: [300000, 300000, 300000, 300000, 300000]
+
+Size in MB stats:
+Mean ± σ in [min … max]:            448 ± 0 in [448 … 448]
+Quantiles [1%, 25%, 50%, 75%, 99%]: [448, 448, 448, 448, 448]
 
 ```
 
@@ -252,17 +249,6 @@ Quantiles [1%, 25%, 50%, 75%, 99%]:          | [8.310242, 12.037121, 12.037121, 
 List indexes.  
 `quickwit index list [args]`
 `quickwit index ls [args]`
-
-*Synopsis*
-
-```bash
-quickwit index list
-    [--endpoint <endpoint>]
-```
-
-*Options*
-
-`--endpoint` Quickwit cluster endpoint. (default: http://127.0.0.1:7280) \
 
 *Examples*
 
@@ -305,15 +291,17 @@ quickwit index ingest
     [--batch-size-limit <batch-size-limit>]
     [--wait]
     [--force]
+    [--commit-timeout <commit-timeout>]
 ```
 
 *Options*
 
-`--index` ID of the target index \
-`--input-path` Location of the input file. \
-`--batch-size-limit` Size limit of each submitted document batch. \
-`--wait` Wait for all documents to be commited and available for search before exiting \
-`--force` Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting \
+`--index` ID of the target index  
+`--input-path` Location of the input file.  
+`--batch-size-limit` Size limit of each submitted document batch.  
+`--wait` Wait for all documents to be commited and available for search before exiting  
+`--force` Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting  
+`--commit-timeout` Duration of the commit timeout operation.  
 
 *Examples*
 
@@ -370,16 +358,16 @@ quickwit index search
 
 *Options*
 
-`--index` ID of the target index \
-`--query` Query expressed in natural query language ((barack AND obama) OR "president of united states"). Learn more on https://quickwit.io/docs/reference/search-language. \
-`--aggregation` JSON serialized aggregation request in tantivy/elasticsearch format. \
-`--max-hits` Maximum number of hits returned. (default: 20) \
-`--start-offset` Offset in the global result set of the first hit returned. (default: 0) \
-`--search-fields` List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2".  \
-`--snippet-fields` List of fields that Quickwit will return snippet highlight on. Space-separated list, e.g. "field1 field2".  \
-`--start-timestamp` Filters out documents before that timestamp (time-series indexes only). \
-`--end-timestamp` Filters out documents after that timestamp (time-series indexes only). \
-`--sort-by-score` Setting this flag calculates and sorts documents by their BM25 score. \
+`--index` ID of the target index  
+`--query` Query expressed in natural query language ((barack AND obama) OR "president of united states"). Learn more on https://quickwit.io/docs/reference/search-language.  
+`--aggregation` JSON serialized aggregation request in tantivy/elasticsearch format.  
+`--max-hits` Maximum number of hits returned. (default: 20)  
+`--start-offset` Offset in the global result set of the first hit returned. (default: 0)  
+`--search-fields` List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2".   
+`--snippet-fields` List of fields that Quickwit will return snippet highlight on. Space-separated list, e.g. "field1 field2".   
+`--start-timestamp` Filters out documents before that timestamp (time-series indexes only).  
+`--end-timestamp` Filters out documents after that timestamp (time-series indexes only).  
+`--sort-by-score` Sorts documents by their BM25 score.  
 
 *Examples*
 
@@ -443,8 +431,8 @@ quickwit source create
 
 *Options*
 
-`--index` ID of the target index \
-`--source-config` Path to source config file. Please, refer to the documentation for more details. \
+`--index` ID of the target index  
+`--source-config` Path to source config file. Please, refer to the documentation for more details.  
 ### source enable
 
 Enables a source for an index.  
@@ -460,8 +448,8 @@ quickwit source enable
 
 *Options*
 
-`--index` ID of the target index \
-`--source` ID of the source. \
+`--index` ID of the target index  
+`--source` ID of the source.  
 ### source disable
 
 Disables a source for an index.  
@@ -477,8 +465,8 @@ quickwit source disable
 
 *Options*
 
-`--index` ID of the target index \
-`--source` ID of the source. \
+`--index` ID of the target index  
+`--source` ID of the source.  
 ### source ingest-api
 
 Enables/disables the ingest API of an index.  
@@ -489,15 +477,15 @@ Enables/disables the ingest API of an index.
 ```bash
 quickwit source ingest-api
     --index <index>
-    --enable
+    [--enable]
     [--disable]
 ```
 
 *Options*
 
-`--index` ID of the target index \
-`--enable` Enables the ingest API. \
-`--disable` Disables the ingest API. \
+`--index` ID of the target index  
+`--enable` Enables the ingest API.  
+`--disable` Disables the ingest API.  
 ### source delete
 
 Deletes a source from an index.  
@@ -514,8 +502,8 @@ quickwit source delete
 
 *Options*
 
-`--index` ID of the target index \
-`--source` ID of the source. \
+`--index` ID of the target index  
+`--source` ID of the source.  
 
 *Examples*
 
@@ -544,8 +532,8 @@ quickwit source describe
 
 *Options*
 
-`--index` ID of the target index \
-`--source` ID of the source. \
+`--index` ID of the target index  
+`--source` ID of the source.  
 ### source list
 
 Lists the sources of an index.  
@@ -561,7 +549,7 @@ quickwit source list
 
 *Options*
 
-`--index` ID of the target index \
+`--index` ID of the target index  
 
 *Examples*
 
@@ -590,8 +578,8 @@ quickwit source reset-checkpoint
 
 *Options*
 
-`--index` Index ID \
-`--source` Source ID \
+`--index` Index ID  
+`--source` Source ID  
 ## split
 Manages splits: lists, describes, marks for deletion...
 
@@ -615,12 +603,12 @@ quickwit split list
 
 *Options*
 
-`--index` Target index ID \
-`--states` Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`. \
-`--create-date` Selects the splits whose creation dates are before this date. \
-`--start-date` Selects the splits that contain documents after this date (time-series indexes only). \
-`--end-date` Selects the splits that contain documents before this date (time-series indexes only). \
-`--output-format` Output format. Possible values are `table`, `json`, and `pretty_json`. \
+`--index` Target index ID  
+`--states` Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`.  
+`--create-date` Selects the splits whose creation dates are before this date.  
+`--start-date` Selects the splits that contain documents after this date (time-series indexes only).  
+`--end-date` Selects the splits that contain documents before this date (time-series indexes only).  
+`--output-format` Output format. Possible values are `table`, `json`, and `pretty-json`.  
 ### split describe
 
 Displays metadata about a split.  
@@ -638,9 +626,9 @@ quickwit split describe
 
 *Options*
 
-`--index` ID of the target index \
-`--split` ID of the target split \
-`--verbose` Displays additional metadata about the hotcache. \
+`--index` ID of the target index  
+`--split` ID of the target split  
+`--verbose` Displays additional metadata about the hotcache.  
 ### split mark-for-deletion
 
 Marks one or multiple splits of an index for deletion.  
@@ -658,9 +646,9 @@ quickwit split mark-for-deletion
 
 *Options*
 
-`--index` Target index ID \
-`--splits` Comma-separated list of split IDs \
-`--yes` Assume "yes" as an answer to all prompts and run non-interactively. \
+`--index` Target index ID  
+`--splits` Comma-separated list of split IDs  
+`--yes` Assume "yes" as an answer to all prompts and run non-interactively.  
 ## tool
 Performs utility operations. Requires a node config.
 
@@ -683,12 +671,12 @@ quickwit tool local-ingest
 
 *Options*
 
-`--index` ID of the target index \
-`--input-path` Location of the input file. \
-`--input-format` Format of the input data. \
-`--overwrite` Overwrites pre-existing index. \
-`--transform-script` VRL program to transform docs before ingesting. \
-`--keep-cache` Does not clear local cache directory upon completion. \
+`--index` ID of the target index  
+`--input-path` Location of the input file.  
+`--input-format` Format of the input data. (default: json)  
+`--overwrite` Overwrites pre-existing index.  
+`--transform-script` VRL program to transform docs before ingesting.  
+`--keep-cache` Does not clear local cache directory upon completion.  
 ### tool extract-split
 
 Downloads and extracts a split to a directory.  
@@ -700,14 +688,14 @@ Downloads and extracts a split to a directory.
 quickwit tool extract-split
     --index <index>
     --split <split>
-    --target-dir <target-dir>
+    [--target-dir <target-dir>]
 ```
 
 *Options*
 
-`--index` ID of the target index \
-`--split` ID of the target split \
-`--target-dir` Directory to extract the split to. \
+`--index` ID of the target index  
+`--split` ID of the target split  
+`--target-dir` Directory to extract the split to.  
 ### tool gc
 
 Garbage collects stale staged splits and splits marked for deletion.  
@@ -732,9 +720,9 @@ quickwit tool gc
 
 *Options*
 
-`--index` ID of the target index \
-`--grace-period` Threshold period after which stale staged splits are garbage collected. (default: 1h) \
-`--dry-run` Executes the command in dry run mode and only displays the list of splits candidates for garbage collection. \
+`--index` ID of the target index  
+`--grace-period` Threshold period after which stale staged splits are garbage collected. (default: 1h)  
+`--dry-run` Executes the command in dry run mode and only displays the list of splits candidates for garbage collection.  
 
 <!--
     End of auto-generated CLI docs
