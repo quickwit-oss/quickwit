@@ -30,7 +30,7 @@ Sub-second search & analytics engine on cloud storage
 
 <br/>
 
-<video src="https://github.com/quickwit-oss/quickwit/assets/653704/4a91a083-78b6-45ca-8232-8958970508d8" controls="controls" style="max-width: 1200px;">
+<video src="https://github.com/quickwit-oss/quickwit/assets/653704/8a480fae-89f2-437c-bfc4-e3e49a5674e9" controls="controls" style="max-width: 1200px;">
 </video>
 
 <br/>
