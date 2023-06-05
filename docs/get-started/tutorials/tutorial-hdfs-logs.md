@@ -151,7 +151,7 @@ This can take up to 10 minutes on a modern machine, the perfect time for a coffe
 <TabItem value="cli" label="CLI">
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit tool local-ingest --index hdfs-logs
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit index ingest --index hdfs-logs
 ```
 
 </TabItem>
@@ -159,7 +159,7 @@ curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.js
 <TabItem value="docker" label="Docker">
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | docker run -v $(pwd)/qwdata:/quickwit/qwdata -i quickwit/quickwit tool local-ingest --index hdfs-logs
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | docker run -v $(pwd)/qwdata:/quickwit/qwdata -i quickwit/quickwit index ingest --index hdfs-logs
 ```
 
 </TabItem>
@@ -175,7 +175,7 @@ If you are in a hurry, use the sample dataset that contains 10 000 documents, we
 <TabItem value="cli" label="CLI">
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | ./quickwit tool local-ingest --index hdfs-logs
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | ./quickwit index ingest --index hdfs-logs
 ```
 
 </TabItem>
