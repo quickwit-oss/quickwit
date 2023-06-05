@@ -77,7 +77,7 @@ version: 0.6
 # storage:
 #   azure:
 #     account: your-azure-account-name
-#     access_key: ${QW_AZURE_ACCESS_KEY}
+#     access_key: ${QW_AZURE_ACCESS_KEY:-your-azure-access-key}
 #
 #   s3:
 #     endpoint: ${QW_S3_ENDPOINT:-http://localhost:4566}
