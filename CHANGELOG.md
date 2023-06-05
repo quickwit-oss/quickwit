@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Dynamic Fields are now fast fields.
 - String fast fields now can be normalized.
 - Various parameters of object storages can now be configured.
-- The ingest API makes it possible to force a commit or wait for a commit.
+- The ingest API makes it possible to force a commit, or wait for a scheduled commit to occur.
 - Ability to parse non-JSON data using VRL to extract some structure from documents.
 - Object storage can now use the `virtual-hosted–style`.
 - `date_histogram` aggregation.
