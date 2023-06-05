@@ -26,7 +26,7 @@ Sub-second search & analytics engine on cloud storage
 </h4>
 <br/>
 
-<b>Quickwit 0.6 has just been released! Read our [blog post](https://quickwit.io/blog/release-0.6) to learn about the latest owerful features!</b>
+<b>Quickwit 0.6 has just been released! Read our [blog post](https://quickwit.io/blog/release-0.6) to learn about the latest powerful features!</b>
 
 <br/>
 
@@ -35,7 +35,7 @@ Sub-second search & analytics engine on cloud storage
 
 <br/>
 
-<b>Quickwit is the fastest search engine on cloud storage.</b> It is a great fit for:
+### **Quickwit is the fastest search engine on cloud storage. It is a great fit for:**
 
 - [Log management](https://quickwit.io/docs/log-management/overview)
 - [Distributed traces](https://quickwit.io/docs/distributed-tracing/overview)
