@@ -33,13 +33,16 @@ Check out our guides to see how you can use Quickwit:
 ## Key features
 
 - Full-text search and aggregation queries
+- Elasticsearch query language support
 - Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, …)
 - Decoupled compute and storage, stateless indexers & searchers
-- [Schemaless](../guides/schemaless) or strict schema indexing
-- Kubernetes ready - See our [helm-chart](../deployment/kubernetes)
-- OTEL-native for [logs](../log-management/overview.md) and [traces](../distributed-tracing/overview.md)
-- [Jaeger-native](../distributed-tracing/plug-quickwit-to-jaeger.md)
-- [RESTful API](../reference/rest-api.md)
+- [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing
+- Schemaless analytics
+- [Grafana data source](https://github.com/quickwit-oss/quickwit-datasource)
+- [Jaeger-native](https://quickwit.io/docs/distributed-tracing/plug-quickwit-to-jaeger)
+- OTEL-native for [logs](https://quickwit.io/docs/log-management/overview) and [traces](https://quickwit.io/docs/distributed-tracing/overview)
+- Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/deployment/kubernetes)
+- RESTful API
 
 ### Enterprise-grade features
 
