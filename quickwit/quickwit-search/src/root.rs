@@ -291,7 +291,7 @@ pub async fn root_search(
 
     // Creates a collector which merges responses into one
     let merge_collector =
-        make_merge_collector(&search_request, &searcher_context.aggregation_limits)?;
+        make_merge_collector(&search_request, &searcher_context.get_aggregation_limits())?;
     let aggregations = merge_collector.aggregation.clone();
 
     // Merging is a cpu-bound task.
@@ -568,8 +568,8 @@ pub fn finalize_aggregation(
             QuickwitAggregations::TantivyAggregations(aggregations) => {
                 let res: IntermediateAggregationResults =
                     postcard::from_bytes(intermediate_aggregation_result.as_slice())?;
-                let res: AggregationResults =
-                    res.into_final_result(aggregations, &searcher_context.aggregation_limits)?;
+                let res: AggregationResults = res
+                    .into_final_result(aggregations, &searcher_context.get_aggregation_limits())?;
                 Some(serde_json::to_string(&res)?)
             }
         }

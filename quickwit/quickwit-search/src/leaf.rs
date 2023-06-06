@@ -341,11 +341,12 @@ async fn leaf_search_single_split(
     let split_id = split.split_id.to_string();
     let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
     let split_schema = index.schema();
+
     let quickwit_collector = make_collector_for_split(
         split_id.clone(),
         doc_mapper.as_ref(),
         &search_request,
-        searcher_context.aggregation_limits.clone(),
+        searcher_context.get_aggregation_limits(),
     )?;
     let query_ast: QueryAst = serde_json::from_str(search_request.query_ast.as_str())
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
@@ -477,7 +478,8 @@ pub async fn leaf_search(
         });
 
     // Creates a collector which merges responses into one
-    let merge_collector = make_merge_collector(&request, &searcher_context.aggregation_limits)?;
+    let merge_collector =
+        make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
