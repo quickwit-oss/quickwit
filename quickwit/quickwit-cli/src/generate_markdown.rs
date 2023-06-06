@@ -132,20 +132,39 @@ fn markdown_for_command_helper(
             println!("    {commando}");
         }
         println!("```");
-
         println!("\n*Options*\n");
-        for arg in arguments {
-            let default = if let Some(val) = arg.get_default_values().get(0) {
-                format!(" (default: {})", val.to_str().unwrap())
-            } else {
-                "".to_string()
-            };
-            println!(
-                "`--{}` {}{}  ", // Insert line break after option
-                arg.get_id(),
-                arg.get_help().unwrap_or_default(),
-                default
-            );
+
+        // Check if any options have defaults to know if the "Default" column is needed
+        let has_defaults = arguments
+            .iter()
+            .any(|arg| !arg.get_default_values().is_empty());
+
+        if has_defaults {
+            println!("| Option | Description | Default |");
+            println!("|-----------------|-------------|--------:|");
+            for arg in arguments {
+                let default = if let Some(val) = arg.get_default_values().get(0) {
+                    format!("`{}`", val.to_str().unwrap())
+                } else {
+                    "".to_string()
+                };
+                println!(
+                    "| `--{}` | {} | {} |",
+                    arg.get_id(),
+                    arg.get_help().unwrap_or_default(),
+                    default
+                );
+            }
+        } else {
+            println!("| Option | Description |");
+            println!("|-----------------|-------------|");
+            for arg in arguments {
+                println!(
+                    "| `--{}` | {} |",
+                    arg.get_id(),
+                    arg.get_help().unwrap_or_default()
+                );
+            }
         }
     }
 
