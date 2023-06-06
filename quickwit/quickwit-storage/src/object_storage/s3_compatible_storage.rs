@@ -130,24 +130,24 @@ impl S3CompatibleObjectStorage {
         s3_storage_config: &S3StorageConfig,
         uri: &Uri,
     ) -> Result<Self, StorageResolverError> {
-        let (bucket, path) = parse_s3_uri(uri).ok_or_else(|| {
-            let message = format!("Failed to extract bucket and key from S3 uri: {uri}");
+        let (bucket, prefix) = parse_s3_uri(uri).ok_or_else(|| {
+            let message = format!("Failed to extract bucket name from S3 URI: {uri}");
             StorageResolverError::InvalidUri(message)
         })?;
         let storage = Self::new(s3_storage_config, uri.clone(), bucket).await?;
-        Ok(storage.with_prefix(&path))
+        Ok(storage.with_prefix(prefix))
     }
 
     /// Sets a specific for all buckets.
     ///
     /// This method overrides any existing prefix. (It does NOT
     /// append the argument to any existing prefix.)
-    pub fn with_prefix(self, prefix: &Path) -> Self {
+    pub fn with_prefix(self, prefix: PathBuf) -> Self {
         Self {
             s3_client: self.s3_client,
             uri: self.uri,
             bucket: self.bucket,
-            prefix: prefix.to_path_buf(),
+            prefix,
             multipart_policy: self.multipart_policy,
             retry_params: self.retry_params,
             disable_multi_object_delete_requests: self.disable_multi_object_delete_requests,
@@ -164,24 +164,21 @@ impl S3CompatibleObjectStorage {
 
 pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     static S3_URI_PTN: OnceCell<Regex> = OnceCell::new();
-    S3_URI_PTN
+
+    let captures = S3_URI_PTN
         .get_or_init(|| {
             // s3://bucket/path/to/object
-            Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<path>.+))?").unwrap()
+            Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<prefix>.+))?")
+                .expect("The regular expression should compile.")
         })
-        .captures(uri.as_str())
-        .and_then(|captures| {
-            captures.name("bucket").map(|bucket_match| {
-                (
-                    bucket_match.as_str().to_string(),
-                    captures
-                        .name("path")
-                        .map_or_else(PathBuf::new, |path_match| {
-                            PathBuf::from(path_match.as_str())
-                        }),
-                )
-            })
-        })
+        .captures(uri.as_str())?;
+
+    let bucket = captures.name("bucket")?.as_str().to_string();
+    let prefix = captures
+        .name("prefix")
+        .map(|prefix_match| PathBuf::from(prefix_match.as_str()))
+        .unwrap_or_default();
+    Some((bucket, prefix))
 }
 
 #[derive(Clone, Debug)]

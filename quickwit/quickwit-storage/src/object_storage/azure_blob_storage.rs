@@ -100,7 +100,7 @@ impl fmt::Debug for AzureBlobStorage {
 }
 
 impl AzureBlobStorage {
-    /// Creates an object storage.
+    /// Creates a new [`AzureBlobStorage`] instance.
     pub fn new(account: String, access_key: String, uri: Uri, container_name: String) -> Self {
         let storage_credentials = StorageCredentials::access_key(account.clone(), access_key);
         let container_client =
@@ -120,11 +120,11 @@ impl AzureBlobStorage {
     /// Sets the prefix path.
     ///
     /// The existing prefix is overwritten.
-    pub fn with_prefix(self, prefix: &Path) -> Self {
+    pub fn with_prefix(self, prefix: PathBuf) -> Self {
         Self {
             container_client: self.container_client,
             uri: self.uri,
-            prefix: prefix.to_path_buf(),
+            prefix,
             multipart_policy: self.multipart_policy,
             retry_params: self.retry_params,
         }
@@ -158,21 +158,27 @@ impl AzureBlobStorage {
         azure_storage_config: &AzureStorageConfig,
         uri: &Uri,
     ) -> Result<AzureBlobStorage, StorageResolverError> {
-        let (account_name, container, path) = parse_azure_uri(uri).ok_or_else(|| {
-            let message =
-                format!("Failed to extract account and container names from Azure URI: {uri}");
+        let account_name = azure_storage_config.resolve_account_name().ok_or_else(|| {
+            let message = format!(
+                "Could not find Azure account name in environment variable `{}` or storage config.",
+                AzureStorageConfig::AZURE_STORAGE_ACCOUNT_ENV_VAR
+            );
+            StorageResolverError::InvalidConfig(message)
+        })?;
+        let access_key = azure_storage_config.resolve_access_key().ok_or_else(|| {
+            let message = format!(
+                "Could not find Azure access key in environment variable `{}` or storage config.",
+                AzureStorageConfig::AZURE_STORAGE_ACCESS_KEY_ENV_VAR
+            );
+            StorageResolverError::InvalidConfig(message)
+        })?;
+        let (container_name, prefix) = parse_azure_uri(uri).ok_or_else(|| {
+            let message = format!("Failed to extract container name from Azure URI: {uri}");
             StorageResolverError::InvalidUri(message)
         })?;
-        let access_key = std::env::var("QW_AZURE_ACCESS_KEY")
-            .ok()
-            .or_else(|| azure_storage_config.access_key.clone())
-            .expect(
-                "Azure account access key should be set in the `QW_AZURE_ACCESS_KEY` env variable \
-                 or in the node's storage config.",
-            );
         let azure_blob_storage =
-            AzureBlobStorage::new(account_name, access_key, uri.clone(), container);
-        Ok(azure_blob_storage.with_prefix(&path))
+            AzureBlobStorage::new(account_name, access_key, uri.clone(), container_name);
+        Ok(azure_blob_storage.with_prefix(prefix))
     }
 
     /// Returns the blob name (a.k.a blob key).
@@ -302,7 +308,7 @@ impl Storage for AzureBlobStorage {
         if let Some(first_blob_result) = self
             .container_client
             .list_blobs()
-            .max_results(NonZeroU32::new(1u32).unwrap())
+            .max_results(NonZeroU32::new(1u32).expect("1 is always non-zero."))
             .into_stream()
             .next()
             .await
@@ -474,35 +480,23 @@ async fn extract_range_data_and_hash(
     Ok((data, hash))
 }
 
-pub fn parse_azure_uri(uri: &Uri) -> Option<(String, String, PathBuf)> {
-    // Ex: azure://account/container/prefix.
+pub fn parse_azure_uri(uri: &Uri) -> Option<(String, PathBuf)> {
+    // Ex: azure://container/prefix.
     static URI_PTN: OnceCell<Regex> = OnceCell::new();
-    URI_PTN
+
+    let captures = URI_PTN
         .get_or_init(|| {
-            Regex::new(
-                r"azure(\+[^:]+)?://(?P<account>[^/]+)(/(?P<container>[^/]+))(/(?P<path>.+))?",
-            )
-            .unwrap()
+            Regex::new(r"azure(\+[^:]+)?://(?P<container>[^/]+)(/(?P<prefix>.+))?")
+                .expect("The regular expression should compile.")
         })
-        .captures(uri.as_str())
-        .and_then(|captures| {
-            let account = match captures.name("account") {
-                Some(account_match) => account_match.as_str().to_string(),
-                None => return None,
-            };
+        .captures(uri.as_str())?;
 
-            let container = match captures.name("container") {
-                Some(container_match) => container_match.as_str().to_string(),
-                None => return None,
-            };
-
-            let path = captures.name("path").map_or_else(
-                || PathBuf::from(""),
-                |path_match| PathBuf::from(path_match.as_str()),
-            );
-
-            Some((account, container, path))
-        })
+    let container = captures.name("container")?.as_str().to_string();
+    let prefix = captures
+        .name("prefix")
+        .map(|prefix_match| PathBuf::from(prefix_match.as_str()))
+        .unwrap_or_default();
+    Some((container, prefix))
 }
 
 /// Collect a download stream into an output buffer.
@@ -587,26 +581,21 @@ mod tests {
 
     #[test]
     fn test_parse_azure_uri() {
-        let (account, container, path) =
-            parse_azure_uri(&Uri::from_well_formed("azure://quickwit/indexes/wiki")).unwrap();
-        assert_eq!(account, "quickwit");
-        assert_eq!(container, "indexes");
-        assert_eq!(path.to_string_lossy().to_string(), "wiki");
+        assert!(parse_azure_uri(&Uri::from_well_formed("azure://")).is_none());
 
-        let (account, container, path) =
-            parse_azure_uri(&Uri::from_well_formed("azure://jane/store")).unwrap();
-        assert_eq!(account, "jane");
-        assert_eq!(container, "store");
-        assert_eq!(path.to_string_lossy().to_string(), "");
+        let (container, prefix) =
+            parse_azure_uri(&Uri::from_well_formed("azure://test-container")).unwrap();
+        assert_eq!(container, "test-container");
+        assert!(prefix.to_str().unwrap().is_empty());
 
-        assert_eq!(
-            parse_azure_uri(&Uri::from_well_formed("azure://quickwit")),
-            None
-        );
-        assert_eq!(
-            parse_azure_uri(&Uri::from_well_formed("azure://quickwit/")),
-            None
-        );
-        assert_eq!(parse_azure_uri(&Uri::from_well_formed("azure://")), None);
+        let (container, prefix) =
+            parse_azure_uri(&Uri::from_well_formed("azure://test-container/")).unwrap();
+        assert_eq!(container, "test-container");
+        assert!(prefix.to_str().unwrap().is_empty());
+
+        let (container, prefix) =
+            parse_azure_uri(&Uri::from_well_formed("azure://test-container/indexes")).unwrap();
+        assert_eq!(container, "test-container");
+        assert_eq!(prefix.to_str().unwrap(), "indexes");
     }
 }

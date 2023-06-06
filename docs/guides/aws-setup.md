@@ -47,6 +47,8 @@ AWS credentials or region resolution may take a few seconds, especially if the A
 Required authorized actions:
 - `ListObjects`
 - `GetObject`
+- `PutObject`
+- `DeleteObject`
 
 You can run the following commands to verify that AWS credentials, region, and IAM permissions are property configured for Amazon S3:
 

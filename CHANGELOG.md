@@ -1,3 +1,4 @@
+<!--
 # Changelog
 All notable changes to this project will be documented in this file.
 
@@ -18,6 +19,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Security
+
+--->
+
+## [0.6.0] - 2023-06-03
+
+### Added
+- Elasticsearch/Opensearch compatible API.
+- New columnar format:
+    - Fast fields can now have any cardinality (Optional, Multivalued, restricted). In fact cardinality is now only used to format the output.
+    - Dynamic Fields are now fast fields.
+- String fast fields now can be normalized.
+- Various parameters of object storages can now be configured.
+- The ingest API makes it possible to force a commit, or wait for a scheduled commit to occur.
+- Ability to parse non-JSON data using VRL to extract some structure from documents.
+- Object storage can now use the `virtual-hosted–style`.
+- `date_histogram` aggregation.
+- `percentiles` aggregation.
+- Added support for Prefix Phrase query.
+- Added support for range queries.
+- The query language now supports different date formats.
+- Added support for base16 input/output configuration for bytes field. You can search for bytes fields using base16 encoded values.
+- Autotagging: fields used in the partition key are automatically added to tags.
+- Added arm64 docker image.
+- Added CORS configuration for the REST API.
+
+
+### Fixed
+- Major bug fix that required to restart quickwit when deleting and recreating an index with the same name.
+- The number of concurrent GET requests to object stores is now limited. This fixes a bug observed with when requested a lot of documents from MinIO.
+- Quickwit now searches into resource attributes when receiving a Jaeger request carrying tags
+- Object storage can be figured to:
+    - avoid Bulk delete API (workaround for Google Cloud Storage).
+    - Use virtual-host style addresses (workaround for Alibaba Object Storage Service).
+- Fix aggregation min doc_count empty merge bug.
+- Fix: Sort order for term aggregations.
+- Switch to ms in histogram for date type (aligning with ES).
+
+### Improvements
+
+- Search performance improvement.
+- Aggregation performance improvement.
+- Aggregation memory improvement.
+
+More details in tantivy's [changelog](https://github.com/quickwit-oss/tantivy/blob/main/CHANGELOG.md).
+
+### Changed
+- Datetime now have up to a nanosecond precision.
+- By default, quickwit now uses the node's hostname as the default node ID.
+- By default, Quickwit is in dynamic mode and all dynamic fields are marked as fast fields.
+- JSON field uses by default the raw tokanizer and is set to fast field.
+- Various performance/compression improvements.
+- OTEL indexes Trace ID and Span ID are now bytes fields.
+- OTEL indexes stores timestamps with nanosecond precision.
+- pan status is now indexed in the OTEL trace index.
+- Default and raw tokenizers filter tokesn longer than 255 bytes instead of 40 bytes.
+
 
 ## [0.5.0] - 2023-03-16
 
