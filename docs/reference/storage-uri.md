@@ -124,12 +124,11 @@ export AWS_REGION=garage
 
 We support other S3-compatible storages and are [welcoming PRs](http://github.com/quickwit-oss/quickwit) to enrich the documentation with new storage backends.
 
-## Azure blob storage
+## Azure Blob Storage
 
-Quickwit supports Azure URIs formatted as `azure://{storage-account}/{container}/{prefix}` where:
-- `storage-account` is your Azure storage account name.
-- `container` is the container name (or bucket in S3 parlance).
-- `prefix` is optional and can be any prefix.
+Quickwit supports Azure URIs formatted as `azure://{container}/{prefix}` where:
+- `container` is the container name (also known as "bucket" in S3 terminology).
+- `prefix` is optional and can be any blob prefix.
 
-See our [Azure Setup Guide](../guides/storage-setup/azure-setup.md) for the detailed steps to configure Quickwit with Azure.
+Read our [Azure Setup Guide](../guides/storage-setup/azure-setup.md) for detailed steps to configure Quickwit with Azure.
 
