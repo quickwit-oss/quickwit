@@ -36,7 +36,7 @@ use tokio::runtime::Runtime;
 // By default, tokio creates a new runtime, for each unit test.
 // Here, we want to use the singleton `AwsSdkConfig` object.
 // This object packs a smithy connector which itself includes a
-// hyper client. A hyper client cannot be used from multiple runtimes.
+// hyper client pool. A hyper client cannot be used from multiple runtimes.
 fn test_runtime_singleton() -> &'static Runtime {
     static RUNTIME_CACHE: OnceCell<tokio::runtime::Runtime> = OnceCell::new();
     RUNTIME_CACHE.get_or_init(|| {
