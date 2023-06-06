@@ -42,7 +42,8 @@ There are also other parameters that can be only defined by env variables:
 | `QW_S3_ENDPOINT` | Custom S3 endpoint. |
 | `QW_S3_MAX_CONCURRENCY` | Limit the number of concurent requests to S3 |
 | `QW_ENABLE_JAEGER_EXPORTER` | Enable trace export to Jaeger. |
-| `QW_AZURE_ACCESS_KEY` | Azure Blob storage access key. |
+| `QW_AZURE_STORAGE_ACCOUNT` | Azure Blob Storage account name. |
+| `QW_AZURE_STORAGE_ACCESS_KEY` | Azure Blob Storage account access key. |
 
 More details about [storage configuration](../reference/storage-uri.md).
 
@@ -58,13 +59,15 @@ If a storage configuration is not explicitly set, Quickwit will rely on the defa
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `access_key` | The Azure account access key. | |
+| `account` | The Azure storage account name. | |
+| `access_key` | The Azure storage account access key. | |
 
 Example of a storage configuration for Azure in YAML format:
 
 ```yaml
 storage:
   azure:
+    account: your-azure-account-name
     access_key: your-azure-access-key
 ```
 

@@ -3,7 +3,7 @@ title: AWS S3
 sidebar_position: 1
 ---
 
-In this guide, you will learn how to configure a Quickwit [storage](/docs/reference/storage-uri) for AWS S3.
+In this guide, you will learn how to configure a Quickwit [storage](/docs/reference/storage-uri) for Amazon S3.
 
 ## Set your AWS credentials
 
@@ -20,7 +20,7 @@ default_index_uri: s3://{my-bucket}/indexes
 
 ## Set the Index URI
 
-Here is an example of how to setup your index URI in the [index config file](/docs/configuration/index-config): 
+Here is an example of how to setup your index URI in the [index config file](/docs/configuration/index-config):
 ```yaml
 index_uri: s3://{my-bucket}/indexes/{my-index-id}
 ```
