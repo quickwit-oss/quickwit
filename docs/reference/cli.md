@@ -4,9 +4,29 @@ sidebar_position: 50
 ---
 
 Quickwit command line tool lets you start a Quickwit server and manage indexes (create, delete, ingest), splits and sources (create, delete, toggle). To start a server, `quickwit` needs a [node config file path](../configuration/node-config.md) that you can specify with `QW_CONFIG` environment variable: `export QW_CONFIG=./config/quickwit.yaml`.
-To manage indexes, splits and sources, you need to specify the endpoint of a Quickwit node with the `--endpoint` argument.
 
 This page documents all the available commands, related options, and environment variables.
+
+### Common Options
+
+To manage indexes, splits and sources, you might need to specify the connection to a Quickwit node. The following options are supported:
+
+`--endpoint` The url of a Quickwit node. Defaults to `http://127.0.0.1:7280`  
+`--timeout` The command timeout. The default timeout is command specific:
+- **search** - 1 minute
+- **ingest** (without force or wait) - 1 minute
+- **ingest** (with force or wait) - 30 minute
+- all other operations - 10 seconds
+
+`--connect-timeout` The connect timeout. Default is 5 seconds.
+
+The timeout can be expressed as in seconds, minutes, hours or days. For examples:
+
+- `10s` - 10 seconds timeout
+- `1m` - 1 minute timeout
+- `2h` - 2 hours timeout
+- `1d` - 1 day timeout
+- `none` - no timeout is applied.
 
 :::caution
 
