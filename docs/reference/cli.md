@@ -90,7 +90,7 @@ quickwit run
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description | Default |
+| Option | Description | Default |
 |-----------------|-------------|--------:|
 | `--config` | Config file location | `config/quickwit.yaml` |
 | `--service` | Services (indexer,searcher,janitor,metastore or control-plane) to run. If unspecified, all the supported services are started. |  |
@@ -140,7 +140,7 @@ quickwit index create
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index-config` | Location of the index config file. |
 | `--overwrite` | Overwrites pre-existing index. This will delete all existing data stored at `index-uri` before creating a new index. |
@@ -172,7 +172,7 @@ quickwit index clear
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | Index ID |
 ### index delete
@@ -191,7 +191,7 @@ quickwit index delete
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--dry-run` | Executes the command in dry run mode and only displays the list of splits candidates for deletion. |
@@ -221,7 +221,7 @@ quickwit index describe
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 
@@ -306,7 +306,7 @@ quickwit index ingest
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--input-path` | Location of the input file. |
@@ -370,7 +370,7 @@ quickwit index search
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description | Default |
+| Option | Description | Default |
 |-----------------|-------------|--------:|
 | `--index` | ID of the target index |  |
 | `--query` | Query expressed in natural query language ((barack AND obama) OR "president of united states"). Learn more on https://quickwit.io/docs/reference/search-language. |  |
@@ -445,7 +445,7 @@ quickwit source create
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--source-config` | Path to source config file. Please, refer to the documentation for more details. |
@@ -464,7 +464,7 @@ quickwit source enable
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--source` | ID of the source. |
@@ -483,7 +483,7 @@ quickwit source disable
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--source` | ID of the source. |
@@ -503,7 +503,7 @@ quickwit source ingest-api
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--enable` | Enables the ingest API. |
@@ -524,7 +524,7 @@ quickwit source delete
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--source` | ID of the source. |
@@ -556,7 +556,7 @@ quickwit source describe
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--source` | ID of the source. |
@@ -575,7 +575,7 @@ quickwit source list
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 
@@ -606,7 +606,7 @@ quickwit source reset-checkpoint
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | Index ID |
 | `--source` | Source ID |
@@ -633,7 +633,7 @@ quickwit split list
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | Target index ID |
 | `--states` | Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`. |
@@ -658,7 +658,7 @@ quickwit split describe
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--split` | ID of the target split |
@@ -680,7 +680,7 @@ quickwit split mark-for-deletion
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | Target index ID |
 | `--splits` | Comma-separated list of split IDs |
@@ -707,7 +707,7 @@ quickwit tool local-ingest
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description | Default |
+| Option | Description | Default |
 |-----------------|-------------|--------:|
 | `--index` | ID of the target index |  |
 | `--input-path` | Location of the input file. |  |
@@ -731,7 +731,7 @@ quickwit tool extract-split
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| Option | Description |
 |-----------------|-------------|
 | `--index` | ID of the target index |
 | `--split` | ID of the target split |
@@ -760,11 +760,37 @@ quickwit tool gc
 
 *Options*
 
-| Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description | Default |
+| Option | Description | Default |
 |-----------------|-------------|--------:|
 | `--index` | ID of the target index |  |
 | `--grace-period` | Threshold period after which stale staged splits are garbage collected. | `1h` |
 | `--dry-run` | Executes the command in dry run mode and only displays the list of splits candidates for garbage collection. |  |
+
+<!--
+    End of auto-generated CLI docs
+-->
+
+## Environment Variables
+
+### QW_CLUSTER_ENDPOINT
+
+Specifies the address of the cluster to connect to. Management commands `index`, `split` and `source` require the `cluster_endpoint`, which you can set once and for all with the `QW_CLUSTER_ENDPOINT` environment variable.
+
+### QW_CONFIG
+
+Specifies the path to the [quickwit config](../configuration/node-config.md). Commands `run` and `tools` require the `config`, which you can set once and for all with the `QW_CONFIG` environment variable.
+
+*Example*
+
+`export QW_CONFIG=config/quickwit.yaml`
+
+### QW_DISABLE_TELEMETRY
+
+Disables [telemetry](../telemetry.md) when set to any non-empty value.
+
+*Example*
+
+`QW_DISABLE_TELEMETRY=1 quickwit help`
 
 <!--
     End of auto-generated CLI docs
