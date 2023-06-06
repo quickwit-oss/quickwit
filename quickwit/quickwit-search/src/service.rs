@@ -293,8 +293,6 @@ impl SearchService for SearchServiceImpl {
 pub struct SearcherContext {
     /// Searcher config.
     pub searcher_config: SearcherConfig,
-    /// Aggregation limits.
-    pub aggregation_limits: AggregationLimits,
     /// Fast fields cache.
     pub fast_fields_cache: Arc<dyn Cache>,
     /// Counting semaphore to limit concurrent leaf search split requests.
@@ -334,21 +332,23 @@ impl SearcherContext {
         let fast_field_cache_capacity =
             searcher_config.fast_field_cache_capacity.get_bytes() as usize;
         let storage_long_term_cache = Arc::new(QuickwitCache::new(fast_field_cache_capacity));
-        let aggregation_limits = AggregationLimits::new(
-            Some(searcher_config.aggregation_memory_limit.get_bytes()),
-            Some(searcher_config.aggregation_bucket_limit),
-        );
         let leaf_search_cache = LeafSearchCache::new(
             searcher_config.partial_request_cache_capacity.get_bytes() as usize,
         );
         Self {
             searcher_config,
-            aggregation_limits,
             fast_fields_cache: storage_long_term_cache,
             leaf_search_split_semaphore,
             split_footer_cache: global_split_footer_cache,
             split_stream_semaphore,
             leaf_search_cache,
         }
+    }
+    // Returns a new instance to track the aggregation memory usage.
+    pub fn get_aggregation_limits(&self) -> AggregationLimits {
+        AggregationLimits::new(
+            Some(self.searcher_config.aggregation_memory_limit.get_bytes()),
+            Some(self.searcher_config.aggregation_bucket_limit),
+        )
     }
 }
