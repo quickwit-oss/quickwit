@@ -26,7 +26,7 @@ Sub-second search & analytics engine on cloud storage
 </h4>
 <br/>
 
-<b>We just released Quickwit 0.6! Read the [blog post](https://quickwit.io/blog/release-0.6) to learn about the latest powerful features!</b>
+<b>We just released Quickwit 0.6! Read the [blog post](https://quickwit.io/blog/quickwit-0.6) to learn about the latest powerful features!</b>
 
 <br/>
 
