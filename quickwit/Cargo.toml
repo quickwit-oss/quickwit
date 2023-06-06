@@ -140,7 +140,6 @@ serde_json = "1.0"
 serde_qs = { version = "0.10", features = ["warp"] }
 serde_with = "2.3.0"
 serde_yaml = "0.9"
-serial_test = "2.0.0"
 siphasher = "0.3"
 sqlx = { version = "0.6", features = [
   "runtime-tokio-rustls",

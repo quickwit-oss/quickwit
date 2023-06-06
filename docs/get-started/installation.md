@@ -21,13 +21,13 @@ Support of aarch64 is currently experimental.
 
 ## Download
 
-version: 0.5.0 - [Release notes](https://github.com/quickwit-oss/quickwit/releases/tag/v0.5.0) - [Changelog](https://github.com/quickwit-oss/quickwit/blob/main/CHANGELOG.md)
+version: 0.6.0 - [Release notes](https://github.com/quickwit-oss/quickwit/releases/tag/v0.6.0) - [Changelog](https://github.com/quickwit-oss/quickwit/blob/main/CHANGELOG.md)
 License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
-- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.5.0/quickwit-v0.5.0-aarch64-unknown-linux-gnu.tar.gz)
-- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.5.0/quickwit-v0.5.0-x86_64-unknown-linux-gnu.tar.gz)
-- [macOS aarch64](https://github.com/quickwit-oss/quickwit/releases/download/v0.5.0/quickwit-v0.5.0-aarch64-apple-darwin.tar.gz)
-- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.5.0/quickwit-v0.5.0-x86_64-apple-darwin.tar.gz)
+- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.6.0/quickwit-v0.6.0-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.6.0/quickwit-v0.6.0-x86_64-unknown-linux-gnu.tar.gz)
+- [macOS aarch64](https://github.com/quickwit-oss/quickwit/releases/download/v0.6.0/quickwit-v0.6.0-aarch64-apple-darwin.tar.gz)
+- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.6.0/quickwit-v0.6.0-x86_64-apple-darwin.tar.gz)
 
 
 Check out the available builds in greater detail on [GitHub](https://github.com/quickwit-oss/quickwit/releases)
@@ -152,3 +152,4 @@ docker run --rm --platform linux/amd64 quickwit/quickwit --version
 ```
 
 To get the full gist of this, follow the [Quickstart guide](./quickstart.md).
+

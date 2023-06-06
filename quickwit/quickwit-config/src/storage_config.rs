@@ -217,10 +217,31 @@ pub struct AzureStorageConfig {
 }
 
 impl AzureStorageConfig {
+    pub const AZURE_STORAGE_ACCOUNT_ENV_VAR: &'static str = "QW_AZURE_STORAGE_ACCOUNT";
+
+    pub const AZURE_STORAGE_ACCESS_KEY_ENV_VAR: &'static str = "QW_AZURE_STORAGE_ACCESS_KEY";
+
+    /// Redacts the access key.
     pub fn redact(&mut self) {
         if let Some(access_key) = self.access_key.as_mut() {
             *access_key = "***redacted***".to_string();
         }
+    }
+
+    /// Attempts to find the account name in the environment variable `QW_AZURE_STORAGE_ACCOUNT` or
+    /// the config.
+    pub fn resolve_account_name(&self) -> Option<String> {
+        env::var(Self::AZURE_STORAGE_ACCOUNT_ENV_VAR)
+            .ok()
+            .or_else(|| self.account_name.clone())
+    }
+
+    /// Attempts to find the access key in the environment variable `QW_AZURE_STORAGE_ACCESS_KEY` or
+    /// the config.
+    pub fn resolve_access_key(&self) -> Option<String> {
+        env::var(Self::AZURE_STORAGE_ACCESS_KEY_ENV_VAR)
+            .ok()
+            .or_else(|| self.access_key.clone())
     }
 }
 
@@ -261,7 +282,9 @@ impl S3StorageConfig {
     }
 
     pub fn endpoint(&self) -> Option<String> {
-        env::var("QW_S3_ENDPOINT").ok().or(self.endpoint.clone())
+        env::var("QW_S3_ENDPOINT")
+            .ok()
+            .or_else(|| self.endpoint.clone())
     }
 
     pub fn force_path_style_access(&self) -> Option<bool> {
