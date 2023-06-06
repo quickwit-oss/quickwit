@@ -5,32 +5,40 @@ sidebar_position: 2
 
 In this guide, you will learn how to configure a Quickwit [storage](/docs/reference/storage-uri) for Azure Blob Storage.
 
-## Get the access key
+## Configure storage account and access key
 
-The access key can be accessed in your `Storage Account` inside the `Access keys` directory. 
+To set up your storage account and access key, you can either use the environment variables `QW_AZURE_STORAGE_ACCOUNT` and `QW_AZURE_STORAGE_ACCESS_KEY`:
 
-Declare the environment variable used by Quickwit to configure the storage:
 ```bash
-export QW_AZURE_ACCESS_KEY=****
+export QW_AZURE_STORAGE_ACCOUNT= your-azure-account-name
+export QW_AZURE_STORAGE_ACCESS_KEY= your-azure-access-key
 ```
 
-## Set the Metastore URI and default index URI
-
-Quickwit expects Azure URIs to be of the format `azure://{storage-account}/{container}/{prefix}` where:
-- `storage-account` is your Azure storage account name. 
-- `container` is the container name (or bucket in S3 parlance).
-- `prefix` is optional and can be any prefix.
-
-Here is an example of how to set up your [node config file](/docs/configuration/node-config) with GCS:
+Or, you can configure them through the storage section of the node config file. Here is an example of a storage configuration for Azure in YAML format:
 
 ```yaml
-metastore_uri: azure://my-storage-account/my-container/my-indexes
-default_index_uri: azure://my-storage-account/my-container/my-indexes
+storage:
+  azure:
+    account: your-azure-account-name
+    access_key: your-azure-access-key
 ```
 
-## Set the Index URI
+## Set the metastore URI and default index URI
 
-Here is an example of how to setup your index URI in the [index config file](/docs/configuration/index-config):
+Quickwit expects Azure URIs to match the following format `azure://{container}/{prefix}` where:
+- `container` is the container name (or "bucket" in S3 terminology).
+- `prefix` is optional and can be any blob prefix.
+
+Here is an example of how to set up a [node config file](/docs/configuration/node-config) for Azure:
+
 ```yaml
-index_uri: azure://my-storage-account/my-indexes/my-index-id
+metastore_uri: azure://my-container/my-indexes  # Applies only for file-backed metastores
+default_index_uri: azure://my-container/my-indexes
+```
+
+## Set the index URI
+
+Here is an example of how to setup an index URI in the [index config file](/docs/configuration/index-config):
+```yaml
+index_uri: azure://my-container/my-indexes/my-index
 ```

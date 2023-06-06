@@ -42,7 +42,8 @@ There are also other parameters that can be only defined by env variables:
 | `QW_S3_ENDPOINT` | Custom S3 endpoint. |
 | `QW_S3_MAX_CONCURRENCY` | Limit the number of concurent requests to S3 |
 | `QW_ENABLE_JAEGER_EXPORTER` | Enable trace export to Jaeger. |
-| `QW_AZURE_ACCESS_KEY` | Azure Blob storage access key. |
+| `QW_AZURE_STORAGE_ACCOUNT` | Azure Blob Storage account name. |
+| `QW_AZURE_STORAGE_ACCESS_KEY` | Azure Blob Storage account access key. |
 
 More details about [storage configuration](../reference/storage-uri.md).
 
@@ -58,13 +59,15 @@ If a storage configuration is not explicitly set, Quickwit will rely on the defa
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `access_key` | The Azure account access key. | |
+| `account` | The Azure storage account name. | |
+| `access_key` | The Azure storage account access key. | |
 
 Example of a storage configuration for Azure in YAML format:
 
 ```yaml
 storage:
   azure:
+    account: your-azure-account-name
     access_key: your-azure-access-key
 ```
 
@@ -144,7 +147,7 @@ This section contains the configuration options for a Searcher.
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `aggregation_memory_limit` | Controls the maximum amount of memory that can be used for aggregations before aborting. This limit is per single leaf query (a leaf query is made of one or several split queries). It is used to prevent excessive memory usage during the aggregation phase, which can lead to performance degradation or crashes. | `500M`|
+| `aggregation_memory_limit` | Controls the maximum amount of memory that can be used for aggregations before aborting. This limit is per request and single leaf query (a leaf query is querying one or multiple splits concurrently). It is used to prevent excessive memory usage during the aggregation phase, which can lead to performance degradation or crashes. Since it is per request, concurrent requests can exceed the limit. | `500M`|
 | `aggregation_bucket_limit` | Determines the maximum number of buckets returned to the client. | `65000` |
 | `fast_field_cache_capacity` | Fast field cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or if you use the search stream API, or even for tracing, it might worth increasing this parameter. The [metrics](../reference/metrics.md) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. | `1G` |
 | `split_footer_cache_capacity` | Split footer cache (it is essentially the hotcache) capacity on a Searcher.| `500M` |

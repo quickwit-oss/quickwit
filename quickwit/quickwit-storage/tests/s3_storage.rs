@@ -20,7 +20,7 @@
 // This file is an integration test that assumes that the environment
 // makes it possible to connect to Amazon S3's quickwit-integration-test bucket.
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use anyhow::Context;
 use quickwit_common::rand::append_random_suffix;
@@ -46,11 +46,11 @@ async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_ur
     let mut object_storage = S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri)
         .await
         .unwrap()
-        .with_prefix(Path::new("test-s3-compatible-storage"));
+        .with_prefix(PathBuf::from("test-s3-compatible-storage"));
 
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
-        .context("Test single part upload failed.")
+        .context("Test single-part upload failed.")
         .unwrap();
 
     object_storage.set_policy(MultiPartPolicy {
@@ -63,7 +63,7 @@ async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_ur
 
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await
-        .context("Test multi-part upload failed.")
+        .context("Test multipart upload failed.")
         .unwrap();
 }
 
