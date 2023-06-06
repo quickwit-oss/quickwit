@@ -23,12 +23,30 @@
 use std::path::PathBuf;
 
 use anyhow::Context;
+use once_cell::sync::OnceCell;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::setup_logging_for_tests;
 use quickwit_common::uri::Uri;
 use quickwit_config::S3StorageConfig;
 use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
-use serial_test::serial;
+use tokio::runtime::Runtime;
+
+// Introducing a common runtime for the unit tests in this file.
+//
+// By default, tokio creates a new runtime, for each unit test.
+// Here, we want to use the singleton `AwsSdkConfig` object.
+// This object packs a smithy connector which itself includes a
+// hyper client pool. A hyper client cannot be used from multiple runtimes.
+fn test_runtime_singleton() -> &'static Runtime {
+    static RUNTIME_CACHE: OnceCell<tokio::runtime::Runtime> = OnceCell::new();
+    RUNTIME_CACHE.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap()
+    })
+}
 
 async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_uri: &str) {
     setup_logging_for_tests();
@@ -68,37 +86,36 @@ async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_ur
 }
 
 #[cfg(feature = "testsuite")]
-#[tokio::test]
-#[serial]
+#[test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_suite_on_s3_storage_path_style_access() {
+fn test_suite_on_s3_storage_path_style_access() {
     let s3_storage_config = S3StorageConfig {
         force_path_style_access: true,
         ..Default::default()
     };
     let bucket_uri = append_random_suffix("s3://quickwit-integration-tests/test-path-style-access");
-    run_s3_storage_test_suite(s3_storage_config, &bucket_uri).await
+    let test_runtime = test_runtime_singleton();
+    test_runtime.block_on(run_s3_storage_test_suite(s3_storage_config, &bucket_uri));
 }
 
 #[cfg(feature = "testsuite")]
-#[tokio::test]
-#[serial]
+#[test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_suite_on_s3_storage_virtual_hosted_style_access() {
+fn test_suite_on_s3_storage_virtual_hosted_style_access() {
     let s3_storage_config = S3StorageConfig {
         force_path_style_access: false,
         ..Default::default()
     };
     let bucket_uri =
         append_random_suffix("s3://quickwit-integration-tests/test-virtual-hosted-style-access");
-    run_s3_storage_test_suite(s3_storage_config, &bucket_uri).await
+    let test_runtime = test_runtime_singleton();
+    test_runtime.block_on(run_s3_storage_test_suite(s3_storage_config, &bucket_uri));
 }
 
 #[cfg(feature = "testsuite")]
-#[tokio::test]
-#[serial]
+#[test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_suite_on_s3_storage_bulk_delete_single_object_delete_api() {
+fn test_suite_on_s3_storage_bulk_delete_single_object_delete_api() {
     let s3_storage_config = S3StorageConfig {
         disable_multi_object_delete_requests: true,
         ..Default::default()
@@ -107,12 +124,15 @@ async fn test_suite_on_s3_storage_bulk_delete_single_object_delete_api() {
         "s3://quickwit-integration-tests/test-bulk-delete-single-object-delete-api",
     );
     let storage_uri = Uri::from_well_formed(bucket_uri);
-    let mut object_storage = S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri)
-        .await
-        .unwrap();
-
-    quickwit_storage::test_write_and_bulk_delete(&mut object_storage)
-        .await
-        .context("Test bulk delete single-object delete API failed.")
-        .unwrap();
+    let test_runtime = test_runtime_singleton();
+    test_runtime.block_on(async move {
+        let mut object_storage =
+            S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri)
+                .await
+                .unwrap();
+        quickwit_storage::test_write_and_bulk_delete(&mut object_storage)
+            .await
+            .context("Test bulk delete single-object delete API failed.")
+            .unwrap();
+    });
 }
