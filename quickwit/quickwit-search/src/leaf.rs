@@ -29,8 +29,8 @@ use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::{
-    LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, SearchRequest,
-    SplitIdAndFooterOffsets, SplitSearchError,
+    LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, PartialHit, SearchRequest,
+    SortByValue, SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::{
@@ -42,6 +42,7 @@ use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
+use tokio::sync::RwLock;
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector};
@@ -426,6 +427,102 @@ pub(crate) fn rewrite_start_end_time_bounds(
     }
 }
 
+#[derive(Debug)]
+enum MutCanSplitDoBetter {
+    Uninformative,
+    SplitIdHigher(Option<String>),
+    SplitTimestampHigher(Option<i64>),
+    SplitTimestampLower(Option<i64>),
+}
+
+#[derive(Debug, Clone)]
+pub struct CanSplitDoBetter {
+    // TODO nothing is awaited while the rwlock is held, and critical sections are short, maybe
+    // this should be a sync lock?
+    inner: Arc<RwLock<MutCanSplitDoBetter>>,
+}
+
+impl CanSplitDoBetter {
+    /// Split metadata contains no information using for sorting
+    pub fn uninformative() -> Self {
+        CanSplitDoBetter {
+            inner: Arc::new(RwLock::new(MutCanSplitDoBetter::Uninformative)),
+        }
+    }
+
+    /// No order was requested, split id can be useful
+    pub fn no_order() -> Self {
+        CanSplitDoBetter {
+            inner: Arc::new(RwLock::new(MutCanSplitDoBetter::SplitIdHigher(None))),
+        }
+    }
+
+    /// Sorted by desc timestamp was requested
+    pub fn desc_timestamp() -> Self {
+        CanSplitDoBetter {
+            inner: Arc::new(RwLock::new(MutCanSplitDoBetter::SplitTimestampHigher(None))),
+        }
+    }
+
+    /// Sorted by asc timestamp was requested
+    pub fn asc_timestamp() -> Self {
+        CanSplitDoBetter {
+            inner: Arc::new(RwLock::new(MutCanSplitDoBetter::SplitTimestampLower(None))),
+        }
+    }
+
+    /// Returns whether the given split can possibly give documents better than the one already
+    /// known to match.
+    pub async fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
+        match &*self.inner.read().await {
+            MutCanSplitDoBetter::SplitIdHigher(Some(split_id)) => split.split_id >= *split_id,
+            MutCanSplitDoBetter::SplitTimestampHigher(Some(timestamp)) => {
+                split.timestamp_end() > *timestamp
+            }
+            MutCanSplitDoBetter::SplitTimestampLower(Some(timestamp)) => {
+                split.timestamp_start() < *timestamp
+            }
+            _ => true,
+        }
+    }
+
+    /// Record the new worst-of-the-top document, that is, the document which would first be
+    /// evicted from the list of best documents, if a better document was found. Only call this
+    /// funciton if you have at least max_hits documents already.
+    pub async fn record_new_worst_hit(&self, hit: &PartialHit) {
+        match &mut *self.inner.write().await {
+            MutCanSplitDoBetter::Uninformative => (),
+            MutCanSplitDoBetter::SplitIdHigher(split_id) => *split_id = Some(hit.split_id.clone()),
+            MutCanSplitDoBetter::SplitTimestampHigher(timestamp) => {
+                if let Some(SortByValue { sort_value: Some(SortValue::I64(timestamp_ns))}) = hit.sort_value {
+                    // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
+                    // sure we don't throw away something like 1.2s, so we should round up while
+                    // dividing.
+                    let mut timestamp_s = timestamp_ns / 1_000_000_000;
+                    if timestamp_ns % 1_000_000_000 != 0 {
+                        timestamp_s += 1;
+                    }
+                    *timestamp = Some(timestamp_s);
+                }
+            }
+            MutCanSplitDoBetter::SplitTimestampLower(timestamp) => {
+                if let Some(SortByValue { sort_value: Some(SortValue::I64(timestamp_ns))}) = hit.sort_value {
+                    // if we get a timestamp of, says 1.5s, we need to check down to 1s to make
+                    // sure we don't throw away something like 1.7s, so we should truncate,
+                    // which is the default behavior of division
+                    let timestamp_s = timestamp_ns / 1_000_000_000;
+                    *timestamp = Some(timestamp_s);
+                }
+            }
+        }
+    }
+
+    /// Returns whether it is useful to iteratively merge instead of merging all at once.
+    pub async fn iterative_merge(&self) -> bool {
+        !matches!(*self.inner.read().await, MutCanSplitDoBetter::Uninformative)
+    }
+}
+
 /// `leaf` step of search.
 ///
 /// The leaf search collects all kind of information, and returns a set of
@@ -441,6 +538,33 @@ pub async fn leaf_search(
 ) -> Result<LeafSearchResponse, SearchError> {
     let request = Arc::new(request.clone());
 
+    let split_filter = if request.sort_fields.is_empty() {
+        splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id));
+        CanSplitDoBetter::no_order()
+    } else if let Some((sort_by, timestamp_field)) = request
+        .sort_fields
+        .first()
+        .zip(doc_mapper.timestamp_field_name())
+    {
+        if sort_by.field_name == timestamp_field {
+            if sort_by.sort_order() == SortOrder::Desc {
+                splits.sort_unstable_by_key(|b| std::cmp::Reverse(b.timestamp_end()));
+                CanSplitDoBetter::desc_timestamp()
+            } else {
+                splits.sort_unstable_by_key(|a| a.timestamp_start());
+                CanSplitDoBetter::asc_timestamp()
+            }
+        } else {
+            CanSplitDoBetter::uninformative()
+        }
+    } else {
+        CanSplitDoBetter::uninformative()
+    };
+
+    // In the future this should become `request.aggregation.is_some() ||
+    // request.exact_count == true`
+    let run_all_splits = true;
+
     let leaf_search_single_split_futures: FuturesUnordered<_> = splits
         .iter()
         .map(|split| {
@@ -448,13 +572,29 @@ pub async fn leaf_search(
             let doc_mapper_clone = doc_mapper.clone();
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
-            let request = (*request).clone();
+            let mut request = (*request).clone();
+            let split_filter = split_filter.clone();
             tokio::spawn(
                 async move {
                 let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore
                     .acquire()
                     .await
                     .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+
+                if !split_filter.can_be_better(&split).await {
+                    if run_all_splits {
+                        request.max_hits = 0;
+                    } else {
+                        return Ok(LeafSearchResponse {
+                            num_hits: 0,
+                            partial_hits: Vec::new(),
+                            failed_splits: Vec::new(),
+                            num_attempted_splits: 1,
+                            intermediate_aggregation_result: None,
+                        })
+                    }
+                }
+
                 crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
                 let timer = crate::SEARCH_METRICS
                     .leaf_search_split_duration_secs
@@ -477,6 +617,9 @@ pub async fn leaf_search(
         })
         .collect();
 
+    // TODO implement incremential merge to allow skipping splits.
+    // TODO wash hit score away when doing a "sort by nothing" search so it is sorted by split id,
+    // not by doc_id inside a split.
     let split_search_results = leaf_search_single_split_futures.collect::<Vec<_>>().await;
 
     // the result wrapping is only for the collector api merge_fruits

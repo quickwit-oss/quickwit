@@ -148,6 +148,7 @@ enum SortingFieldComputerComponent {
         order: SortOrder,
     },
 }
+
 impl SortingFieldComputerComponent {
     fn recover_typed_sort_value(&self, sort_value: Option<u64>) -> Option<SortValue> {
         let recover_from_fast_field = |sort_value: u64, order: SortOrder, sort_field_type| {
