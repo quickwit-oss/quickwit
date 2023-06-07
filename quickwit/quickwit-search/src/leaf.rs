@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use futures::future::try_join_all;
+use futures::stream::{FuturesUnordered, StreamExt};
 use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
@@ -435,18 +436,19 @@ pub async fn leaf_search(
     searcher_context: Arc<SearcherContext>,
     request: &SearchRequest,
     index_storage: Arc<dyn Storage>,
-    splits: &[SplitIdAndFooterOffsets],
+    splits: &mut [SplitIdAndFooterOffsets],
     doc_mapper: Arc<dyn DocMapper>,
 ) -> Result<LeafSearchResponse, SearchError> {
     let request = Arc::new(request.clone());
-    let leaf_search_single_split_futures: Vec<_> = splits
+
+    let leaf_search_single_split_futures: FuturesUnordered<_> = splits
         .iter()
         .map(|split| {
             let split = split.clone();
             let doc_mapper_clone = doc_mapper.clone();
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
-            let request = request.clone();
+            let request = (*request).clone();
             tokio::spawn(
                 async move {
                 let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore
@@ -457,20 +459,25 @@ pub async fn leaf_search(
                 let timer = crate::SEARCH_METRICS
                     .leaf_search_split_duration_secs
                     .start_timer();
+
                 let leaf_search_single_split_res = leaf_search_single_split(
                     &searcher_context_clone,
-                    (*request).clone(),
+                    request,
                     index_storage_clone,
                     split.clone(),
                     doc_mapper_clone,
                 )
                 .await;
                 timer.observe_duration();
+                if let Ok(ss_res) = leaf_search_single_split_res.as_ref() {
+                    warn!("result for {}: {:?}", split.split_id, ss_res);
+                }
                 leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
             }.in_current_span())
         })
         .collect();
-    let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
+
+    let split_search_results = leaf_search_single_split_futures.collect::<Vec<_>>().await;
 
     // the result wrapping is only for the collector api merge_fruits
     // (Vec<tantivy::Result<LeafSearchResponse>>)
