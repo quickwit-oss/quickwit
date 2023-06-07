@@ -57,7 +57,6 @@ runs:
         path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
         retention-days: 3
     - name: Upload archive
-      if: "${{ inputs.version != 'nightly' }}"
       uses: quickwit-inc/upload-to-github-release@v1
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
