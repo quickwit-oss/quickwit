@@ -85,7 +85,7 @@
         "message"
       ]
     },
-    "version": "0.6"
+    "version": "0.7"
   },
   "index_uid": "my-index",
   "sources": [
@@ -103,8 +103,8 @@
       "transform": {
         "script": ".message = downcase(string!(.message))"
       },
-      "version": "0.6"
+      "version": "0.7"
     }
   ],
-  "version": "0.6"
+  "version": "0.7"
 }

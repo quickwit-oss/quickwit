@@ -45,7 +45,7 @@ use crate::{IndexMetadata, SplitMetadata};
 ///     #[serde(rename="0.2")]
 ///     V0_2(MyResourceV1) //< there was no change in this version.
 /// }
-const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "0.6";
+const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "0.7";
 
 /// This test makes sure that the resource is using the current `GLOBAL_QUICKWIT_RESOURCE_VERSION`.
 fn test_global_version<T: Serialize>(serializable: &T) -> anyhow::Result<()> {

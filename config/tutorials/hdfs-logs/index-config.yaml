@@ -2,7 +2,7 @@
 # Index config file for hdfs-logs dataset.
 #
 
-version: 0.6
+version: 0.7
 
 index_id: hdfs-logs
 

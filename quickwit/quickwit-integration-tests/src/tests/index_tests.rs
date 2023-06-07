@@ -40,7 +40,7 @@ async fn test_restarting_standalone_server() {
     let index_id = "test-index-with-restarting";
     let index_config = Bytes::from(format!(
         r#"
-            version: 0.6
+            version: 0.7
             index_id: {}
             doc_mapping:
                 field_mappings:
@@ -227,7 +227,7 @@ async fn test_commit_modes() {
         .indexes()
         .create(
             r#"
-            version: 0.6
+            version: 0.7
             index_id: test_commit_modes_index
             doc_mapping:
               field_mappings:
@@ -382,7 +382,7 @@ async fn test_very_large_index_name() {
         .create(
             format!(
                 r#"
-                version: 0.6
+                version: 0.7
                 index_id: {index_id}
                 doc_mapping:
                   field_mappings:
@@ -438,7 +438,7 @@ async fn test_very_large_index_name() {
         .create(
             format!(
                 r#"
-                    version: 0.6
+                    version: 0.7
                     index_id: {oversized_index_id}
                     doc_mapping:
                       field_mappings:
@@ -474,7 +474,7 @@ async fn test_shutdown() {
         .indexes()
         .create(
             r#"
-            version: 0.6
+            version: 0.7
             index_id: test_commit_modes_index
             doc_mapping:
               field_mappings:

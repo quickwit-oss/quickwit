@@ -24,7 +24,7 @@ The doc mapping of this index described below is derived from the [OpenTelemetry
 
 ```yaml
 
-version: 0.6
+version: 0.7
 
 index_id: otel-logs-v0
 

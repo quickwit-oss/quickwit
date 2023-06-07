@@ -44,7 +44,7 @@ use std::ops::Range;
 pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
 pub use metastore::file_backed_metastore::FileBackedMetastore;
 pub use metastore::grpc_metastore::{GrpcMetastoreAdapter, MetastoreGrpcClient};
-pub(crate) use metastore::index_metadata::serialize::{IndexMetadataV0_6, VersionedIndexMetadata};
+pub(crate) use metastore::index_metadata::serialize::{IndexMetadataV0_7, VersionedIndexMetadata};
 pub use metastore::metastore_event_publisher::{MetastoreEvent, MetastoreEventPublisher};
 #[cfg(feature = "postgres")]
 pub use metastore::postgresql_metastore::PostgresqlMetastore;
@@ -57,16 +57,16 @@ pub use metastore_resolver::MetastoreResolver;
 use quickwit_common::is_disjoint;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 pub use split_metadata::{Split, SplitMetadata, SplitState};
-pub(crate) use split_metadata_version::{SplitMetadataV0_6, VersionedSplitMetadata};
+pub(crate) use split_metadata_version::{SplitMetadataV0_7, VersionedSplitMetadata};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(
     Split,
     SplitState,
     VersionedIndexMetadata,
-    IndexMetadataV0_6,
+    IndexMetadataV0_7,
     VersionedSplitMetadata,
-    SplitMetadataV0_6,
+    SplitMetadataV0_7,
 )))]
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct MetastoreApiSchemas;
