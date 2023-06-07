@@ -132,10 +132,9 @@ search_settings:
 
 ## Known limitations
 
-There are a few limitations on the current distributed tracing setup in Quickwit 0.5:
-- Aggregations are not available on sparse fields and JSON field, this will be fixed in 0.6. This means that only the timestamp and `trace_id` fields can support aggregations.
-- The OTLP gRPC service does not provide High-Availability and High-Durability, this will be fixed in Q2/Q3.
-- OTLP gRPC service index documents only in the `otel-trace-v0` index.
+There are a few limitations on the current distributed tracing setup in Quickwit 0.6:
+- The OTLP gRPC service does not provide High-Availability and High-Durability, this will be fixed in Q3/Q4.
+- OTLP gRPC service index documents only in the `otel-trace-v0_6` index.
 - OTLP HTTP is not available but it should be easy to add.
 
 If you are interested in new features or discovered other limitations, please open an issue on [GitHub](https://github.com/quickwit-oss/quickwit).

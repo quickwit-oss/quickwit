@@ -108,7 +108,3 @@ Quickwit is now ingesting logs coming from Fluentbit and you can search them eit
 - `curl "http://127.0.0.1:7280/api/v1/fluentbit-logs/search?query=severity:DEBUG"`
 - Open your browser at `http://127.0.0.1:7280/ui/search?query=severity:DEBUG&index_id=fluentbit-logs&max_hits=10`.
 
-
-## Further improvements
-
-You will soon be able to do aggregations on dynamic fields (planned for 0.6).
