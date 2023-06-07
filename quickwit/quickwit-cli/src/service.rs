@@ -39,7 +39,7 @@ pub fn build_run_command() -> Command {
         .long_about("Starts a Quickwit node with all services enabled by default: `indexer`, `searcher`, `metastore`, `control-plane`, and `janitor`.")
         .arg(config_cli_arg())
         .args(&[
-            arg!(--"service" <SERVICE> "Services (indexer,searcher,janitor,metastore or control-plane) to run. If unspecified, all the supported services are started.")
+            arg!(--"service" <SERVICE> "Services (`indexer`, `searcher`, `metastore`, `control-plane`, or `janitor`) to run. If unspecified, all the supported services are started.")
                 .action(ArgAction::Append)
                 .required(false),
         ])
