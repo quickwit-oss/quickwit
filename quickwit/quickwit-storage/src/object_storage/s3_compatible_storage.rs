@@ -70,7 +70,8 @@ pub struct S3CompatibleObjectStorage {
     prefix: PathBuf,
     multipart_policy: MultiPartPolicy,
     retry_params: RetryParams,
-    disable_multi_object_delete_requests: bool,
+    disable_multi_object_delete: bool,
+    disable_multipart_upload: bool,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -141,6 +142,8 @@ impl S3CompatibleObjectStorage {
             max_attempts: 3,
             ..Default::default()
         };
+        let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
+        let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
         Ok(Self {
             s3_client,
             uri,
@@ -148,8 +151,8 @@ impl S3CompatibleObjectStorage {
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
             retry_params,
-            disable_multi_object_delete_requests: s3_storage_config
-                .disable_multi_object_delete_requests,
+            disable_multi_object_delete,
+            disable_multipart_upload,
         })
     }
 
@@ -178,7 +181,8 @@ impl S3CompatibleObjectStorage {
             prefix,
             multipart_policy: self.multipart_policy,
             retry_params: self.retry_params,
-            disable_multi_object_delete_requests: self.disable_multi_object_delete_requests,
+            disable_multi_object_delete: self.disable_multi_object_delete,
+            disable_multipart_upload: self.disable_multipart_upload,
         }
     }
 
@@ -397,7 +401,7 @@ impl S3CompatibleObjectStorage {
         Ok(completed_part)
     }
 
-    async fn put_multi_part<'a>(
+    async fn put_multipart<'a>(
         &'a self,
         key: &'a str,
         payload: Box<dyn crate::PutPayload>,
@@ -674,10 +678,10 @@ impl Storage for S3CompatibleObjectStorage {
         let key = self.key(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
-        if part_num_bytes >= total_len {
+        if self.disable_multipart_upload || part_num_bytes >= total_len {
             self.put_single_part(&key, payload, total_len).await?;
         } else {
-            self.put_multi_part(&key, payload, part_num_bytes, total_len)
+            self.put_multipart(&key, payload, part_num_bytes, total_len)
                 .await?;
         }
         Ok(())
@@ -720,7 +724,7 @@ impl Storage for S3CompatibleObjectStorage {
     }
 
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
-        if self.disable_multi_object_delete_requests {
+        if self.disable_multi_object_delete {
             self.bulk_delete_single(paths).await
         } else {
             self.bulk_delete_multi(paths).await
@@ -871,7 +875,8 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
-            disable_multi_object_delete_requests: false,
+            disable_multi_object_delete: false,
+            disable_multipart_upload: false,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -924,7 +929,8 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
-            disable_multi_object_delete_requests: true,
+            disable_multi_object_delete: true,
+            disable_multipart_upload: false,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -967,7 +973,8 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
-            disable_multi_object_delete_requests: false,
+            disable_multi_object_delete: false,
+            disable_multipart_upload: false,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1051,7 +1058,8 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
-            disable_multi_object_delete_requests: false,
+            disable_multi_object_delete: false,
+            disable_multipart_upload: false,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[

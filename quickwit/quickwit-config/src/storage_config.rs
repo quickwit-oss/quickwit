@@ -39,6 +39,18 @@ pub enum StorageBackend {
     S3,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageBackendFlavor {
+    /// Garage
+    Garage,
+    /// Google Cloud Storage
+    #[serde(alias = "gcp", alias = "google")]
+    Gcs,
+    /// MinIO
+    MinIO,
+}
+
 /// Holds the storage configurations defined in the `storage` section of node config files.
 ///
 /// ```yaml
@@ -61,6 +73,14 @@ impl StorageConfigs {
     pub fn redact(&mut self) {
         for storage_config in self.0.iter_mut() {
             storage_config.redact();
+        }
+    }
+
+    pub fn apply_flavors(&mut self) {
+        for storage_config in self.0.iter_mut() {
+            if let StorageConfig::S3(s3_storage_config) = storage_config {
+                s3_storage_config.apply_flavor();
+            }
         }
     }
 
@@ -265,6 +285,9 @@ impl fmt::Debug for AzureStorageConfig {
 #[serde(deny_unknown_fields)]
 pub struct S3StorageConfig {
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flavor: Option<StorageBackendFlavor>,
+    #[serde(default)]
     pub access_key_id: Option<String>,
     #[serde(default)]
     pub secret_access_key: Option<String>,
@@ -274,11 +297,31 @@ pub struct S3StorageConfig {
     pub endpoint: Option<String>,
     #[serde(default)]
     pub force_path_style_access: bool,
+    #[serde(alias = "disable_multi_object_delete_requests")]
     #[serde(default)]
-    pub disable_multi_object_delete_requests: bool,
+    pub disable_multi_object_delete: bool,
+    #[serde(default)]
+    pub disable_multipart_upload: bool,
 }
 
 impl S3StorageConfig {
+    fn apply_flavor(&mut self) {
+        match self.flavor {
+            Some(StorageBackendFlavor::Garage) => {
+                self.region = Some("garage".to_string());
+                self.force_path_style_access = true;
+            }
+            Some(StorageBackendFlavor::Gcs) => {
+                self.disable_multi_object_delete = true;
+                self.disable_multipart_upload = true;
+            }
+            Some(StorageBackendFlavor::MinIO) => {
+                self.force_path_style_access = true;
+            }
+            _ => {}
+        }
+    }
+
     pub fn redact(&mut self) {
         if let Some(secret_access_key) = self.secret_access_key.as_mut() {
             *secret_access_key = "***redacted***".to_string();
@@ -308,8 +351,8 @@ impl fmt::Debug for S3StorageConfig {
             .field("endpoint", &self.endpoint)
             .field("force_path_style_access", &self.force_path_style_access)
             .field(
-                "disable_multi_object_delete_requests",
-                &self.disable_multi_object_delete_requests,
+                "disable_multi_object_delete",
+                &self.disable_multi_object_delete,
             )
             .finish()
     }
@@ -354,6 +397,30 @@ mod tests {
             .into(),
         ]);
         assert_eq!(storage_configs, expected_storage_configs);
+    }
+
+    #[test]
+    fn test_storage_configs_apply_flavors() {
+        let mut storage_configs = StorageConfigs(vec![
+            S3StorageConfig {
+                flavor: Some(StorageBackendFlavor::Gcs),
+                ..Default::default()
+            }
+            .into(),
+            S3StorageConfig {
+                flavor: Some(StorageBackendFlavor::MinIO),
+                ..Default::default()
+            }
+            .into(),
+        ]);
+        storage_configs.apply_flavors();
+
+        let gcs_storage_config = storage_configs[0].as_s3().unwrap();
+        assert!(gcs_storage_config.disable_multi_object_delete);
+        assert!(gcs_storage_config.disable_multipart_upload);
+
+        let minio_storage_config = storage_configs[1].as_s3().unwrap();
+        assert!(minio_storage_config.force_path_style_access);
     }
 
     #[test]
@@ -461,6 +528,7 @@ mod tests {
                 endpoint: http://localhost:4566
                 force_path_style_access: true
                 disable_multi_object_delete_requests: true
+                disable_multipart_upload: true
             "#;
             let s3_storage_config: S3StorageConfig =
                 serde_yaml::from_str(s3_storage_config_yaml).unwrap();
@@ -469,7 +537,8 @@ mod tests {
                 region: Some("us-east-1".to_string()),
                 endpoint: Some("http://localhost:4566".to_string()),
                 force_path_style_access: true,
-                disable_multi_object_delete_requests: true,
+                disable_multi_object_delete: true,
+                disable_multipart_upload: true,
                 ..Default::default()
             };
             assert_eq!(s3_storage_config, expected_s3_config);

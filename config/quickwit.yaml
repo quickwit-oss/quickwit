@@ -73,6 +73,7 @@ version: 0.6
 # default_index_root_uri: s3://your-bucket/indexes
 #
 # -------------------------------- Storage settings --------------------------------
+#
 # Hardcoding credentials into configuration files is not secure and strongly
 # discouraged. Prefer the alternative authentication methods that your storage
 # backend may provide.
@@ -85,10 +86,11 @@ version: 0.6
 #   s3:
 #     access_key_id: ${AWS_ACCESS_KEY_ID}
 #     secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-#     endpoint: ${QW_S3_ENDPOINT}
 #     region: ${AWS_REGION}
+#     endpoint: ${QW_S3_ENDPOINT}
 #     force_path_style_access: ${QW_S3_FORCE_PATH_STYLE_ACCESS:-false}
-#     disable_multi_object_delete_requests: false
+#     disable_multi_object_delete: false
+#     disable_multipart_upload: false
 #
 # -------------------------------- Metastore settings --------------------------------
 #
