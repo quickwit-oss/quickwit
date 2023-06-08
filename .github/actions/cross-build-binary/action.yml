@@ -63,4 +63,5 @@ runs:
       with:
         file: ${{ env.ASSET_FULL_NAME }}.tar.gz
         overwrite: true
+        draft: false
         tag_name: ${{ inputs.version }}
