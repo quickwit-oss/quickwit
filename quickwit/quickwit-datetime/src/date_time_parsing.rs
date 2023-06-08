@@ -141,20 +141,41 @@ mod tests {
 
     #[test]
     fn test_parse_iso8601() {
-        let date_time = parse_iso8601("20120521T120914Z").unwrap();
+        let date_time = parse_iso8601("2012-05-21T12:09:14Z").unwrap();
         assert_eq!(date_time, datetime!(2012-05-21 12:09:14 UTC));
+
+        let date_time = parse_iso8601("2012-05-21T12:09:14-00:00").unwrap();
+        assert_eq!(date_time, datetime!(2012-05-21 12:09:14 UTC));
+
+        let date_time = parse_iso8601("2012-05-21T12:09:14-08:00").unwrap();
+        assert_eq!(date_time, datetime!(2012-05-21 20:09:14 UTC));
     }
 
     #[test]
     fn test_parse_rfc2822() {
         let date_time = parse_rfc2822("Mon, 21 May 2012 12:09:14 GMT").unwrap();
         assert_eq!(date_time, datetime!(2012-05-21 12:09:14 UTC));
+
+        let date_time = parse_rfc2822("Mon, 21 May 2012 12:09:14 UT").unwrap();
+        assert_eq!(date_time, datetime!(2012-05-21 12:09:14 UTC));
+
+        let date_time = parse_rfc2822("Mon, 21 May 2012 12:09:14 PST").unwrap();
+        assert_eq!(date_time, datetime!(2012-05-21 20:09:14 UTC));
+
+        let date_time = parse_rfc2822("Mon, 21 May 2012 12:09:14 -0800").unwrap();
+        assert_eq!(date_time, datetime!(2012-05-21 20:09:14 UTC));
     }
 
     #[test]
     fn test_parse_rfc3339() {
+        let date_time = parse_rfc3339("2012-05-21T12:09:14Z").unwrap();
+        assert_eq!(date_time, datetime!(2012-05-21 12:09:14 UTC));
+
         let date_time = parse_rfc3339("2012-05-21T12:09:14-00:00").unwrap();
         assert_eq!(date_time, datetime!(2012-05-21 12:09:14 UTC));
+
+        let date_time = parse_rfc3339("2012-05-21T12:09:14-08:00").unwrap();
+        assert_eq!(date_time, datetime!(2012-05-21 20:09:14 UTC));
     }
 
     #[test]
