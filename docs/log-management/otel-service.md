@@ -31,19 +31,17 @@ index_id: otel-logs-v0_6
 doc_mapping:
   mode: strict
   field_mappings:
-    - name: timestamp_secs
+    - name: timestamp_nanos
       type: datetime
       input_formats: [unix_timestamp]
+      output_format: unix_timestamp_nanos
       indexed: false
       fast: true
-      precision: seconds
-      stored: false
-    - name: timestamp_nanos
-      type: u64
-      indexed: false
+      precision: milliseconds
     - name: observed_timestamp_nanos
-      type: u64
-      indexed: false
+      type: datetime
+      input_formats: [unix_timestamp]
+      output_format: unix_timestamp_nanos
     - name: service_name
       type: text
       tokenizer: raw
@@ -61,11 +59,9 @@ doc_mapping:
       type: u64
       indexed: false
     - name: trace_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: span_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: trace_flags
       type: u64
       indexed: false
@@ -88,13 +84,13 @@ doc_mapping:
       type: u64
       indexed: false
 
-  timestamp_field: timestamp_secs
+  timestamp_field: timestamp_nanos
 
 indexing_settings:
   commit_timeout_secs: 5
 
 search_settings:
-  default_search_fields: []
+  default_search_fields: [body.message]
 ```
 
 ## UI Integration

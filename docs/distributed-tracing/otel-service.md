@@ -35,8 +35,7 @@ doc_mapping:
   mode: strict
   field_mappings:
     - name: trace_id
-      type: text
-      tokenizer: raw
+      type: bytes
       fast: true
     - name: trace_state
       type: text
@@ -63,8 +62,7 @@ doc_mapping:
       type: u64
       indexed: false
     - name: span_id
-      type: text
-      tokenizer: raw
+      type: bytes
     - name: span_kind
       type: u64
     - name: span_name
@@ -74,18 +72,18 @@ doc_mapping:
       type: text
       tokenizer: raw
     - name: span_start_timestamp_nanos
-      type: u64
-      indexed: false
-    - name: span_end_timestamp_nanos
-      type: u64
-      indexed: false
-    - name: span_start_timestamp_secs
       type: datetime
       input_formats: [unix_timestamp]
+      output_format: unix_timestamp_nanos
       indexed: false
       fast: true
-      precision: seconds
-      stored: false
+      precision: milliseconds
+    - name: span_end_timestamp_nanos
+      type: datetime
+      input_formats: [unix_timestamp]
+      output_format: unix_timestamp_nanos
+      indexed: false
+      fast: false
     - name: span_duration_millis
       type: u64
       indexed: false
@@ -105,9 +103,9 @@ doc_mapping:
       indexed: false
     - name: span_status
       type: json
-      indexed: false
+      indexed: true
     - name: parent_span_id
-      type: text
+      type: bytes
       indexed: false
     - name: events
       type: array<json>
@@ -121,7 +119,7 @@ doc_mapping:
       type: array<json>
       tokenizer: raw
 
-  timestamp_field: span_start_timestamp_secs
+  timestamp_field: span_start_timestamp_nanos
 
 indexing_settings:
   commit_timeout_secs: 5
