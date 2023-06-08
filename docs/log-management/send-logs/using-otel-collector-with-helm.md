@@ -179,13 +179,13 @@ If you see some errors there, it's probably coming from a misconfiguration of yo
 
 ### Ready to search logs
 
-You are now ready to search, wait 30 seconds and you will see the first indexed logs: just [open the UI](http://localhost:7280/ui/search?query=*&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs) and play with it. Funny thing you will see quickwit logs in it :).
+You are now ready to search, wait 30 seconds and you will see the first indexed logs: just [open the UI](http://localhost:7280/ui/search?query=*&index_id=otel-logs-v0_6&max_hits=10&sort_by_field=-timestamp_secs) and play with it. Funny thing you will see quickwit logs in it :).
 
 Example of queries:
 
-- [body.message:quickwit](http://localhost:7280/ui/search?query=body.message:quickwit&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs)
-- [resource_attributes.k8s.container.name:quickwit](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.name%3Aquickwit&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs)
-- [resource_attributes.k8s.container.restart_count:1](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.restart_count%3A1&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs)
+- [body.message:quickwit](http://localhost:7280/ui/search?query=body.message:quickwit&index_id=otel-logs-v0_6&max_hits=10&sort_by_field=-timestamp_secs)
+- [resource_attributes.k8s.container.name:quickwit](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.name%3Aquickwit&index_id=otel-logs-v0_6&max_hits=10&sort_by_field=-timestamp_secs)
+- [resource_attributes.k8s.container.restart_count:1](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.restart_count%3A1&index_id=otel-logs-v0_6&max_hits=10&sort_by_field=-timestamp_secs)
 
  
 ![UI screenshot](../../assets/screenshot-ui-otel-logs.png)
@@ -198,7 +198,7 @@ Let's first delete the index and then uninstall the charts.
 
 ```bash
 # Delete the index. The command will return the list of delete split files.
-curl -XDELETE http://127.0.0.1:7280/api/v1/indexes/otel-logs-v0
+curl -XDELETE http://127.0.0.1:7280/api/v1/indexes/otel-logs-v0_6
 
 # Uninstall charts
 helm uninstall otel-collector

@@ -230,7 +230,7 @@ Now, if you hit [http://localhost:5000/process-ip](http://localhost:5000/process
 30 seconds has passed, let's query the traces from our service:
 
 ```bash
-curl -XPOST http://localhost:7280/api/v1/otel-trace-v0/search -H 'Content-Type: application/json' -d '{
+curl -XPOST http://localhost:7280/api/v1/otel-traces-v0_6/search -H 'Content-Type: application/json' -d '{
     "query": "resource_attributes.service.name:my_app"
 }'
 ```

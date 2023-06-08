@@ -5,7 +5,7 @@ sidebar_position: 4
 
 Quickwit natively supports the [OpenTelemetry Protocol (OTLP)](https://opentelemetry.io/docs/reference/specification/protocol/otlp/) and provides a gRPC endpoint to receive spans from an OpenTelemetry collector. This endpoint is enabled by default.
 
-When enabled, Quickwit will start the gRPC service ready to receive spans from an OpenTelemetry collector. The spans are indexed on  the `otel-trace-v0` index, and this index will be automatically created if not present. The index doc mapping is described in the next [section](#trace-and-span-data-model).
+When enabled, Quickwit will start the gRPC service ready to receive spans from an OpenTelemetry collector. The spans are indexed on  the `otel-traces-v0_6` index, and this index will be automatically created if not present. The index doc mapping is described in the next [section](#trace-and-span-data-model).
 
 If for any reason, you want to disable this endpoint, you can:
 - Set the `QW_ENABLE_OTLP_ENDPOINT` environment variable to `false` when starting Quickwit.
@@ -19,14 +19,14 @@ indexer:
 
 ## OpenTelemetry logs data model
 
-Quickwit sends OpenTelemetry logs into the `otel-logs-v0` index which is automatically created if you enable the OpenTelemetry service.
+Quickwit sends OpenTelemetry logs into the `otel-logs-v0_6` index which is automatically created if you enable the OpenTelemetry service.
 The doc mapping of this index described below is derived from the [OpenTelemetry logs data model](https://opentelemetry.io/docs/reference/specification/logs/data-model/).
 
 ```yaml
 
 version: 0.6
 
-index_id: otel-logs-v0
+index_id: otel-logs-v0_6
 
 doc_mapping:
   mode: strict
