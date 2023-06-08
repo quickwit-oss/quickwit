@@ -19,7 +19,6 @@ aws-types = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-ec2_instance_metadata = { workspace = true }
 futures = { workspace = true }
 hyper = { workspace = true }
 hyper-rustls = { workspace = true }
