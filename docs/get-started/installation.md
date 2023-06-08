@@ -40,7 +40,7 @@ Downloads `.tar.gz`:
 
 </RenderIf>
 
-<!-- Bellow is the set of links you need to edit when a new version is released -->
+<!-- Bellow is the set of links to edit when a new version is released -->
 <RenderIf condition={useDocsVersion().version != 'current'}>
 
 version: 0.6.0 - [Release notes](https://github.com/quickwit-oss/quickwit/releases/tag/v0.6.0) - [Changelog](https://github.com/quickwit-oss/quickwit/blob/main/CHANGELOG.md)
