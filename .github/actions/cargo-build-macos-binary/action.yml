@@ -61,11 +61,11 @@ runs:
         path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
         retention-days: 3
     - name: Deploy archive to GitHub release
-      if: "${{ inputs.version != 'nightly' }}"
       uses: quickwit-inc/upload-to-github-release@v1
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
       with:
         file: ${{ env.ASSET_FULL_NAME }}.tar.gz
         overwrite: true
+        draft: ${{ inputs.version != 'nightly' }}
         tag_name: ${{ inputs.version }}
