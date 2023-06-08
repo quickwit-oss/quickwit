@@ -150,10 +150,10 @@ docker run --rm quickwit/quickwit --version
 # You can also safely ignore jemalloc warnings.
 docker run --rm --platform linux/amd64 quickwit/quickwit --version
 ```
-Here is the directory layout of quickwit inside the container in case you need to mount a volume:
+Here is the directory layout of Quickwit inside the container in case you need to mount a volume:
 
 ```bash
-quickwit
+/quickwit
     ├── config
     │   └── quickwit.yaml
     ├── quickwit
