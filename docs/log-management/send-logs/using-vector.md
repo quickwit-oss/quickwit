@@ -43,7 +43,9 @@ docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 7280:7280 quickwit/quickwit
 
 ## Taking advantage of Quickwit's native support for logs
 
-Let's embrace the OpenTelemetry standard and take advantage of Quickwit features. With the native support for OpenTelemetry standards, Quickwit already comes with an index called `otel-logs_v0_6` that is compatible with the OpenTelemetry [logs data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md)
+Let's embrace the OpenTelemetry standard and take advantage of Quickwit features. With the native support for OpenTelemetry standards, Quickwit already comes with an index called `otel-logs_v0_6` that is compatible with the OpenTelemetry [logs data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md). This means we can start pushing log data without any prior usual index setup. 
+
+Here is the OpenTelemetry index configuration for reference.
 
 ```yaml title="otel-logs_v0_6"
 version: 0.6
@@ -224,4 +226,4 @@ curl -XPOST -H "Content-Type: application/json" http://127.0.0.1:7280/api/v1/ote
 
 ## Going further
 
-Now you can also deploy Grafana and connect to Quickwit as data source for query, alerts and more!
+Now you can also deploy Grafana and connect to Quickwit as data source for query, dashboard, alerts and more!
