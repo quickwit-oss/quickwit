@@ -292,7 +292,7 @@ fn get_or_insert_path<'a>(
 }
 
 impl MappingNode {
-    /// Find the field mapping type in the mapping tree for a given field path.
+    /// Finds the field mapping type for a given field path in the mapping tree.
     /// Dots in `field_path_as_str` define the boundaries between field names.
     /// If a dot is part of a field name, it must be escaped with '\'.
     pub fn find_field_mapping_type(&self, field_path_as_str: &str) -> Option<FieldMappingType> {

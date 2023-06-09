@@ -122,20 +122,20 @@ fn validate_timestamp_field(
     mapping_root_node: &MappingNode,
 ) -> anyhow::Result<()> {
     let Some(timestamp_field_type) = mapping_root_node.find_field_mapping_type(timestamp_field_path) else {
-        bail!("Missing timestamp field in field mappings: `{}`", timestamp_field_path);
+        bail!("Could not find timestamp field `{timestamp_field_path}` in field mappings.");
     };
     if let FieldMappingType::DateTime(date_time_option, cardinality) = &timestamp_field_type {
         if cardinality != &Cardinality::SingleValue {
             bail!(
-                "Multiple values are forbidden for the timestamp field (`{timestamp_field_path}`)."
+                "Timestamp field `{timestamp_field_path}` should be single-valued."
             );
         }
         if !date_time_option.fast {
-            bail!("The timestamp field `{timestamp_field_path}`is required to be a fast field.");
+            bail!("Timestamp field `{timestamp_field_path}` should be a fast field.");
         }
     } else {
         bail!(
-            "The timestamp field `{timestamp_field_path}` is required to have the datetime type."
+            "Timestamp field `{timestamp_field_path}` should be a datetime field."
         );
     }
     Ok(())
