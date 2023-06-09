@@ -34,84 +34,86 @@ mkdir qwdata
 ```bash
 # Create Quickwit data dir.
 mkdir qwdata
-docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit run
+docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 7280:7280 quickwit/quickwit run
 ```
 
 </TabItem>
 
 </Tabs>
 
-## Create an index for logs
+## Taking advantage of Quickwit's native support for logs
 
-Let's embrace the OpenTelemetry standard and create an index compatible with its [logs data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md).
+Let's embrace the OpenTelemetry standard and take advantage of Quickwit features. With the native support for OpenTelemetry standards, Quickwit already comes with an index called `otel-logs_v0_6` that is compatible with the OpenTelemetry [logs data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md)
 
-```yaml title="index-config.yaml"
-#
-# Index config file for receiving logs in OpenTelemetry format.
-# Link: https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md
-#
-
+```yaml title="otel-logs_v0_6"
 version: 0.6
 
-index_id: vector-otel-logs
+index_id: otel-logs-v0_6
 
 doc_mapping:
+  mode: strict
   field_mappings:
-    - name: timestamp
+    - name: timestamp_nanos
       type: datetime
-      input_formats:
-        - unix_timestamp
-      output_format: unix_timestamp_secs
+      input_formats: [unix_timestamp]
+      output_format: unix_timestamp_nanos
+      indexed: false
       fast: true
-    - name: severity
+      precision: milliseconds
+    - name: observed_timestamp_nanos
+      type: datetime
+      input_formats: [unix_timestamp]
+      output_format: unix_timestamp_nanos
+    - name: service_name
       type: text
       tokenizer: raw
-      fast: true
-    - name: body
+    - name: severity_text
       type: text
-      tokenizer: default
-      record: position
+      tokenizer: raw
+    - name: severity_number
+      type: u64
+    - name: body
+      type: json
     - name: attributes
       type: json
-    - name: resource
+      tokenizer: raw
+    - name: dropped_attributes_count
+      type: u64
+      indexed: false
+    - name: trace_id
+      type: bytes
+    - name: span_id
+      type: bytes
+    - name: trace_flags
+      type: u64
+      indexed: false
+    - name: resource_attributes
       type: json
-  timestamp_field: timestamp
+      tokenizer: raw
+    - name: resource_dropped_attributes_count
+      type: u64
+      indexed: false
+    - name: scope_name
+      type: text
+      indexed: false
+    - name: scope_version
+      type: text
+      indexed: false
+    - name: scope_attributes
+      type: json
+      indexed: false
+    - name: scope_dropped_attributes_count
+      type: u64
+      indexed: false
 
-search_settings:
-  default_search_fields: [severity, body]
+  timestamp_field: timestamp_nanos
 
 indexing_settings:
-  commit_timeout_secs: 10
+  commit_timeout_secs: 5
+
+search_settings:
+  default_search_fields: [body.message]
 ```
-
-First download the YAML file:
-
-```bash
-curl -o vector-otel-logs.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/vector-otel-logs/index-config.yaml
-```
-
-And then create the index with `cURL` or the `CLI`:
-
-<Tabs>
-
-<TabItem value="curl" label="cURL">
-
-```bash
-curl -XPOST http://localhost:7280/api/v1/indexes -H "content-type: application/yaml" --data-binary @vector-otel-logs.yaml
-```
-
-</TabItem>
-
-<TabItem value="cli" label="CLI">
-
-```bash
-./quickwit index create --index-config vector-otel-logs.yaml
-```
-
-</TabItem>
-
-</Tabs>
-
 
 ## Setup Vector
 
@@ -132,17 +134,16 @@ inputs = [ "generate_syslog"]
 type = "remap"
 source = '''
   structured = parse_syslog!(.message)
-  .timestamp, err = to_unix_timestamp(structured.timestamp, unit: "milliseconds")
-  .body = .message
-  del(.message)
-  .resource.source_type = .source_type
-  .resource.host.hostname = structured.hostname
-  .resource.service.name = structured.appname
+  .timestamp_nanos, err = to_unix_timestamp(structured.timestamp, unit: "nanoseconds")
+  .body = structured
+  .service_name = structured.appname
+  .resource_attributes.source_type = .source_type
+  .resource_attributes.host.hostname = structured.hostname
+  .resource_attributes.service.name = structured.appname
   .attributes.syslog.procid = structured.procid
   .attributes.syslog.facility = structured.facility
   .attributes.syslog.version = structured.version
-  del(.source_type)
-  .severity = if includes(["emerg", "err", "crit", "alert"], structured.severity) {
+  .severity_text = if includes(["emerg", "err", "crit", "alert"], structured.severity) {
     "ERROR"
   } else if structured.severity == "warning" {
     "WARN"
@@ -153,7 +154,10 @@ source = '''
   } else {
    structured.severity
   }
-  .name = structured.msgid
+  .scope_name = structured.msgid
+  del(.message)
+  del(.timestamp)
+  del(.source_type)
 '''
 
 # useful to see the logs in the terminal
@@ -180,11 +184,13 @@ docker run -v $(pwd)/vector.toml:/etc/vector/vector.toml:ro -p 8383:8383 --add-h
 ## Search logs
 
 Quickwit is now ingesting logs coming from Vector and you can search them either with `curl` or by using the UI:
-- `curl -XGET http://127.0.0.1:7280/api/v1/vector-otel-logs/search\?query\=severity:ERROR`
-- Open your browser at `http://127.0.0.1:7280/ui/search?query=severity:ERROR&index_id=vector-otel-logs&max_hits=10` and play with it!
+- `curl -XGET http://127.0.0.1:7280/api/v1/otel-logs-v0_6/search?query=severity_text:ERROR`
+- Open your browser at `http://127.0.0.1:7280/ui/search?query=severity_text:ERROR&index_id=otel-logs-v0_6&max_hits=10` and play with it!
 
+<!-- 
+TODO: show this when aggregation enabled on severity_text
 
-## Compute aggregation on severity
+## Compute aggregation on severity_text
 
 For aggregations, we can't use yet Quickwit UI but we can use cURL.
 
@@ -197,13 +203,13 @@ Let's craft a nice aggregation query to count how many `INFO`, `DEBUG`, `WARN`, 
   "aggs": {
     "count_per_minute": {
       "histogram": {
-          "field": "timestamp",
+          "field": "timestamp_nanos",
           "interval": 60000000
       },
       "aggs": {
-        "severity_count": {
+        "severity_text_count": {
           "terms": {
-            "field": "severity"
+            "field": "severity_text"
           }
         }
       }
@@ -213,9 +219,9 @@ Let's craft a nice aggregation query to count how many `INFO`, `DEBUG`, `WARN`, 
 ```
 
 ```bash
-curl -XPOST -H "Content-Type: application/json" http://127.0.0.1:7280/api/v1/vector-otel-logs/search --data @aggregation-query.json
-```
+curl -XPOST -H "Content-Type: application/json" http://127.0.0.1:7280/api/v1/otel-logs-v0_6/search --data @aggregation-query.json
+``` -->
 
-## Further improvements
+## Going further
 
-Coming soon: deploy Vector + Quickwit on your infrastructure, use Grafana to query Quickwit, and more!
+Now you can also deploy Grafana and connect to Quickwit as data source for query, alerts and more!
