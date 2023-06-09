@@ -292,6 +292,30 @@ fn get_or_insert_path<'a>(
 }
 
 impl MappingNode {
+    /// Finds the field mapping type for a given field path in the mapping tree.
+    /// Dots in `field_path_as_str` define the boundaries between field names.
+    /// If a dot is part of a field name, it must be escaped with '\'.
+    pub fn find_field_mapping_type(&self, field_path_as_str: &str) -> Option<FieldMappingType> {
+        let field_path = build_field_path_from_str(field_path_as_str);
+        self.internal_find_field_mapping_type(&field_path)
+    }
+
+    fn internal_find_field_mapping_type(&self, field_path: &[String]) -> Option<FieldMappingType> {
+        let (first_path_fragment, sub_field_path) = field_path.split_first()?;
+        let field_name = self
+            .branches_order
+            .iter()
+            .find(|name| name == &first_path_fragment)?;
+        let child_tree = self.branches.get(field_name).expect("Missing field");
+        match (child_tree, sub_field_path.is_empty()) {
+            (_, true) => Some(child_tree.clone().into()),
+            (MappingTree::Leaf(_), false) => None,
+            (MappingTree::Node(child_node), false) => {
+                child_node.internal_find_field_mapping_type(sub_field_path)
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn num_fields(&self) -> usize {
         self.branches.len()
@@ -539,6 +563,33 @@ fn get_ip_address_options(quickwit_ip_address_options: &QuickwitIpAddrOptions) -
 /// ('\' itself is forbidden).
 fn field_name_for_field_path(field_path: &[&str]) -> String {
     field_path.iter().cloned().map(escape_dots).join(".")
+}
+
+/// Builds the sequence of field names crossed to reach the field
+/// starting from the root of the document.
+/// Dots '.' define the boundaries between field names.
+/// If a dot is part of a field name, it must be escaped with '\'.
+fn build_field_path_from_str(field_path_as_str: &str) -> Vec<String> {
+    let mut field_path = Vec::new();
+    let mut current_path_fragment = String::new();
+    let mut escaped = false;
+    for char in field_path_as_str.chars() {
+        if escaped {
+            current_path_fragment.push(char);
+            escaped = false;
+        } else if char == '\\' {
+            escaped = true;
+        } else if char == '.' {
+            let path_fragment = std::mem::take(&mut current_path_fragment);
+            field_path.push(path_fragment);
+        } else {
+            current_path_fragment.push(char);
+        }
+    }
+    if !current_path_fragment.is_empty() {
+        field_path.push(current_path_fragment);
+    }
+    field_path
 }
 
 fn escape_dots(field_name: &str) -> String {
@@ -1095,5 +1146,29 @@ mod tests {
             value_to_json(TantivyValue::Bytes(vec![1, 2, 3]), &LeafType::Bytes(hex)).unwrap(),
             serde_json::json!("010203")
         );
+    }
+
+    #[test]
+    fn test_field_path_for_field_name() {
+        assert_eq!(super::build_field_path_from_str(""), Vec::<String>::new());
+        assert_eq!(super::build_field_path_from_str("hello"), vec!["hello"]);
+        assert_eq!(
+            super::build_field_path_from_str("one.two.three"),
+            vec!["one", "two", "three"]
+        );
+        assert_eq!(
+            super::build_field_path_from_str(r#"one\.two"#),
+            vec!["one.two"]
+        );
+        assert_eq!(
+            super::build_field_path_from_str(r#"one\.two.three"#),
+            vec!["one.two", "three"]
+        );
+        assert_eq!(super::build_field_path_from_str(r#"one."#), vec!["one"]);
+        // Those are invalid field paths, but we chekc that it does not panick.
+        // Issue #3538 is about validating field paths before trying ot build the path.
+        assert_eq!(super::build_field_path_from_str("\\."), vec!["."]);
+        assert_eq!(super::build_field_path_from_str("a."), vec!["a"]);
+        assert_eq!(super::build_field_path_from_str(".a"), vec!["", "a"]);
     }
 }
