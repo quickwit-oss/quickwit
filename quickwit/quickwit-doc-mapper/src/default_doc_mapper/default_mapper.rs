@@ -126,17 +126,13 @@ fn validate_timestamp_field(
     };
     if let FieldMappingType::DateTime(date_time_option, cardinality) = &timestamp_field_type {
         if cardinality != &Cardinality::SingleValue {
-            bail!(
-                "Timestamp field `{timestamp_field_path}` should be single-valued."
-            );
+            bail!("Timestamp field `{timestamp_field_path}` should be single-valued.");
         }
         if !date_time_option.fast {
             bail!("Timestamp field `{timestamp_field_path}` should be a fast field.");
         }
     } else {
-        bail!(
-            "Timestamp field `{timestamp_field_path}` should be a datetime field."
-        );
+        bail!("Timestamp field `{timestamp_field_path}` should be a datetime field.");
     }
     Ok(())
 }
@@ -601,6 +597,20 @@ mod tests {
         }"#,
         )
         .unwrap();
+
+        serde_yaml::from_str::<DefaultDocMapper>(
+            r#"
+            field_mappings:
+              - name: some_obj
+                type: object
+                field_mappings:
+                  - name: timestamp
+                    type: datetime
+                    fast: true
+            timestamp_field: some_obj.timestamp
+        "#,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -618,6 +628,17 @@ mod tests {
         }"#,
         )
         .unwrap();
+
+        serde_yaml::from_str::<DefaultDocMapper>(
+            r#"
+            field_mappings:
+              - name: my.timestamp
+                type: datetime
+                fast: true
+            timestamp_field: "my\\.timestamp"
+        "#,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -633,7 +654,7 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-        let expected_msg = "The timestamp field `timestamp` is required to have the datetime type.";
+        let expected_msg = "Timestamp field `timestamp` should be a datetime field.";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), &expected_msg);
     }
 
@@ -652,7 +673,7 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-        let expected_msg = "The timestamp field `timestamp`is required to be a fast field.";
+        let expected_msg = "Timestamp field `timestamp` should be a fast field.";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), &expected_msg);
     }
 
@@ -725,7 +746,7 @@ mod tests {
         }"#;
 
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-        let expected_msg = "Multiple values are forbidden for the timestamp field (`timestamp`).";
+        let expected_msg = "Timestamp field `timestamp` should be single-valued.";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), expected_msg);
     }
 

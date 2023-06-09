@@ -4650,6 +4650,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "serde_yaml 0.9.21",
  "siphasher",
  "tantivy",
  "thiserror",

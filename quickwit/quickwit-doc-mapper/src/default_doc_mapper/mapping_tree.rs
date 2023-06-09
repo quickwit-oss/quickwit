@@ -301,12 +301,11 @@ impl MappingNode {
     }
 
     fn internal_find_field_mapping_type(&self, field_path: &[String]) -> Option<FieldMappingType> {
-        let Some((first_path_fragment, sub_field_path)) = field_path.split_first() else {
-            return None;
-        };
-        let Some(field_name) = self.branches_order.iter().find(|name| name == &first_path_fragment) else {
-            return None;
-        };
+        let (first_path_fragment, sub_field_path) = field_path.split_first()?;
+        let field_name = self
+            .branches_order
+            .iter()
+            .find(|name| name == &first_path_fragment)?;
         let child_tree = self.branches.get(field_name).expect("Missing field");
         match (child_tree, sub_field_path.is_empty()) {
             (_, true) => Some(child_tree.clone().into()),
@@ -581,8 +580,8 @@ fn build_field_path_from_str(field_path_as_str: &str) -> Vec<String> {
         } else if char == '\\' {
             escaped = true;
         } else if char == '.' {
-            field_path.push(current_path_fragment.clone());
-            current_path_fragment.clear();
+            let path_fragment = std::mem::take(&mut current_path_fragment);
+            field_path.push(path_fragment);
         } else {
             current_path_fragment.push(char);
         }
@@ -1166,5 +1165,10 @@ mod tests {
             vec!["one.two", "three"]
         );
         assert_eq!(super::build_field_path_from_str(r#"one."#), vec!["one"]);
+        // Those are invalid field paths, but we chekc that it does not panick.
+        // Issue #3538 is about validating field paths before trying ot build the path.
+        assert_eq!(super::build_field_path_from_str("\\."), vec!["."]);
+        assert_eq!(super::build_field_path_from_str("a."), vec!["a"]);
+        assert_eq!(super::build_field_path_from_str(".a"), vec!["", "a"]);
     }
 }
