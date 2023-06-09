@@ -180,8 +180,13 @@ encoding.codec = "json"
 framing.method = "newline_delimited"
 uri = "http://127.0.0.1:7280/api/v1/otel-logs-v0_6/ingest"
 ```
+Download the above Vector config file.
 
-Now let's start Vector to start send logs to Quickwit.
+```bash
+curl -o vector.toml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/vector-otel-logs/vector.toml
+```
+
+Now let's start Vector so that we can start sending logs to Quickwit.
 
 ```bash
 docker run -v $(pwd)/vector.toml:/etc/vector/vector.toml:ro -p 8383:8383 --net=host timberio/vector:0.25.0-distroless-libc
