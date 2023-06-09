@@ -67,13 +67,16 @@ doc_mapping:
     - name: severity_text
       type: text
       tokenizer: raw
+      fast: true
     - name: severity_number
       type: u64
+      fast: true
     - name: body
       type: json
     - name: attributes
       type: json
       tokenizer: raw
+      fast: true
     - name: dropped_attributes_count
       type: u64
       indexed: false
@@ -87,6 +90,7 @@ doc_mapping:
     - name: resource_attributes
       type: json
       tokenizer: raw
+      fast: true
     - name: resource_dropped_attributes_count
       type: u64
       indexed: false
