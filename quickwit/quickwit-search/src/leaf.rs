@@ -45,7 +45,7 @@ use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::sync::RwLock;
 use tracing::*;
 
-use crate::collector::{make_collector_for_split, make_merge_collector};
+use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
 use crate::service::SearcherContext;
 use crate::SearchError;
 
@@ -494,7 +494,9 @@ impl CanSplitDoBetter {
             MutCanSplitDoBetter::Uninformative => (),
             MutCanSplitDoBetter::SplitIdHigher(split_id) => *split_id = Some(hit.split_id.clone()),
             MutCanSplitDoBetter::SplitTimestampHigher(timestamp) => {
-                if let Some(SortByValue { sort_value: Some(SortValue::I64(timestamp_ns))}) = hit.sort_value {
+                if let Some(SortValue::I64(timestamp_ns)) =
+                    hit.sort_value.and_then(|v| v.sort_value)
+                {
                     // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
                     // sure we don't throw away something like 1.2s, so we should round up while
                     // dividing.
@@ -506,7 +508,9 @@ impl CanSplitDoBetter {
                 }
             }
             MutCanSplitDoBetter::SplitTimestampLower(timestamp) => {
-                if let Some(SortByValue { sort_value: Some(SortValue::I64(timestamp_ns))}) = hit.sort_value {
+                if let Some(SortValue::I64(timestamp_ns)) =
+                    hit.sort_value.and_then(|v| v.sort_value)
+                {
                     // if we get a timestamp of, says 1.5s, we need to check down to 1s to make
                     // sure we don't throw away something like 1.7s, so we should truncate,
                     // which is the default behavior of division
@@ -520,6 +524,14 @@ impl CanSplitDoBetter {
     /// Returns whether it is useful to iteratively merge instead of merging all at once.
     pub async fn iterative_merge(&self) -> bool {
         !matches!(*self.inner.read().await, MutCanSplitDoBetter::Uninformative)
+    }
+
+    /// Whether we should wash score and rely only on document GlobalAddress.
+    pub async fn wash_score(&self) -> bool {
+        matches!(
+            *self.inner.read().await,
+            MutCanSplitDoBetter::SplitIdHigher(_)
+        )
     }
 }
 
@@ -565,7 +577,7 @@ pub async fn leaf_search(
     // request.exact_count == true`
     let run_all_splits = true;
 
-    let leaf_search_single_split_futures: FuturesUnordered<_> = splits
+    let mut leaf_search_single_split_futures: FuturesUnordered<_> = splits
         .iter()
         .map(|split| {
             let split = split.clone();
@@ -576,6 +588,8 @@ pub async fn leaf_search(
             let split_filter = split_filter.clone();
             tokio::spawn(
                 async move {
+                // TODO currently permits are not always given in order when thread pool has more
+                // than one thread. This means sorting splits is only half useful.
                 let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore
                     .acquire()
                     .await
@@ -609,57 +623,91 @@ pub async fn leaf_search(
                 )
                 .await;
                 timer.observe_duration();
-                if let Ok(ss_res) = leaf_search_single_split_res.as_ref() {
-                    warn!("result for {}: {:?}", split.split_id, ss_res);
-                }
                 leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
             }.in_current_span())
         })
         .collect();
 
-    // TODO implement incremential merge to allow skipping splits.
-    // TODO wash hit score away when doing a "sort by nothing" search so it is sorted by split id,
-    // not by doc_id inside a split.
-    let split_search_results = leaf_search_single_split_futures.collect::<Vec<_>>().await;
-
-    // the result wrapping is only for the collector api merge_fruits
-    // (Vec<tantivy::Result<LeafSearchResponse>>)
-    let (split_search_responses, errors): (
-        Vec<tantivy::Result<LeafSearchResponse>>,
-        Vec<(String, SearchError)>,
-    ) = split_search_results
-        .into_iter()
-        .partition_map(|split_search_res| match split_search_res {
-            Ok(Ok(split_search_resp)) => Either::Left(Ok(split_search_resp)),
-            Ok(Err(err)) => Either::Right(err),
-            Err(e) => {
-                warn!("A leaf_search_single_split panicked");
-                Either::Right(("unknown".to_string(), e.into()))
-            }
-        });
-
     // Creates a collector which merges responses into one
     let merge_collector =
         make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
 
-    // Merging is a cpu-bound task.
-    // It should be executed by Tokio's blocking threads.
-    let span = info_span!("merge_search_responses");
-    let mut merged_search_response = crate::run_cpu_intensive(move || {
-        let _span_guard = span.enter();
-        merge_collector.merge_fruits(split_search_responses)
-    })
-    .await
-    .context("Failed to merge split search responses.")??;
+    let wash_score = split_filter.wash_score().await;
+    if split_filter.iterative_merge().await {
+        // TODO we know splits processed and pending, and the current worst-best result.
+        // If !run_all_splits, we could cancel pending tasks based on that.
+        let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
+        while let Some(split_search_res) = leaf_search_single_split_futures.next().await {
+            match split_search_res {
+                Ok(Ok(mut split_search_res)) => {
+                    if wash_score {
+                        for hit in &mut split_search_res.partial_hits {
+                            hit.sort_value = None;
+                            hit.sort_value2 = None;
+                        }
+                    }
 
-    merged_search_response
-        .failed_splits
-        .extend(errors.into_iter().map(|(split_id, err)| SplitSearchError {
-            split_id,
-            error: format!("{err}"),
-            retryable_error: true,
-        }));
-    Ok(merged_search_response)
+                    incremental_merge_collector.add_split(split_search_res);
+                }
+                Ok(Err((split_id, err))) => {
+                    incremental_merge_collector.add_failed_split(SplitSearchError {
+                        split_id,
+                        error: format!("{err}"),
+                        retryable_error: true,
+                    })
+                }
+                Err(e) => incremental_merge_collector.add_failed_split(SplitSearchError {
+                    split_id: "unknown".to_string(),
+                    error: format!("{}", SearchError::from(e)),
+                    retryable_error: true,
+                }),
+            }
+
+            if let Some(last_hit) = incremental_merge_collector.peek_worst_hit() {
+                split_filter.record_new_worst_hit(last_hit).await;
+            }
+        }
+
+        incremental_merge_collector.finalize().map_err(Into::into)
+    } else {
+        // not by doc_id inside a split.
+        let split_search_results = leaf_search_single_split_futures.collect::<Vec<_>>().await;
+
+        // the result wrapping is only for the collector api merge_fruits
+        // (Vec<tantivy::Result<LeafSearchResponse>>)
+        let (split_search_responses, errors): (
+            Vec<tantivy::Result<LeafSearchResponse>>,
+            Vec<(String, SearchError)>,
+        ) = split_search_results.into_iter().partition_map(
+            |split_search_res| match split_search_res {
+                Ok(Ok(split_search_resp)) => Either::Left(Ok(split_search_resp)),
+                Ok(Err(err)) => Either::Right(err),
+                Err(e) => {
+                    warn!("A leaf_search_single_split panicked");
+                    Either::Right(("unknown".to_string(), e.into()))
+                }
+            },
+        );
+
+        // Merging is a cpu-bound task.
+        // It should be executed by Tokio's blocking threads.
+        let span = info_span!("merge_search_responses");
+        let mut merged_search_response = crate::run_cpu_intensive(move || {
+            let _span_guard = span.enter();
+            merge_collector.merge_fruits(split_search_responses)
+        })
+        .await
+        .context("Failed to merge split search responses.")??;
+
+        merged_search_response
+            .failed_splits
+            .extend(errors.into_iter().map(|(split_id, err)| SplitSearchError {
+                split_id,
+                error: format!("{err}"),
+                retryable_error: true,
+            }));
+        Ok(merged_search_response)
+    }
 }
 
 /// Apply a leaf list terms on a single split.

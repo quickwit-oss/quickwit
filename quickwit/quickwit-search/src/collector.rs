@@ -21,9 +21,11 @@ use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashSet};
 
 use itertools::Itertools;
-use quickwit_common::binary_heap::top_k;
+use quickwit_common::binary_heap::{top_k, SortKeyMapper, TopK};
 use quickwit_doc_mapper::{DocMapper, WarmupInfo};
-use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue};
+use quickwit_proto::{
+    LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue, SplitSearchError,
+};
 use serde::Deserialize;
 use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
@@ -615,7 +617,7 @@ impl Collector for QuickwitCollector {
         let segment_fruits: tantivy::Result<Vec<LeafSearchResponse>> =
             segment_fruits.into_iter().collect();
         // We want the hits in [start_offset..start_offset + max_hits).
-        // All leaves will return their top [0..max_hits) documents.
+        // All leaves will return their top [0..start_offset + max_hits) documents.
         // We compute the overall [0..start_offset + max_hits) documents ...
         let num_hits = self.start_offset + self.max_hits;
         let (sort_order1, sort_order2) = self.sort_by.sort_orders();
@@ -627,14 +629,13 @@ impl Collector for QuickwitCollector {
             num_hits,
         )?;
         // ... and drop the first [..start_offsets) hits.
-        merged_leaf_response
-            .partial_hits
-            .drain(
-                0..self
-                    .start_offset
-                    .min(merged_leaf_response.partial_hits.len()),
-            )
-            .count(); //< we just use count as a way to consume the entire iterator.
+        // note that self.start_offset is 0 when merging from leaf_search, and is only set when
+        // merging from root_search, so as to remove the firsts elements only once.
+        merged_leaf_response.partial_hits.drain(
+            0..self
+                .start_offset
+                .min(merged_leaf_response.partial_hits.len()),
+        );
         Ok(merged_leaf_response)
     }
 }
@@ -643,31 +644,17 @@ fn map_error(err: postcard::Error) -> TantivyError {
     TantivyError::InternalError(format!("Merge Result Postcard Error: {err}"))
 }
 
-/// Merges a set of Leaf Results.
-fn merge_leaf_responses(
+fn merge_intermediate_aggregation_result<'a>(
     aggregations_opt: &Option<QuickwitAggregations>,
-    mut leaf_responses: Vec<LeafSearchResponse>,
-    sort_order1: SortOrder,
-    sort_order2: SortOrder,
-    max_hits: usize,
-) -> tantivy::Result<LeafSearchResponse> {
-    // Optimization: No merging needed if there is only one result.
-    if leaf_responses.len() == 1 {
-        return Ok(leaf_responses.pop().unwrap());
-    }
+    intermediate_aggregation_result: impl Iterator<Item = &'a [u8]>,
+) -> tantivy::Result<Option<Vec<u8>>> {
     let merged_intermediate_aggregation_result = match aggregations_opt {
         Some(QuickwitAggregations::FindTraceIdsAggregation(collector)) => {
             let fruits: Vec<
                 <<FindTraceIdsCollector as Collector>::Child as SegmentCollector>::Fruit,
-            > = leaf_responses
-                .iter()
-                .filter_map(|leaf_response| {
-                    leaf_response.intermediate_aggregation_result.as_ref().map(
-                        |intermediate_aggregation_result| {
-                            postcard::from_bytes(intermediate_aggregation_result.as_slice())
-                                .map_err(map_error)
-                        },
-                    )
+            > = intermediate_aggregation_result
+                .map(|intermediate_aggregation_result| {
+                    postcard::from_bytes(intermediate_aggregation_result).map_err(map_error)
                 })
                 .collect::<Result<_, _>>()?;
             let merged_fruit = collector.merge_fruits(fruits)?;
@@ -675,15 +662,9 @@ fn merge_leaf_responses(
             Some(serialized)
         }
         Some(QuickwitAggregations::TantivyAggregations(_)) => {
-            let fruits: Vec<IntermediateAggregationResults> = leaf_responses
-                .iter()
-                .filter_map(|leaf_response| {
-                    leaf_response.intermediate_aggregation_result.as_ref().map(
-                        |intermediate_aggregation_result| {
-                            postcard::from_bytes(intermediate_aggregation_result.as_slice())
-                                .map_err(map_error)
-                        },
-                    )
+            let fruits: Vec<IntermediateAggregationResults> = intermediate_aggregation_result
+                .map(|intermediate_aggregation_result| {
+                    postcard::from_bytes(intermediate_aggregation_result).map_err(map_error)
                 })
                 .collect::<Result<_, _>>()?;
 
@@ -702,6 +683,28 @@ fn merge_leaf_responses(
         }
         None => None,
     };
+    Ok(merged_intermediate_aggregation_result)
+}
+
+/// Merges a set of Leaf Results.
+fn merge_leaf_responses(
+    aggregations_opt: &Option<QuickwitAggregations>,
+    mut leaf_responses: Vec<LeafSearchResponse>,
+    sort_order1: SortOrder,
+    sort_order2: SortOrder,
+    max_hits: usize,
+) -> tantivy::Result<LeafSearchResponse> {
+    // Optimization: No merging needed if there is only one result.
+    if leaf_responses.len() == 1 {
+        return Ok(leaf_responses.pop().unwrap());
+    }
+
+    let merged_intermediate_aggregation_result = merge_intermediate_aggregation_result(
+        aggregations_opt,
+        leaf_responses
+            .iter()
+            .filter_map(|leaf_response| leaf_response.intermediate_aggregation_result.as_deref()),
+    )?;
     let num_attempted_splits = leaf_responses
         .iter()
         .map(|leaf_response| leaf_response.num_attempted_splits)
@@ -715,6 +718,7 @@ fn merge_leaf_responses(
         .flat_map(|leaf_response| leaf_response.failed_splits.iter())
         .cloned()
         .collect_vec();
+
     let all_partial_hits: Vec<PartialHit> = leaf_responses
         .into_iter()
         .flat_map(|leaf_response| leaf_response.partial_hits)
@@ -880,6 +884,147 @@ pub(crate) fn make_merge_collector(
         aggregation,
         aggregation_limits: aggregation_limits.clone(),
     })
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PartialHitSortingKey {
+    sort_value: Option<SortValue>,
+    sort_value2: Option<SortValue>,
+    address: GlobalDocAddress,
+    sort_order: SortOrder,
+    sort_order2: SortOrder,
+}
+
+impl Ord for PartialHitSortingKey {
+    fn cmp(&self, other: &PartialHitSortingKey) -> Ordering {
+        assert_eq!(
+            self.sort_order, other.sort_order,
+            "comparing two PartialHitSortingKey of different ordering"
+        );
+        assert_eq!(
+            self.sort_order2, other.sort_order2,
+            "comparing two PartialHitSortingKey of different ordering"
+        );
+        let mut order = self.sort_value.cmp(&other.sort_value);
+        if self.sort_order == SortOrder::Asc {
+            order = order.reverse();
+        };
+        let mut order2 = self.sort_value2.cmp(&other.sort_value2);
+        if self.sort_order2 == SortOrder::Asc {
+            order2 = order2.reverse();
+        };
+        let mut order_addr = self.address.cmp(&other.address);
+        if self.sort_order == SortOrder::Asc {
+            order_addr = order_addr.reverse();
+        };
+        order.then(order2).then(order_addr)
+    }
+}
+
+impl PartialOrd for PartialHitSortingKey {
+    fn partial_cmp(&self, other: &PartialHitSortingKey) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+struct HitSortingMapper {
+    order1: SortOrder,
+    order2: SortOrder,
+}
+
+impl SortKeyMapper<PartialHit> for HitSortingMapper {
+    type Key = PartialHitSortingKey;
+    fn get_sort_key(&self, partial_hit: &PartialHit) -> PartialHitSortingKey {
+        PartialHitSortingKey {
+            sort_value: partial_hit.sort_value.and_then(|v| v.sort_value),
+            sort_value2: partial_hit.sort_value2.and_then(|v| v.sort_value),
+            address: GlobalDocAddress::from_partial_hit(partial_hit),
+            sort_order: self.order1,
+            sort_order2: self.order2,
+        }
+    }
+}
+
+/// Incrementally merge segment results.
+// TODO add tests
+pub(crate) struct IncrementalCollector {
+    inner: QuickwitCollector,
+    top_k_hits: TopK<PartialHit, PartialHitSortingKey, HitSortingMapper>,
+    intermediate_aggregation_results: Vec<Vec<u8>>,
+    num_hits: u64,
+    failed_splits: Vec<SplitSearchError>,
+    num_attempted_splits: u64,
+}
+
+impl IncrementalCollector {
+    /// Create a new incremental collector
+    pub(crate) fn new(inner: QuickwitCollector) -> Self {
+        let (order1, order2) = inner.sort_by.sort_orders();
+        let sort_key_mapper = HitSortingMapper { order1, order2 };
+        IncrementalCollector {
+            top_k_hits: TopK::new(inner.max_hits + inner.start_offset, sort_key_mapper),
+            inner,
+            intermediate_aggregation_results: Vec::new(),
+            num_hits: 0,
+            failed_splits: Vec::new(),
+            num_attempted_splits: 0,
+        }
+    }
+
+    /// Merge one search result with the current state
+    pub(crate) fn add_split(&mut self, leaf_response: LeafSearchResponse) {
+        let LeafSearchResponse {
+            num_hits,
+            partial_hits,
+            failed_splits,
+            num_attempted_splits,
+            intermediate_aggregation_result,
+        } = leaf_response;
+
+        self.num_hits += num_hits;
+        self.top_k_hits.add_entries(partial_hits.into_iter());
+        self.failed_splits.extend(failed_splits);
+        self.num_attempted_splits += num_attempted_splits;
+        if let Some(intermediate_aggregation_result) = intermediate_aggregation_result {
+            self.intermediate_aggregation_results
+                .push(intermediate_aggregation_result);
+        }
+    }
+
+    /// Add a failed split to the state
+    pub(crate) fn add_failed_split(&mut self, split_error: SplitSearchError) {
+        self.failed_splits.push(split_error)
+    }
+
+    /// Get the worst top-hit. Can be used to skip splits if they can't possibly do better.
+    pub(crate) fn peek_worst_hit(&self) -> Option<&PartialHit> {
+        if self.top_k_hits.at_capacity() {
+            self.top_k_hits.peek_worst()
+        } else {
+            None
+        }
+    }
+
+    /// Finalize the merge, creating a LeafSearchResponse.
+    pub(crate) fn finalize(self) -> tantivy::Result<LeafSearchResponse> {
+        let intermediate_aggregation_result = merge_intermediate_aggregation_result(
+            &self.inner.aggregation,
+            self.intermediate_aggregation_results
+                .iter()
+                .map(|vec| vec.as_slice()),
+        )?;
+        let mut partial_hits = self.top_k_hits.finalize();
+        if self.inner.start_offset != 0 {
+            partial_hits.drain(0..self.inner.start_offset.min(partial_hits.len()));
+        }
+        Ok(LeafSearchResponse {
+            num_hits: self.num_hits,
+            partial_hits,
+            failed_splits: self.failed_splits,
+            num_attempted_splits: self.num_attempted_splits,
+            intermediate_aggregation_result,
+        })
+    }
 }
 
 #[cfg(test)]

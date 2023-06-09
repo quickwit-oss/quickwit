@@ -118,6 +118,76 @@ impl<O: Ord, T> PartialEq for OrderItemPair<O, T> {
 
 impl<O: Ord, T> Eq for OrderItemPair<O, T> {}
 
+pub trait SortKeyMapper<Value> {
+    type Key;
+    fn get_sort_key(&self, value: &Value) -> Self::Key;
+}
+
+/// Progressively compute top-k.
+// TODO add tests
+pub struct TopK<T, O: Ord, S> {
+    heap: BinaryHeap<Reverse<OrderItemPair<O, T>>>,
+    sort_key_mapper: S,
+    k: usize,
+}
+
+impl<T, O, S> TopK<T, O, S>
+where
+    O: Ord,
+    S: SortKeyMapper<T, Key = O>,
+{
+    /// Create a new top-k computer.
+    pub fn new(k: usize, sort_key_mapper: S) -> Self {
+        TopK {
+            heap: BinaryHeap::with_capacity(k),
+            sort_key_mapper,
+            k,
+        }
+    }
+
+    /// Whether there are k element ready already.
+    pub fn at_capacity(&self) -> bool {
+        self.heap.len() >= self.k
+    }
+
+    /// Try to add new entries, if they are better than the current worst.
+    pub fn add_entries(&mut self, mut items: impl Iterator<Item = T>) {
+        if self.k == 0 {
+            return;
+        }
+        while !self.at_capacity() {
+            if let Some(item) = items.next() {
+                let order: O = self.sort_key_mapper.get_sort_key(&item);
+                self.heap.push(Reverse(OrderItemPair { order, item }));
+            } else {
+                return;
+            }
+        }
+
+        for item in items {
+            let mut head = self.heap.peek_mut().unwrap();
+            let order = self.sort_key_mapper.get_sort_key(&item);
+            if head.0.order < order {
+                *head = Reverse(OrderItemPair { order, item });
+            }
+        }
+    }
+
+    /// Get a reference to the worst entry.
+    pub fn peek_worst(&self) -> Option<&T> {
+        self.heap.peek().map(|entry| &entry.0.item)
+    }
+
+    /// Get a Vec of sorted entries.
+    pub fn finalize(self) -> Vec<T> {
+        self.heap
+            .into_sorted_vec()
+            .into_iter()
+            .map(|order_item| order_item.0.item)
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
