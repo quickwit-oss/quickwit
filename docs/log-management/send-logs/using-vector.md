@@ -72,13 +72,16 @@ doc_mapping:
     - name: severity_text
       type: text
       tokenizer: raw
+      fast: true
     - name: severity_number
       type: u64
+      fast: true
     - name: body
       type: json
     - name: attributes
       type: json
       tokenizer: raw
+      fast: true
     - name: dropped_attributes_count
       type: u64
       indexed: false
@@ -92,6 +95,7 @@ doc_mapping:
     - name: resource_attributes
       type: json
       tokenizer: raw
+      fast: true
     - name: resource_dropped_attributes_count
       type: u64
       indexed: false
@@ -119,7 +123,7 @@ search_settings:
 
 ## Setup Vector
 
-Our sink here will be Quickwit ingest API `http://127.0.0.1:7280/api/v1/otel-logs/ingest`.
+Our sink here will be Quickwit ingest API `http://127.0.0.1:7280/api/v1/otel-logs-v0_6/ingest`.
 To keep it simple in this tutorial, we will use a log source called `demo_logs` that generates logs in a given format. Let's choose the common `syslog` format
 (Vector does not generate logs in the OpenTelemetry format directly!) and use the transform feature to map the `syslog` format into the OpenTelemetry format.
 
@@ -163,10 +167,10 @@ source = '''
 '''
 
 # useful to see the logs in the terminal
-#[sinks.emit_syslog]
-#inputs = ["remap_syslog"]
-#type = "console"
-#encoding.codec = "json"
+# [sinks.emit_syslog]
+# inputs = ["remap_syslog"]
+# type = "console"
+# encoding.codec = "json"
 
 [sinks.quickwit_logs]
 type = "http"
@@ -174,13 +178,13 @@ method = "post"
 inputs = ["remap_syslog"]
 encoding.codec = "json"
 framing.method = "newline_delimited"
-uri = "http://host.docker.internal:7280/api/v1/vector-otel-logs/ingest"
+uri = "http://127.0.0.1:7280/api/v1/otel-logs-v0_6/ingest"
 ```
 
 Now let's start Vector to start send logs to Quickwit.
 
 ```bash
-docker run -v $(pwd)/vector.toml:/etc/vector/vector.toml:ro -p 8383:8383 --add-host=host.docker.internal:host-gateway timberio/vector:0.25.0-distroless-libc
+docker run -v $(pwd)/vector.toml:/etc/vector/vector.toml:ro -p 8383:8383 --net=host timberio/vector:0.25.0-distroless-libc
 ```
 
 ## Search logs
@@ -188,9 +192,6 @@ docker run -v $(pwd)/vector.toml:/etc/vector/vector.toml:ro -p 8383:8383 --add-h
 Quickwit is now ingesting logs coming from Vector and you can search them either with `curl` or by using the UI:
 - `curl -XGET http://127.0.0.1:7280/api/v1/otel-logs-v0_6/search?query=severity_text:ERROR`
 - Open your browser at `http://127.0.0.1:7280/ui/search?query=severity_text:ERROR&index_id=otel-logs-v0_6&max_hits=10` and play with it!
-
-<!-- 
-TODO: show this when aggregation enabled on severity_text
 
 ## Compute aggregation on severity_text
 
@@ -222,7 +223,7 @@ Let's craft a nice aggregation query to count how many `INFO`, `DEBUG`, `WARN`, 
 
 ```bash
 curl -XPOST -H "Content-Type: application/json" http://127.0.0.1:7280/api/v1/otel-logs-v0_6/search --data @aggregation-query.json
-``` -->
+```
 
 ## Going further
 
