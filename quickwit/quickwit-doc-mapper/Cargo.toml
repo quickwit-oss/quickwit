@@ -33,10 +33,11 @@ typetag = { workspace = true }
 utoipa = { workspace = true }
 
 [dev-dependencies]
-proptest = { workspace = true }
 criterion = { workspace = true }
 matches = { workspace = true }
+proptest = { workspace = true }
 quickwit-proto = { workspace = true }
+serde_yaml = { workspace = true }
 time = { workspace = true }
 
 [features]
