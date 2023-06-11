@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+## [0.6.1]
+
+### Added
+- Support of phrase prefix queries in the query language.
+
+### Fixed
+- Fix timestamp field which was not allowed when defined in an object mapping.
+- Fix querying of integer on a JSON field (no document were returned).
+
+
 ## [0.6.0] - 2023-06-03
 
 ### Added
