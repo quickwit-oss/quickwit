@@ -32,6 +32,8 @@ use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{self, BuildTantivyAst, FullTextMode, FullTextParams, QueryAst};
 use crate::{BooleanOperand, InvalidQuery, JsonLiteral};
 
+const DEFAULT_PHRASE_QUERY_MAX_EXPANSION: u32 = 50;
+
 /// A query expressed in the tantivy query grammar DSL.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct UserInputQuery {
@@ -182,6 +184,7 @@ fn convert_user_input_literal(
     let UserInputLiteral {
         field_name,
         phrase,
+        prefix,
         delimiter,
         slop,
     } = user_input_literal;
@@ -211,6 +214,15 @@ fn convert_user_input_literal(
     let mut phrase_queries: Vec<QueryAst> = field_names
         .into_iter()
         .map(|field_name| {
+            if prefix {
+                return query_ast::PhrasePrefixQuery {
+                    field: field_name,
+                    phrase: phrase.clone(),
+                    params: full_text_params.clone(),
+                    max_expansions: DEFAULT_PHRASE_QUERY_MAX_EXPANSION,
+                }
+                .into();
+            }
             query_ast::FullTextQuery {
                 field: field_name,
                 text: phrase.clone(),
@@ -306,6 +318,25 @@ mod tests {
         assert_eq!(
             phrase_query.params.mode,
             FullTextMode::PhraseFallbackToIntersection
+        );
+    }
+
+    #[test]
+    fn test_user_input_query_phrase_with_prefix() {
+        let ast = UserInputQuery {
+            user_text: "field:\"hello\"*".to_string(),
+            default_fields: None,
+            default_operator: BooleanOperand::And,
+        }
+        .parse_user_query(&[])
+        .unwrap();
+        let QueryAst::PhrasePrefix(phrase_prefix_query) = ast else { panic!() };
+        assert_eq!(&phrase_prefix_query.field, "field");
+        assert_eq!(&phrase_prefix_query.phrase, "hello");
+        assert_eq!(phrase_prefix_query.max_expansions, 50);
+        assert_eq!(
+            phrase_prefix_query.params.mode,
+            FullTextMode::Phrase { slop: 0 }
         );
     }
 
