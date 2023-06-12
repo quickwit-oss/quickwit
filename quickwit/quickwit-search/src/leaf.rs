@@ -30,7 +30,7 @@ use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::{
     LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, PartialHit, SearchRequest,
-    SortByValue, SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
+    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::{

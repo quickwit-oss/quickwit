@@ -124,7 +124,6 @@ pub trait SortKeyMapper<Value> {
 }
 
 /// Progressively compute top-k.
-// TODO add tests
 pub struct TopK<T, O: Ord, S> {
     heap: BinaryHeap<Reverse<OrderItemPair<O, T>>>,
     sort_key_mapper: S,
@@ -190,7 +189,6 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]
@@ -201,9 +199,85 @@ mod tests {
         assert_eq!(&top_k, &[1, 2]);
         let top_k = super::top_k(vec![1u32, 2, 2].into_iter(), 4, |n| *n);
         assert_eq!(&top_k, &[2u32, 2, 1]);
-        let top_k = super::top_k(vec![1u32, 2, 2].into_iter(), 4, |n| *n);
-        assert_eq!(&top_k, &[2u32, 2, 1]);
         let top_k: Vec<u32> = super::top_k(vec![].into_iter(), 4, |n| *n);
         assert!(top_k.is_empty());
+    }
+
+    #[test]
+    fn test_incremental_top_k() {
+        struct Mapper(bool);
+        impl SortKeyMapper<u32> for Mapper {
+            type Key = u32;
+            fn get_sort_key(&self, value: &u32) -> u32 {
+                if self.0 {
+                    u32::MAX - value
+                } else {
+                    *value
+                }
+            }
+        }
+        let mut top_k = TopK::new(2, Mapper(false));
+        top_k.add_entries([1u32, 2, 3].into_iter());
+        assert!(top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&2));
+        assert_eq!(&top_k.finalize(), &[3, 2]);
+
+        let mut top_k = TopK::new(2, Mapper(false));
+        top_k.add_entries([1u32].into_iter());
+        assert!(!top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&1));
+        top_k.add_entries([3].into_iter());
+        assert!(top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&1));
+        top_k.add_entries([2].into_iter());
+        assert!(top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&2));
+        assert_eq!(&top_k.finalize(), &[3, 2]);
+
+        let mut top_k = TopK::new(2, Mapper(true));
+        top_k.add_entries([1u32, 2, 3].into_iter());
+        assert!(top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&2));
+        assert_eq!(&top_k.finalize(), &[1, 2]);
+
+        let mut top_k = TopK::new(2, Mapper(true));
+        top_k.add_entries([1u32].into_iter());
+        assert!(!top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&1));
+        top_k.add_entries([3].into_iter());
+        assert!(top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&3));
+        top_k.add_entries([2].into_iter());
+        assert!(top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&2));
+        assert_eq!(&top_k.finalize(), &[1, 2]);
+
+        let mut top_k = TopK::new(4, Mapper(false));
+        top_k.add_entries([2u32, 1, 2].into_iter());
+        assert!(!top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&1));
+        assert_eq!(&top_k.finalize(), &[2, 2, 1]);
+
+        let mut top_k = TopK::new(4, Mapper(false));
+        top_k.add_entries([2u32].into_iter());
+        assert!(!top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&2));
+        top_k.add_entries([1].into_iter());
+        assert!(!top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&1));
+        top_k.add_entries([2].into_iter());
+        assert!(!top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), Some(&1));
+        assert_eq!(&top_k.finalize(), &[2, 2, 1]);
+
+        let mut top_k = TopK::<u32, u32, _>::new(4, Mapper(false));
+        top_k.add_entries([].into_iter());
+        assert!(top_k.finalize().is_empty());
+
+        let mut top_k = TopK::new(0, Mapper(false));
+        top_k.add_entries([1u32, 2, 3].into_iter());
+        assert!(top_k.at_capacity());
+        assert_eq!(top_k.peek_worst(), None);
+        assert!(top_k.finalize().is_empty());
     }
 }
