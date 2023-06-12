@@ -20,7 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use anyhow::Context;
 use futures::future::try_join_all;
@@ -42,7 +42,6 @@ use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
-use tokio::sync::RwLock;
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
@@ -437,8 +436,6 @@ enum MutCanSplitDoBetter {
 
 #[derive(Debug, Clone)]
 pub struct CanSplitDoBetter {
-    // TODO nothing is awaited while the rwlock is held, and critical sections are short, maybe
-    // this should be a sync lock?
     inner: Arc<RwLock<MutCanSplitDoBetter>>,
 }
 
@@ -473,8 +470,8 @@ impl CanSplitDoBetter {
 
     /// Returns whether the given split can possibly give documents better than the one already
     /// known to match.
-    pub async fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
-        match &*self.inner.read().await {
+    pub fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
+        match &*self.inner.read().unwrap() {
             MutCanSplitDoBetter::SplitIdHigher(Some(split_id)) => split.split_id >= *split_id,
             MutCanSplitDoBetter::SplitTimestampHigher(Some(timestamp)) => {
                 split.timestamp_end() > *timestamp
@@ -489,8 +486,8 @@ impl CanSplitDoBetter {
     /// Record the new worst-of-the-top document, that is, the document which would first be
     /// evicted from the list of best documents, if a better document was found. Only call this
     /// funciton if you have at least max_hits documents already.
-    pub async fn record_new_worst_hit(&self, hit: &PartialHit) {
-        match &mut *self.inner.write().await {
+    pub fn record_new_worst_hit(&self, hit: &PartialHit) {
+        match &mut *self.inner.write().unwrap() {
             MutCanSplitDoBetter::Uninformative => (),
             MutCanSplitDoBetter::SplitIdHigher(split_id) => *split_id = Some(hit.split_id.clone()),
             MutCanSplitDoBetter::SplitTimestampHigher(timestamp) => {
@@ -522,14 +519,17 @@ impl CanSplitDoBetter {
     }
 
     /// Returns whether it is useful to iteratively merge instead of merging all at once.
-    pub async fn iterative_merge(&self) -> bool {
-        !matches!(*self.inner.read().await, MutCanSplitDoBetter::Uninformative)
+    pub fn iterative_merge(&self) -> bool {
+        !matches!(
+            *self.inner.read().unwrap(),
+            MutCanSplitDoBetter::Uninformative
+        )
     }
 
     /// Whether we should wash score and rely only on document GlobalAddress.
-    pub async fn wash_score(&self) -> bool {
+    pub fn wash_score(&self) -> bool {
         matches!(
-            *self.inner.read().await,
+            *self.inner.read().unwrap(),
             MutCanSplitDoBetter::SplitIdHigher(_)
         )
     }
@@ -573,7 +573,7 @@ pub async fn leaf_search(
         CanSplitDoBetter::uninformative()
     };
 
-    // In the future this should become `request.aggregation.is_some() ||
+    // In the future this should become `request.aggregation_request.is_some() ||
     // request.exact_count == true`
     let run_all_splits = true;
 
@@ -595,7 +595,7 @@ pub async fn leaf_search(
                     .await
                     .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
 
-                if !split_filter.can_be_better(&split).await {
+                if !split_filter.can_be_better(&split) {
                     if run_all_splits {
                         request.max_hits = 0;
                     } else {
@@ -603,7 +603,7 @@ pub async fn leaf_search(
                             num_hits: 0,
                             partial_hits: Vec::new(),
                             failed_splits: Vec::new(),
-                            num_attempted_splits: 1,
+                            num_attempted_splits: 0,
                             intermediate_aggregation_result: None,
                         })
                     }
@@ -632,8 +632,8 @@ pub async fn leaf_search(
     let merge_collector =
         make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
 
-    let wash_score = split_filter.wash_score().await;
-    if split_filter.iterative_merge().await {
+    let wash_score = split_filter.wash_score();
+    if split_filter.iterative_merge() {
         // TODO we know splits processed and pending, and the current worst-best result.
         // If !run_all_splits, we could cancel pending tasks based on that.
         let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
@@ -664,7 +664,7 @@ pub async fn leaf_search(
             }
 
             if let Some(last_hit) = incremental_merge_collector.peek_worst_hit() {
-                split_filter.record_new_worst_hit(last_hit).await;
+                split_filter.record_new_worst_hit(last_hit);
             }
         }
 
