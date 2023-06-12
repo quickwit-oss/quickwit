@@ -68,7 +68,7 @@ impl FullTextParams {
         let text_indexing_options = json_options
             .get_text_indexing_options()
             .with_context(|| format!("Json field text `{}` is not indexed", json_path))?;
-        let text_analyzer: TextAnalyzer = self.text_analyzer(text_indexing_options)?;
+        let mut text_analyzer: TextAnalyzer = self.text_analyzer(text_indexing_options)?;
         let mut token_stream: BoxTokenStream = text_analyzer.token_stream(text);
         let mut tokens = Vec::new();
         let mut term = Term::with_capacity(100);
@@ -91,7 +91,7 @@ impl FullTextParams {
         text: &str,
         text_field_indexing: &TextFieldIndexing,
     ) -> anyhow::Result<Vec<(usize, Term)>> {
-        let text_analyzer: TextAnalyzer = self.text_analyzer(text_field_indexing)?;
+        let mut text_analyzer: TextAnalyzer = self.text_analyzer(text_field_indexing)?;
         let mut token_stream: BoxTokenStream = text_analyzer.token_stream(text);
         let mut tokens = Vec::new();
         token_stream.process(&mut |token| {
