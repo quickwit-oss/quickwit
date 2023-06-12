@@ -26,7 +26,7 @@ use tantivy::tokenizer::{
 };
 
 fn create_quickwit_tokenizer_manager() -> TokenizerManager {
-    let raw_tokenizer = TextAnalyzer::builder(RawTokenizer)
+    let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
         .filter(RemoveLongFilter::limit(255))
         .build();
 
@@ -41,14 +41,14 @@ fn create_quickwit_tokenizer_manager() -> TokenizerManager {
 
     tokenizer_manager.register(
         "default",
-        TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer)
+        TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer::default())
             .filter(RemoveLongFilter::limit(255))
             .filter(LowerCaser)
             .build(),
     );
     tokenizer_manager.register(
         "en_stem",
-        TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer)
+        TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer::default())
             .filter(RemoveLongFilter::limit(255))
             .filter(LowerCaser)
             .filter(tantivy::tokenizer::Stemmer::new(
@@ -61,11 +61,11 @@ fn create_quickwit_tokenizer_manager() -> TokenizerManager {
 }
 
 fn create_quickwit_fastfield_normalizer_manager() -> TokenizerManager {
-    let raw_tokenizer = TextAnalyzer::builder(RawTokenizer)
+    let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
         .filter(RemoveLongFilter::limit(255))
         .build();
 
-    let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer)
+    let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
         .filter(LowerCaser)
         .filter(RemoveLongFilter::limit(255))
         .build();
@@ -82,7 +82,7 @@ struct ChineseTokenizer;
 impl Tokenizer for ChineseTokenizer {
     type TokenStream<'a> = ChineseTokenStream<'a>;
 
-    fn token_stream<'a>(&self, text: &'a str) -> Self::TokenStream<'a> {
+    fn token_stream<'a>(&mut self, text: &'a str) -> Self::TokenStream<'a> {
         ChineseTokenStream {
             text,
             last_char: None,
@@ -209,21 +209,27 @@ mod tests {
         sand in my face
         "#;
 
-        let tokenizer = get_quickwit_tokenizer_manager().get("raw").unwrap();
-        let mut haiku_stream = tokenizer.token_stream(my_haiku);
-        assert!(haiku_stream.advance());
-        assert!(!haiku_stream.advance());
-        let my_too_long_text = vec!["a".repeat(255)].join("");
-        assert!(!tokenizer.token_stream(&my_too_long_text).advance());
-        let my_long_text = vec!["a".repeat(254)].join("");
-        assert!(tokenizer.token_stream(&my_long_text).advance());
+        let mut tokenizer = get_quickwit_tokenizer_manager().get("raw").unwrap();
+        {
+            let mut haiku_stream = tokenizer.token_stream(my_haiku);
+            assert!(haiku_stream.advance());
+            assert!(!haiku_stream.advance());
+        }
+        {
+            let my_too_long_text = vec!["a".repeat(255)].join("");
+            assert!(!tokenizer.token_stream(&my_too_long_text).advance());
+        }
+        {
+            let my_long_text = vec!["a".repeat(254)].join("");
+            assert!(tokenizer.token_stream(&my_long_text).advance());
+        }
     }
 
     #[test]
     fn test_chinese_tokenizer() {
         let text = "Hello world, 你好世界, bonjour monde";
 
-        let tokenizer = get_quickwit_tokenizer_manager()
+        let mut tokenizer = get_quickwit_tokenizer_manager()
             .get("chinese_compatible")
             .unwrap();
         let mut text_stream = tokenizer.token_stream(text);
@@ -300,7 +306,7 @@ mod tests {
     fn test_chinese_tokenizer_no_space() {
         let text = "Hello你好bonjour";
 
-        let tokenizer = get_quickwit_tokenizer_manager()
+        let mut tokenizer = get_quickwit_tokenizer_manager()
             .get("chinese_compatible")
             .unwrap();
         let mut text_stream = tokenizer.token_stream(text);
@@ -347,8 +353,8 @@ mod tests {
     proptest::proptest! {
         #[test]
         fn test_proptest_ascii_default_chinese_equal(text in "[ -~]{0,64}") {
-            let cn_tok = get_quickwit_tokenizer_manager().get("chinese_compatible").unwrap();
-            let default_tok = get_quickwit_tokenizer_manager().get("default").unwrap();
+            let mut cn_tok = get_quickwit_tokenizer_manager().get("chinese_compatible").unwrap();
+            let mut default_tok = get_quickwit_tokenizer_manager().get("default").unwrap();
 
             let mut text_stream = cn_tok.token_stream(&text);
 

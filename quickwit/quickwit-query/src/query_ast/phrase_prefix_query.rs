@@ -36,7 +36,7 @@ pub struct PhrasePrefixQuery {
     pub field: String,
     pub phrase: String,
     pub max_expansions: u32,
-    pub analyzer: FullTextParams,
+    pub params: FullTextParams,
 }
 
 impl PhrasePrefixQuery {
@@ -63,7 +63,7 @@ impl PhrasePrefixQuery {
                     ));
                 }
 
-                let terms = self.analyzer.tokenize_text_into_terms(
+                let terms = self.params.tokenize_text_into_terms(
                     field,
                     &self.phrase,
                     text_field_indexing,
@@ -85,7 +85,7 @@ impl PhrasePrefixQuery {
                             .to_string(),
                     ));
                 }
-                let terms = self.analyzer.tokenize_text_into_terms_json(
+                let terms = self.params.tokenize_text_into_terms_json(
                     field,
                     json_path,
                     &self.phrase,
@@ -116,7 +116,7 @@ impl BuildTantivyAst for PhrasePrefixQuery {
         let (_, terms) = self.get_terms(schema)?;
 
         if terms.is_empty() {
-            if self.analyzer.zero_terms_query.is_none() {
+            if self.params.zero_terms_query.is_none() {
                 Ok(TantivyQueryAst::match_none())
             } else {
                 Ok(TantivyQueryAst::match_all())
