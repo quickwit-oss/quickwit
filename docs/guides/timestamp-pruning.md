@@ -3,7 +3,7 @@ title: Timestamp pruning
 sidebar_position: 4
 ---
 
-Quickwit indexes documents in bacthing fashion by outputing self contained index files called [splits](https://quickwit.io/docs/overview/architecture/#splits). Overtime, the number of splits created in a Quickwit index grows as long as new documents are being indexed. This number of splits linearly hurts query performance because Quickwit needs to examine all the splits in an index during query execution.
+Quickwit indexes documents in batching fashion by outputting self-contained index files called [splits](../architecture/#splits). Over time, the number of splits created in a Quickwit index grows as long as new documents are being indexed. This number of splits linearly hurts query performance because Quickwit needs to examine all the splits in an index during query execution.
 
 Quickwit performs some maintenance techniques to keep the number of splits low within an index: applying merge policy and deleting data based on the retention policy.
 Time pruning is another technique that can also greatly reduce the number splits needed during query execution. The only catch being that: it's only applicable to time series datasets.
