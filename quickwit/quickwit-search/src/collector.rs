@@ -946,7 +946,6 @@ impl SortKeyMapper<PartialHit> for HitSortingMapper {
 }
 
 /// Incrementally merge segment results.
-// TODO add tests
 pub(crate) struct IncrementalCollector {
     inner: QuickwitCollector,
     top_k_hits: TopK<PartialHit, PartialHitSortingKey, HitSortingMapper>,
@@ -997,6 +996,8 @@ impl IncrementalCollector {
     }
 
     /// Get the worst top-hit. Can be used to skip splits if they can't possibly do better.
+    ///
+    /// Only returns a result if enough hits were recorded already.
     pub(crate) fn peek_worst_hit(&self) -> Option<&PartialHit> {
         if self.top_k_hits.at_capacity() {
             self.top_k_hits.peek_worst()
@@ -1031,9 +1032,12 @@ impl IncrementalCollector {
 mod tests {
     use std::cmp::Ordering;
 
-    use quickwit_proto::{PartialHit, SortOrder, SortValue};
+    use quickwit_proto::{
+        LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue, SplitSearchError,
+    };
+    use tantivy::collector::Collector;
 
-    use super::PartialHitHeapItem;
+    use super::{make_merge_collector, IncrementalCollector, PartialHitHeapItem};
     use crate::collector::top_k_partial_hits;
 
     #[test]
@@ -1136,5 +1140,223 @@ mod tests {
             ),
             &[make_hit_given_split_id(1), make_hit_given_split_id(2)]
         );
+    }
+
+    fn merge_collector_equal_results(
+        request: &SearchRequest,
+        results: Vec<LeafSearchResponse>,
+    ) -> LeafSearchResponse {
+        let collector = make_merge_collector(request, &Default::default()).unwrap();
+        let mut incremental_collector = IncrementalCollector::new(collector.clone());
+
+        let result = collector
+            .merge_fruits(results.iter().cloned().map(Ok).collect())
+            .unwrap();
+
+        for split_result in results {
+            incremental_collector.add_split(split_result);
+        }
+
+        let incremental_result = incremental_collector.finalize().unwrap();
+        assert_eq!(result, incremental_result);
+        result
+    }
+
+    #[test]
+    fn test_merge_collectors() {
+        let result = merge_collector_equal_results(
+            &SearchRequest {
+                start_offset: 0,
+                max_hits: 2,
+                sort_by_field: Some("timestamp".to_string()),
+                sort_order: Some(SortOrder::Desc as i32),
+                aggregation_request: None,
+                ..Default::default()
+            },
+            vec![LeafSearchResponse {
+                num_hits: 1234,
+                partial_hits: vec![PartialHit {
+                    split_id: "1".to_string(),
+                    segment_ord: 0,
+                    doc_id: 123,
+                    sort_value: Some(SortValue::I64(1234)),
+                }],
+                failed_splits: Vec::new(),
+                num_attempted_splits: 3,
+                intermediate_aggregation_result: None,
+            }],
+        );
+
+        assert_eq!(
+            result,
+            LeafSearchResponse {
+                num_hits: 1234,
+                partial_hits: vec![PartialHit {
+                    split_id: "1".to_string(),
+                    segment_ord: 0,
+                    doc_id: 123,
+                    sort_value: Some(SortValue::I64(1234)),
+                }],
+                failed_splits: Vec::new(),
+                num_attempted_splits: 3,
+                intermediate_aggregation_result: None
+            }
+        );
+
+        let result = merge_collector_equal_results(
+            &SearchRequest {
+                start_offset: 0,
+                max_hits: 2,
+                sort_by_field: Some("timestamp".to_string()),
+                sort_order: Some(SortOrder::Desc as i32),
+                aggregation_request: None,
+                ..Default::default()
+            },
+            vec![
+                LeafSearchResponse {
+                    num_hits: 1234,
+                    partial_hits: vec![
+                        PartialHit {
+                            split_id: "1".to_string(),
+                            segment_ord: 0,
+                            doc_id: 123,
+                            sort_value: Some(SortValue::I64(1234)),
+                        },
+                        PartialHit {
+                            split_id: "1".to_string(),
+                            segment_ord: 0,
+                            doc_id: 125,
+                            sort_value: Some(SortValue::I64(1236)),
+                        },
+                    ],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 3,
+                    intermediate_aggregation_result: None,
+                },
+                LeafSearchResponse {
+                    num_hits: 10,
+                    partial_hits: vec![PartialHit {
+                        split_id: "2".to_string(),
+                        segment_ord: 0,
+                        doc_id: 3,
+                        sort_value: Some(SortValue::I64(1235)),
+                    }],
+                    failed_splits: vec![SplitSearchError {
+                        error: "fake error".to_string(),
+                        split_id: "3".to_string(),
+                        retryable_error: true,
+                    }],
+                    num_attempted_splits: 2,
+                    intermediate_aggregation_result: None,
+                },
+            ],
+        );
+
+        assert_eq!(
+            result,
+            LeafSearchResponse {
+                num_hits: 1244,
+                partial_hits: vec![
+                    PartialHit {
+                        split_id: "1".to_string(),
+                        segment_ord: 0,
+                        doc_id: 125,
+                        sort_value: Some(SortValue::I64(1236)),
+                    },
+                    PartialHit {
+                        split_id: "2".to_string(),
+                        segment_ord: 0,
+                        doc_id: 3,
+                        sort_value: Some(SortValue::I64(1235)),
+                    },
+                ],
+                failed_splits: vec![SplitSearchError {
+                    error: "fake error".to_string(),
+                    split_id: "3".to_string(),
+                    retryable_error: true,
+                }],
+                num_attempted_splits: 5,
+                intermediate_aggregation_result: None
+            }
+        );
+
+        // same request, but we reverse sort order
+        let result = merge_collector_equal_results(
+            &SearchRequest {
+                start_offset: 0,
+                max_hits: 2,
+                sort_by_field: Some("timestamp".to_string()),
+                sort_order: Some(SortOrder::Asc as i32),
+                aggregation_request: None,
+                ..Default::default()
+            },
+            vec![
+                LeafSearchResponse {
+                    num_hits: 1234,
+                    partial_hits: vec![
+                        PartialHit {
+                            split_id: "1".to_string(),
+                            segment_ord: 0,
+                            doc_id: 123,
+                            sort_value: Some(SortValue::I64(1234)),
+                        },
+                        PartialHit {
+                            split_id: "1".to_string(),
+                            segment_ord: 0,
+                            doc_id: 125,
+                            sort_value: Some(SortValue::I64(1236)),
+                        },
+                    ],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 3,
+                    intermediate_aggregation_result: None,
+                },
+                LeafSearchResponse {
+                    num_hits: 10,
+                    partial_hits: vec![PartialHit {
+                        split_id: "2".to_string(),
+                        segment_ord: 0,
+                        doc_id: 3,
+                        sort_value: Some(SortValue::I64(1235)),
+                    }],
+                    failed_splits: vec![SplitSearchError {
+                        error: "fake error".to_string(),
+                        split_id: "3".to_string(),
+                        retryable_error: true,
+                    }],
+                    num_attempted_splits: 2,
+                    intermediate_aggregation_result: None,
+                },
+            ],
+        );
+
+        assert_eq!(
+            result,
+            LeafSearchResponse {
+                num_hits: 1244,
+                partial_hits: vec![
+                    PartialHit {
+                        split_id: "1".to_string(),
+                        segment_ord: 0,
+                        doc_id: 123,
+                        sort_value: Some(SortValue::I64(1234)),
+                    },
+                    PartialHit {
+                        split_id: "2".to_string(),
+                        segment_ord: 0,
+                        doc_id: 3,
+                        sort_value: Some(SortValue::I64(1235)),
+                    },
+                ],
+                failed_splits: vec![SplitSearchError {
+                    error: "fake error".to_string(),
+                    split_id: "3".to_string(),
+                    retryable_error: true,
+                }],
+                num_attempted_splits: 5,
+                intermediate_aggregation_result: None
+            }
+        );
+        // TODO would be nice to test aggregation too.
     }
 }
