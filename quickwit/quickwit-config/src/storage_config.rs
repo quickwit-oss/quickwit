@@ -208,16 +208,40 @@ impl StorageConfig {
 #[serde(deny_unknown_fields)]
 pub struct AzureStorageConfig {
     #[serde(default)]
+    #[serde(rename = "account")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub account_name: Option<String>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub access_key: Option<String>,
 }
 
 impl AzureStorageConfig {
+    pub const AZURE_STORAGE_ACCOUNT_ENV_VAR: &'static str = "QW_AZURE_STORAGE_ACCOUNT";
+
+    pub const AZURE_STORAGE_ACCESS_KEY_ENV_VAR: &'static str = "QW_AZURE_STORAGE_ACCESS_KEY";
+
+    /// Redacts the access key.
     pub fn redact(&mut self) {
         if let Some(access_key) = self.access_key.as_mut() {
             *access_key = "***redacted***".to_string();
         }
+    }
+
+    /// Attempts to find the account name in the environment variable `QW_AZURE_STORAGE_ACCOUNT` or
+    /// the config.
+    pub fn resolve_account_name(&self) -> Option<String> {
+        env::var(Self::AZURE_STORAGE_ACCOUNT_ENV_VAR)
+            .ok()
+            .or_else(|| self.account_name.clone())
+    }
+
+    /// Attempts to find the access key in the environment variable `QW_AZURE_STORAGE_ACCESS_KEY` or
+    /// the config.
+    pub fn resolve_access_key(&self) -> Option<String> {
+        env::var(Self::AZURE_STORAGE_ACCESS_KEY_ENV_VAR)
+            .ok()
+            .or_else(|| self.access_key.clone())
     }
 }
 
@@ -258,7 +282,9 @@ impl S3StorageConfig {
     }
 
     pub fn endpoint(&self) -> Option<String> {
-        env::var("QW_S3_ENDPOINT").ok().or(self.endpoint.clone())
+        env::var("QW_S3_ENDPOINT")
+            .ok()
+            .or_else(|| self.endpoint.clone())
     }
 
     pub fn force_path_style_access(&self) -> Option<bool> {
@@ -305,7 +331,7 @@ mod tests {
 
         let storage_configs_yaml = r#"
                 azure:
-                    account_name: test-account
+                    account: test-account
                 s3:
                     endpoint: http://localhost:4566
             "#;
@@ -383,7 +409,7 @@ mod tests {
     fn test_storage_azure_config_serde() {
         {
             let azure_storage_config_yaml = r#"
-                account_name: test-account
+                account: test-account
             "#;
             let azure_storage_config: AzureStorageConfig =
                 serde_yaml::from_str(azure_storage_config_yaml).unwrap();
@@ -396,7 +422,7 @@ mod tests {
         }
         {
             let azure_storage_config_yaml = r#"
-                account_name: test-account
+                account: test-account
                 access_key: test-access-key
             "#;
             let azure_storage_config: AzureStorageConfig =

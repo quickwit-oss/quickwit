@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-storage"
-version = "0.6.0"
+version = "0.6.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -49,7 +49,6 @@ quickwit-config = { workspace = true }
 [dev-dependencies]
 mockall = { workspace = true }
 proptest = { workspace = true }
-serial_test = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 

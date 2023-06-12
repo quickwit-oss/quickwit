@@ -276,7 +276,6 @@ impl QuickwitClient {
                     } else {
                         (None, self.ingest_timeout)
                     };
-                tracing::warn!("Ingesting {} bytes", batch.len());
                 let response = self
                     .transport
                     .send(

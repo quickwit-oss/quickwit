@@ -1,6 +1,6 @@
 ---
 title: Aggregations API
-sidebar_position: 2
+sidebar_position: 30
 ---
 
 An aggregation summarizes your data as statistics on buckets or metrics.
@@ -15,7 +15,7 @@ There are two categories: [Metrics](#metric-aggregations) and [Buckets](#bucket-
 
 #### Prerequisite
 
-To be able to use aggregations on a field, the field needs to have a fast field index created. A fast field index is a columnar storage, 
+To be able to use aggregations on a field, the field needs to have a fast field index created. A fast field index is a columnar storage,
 where documents values are extracted and stored to.
 
 Example to create a fast field on text for term aggregations.
@@ -31,7 +31,7 @@ See the [index configuration](../configuration/index-config.md) page for more de
 
 #### Format
 
-The aggregation request and result de/serialize into elasticsearch compatible JSON. 
+The aggregation request and result de/serialize into elasticsearch compatible JSON.
 If not documented otherwise you should be able to drop in your elasticsearch aggregation queries.
 
 In some examples below is not the full request shown, but only the payload for `aggregations`.
@@ -106,12 +106,12 @@ Response
 
 ## Bucket Aggregations
 
-BucketAggregations create buckets of documents. Each bucket is associated with a rule which determines whether or not a document falls into it. 
-In other words, the buckets effectively define document sets. Buckets are not necessarily disjunct, therefore a document can fall into multiple buckets. 
-In addition to the buckets themselves, the bucket aggregations also compute and return the number of documents for each bucket. 
-Bucket aggregations, as opposed to metric aggregations, can hold sub-aggregations. 
-These sub-aggregations will be aggregated for the buckets created by their “parent” bucket aggregation. 
-There are different bucket aggregators, each with a different “bucketing” strategy. 
+BucketAggregations create buckets of documents. Each bucket is associated with a rule which determines whether or not a document falls into it.
+In other words, the buckets effectively define document sets. Buckets are not necessarily disjunct, therefore a document can fall into multiple buckets.
+In addition to the buckets themselves, the bucket aggregations also compute and return the number of documents for each bucket.
+Bucket aggregations, as opposed to metric aggregations, can hold sub-aggregations.
+These sub-aggregations will be aggregated for the buckets created by their “parent” bucket aggregation.
+There are different bucket aggregators, each with a different “bucketing” strategy.
 Some define a single bucket, some define a fixed number of multiple buckets, and others dynamically create the buckets during the aggregation process.
 
 Example request, histogram with stats in each bucket:
@@ -122,7 +122,7 @@ See [`DateHistogram`](#date-histogram) for more convenient API for `datetime` fi
 
 Fields of type `datetime` are handled the same way as any numeric field. However, all values in the requests such as intervals, offsets, bounds, and range boundaries need to be expressed in milliseconds.
 
-Histogram with one bucket per day on a `datetime` field. `interval` needs to be provided in milliseconds. 
+Histogram with one bucket per day on a `datetime` field. `interval` needs to be provided in milliseconds.
 In the following example, we grouped documents per day (`1 day = 86400000 milliseconds`).
 The returned format is currently fixed at `Rfc3339`.
 
@@ -198,7 +198,7 @@ The value range of the buckets can bet extended via extended_bounds or limit the
 
 ###### **field**
 
-The field to aggregate on. 
+The field to aggregate on.
 
 Currently this aggregation only works on fast fields of type `u64`, `f64`, `i64`, and `datetime`.
 
@@ -296,7 +296,7 @@ Like the histogram, values are rounded down into the closest bucket.
 The returned format is currently fixed at `Rfc3339`.
 
 ##### Limitations
-Only fixed time intervals via the `fixed_interval` parameter are supported. 
+Only fixed time intervals via the `fixed_interval` parameter are supported.
 The parameters `interval` and `calendar_interval` are unsupported.
 
 ##### Request
@@ -337,7 +337,7 @@ The parameters `interval` and `calendar_interval` are unsupported.
 
 ###### **field**
 
-The field to aggregate on. 
+The field to aggregate on.
 
 Currently this aggregation only works on fast fields of type `datetime`.
 
@@ -442,13 +442,13 @@ If a custom `key` is provided, it will be used instead.
 
 ###### **field**
 
-The field to aggregate on. 
+The field to aggregate on.
 
 Currently this aggregation only works on fast fields of type `u64`, `f64`, `i64`, and `datetime`.
 
 ###### **ranges**
 
-The list of buckets, with `from` and `to` values. 
+The list of buckets, with `from` and `to` values.
 The `from` value is inclusive in the range.
 The `to` value is not inclusive in the range.
 `key` is optional, and will be used as the bucket key in the response.
@@ -478,9 +478,9 @@ Response
 ...
 "aggregations": {
     "genres": {
-        "doc_count_error_upper_bound": 0,   
-        "sum_other_doc_count": 0,           
-        "buckets": [                        
+        "doc_count_error_upper_bound": 0,
+        "sum_other_doc_count": 0,
+        "buckets": [
             { "key": "drumnbass", "doc_count": 6 },
             { "key": "raggae", "doc_count": 4 },
             { "key": "jazz", "doc_count": 2 }
@@ -531,7 +531,7 @@ Defaults to size * 1.5 + 10.
 
 ###### **show_term_doc_count_error**
 
-If you set the show_term_doc_count_error parameter to true, the terms aggregation will include doc_count_error_upper_bound, which is an upper bound to the error on the doc_count returned by each split. 
+If you set the show_term_doc_count_error parameter to true, the terms aggregation will include doc_count_error_upper_bound, which is an upper bound to the error on the doc_count returned by each split.
 It’s the sum of the size of the largest bucket on each split that didn’t fit into split_size.
 
 Defaults to true when ordering by count desc.
@@ -733,7 +733,7 @@ Supported field types are `u64`, `f64`, `i64`, and `datetime`.
 
 ### Stats
 
-A multi-value metric aggregation that computes stats (average, count, min, max, standard deviation, and sum) of numeric values that are extracted from the aggregated documents. 
+A multi-value metric aggregation that computes stats (average, count, min, max, standard deviation, and sum) of numeric values that are extracted from the aggregated documents.
 Supported field types are `u64`, `f64`, `i64`, and `datetime`.
 
 **Request**
@@ -814,7 +814,7 @@ This aggregation can be particularly interesting for analyzing website or servic
 For example, if the 95th percentile website load time is significantly higher than the median, this indicates
 that a small percentage of users are experiencing much slower load times than the majority.
 
-To use the percentiles aggregation, you'll need to provide a field to aggregate on. 
+To use the percentiles aggregation, you'll need to provide a field to aggregate on.
 In the case of website load times, this would typically be a field containing the duration of time it takes for the site to load.
 
 **Request**

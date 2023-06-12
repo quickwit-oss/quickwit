@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-aws"
-version = "0.6.0"
+version = "0.6.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -19,7 +19,6 @@ aws-types = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-ec2_instance_metadata = { workspace = true }
 futures = { workspace = true }
 hyper = { workspace = true }
 hyper-rustls = { workspace = true }
