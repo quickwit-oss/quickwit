@@ -4,6 +4,23 @@ This directory is meant to test quickwit at the Rest API level.
 It was originally meant to iterate over the elastic search compatibility API,
 but can also be used as a convenient way to create integration tests.
 
+# Setting up the Python environment
+
+## Installing Pipenv
+
+```bash
+pip install --user pipenv
+```
+
+[Pipenv installation](https://pipenv.pypa.io/en/latest/installation/)
+
+## Installing the dependencies in a virtual environment
+
+```bash
+pipenv shell
+pipenv install
+```
+
 # Running the tests
 
 The test script is meant to target `elasticsearch` and `quickwit`.
