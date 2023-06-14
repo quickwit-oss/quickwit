@@ -388,7 +388,7 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=0, type=Json, path=toto, type=U64, 5))), (Should, TermQuery(Term(field=0, type=Json, path=toto, type=Str, "5")))] }"#
+            r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=0, type=Json, path=toto, type=I64, 5))), (Should, TermQuery(Term(field=0, type=Json, path=toto, type=Str, "5")))] }"#
         );
     }
 

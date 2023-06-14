@@ -67,7 +67,7 @@ impl ConvertableToQueryAst for MatchPhrasePrefix {
         let phrase_prefix_query_ast = query_ast::PhrasePrefixQuery {
             field: self.field,
             phrase: query,
-            analyzer,
+            params: analyzer,
             max_expansions,
         };
         Ok(phrase_prefix_query_ast.into())
