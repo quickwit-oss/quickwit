@@ -168,10 +168,6 @@ and start a container ready to execute Quickwit commands.
 
 ```bash
 docker run --rm quickwit/quickwit --version
-
-# If you are using Apple silicon based macOS system you might need to specify the platform.
-# You can also safely ignore jemalloc warnings.
-docker run --rm --platform linux/amd64 quickwit/quickwit --version
 ```
 Here is the directory layout of Quickwit inside the container in case you need to mount a volume:
 
@@ -187,32 +183,10 @@ Here is the directory layout of Quickwit inside the container in case you need t
 - `quickwit`: the quickwit executable binary.
 - `qwdata/`: the default data directory.
 
-Here is a list of the available environment variables and ports options that can be used to configure Quickwit:
+The full list of available environment variables and ports options can be found in the respective configuration sections:
 
-[Node configuration](../configuration/node-config.md):
-- `QW_CLUSTER_ID`
-- `QW_NODE_ID`
-- `QW_ENABLED_SERVICES`
-- `QW_LISTEN_ADDRESS`
-- `QW_ADVERTISE_ADDRESS`
-- `QW_PEER_SEEDS`
-- `QW_DATA_DIR`
-- `QW_METASTORE_URI`
-- `QW_DEFAULT_INDEX_ROOT_URI`
-- `QW_ENABLE_JAEGER_EXPORTER`
-- `QW_ENABLE_JAEGER_ENDPOINT`
-- `QW_S3_ENDPOINT`
-- `QW_S3_MAX_CONCURRENCY`
-- `QW_AZURE_STORAGE_ACCOUNT`
-- `QW_AZURE_STORAGE_ACCESS_KEY`
-
-[Ports configuration](../configuration/ports-config.md):
-- `QW_REST_LISTEN_PORT`
-- `QW_GOSSIP_LISTEN_PORT`
-- `QW_GRPC_LISTEN_PORT`
-
-[Telemetry](../telemetry.md):
-- `QW_DISABLE_TELEMETRY`
+- [Node configuration](../configuration/node-config.md)
+- [Ports configuration](../configuration/ports-config.md):
 
 To get the full gist of this, follow the [Quickstart guide](./quickstart.md).
 

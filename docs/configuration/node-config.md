@@ -39,7 +39,6 @@ There are also other parameters that can be only defined by env variables:
 
 | Env variable | Description |
 | --- | --- |
-| `QW_S3_MAX_CONCURRENCY` | Limit the number of concurrent requests to S3 |
 | `QW_ENABLE_JAEGER_EXPORTER` | Enable trace export to Jaeger. |
 
 More details about [storage configuration](../reference/storage-uri.md).
@@ -75,6 +74,12 @@ storage:
 | `endpoint` | Custom endpoint for use with S3-compatible providers. | `QW_S3_ENDPOINT` | SDK default |
 | `force_path_style_access` | Disables [virtual-hosted–style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) requests. Required by some S3-compatible providers (Ceph, MinIO). | `QW_S3_FORCE_PATH_STYLE_ACCESS` | `false` |
 | `disable_multi_object_delete_requests` | Disables [Multi-Object Delete](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html) requests. Required by some S3-compatible providers (GCS). | | `false` |
+
+There is an additional parameter that can only be defined using env variable:
+
+| Env variable | Description |
+| --- | --- |
+| `QW_S3_MAX_CONCURRENCY` | Limit the number of concurrent requests to S3 |
 
 Example of a storage configuration for S3 in YAML format:
 
