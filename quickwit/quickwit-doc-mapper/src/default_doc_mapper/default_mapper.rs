@@ -117,31 +117,22 @@ impl DefaultDocMapper {
     }
 }
 
-fn validate_timestamp_field_if_any(builder: &DefaultDocMapperBuilder) -> anyhow::Result<()> {
-    let Some(timestamp_field_name) = builder.timestamp_field.as_ref() else {
-        return Ok(());
+fn validate_timestamp_field(
+    timestamp_field_path: &str,
+    mapping_root_node: &MappingNode,
+) -> anyhow::Result<()> {
+    let Some(timestamp_field_type) = mapping_root_node.find_field_mapping_type(timestamp_field_path) else {
+        bail!("Could not find timestamp field `{timestamp_field_path}` in field mappings.");
     };
-    let Some(timestamp_field_entry) = builder.field_mappings.iter().find(|mapping| {
-                &mapping.name == timestamp_field_name
-            }) else {
-                bail!("Missing timestamp field in field mappings: `{}`", timestamp_field_name);
-            };
-    if let FieldMappingType::DateTime(date_time_option, cardinality) =
-        &timestamp_field_entry.mapping_type
-    {
+    if let FieldMappingType::DateTime(date_time_option, cardinality) = &timestamp_field_type {
         if cardinality != &Cardinality::SingleValue {
-            bail!(
-                "Multiple values are forbidden for  the timestamp field \
-                 (`{timestamp_field_name}`)."
-            );
+            bail!("Timestamp field `{timestamp_field_path}` should be single-valued.");
         }
         if !date_time_option.fast {
-            bail!("The timestamp field `{timestamp_field_name}`is required to be a fast field.");
+            bail!("Timestamp field `{timestamp_field_path}` should be a fast field.");
         }
     } else {
-        bail!(
-            "The timestamp field `{timestamp_field_name}` is required to have the datetime type."
-        );
+        bail!("Timestamp field `{timestamp_field_path}` should be a datetime field.");
     }
     Ok(())
 }
@@ -159,7 +150,9 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             None
         };
 
-        validate_timestamp_field_if_any(&builder)?;
+        if let Some(timestamp_field_path) = builder.timestamp_field.as_ref() {
+            validate_timestamp_field(timestamp_field_path, &field_mappings)?;
+        };
 
         let dynamic_field = if let Mode::Dynamic(json_options) = &mode {
             Some(schema_builder.add_json_field(DYNAMIC_FIELD_NAME, json_options.clone()))
@@ -584,20 +577,84 @@ mod tests {
     }
 
     #[test]
-    fn test_fail_to_build_doc_mapper_with_non_datetime_timestamp_field() {
+    fn test_timestamp_field_in_object_is_valid() {
+        serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+            "field_mappings": [
+                {
+                    "name": "some_obj",
+                    "type": "object",
+                    "field_mappings": [
+                        {
+                            "name": "timestamp",
+                            "type": "datetime",
+                            "fast": true
+                        }
+                    ]
+                }
+            ],
+            "timestamp_field": "some_obj.timestamp"
+        }"#,
+        )
+        .unwrap();
+
+        serde_yaml::from_str::<DefaultDocMapper>(
+            r#"
+            field_mappings:
+              - name: some_obj
+                type: object
+                field_mappings:
+                  - name: timestamp
+                    type: datetime
+                    fast: true
+            timestamp_field: some_obj.timestamp
+        "#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_timestamp_field_with_dots_in_its_name_is_valid() {
+        serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+            "field_mappings": [
+                {
+                    "name": "my.timestamp",
+                    "type": "datetime",
+                    "fast": true
+                }
+            ],
+            "timestamp_field": "my\\.timestamp"
+        }"#,
+        )
+        .unwrap();
+
+        serde_yaml::from_str::<DefaultDocMapper>(
+            r#"
+            field_mappings:
+              - name: my.timestamp
+                type: datetime
+                fast: true
+            timestamp_field: "my\\.timestamp"
+        "#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_fail_to_build_doc_mapper_with_timestamp_field_with_multivalues_cardinality() {
         let doc_mapper = r#"{
-            "default_search_fields": [],
             "timestamp_field": "timestamp",
             "tag_fields": [],
             "field_mappings": [
                 {
                     "name": "timestamp",
-                    "type": "text"
+                    "type": "array<i64>"
                 }
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-        let expected_msg = "The timestamp field `timestamp` is required to have the datetime type.";
+        let expected_msg = "Timestamp field `timestamp` should be a datetime field.";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), &expected_msg);
     }
 
@@ -616,7 +673,7 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-        let expected_msg = "The timestamp field `timestamp`is required to be a fast field.";
+        let expected_msg = "Timestamp field `timestamp` should be a fast field.";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), &expected_msg);
     }
 
@@ -689,7 +746,7 @@ mod tests {
         }"#;
 
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-        let expected_msg = "Multiple values are forbidden for  the timestamp field (`timestamp`).";
+        let expected_msg = "Timestamp field `timestamp` should be single-valued.";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), expected_msg);
     }
 
@@ -802,7 +859,7 @@ mod tests {
     }
 
     #[test]
-    fn test_partion_key_in_tags() {
+    fn test_partition_key_in_tags() {
         let doc_mapper = r#"{
             "default_search_fields": [],
             "timestamp_field": null,
@@ -838,7 +895,7 @@ mod tests {
     }
 
     #[test]
-    fn test_partion_key_in_tags_without_explicit_tags() {
+    fn test_partition_key_in_tags_without_explicit_tags() {
         let doc_mapper = r#"{
             "default_search_fields": [],
             "timestamp_field": null,
@@ -870,6 +927,42 @@ mod tests {
         let doc_mapper = builder.try_build().unwrap();
         let tag_fields: Vec<_> = doc_mapper.tag_field_names.into_iter().collect();
         assert_eq!(tag_fields, vec!["city", "division", "service",]);
+    }
+
+    #[test]
+    fn test_build_doc_mapper_with_tag_field_with_dots_in_its_name() {
+        let doc_mapper = r#"{
+            "default_search_fields": [],
+            "tag_fields": ["my\\.city\\.id"],
+            "field_mappings": [
+                {
+                    "name": "my.city.id",
+                    "type": "u64"
+                }
+            ]
+        }"#;
+        serde_json::from_str::<DefaultDocMapper>(doc_mapper).unwrap();
+    }
+
+    #[test]
+    fn test_build_doc_mapper_with_tag_field_in_object() {
+        let doc_mapper = r#"{
+            "default_search_fields": [],
+            "tag_fields": ["location.city"],
+            "field_mappings": [
+                {
+                    "name": "location",
+                    "type": "object",
+                    "field_mappings": [
+                        {
+                            "name": "city",
+                            "type": "u64"
+                        }
+                    ]
+                }
+            ]
+        }"#;
+        serde_json::from_str::<DefaultDocMapper>(doc_mapper).unwrap();
     }
 
     #[test]
@@ -1279,5 +1372,66 @@ mod tests {
                 super::QuickwitTextTokenizer::Default.get_name()
             );
         }
+    }
+
+    #[test]
+    fn test_find_field_mapping_type() {
+        let mapper = serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+            "field_mappings": [
+                {
+                    "name": "some_obj",
+                    "type": "object",
+                    "field_mappings": [
+                        {
+                            "name": "timestamp",
+                            "type": "datetime",
+                            "fast": true
+                        },
+                        {
+                            "name": "object2",
+                            "type": "object",
+                            "field_mappings": [
+                                {
+                                    "name": "id",
+                                    "type": "u64"
+                                },
+                                {
+                                    "name": "my.id",
+                                    "type": "u64"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "name": "my.timestamp",
+                    "type": "datetime",
+                    "fast": true
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        mapper
+            .field_mappings
+            .find_field_mapping_type("some_obj.timestamp")
+            .unwrap();
+        mapper
+            .field_mappings
+            .find_field_mapping_type("some_obj.object2.id")
+            .unwrap();
+        mapper
+            .field_mappings
+            .find_field_mapping_type("some_obj.object2")
+            .unwrap();
+        mapper
+            .field_mappings
+            .find_field_mapping_type("some_obj.object2.my\\.id")
+            .unwrap();
+        mapper
+            .field_mappings
+            .find_field_mapping_type("my\\.timestamp")
+            .unwrap();
     }
 }

@@ -9,18 +9,21 @@ This page documents all the available commands, related options, and environment
 
 ### Common Options
 
-To manage indexes, splits and sources, you might need to specify the connection to a Quickwit node. The following options are supported:
+To manage indexes, splits and sources on a remote cluster you might need to specify the connection to a Quickwit node. The following options are supported:
 
-`--endpoint` The url of a Quickwit node. Defaults to `http://127.0.0.1:7280`  
-`--timeout` The command timeout. The default timeout is command specific:
+| Option              | Description                 | Default                 |
+|---------------------|-----------------------------|------------------------:|
+| `--endpoint`        | The url of a Quickwit node. | `http://127.0.0.1:7280` |
+| `--timeout`         | Command timeout.            | *See below*             |
+| `--connect-timeout` | Connect timeout.            | `5s`                    |
+
+The default timeouts are command specific:
 - **search** - 1 minute
 - **ingest** (without force or wait) - 1 minute
 - **ingest** (with force or wait) - 30 minute
 - all other operations - 10 seconds
 
-`--connect-timeout` The connect timeout. Default is 5 seconds.
-
-The timeout can be expressed as in seconds, minutes, hours or days. For examples:
+The timeout can be expressed as in seconds, minutes, hours or days. For example:
 
 - `10s` - 10 seconds timeout
 - `1m` - 1 minute timeout
