@@ -7,6 +7,7 @@ pub struct NotifyIndexChangeRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NotifyIndexChangeResponse {}
 /// BEGIN quickwit-codegen
+use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
@@ -281,13 +282,12 @@ impl<A: quickwit_actors::Actor> Clone for ControlPlaneServiceMailbox<A> {
         Self { inner }
     }
 }
-use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for ControlPlaneServiceMailbox<A>
 where
     A: quickwit_actors::Actor
         + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send
         + 'static,
-    M: std::fmt::Debug + Send + Sync + 'static,
+    M: std::fmt::Debug + Send + 'static,
     T: Send + 'static,
     E: std::fmt::Debug + Send + 'static,
     crate::ControlPlaneError: From<quickwit_actors::AskError<E>>,
@@ -315,7 +315,7 @@ where
 #[async_trait::async_trait]
 impl<A> ControlPlaneService for ControlPlaneServiceMailbox<A>
 where
-    A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+    A: quickwit_actors::Actor + std::fmt::Debug,
     ControlPlaneServiceMailbox<
         A,
     >: tower::Service<

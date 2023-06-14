@@ -41,7 +41,8 @@ pub struct PingResponse {
     pub message: ::prost::alloc::string::String,
 }
 /// BEGIN quickwit-codegen
-type HelloStream<T> = quickwit_common::ServiceStream<T, crate::HelloError>;
+use tower::{Layer, Service, ServiceExt};
+pub type HelloStream<T> = quickwit_common::ServiceStream<crate::HelloResult<T>>;
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait Hello: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
@@ -55,7 +56,7 @@ pub trait Hello: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
     ) -> crate::HelloResult<GoodbyeResponse>;
     async fn ping(
         &mut self,
-        request: PingRequest,
+        request: quickwit_common::ServiceStream<PingRequest>,
     ) -> crate::HelloResult<HelloStream<PingResponse>>;
 }
 dyn_clone::clone_trait_object!(Hello);
@@ -127,7 +128,7 @@ impl Hello for HelloClient {
     }
     async fn ping(
         &mut self,
-        request: PingRequest,
+        request: quickwit_common::ServiceStream<PingRequest>,
     ) -> crate::HelloResult<HelloStream<PingResponse>> {
         self.inner.ping(request).await
     }
@@ -155,7 +156,7 @@ pub mod mock {
         }
         async fn ping(
             &mut self,
-            request: PingRequest,
+            request: quickwit_common::ServiceStream<PingRequest>,
         ) -> crate::HelloResult<HelloStream<PingResponse>> {
             self.inner.lock().await.ping(request).await
         }
@@ -204,7 +205,7 @@ impl tower::Service<GoodbyeRequest> for Box<dyn Hello> {
         Box::pin(fut)
     }
 }
-impl tower::Service<PingRequest> for Box<dyn Hello> {
+impl tower::Service<quickwit_common::ServiceStream<PingRequest>> for Box<dyn Hello> {
     type Response = HelloStream<PingResponse>;
     type Error = crate::HelloError;
     type Future = BoxFuture<Self::Response, Self::Error>;
@@ -214,7 +215,10 @@ impl tower::Service<PingRequest> for Box<dyn Hello> {
     ) -> std::task::Poll<Result<(), Self::Error>> {
         std::task::Poll::Ready(Ok(()))
     }
-    fn call(&mut self, request: PingRequest) -> Self::Future {
+    fn call(
+        &mut self,
+        request: quickwit_common::ServiceStream<PingRequest>,
+    ) -> Self::Future {
         let mut svc = self.clone();
         let fut = async move { svc.ping(request).await };
         Box::pin(fut)
@@ -234,7 +238,7 @@ struct HelloTowerBlock {
         crate::HelloError,
     >,
     ping_svc: quickwit_common::tower::BoxService<
-        PingRequest,
+        quickwit_common::ServiceStream<PingRequest>,
         HelloStream<PingResponse>,
         crate::HelloError,
     >,
@@ -264,7 +268,7 @@ impl Hello for HelloTowerBlock {
     }
     async fn ping(
         &mut self,
-        request: PingRequest,
+        request: quickwit_common::ServiceStream<PingRequest>,
     ) -> crate::HelloResult<HelloStream<PingResponse>> {
         self.ping_svc.ready().await?.call(request).await
     }
@@ -293,7 +297,7 @@ pub struct HelloTowerBlockBuilder {
     ping_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn Hello>,
-            PingRequest,
+            quickwit_common::ServiceStream<PingRequest>,
             HelloStream<PingResponse>,
             crate::HelloError,
         >,
@@ -316,11 +320,13 @@ impl HelloTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<GoodbyeRequest>>::Future: Send + 'static,
         L::Service: tower::Service<
-                PingRequest,
+                quickwit_common::ServiceStream<PingRequest>,
                 Response = HelloStream<PingResponse>,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<PingRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<
+            quickwit_common::ServiceStream<PingRequest>,
+        >>::Future: Send + 'static,
     {
         self.hello_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.goodbye_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -357,11 +363,13 @@ impl HelloTowerBlockBuilder {
     where
         L: tower::Layer<Box<dyn Hello>> + Send + Sync + 'static,
         L::Service: tower::Service<
-                PingRequest,
+                quickwit_common::ServiceStream<PingRequest>,
                 Response = HelloStream<PingResponse>,
                 Error = crate::HelloError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<PingRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<
+            quickwit_common::ServiceStream<PingRequest>,
+        >>::Future: Send + 'static,
     {
         self.ping_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
@@ -460,13 +468,12 @@ impl<A: quickwit_actors::Actor> Clone for HelloMailbox<A> {
         Self { inner }
     }
 }
-use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for HelloMailbox<A>
 where
     A: quickwit_actors::Actor
         + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send
         + 'static,
-    M: std::fmt::Debug + Send + Sync + 'static,
+    M: std::fmt::Debug + Send + 'static,
     T: Send + 'static,
     E: std::fmt::Debug + Send + 'static,
     crate::HelloError: From<quickwit_actors::AskError<E>>,
@@ -494,7 +501,7 @@ where
 #[async_trait::async_trait]
 impl<A> Hello for HelloMailbox<A>
 where
-    A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+    A: quickwit_actors::Actor + std::fmt::Debug,
     HelloMailbox<
         A,
     >: tower::Service<
@@ -510,7 +517,7 @@ where
             Future = BoxFuture<GoodbyeResponse, crate::HelloError>,
         >
         + tower::Service<
-            PingRequest,
+            quickwit_common::ServiceStream<PingRequest>,
             Response = HelloStream<PingResponse>,
             Error = crate::HelloError,
             Future = BoxFuture<HelloStream<PingResponse>, crate::HelloError>,
@@ -530,7 +537,7 @@ where
     }
     async fn ping(
         &mut self,
-        request: PingRequest,
+        request: quickwit_common::ServiceStream<PingRequest>,
     ) -> crate::HelloResult<HelloStream<PingResponse>> {
         self.call(request).await
     }
@@ -576,15 +583,15 @@ where
     }
     async fn ping(
         &mut self,
-        request: PingRequest,
+        request: quickwit_common::ServiceStream<PingRequest>,
     ) -> crate::HelloResult<HelloStream<PingResponse>> {
         self.inner
             .ping(request)
             .await
             .map(|response| {
-                let stream = response.into_inner();
-                let service_stream = quickwit_common::ServiceStream::from(stream);
-                service_stream.map_err(|error| error.into())
+                let streaming: tonic::Streaming<_> = response.into_inner();
+                let stream = quickwit_common::ServiceStream::from(streaming);
+                stream.map_err(|error| error.into())
             })
             .map_err(|error| error.into())
     }
@@ -625,14 +632,17 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
             .map(tonic::Response::new)
             .map_err(|error| error.into())
     }
-    type PingStream = quickwit_common::ServiceStream<PingResponse, tonic::Status>;
+    type PingStream = quickwit_common::ServiceStream<tonic::Result<PingResponse>>;
     async fn ping(
         &self,
-        request: tonic::Request<PingRequest>,
+        request: tonic::Request<tonic::Streaming<PingRequest>>,
     ) -> Result<tonic::Response<Self::PingStream>, tonic::Status> {
         self.inner
             .clone()
-            .ping(request.into_inner())
+            .ping({
+                let streaming: tonic::Streaming<_> = request.into_inner();
+                quickwit_common::ServiceStream::from(streaming)
+            })
             .await
             .map(|stream| tonic::Response::new(stream.map_err(|error| error.into())))
             .map_err(|error| error.into())
@@ -766,7 +776,7 @@ pub mod hello_grpc_client {
         }
         pub async fn ping(
             &mut self,
-            request: impl tonic::IntoRequest<super::PingRequest>,
+            request: impl tonic::IntoStreamingRequest<Message = super::PingRequest>,
         ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::PingResponse>>,
             tonic::Status,
@@ -782,9 +792,9 @@ pub mod hello_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/hello.Hello/Ping");
-            let mut req = request.into_request();
+            let mut req = request.into_streaming_request();
             req.extensions_mut().insert(GrpcMethod::new("hello.Hello", "Ping"));
-            self.inner.server_streaming(req, path, codec).await
+            self.inner.streaming(req, path, codec).await
         }
     }
 }
@@ -811,7 +821,7 @@ pub mod hello_grpc_server {
             + 'static;
         async fn ping(
             &self,
-            request: tonic::Request<super::PingRequest>,
+            request: tonic::Request<tonic::Streaming<super::PingRequest>>,
         ) -> std::result::Result<tonic::Response<Self::PingStream>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -982,7 +992,7 @@ pub mod hello_grpc_server {
                     struct PingSvc<T: HelloGrpc>(pub Arc<T>);
                     impl<
                         T: HelloGrpc,
-                    > tonic::server::ServerStreamingService<super::PingRequest>
+                    > tonic::server::StreamingService<super::PingRequest>
                     for PingSvc<T> {
                         type Response = super::PingResponse;
                         type ResponseStream = T::PingStream;
@@ -992,7 +1002,7 @@ pub mod hello_grpc_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::PingRequest>,
+                            request: tonic::Request<tonic::Streaming<super::PingRequest>>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move { (*inner).ping(request).await };
@@ -1017,7 +1027,7 @@ pub mod hello_grpc_server {
                                 max_decoding_message_size,
                                 max_encoding_message_size,
                             );
-                        let res = grpc.server_streaming(method, req).await;
+                        let res = grpc.streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
