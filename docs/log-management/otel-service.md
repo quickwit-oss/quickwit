@@ -20,81 +20,10 @@ indexer:
 ## OpenTelemetry logs data model
 
 Quickwit sends OpenTelemetry logs into the `otel-logs-v0_6` index which is automatically created if you enable the OpenTelemetry service.
-The doc mapping of this index described below is derived from the [OpenTelemetry logs data model](https://opentelemetry.io/docs/reference/specification/logs/data-model/).
+The doc mapping of this index is derived from the [OpenTelemetry logs data model](https://opentelemetry.io/docs/reference/specification/logs/data-model/). It can be accessed along with the index configuration by sending a HTTP GET request to Quickwit API.
 
-```yaml
-
-version: 0.6
-
-index_id: otel-logs-v0_6
-
-doc_mapping:
-  mode: strict
-  field_mappings:
-    - name: timestamp_nanos
-      type: datetime
-      input_formats: [unix_timestamp]
-      output_format: unix_timestamp_nanos
-      indexed: false
-      fast: true
-      precision: milliseconds
-    - name: observed_timestamp_nanos
-      type: datetime
-      input_formats: [unix_timestamp]
-      output_format: unix_timestamp_nanos
-    - name: service_name
-      type: text
-      tokenizer: raw
-    - name: severity_text
-      type: text
-      tokenizer: raw
-      fast: true
-    - name: severity_number
-      type: u64
-      fast: true
-    - name: body
-      type: json
-    - name: attributes
-      type: json
-      tokenizer: raw
-      fast: true
-    - name: dropped_attributes_count
-      type: u64
-      indexed: false
-    - name: trace_id
-      type: bytes
-    - name: span_id
-      type: bytes
-    - name: trace_flags
-      type: u64
-      indexed: false
-    - name: resource_attributes
-      type: json
-      tokenizer: raw
-      fast: true
-    - name: resource_dropped_attributes_count
-      type: u64
-      indexed: false
-    - name: scope_name
-      type: text
-      indexed: false
-    - name: scope_version
-      type: text
-      indexed: false
-    - name: scope_attributes
-      type: json
-      indexed: false
-    - name: scope_dropped_attributes_count
-      type: u64
-      indexed: false
-
-  timestamp_field: timestamp_nanos
-
-indexing_settings:
-  commit_timeout_secs: 5
-
-search_settings:
-  default_search_fields: [body.message]
+```bash
+curl -X GET http://localhost:7280/api/v1/indexes/otel-logs-v0_6
 ```
 
 ## UI Integration
