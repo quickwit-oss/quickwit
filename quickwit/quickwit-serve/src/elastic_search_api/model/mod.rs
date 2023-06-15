@@ -30,5 +30,20 @@ pub use error::ElasticSearchError;
 pub use multi_search::{
     MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,
 };
+use quickwit_proto::SortOrder;
 pub use search_body::SearchBody;
 pub use search_query_params::SearchQueryParams;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SortField {
+    pub field: String,
+    pub order: SortOrder,
+}
+
+pub(crate) fn default_elasticsearch_sort_order(field_name: &str) -> SortOrder {
+    if field_name == "_score" {
+        SortOrder::Desc
+    } else {
+        SortOrder::Asc
+    }
+}
