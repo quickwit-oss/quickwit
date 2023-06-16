@@ -118,7 +118,10 @@ fn build_request_for_es_api(
     let max_hits = search_params.size.or(search_body.size).unwrap_or(10);
     let start_offset = search_params.from.or(search_body.from).unwrap_or(0);
 
-    let sort_fields: Vec<SortField> = search_params.sort_fields()?.unwrap_or_default();
+    let sort_fields: Vec<SortField> = search_params
+        .sort_fields()?
+        .or_else(|| search_body.sort.clone())
+        .unwrap_or_default();
 
     if sort_fields.len() >= 2 {
         return Err(ElasticSearchError::from(SearchError::InvalidArgument(
