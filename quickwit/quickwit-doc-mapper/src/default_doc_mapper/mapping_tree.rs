@@ -718,6 +718,7 @@ mod tests {
     use tantivy::schema::{Field, IntoIpv6Addr, Value as TantivyValue};
     use tantivy::{DateTime, Document};
     use time::macros::datetime;
+    use time::OffsetDateTime;
 
     use super::{value_to_json, LeafType, MappingLeaf};
     use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
@@ -1022,13 +1023,38 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_date() {
+    fn test_parse_date_time_str() {
         let typ = LeafType::DateTime(QuickwitDateTimeOptions::default());
         let value = typ
             .value_from_json(json!("2021-12-19T16:39:57-01:00"))
             .unwrap();
         let date_time = datetime!(2021-12-19 17:39:57 UTC);
         assert_eq!(value, TantivyValue::Date(DateTime::from_utc(date_time)));
+    }
+
+    #[test]
+    fn test_parse_timestamp_float() {
+        let typ = LeafType::DateTime(QuickwitDateTimeOptions::default());
+        let unix_ts_secs = OffsetDateTime::now_utc().unix_timestamp();
+        let value = typ
+            .value_from_json(json!(unix_ts_secs as f64 + 0.1))
+            .unwrap();
+        let date_time = match value {
+            TantivyValue::Date(date_time) => date_time,
+            other => panic!("Expected a tantivy date time, got `{other:?}`."),
+        };
+        assert!((date_time.into_timestamp_millis() - (unix_ts_secs * 1_000 + 100)).abs() <= 1);
+    }
+
+    #[test]
+    fn test_parse_timestamp_int() {
+        let typ = LeafType::DateTime(QuickwitDateTimeOptions::default());
+        let unix_ts_secs = OffsetDateTime::now_utc().unix_timestamp();
+        let value = typ.value_from_json(json!(unix_ts_secs)).unwrap();
+        assert_eq!(
+            value,
+            TantivyValue::Date(DateTime::from_timestamp_secs(unix_ts_secs))
+        );
     }
 
     #[test]
@@ -1048,7 +1074,8 @@ mod tests {
         let err = typ.value_from_json(json!(["foo", "bar"])).err().unwrap();
         assert_eq!(
             err,
-            "Failed to parse datetime. Expected an integer or a string, got `[\"foo\",\"bar\"]`."
+            "Failed to parse datetime: expected a float, integer, or string, got \
+             `[\"foo\",\"bar\"]`."
         );
     }
 
