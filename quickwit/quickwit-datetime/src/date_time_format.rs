@@ -17,6 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+// This clippy warning is triggered by our the `ouroboros::self_referencing` macro.
+#![allow(clippy::useless_transmute)]
+
 use std::fmt::Display;
 use std::str::FromStr;
 
