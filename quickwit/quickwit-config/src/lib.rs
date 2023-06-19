@@ -24,8 +24,6 @@ use std::str::FromStr;
 use anyhow::{bail, Context};
 use json_comments::StripComments;
 use once_cell::sync::OnceCell;
-use quickwit_common::net::is_valid_hostname;
-use quickwit_common::uri::Uri;
 use regex::Regex;
 
 mod config_value;
@@ -119,11 +117,14 @@ pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
 }
 
 pub fn validate_node_id(node_id: &str) -> anyhow::Result<()> {
-    if !is_valid_hostname(node_id) {
-        bail!(
-            "Node identifier `{node_id}` is invalid. Node identifiers must be valid short \
-             hostnames (see RFC 1123)."
-        );
+    #[cfg(not(feature = "wasm"))]
+    {
+        if !quickwit_common::net::is_valid_hostname(node_id) {
+            bail!(
+                "Node identifier `{node_id}` is invalid. Node identifiers must be valid short \
+                 hostnames (see RFC 1123)."
+            );
+        }
     }
     Ok(())
 }
@@ -143,8 +144,8 @@ impl ConfigFormat {
             ConfigFormat::Yaml => "yaml",
         }
     }
-
-    pub fn sniff_from_uri(uri: &Uri) -> anyhow::Result<ConfigFormat> {
+    #[cfg(not(feature = "wasm"))]
+    pub fn sniff_from_uri(uri: &quickwit_common::uri::Uri) -> anyhow::Result<ConfigFormat> {
         let extension_str: &str = uri.extension().with_context(|| {
             format!(
                 "Failed to read config file `{uri}`: file extension is missing. Supported file \
@@ -153,6 +154,11 @@ impl ConfigFormat {
         })?;
         ConfigFormat::from_str(extension_str)
             .with_context(|| format!("Failed to identify configuration file format {uri}."))
+    }
+
+    #[cfg(feature = "wasm")]
+    pub fn sniff_from_uri(uri: &quickwit_common::uri::Uri) -> anyhow::Result<ConfigFormat> {
+        unimplemented!()
     }
 
     pub fn parse<T>(&self, payload: &[u8]) -> anyhow::Result<T>

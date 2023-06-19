@@ -20,7 +20,7 @@ tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["default"] }
 quickwit-config = { workspace = true }
 quickwit-cluster = { workspace = true }
 

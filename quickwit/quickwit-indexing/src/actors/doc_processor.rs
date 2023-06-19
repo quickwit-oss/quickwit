@@ -325,6 +325,31 @@ impl DocProcessor {
     }
 }
 
+struct DocTransformer{
+    vrl_program: VrlProgram,
+}
+impl DocTransformer {
+    pub fn try_new(
+        transform_config_opt: TransformConfig,
+    ) -> anyhow::Result<Self> {
+        let vrl_program = VrlProgram::try_from_transform_config(transform_config_opt)?;
+        let doc_processor = Self {
+            vrl_program,
+        };
+        Ok(doc_processor)
+    }
+    fn transform(&mut self, input_doc: InputDoc) -> Result<JsonObject, DocProcessorError> {
+        let vrl_doc = input_doc.try_into_vrl_doc()?;
+        let transformed_vrl_doc = self.vrl_program.transform_doc(vrl_doc)?;
+
+        match serde_json::to_value(transformed_vrl_doc) {
+            Ok(JsonValue::Object(json_doc)) => Ok(json_doc),
+            _ => return Err(DocProcessorError::ParsingError),
+        }
+    }
+}
+
+
 fn extract_timestamp_field(doc_mapper: &dyn DocMapper) -> anyhow::Result<Option<Field>> {
     let schema = doc_mapper.schema();
     let Some(timestamp_field_name) = doc_mapper.timestamp_field_name() else {

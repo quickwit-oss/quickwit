@@ -31,6 +31,8 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 typetag = { workspace = true }
 utoipa = { workspace = true }
+vrl = { workspace = true }
+vrl-stdlib = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -21,25 +21,35 @@
 
 mod checklist;
 mod coolid;
+pub mod host;
 
 pub mod binary_heap;
 mod file_entry;
+#[cfg(not(feature = "wasm"))]
 pub mod fs;
+#[cfg(not(feature = "wasm"))]
 pub mod io;
 mod kill_switch;
+#[cfg(not(feature = "wasm"))]
 pub mod metrics;
+#[cfg(not(feature = "wasm"))]
 pub mod net;
 mod progress;
+#[cfg(not(feature = "wasm"))]
 pub mod pubsub;
 pub mod rand;
 pub mod rendezvous_hasher;
+#[cfg(not(feature = "wasm"))]
 pub mod runtimes;
 pub mod sorted_iter;
 
+#[cfg(not(feature = "wasm"))]
 pub mod stream_utils;
+#[cfg(not(feature = "wasm"))]
 pub mod temp_dir;
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;
+#[cfg(not(feature = "wasm"))]
 pub mod tower;
 pub mod type_map;
 pub mod uri;
@@ -56,6 +66,7 @@ pub use coolid::new_coolid;
 pub use file_entry::FileEntry;
 pub use kill_switch::KillSwitch;
 pub use progress::{Progress, ProtectedZoneGuard};
+#[cfg(not(feature = "wasm"))]
 pub use stream_utils::{BoxStream, ServiceStream};
 use tracing::{error, info};
 
@@ -159,7 +170,8 @@ impl<'a, T> PrettySample<'a, T> {
 }
 
 impl<T> Debug for PrettySample<'_, T>
-where T: Debug
+where
+    T: Debug,
 {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "[")?;

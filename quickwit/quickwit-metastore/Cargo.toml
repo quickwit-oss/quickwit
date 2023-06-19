@@ -33,7 +33,7 @@ tracing = { workspace = true }
 utoipa = { workspace = true }
 ulid = { workspace = true, features = ["serde"] }
 
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["default"] }
 quickwit-config = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-proto = { workspace = true }

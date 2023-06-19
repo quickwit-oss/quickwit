@@ -22,7 +22,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
-use quickwit_common::net::{find_private_ip, get_short_hostname, Host};
+use quickwit_common::host::Host;
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
@@ -47,8 +47,9 @@ fn default_cluster_id() -> ConfigValue<String, QW_CLUSTER_ID> {
     ConfigValue::with_default(DEFAULT_CLUSTER_ID.to_string())
 }
 
+#[cfg(not(feature = "wasm"))]
 fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
-    let node_id = match get_short_hostname() {
+    let node_id = match quickwit_common::net::get_short_hostname() {
         Ok(short_hostname) => short_hostname,
         Err(error) => {
             let node_id = new_coolid("node");
@@ -56,6 +57,12 @@ fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
             node_id
         }
     };
+    ConfigValue::with_default(node_id)
+}
+
+#[cfg(feature = "wasm")]
+fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
+    let node_id = new_coolid("node");
     ConfigValue::with_default(node_id)
 }
 
@@ -99,9 +106,12 @@ fn default_data_dir_uri() -> ConfigValue<Uri, QW_DATA_DIR> {
 /// Returns the default advertise host.
 fn default_advertise_host(listen_ip: &IpAddr) -> anyhow::Result<Host> {
     if listen_ip.is_unspecified() {
-        if let Some((interface_name, private_ip)) = find_private_ip() {
-            info!(advertise_address=%private_ip, interface_name=%interface_name, "Using sniffed advertise address.");
-            return Ok(Host::from(private_ip));
+        #[cfg(not(feature = "wasm"))]
+        {
+            if let Some((interface_name, private_ip)) = quickwit_common::net::find_private_ip() {
+                info!(advertise_address=%private_ip, interface_name=%interface_name, "Using sniffed advertise address.");
+                return Ok(Host::from(private_ip));
+            }
         }
         bail!("Listen address `{listen_ip}` is unspecified and advertise address is not set.");
     }
@@ -203,6 +213,16 @@ struct QuickwitConfigBuilder {
 }
 
 impl QuickwitConfigBuilder {
+
+    #[cfg(feature = "wasm")]
+    pub async fn build_and_validate(
+        self,
+        env_vars: &HashMap<String, String>,
+    ) -> anyhow::Result<QuickwitConfig> {
+        unimplemented!()
+    }
+
+    #[cfg(not(feature = "wasm"))]
     pub async fn build_and_validate(
         self,
         env_vars: &HashMap<String, String>,
@@ -555,7 +575,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
-        assert_eq!(config.node_id, get_short_hostname().unwrap());
+        assert_eq!(
+            config.node_id,
+            quickwit_common::net::get_short_hostname().unwrap()
+        );
         assert_eq!(
             config.enabled_services,
             QuickwitService::supported_services()

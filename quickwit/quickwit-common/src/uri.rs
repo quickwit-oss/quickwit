@@ -286,12 +286,15 @@ impl Uri {
                     bail!("Failed to normalize URI: tilde expansion is only partially supported.");
                 }
 
-                let home_dir_path = home::home_dir()
-                    .context("Failed normalize URI: could not resolve home directory.")?
-                    .to_string_lossy()
-                    .to_string();
+                #[cfg(not(feature = "wasm"))]
+                {
+                    let home_dir_path = home::home_dir()
+                        .context("Failed normalize URI: could not resolve home directory.")?
+                        .to_string_lossy()
+                        .to_string();
 
-                path.replace_range(0..1, &home_dir_path);
+                    path.replace_range(0..1, &home_dir_path);
+                }
             }
             if Path::new(&path).is_relative() {
                 let current_dir = env::current_dir().context(

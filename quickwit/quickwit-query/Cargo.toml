@@ -18,7 +18,8 @@ quickwit-datetime = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
-tantivy = { workspace = true }
+tantivy = { workspace = true , features = [
+] }
 thiserror = { workspace = true }
 
 [dev-dependencies]
