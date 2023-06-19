@@ -5330,11 +5330,12 @@ dependencies = [
 
 [[package]]
 name = "rdkafka"
-version = "0.28.0"
+version = "0.32.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1de127f294f2dba488ed46760b129d5ecbeabbd337ccbf3739cb29d50db2161c"
+checksum = "f8733bc5dc0b192d1a4b28073f9bff1326ad9e4fecd4d9b025d6fc358d1c3e79"
 dependencies = [
- "futures",
+ "futures-channel",
+ "futures-util",
  "libc",
  "log",
  "rdkafka-sys",
@@ -5347,9 +5348,9 @@ dependencies = [
 
 [[package]]
 name = "rdkafka-sys"
-version = "4.4.0+1.9.2"
+version = "4.5.0+1.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87ac9d87c3aba1748e3112318459f2ac8bff80bfff7359e338e0463549590249"
+checksum = "1bb0676c2112342ac7165decdedbc4e7086c0af384479ccce534546b10687a5d"
 dependencies = [
  "cmake",
  "libc",
@@ -5358,6 +5359,7 @@ dependencies = [
  "openssl-sys",
  "pkg-config",
  "sasl2-sys",
+ "zstd-sys",
 ]
 
 [[package]]
