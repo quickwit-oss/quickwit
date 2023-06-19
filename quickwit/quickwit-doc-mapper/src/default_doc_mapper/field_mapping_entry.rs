@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::convert::TryFrom;
 
 use anyhow::bail;
@@ -211,26 +212,28 @@ impl Default for QuickwitIpAddrOptions {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-pub enum QuickwitTextTokenizer {
-    #[serde(rename = "raw")]
-    Raw,
-    #[serde(rename = "default")]
-    Default,
-    #[serde(rename = "en_stem")]
-    StemEn,
-    #[serde(rename = "chinese_compatible")]
-    Chinese,
+#[derive(Clone, PartialEq, Debug, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct QuickwitTextTokenizer(Cow<'static, str>);
+
+pub(crate) const DEFAULT_TOKENIZER_NAME: &str = "default";
+
+pub(crate) const RAW_TOKENIZER_NAME: &str = "raw";
+
+impl Default for QuickwitTextTokenizer {
+    fn default() -> Self {
+        Self::from_static(DEFAULT_TOKENIZER_NAME)
+    }
 }
 
 impl QuickwitTextTokenizer {
-    pub fn get_name(&self) -> &str {
-        match self {
-            QuickwitTextTokenizer::Raw => "raw",
-            QuickwitTextTokenizer::Default => "default",
-            QuickwitTextTokenizer::StemEn => "en_stem",
-            QuickwitTextTokenizer::Chinese => "chinese_compatible",
-        }
+    pub const fn from_static(name: &'static str) -> Self {
+        Self(Cow::Borrowed(name))
+    }
+    pub(crate) fn name(&self) -> &str {
+        &self.0
+    }
+    pub fn raw() -> Self {
+        Self::from_static(RAW_TOKENIZER_NAME)
     }
 }
 
@@ -322,11 +325,11 @@ impl From<QuickwitTextOptions> for TextOptions {
                 .unwrap_or(IndexRecordOption::Basic);
             let tokenizer = quickwit_text_options
                 .tokenizer
-                .unwrap_or(QuickwitTextTokenizer::Default);
+                .unwrap_or(QuickwitTextTokenizer::default());
             let text_field_indexing = TextFieldIndexing::default()
                 .set_index_option(index_record_option)
                 .set_fieldnorms(quickwit_text_options.fieldnorms)
-                .set_tokenizer(tokenizer.get_name());
+                .set_tokenizer(tokenizer.name());
 
             text_options = text_options.set_indexing_options(text_field_indexing);
         }
@@ -414,9 +417,9 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
                 .unwrap_or(IndexRecordOption::Basic);
             let tokenizer = quickwit_json_options
                 .tokenizer
-                .unwrap_or(QuickwitTextTokenizer::Raw);
+                .unwrap_or(QuickwitTextTokenizer::raw());
             let text_field_indexing = TextFieldIndexing::default()
-                .set_tokenizer(tokenizer.get_name())
+                .set_tokenizer(tokenizer.name())
                 .set_index_option(index_record_option);
             json_options = json_options.set_indexing_options(text_field_indexing);
         }
@@ -728,8 +731,7 @@ mod tests {
                 "name": "my_field_name",
                 "type": "text",
                 "stored": true,
-                "record": "basic",
-                "tokenizer": "notexist"
+                "record": "notexist"
             }
             "#,
         );
@@ -737,7 +739,7 @@ mod tests {
         assert_eq!(
             mapping_entry.unwrap_err().to_string(),
             "Error while parsing field `my_field_name`: unknown variant `notexist`, expected one \
-             of `raw`, `default`, `en_stem`, `chinese_compatible`"
+             of `basic`, `freq`, `position`"
                 .to_string()
         );
         Ok(())
@@ -780,7 +782,7 @@ mod tests {
             FieldMappingType::Text(options, _) => {
                 assert_eq!(options.stored, true);
                 assert_eq!(options.indexed, true);
-                assert_eq!(options.tokenizer.unwrap().get_name(), "en_stem");
+                assert_eq!(options.tokenizer.unwrap().name(), "en_stem");
                 assert_eq!(options.record.unwrap(), IndexRecordOption::Basic);
             }
             _ => panic!("wrong property type"),
@@ -1446,7 +1448,7 @@ mod tests {
         let expected_json_options = QuickwitJsonOptions {
             description: None,
             indexed: true,
-            tokenizer: Some(QuickwitTextTokenizer::Raw),
+            tokenizer: Some(QuickwitTextTokenizer::raw()),
             record: None,
             stored: false,
             expand_dots: true,

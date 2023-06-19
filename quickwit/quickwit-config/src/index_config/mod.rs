@@ -33,7 +33,7 @@ use humantime::parse_duration;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType,
-    QuickwitJsonOptions,
+    QuickwitJsonOptions, TokenizerEntry,
 };
 use serde::{Deserialize, Serialize};
 pub use serialize::load_index_config_from_user_config;
@@ -76,6 +76,8 @@ pub struct DocMapping {
     #[schema(value_type = u32)]
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
     pub max_num_partitions: NonZeroU32,
+    #[serde(default)]
+    pub tokenizers: Vec<TokenizerEntry>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -431,6 +433,7 @@ impl TestableForRegression for IndexConfig {
             partition_key: Some("tenant_id".to_string()),
             max_num_partitions: NonZeroU32::new(100).unwrap(),
             timestamp_field: Some("timestamp".to_string()),
+            tokenizers: vec![],
         };
         let retention_policy = Some(RetentionPolicy::new(
             "90 days".to_string(),
@@ -507,6 +510,7 @@ pub fn build_doc_mapper(
         dynamic_mapping: doc_mapping.dynamic_mapping.clone(),
         partition_key: doc_mapping.partition_key.clone(),
         max_num_partitions: doc_mapping.max_num_partitions,
+        tokenizers: doc_mapping.tokenizers.clone(),
     };
     Ok(Arc::new(builder.try_build()?))
 }

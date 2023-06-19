@@ -3683,7 +3683,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=fmassot/add-box-token-filter-and-refactor#f6a6b4a2ff569891e3892a7e4126257810468c19"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -6473,8 +6473,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy"
-version = "0.20.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+version = "0.20.2"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=fmassot/add-box-token-filter-and-refactor#f6a6b4a2ff569891e3892a7e4126257810468c19"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -6486,7 +6486,7 @@ dependencies = [
  "crc32fast",
  "crossbeam-channel",
  "downcast-rs",
- "fail",
+ "dyn-clone",
  "fastdivide",
  "fs4",
  "futures-util",
@@ -6529,7 +6529,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.4.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=fmassot/add-box-token-filter-and-refactor#f6a6b4a2ff569891e3892a7e4126257810468c19"
 dependencies = [
  "bitpacking",
 ]
@@ -6537,7 +6537,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=fmassot/add-box-token-filter-and-refactor#f6a6b4a2ff569891e3892a7e4126257810468c19"
 dependencies = [
  "fastdivide",
  "fnv",
@@ -6552,7 +6552,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=fmassot/add-box-token-filter-and-refactor#f6a6b4a2ff569891e3892a7e4126257810468c19"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -6575,7 +6575,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.20.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=fmassot/add-box-token-filter-and-refactor#f6a6b4a2ff569891e3892a7e4126257810468c19"
 dependencies = [
  "combine",
  "once_cell",
@@ -6585,7 +6585,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=fmassot/add-box-token-filter-and-refactor#f6a6b4a2ff569891e3892a7e4126257810468c19"
 dependencies = [
  "tantivy-common",
  "tantivy-fst",
@@ -6595,7 +6595,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=fmassot/add-box-token-filter-and-refactor#f6a6b4a2ff569891e3892a7e4126257810468c19"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -6604,7 +6604,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?branch=fmassot/add-box-token-filter-and-refactor#f6a6b4a2ff569891e3892a7e4126257810468c19"
 dependencies = [
  "serde",
 ]

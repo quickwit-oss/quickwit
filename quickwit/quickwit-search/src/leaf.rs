@@ -39,6 +39,7 @@ use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tracing::*;
 
@@ -86,11 +87,12 @@ async fn get_split_footer_from_cache_or_fetch(
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
 /// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
-#[instrument(skip(searcher_context, index_storage))]
+#[instrument(skip(searcher_context, index_storage, tokenizer_manager))]
 pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
+    tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: bool,
 ) -> anyhow::Result<Index> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
@@ -118,7 +120,9 @@ pub(crate) async fn open_index_with_caches(
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
     };
     let mut index = Index::open(hot_directory)?;
-    index.set_tokenizers(quickwit_query::get_quickwit_tokenizer_manager().clone());
+    if let Some(tokenizer_manager) = tokenizer_manager {
+        index.set_tokenizers(tokenizer_manager.clone());
+    }
     index.set_fast_field_tokenizers(
         quickwit_query::get_quickwit_fastfield_normalizer_manager().clone(),
     );
@@ -339,7 +343,14 @@ async fn leaf_search_single_split(
     }
 
     let split_id = split.split_id.to_string();
-    let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
+    let index = open_index_with_caches(
+        searcher_context,
+        storage,
+        &split,
+        Some(doc_mapper.tokenizer_manager()),
+        true,
+    )
+    .await?;
     let split_schema = index.schema();
 
     let quickwit_collector = make_collector_for_split(
@@ -509,7 +520,7 @@ async fn leaf_list_terms_single_split(
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
 ) -> crate::Result<LeafListTermsResponse> {
-    let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
+    let index = open_index_with_caches(searcher_context, storage, &split, None, true).await?;
     let split_schema = index.schema();
     let reader = index
         .reader_builder()
