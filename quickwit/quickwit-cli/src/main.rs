@@ -192,7 +192,8 @@ mod tests {
     };
     use quickwit_cli::split::{DescribeSplitArgs, SplitCliCommand};
     use quickwit_cli::tool::{
-        ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, MergeArgs, ToolCliCommand,
+        ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, LocalSearchArgs, MergeArgs,
+        ToolCliCommand,
     };
     use quickwit_cli::ClientArgs;
     use quickwit_common::uri::Uri;
@@ -544,6 +545,84 @@ mod tests {
                   && snippet_field_names == vec!["body".to_string()]
         ));
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_local_search_args() {
+        let app = build_cli().no_binary_name(true);
+        let matches = app
+            .try_get_matches_from([
+                "tool",
+                "local-search",
+                "--index",
+                "wikipedia",
+                "--query",
+                "Barack Obama",
+            ])
+            .unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
+        assert!(matches!(
+            command,
+            CliCommand::Tool(ToolCliCommand::LocalSearch(LocalSearchArgs {
+                index_id,
+                query,
+                max_hits: 20,
+                start_offset: 0,
+                search_fields: None,
+                snippet_fields: None,
+                start_timestamp: None,
+                end_timestamp: None,
+                aggregation: None,
+                ..
+            })) if &index_id == "wikipedia" && &query == "Barack Obama"
+        ));
+
+        let app = build_cli().no_binary_name(true);
+        let matches = app
+            .try_get_matches_from([
+                "tool",
+                "local-search",
+                "--index",
+                "wikipedia",
+                "--query",
+                "Barack Obama",
+                "--max-hits",
+                "50",
+                "--start-offset",
+                "100",
+                "--start-timestamp",
+                "0",
+                "--end-timestamp",
+                "1",
+                "--search-fields",
+                "title",
+                "url",
+                "--snippet-fields",
+                "body",
+                "--sort-by-field=-score",
+            ])
+            .unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
+        assert!(matches!(
+            command,
+            CliCommand::Tool(ToolCliCommand::LocalSearch(LocalSearchArgs {
+                config_uri: _,
+                index_id,
+                query,
+                aggregation: None,
+                max_hits: 50,
+                start_offset: 100,
+                search_fields: Some(search_field_names),
+                snippet_fields: Some(snippet_field_names),
+                start_timestamp: Some(0),
+                end_timestamp: Some(1),
+                sort_by_field: Some(sort_by_field),
+            })) if &index_id == "wikipedia"
+                  && query == "Barack Obama"
+                  && search_field_names == vec!["title".to_string(), "url".to_string()]
+                  && snippet_field_names == vec!["body".to_string()]
+                  && sort_by_field == "-score"
+        ));
     }
 
     #[test]
