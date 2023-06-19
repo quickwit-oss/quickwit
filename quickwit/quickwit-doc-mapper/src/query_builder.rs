@@ -27,6 +27,7 @@ use quickwit_query::query_ast::{
 use quickwit_query::InvalidQuery;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::Term;
 
 use crate::{QueryParserError, TermRange, WarmupInfo};
@@ -50,6 +51,7 @@ impl<'a> QueryAstVisitor<'a> for RangeQueryFields {
 pub(crate) fn build_query(
     query_ast: &QueryAst,
     schema: Schema,
+    tokenizer_manager: &TokenizerManager,
     search_fields: &[String],
     with_validation: bool,
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
@@ -58,10 +60,16 @@ pub(crate) fn build_query(
     let _: Result<(), Infallible> = range_query_fields.visit(query_ast);
     let fast_field_names: HashSet<String> = range_query_fields.range_query_field_names;
 
-    let query = query_ast.build_tantivy_query(&schema, search_fields, with_validation)?;
+    let query = query_ast.build_tantivy_query(
+        &schema,
+        tokenizer_manager,
+        search_fields,
+        with_validation,
+    )?;
 
     let term_set_query_fields = extract_term_set_query_fields(query_ast);
-    let term_ranges_grouped_by_field = extract_phrase_prefix_term_ranges(query_ast, &schema)?;
+    let term_ranges_grouped_by_field =
+        extract_phrase_prefix_term_ranges(query_ast, &schema, tokenizer_manager)?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
     query.query_terms(&mut |term, need_position| {
@@ -128,13 +136,15 @@ fn prefix_term_to_range(prefix: Term) -> (Bound<Term>, Bound<Term>) {
 
 struct ExtractPhrasePrefixTermRanges<'a> {
     schema: &'a Schema,
+    tokenizer_manager: &'a TokenizerManager,
     term_ranges_to_warm_up: HashMap<Field, HashMap<TermRange, bool>>,
 }
 
 impl<'a> ExtractPhrasePrefixTermRanges<'a> {
-    fn with_schema(schema: &'a Schema) -> Self {
+    fn with_schema(schema: &'a Schema, tokenizer_manager: &'a TokenizerManager) -> Self {
         ExtractPhrasePrefixTermRanges {
             schema,
+            tokenizer_manager,
             term_ranges_to_warm_up: HashMap::new(),
         }
     }
@@ -147,7 +157,7 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPhrasePrefixTermRanges<'b> {
         &mut self,
         phrase_prefix: &'a PhrasePrefixQuery,
     ) -> Result<(), Self::Err> {
-        let (field, terms) = phrase_prefix.get_terms(self.schema)?;
+        let (field, terms) = phrase_prefix.get_terms(self.schema, self.tokenizer_manager)?;
         if let Some((_, term)) = terms.last() {
             let (start, end) = prefix_term_to_range(term.clone());
             let term_range = TermRange {
@@ -167,8 +177,9 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPhrasePrefixTermRanges<'b> {
 fn extract_phrase_prefix_term_ranges(
     query_ast: &QueryAst,
     schema: &Schema,
+    tokenizer_manager: &TokenizerManager,
 ) -> anyhow::Result<HashMap<Field, HashMap<TermRange, bool>>> {
-    let mut visitor = ExtractPhrasePrefixTermRanges::with_schema(schema);
+    let mut visitor = ExtractPhrasePrefixTermRanges::with_schema(schema, tokenizer_manager);
     visitor.visit(query_ast)?;
     Ok(visitor.term_ranges_to_warm_up)
 }
@@ -176,6 +187,7 @@ fn extract_phrase_prefix_term_ranges(
 #[cfg(test)]
 mod test {
     use quickwit_proto::query_ast_from_user_text;
+    use quickwit_query::create_default_quickwit_tokenizer_manager;
     use tantivy::schema::{Schema, FAST, INDEXED, STORED, TEXT};
 
     use super::build_query;
@@ -234,7 +246,13 @@ mod test {
             .parse_user_query(&[])
             .map_err(|err| err.to_string())?;
         let schema = make_schema(dynamic_mode);
-        let query_result = build_query(&query_ast, schema, &[], true);
+        let query_result = build_query(
+            &query_ast,
+            schema,
+            &create_default_quickwit_tokenizer_manager(),
+            &[],
+            true,
+        );
         query_result
             .map(|query| format!("{:?}", query))
             .map_err(|err| err.to_string())
@@ -508,14 +526,27 @@ mod test {
             .parse_user_query(&[])
             .unwrap();
 
-        let (_, warmup_info) = build_query(&query_with_set, make_schema(true), &[], true).unwrap();
+        let (_, warmup_info) = build_query(
+            &query_with_set,
+            make_schema(true),
+            &create_default_quickwit_tokenizer_manager(),
+            &[],
+            true,
+        )
+        .unwrap();
         assert_eq!(warmup_info.term_dict_field_names.len(), 1);
         assert_eq!(warmup_info.posting_field_names.len(), 1);
         assert!(warmup_info.term_dict_field_names.contains("title"));
         assert!(warmup_info.posting_field_names.contains("title"));
 
-        let (_, warmup_info) =
-            build_query(&query_without_set, make_schema(true), &[], true).unwrap();
+        let (_, warmup_info) = build_query(
+            &query_without_set,
+            make_schema(true),
+            &create_default_quickwit_tokenizer_manager(),
+            &[],
+            true,
+        )
+        .unwrap();
         assert!(warmup_info.term_dict_field_names.is_empty());
         assert!(warmup_info.posting_field_names.is_empty());
     }

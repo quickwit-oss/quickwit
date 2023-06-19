@@ -17,18 +17,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
 use anyhow::{bail, Context};
+use quickwit_query::create_default_quickwit_tokenizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, Schema, Value as TantivyValue, STORED};
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::Document;
 
-use super::field_mapping_entry::QuickwitTextTokenizer;
+use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{build_mapping_tree, MappingNode};
 use crate::default_doc_mapper::FieldMappingType;
@@ -37,8 +39,8 @@ use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
-    Cardinality, DocMapper, DocParsingError, ModeType, QueryParserError, WarmupInfo,
-    DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
+    Cardinality, DocMapper, DocParsingError, ModeType, QueryParserError, TokenizerEntry,
+    WarmupInfo, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
 };
 
 /// Defines how an unmapped field should be handled.
@@ -96,6 +98,10 @@ pub struct DefaultDocMapper {
     required_fields: Vec<Field>,
     /// Defines how unmapped fields should be handle.
     mode: Mode,
+    /// User-defined tokenizers.
+    tokenizer_entries: Vec<TokenizerEntry>,
+    /// Tokenizer manager.
+    tokenizer_manager: TokenizerManager,
 }
 
 impl DefaultDocMapper {
@@ -162,6 +168,40 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 
         let schema = schema_builder.build();
 
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+        let mut custom_tokenizer_names = HashSet::new();
+        for tokenizer_config_entry in builder.tokenizers.iter() {
+            if custom_tokenizer_names.contains(&tokenizer_config_entry.name) {
+                bail!(
+                    "Duplicated custom tokenizer: `{}`",
+                    tokenizer_config_entry.name
+                );
+            }
+            if tokenizer_manager
+                .get(&tokenizer_config_entry.name)
+                .is_some()
+            {
+                bail!(
+                    "Custom tokenizer name `{}` should be different from built-in tokenizer's \
+                     names.",
+                    tokenizer_config_entry.name
+                );
+            }
+            let tokenizer = tokenizer_config_entry
+                .config
+                .text_analyzer()
+                .map_err(|error| {
+                    anyhow::anyhow!(
+                        "Failed to build tokenizer `{}`: {:?}",
+                        tokenizer_config_entry.name,
+                        error
+                    )
+                })?;
+            tokenizer_manager.register(&tokenizer_config_entry.name, tokenizer);
+            custom_tokenizer_names.insert(&tokenizer_config_entry.name);
+        }
+        validate_fields_tokenizers(&schema, &tokenizer_manager)?;
+
         // Resolve default search fields
         let mut default_search_field_names = Vec::new();
         for default_search_field_name in &builder.default_search_fields {
@@ -214,6 +254,8 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             partition_key,
             max_num_partitions: builder.max_num_partitions,
             mode,
+            tokenizer_entries: builder.tokenizers,
+            tokenizer_manager,
         })
     }
 }
@@ -233,8 +275,8 @@ fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Err
         FieldType::Str(options) => {
             let tokenizer_opt = options
                 .get_indexing_options()
-                .map(|text_options| text_options.tokenizer());
-            if tokenizer_opt != Some(QuickwitTextTokenizer::Raw.get_name()) {
+                .map(|text_options: &tantivy::schema::TextFieldIndexing| text_options.tokenizer());
+            if tokenizer_opt != Some(RAW_TOKENIZER_NAME) {
                 bail!("Tags collection is only allowed on text fields with the `raw` tokenizer.");
             }
         }
@@ -264,6 +306,34 @@ fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Err
     Ok(())
 }
 
+/// Checks that a given text/json field name has a registered tokenizer.
+fn validate_fields_tokenizers(
+    schema: &Schema,
+    tokenizer_manager: &TokenizerManager,
+) -> Result<(), anyhow::Error> {
+    for (_, field_entry) in schema.fields() {
+        let tokenizer_name_opt = match field_entry.field_type() {
+            FieldType::Str(options) => options
+                .get_indexing_options()
+                .map(|text_options: &tantivy::schema::TextFieldIndexing| text_options.tokenizer()),
+            FieldType::JsonObject(options) => options
+                .get_text_indexing_options()
+                .map(|text_options: &tantivy::schema::TextFieldIndexing| text_options.tokenizer()),
+            _ => None,
+        };
+        if let Some(tokenizer_name) = tokenizer_name_opt {
+            if tokenizer_manager.get(tokenizer_name).is_none() {
+                bail!(
+                    "Unknown tokenizer `{}` for field `{}`.",
+                    tokenizer_name,
+                    field_entry.name()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
     fn from(default_doc_mapper: DefaultDocMapper) -> Self {
         let mode = default_doc_mapper.mode.mode_type();
@@ -289,6 +359,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             dynamic_mapping,
             partition_key: partition_key_opt,
             max_num_partitions: default_doc_mapper.max_num_partitions,
+            tokenizers: default_doc_mapper.tokenizer_entries,
         }
     }
 }
@@ -395,6 +466,7 @@ impl DocMapper for DefaultDocMapper {
         build_query(
             query_ast,
             split_schema,
+            self.tokenizer_manager(),
             &self.default_search_field_names[..],
             with_validation,
         )
@@ -419,6 +491,10 @@ impl DocMapper for DefaultDocMapper {
     fn max_num_partitions(&self) -> NonZeroU32 {
         self.max_num_partitions
     }
+
+    fn tokenizer_manager(&self) -> &TokenizerManager {
+        &self.tokenizer_manager
+    }
 }
 
 #[cfg(test)]
@@ -430,6 +506,7 @@ mod tests {
     use tantivy::schema::{FieldType, IndexRecordOption, Type, Value as TantivyValue};
 
     use super::DefaultDocMapper;
+    use crate::default_doc_mapper::field_mapping_entry::DEFAULT_TOKENIZER_NAME;
     use crate::{
         DefaultDocMapperBuilder, DocMapper, DocParsingError, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
     };
@@ -1353,10 +1430,7 @@ mod tests {
             let FieldType::JsonObject(json_options) = schema.get_field_entry(json_field).field_type()
         else { panic!() };
             let text_indexing_options = json_options.get_text_indexing_options().unwrap();
-            assert_eq!(
-                text_indexing_options.tokenizer(),
-                super::QuickwitTextTokenizer::Raw.get_name()
-            );
+            assert_eq!(text_indexing_options.tokenizer(), super::RAW_TOKENIZER_NAME);
             assert_eq!(
                 text_indexing_options.index_option(),
                 IndexRecordOption::Basic
@@ -1369,7 +1443,7 @@ mod tests {
         else { panic!() };
             assert_eq!(
                 text_options.get_indexing_options().unwrap().tokenizer(),
-                super::QuickwitTextTokenizer::Default.get_name()
+                DEFAULT_TOKENIZER_NAME
             );
         }
     }
@@ -1433,5 +1507,123 @@ mod tests {
             .field_mappings
             .find_field_mapping_type("my\\.timestamp")
             .unwrap();
+    }
+
+    #[test]
+    fn test_build_doc_mapper_with_custom_ngram_tokenizer() {
+        let mapper = serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+            "tokenizers": [
+                {
+                    "name": "my_tokenizer",
+                    "filters": ["lower_caser", "ascii_folding", "remove_long"],
+                    "type": "ngram",
+                    "min_gram": 3,
+                    "max_gram": 5
+                }
+            ],
+            "field_mappings": [
+                {
+                    "name": "my_text",
+                    "type": "text",
+                    "tokenizer": "my_tokenizer"
+                    
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        let field_mapping_type = mapper
+            .field_mappings
+            .find_field_mapping_type("my_text")
+            .unwrap();
+        match &field_mapping_type {
+            super::FieldMappingType::Text(options, _) => {
+                assert!(options.tokenizer.is_some());
+                let tokenizer = options.tokenizer.as_ref().unwrap();
+                assert_eq!(tokenizer.name(), "my_tokenizer");
+            }
+            _ => panic!("Expected a text field"),
+        }
+        assert!(mapper.tokenizer_manager().get("my_tokenizer").is_some());
+    }
+
+    #[test]
+    fn test_build_doc_mapper_should_fail_with_unknown_tokenizer() {
+        let mapper_builder = serde_json::from_str::<DefaultDocMapperBuilder>(
+            r#"{
+            "field_mappings": [
+                {
+                    "name": "my_text",
+                    "type": "text",
+                    "tokenizer": "my_tokenizer"
+                    
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        let mapper = mapper_builder.try_build();
+        let error_msg = mapper.unwrap_err().to_string();
+        assert!(error_msg.contains("Unknown tokenizer"));
+    }
+
+    #[test]
+    fn test_build_doc_mapper_tokenizer_manager_with_custom_tokenizer() {
+        let mapper = serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+            "tokenizers": [
+                {
+                    "name": "my_tokenizer",
+                    "filters": ["lower_caser"],
+                    "type": "ngram",
+                    "min_gram": 3,
+                    "max_gram": 5
+                }
+            ],
+            "field_mappings": [
+                {
+                    "name": "my_text",
+                    "type": "text",
+                    "tokenizer": "my_tokenizer"
+                    
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        let mut tokenizer = mapper.tokenizer_manager().get("my_tokenizer").unwrap();
+        let mut token_stream = tokenizer.token_stream("HELLO WORLD");
+        assert_eq!(token_stream.next().unwrap().text, "hel");
+        assert_eq!(token_stream.next().unwrap().text, "hell");
+        assert_eq!(token_stream.next().unwrap().text, "hello");
+    }
+
+    #[test]
+    fn test_build_doc_mapper_with_custom_invalid_regex_tokenizer() {
+        let mapper_builder = serde_json::from_str::<DefaultDocMapperBuilder>(
+            r#"{
+            "tokenizers": [
+                {
+                    "name": "my_tokenizer",
+                    "type": "regex",
+                    "pattern": "(my_pattern"
+                }
+            ],
+            "field_mappings": [
+                {
+                    "name": "my_text",
+                    "type": "text",
+                    "tokenizer": "my_tokenizer"
+                    
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        let mapper = mapper_builder.try_build();
+        assert!(mapper.is_err());
+        let error_mesg = mapper.unwrap_err().to_string();
+        assert!(error_mesg.contains("Invalid regex tokenizer"));
     }
 }
