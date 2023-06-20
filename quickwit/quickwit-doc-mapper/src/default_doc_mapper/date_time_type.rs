@@ -77,9 +77,9 @@ impl QuickwitDateTimeOptions {
                 // `.as_f64()` actually converts floats to integers, so we must check for integers
                 // first.
                 if let Some(timestamp_i64) = timestamp.as_i64() {
-                    quickwit_datetime::parse_date_time_int(timestamp_i64, &self.input_formats.0)?
+                    quickwit_datetime::parse_timestamp_int(timestamp_i64, &self.input_formats.0)?
                 } else if let Some(timestamp_f64) = timestamp.as_f64() {
-                    quickwit_datetime::parse_date_time_float(timestamp_f64, &self.input_formats.0)?
+                    quickwit_datetime::parse_timestamp_float(timestamp_f64, &self.input_formats.0)?
                 } else {
                     return Err(format!(
                         "Failed to parse datetime `{timestamp:?}`: value is larger than i64::MAX.",
