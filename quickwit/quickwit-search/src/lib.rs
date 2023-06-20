@@ -199,14 +199,13 @@ pub async fn single_node_search(
     let metas = list_relevant_splits(index_uid, &search_request, metastore).await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
-    validate_request(&*doc_mapper, &search_request)?;
+    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
+    validate_request(&*doc_mapper, &search_request, &searcher_context)?;
 
     // Verifying that the query is valid.
     doc_mapper
         .query(doc_mapper.schema(), &query_ast_resolved, true)
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
-
-    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
 
     let leaf_search_response = leaf_search(
         searcher_context.clone(),
