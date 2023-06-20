@@ -12,8 +12,8 @@ members = [
   "quickwit-config",
   "quickwit-control-plane",
   "quickwit-core",
-  "quickwit-directories",
   "quickwit-datetime",
+  "quickwit-directories",
   "quickwit-doc-mapper",
   "quickwit-grpc-clients",
   "quickwit-indexing",
@@ -122,11 +122,12 @@ quote = "1.0.23"
 rand = "0.8"
 rand_distr = "0.4"
 rayon = "1"
-rdkafka = { version = "0.28", default-features = false, features = [
-  "tokio",
+rdkafka = { version = "0.32", default-features = false, features = [
+  "cmake-build",
   "libz",
   "ssl",
-  "cmake-build",
+  "tokio",
+  "zstd",
 ] }
 regex = "1.8.1"
 reqwest = { version = "0.11", default-features = false, features = [

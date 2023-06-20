@@ -667,11 +667,14 @@ fn create_consumer(
     params: KafkaSourceParams,
     events_tx: mpsc::Sender<KafkaEvent>,
 ) -> anyhow::Result<(ClientConfig, RdKafkaConsumer)> {
-    let mut client_config = parse_client_params(params.client_params)?;
-
     // Group ID is limited to 255 characters.
-    let mut group_id = format!("quickwit-{index_uid}-{source_id}");
+    let mut group_id = match &params.client_params["group.id"] {
+        JsonValue::String(group_id) => group_id.clone(),
+        _ => format!("quickwit-{index_uid}-{source_id}"),
+    };
     group_id.truncate(255);
+
+    let mut client_config = parse_client_params(params.client_params)?;
 
     let log_level = parse_client_log_level(params.client_log_level)?;
     let consumer: RdKafkaConsumer = client_config
