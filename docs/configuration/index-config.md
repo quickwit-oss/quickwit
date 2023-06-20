@@ -190,12 +190,16 @@ fast: true
 The `datetime` type handles dates and datetimes. Each `datetime` field can be configured to support multiple input formats.
 When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared. The following formats are natively supported:
 - `iso8601`, `rfc2822`, `rfc3339`: parse dates using standard ISO and RFC formats.
-- `strptime`: parse dates using the Unix [strptime](https://man7.org/linux/man-pages/man3/strptime.3.html) format with few changes:
+- `strptime`: parse dates using the Unix [strptime](https://man7.org/linux/man-pages/man3/strptime.3.html) format with some variations:
   - `strptime` format specifiers: `%C`, `%d`, `%D`, `%e`, `%F`, `%g`, `%G`, `%h`, `%H`, `%I`, `%j`, `%k`, `%l`, `%m`, `%M`, `%n`, `%R`, `%S`, `%t`, `%T`, `%u`, `%U`, `%V`, `%w`, `%W`, `%y`, `%Y`, `%%`.
   - `%f` for milliseconds precision support.
   - `%z` timezone offsets can be specified as `(+|-)hhmm` or `(+|-)hh:mm`.
 
-- `unix_timestamp`: parse Unix timestamp values. Timestamps can be provided with different precisions, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is able to infer the precision from the value. Because internally, datetimes are stored as `i64`, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
+- `unix_timestamp`: parse float and integer numbers to Unix timestamps. Floating-point values are converted to timestamps expressed in seconds. Integer values are converted to Unix timestamps whose precision determined in `seconds`, `milliseconds`, `microseconds`, or `nanoseconds` is inferred from the number of input digits. Internally, datetimes are stored as `i64`, and Quickwit only supports timestamp values ranging from `Apr 13, 1972 23:59:55` to `Mar 16, 2242 12:56:31` as a result.
+
+:::warning
+We discourage ingesting decimal timestamps because the conversion occurs with a loss of precision in some cases. Prefer integer values instead.
+:::
 
 When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding, which improves compression (truncation here means zeroing). The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field. Finally, operations on `datetime` fastfields, e.g. via aggregations, need to be done at the nanosecond level.
 
@@ -323,7 +327,7 @@ stored: true
 indexed: true
 tokenizer: "default"
 expand_dots: false
-fast: 
+fast:
   normalizer: lowercase
 ```
 

@@ -73,18 +73,25 @@ impl Default for QuickwitDateTimeOptions {
 impl QuickwitDateTimeOptions {
     pub(crate) fn parse_json(&self, json_value: JsonValue) -> Result<TantivyValue, String> {
         let date_time = match json_value {
-            JsonValue::Number(number) => {
-                let timestamp = number.as_i64().ok_or_else(|| {
-                    format!("Failed to parse datetime. Expected an integer, got `{number:?}`.")
-                })?;
-                quickwit_datetime::parse_date_time_int(timestamp, &self.input_formats.0)?
+            JsonValue::Number(timestamp) => {
+                // `.as_f64()` actually converts floats to integers, so we must check for integers
+                // first.
+                if let Some(timestamp_i64) = timestamp.as_i64() {
+                    quickwit_datetime::parse_date_time_int(timestamp_i64, &self.input_formats.0)?
+                } else if let Some(timestamp_f64) = timestamp.as_f64() {
+                    quickwit_datetime::parse_date_time_float(timestamp_f64, &self.input_formats.0)?
+                } else {
+                    return Err(format!(
+                        "Failed to parse datetime `{timestamp:?}`: value is larger than i64::MAX.",
+                    ));
+                }
             }
             JsonValue::String(date_time_str) => {
                 quickwit_datetime::parse_date_time_str(&date_time_str, &self.input_formats.0)?
             }
             _ => {
                 return Err(format!(
-                    "Failed to parse datetime. Expected an integer or a string, got \
+                    "Failed to parse datetime: expected a float, integer, or string, got \
                      `{json_value}`."
                 ))
             }
@@ -328,22 +335,27 @@ mod tests {
             let tantivy_value = date_time_options.parse_json(json_value).unwrap();
             let date_time = match tantivy_value {
                 TantivyValue::Date(date_time) => date_time,
-                _ => panic!("Expected a tantivy date time."),
+                other => panic!("Expected a tantivy date time, got `{other:?}`."),
             };
-            assert_eq!(date_time.into_timestamp_secs(), expected_timestamp,);
+            assert_eq!(date_time.into_timestamp_secs(), expected_timestamp);
         }
         {
             let json_value = serde_json::json!(expected_timestamp);
             let tantivy_value = date_time_options.parse_json(json_value).unwrap();
             let date_time = match tantivy_value {
                 TantivyValue::Date(date_time) => date_time,
-                _ => panic!("Expected a tantivy date time."),
+                other => panic!("Expected a tantivy date time, got `{other:?}`."),
             };
-            assert_eq!(date_time.into_timestamp_secs(), expected_timestamp,);
+            assert_eq!(date_time.into_timestamp_secs(), expected_timestamp);
         }
         {
             let json_value = serde_json::json!(expected_timestamp as f64);
-            date_time_options.parse_json(json_value).unwrap_err();
+            let tantivy_value = date_time_options.parse_json(json_value).unwrap();
+            let date_time = match tantivy_value {
+                TantivyValue::Date(date_time) => date_time,
+                other => panic!("Expected a tantivy date time, got `{other:?}`."),
+            };
+            assert_eq!(date_time.into_timestamp_secs(), expected_timestamp);
         }
     }
 }
