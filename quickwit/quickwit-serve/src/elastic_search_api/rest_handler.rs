@@ -28,7 +28,7 @@ use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
-use quickwit_proto::{SearchResponse, ServiceErrorCode, SortOrder};
+use quickwit_proto::{SearchResponse, ServiceErrorCode};
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{SearchError, SearchService};
@@ -40,6 +40,7 @@ use super::model::{
     MultiSearchSingleResponse, SearchBody, SearchQueryParams,
 };
 use crate::elastic_search_api::filter::elastic_index_search_filter;
+use crate::elastic_search_api::model::SortField;
 use crate::format::BodyFormat;
 use crate::json_api_response::{make_json_api_response, ApiError, JsonApiResponse};
 use crate::with_arg;
@@ -117,16 +118,9 @@ fn build_request_for_es_api(
     let max_hits = search_params.size.or(search_body.size).unwrap_or(10);
     let start_offset = search_params.from.or(search_body.from).unwrap_or(0);
 
-    let sort_fields: Vec<(String, Option<SortOrder>)> = search_params
+    let sort_fields: Vec<SortField> = search_params
         .sort_fields()?
-        .or_else(|| {
-            search_body.sort.map(|sort_orders| {
-                sort_orders
-                    .into_iter()
-                    .map(|sort_order| (sort_order.field, sort_order.value.order))
-                    .collect()
-            })
-        })
+        .or_else(|| search_body.sort.clone())
         .unwrap_or_default();
 
     if sort_fields.len() >= 2 {
@@ -135,12 +129,11 @@ fn build_request_for_es_api(
         )));
     }
 
-    let (sort_by_field, sort_order) =
-        if let Some((field_name, sort_order_opt)) = sort_fields.into_iter().next() {
-            (Some(field_name), sort_order_opt)
-        } else {
-            (None, None)
-        };
+    let (sort_by_field, sort_order) = if let Some(sort_field) = sort_fields.into_iter().next() {
+        (Some(sort_field.field), Some(sort_field.order as i32))
+    } else {
+        (None, None)
+    };
 
     Ok(quickwit_proto::SearchRequest {
         index_id,
@@ -149,7 +142,7 @@ fn build_request_for_es_api(
         start_offset,
         aggregation_request,
         sort_by_field,
-        sort_order: sort_order.map(|order| order as i32),
+        sort_order,
         ..Default::default()
     })
 }

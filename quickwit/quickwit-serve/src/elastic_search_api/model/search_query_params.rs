@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use super::super::TrackTotalHits;
 use super::MultiSearchHeader;
+use crate::elastic_search_api::model::{default_elasticsearch_sort_order, SortField};
 use crate::simple_list::{from_simple_list, to_simple_list};
 
 #[serde_with::skip_serializing_none]
@@ -150,17 +151,24 @@ pub struct SearchQueryParams {
 }
 
 // Parse a single sort field parameter from ES sort query string parameter.
-fn parse_sort_field_str(sort_field_str: &str) -> Result<(String, Option<SortOrder>), SearchError> {
+fn parse_sort_field_str(sort_field_str: &str) -> Result<SortField, SearchError> {
     if let Some((field, order_str)) = sort_field_str.split_once(':') {
-        let sort_order = SortOrder::from_str_name(order_str).ok_or_else(|| {
+        let order = SortOrder::from_str_name(order_str).ok_or_else(|| {
             SearchError::InvalidArgument(format!(
                 "Invalid sort order `{}`. Expected `asc` or `desc`",
                 field
             ))
         })?;
-        Ok((field.to_string(), Some(sort_order)))
+        Ok(SortField {
+            field: field.to_string(),
+            order,
+        })
     } else {
-        Ok((sort_field_str.to_string(), None))
+        let order = default_elasticsearch_sort_order(sort_field_str);
+        Ok(SortField {
+            field: sort_field_str.to_string(),
+            order,
+        })
     }
 }
 
@@ -171,13 +179,11 @@ impl SearchQueryParams {
     /// (`field:order,field2:order2,...`). Returns `Ok(None)` if the sort query string parameter
     /// is not present.
     #[allow(clippy::type_complexity)]
-    pub(crate) fn sort_fields(
-        &self,
-    ) -> Result<Option<Vec<(String, Option<SortOrder>)>>, SearchError> {
+    pub(crate) fn sort_fields(&self) -> Result<Option<Vec<SortField>>, SearchError> {
         let Some(sort_fields_str) = self.sort.as_ref() else {
             return Ok(None);
         };
-        let mut sort_fields = Vec::with_capacity(sort_fields_str.len());
+        let mut sort_fields: Vec<SortField> = Vec::with_capacity(sort_fields_str.len());
         for sort_field_str in sort_fields_str {
             sort_fields.push(parse_sort_field_str(sort_field_str)?);
         }
