@@ -270,7 +270,7 @@ impl Source for PulsarSource {
     }
 
     async fn suggest_truncate(
-        &self,
+        &mut self,
         checkpoint: SourceCheckpoint,
         _ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {

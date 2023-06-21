@@ -98,6 +98,7 @@ impl SourceConfigForSerialization {
             | SourceParams::Void(_)
             | SourceParams::IngestApi
             | SourceParams::IngestCli => {}
+            SourceParams::PubSub(_) => {}
         }
         match &self.source_params {
             SourceParams::Kafka(_) => {}

@@ -58,6 +58,7 @@
 //! - the kafka source: the partition id is a kafka topic partition id, and the position is a kafka
 //!   offset.
 mod file_source;
+mod gcp_pubsub_source;
 mod ingest_api_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
@@ -76,6 +77,7 @@ use std::time::Duration;
 use anyhow::bail;
 use async_trait::async_trait;
 pub use file_source::{FileSource, FileSourceFactory};
+pub use gcp_pubsub_source::{PubSubSource, PubSubSourceFactory};
 #[cfg(feature = "kafka")]
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
@@ -189,7 +191,7 @@ pub trait Source: Send + Sync + 'static {
     /// indexing pipeline, as truncation is just "a suggestion".
     /// The error will however be logged.
     async fn suggest_truncate(
-        &self,
+        &mut self,
         _checkpoint: SourceCheckpoint,
         _ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
@@ -287,6 +289,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
     SOURCE_LOADER.get_or_init(|| {
         let mut source_factory = SourceLoader::default();
         source_factory.add_source("file", FileSourceFactory);
+        source_factory.add_source("pubsub", PubSubSourceFactory);
         #[cfg(feature = "kafka")]
         source_factory.add_source("kafka", KafkaSourceFactory);
         #[cfg(feature = "kinesis")]
