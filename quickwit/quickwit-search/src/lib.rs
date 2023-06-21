@@ -281,7 +281,6 @@ pub async fn start_searcher_service(
         metastore,
         storage_resolver,
         cluster_client,
-        search_job_placer,
         searcher_config,
     ));
     Ok(search_service)

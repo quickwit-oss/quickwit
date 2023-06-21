@@ -124,8 +124,7 @@ mod tests {
             .await;
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
-        let stream =
-            root_search_stream(request, &metastore, cluster_client, &search_job_placer).await?;
+        let stream = root_search_stream(request, &metastore, cluster_client).await?;
         let search_stream_result: Result<Vec<_>, SearchError> = stream.try_collect().await;
         let search_error = search_stream_result.unwrap_err();
         assert_eq!(
