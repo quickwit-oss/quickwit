@@ -296,9 +296,11 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
     let grpc_client_package_name = &context.grpc_client_package_name;
     let grpc_client_name = &context.grpc_client_name;
     let client_methods = generate_client_methods(context);
+    let mock_methods = generate_mock_methods(context);
     let mailbox_name = &context.mailbox_name;
     let tower_block_builder_name = &context.tower_block_builder_name;
     let mock_name = &context.mock_name;
+    let mock_wrapper_name = quote::format_ident!("{}Wrapper", mock_name);
 
     quote! {
         #[derive(Debug, Clone)]
@@ -355,9 +357,26 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
         }
 
         #[cfg(any(test, feature = "testsuite"))]
-        impl From<#mock_name> for #client_name {
-            fn from(mock: #mock_name) -> Self {
-                #client_name::new(mock)
+        pub mod mock {
+            use super::*;
+
+            #[derive(Debug, Clone)]
+            struct #mock_wrapper_name {
+                inner: std::sync::Arc<tokio::sync::Mutex<#mock_name>>
+            }
+
+            #[async_trait::async_trait]
+            impl #service_name for #mock_wrapper_name {
+                #mock_methods
+            }
+
+            impl From<#mock_name> for #client_name {
+                fn from(mock: #mock_name) -> Self {
+                    let mock_wrapper = #mock_wrapper_name {
+                        inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock))
+                    };
+                    #client_name::new(mock_wrapper)
+                }
             }
         }
     }
@@ -382,6 +401,32 @@ fn generate_client_methods(context: &CodegenContext) -> TokenStream {
         let method = quote! {
             async fn #method_name(&mut self, request: #request_type) -> #result_type<#response_type> {
                 self.inner.#method_name(request).await
+            }
+        };
+        stream.extend(method);
+    }
+    stream
+}
+
+fn generate_mock_methods(context: &CodegenContext) -> TokenStream {
+    let result_type = &context.result_type;
+    let stream_type = &context.stream_type;
+
+    let mut stream = TokenStream::new();
+
+    for syn_method in &context.methods {
+        let method_name = syn_method.name.to_token_stream();
+        let request_type = syn_method.request_type.to_token_stream();
+
+        let response_type = if syn_method.server_streaming {
+            let response_type = &syn_method.response_type;
+            quote! { #stream_type<#response_type> }
+        } else {
+            syn_method.response_type.to_token_stream()
+        };
+        let method = quote! {
+            async fn #method_name(&mut self, request: #request_type) -> #result_type<#response_type> {
+                self.inner.lock().await.#method_name(request).await
             }
         };
         stream.extend(method);
