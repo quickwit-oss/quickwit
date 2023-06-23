@@ -276,7 +276,7 @@ pub async fn start_searcher_service(
     storage_resolver: StorageResolver,
     search_job_placer: SearchJobPlacer,
 ) -> anyhow::Result<Arc<dyn SearchService>> {
-    let cluster_client = ClusterClient::new(search_job_placer.clone());
+    let cluster_client = ClusterClient::new(search_job_placer);
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore,
         storage_resolver,
