@@ -53,9 +53,9 @@ const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 ///
 /// Pseudo-algorithm for a given index:
 /// 1. Fetches the delete tasks and deduce the last `opstamp`.
-/// 2. Fetches the last `N` stale splits ordered by their `delete_opstamp`.
-///    A stale split is a split a `delete_opstamp` inferior to the last `opstamp`
-///    In theory, this works but... there is one difficulty:
+/// 2. Fetches the last `N` stale splits ordered by their `delete_opstamp`. A stale split is a split
+///    a `delete_opstamp` inferior to the last `opstamp` In theory, this works but... there is one
+///    difficulty:
 ///    - Delete operations do not run on immature splits and they are excluded after fetching stale
 ///      splits from the metastore as the metastore has no knowledge about the merge policy. If
 ///      there are more than `N` immature stale splits, the planner will plan no operations.

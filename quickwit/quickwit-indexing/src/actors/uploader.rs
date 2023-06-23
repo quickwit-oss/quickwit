@@ -70,13 +70,12 @@ pub enum UploaderType {
 ///
 /// This is useful as we have different requirements between the indexing pipeline and
 /// the merge/delete task pipelines.
-/// 1. In the indexing pipeline, we want to publish splits in the same order as they
-///    are produced by the indexer/packager to ensure we are publishing splits without
-///    "holes" in checkpoints. We thus send [`SplitsUpdate`] to the [`Sequencer`]
-///    to keep the right ordering.
-/// 2. In the merge pipeline and the delete task pipeline, we are merging splits and in
-///    in this case, publishing order does not matter. In this case, we can just
-///    send [`SplitsUpdate`] directly to the [`Publisher`].
+/// 1. In the indexing pipeline, we want to publish splits in the same order as they are produced by
+///    the indexer/packager to ensure we are publishing splits without "holes" in checkpoints. We
+///    thus send [`SplitsUpdate`] to the [`Sequencer`] to keep the right ordering.
+/// 2. In the merge pipeline and the delete task pipeline, we are merging splits and in in this
+///    case, publishing order does not matter. In this case, we can just send [`SplitsUpdate`]
+///    directly to the [`Publisher`].
 #[derive(Clone, Debug)]
 pub enum SplitsUpdateMailbox {
     Sequencer(Mailbox<Sequencer<Publisher>>),
