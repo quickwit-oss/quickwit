@@ -212,13 +212,12 @@ pub(crate) fn validate_request(
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
-#[instrument(skip(search_request, cluster_client, search_job_placer, metastore))]
+#[instrument(skip(search_request, cluster_client, metastore))]
 pub async fn root_search(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,
     metastore: &dyn Metastore,
     cluster_client: &ClusterClient,
-    search_job_placer: &SearchJobPlacer,
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
 
@@ -274,7 +273,8 @@ pub async fn root_search(
 
     let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
 
-    let assigned_leaf_search_jobs = search_job_placer
+    let assigned_leaf_search_jobs = cluster_client
+        .search_job_placer
         .assign_jobs(jobs, &HashSet::default())
         .await?;
     let leaf_search_responses: Vec<LeafSearchResponse> =
@@ -341,7 +341,7 @@ pub async fn root_search(
         assign_client_fetch_doc_tasks(
             &leaf_search_response.partial_hits,
             &split_offsets_map,
-            search_job_placer,
+            &cluster_client.search_job_placer,
         )
         .await?;
 
@@ -584,12 +584,11 @@ pub fn finalize_aggregation(
 /// 2. Merges the search results.
 /// 3. Builds the response and returns.
 /// this is much simpler than `root_search` as it doesn't need to get actual docs.
-#[instrument(skip(list_terms_request, cluster_client, search_job_placer, metastore))]
+#[instrument(skip(list_terms_request, cluster_client, metastore))]
 pub async fn root_list_terms(
     list_terms_request: &ListTermsRequest,
     metastore: &dyn Metastore,
     cluster_client: &ClusterClient,
-    search_job_placer: &SearchJobPlacer,
 ) -> crate::Result<ListTermsResponse> {
     let start_instant = tokio::time::Instant::now();
 
@@ -640,7 +639,8 @@ pub async fn root_list_terms(
     let index_uri = &index_config.index_uri;
 
     let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
-    let assigned_leaf_search_jobs = search_job_placer
+    let assigned_leaf_search_jobs = cluster_client
+        .search_job_placer
         .assign_jobs(jobs, &HashSet::default())
         .await?;
     let leaf_search_responses: Vec<LeafListTermsResponse> =
@@ -915,7 +915,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await
         .unwrap();
@@ -976,7 +975,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await
         .unwrap();
@@ -1057,7 +1055,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await
         .unwrap();
@@ -1169,7 +1166,6 @@ mod tests {
             search_request.clone(),
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await?;
 
@@ -1325,7 +1321,6 @@ mod tests {
             search_request.clone(),
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await?;
 
@@ -1477,7 +1472,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await
         .unwrap();
@@ -1602,7 +1596,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await
         .unwrap();
@@ -1675,7 +1668,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await
         .unwrap();
@@ -1734,7 +1726,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await;
         assert!(search_response.is_err());
@@ -1816,7 +1807,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await
         .unwrap();
@@ -1890,7 +1880,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await
         .unwrap();
@@ -1928,7 +1917,6 @@ mod tests {
             },
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await
         .is_err());
@@ -1943,7 +1931,6 @@ mod tests {
             },
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await
         .is_err());
@@ -1999,7 +1986,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await;
         assert!(search_response.is_err());
@@ -2040,7 +2026,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await;
         assert!(search_response.is_err());
@@ -2061,7 +2046,6 @@ mod tests {
             search_request,
             &metastore,
             &cluster_client,
-            &search_job_placer,
         )
         .await;
         assert!(search_response.is_err());

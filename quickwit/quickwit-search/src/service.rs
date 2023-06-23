@@ -41,7 +41,7 @@ use crate::leaf_cache::LeafSearchCache;
 use crate::search_stream::{leaf_search_stream, root_search_stream};
 use crate::{
     fetch_docs, leaf_list_terms, leaf_search, root_list_terms, root_search, ClusterClient,
-    SearchError, SearchJobPlacer,
+    SearchError,
 };
 
 #[derive(Clone)]
@@ -50,7 +50,6 @@ pub struct SearchServiceImpl {
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageResolver,
     cluster_client: ClusterClient,
-    search_job_placer: SearchJobPlacer,
     searcher_context: Arc<SearcherContext>,
 }
 
@@ -121,7 +120,6 @@ impl SearchServiceImpl {
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageResolver,
         cluster_client: ClusterClient,
-        search_job_placer: SearchJobPlacer,
         searcher_config: SearcherConfig,
     ) -> Self {
         let searcher_context = Arc::new(SearcherContext::new(searcher_config));
@@ -129,7 +127,6 @@ impl SearchServiceImpl {
             metastore,
             storage_resolver,
             cluster_client,
-            search_job_placer,
             searcher_context,
         }
     }
@@ -150,7 +147,6 @@ impl SearchService for SearchServiceImpl {
             search_request,
             self.metastore.as_ref(),
             &self.cluster_client,
-            &self.search_job_placer,
         )
         .await?;
 
@@ -215,7 +211,6 @@ impl SearchService for SearchServiceImpl {
             stream_request,
             self.metastore.as_ref(),
             self.cluster_client.clone(),
-            &self.search_job_placer,
         )
         .await?;
         Ok(Box::pin(data))
@@ -253,7 +248,6 @@ impl SearchService for SearchServiceImpl {
             &list_terms_request,
             self.metastore.as_ref(),
             &self.cluster_client,
-            &self.search_job_placer,
         )
         .await?;
 

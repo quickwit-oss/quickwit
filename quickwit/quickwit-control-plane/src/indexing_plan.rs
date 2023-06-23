@@ -127,15 +127,12 @@ impl PhysicalIndexingPlan {
 /// Builds a [`PhysicalIndexingPlan`] by assigning each indexing tasks to a node ID.
 /// The algorithm first sort indexing tasks by (index_id, source_id).
 /// Then for each indexing tasks, it performs the following steps:
-/// 1. Sort node by rendez-vous hashing to make the assignment stable (it makes it
-///    deterministic too). This is not bullet proof as the node score has an impact
-///    on the assignment too.
-/// 2. Select node candidates that can run the task, see [`select_node_candidates`]
-///    function.
+/// 1. Sort node by rendez-vous hashing to make the assignment stable (it makes it deterministic
+///    too). This is not bullet proof as the node score has an impact on the assignment too.
+/// 2. Select node candidates that can run the task, see [`select_node_candidates`] function.
 /// 3. For each node, compute a score for this task, the higher, the better, see
 ///    `compute_node_score` function.
-/// 4. Select the best node (highest score) and assign the task to
-///    this node.
+/// 4. Select the best node (highest score) and assign the task to this node.
 /// Additional notes(fmassot): it's nice to have the cluster members as they contain the running
 /// tasks. We can potentially use this info to assign an indexing task to a node running the same
 /// task.

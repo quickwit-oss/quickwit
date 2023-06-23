@@ -38,7 +38,7 @@ use crate::{SearchError, SearchJobPlacer, SearchServiceClient};
 /// to retry on other `SearchServiceClient`.
 #[derive(Clone)]
 pub struct ClusterClient {
-    search_job_placer: SearchJobPlacer,
+    pub(crate) search_job_placer: SearchJobPlacer,
 }
 
 impl ClusterClient {

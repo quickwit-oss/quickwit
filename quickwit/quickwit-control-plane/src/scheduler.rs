@@ -77,15 +77,15 @@ pub struct IndexingSchedulerState {
 /// The [`IndexingScheduler`] is responsible for scheduling indexing tasks to indexers.
 /// The scheduling executes the following steps:
 /// 1. Fetches all indexes metadata.
-/// 2. Builds an indexing plan = `[Vec<IndexingTask>]`, from the indexes metadatas.
-///    See [`build_indexing_plan`] for the implementation details.
-/// 3. Builds a [`PhysicalIndexingPlan`] from the list of indexing tasks.
-///    See [`build_physical_indexing_plan`] for the implementation details.
+/// 2. Builds an indexing plan = `[Vec<IndexingTask>]`, from the indexes metadatas. See
+///    [`build_indexing_plan`] for the implementation details.
+/// 3. Builds a [`PhysicalIndexingPlan`] from the list of indexing tasks. See
+///    [`build_physical_indexing_plan`] for the implementation details.
 /// 4. Apply the [`PhysicalIndexingPlan`]: for each indexer, the scheduler send the indexing tasks
-///    by gRPC. An indexer immediately returns an Ok and apply asynchronously the received plan.
-///    Any errors (network) happening in this step are ignored. The scheduler runs a control loop
-///    that regularly checks if indexers are effectively running their plans (more details in the
-///    next section).
+///    by gRPC. An indexer immediately returns an Ok and apply asynchronously the received plan. Any
+///    errors (network) happening in this step are ignored. The scheduler runs a control loop that
+///    regularly checks if indexers are effectively running their plans (more details in the next
+///    section).
 ///
 /// The scheduling is executed when the scheduler receives external or internal events and on
 /// certains conditions. The following events possibly trigger a scheduling:
