@@ -303,8 +303,6 @@ pub struct SearcherContext {
     pub split_stream_semaphore: Semaphore,
     /// Recent sub-query cache.
     pub leaf_search_cache: LeafSearchCache,
-    /// Query string max length.
-    pub query_string_max_length: usize,
 }
 
 impl std::fmt::Debug for SearcherContext {
@@ -337,7 +335,6 @@ impl SearcherContext {
         let leaf_search_cache = LeafSearchCache::new(
             searcher_config.partial_request_cache_capacity.get_bytes() as usize,
         );
-        let query_string_max_length = searcher_config.max_query_string_length.get_bytes() as usize;
         Self {
             searcher_config,
             fast_fields_cache: storage_long_term_cache,
@@ -345,7 +342,6 @@ impl SearcherContext {
             split_footer_cache: global_split_footer_cache,
             split_stream_semaphore,
             leaf_search_cache,
-            query_string_max_length,
         }
     }
     // Returns a new instance to track the aggregation memory usage.
