@@ -416,6 +416,14 @@ impl TestableForRegression for IndexConfig {
         }"#,
         )
         .unwrap();
+        let tokenizer = serde_json::from_str(
+            r#"{
+                "name": "custom_tokenizer",
+                "type": "regex",
+                "pattern": "[^\\p{L}\\p{N}]+"
+            }"#,
+        )
+        .unwrap();
         let doc_mapping = DocMapping {
             field_mappings: vec![
                 tenant_id_mapping,
@@ -433,7 +441,7 @@ impl TestableForRegression for IndexConfig {
             partition_key: Some("tenant_id".to_string()),
             max_num_partitions: NonZeroU32::new(100).unwrap(),
             timestamp_field: Some("timestamp".to_string()),
-            tokenizers: vec![],
+            tokenizers: vec![tokenizer],
         };
         let retention_policy = Some(RetentionPolicy::new(
             "90 days".to_string(),
