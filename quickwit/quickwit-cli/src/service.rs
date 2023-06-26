@@ -76,7 +76,8 @@ impl RunCliCommand {
     pub async fn execute(&self) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
         let mut config = load_node_config(&self.config_uri).await?;
-        let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+        let (storage_resolver, metastore_resolver) =
+            get_resolvers(&config.storage_configs, &config.metastore_configs);
         crate::busy_detector::set_enabled(true);
 
         if let Some(services) = &self.services {

@@ -161,6 +161,17 @@ impl StorageResolver {
             .build()
             .expect("Storage factory and config backends should match.")
     }
+
+    /// Returns the [`StorageConfigs`] associated with this resolver for testing purposes only.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn storage_configs(&self) -> StorageConfigs {
+        let storage_configs = self
+            .per_backend_factories
+            .values()
+            .map(|(_, storage_config)| storage_config.clone())
+            .collect();
+        StorageConfigs::new(storage_configs)
+    }
 }
 
 #[derive(Default)]
