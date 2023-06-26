@@ -88,6 +88,8 @@ indicatif = "0.17.3"
 itertools = "0.10.5"
 json_comments = "0.2"
 libz-sys = "1.1.8"
+lindera-core = "0.25.0"
+lindera-dictionary = "0.25.0"
 lru = "0.10"
 matches = "0.1.9"
 md5 = "0.7"
@@ -177,6 +179,7 @@ username = "0.2"
 utoipa = "3.3.0"
 uuid = { version = "1.3", features = ["v4", "serde"] }
 warp = "0.3"
+whichlang = { git = "https://github.com/quickwit-oss/whichlang", rev = "fe406416" }
 wiremock = "0.5"
 
 aws-config = "0.55.0"
@@ -229,9 +232,11 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", branch = "fmassot/
   "quickwit",
 ] }
 
+lindera-tantivy = { git = "https://github.com/quickwit-oss/lindera-tantivy/", branch = "fmassot/use-tokenizer-api-on-branch-fmassot/add-box-token-filter-and-refactor", features = ["ipadic", "ipadic-compress", "cc-cedict", "cc-cedict-compress", "ko-dic", "ko-dic-compress"] }
+
 # This is actually not used directly the goal is to fix the version
-# used by reqwest. 0.8.30 has an unclear license.
-encoding_rs = "=0.8.29"
+# used by reqwest.
+encoding_rs = "=0.8.32"
 
 # vrl deps, at the end because the feature list for vrl-stdlib is long
 vrl = { git = "https://github.com/vectordotdev/vrl", rev = "v0.3.0", default-features = false, features = [

@@ -31,7 +31,7 @@
 mod elastic_query_dsl;
 mod json_literal;
 pub mod query_ast;
-mod tokenizers;
+pub mod tokenizers;
 
 mod error;
 mod not_nan_f32;

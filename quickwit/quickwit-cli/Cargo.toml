@@ -65,6 +65,7 @@ quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true }
 quickwit-rest-client = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
@@ -93,6 +94,7 @@ release-feature-set = [
   "quickwit-indexing/pulsar",
   "quickwit-metastore/azure",
   "quickwit-metastore/postgres",
+  "quickwit-query/multilang",
 ]
 release-feature-vendored-set = [
   "jemalloc",
@@ -102,6 +104,7 @@ release-feature-vendored-set = [
   "quickwit-indexing/vendored-kafka",
   "quickwit-metastore/azure",
   "quickwit-metastore/postgres",
+  "quickwit-query/multilang",
 ]
 release-macos-feature-vendored-set = [
   "jemalloc",
@@ -111,4 +114,5 @@ release-macos-feature-vendored-set = [
   "quickwit-indexing/vendored-kafka-macos",
   "quickwit-metastore/azure",
   "quickwit-metastore/postgres",
+  "quickwit-query/multilang",
 ]
