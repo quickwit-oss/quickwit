@@ -87,8 +87,8 @@ version: 0.6
 #     secret_access_key: ${AWS_SECRET_ACCESS_KEY}
 #     endpoint: ${QW_S3_ENDPOINT}
 #     region: ${AWS_REGION}
-#     force_path_style_access: ${QW_S3_FORCE_PATH_STYLE_ACCESS:-true}
-#     disable_multi_object_delete_requests: true
+#     force_path_style_access: ${QW_S3_FORCE_PATH_STYLE_ACCESS:-false}
+#     disable_multi_object_delete_requests: false
 #
 # -------------------------------- Metastore settings --------------------------------
 #
