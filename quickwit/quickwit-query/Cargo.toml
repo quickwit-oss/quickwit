@@ -13,6 +13,9 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
+lindera-core = { workspace = true, optional = true}
+lindera-dictionary = { workspace = true, optional = true }
+lindera-tantivy = { workspace = true, optional = true }
 once_cell = { workspace = true }
 quickwit-datetime = { workspace = true }
 serde = { workspace = true }
@@ -20,6 +23,7 @@ serde_json = { workspace = true }
 serde_with = { workspace = true }
 tantivy = { workspace = true }
 thiserror = { workspace = true }
+whichlang = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -29,3 +33,16 @@ time = { workspace = true }
 [[bench]]
 name = "tokenizers_bench"
 harness = false
+
+
+[features]
+multilang = [
+    "lindera-core",
+    "lindera-dictionary",
+    "lindera-tantivy",
+    "whichlang",
+]
+
+testsuite = [
+    "multilang",
+]

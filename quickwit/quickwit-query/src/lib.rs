@@ -33,7 +33,7 @@ mod error;
 mod json_literal;
 mod not_nan_f32;
 pub mod query_ast;
-mod tokenizers;
+pub mod tokenizers;
 
 pub use elastic_query_dsl::{ElasticQueryDsl, OneFieldMap};
 pub use error::InvalidQuery;
