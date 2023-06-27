@@ -281,11 +281,7 @@ impl IndexingService {
             .await?;
         let merge_policy =
             crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
-        let split_store = IndexingSplitStore::new(
-            storage.clone(),
-            merge_policy.clone(),
-            self.local_split_store.clone(),
-        );
+        let split_store = IndexingSplitStore::new(storage.clone(), self.local_split_store.clone());
 
         let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
             .map_err(IndexingServiceError::InvalidParams)?;
@@ -296,7 +292,7 @@ impl IndexingService {
             indexing_directory: indexing_directory.clone(),
             metastore: self.metastore.clone(),
             split_store: split_store.clone(),
-            merge_policy,
+            merge_policy: merge_policy.clone(),
             merge_max_io_num_bytes_per_sec: index_config
                 .indexing_settings
                 .resources
@@ -322,6 +318,7 @@ impl IndexingService {
             metastore: self.metastore.clone(),
             storage,
             split_store,
+            merge_policy,
             max_concurrent_split_uploads_index,
             max_concurrent_split_uploads_merge,
             queues_dir_path: self.queue_dir_path.clone(),

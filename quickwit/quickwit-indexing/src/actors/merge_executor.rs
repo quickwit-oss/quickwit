@@ -245,6 +245,7 @@ pub fn merge_split_attrs(
         .map(|split| split.delete_opstamp)
         .min()
         .unwrap_or(0);
+    let num_merge_ops = max_merge_ops(splits) + 1;
     SplitAttrs {
         split_id: merge_split_id,
         partition_id,
@@ -254,7 +255,7 @@ pub fn merge_split_attrs(
         num_docs,
         uncompressed_docs_size_in_bytes,
         delete_opstamp,
-        num_merge_ops: max_merge_ops(splits) + 1,
+        num_merge_ops,
     }
 }
 

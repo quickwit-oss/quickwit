@@ -62,7 +62,6 @@ pub async fn start_janitor_service(
     let retention_policy_executor = RetentionPolicyExecutor::new(metastore.clone());
     let (_, retention_policy_executor_handle) =
         universe.spawn_builder().spawn(retention_policy_executor);
-
     let delete_task_service = DeleteTaskService::new(
         metastore,
         search_job_placer,

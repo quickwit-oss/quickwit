@@ -1661,6 +1661,7 @@ pub mod test_suite {
             index_uid: index_uid.clone(),
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
+            maturity_timestamp: current_timestamp,
             tags: to_btree_set(&["tag!", "tag:foo", "tag:bar"]),
             delete_opstamp: 3,
             ..Default::default()
@@ -1672,6 +1673,7 @@ pub mod test_suite {
             index_uid: index_uid.clone(),
             time_range: Some(100..=199),
             create_timestamp: current_timestamp,
+            maturity_timestamp: current_timestamp + 10,
             tags: to_btree_set(&["tag!", "tag:bar"]),
             delete_opstamp: 1,
             ..Default::default()
@@ -1683,6 +1685,7 @@ pub mod test_suite {
             index_uid: index_uid.clone(),
             time_range: Some(200..=299),
             create_timestamp: current_timestamp,
+            maturity_timestamp: current_timestamp + 20,
             tags: to_btree_set(&["tag!", "tag:foo", "tag:baz"]),
             delete_opstamp: 5,
             ..Default::default()
@@ -2068,6 +2071,22 @@ pub mod test_suite {
                 split_ids,
                 &[&split_id_1, &split_id_2, &split_id_3, &split_id_6,]
             );
+
+            // Test maturity_timestamp filter
+            let query = ListSplitsQuery::for_index(index_uid.clone())
+                .with_maturity_timestamp_lte(current_timestamp);
+            let splits = metastore.list_splits(query.clone()).await.unwrap();
+            let split_ids = collect_split_ids(&splits);
+            assert_eq!(
+                split_ids,
+                &[&split_id_1, &split_id_4, &split_id_5, &split_id_6,]
+            );
+
+            let query = ListSplitsQuery::for_index(index_uid.clone())
+                .with_maturity_timestamp_gte(current_timestamp);
+            let splits = metastore.list_splits(query.clone()).await.unwrap();
+            let split_ids = collect_split_ids(&splits);
+            assert_eq!(split_ids, &[&split_id_1, &split_id_2, &split_id_3]);
 
             cleanup_index(&metastore, index_uid).await;
         }

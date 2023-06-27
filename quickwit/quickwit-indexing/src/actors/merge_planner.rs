@@ -148,7 +148,7 @@ impl MergePlanner {
     }
 
     fn record_split(&mut self, new_split: SplitMetadata) {
-        if self.merge_policy.is_mature(&new_split) {
+        if new_split.is_mature() {
             return;
         }
         let splits_for_partition: &mut Vec<SplitMetadata> = self
@@ -331,6 +331,7 @@ mod tests {
             partition_id,
             num_merge_ops,
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+            maturity_timestamp: OffsetDateTime::now_utc().unix_timestamp() + 3600,
             ..Default::default()
         }
     }

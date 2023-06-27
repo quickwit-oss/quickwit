@@ -101,6 +101,10 @@ pub struct SplitMetadata {
     /// Timestamp for tracking when the split was created.
     pub create_timestamp: i64,
 
+    /// Timestamp for tracking when the split becomes mature.
+    /// If a split is already mature, this timestamp is set to 0.
+    pub maturity_timestamp: i64,
+
     /// Set of unique tags values of form `{field_name}:{field_value}`.
     /// The set is filled at indexing with values from each field registered
     /// in the [`DocMapping`](quickwit_config::DocMapping) `tag_fields` attribute and only when
@@ -153,6 +157,11 @@ impl SplitMetadata {
         &self.split_id
     }
 
+    /// Returns true if the split is mature at `utc_now_timetamp()`.
+    pub fn is_mature(&self) -> bool {
+        self.maturity_timestamp <= utc_now_timestamp()
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     /// Returns an instance of `SplitMetadata` for testing.
     pub fn for_test(split_id: String) -> Self {
@@ -186,6 +195,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             uncompressed_docs_size_in_bytes: 234234,
             time_range: Some(121000..=130198),
             create_timestamp: 3,
+            maturity_timestamp: 4,
             tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
             footer_offsets: 1000..2000,
             num_merge_ops: 3,

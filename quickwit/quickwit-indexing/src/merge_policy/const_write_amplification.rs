@@ -18,11 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use quickwit_config::merge_policy_config::ConstWriteAmplificationMergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
-use time::OffsetDateTime;
 
 use super::MergeOperation;
 use crate::merge_policy::MergePolicy;
@@ -75,8 +75,6 @@ impl ConstWriteAmplificationMergePolicy {
 
     #[cfg(test)]
     fn for_test() -> ConstWriteAmplificationMergePolicy {
-        use std::time::Duration;
-
         let config = ConstWriteAmplificationMergePolicyConfig {
             max_merge_ops: 3,
             merge_factor: 3,
@@ -135,7 +133,7 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
         let mut group_by_num_merge_ops: HashMap<usize, Vec<SplitMetadata>> = HashMap::default();
         let mut mature_splits = Vec::new();
         for split in splits.drain(..) {
-            if self.is_mature(&split) {
+            if split.is_mature() {
                 mature_splits.push(split);
             } else {
                 group_by_num_merge_ops
@@ -154,19 +152,18 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
         merge_operations
     }
 
-    fn is_mature(&self, split: &SplitMetadata) -> bool {
-        if split.num_merge_ops >= self.config.max_merge_ops {
-            return true;
+    fn split_time_to_maturity(
+        &self,
+        split_num_docs: usize,
+        split_num_merge_ops: usize,
+    ) -> Option<Duration> {
+        if split_num_merge_ops >= self.config.max_merge_ops {
+            return None;
         }
-        if split.num_docs >= self.split_num_docs_target {
-            return true;
+        if split_num_docs >= self.split_num_docs_target {
+            return None;
         }
-        if OffsetDateTime::now_utc().unix_timestamp()
-            >= split.create_timestamp + self.config.maturation_period.as_secs() as i64
-        {
-            return true;
-        }
-        false
+        Some(self.config.maturation_period)
     }
 
     #[cfg(test)]
@@ -197,6 +194,7 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
 mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
+    use std::time::Duration;
 
     use quickwit_metastore::SplitMetadata;
     use rand::seq::SliceRandom;
@@ -210,28 +208,25 @@ mod tests {
     #[test]
     fn test_split_is_mature() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
-        let split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
+        let split = create_splits(&merge_policy, vec![9_000_000])
+            .into_iter()
+            .next()
+            .unwrap();
         // Split under max_merge_docs, num_merge_ops < max_merge_ops and created before now() -
         // maturation_period is not mature.
-        assert!(!merge_policy.is_mature(&split));
-        {
-            // Split with docs > max_merge_docs is mature.
-            let mut mature_split = split.clone();
-            mature_split.num_docs = merge_policy.split_num_docs_target + 1;
-            assert!(merge_policy.is_mature(&mature_split));
-        }
-        {
-            // Split with create_timestamp >= now + maturity duration is mature
-            let mut mature_split = split.clone();
-            mature_split.create_timestamp -= merge_policy.config.maturation_period.as_secs() as i64;
-            assert!(merge_policy.is_mature(&mature_split));
-        }
-        {
-            // Split with num_merge_ops >= max_merge_ops is mature
-            let mut mature_split = split;
-            mature_split.num_merge_ops = merge_policy.config.max_merge_ops;
-            assert!(merge_policy.is_mature(&mature_split));
-        }
+        assert_eq!(
+            merge_policy.split_time_to_maturity(split.num_docs, split.num_merge_ops),
+            Some(Duration::from_secs(3600))
+        );
+        // Split with docs > max_merge_docs is mature.
+        assert!(merge_policy
+            .split_time_to_maturity(merge_policy.split_num_docs_target + 1, split.num_merge_ops)
+            .is_none());
+
+        // Split with num_merge_ops >= max_merge_ops is mature
+        assert!(merge_policy
+            .split_time_to_maturity(split.num_docs, merge_policy.config.max_merge_ops)
+            .is_none());
     }
 
     #[test]
@@ -243,14 +238,15 @@ mod tests {
 
     #[test]
     fn test_const_write_merge_policy_single_split() {
+        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         let mut splits = vec![SplitMetadata {
             split_id: "01GE1R0KBFQHJ76030RYRAS8QA".to_string(),
             num_docs: 1,
             create_timestamp: 1665000000,
+            maturity_timestamp: merge_policy.split_maturity_timestamp(1665000000, 1, 0),
             num_merge_ops: 4,
             ..Default::default()
         }];
-        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         let operations: Vec<MergeOperation> = merge_policy.operations(&mut splits);
         assert!(operations.is_empty());
         assert_eq!(splits.len(), 1);
@@ -259,12 +255,18 @@ mod tests {
     #[test]
     fn test_const_write_merge_policy_simple() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
+        let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits = (0..merge_policy.config.merge_factor)
             .map(|i| SplitMetadata {
                 split_id: format!("split-{i}"),
                 num_docs: 1_000,
                 num_merge_ops: 1,
-                create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+                create_timestamp,
+                maturity_timestamp: merge_policy.split_maturity_timestamp(
+                    create_timestamp,
+                    1_000,
+                    1,
+                ),
                 ..Default::default()
             })
             .collect();
@@ -279,13 +281,16 @@ mod tests {
     #[test]
     fn test_const_write_merge_policy_merge_factor_max() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
+        let time_to_maturity = merge_policy.split_time_to_maturity(1_000, 1).unwrap();
+        let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits =
             (0..merge_policy.config.max_merge_factor + merge_policy.config.merge_factor - 1)
                 .map(|i| SplitMetadata {
                     split_id: format!("split-{i}"),
                     num_docs: 1_000,
                     num_merge_ops: 1,
-                    create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+                    create_timestamp,
+                    maturity_timestamp: create_timestamp + time_to_maturity.as_secs() as i64,
                     ..Default::default()
                 })
                 .collect();
@@ -300,6 +305,7 @@ mod tests {
     #[test]
     fn test_const_write_merge_policy_older_first() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
+        let time_to_maturity = merge_policy.split_time_to_maturity(1_000, 1).unwrap();
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits: Vec<SplitMetadata> = (0..merge_policy.config.max_merge_factor)
             .map(|i| SplitMetadata {
@@ -307,6 +313,7 @@ mod tests {
                 num_docs: 1_000,
                 num_merge_ops: 1,
                 create_timestamp: now_timestamp + i as i64,
+                maturity_timestamp: now_timestamp + i as i64 + time_to_maturity.as_secs() as i64,
                 ..Default::default()
             })
             .collect();
@@ -331,13 +338,20 @@ mod tests {
     #[test]
     fn test_const_write_merge_policy_target_num_docs() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
+        let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits = (0..4)
-            .map(|i| SplitMetadata {
-                split_id: format!("split-{i}"),
-                num_docs: (merge_policy.split_num_docs_target + 2) / 3,
-                num_merge_ops: 1,
-                create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-                ..Default::default()
+            .map(|i| {
+                let num_docs = (merge_policy.split_num_docs_target + 2) / 3;
+                let maturity_timestamp =
+                    merge_policy.split_maturity_timestamp(create_timestamp + i as i64, num_docs, 1);
+                SplitMetadata {
+                    split_id: format!("split-{i}"),
+                    num_docs,
+                    num_merge_ops: 1,
+                    create_timestamp,
+                    maturity_timestamp,
+                    ..Default::default()
+                }
             })
             .collect();
         let operations: Vec<MergeOperation> = merge_policy.operations(&mut splits);

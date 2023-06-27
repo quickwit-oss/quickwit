@@ -167,7 +167,6 @@ impl DeleteTaskService {
             index_metadata.index_uid.clone(),
             self.metastore.clone(),
             self.search_job_placer.clone(),
-            index_config.indexing_settings,
             index_storage,
             self.delete_service_task_dir.clone(),
             self.max_concurrent_split_uploads,

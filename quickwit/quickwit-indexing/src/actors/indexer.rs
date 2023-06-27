@@ -458,6 +458,7 @@ impl Handler<NewPublishLock> for Indexer {
 }
 
 impl Indexer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<dyn DocMapper>,
@@ -559,6 +560,7 @@ impl Indexer {
         // Dropping the indexing permit explicitly here for enhanced readability.
         drop(indexing_permit);
 
+        // Update the time to maturity of the splits as they won't receive documents anymore.
         let mut splits: Vec<IndexedSplitBuilder> = indexed_splits.into_values().collect();
 
         if let Some(other_split) = other_indexed_split_opt {
@@ -767,10 +769,9 @@ mod tests {
         let batch = messages.into_iter().next().unwrap();
         assert_eq!(batch.commit_trigger, CommitTrigger::NumDocsLimit);
         assert_eq!(batch.splits[0].split_attrs.num_docs, 4);
-        assert_eq!(
-            batch.splits[0].split_attrs.delete_opstamp,
-            last_delete_opstamp
-        );
+        for split in batch.splits.iter() {
+            assert_eq!(split.split_attrs.delete_opstamp, last_delete_opstamp);
+        }
         let index_checkpoint = batch.checkpoint_delta.unwrap();
         assert_eq!(index_checkpoint.source_id, "test-source");
         assert_eq!(

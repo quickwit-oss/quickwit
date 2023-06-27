@@ -336,6 +336,9 @@ pub struct ListSplitsQuery {
 
     /// The create timestamp range to filter by.
     pub create_timestamp: FilterRange<i64>,
+
+    /// The maturity timestamp range to filter by.
+    pub maturity_timestamp: FilterRange<i64>,
 }
 
 #[allow(unused_attributes)]
@@ -352,6 +355,7 @@ impl ListSplitsQuery {
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
+            maturity_timestamp: Default::default(),
         }
     }
 
@@ -494,6 +498,34 @@ impl ListSplitsQuery {
     /// *greater than* the provided value.
     pub fn with_create_timestamp_gt(mut self, v: i64) -> Self {
         self.create_timestamp.start = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than or equal to* the provided value.
+    pub fn with_maturity_timestamp_lte(mut self, v: i64) -> Self {
+        self.maturity_timestamp.end = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than* the provided value.
+    pub fn with_maturity_timestamp_lt(mut self, v: i64) -> Self {
+        self.maturity_timestamp.end = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than or equal to* the provided value.
+    pub fn with_maturity_timestamp_gte(mut self, v: i64) -> Self {
+        self.maturity_timestamp.start = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than* the provided value.
+    pub fn with_maturity_timestamp_gt(mut self, v: i64) -> Self {
+        self.maturity_timestamp.start = Bound::Excluded(v);
         self
     }
 }

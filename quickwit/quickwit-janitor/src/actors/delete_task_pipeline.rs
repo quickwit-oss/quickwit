@@ -28,7 +28,7 @@ use quickwit_actors::{
 use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::{self};
 use quickwit_common::uri::Uri;
-use quickwit_config::{build_doc_mapper, IndexingSettings};
+use quickwit_config::build_doc_mapper;
 use quickwit_indexing::actors::{
     MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
 };
@@ -77,7 +77,6 @@ pub struct DeleteTaskPipeline {
     index_uid: IndexUid,
     metastore: Arc<dyn Metastore>,
     search_job_placer: SearchJobPlacer,
-    indexing_settings: IndexingSettings,
     index_storage: Arc<dyn Storage>,
     delete_service_task_dir: PathBuf,
     handles: Option<DeletePipelineHandle>,
@@ -127,7 +126,6 @@ impl DeleteTaskPipeline {
         index_uid: IndexUid,
         metastore: Arc<dyn Metastore>,
         search_job_placer: SearchJobPlacer,
-        indexing_settings: IndexingSettings,
         index_storage: Arc<dyn Storage>,
         delete_service_task_dir: PathBuf,
         max_concurrent_split_uploads: usize,
@@ -136,7 +134,6 @@ impl DeleteTaskPipeline {
             index_uid,
             metastore,
             search_job_placer,
-            indexing_settings,
             index_storage,
             delete_service_task_dir,
             handles: Default::default(),
@@ -166,9 +163,11 @@ impl DeleteTaskPipeline {
             ctx.spawn_actor().supervise(publisher);
         let split_store =
             IndexingSplitStore::create_without_local_store(self.index_storage.clone());
+        let merge_policy = merge_policy_from_settings(&index_config.indexing_settings);
         let uploader = Uploader::new(
             UploaderType::DeleteUploader,
             self.metastore.clone(),
+            merge_policy,
             split_store.clone(),
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
             self.max_concurrent_split_uploads,
@@ -220,7 +219,6 @@ impl DeleteTaskPipeline {
         };
         let (downloader_mailbox, downloader_supervisor_handler) =
             ctx.spawn_actor().supervise(merge_split_downloader);
-        let merge_policy = merge_policy_from_settings(&self.indexing_settings);
         let doc_mapper_str = serde_json::to_string(&doc_mapper)?;
         let index_uri: &Uri = &index_config.index_uri;
         let task_planner = DeleteTaskPlanner::new(
@@ -229,7 +227,6 @@ impl DeleteTaskPipeline {
             doc_mapper_str,
             self.metastore.clone(),
             self.search_job_placer.clone(),
-            merge_policy,
             downloader_mailbox,
         );
         let (_, task_planner_supervisor_handler) = ctx.spawn_actor().supervise(task_planner);
@@ -292,8 +289,6 @@ mod tests {
     use async_trait::async_trait;
     use quickwit_actors::Handler;
     use quickwit_common::temp_dir::TempDirectory;
-    use quickwit_config::merge_policy_config::MergePolicyConfig;
-    use quickwit_config::IndexingSettings;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitState;
     use quickwit_proto::metastore_api::DeleteQuery;
@@ -336,9 +331,18 @@ mod tests {
                 type: i64
                 fast: true
         "#;
-        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
-            .await
-            .unwrap();
+        let indexing_settings_yaml = r#"
+            merge_policy:
+                type: no_merge
+        "#;
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_yaml,
+            &["body"],
+        )
+        .await
+        .unwrap();
         let index_uid = test_sandbox.index_uid();
         let docs = vec![
             serde_json::json!({"body": "info", "ts": 0 }),
@@ -378,13 +382,10 @@ mod tests {
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let delete_service_task_dir = TempDirectory::for_test();
-        let mut indexing_settings = IndexingSettings::for_test();
-        indexing_settings.merge_policy = MergePolicyConfig::Nop;
         let pipeline = DeleteTaskPipeline::new(
             test_sandbox.index_uid(),
             metastore.clone(),
             search_job_placer,
-            indexing_settings,
             test_sandbox.storage(),
             delete_service_task_dir.path().into(),
             4,
@@ -452,12 +453,10 @@ mod tests {
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let delete_service_task_dir = TempDirectory::for_test();
-        let indexing_settings = IndexingSettings::for_test();
         let pipeline = DeleteTaskPipeline::new(
             test_sandbox.index_uid(),
             metastore.clone(),
             search_job_placer,
-            indexing_settings,
             test_sandbox.storage(),
             delete_service_task_dir.path().into(),
             4,

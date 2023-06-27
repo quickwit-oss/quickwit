@@ -282,6 +282,12 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery) -> String {
         &query.create_timestamp,
         |val| format!("to_timestamp({val})"),
     );
+    write_sql_filter(
+        &mut sql,
+        "maturity_timestamp",
+        &query.maturity_timestamp,
+        |val| format!("to_timestamp({val})"),
+    );
     write_sql_filter(&mut sql, "delete_opstamp", &query.delete_opstamp, |val| {
         val.to_string()
     });
@@ -471,6 +477,7 @@ impl Metastore for PostgresqlMetastore {
         let mut tags_list = Vec::with_capacity(split_metadata_list.len());
         let mut split_metadata_json_list = Vec::with_capacity(split_metadata_list.len());
         let mut delete_opstamps = Vec::with_capacity(split_metadata_list.len());
+        let mut maturity_timestamps = Vec::with_capacity(split_metadata_list.len());
 
         for split_metadata in split_metadata_list {
             let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|error| {
@@ -495,13 +502,14 @@ impl Metastore for PostgresqlMetastore {
 
             split_ids.push(split_metadata.split_id);
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
+            maturity_timestamps.push(split_metadata.maturity_timestamp);
         }
         tracing::Span::current().record("split_ids", format!("{split_ids:?}"));
 
         run_with_tx!(self.connection_pool, tx, {
             let upserted_split_ids: Vec<String> = sqlx::query_scalar(r#"
                 INSERT INTO splits
-                    (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, split_state, index_uid)
+                    (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, maturity_timestamp, split_state, index_uid)
                 SELECT
                     split_id,
                     time_range_start,
@@ -509,11 +517,12 @@ impl Metastore for PostgresqlMetastore {
                     ARRAY(SELECT json_array_elements_text(tags_json::json)) as tags,
                     split_metadata_json,
                     delete_opstamp,
-                    $7 as split_state,
-                    $8 as index_uid
+                    to_timestamp(maturity_timestamp),
+                    $8 as split_state,
+                    $9 as index_uid
                 FROM
-                    UNNEST($1, $2, $3, $4, $5, $6)
-                    as tr(split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp)
+                    UNNEST($1, $2, $3, $4, $5, $6, $7)
+                    as tr(split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp, maturity_timestamp)
                 ON CONFLICT(split_id) DO UPDATE
                     SET
                         time_range_start = excluded.time_range_start,
@@ -521,6 +530,7 @@ impl Metastore for PostgresqlMetastore {
                         tags = excluded.tags,
                         split_metadata_json = excluded.split_metadata_json,
                         delete_opstamp = excluded.delete_opstamp,
+                        maturity_timestamp = excluded.maturity_timestamp,
                         index_uid = excluded.index_uid,
                         update_timestamp = CURRENT_TIMESTAMP,
                         create_timestamp = CURRENT_TIMESTAMP
@@ -533,6 +543,7 @@ impl Metastore for PostgresqlMetastore {
                 .bind(tags_list)
                 .bind(split_metadata_json_list)
                 .bind(delete_opstamps)
+                .bind(maturity_timestamps)
                 .bind(SplitState::Staged.as_str())
                 .bind(index_uid.to_string())
                 .fetch_all(tx)
@@ -1368,6 +1379,13 @@ mod tests {
         assert_eq!(
             sql,
             " WHERE index_uid = $1 AND create_timestamp <= to_timestamp(55)"
+        );
+
+        let query = ListSplitsQuery::for_index(index_uid.clone()).with_maturity_timestamp_lte(55);
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(
+            sql,
+            " WHERE index_uid = $1 AND maturity_timestamp <= to_timestamp(55)"
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_delete_opstamp_gte(4);

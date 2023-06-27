@@ -1124,13 +1124,13 @@ mod test {
             split_metadata: split_metadata_1,
             split_state: quickwit_metastore::SplitState::Published,
             update_timestamp: 0,
-            publish_timestamp: Some(0),
+            publish_timestamp: Some(10),
         };
         let split_data_2 = Split {
             split_metadata: split_metadata_2,
             split_state: quickwit_metastore::SplitState::MarkedForDeletion,
             update_timestamp: 0,
-            publish_timestamp: Some(0),
+            publish_timestamp: Some(10),
         };
 
         let index_stats =
@@ -1162,8 +1162,8 @@ mod test {
         let split_id = "stat-test-split".to_string();
         let template_split = Split {
             split_state: quickwit_metastore::SplitState::Published,
-            update_timestamp: 0,
-            publish_timestamp: Some(0),
+            update_timestamp: 10,
+            publish_timestamp: Some(10),
             split_metadata: SplitMetadata::default(),
         };
 

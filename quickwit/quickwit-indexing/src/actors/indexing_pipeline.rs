@@ -43,6 +43,7 @@ use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
+use crate::merge_policy::MergePolicy;
 use crate::models::{IndexingPipelineId, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
 use crate::split_store::IndexingSplitStore;
@@ -298,6 +299,7 @@ impl IndexingPipeline {
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
             self.params.metastore.clone(),
+            self.params.merge_policy.clone(),
             self.params.split_store.clone(),
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             self.params.max_concurrent_split_uploads_index,
@@ -529,6 +531,7 @@ pub struct IndexingPipelineParams {
     pub metastore: Arc<dyn Metastore>,
     pub storage: Arc<dyn Storage>,
     pub split_store: IndexingSplitStore,
+    pub merge_policy: Arc<dyn MergePolicy>,
     pub max_concurrent_split_uploads_index: usize,
     pub max_concurrent_split_uploads_merge: usize,
     pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
@@ -639,6 +642,7 @@ mod tests {
             metastore: metastore.clone(),
             storage,
             split_store,
+            merge_policy: default_merge_policy(),
             queues_dir_path: PathBuf::from("./queues"),
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
@@ -734,6 +738,7 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,
+            merge_policy: default_merge_policy(),
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
@@ -808,6 +813,7 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,
+            merge_policy: default_merge_policy(),
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
@@ -924,6 +930,7 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,
+            merge_policy: default_merge_policy(),
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,

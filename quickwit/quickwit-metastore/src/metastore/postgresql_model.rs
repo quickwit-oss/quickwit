@@ -83,6 +83,9 @@ pub struct Split {
     pub update_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// Timestamp for tracking when the split was published.
     pub publish_timestamp: Option<sqlx::types::time::PrimitiveDateTime>,
+    /// Timestamp for tracking when the split becomes mature.
+    /// If a split is already mature, this timestamp is set to 0.
+    pub maturity_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// A list of tags for categorizing and searching group of splits.
     pub tags: Vec<String>,
     // The split's metadata serialized as a JSON string.
@@ -133,8 +136,10 @@ impl TryInto<QuickwitSplit> for Split {
         let publish_timestamp = self
             .publish_timestamp
             .map(|publish_timestamp| publish_timestamp.assume_utc().unix_timestamp());
+        let maturity_timestamp = self.maturity_timestamp.assume_utc().unix_timestamp();
         split_metadata.index_uid = self.index_uid;
         split_metadata.delete_opstamp = self.delete_opstamp as u64;
+        split_metadata.maturity_timestamp = maturity_timestamp;
         Ok(QuickwitSplit {
             split_metadata,
             split_state,

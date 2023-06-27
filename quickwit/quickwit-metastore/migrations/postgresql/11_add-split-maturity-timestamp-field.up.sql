@@ -1,0 +1,2 @@
+ALTER TABLE splits
+    ADD COLUMN maturity_timestamp TIMESTAMP DEFAULT TO_TIMESTAMP(0);

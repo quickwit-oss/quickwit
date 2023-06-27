@@ -126,6 +126,7 @@
         "start": 1000
       },
       "index_uid": "my-index",
+      "maturity_timestamp": 0,
       "node_id": "node",
       "num_docs": 12303,
       "num_merge_ops": 3,

@@ -500,6 +500,13 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         return false;
     }
 
+    if !query
+        .maturity_timestamp
+        .contains(&split.split_metadata.maturity_timestamp)
+    {
+        return false;
+    }
+
     if let Some(range) = split.split_metadata.time_range.as_ref() {
         if !query.time_range.overlaps_with(range.clone()) {
             return false;
@@ -558,7 +565,7 @@ mod tests {
                 },
                 split_state: SplitState::Published,
                 update_timestamp: 0i64,
-                publish_timestamp: None,
+                publish_timestamp: Some(10i64),
             },
         ]
     }
