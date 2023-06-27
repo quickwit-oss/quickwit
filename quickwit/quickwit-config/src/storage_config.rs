@@ -54,6 +54,10 @@ pub enum StorageBackend {
 pub struct StorageConfigs(#[serde_as(as = "EnumMap")] Vec<StorageConfig>);
 
 impl StorageConfigs {
+    pub fn new(storage_configs: Vec<StorageConfig>) -> Self {
+        Self(storage_configs)
+    }
+
     pub fn redact(&mut self) {
         for storage_config in self.0.iter_mut() {
             storage_config.redact();

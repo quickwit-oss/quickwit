@@ -32,7 +32,10 @@ use quickwit_common::run_checklist;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig, DEFAULT_QW_CONFIG_PATH};
+use quickwit_config::{
+    ConfigFormat, MetastoreConfigs, QuickwitConfig, SourceConfig, StorageConfigs,
+    DEFAULT_QW_CONFIG_PATH,
+};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{Metastore, MetastoreResolver};
 use quickwit_rest_client::models::Timeout;
@@ -255,19 +258,21 @@ async fn load_node_config(config_uri: &Uri) -> anyhow::Result<QuickwitConfig> {
     Ok(config)
 }
 
-async fn get_resolvers(config: &QuickwitConfig) -> (StorageResolver, MetastoreResolver) {
+fn get_resolvers(
+    storage_configs: &StorageConfigs,
+    metastore_configs: &MetastoreConfigs,
+) -> (StorageResolver, MetastoreResolver) {
     // The CLI tests rely on the unconfigured singleton resolvers, so it's better to return them if
     // the storage and metastore configs are not set.
-    let storage_resolver = if config.storage_configs.is_empty() {
-        StorageResolver::unconfigured()
-    } else {
-        StorageResolver::configured(&config.storage_configs)
-    };
-    let metastore_resolver = if config.metastore_configs.is_empty() {
-        MetastoreResolver::unconfigured()
-    } else {
-        MetastoreResolver::configured(storage_resolver.clone(), &config.metastore_configs)
-    };
+    if storage_configs.is_empty() && metastore_configs.is_empty() {
+        return (
+            StorageResolver::unconfigured(),
+            MetastoreResolver::unconfigured(),
+        );
+    }
+    let storage_resolver = StorageResolver::configured(storage_configs);
+    let metastore_resolver =
+        MetastoreResolver::configured(storage_resolver.clone(), metastore_configs);
     (storage_resolver, metastore_resolver)
 }
 
@@ -437,9 +442,10 @@ pub mod busy_detector {
 mod tests {
     use std::time::Duration;
 
+    use quickwit_config::S3StorageConfig;
     use quickwit_rest_client::models::Timeout;
 
-    use super::{parse_duration_or_none, parse_duration_with_unit};
+    use super::*;
 
     #[test]
     fn test_parse_duration_with_unit() -> anyhow::Result<()> {
@@ -471,5 +477,24 @@ mod tests {
         assert_eq!(parse_duration_or_none("none")?, Timeout::none());
         assert!(parse_duration_or_none("something").is_err());
         Ok(())
+    }
+
+    #[test]
+    fn test_get_resolvers() {
+        let s3_storage_config = S3StorageConfig {
+            force_path_style_access: true,
+            ..Default::default()
+        };
+        let storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
+        let metastore_configs = MetastoreConfigs::default();
+        let (storage_resolver, _metastore_resolver) =
+            get_resolvers(&storage_configs, &metastore_configs);
+        assert!(
+            storage_resolver
+                .storage_configs()
+                .find_s3()
+                .unwrap()
+                .force_path_style_access
+        );
     }
 }
