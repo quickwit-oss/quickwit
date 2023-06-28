@@ -35,6 +35,7 @@ pub mod rand;
 pub mod rendezvous_hasher;
 pub mod runtimes;
 pub mod sorted_iter;
+pub mod timestamp;
 
 pub mod stream_utils;
 pub mod temp_dir;
