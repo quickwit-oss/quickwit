@@ -5191,6 +5191,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "aws-config",
+ "aws-credential-types",
  "aws-sdk-s3",
  "aws-smithy-client",
  "aws-smithy-http",
