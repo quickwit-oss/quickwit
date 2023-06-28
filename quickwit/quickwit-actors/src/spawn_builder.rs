@@ -19,6 +19,7 @@
 
 use anyhow::Context;
 use quickwit_common::metrics::IntCounter;
+use sync_wrapper::SyncWrapper;
 use tokio::sync::watch;
 use tracing::{debug, error, info};
 
@@ -170,7 +171,7 @@ impl<A: Actor> SpawnBuilder<A> {
         (mailbox, actor_handle)
     }
 
-    pub fn supervise_fn<F: Fn() -> A + Send + Sync + 'static>(
+    pub fn supervise_fn<F: Fn() -> A + Send + 'static>(
         mut self,
         actor_factory: F,
     ) -> (Mailbox<A>, ActorHandle<Supervisor<A>>) {
@@ -224,14 +225,14 @@ fn try_recv_envelope<A: Actor>(inbox: &mut Inbox<A>, ctx: &ActorContext<A>) -> O
 }
 
 struct ActorExecutionEnv<A: Actor> {
-    actor: A,
+    actor: SyncWrapper<A>,
     inbox: Inbox<A>,
     ctx: ActorContext<A>,
 }
 
 impl<A: Actor> ActorExecutionEnv<A> {
     async fn initialize(&mut self) -> Result<(), ActorExitStatus> {
-        self.actor.initialize(&self.ctx).await
+        self.actor.get_mut().initialize(&self.ctx).await
     }
 
     async fn process_messages(&mut self) -> ActorExitStatus {
@@ -247,15 +248,17 @@ impl<A: Actor> ActorExecutionEnv<A> {
         mut envelope: Envelope<A>,
     ) -> Result<(), ActorExitStatus> {
         self.yield_and_check_if_killed().await?;
-        envelope.handle_message(&mut self.actor, &self.ctx).await?;
+        envelope
+            .handle_message(self.actor.get_mut(), &self.ctx)
+            .await?;
         Ok(())
     }
 
-    async fn yield_and_check_if_killed(&self) -> Result<(), ActorExitStatus> {
+    async fn yield_and_check_if_killed(&mut self) -> Result<(), ActorExitStatus> {
         if self.ctx.kill_switch().is_dead() {
             return Err(ActorExitStatus::Killed);
         }
-        if self.actor.yield_after_each_message() {
+        if self.actor.get_mut().yield_after_each_message() {
             self.ctx.yield_now().await;
             if self.ctx.kill_switch().is_dead() {
                 return Err(ActorExitStatus::Killed);
@@ -281,7 +284,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
                 break;
             }
         }
-        self.actor.on_drained_messages(&self.ctx).await?;
+        self.actor.get_mut().on_drained_messages(&self.ctx).await?;
         self.ctx.idle();
         if self.ctx.mailbox().is_last_mailbox() {
             // No one will be able to send us more messages.
@@ -300,9 +303,10 @@ impl<A: Actor> ActorExecutionEnv<A> {
             .map(|scheduler_client| scheduler_client.no_advance_time_guard());
         if let Err(finalize_error) = self
             .actor
+            .get_mut()
             .finalize(&exit_status, &self.ctx)
             .await
-            .with_context(|| format!("Finalization of actor {}", self.actor.name()))
+            .with_context(|| format!("Finalization of actor {}", self.actor.get_mut().name()))
         {
             error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
             return ActorExitStatus::Panicked;
@@ -332,7 +336,7 @@ impl<A: Actor> Drop for ActorExecutionEnv<A> {
     // We rely on this object internally to fetch a post-mortem state,
     // even in case of a panic.
     fn drop(&mut self) {
-        self.ctx.observe(&mut self.actor);
+        self.ctx.observe(self.actor.get_mut());
     }
 }
 
@@ -342,7 +346,11 @@ async fn actor_loop<A: Actor>(
     no_advance_time_guard: NoAdvanceTimeGuard,
     ctx: ActorContext<A>,
 ) -> ActorExitStatus {
-    let mut actor_env = ActorExecutionEnv { actor, inbox, ctx };
+    let mut actor_env = ActorExecutionEnv {
+        actor: SyncWrapper::new(actor),
+        inbox,
+        ctx,
+    };
 
     let initialize_exit_status_res: Result<(), ActorExitStatus> = actor_env.initialize().await;
     drop(no_advance_time_guard);

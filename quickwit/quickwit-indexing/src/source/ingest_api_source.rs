@@ -171,7 +171,7 @@ impl Source for IngestApiSource {
     }
 
     async fn suggest_truncate(
-        &self,
+        &mut self,
         checkpoint: SourceCheckpoint,
         ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
