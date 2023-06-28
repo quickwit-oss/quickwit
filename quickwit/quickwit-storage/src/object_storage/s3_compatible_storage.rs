@@ -20,11 +20,12 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::{env, fmt, io};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
+use aws_credential_types::provider::SharedCredentialsProvider;
+use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
@@ -82,20 +83,47 @@ impl fmt::Debug for S3CompatibleObjectStorage {
     }
 }
 
+fn get_credentials_provider(
+    s3_storage_config: &S3StorageConfig,
+) -> Option<SharedCredentialsProvider> {
+    match (
+        &s3_storage_config.access_key_id,
+        &s3_storage_config.secret_access_key,
+    ) {
+        (Some(access_key_id), Some(secret_access_key)) => {
+            info!("Using S3 credentials defined in storage config.");
+            let credentials = Credentials::from_keys(access_key_id, secret_access_key, None);
+            let credentials_provider = SharedCredentialsProvider::new(credentials);
+            Some(credentials_provider)
+        }
+        _ => None,
+    }
+}
+
+fn get_region(s3_storage_config: &S3StorageConfig) -> Option<Region> {
+    s3_storage_config.region.clone().map(|region| {
+        info!(region=%region, "Using S3 region defined in storage config.");
+        Region::new(region)
+    })
+}
+
 async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     let aws_config = get_aws_config().await;
-    let mut s3_config = aws_sdk_s3::Config::builder().region(aws_config.region().cloned());
+    let credentials_provider =
+        get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider().cloned());
+    let region = get_region(s3_storage_config).or(aws_config.region().cloned());
+    let mut s3_config = aws_sdk_s3::Config::builder().region(region);
 
-    s3_config.set_retry_config(aws_config.retry_config().cloned());
-    s3_config.set_credentials_provider(aws_config.credentials_provider().cloned());
-    s3_config.set_http_connector(aws_config.http_connector().cloned());
-    s3_config.set_timeout_config(aws_config.timeout_config().cloned());
     s3_config.set_credentials_cache(aws_config.credentials_cache().cloned());
-    s3_config.set_sleep_impl(Some(Arc::new(quickwit_aws::TokioSleep::default())));
+    s3_config.set_credentials_provider(credentials_provider);
     s3_config.set_force_path_style(s3_storage_config.force_path_style_access());
+    s3_config.set_http_connector(aws_config.http_connector().cloned());
+    s3_config.set_retry_config(aws_config.retry_config().cloned());
+    s3_config.set_sleep_impl(aws_config.sleep_impl());
+    s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
     if let Some(endpoint) = s3_storage_config.endpoint() {
-        info!(endpoint=%endpoint, "Using custom S3 endpoint.");
+        info!(endpoint=%endpoint, "Using S3 endpoint defined in storage config or environment variable.");
         s3_config.set_endpoint_url(Some(endpoint));
     }
     S3Client::from_conf(s3_config.build())
