@@ -32,6 +32,8 @@ use rest_handler::{
 };
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
+pub use rest_handler::es_compat_info_handler;
+pub use filter::ElasticCompatibleApi;
 
 /// Setup Elasticsearch API handlers
 ///
