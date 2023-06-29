@@ -484,4 +484,38 @@ mod tests {
         );
         assert_eq!(balance_channel.num_connections(), 1);
     }
+
+    #[tokio::test]
+    async fn test_hello_codegen_mock() {
+        let mut hello_mock = HelloClient::mock();
+        hello_mock.expect_hello().returning(|_| {
+            Ok(HelloResponse {
+                message: "Hello, mock!".to_string(),
+            })
+        });
+        let mut hello: HelloClient = hello_mock.into();
+        assert_eq!(
+            hello
+                .hello(HelloRequest {
+                    name: "World".to_string()
+                })
+                .await
+                .unwrap(),
+            HelloResponse {
+                message: "Hello, mock!".to_string()
+            }
+        );
+        assert_eq!(
+            hello
+                .clone()
+                .hello(HelloRequest {
+                    name: "World".to_string()
+                })
+                .await
+                .unwrap(),
+            HelloResponse {
+                message: "Hello, mock!".to_string()
+            }
+        );
+    }
 }
