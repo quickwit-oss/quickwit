@@ -832,11 +832,3 @@ Specifies the path to the [quickwit config](../configuration/node-config.md). Co
 *Example*
 
 `export QW_CONFIG=config/quickwit.yaml`
-
-### QW_DISABLE_TELEMETRY
-
-Disables [telemetry](../telemetry.md) when set to any non-empty value.
-
-*Example*
-
-`QW_DISABLE_TELEMETRY=1 quickwit help`

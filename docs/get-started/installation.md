@@ -168,11 +168,25 @@ and start a container ready to execute Quickwit commands.
 
 ```bash
 docker run --rm quickwit/quickwit --version
-
-# If you are using Apple silicon based macOS system you might need to specify the platform.
-# You can also safely ignore jemalloc warnings.
-docker run --rm --platform linux/amd64 quickwit/quickwit --version
 ```
+Here is the directory layout of Quickwit inside the container in case you need to mount a volume:
+
+```bash
+/quickwit
+    ├── config
+    │   └── quickwit.yaml
+    ├── quickwit
+    └── qwdata
+```
+
+- `config/quickwit.yaml`: the default configuration file.
+- `quickwit`: the quickwit executable binary.
+- `qwdata/`: the default data directory.
+
+The full list of available environment variables and ports options can be found in the respective configuration sections:
+
+- [Node configuration](../configuration/node-config.md)
+- [Ports configuration](../configuration/ports-config.md):
 
 To get the full gist of this, follow the [Quickstart guide](./quickstart.md).
 

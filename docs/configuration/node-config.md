@@ -39,11 +39,7 @@ There are also other parameters that can be only defined by env variables:
 
 | Env variable | Description |
 | --- | --- |
-| `QW_S3_ENDPOINT` | Custom S3 endpoint. |
-| `QW_S3_MAX_CONCURRENCY` | Limit the number of concurent requests to S3 |
 | `QW_ENABLE_JAEGER_EXPORTER` | Enable trace export to Jaeger. |
-| `QW_AZURE_STORAGE_ACCOUNT` | Azure Blob Storage account name. |
-| `QW_AZURE_STORAGE_ACCESS_KEY` | Azure Blob Storage account access key. |
 
 More details about [storage configuration](../reference/storage-uri.md).
 
@@ -57,10 +53,10 @@ If a storage configuration is not explicitly set, Quickwit will rely on the defa
 
 ### Azure storage configuration
 
-| Property | Description | Default value |
-| --- | --- | --- |
-| `account` | The Azure storage account name. | |
-| `access_key` | The Azure storage account access key. | |
+| Property | Description | Env variable | Default value |
+| --- | --- | --- | --- |
+| `account` | The Azure storage account name. | `QW_AZURE_STORAGE_ACCOUNT` | |
+| `access_key` | The Azure storage account access key. | `QW_AZURE_STORAGE_ACCESS_KEY` | |
 
 Example of a storage configuration for Azure in YAML format:
 
@@ -73,11 +69,17 @@ storage:
 
 ### S3 storage configuration
 
-| Property | Description | Default value |
-| --- | --- | --- |
-| `endpoint` | Custom endpoint for use with S3-compatible providers. | SDK default |
-| `force_path_style_access` | Disables [virtual-hosted–style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) requests. Required by some S3-compatible providers (Ceph, MinIO). | `false` |
-| `disable_multi_object_delete_requests` | Disables [Multi-Object Delete](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html) requests. Required by some S3-compatible providers (GCS). | `false` |
+| Property | Description | Env variable | Default value |
+| --- | --- | --- | --- |
+| `endpoint` | Custom endpoint for use with S3-compatible providers. | `QW_S3_ENDPOINT` | SDK default |
+| `force_path_style_access` | Disables [virtual-hosted–style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) requests. Required by some S3-compatible providers (Ceph, MinIO). | `QW_S3_FORCE_PATH_STYLE_ACCESS` | `false` |
+| `disable_multi_object_delete_requests` | Disables [Multi-Object Delete](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html) requests. Required by some S3-compatible providers (GCS). | | `false` |
+
+There is an additional parameter that can only be defined using env variable:
+
+| Env variable | Description |
+| --- | --- |
+| `QW_S3_MAX_CONCURRENCY` | Limit the number of concurrent requests to S3 |
 
 Example of a storage configuration for S3 in YAML format:
 
@@ -126,12 +128,12 @@ metastore:
 
 This section contains the configuration options for an indexer. The split store is documented in the  [indexing document](../overview/concepts/indexing.md#split-store).
 
-| Property | Description | Default value |
-| --- | --- | --- |
-| `split_store_max_num_bytes` | Maximum size in bytes allowed in the split store for each index-source pair. | `100G` |
-| `split_store_max_num_splits` | Maximum number of files allowed in the split store for each index-source pair. | `1000` |
-| `max_concurrent_split_uploads` | Maximum number of concurrent split uploads allowed on the node. | `12` |
-| `enable_otlp_endpoint` | If true, enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry Protocol (OTLP). | `false` |
+| Property | Description | Env variable | Default value |
+| --- | --- | --- | --- |
+| `split_store_max_num_bytes` | Maximum size in bytes allowed in the split store for each index-source pair. | | `100G` |
+| `split_store_max_num_splits` | Maximum number of files allowed in the split store for each index-source pair. | | `1000` |
+| `max_concurrent_split_uploads` | Maximum number of concurrent split uploads allowed on the node. | | `12` |
+| `enable_otlp_endpoint` | If true, enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry Protocol (OTLP). | `QW_ENABLE_OTLP_ENDPOINT` | `false` |
 
 ## Ingest API configuration
 
@@ -157,9 +159,9 @@ This section contains the configuration options for a Searcher.
 
 ## Jaeger configuration
 
-| Property | Description | Default value |
-| --- | --- | --- |
-| `enable_endpoint` | If true, enables the gRPC endpoint that allows the Jaeger Query Service to connect and retrieve traces. | `false` |
+| Property | Description | Env Variable | Default value |
+| --- | --- | --- | --- |
+| `enable_endpoint` | If true, enables the gRPC endpoint that allows the Jaeger Query Service to connect and retrieve traces | `QW_ENABLE_JAEGER_ENDPOINT` | `false` |
 
 
 ## Using environment variables in the configuration
