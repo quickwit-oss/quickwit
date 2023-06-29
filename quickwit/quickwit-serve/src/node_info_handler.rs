@@ -23,18 +23,14 @@ use quickwit_config::QuickwitConfig;
 use serde_json::json;
 use warp::{Filter, Rejection};
 
-use crate::{with_arg, BuildInfo, RuntimeInfo};
 use crate::elastic_search_api::es_compat_info_handler;
+use crate::{with_arg, BuildInfo, RuntimeInfo};
 
-// TODO: make the models utoipa compatible and register 
+// TODO: make the models utoipa compatible and register
 // all endpoints in the docs here.
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(
-    node_version_handler,
-    node_config_handler,
-))]
+#[openapi(paths(node_version_handler, node_config_handler,))]
 pub struct NodeInfoApi;
-
 
 pub fn node_info_handler(
     build_info: &'static BuildInfo,
@@ -130,7 +126,10 @@ mod tests {
         });
         assert_json_include!(actual: resp_json, expected: expected_response_json);
 
-        let resp = warp::test::request().path("/_elastic").reply(&handler).await;
+        let resp = warp::test::request()
+            .path("/_elastic")
+            .reply(&handler)
+            .await;
         assert_eq!(resp.status(), 200);
         let resp_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
         let expected_response_json = serde_json::json!({

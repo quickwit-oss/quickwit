@@ -25,15 +25,15 @@ mod rest_handler;
 use std::sync::Arc;
 
 use bulk::{es_compat_bulk_handler, es_compat_index_bulk_handler};
+pub use filter::ElasticCompatibleApi;
 use quickwit_ingest::IngestServiceClient;
 use quickwit_search::SearchService;
+pub use rest_handler::es_compat_info_handler;
 use rest_handler::{
     es_compat_index_multi_search_handler, es_compat_index_search_handler, es_compat_search_handler,
 };
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
-pub use rest_handler::es_compat_info_handler;
-pub use filter::ElasticCompatibleApi;
 
 /// Setup Elasticsearch API handlers
 ///

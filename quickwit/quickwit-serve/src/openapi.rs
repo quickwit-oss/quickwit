@@ -86,7 +86,8 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base.merge_components_and_paths(IndexingApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IngestApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(SearchApi::openapi().with_path_prefix("/api/v1"));
-    docs_base.merge_components_and_paths(ElasticCompatibleApi::openapi().with_path_prefix("/api/v1"));
+    docs_base
+        .merge_components_and_paths(ElasticCompatibleApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(NodeInfoApi::openapi().with_path_prefix("/api/v1"));
 
     // Schemas

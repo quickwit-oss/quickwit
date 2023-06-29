@@ -55,18 +55,20 @@ pub fn es_compat_info_handler(
     super::filter::elastic_info_filter()
         .and(with_arg(build_info))
         .and(with_arg(config))
-        .then(|build_info: &'static BuildInfo, config: Arc<QuickwitConfig>| async move {
-            warp::reply::json(&json!({
-                "name" : config.node_id,
-                "cluster_name" : config.cluster_id,
-                "version" : {
-                    "distribution" : "quickwit",
-                    "number" : build_info.version,
-                    "build_hash" : build_info.commit_hash,
-                    "build_date" : build_info.build_date,
-                }
-            }))
-        })
+        .then(
+            |build_info: &'static BuildInfo, config: Arc<QuickwitConfig>| async move {
+                warp::reply::json(&json!({
+                    "name" : config.node_id,
+                    "cluster_name" : config.cluster_id,
+                    "version" : {
+                        "distribution" : "quickwit",
+                        "number" : build_info.version,
+                        "build_hash" : build_info.commit_hash,
+                        "build_date" : build_info.build_date,
+                    }
+                }))
+            },
+        )
 }
 
 /// GET or POST _elastic/_search
