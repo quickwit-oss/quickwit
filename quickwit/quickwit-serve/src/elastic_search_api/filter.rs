@@ -32,11 +32,12 @@ const CONTENT_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(10 * 1024 * 1024)
 // TODO: Make all elastic endpoint models `utoipa` compatible
 // and register them here.
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(elastic_info_filter,))]
+#[openapi(paths(elastic_cluster_info_filter,))]
 pub struct ElasticCompatibleApi;
 
 #[utoipa::path(get, tag = "Cluster Info", path = "/_elastic")]
-pub(crate) fn elastic_info_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
+pub(crate) fn elastic_cluster_info_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone
+{
     warp::path!("_elastic")
         .and(warp::get())
         .and(warp::path::end())

@@ -23,7 +23,6 @@ use quickwit_config::QuickwitConfig;
 use serde_json::json;
 use warp::{Filter, Rejection};
 
-use crate::elastic_search_api::es_compat_info_handler;
 use crate::{with_arg, BuildInfo, RuntimeInfo};
 
 #[derive(utoipa::OpenApi)]
@@ -35,9 +34,7 @@ pub fn node_info_handler(
     runtime_info: &'static RuntimeInfo,
     config: Arc<QuickwitConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    node_version_handler(build_info, runtime_info)
-        .or(node_config_handler(config.clone()))
-        .or(es_compat_info_handler(build_info, config))
+    node_version_handler(build_info, runtime_info).or(node_config_handler(config))
 }
 
 #[utoipa::path(get, tag = "Node Info", path = "/version")]
@@ -121,24 +118,6 @@ mod tests {
         let expected_response_json = serde_json::json!({
             "node_id": config.node_id,
             "metastore_uri": "postgresql://username:***redacted***@db",
-        });
-        assert_json_include!(actual: resp_json, expected: expected_response_json);
-
-        let resp = warp::test::request()
-            .path("/_elastic")
-            .reply(&handler)
-            .await;
-        assert_eq!(resp.status(), 200);
-        let resp_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
-        let expected_response_json = serde_json::json!({
-            "name" : config.node_id,
-            "cluster_name" : config.cluster_id,
-            "version" : {
-                "distribution" : "quickwit",
-                "number" : build_info.version,
-                "build_hash" : build_info.commit_hash,
-                "build_date" : build_info.build_date,
-            }
         });
         assert_json_include!(actual: resp_json, expected: expected_response_json);
     }
