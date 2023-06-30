@@ -75,17 +75,46 @@ storage:
 
 | Property | Description | Default value |
 | --- | --- | --- |
+| `flavor` |  The optional storage flavor to use. Available flavors are `garage`, `gcs`, and `minio`. | |
+| `access_key_id` | The AWS access key ID. | |
+| `secret_access_key` | The AWS secret access key. | |
+| `region` | The AWS region to send requests to. | `us-east-1` (SDK default) |
 | `endpoint` | Custom endpoint for use with S3-compatible providers. | SDK default |
 | `force_path_style_access` | Disables [virtual-hosted–style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) requests. Required by some S3-compatible providers (Ceph, MinIO). | `false` |
-| `disable_multi_object_delete_requests` | Disables [Multi-Object Delete](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html) requests. Required by some S3-compatible providers (GCS). | `false` |
+| `disable_multi_object_delete` | Disables [Multi-Object Delete](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html) requests. Required by some S3-compatible providers (GCS). | `false` |
+| `disable_multipart_upload` | Disables [multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html) of objects. Required by some S3-compatible providers (GCS). | `false` |
 
-Example of a storage configuration for S3 in YAML format:
+:::warning
+Hardcoding credentials into configuration files is not secure and strongly discouraged. Prefer the alternative authentication methods that your storage backend may provide.
+:::
+
+**Storage flavors**
+
+Storage flavors ensure that Quickwit works correctly with storage providers that deviate from the S3 API by automatically configuring the appropriate settings. The available flavors are:
+- `garage`
+- `gcs`
+- `minio`
+
+*Garage flavor*
+
+The Garage flavor (`garage`) overrides the `region` parameter to `garage` and forces path-style access.
+
+*Google Cloud Storage*
+
+The Google Cloud Storage flavor (`gcs`) turns off multi-object delete requests and multipart uploads.
+
+*MinIO flavor*
+
+The MinIO flavor (`minio`) forces path-style access.
+
+Example of a storage configuration for Google Cloud Storage in YAML format:
 
 ```yaml
 storage:
   s3:
-    endpoint: http://localhost:9000
-    force_path_style_access: true
+    flavor: gcs
+    region: us-east1
+    endpoint: https://storage.googleapis.com
 ```
 
 ## Metastore configuration
@@ -124,7 +153,7 @@ metastore:
 
 ## Indexer configuration
 
-This section contains the configuration options for an indexer. The split store is documented in the  [indexing document](../overview/concepts/indexing.md#split-store).
+This section contains the configuration options for an indexer. The split store is documented in the [indexing document](../overview/concepts/indexing.md#split-store).
 
 | Property | Description | Default value |
 | --- | --- | --- |
@@ -168,15 +197,15 @@ You can use environment variable references in the config file to set values tha
 
 `${VAR_NAME}`
 
-Where `VAR_NAME` is the name of the environment variable.
+where `VAR_NAME` is the name of the environment variable.
 
-Each variable reference is replaced at startup by the value of the environment variable. The replacement is case-sensitive and occurs before the configuration file is parsed. References to undefined variables throw an error unless you specify a default value or custom error text.
+Each variable reference is replaced at startup by the value of the environment variable. The replacement is case-sensitive and occurs before the configuration file is parsed. Referencing undefined variables throws an error unless you specify a default value or custom error text.
 
 To specify a default value, use:
 
 `${VAR_NAME:-default_value}`
 
-Where `default_value` is the value to use if the environment variable is not set.
+where `default_value` is the value to use if the environment variable is unset.
 
 ```
 <config_field>: ${VAR_NAME}
@@ -211,10 +240,10 @@ rest_listen_port: 1111
 
 ## Configuring CORS (Cross-origin resource sharing)
 
-CORS (Cross-origin resource sharing) describes what address/origins can access the REST API from the browser,
-by default no origins are allowed.
+CORS (Cross-origin resource sharing) describes which address or origins can access the REST API from the browser.
+By default, sharing resources cross-origin is not allowed.
 
-A wildcard, single origin or multiple origins can be specified as part of the `rest_cors_allow_origins` parameter:
+A wildcard, single origin, or multiple origins can be specified as part of the `rest_cors_allow_origins` parameter:
 
 ```yaml
 version: 0.6

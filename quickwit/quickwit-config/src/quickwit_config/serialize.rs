@@ -204,7 +204,7 @@ struct QuickwitConfigBuilder {
 
 impl QuickwitConfigBuilder {
     pub async fn build_and_validate(
-        self,
+        mut self,
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<QuickwitConfig> {
         let enabled_services = self
@@ -265,6 +265,7 @@ impl QuickwitConfigBuilder {
             .unwrap_or_else(|| default_index_root_uri(&data_dir_uri));
 
         self.storage_configs.validate()?;
+        self.storage_configs.apply_flavors();
 
         let quickwit_config = QuickwitConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
@@ -400,6 +401,7 @@ mod tests {
     use itertools::Itertools;
 
     use super::*;
+    use crate::storage_config::StorageBackendFlavor;
 
     fn get_config_filepath(config_filename: &str) -> String {
         format!(
@@ -465,11 +467,14 @@ mod tests {
         );
 
         let s3_storage_config = config.storage_configs.find_s3().unwrap();
+        assert_eq!(s3_storage_config.flavor.unwrap(), StorageBackendFlavor::Gcs);
         assert_eq!(
             s3_storage_config.endpoint.as_ref().unwrap(),
             "http://localhost:4566"
         );
         assert!(s3_storage_config.force_path_style_access);
+        assert!(s3_storage_config.disable_multi_object_delete);
+        assert!(s3_storage_config.disable_multipart_upload);
 
         let postgres_config = config.metastore_configs.find_postgres().unwrap();
         assert_eq!(postgres_config.max_num_connections.get(), 12);
