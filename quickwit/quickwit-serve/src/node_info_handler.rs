@@ -26,8 +26,6 @@ use warp::{Filter, Rejection};
 use crate::elastic_search_api::es_compat_info_handler;
 use crate::{with_arg, BuildInfo, RuntimeInfo};
 
-// TODO: make the models utoipa compatible and register
-// all endpoints in the docs here.
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(node_version_handler, node_config_handler,))]
 pub struct NodeInfoApi;

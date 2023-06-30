@@ -29,8 +29,8 @@ use crate::elastic_search_api::model::{ElasticIngestOptions, SearchBody, SearchQ
 const BODY_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(1_000_000);
 const CONTENT_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(10 * 1024 * 1024); // 10MiB
 
-// TODO: make the models utoipa compatible and register
-// all endpoints in the docs here.
+// TODO: Make all elastic endpoint models `utoipa` compatible
+// and register them here.
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(elastic_info_filter,))]
 pub struct ElasticCompatibleApi;
@@ -40,7 +40,6 @@ pub(crate) fn elastic_info_filter() -> impl Filter<Extract = (), Error = Rejecti
     warp::path!("_elastic")
         .and(warp::get())
         .and(warp::path::end())
-    // .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
 #[utoipa::path(get, tag = "Search", path = "/_search")]
