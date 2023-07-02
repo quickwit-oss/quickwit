@@ -458,7 +458,6 @@ impl Handler<NewPublishLock> for Indexer {
 }
 
 impl Indexer {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<dyn DocMapper>,
@@ -560,7 +559,6 @@ impl Indexer {
         // Dropping the indexing permit explicitly here for enhanced readability.
         drop(indexing_permit);
 
-        // Update the time to maturity of the splits as they won't receive documents anymore.
         let mut splits: Vec<IndexedSplitBuilder> = indexed_splits.into_values().collect();
 
         if let Some(other_split) = other_indexed_split_opt {
