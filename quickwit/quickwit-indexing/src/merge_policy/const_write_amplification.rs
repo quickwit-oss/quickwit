@@ -243,7 +243,7 @@ mod tests {
             split_id: "01GE1R0KBFQHJ76030RYRAS8QA".to_string(),
             num_docs: 1,
             create_timestamp: 1665000000,
-            maturity_timestamp: merge_policy.split_maturity_timestamp(1665000000, 1, 0),
+            time_to_maturity: merge_policy.split_time_to_maturity(1, 0),
             num_merge_ops: 4,
             ..Default::default()
         }];
@@ -262,11 +262,7 @@ mod tests {
                 num_docs: 1_000,
                 num_merge_ops: 1,
                 create_timestamp,
-                maturity_timestamp: merge_policy.split_maturity_timestamp(
-                    create_timestamp,
-                    1_000,
-                    1,
-                ),
+                time_to_maturity: merge_policy.split_time_to_maturity(1_000, 1),
                 ..Default::default()
             })
             .collect();
@@ -281,7 +277,7 @@ mod tests {
     #[test]
     fn test_const_write_merge_policy_merge_factor_max() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
-        let time_to_maturity = merge_policy.split_time_to_maturity(1_000, 1).unwrap();
+        let time_to_maturity = merge_policy.split_time_to_maturity(1_000, 1);
         let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits =
             (0..merge_policy.config.max_merge_factor + merge_policy.config.merge_factor - 1)
@@ -290,7 +286,7 @@ mod tests {
                     num_docs: 1_000,
                     num_merge_ops: 1,
                     create_timestamp,
-                    maturity_timestamp: create_timestamp + time_to_maturity.as_secs() as i64,
+                    time_to_maturity,
                     ..Default::default()
                 })
                 .collect();
@@ -305,15 +301,15 @@ mod tests {
     #[test]
     fn test_const_write_merge_policy_older_first() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
-        let time_to_maturity = merge_policy.split_time_to_maturity(1_000, 1).unwrap();
-        let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let time_to_maturity = merge_policy.split_time_to_maturity(1_000, 1);
+        let now_timestamp: i64 = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits: Vec<SplitMetadata> = (0..merge_policy.config.max_merge_factor)
             .map(|i| SplitMetadata {
                 split_id: format!("split-{i}"),
                 num_docs: 1_000,
                 num_merge_ops: 1,
                 create_timestamp: now_timestamp + i as i64,
-                maturity_timestamp: now_timestamp + i as i64 + time_to_maturity.as_secs() as i64,
+                time_to_maturity,
                 ..Default::default()
             })
             .collect();
@@ -342,14 +338,13 @@ mod tests {
         let mut splits = (0..4)
             .map(|i| {
                 let num_docs = (merge_policy.split_num_docs_target + 2) / 3;
-                let maturity_timestamp =
-                    merge_policy.split_maturity_timestamp(create_timestamp + i as i64, num_docs, 1);
+                let time_to_maturity = merge_policy.split_time_to_maturity(num_docs, 1);
                 SplitMetadata {
                     split_id: format!("split-{i}"),
                     num_docs,
                     num_merge_ops: 1,
                     create_timestamp,
-                    maturity_timestamp,
+                    time_to_maturity,
                     ..Default::default()
                 }
             })

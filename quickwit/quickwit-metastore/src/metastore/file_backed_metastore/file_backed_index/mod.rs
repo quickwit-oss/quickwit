@@ -502,7 +502,7 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
 
     if !query
         .maturity_timestamp
-        .contains(&split.split_metadata.maturity_timestamp)
+        .contains(&split.split_metadata.maturity_timestamp())
     {
         return false;
     }

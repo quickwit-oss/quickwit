@@ -136,10 +136,8 @@ impl TryInto<QuickwitSplit> for Split {
         let publish_timestamp = self
             .publish_timestamp
             .map(|publish_timestamp| publish_timestamp.assume_utc().unix_timestamp());
-        let maturity_timestamp = self.maturity_timestamp.assume_utc().unix_timestamp();
         split_metadata.index_uid = self.index_uid;
         split_metadata.delete_opstamp = self.delete_opstamp as u64;
-        split_metadata.maturity_timestamp = maturity_timestamp;
         Ok(QuickwitSplit {
             split_metadata,
             split_state,

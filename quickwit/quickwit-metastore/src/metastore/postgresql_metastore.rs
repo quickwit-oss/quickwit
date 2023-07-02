@@ -493,16 +493,15 @@ impl Metastore for PostgresqlMetastore {
                 .as_ref()
                 .map(|range| *range.start());
             time_range_start_list.push(time_range_start);
+            maturity_timestamps.push(split_metadata.maturity_timestamp());
 
             let time_range_end = split_metadata.time_range.map(|range| *range.end());
             time_range_end_list.push(time_range_end);
 
             let tags: Vec<String> = split_metadata.tags.into_iter().collect();
             tags_list.push(sqlx::types::Json(tags));
-
             split_ids.push(split_metadata.split_id);
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
-            maturity_timestamps.push(split_metadata.maturity_timestamp);
         }
         tracing::Span::current().record("split_ids", format!("{split_ids:?}"));
 

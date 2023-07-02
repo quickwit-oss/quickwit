@@ -21,6 +21,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
+use std::time::Duration;
 
 use quickwit_common::FileEntry;
 use quickwit_proto::IndexUid;
@@ -103,7 +104,8 @@ pub struct SplitMetadata {
 
     /// Timestamp for tracking when the split becomes mature.
     /// If a split is already mature, this timestamp is set to 0.
-    pub maturity_timestamp: i64,
+    // pub maturity_timestamp: i64,
+    pub time_to_maturity: Option<Duration>,
 
     /// Set of unique tags values of form `{field_name}:{field_value}`.
     /// The set is filled at indexing with values from each field registered
@@ -159,7 +161,15 @@ impl SplitMetadata {
 
     /// Returns true if the split is mature at `utc_now_timetamp()`.
     pub fn is_mature(&self) -> bool {
-        self.maturity_timestamp <= utc_now_timestamp()
+        self.maturity_timestamp() <= utc_now_timestamp()
+    }
+
+    /// Returns the timestamp at which the split becomes mature.
+    /// If the split has no time to maturity defined, it returns 0.
+    pub fn maturity_timestamp(&self) -> i64 {
+        self.time_to_maturity
+            .map(|time_to_maturity| self.create_timestamp + time_to_maturity.as_secs() as i64)
+            .unwrap_or(0)
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -195,7 +205,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             uncompressed_docs_size_in_bytes: 234234,
             time_range: Some(121000..=130198),
             create_timestamp: 3,
-            maturity_timestamp: 4,
+            time_to_maturity: Some(Duration::from_secs(4)),
             tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
             footer_offsets: 1000..2000,
             num_merge_ops: 3,

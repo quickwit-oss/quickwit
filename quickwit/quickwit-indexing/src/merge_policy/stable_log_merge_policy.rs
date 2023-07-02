@@ -568,10 +568,7 @@ mod tests {
         for split in splits.iter_mut() {
             let time_to_maturity =
                 merge_policy.split_time_to_maturity(split.num_docs, split.num_merge_ops);
-            let maturity_timestamp = time_to_maturity
-                .map(|duration| split.create_timestamp + duration.as_secs() as i64)
-                .unwrap_or(0);
-            split.maturity_timestamp = maturity_timestamp;
+            split.time_to_maturity = time_to_maturity;
         }
         let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 2);

@@ -119,16 +119,16 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
 
     /// Returns the timestamp at which a split with the given create timestamp becomes mature.
     /// If the split is already mature given its num docs and merge ops, returns `0`.
-    fn split_maturity_timestamp(
-        &self,
-        split_create_timestamp: i64,
-        split_num_docs: usize,
-        split_num_merge_ops: usize,
-    ) -> i64 {
-        self.split_time_to_maturity(split_num_docs, split_num_merge_ops)
-            .map(|time_to_maturity| split_create_timestamp + time_to_maturity.as_secs() as i64)
-            .unwrap_or(0)
-    }
+    // fn split_maturity_timestamp(
+    //     &self,
+    //     split_create_timestamp: i64,
+    //     split_num_docs: usize,
+    //     split_num_merge_ops: usize,
+    // ) -> i64 {
+    //     self.split_time_to_maturity(split_num_docs, split_num_merge_ops)
+    //         .map(|time_to_maturity| split_create_timestamp + time_to_maturity.as_secs() as i64)
+    //         .unwrap_or(0)
+    // }
 
     /// Checks a bunch of properties specific to the given merge policy.
     /// This method is used in proptesting.
@@ -249,14 +249,13 @@ pub mod tests {
             .enumerate()
             .map(|(split_ord, (num_docs, time_range))| {
                 let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-                let maturity_timestamp =
-                    merge_policy.split_maturity_timestamp(create_timestamp, num_docs, 0);
+                let time_to_maturity = merge_policy.split_time_to_maturity(num_docs, 0);
                 SplitMetadata {
                     split_id: format!("split_{split_ord:02}"),
                     num_docs,
                     time_range: Some(time_range),
                     create_timestamp,
-                    maturity_timestamp,
+                    time_to_maturity,
                     ..Default::default()
                 }
             })
@@ -427,7 +426,7 @@ pub mod tests {
     fn mock_split_meta_from_num_docs(
         time_range: RangeInclusive<i64>,
         num_docs: u64,
-        maturity_timestamp: i64,
+        time_to_maturity: Option<Duration>,
     ) -> SplitMetadata {
         SplitMetadata {
             split_id: crate::new_split_id(),
@@ -436,7 +435,7 @@ pub mod tests {
             uncompressed_docs_size_in_bytes: 256u64 * num_docs,
             time_range: Some(time_range),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-            maturity_timestamp,
+            time_to_maturity,
             tags: BTreeSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
             footer_offsets: 0..100,
             index_uid: IndexUid::new("test-index"),
@@ -459,12 +458,8 @@ pub mod tests {
                 let time_first = split_ord as i64 * 1_000;
                 let time_last = time_first + 999;
                 let time_range = time_first..=time_last;
-                let maturity_timestamp = merge_policy.split_maturity_timestamp(
-                    OffsetDateTime::now_utc().unix_timestamp(),
-                    num_docs,
-                    0,
-                );
-                mock_split_meta_from_num_docs(time_range, num_docs as u64, maturity_timestamp)
+                let time_to_maturity = merge_policy.split_time_to_maturity(num_docs, 0);
+                mock_split_meta_from_num_docs(time_range, num_docs as u64, time_to_maturity)
             })
             .collect();
         aux_test_simulate_merge_planner(merge_policy, split_metadatas, check_final_configuration)

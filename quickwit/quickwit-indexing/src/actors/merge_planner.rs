@@ -331,7 +331,7 @@ mod tests {
             partition_id,
             num_merge_ops,
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-            maturity_timestamp: OffsetDateTime::now_utc().unix_timestamp() + 3600,
+            time_to_maturity: Some(Duration::from_secs(3600)),
             ..Default::default()
         }
     }

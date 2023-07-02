@@ -234,6 +234,7 @@ impl IndexingSplitStore {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
 
     use byte_unit::Byte;
     use quickwit_common::io::IoControls;
@@ -251,7 +252,7 @@ mod tests {
         SplitMetadata {
             split_id: split_id.to_string(),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-            maturity_timestamp: OffsetDateTime::now_utc().unix_timestamp() + 3600,
+            time_to_maturity: Some(Duration::from_secs(3600)),
             ..Default::default()
         }
     }

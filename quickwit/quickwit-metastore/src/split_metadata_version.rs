@@ -19,6 +19,7 @@
 
 use std::collections::BTreeSet;
 use std::ops::{Range, RangeInclusive};
+use std::time::Duration;
 
 use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
@@ -69,7 +70,7 @@ pub(crate) struct SplitMetadataV0_6 {
 
     /// Timestamp for tracking when the split becomes mature.
     #[serde(default)]
-    pub maturity_timestamp: i64,
+    pub time_to_maturity: Option<Duration>,
 
     #[serde(default)]
     #[schema(value_type = Vec<String>)]
@@ -121,7 +122,7 @@ impl From<SplitMetadataV0_6> for SplitMetadata {
             uncompressed_docs_size_in_bytes: v6.uncompressed_docs_size_in_bytes,
             time_range: v6.time_range,
             create_timestamp: v6.create_timestamp,
-            maturity_timestamp: v6.maturity_timestamp,
+            time_to_maturity: v6.time_to_maturity,
             tags: v6.tags,
             footer_offsets: v6.footer_offsets,
             num_merge_ops: v6.num_merge_ops,
@@ -142,7 +143,7 @@ impl From<SplitMetadata> for SplitMetadataV0_6 {
             uncompressed_docs_size_in_bytes: split.uncompressed_docs_size_in_bytes,
             time_range: split.time_range,
             create_timestamp: split.create_timestamp,
-            maturity_timestamp: split.maturity_timestamp,
+            time_to_maturity: split.time_to_maturity,
             tags: split.tags,
             footer_offsets: split.footer_offsets,
             num_merge_ops: split.num_merge_ops,
