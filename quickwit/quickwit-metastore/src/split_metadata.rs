@@ -167,7 +167,11 @@ impl SplitMetadata {
         }
     }
 
-    /// TODO
+    /// Returns the unix timestamp at which the split becomes mature.
+    /// Not that if the split is mature `SplitMaturity::Mature`, we return 0.
+    /// This is handy only for metastore implementations where we want to filter
+    /// out splits that are not mature yet and/or for persisting the maturity
+    /// timestamp in a database.
     pub(crate) fn maturity_timestamp(&self) -> i64 {
         match self.maturity {
             SplitMaturity::Mature => 0,
@@ -268,7 +272,10 @@ impl FromStr for SplitState {
     }
 }
 
-/// A split maturity.
+/// Split maturity is determined by the `MergePolicy`. Once a split is mature,
+/// it does not undergo new merge operations.
+/// A split is either `Mature` or becomes mature after a given period, aka
+/// `TimeToMaturity`.
 #[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(untagged)]
 pub enum SplitMaturity {
