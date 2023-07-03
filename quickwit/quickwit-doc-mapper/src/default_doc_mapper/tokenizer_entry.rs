@@ -18,12 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::Context;
-use itertools::Itertools;
 use quickwit_query::DEFAULT_REMOVE_TOKEN_LENGTH;
 use serde::{Deserialize, Serialize};
 use tantivy::tokenizer::{
-    AsciiFoldingFilter, BoxTokenFilter, LowerCaser, NgramTokenizer, RegexTokenizer,
-    RemoveLongFilter, TextAnalyzer,
+    AsciiFoldingFilter, LowerCaser, NgramTokenizer, RegexTokenizer, RemoveLongFilter, TextAnalyzer, SimpleTokenizer,
 };
 
 /// A `TokenizerEntry` defines a custom tokenizer with its name and configuration.
@@ -46,27 +44,34 @@ pub struct TokenizerConfig {
 
 impl TokenizerConfig {
     pub fn text_analyzer(&self) -> anyhow::Result<TextAnalyzer> {
-        let boxed_token_filters = self.token_filters();
-        let text_analyzer = match &self.tokenizer_type {
+        let mut text_analyzer_builder = match &self.tokenizer_type {
+            TokenizerType::Simple => TextAnalyzer::builder(SimpleTokenizer::default()).dynamic(),
             TokenizerType::Ngram(options) => {
                 let tokenizer =
-                    NgramTokenizer::new(options.min_gram, options.max_gram, options.prefix_only);
-                TextAnalyzer::new(tokenizer, boxed_token_filters)
+                    NgramTokenizer::new(options.min_gram, options.max_gram, options.prefix_only)
+                        .with_context(|| "Invalid ngram tokenizer".to_string())?;
+                TextAnalyzer::builder(tokenizer).dynamic()
             }
             TokenizerType::Regex(options) => {
                 let tokenizer = RegexTokenizer::new(&options.pattern)
                     .with_context(|| "Invalid regex tokenizer".to_string())?;
-                TextAnalyzer::new(tokenizer, boxed_token_filters)
+                TextAnalyzer::builder(tokenizer).dynamic()
             }
         };
-        Ok(text_analyzer)
-    }
-
-    fn token_filters(&self) -> Vec<BoxTokenFilter> {
-        self.filters
-            .iter()
-            .map(|token_filter| token_filter.box_token_filter())
-            .collect_vec()
+        for filter in &self.filters {
+            match filter.tantivy_token_filter_enum() {
+                TantivyTokenFilterEnum::RemoveLong(token_filter) => {
+                    text_analyzer_builder = text_analyzer_builder.filter_dynamic(token_filter);
+                }
+                TantivyTokenFilterEnum::LowerCaser(token_filter) => {
+                    text_analyzer_builder = text_analyzer_builder.filter_dynamic(token_filter);
+                }
+                TantivyTokenFilterEnum::AsciiFolding(token_filter) => {
+                    text_analyzer_builder = text_analyzer_builder.filter_dynamic(token_filter);
+                }
+            }
+        }
+        Ok(text_analyzer_builder.build())
     }
 }
 
@@ -78,14 +83,22 @@ pub enum TokenFilterType {
     AsciiFolding,
 }
 
+/// Tantivy token filter enum to build
+/// a `TextAnalyzer` with dynamic token filters.
+enum TantivyTokenFilterEnum {
+    RemoveLong(RemoveLongFilter),
+    LowerCaser(LowerCaser),
+    AsciiFolding(AsciiFoldingFilter),
+}
+
 impl TokenFilterType {
-    fn box_token_filter(&self) -> BoxTokenFilter {
+    fn tantivy_token_filter_enum(&self) -> TantivyTokenFilterEnum {
         match &self {
-            Self::RemoveLong => {
-                BoxTokenFilter::from(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
-            }
-            Self::LowerCaser => BoxTokenFilter::from(LowerCaser),
-            Self::AsciiFolding => BoxTokenFilter::from(AsciiFoldingFilter),
+            Self::RemoveLong => TantivyTokenFilterEnum::RemoveLong(RemoveLongFilter::limit(
+                DEFAULT_REMOVE_TOKEN_LENGTH,
+            )),
+            Self::LowerCaser => TantivyTokenFilterEnum::LowerCaser(LowerCaser),
+            Self::AsciiFolding => TantivyTokenFilterEnum::AsciiFolding(AsciiFoldingFilter),
         }
     }
 }
@@ -93,6 +106,7 @@ impl TokenFilterType {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TokenizerType {
+    Simple,
     Ngram(NgramTokenizerOption),
     Regex(RegexTokenizerOption),
 }

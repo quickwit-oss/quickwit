@@ -1534,7 +1534,6 @@ mod tests {
                     "name": "my_text",
                     "type": "text",
                     "tokenizer": "my_tokenizer"
-                    
                 }
             ]
         }"#,
@@ -1564,7 +1563,6 @@ mod tests {
                     "name": "my_text",
                     "type": "text",
                     "tokenizer": "my_tokenizer"
-                    
                 }
             ]
         }"#,
@@ -1593,7 +1591,6 @@ mod tests {
                     "name": "my_text",
                     "type": "text",
                     "tokenizer": "my_tokenizer"
-                    
                 }
             ]
         }"#,
@@ -1622,7 +1619,6 @@ mod tests {
                     "name": "my_text",
                     "type": "text",
                     "tokenizer": "my_tokenizer"
-                    
                 }
             ]
         }"#,
@@ -1632,5 +1628,41 @@ mod tests {
         assert!(mapper.is_err());
         let error_mesg = mapper.unwrap_err().to_string();
         assert!(error_mesg.contains("Invalid regex tokenizer"));
+    }
+
+    #[test]
+    fn test_doc_mapper_with_custom_tokenizer_equivalent_to_default() {
+        let mapper = serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+            "tokenizers": [
+                {
+                    "name": "my_tokenizer",
+                    "filters": ["remove_long", "lower_caser"],
+                    "type": "simple",
+                    "min_gram": 3,
+                    "max_gram": 5
+                }
+            ],
+            "field_mappings": [
+                {
+                    "name": "my_text",
+                    "type": "text",
+                    "tokenizer": "my_tokenizer"
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        let mut default_tokenizer = mapper.tokenizer_manager().get("default").unwrap();
+        let mut tokenizer = mapper.tokenizer_manager().get("my_tokenizer").unwrap();
+        let text = "I've seen things... seen things you little people wouldn't believe.";
+        let mut default_token_stream = default_tokenizer.token_stream(text);
+        let mut token_stream = tokenizer.token_stream(text);
+        for _ in 0..10 {
+            assert_eq!(
+                default_token_stream.next().unwrap().text,
+                token_stream.next().unwrap().text
+            );
+        }
     }
 }
