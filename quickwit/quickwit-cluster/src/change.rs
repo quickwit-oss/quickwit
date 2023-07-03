@@ -718,7 +718,10 @@ mod tests {
             assert_eq!(events.len(), 1);
 
             let ClusterChange::Add(_node) = events[0].clone() else {
-                panic!("Expected `ClusterChange::Add` event, got `{:?}`.", events[0]);
+                panic!(
+                    "Expected `ClusterChange::Add` event, got `{:?}`.",
+                    events[0]
+                );
             };
 
             let events = compute_cluster_change_events(
@@ -765,7 +768,10 @@ mod tests {
             assert_eq!(events.len(), 1);
 
             let ClusterChange::Update(_node) = events[0].clone() else {
-                panic!("Expected `ClusterChange::Update` event, got `{:?}`.", events[0]);
+                panic!(
+                    "Expected `ClusterChange::Update` event, got `{:?}`.",
+                    events[0]
+                );
             };
 
             // Node left the cluster.
@@ -781,7 +787,10 @@ mod tests {
             assert_eq!(events.len(), 1);
 
             let ClusterChange::Remove(_node) = events[0].clone() else {
-                panic!("Expected `ClusterChange::Remove` event, got `{:?}`.", events[0]);
+                panic!(
+                    "Expected `ClusterChange::Remove` event, got `{:?}`.",
+                    events[0]
+                );
             };
         }
     }
