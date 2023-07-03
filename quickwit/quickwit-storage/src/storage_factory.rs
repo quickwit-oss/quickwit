@@ -23,7 +23,8 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::StorageBackend;
 
-use crate::{Storage, StorageResolverError};
+use crate::cache_storage::CacheStorageFactory;
+use crate::{Storage, StorageResolver, StorageResolverError};
 
 /// A storage factory builds a [`Storage`] object for a target [`StorageBackend`] from a
 /// [`Uri`].
@@ -34,7 +35,16 @@ pub trait StorageFactory: Send + Sync + 'static {
     fn backend(&self) -> StorageBackend;
 
     /// Returns the appropriate [`Storage`] object for the URI.
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError>;
+    async fn resolve(
+        &self,
+        storage_resolver: &StorageResolver,
+        uri: &Uri,
+    ) -> Result<Arc<dyn Storage>, StorageResolverError>;
+
+    /// TODO: This is ugly. I will need to replace it when I refactor storage.
+    fn as_cache_storage_factory<'a>(&'a self) -> Option<&'a CacheStorageFactory> {
+        None
+    }
 }
 
 /// A storage factory for handling unsupported or unavailable storage backends.
@@ -57,7 +67,11 @@ impl StorageFactory for UnsupportedStorage {
         self.backend
     }
 
-    async fn resolve(&self, _uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(
+        &self,
+        _storage_resolver: &StorageResolver,
+        _uri: &Uri,
+    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
         Err(StorageResolverError::UnsupportedBackend(
             self.message.to_string(),
         ))

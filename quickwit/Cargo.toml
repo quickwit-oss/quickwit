@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "quickwit-actors",
   "quickwit-aws",
+  "quickwit-cache-storage",
   "quickwit-cli",
   "quickwit-cluster",
   "quickwit-codegen",
@@ -205,6 +206,7 @@ azure_storage_blobs = { version = "0.13.0", default-features = false, features =
 
 quickwit-actors = { version = "0.6.3", path = "./quickwit-actors" }
 quickwit-aws = { version = "0.6.3", path = "./quickwit-aws" }
+quickwit-cache-storage = { version = "0.6.3", path = "./quickwit-cache-storage" }
 quickwit-cluster = { version = "0.6.3", path = "./quickwit-cluster" }
 quickwit-codegen = { version = "0.6.3", path = "./quickwit-codegen" }
 quickwit-codegen-example = { version = "0.6.3", path = "./quickwit-codegen/example" }

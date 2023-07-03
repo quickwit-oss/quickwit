@@ -21,6 +21,7 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, Context};
+use byte_unit::Byte;
 use chitchat::{ChitchatId, NodeState};
 use itertools::Itertools;
 use quickwit_proto::indexing::IndexingTask;
@@ -35,6 +36,8 @@ pub(crate) const ENABLED_SERVICES_KEY: &str = "enabled_services";
 // `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
 pub(crate) const INDEXING_TASK_PREFIX: &str = "indexing_task";
 pub(crate) const INDEXING_TASK_SEPARATOR: char = ':';
+// Storage cache size
+pub(crate) const MAX_CACHE_STORAGE_DISK_USAGE_KEY: &str = "max_cache_storage_disk_usage";
 
 // Readiness key and values used to store node's readiness in Chitchat state.
 pub(crate) const READINESS_KEY: &str = "readiness";
@@ -43,6 +46,8 @@ pub(crate) const READINESS_VALUE_NOT_READY: &str = "NOT_READY";
 
 pub(crate) trait NodeStateExt {
     fn grpc_advertise_addr(&self) -> anyhow::Result<SocketAddr>;
+
+    fn max_cache_storage_disk_usage(&self) -> anyhow::Result<Option<Byte>>;
 
     fn is_ready(&self) -> bool;
 }
@@ -58,6 +63,16 @@ impl NodeStateExt for NodeState {
                     format!("Failed to parse gRPC advertise address `{grpc_advertise_addr_value}`.")
                 })
             })?
+    }
+
+    fn max_cache_storage_disk_usage(&self) -> anyhow::Result<Option<Byte>> {
+        if let Some(str_value) = self.get(MAX_CACHE_STORAGE_DISK_USAGE_KEY) {
+            Byte::from_str(str_value).map(Some).with_context(|| {
+                format!("Failed to parse max cache storage disk usage `{str_value}`.")
+            })
+        } else {
+            Ok(None)
+        }
     }
 
     fn is_ready(&self) -> bool {
@@ -89,10 +104,14 @@ pub struct ClusterMember {
     /// None if the node is not an indexer or the indexer has not yet started some indexing
     /// pipelines.
     pub indexing_tasks: Vec<IndexingTask>,
+    /// Space allocated for local storage.
+    /// None if the node is not participating in the local storage
+    pub max_cache_storage_disk_usage: Option<Byte>,
     pub is_ready: bool,
 }
 
 impl ClusterMember {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: String,
         generation_id: GenerationId,
@@ -101,6 +120,7 @@ impl ClusterMember {
         gossip_advertise_addr: SocketAddr,
         grpc_advertise_addr: SocketAddr,
         indexing_tasks: Vec<IndexingTask>,
+        max_cache_storage_disk_usage: Option<Byte>,
     ) -> Self {
         Self {
             node_id,
@@ -110,6 +130,7 @@ impl ClusterMember {
             gossip_advertise_addr,
             grpc_advertise_addr,
             indexing_tasks,
+            max_cache_storage_disk_usage,
         }
     }
 
@@ -148,6 +169,7 @@ pub(crate) fn build_cluster_member(
         })?;
     let grpc_advertise_addr = node_state.grpc_advertise_addr()?;
     let indexing_tasks = parse_indexing_tasks(node_state, &chitchat_id.node_id);
+    let max_cache_storage_disk_usage = node_state.max_cache_storage_disk_usage()?;
     let member = ClusterMember::new(
         chitchat_id.node_id,
         chitchat_id.generation_id.into(),
@@ -156,6 +178,7 @@ pub(crate) fn build_cluster_member(
         chitchat_id.gossip_advertise_addr,
         grpc_advertise_addr,
         indexing_tasks,
+        max_cache_storage_disk_usage,
     );
     Ok(member)
 }

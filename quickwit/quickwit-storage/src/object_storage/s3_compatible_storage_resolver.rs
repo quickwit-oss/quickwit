@@ -24,7 +24,8 @@ use quickwit_common::uri::Uri;
 use quickwit_config::{S3StorageConfig, StorageBackend};
 
 use crate::{
-    DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,
+    DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolver,
+    StorageResolverError,
 };
 
 /// S3 compatible object storage resolver.
@@ -45,7 +46,11 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
         StorageBackend::S3
     }
 
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(
+        &self,
+        _storage_resolver: &StorageResolver,
+        uri: &Uri,
+    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = S3CompatibleObjectStorage::from_uri(&self.storage_config, uri).await?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }

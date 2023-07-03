@@ -99,6 +99,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &["protos"],
         )?;
 
+    // Cache Storage Service
+    Codegen::run(
+        &["protos/quickwit/cache_storage.proto"],
+        "src/codegen/quickwit",
+        "crate::cache_storage::Result",
+        "crate::cache_storage::CacheStorageError",
+        &[],
+    )
+    .unwrap();
+
     // Jaeger proto
     let protos = find_protos("protos/third-party/jaeger");
 

@@ -42,8 +42,8 @@ use tracing::{info, warn};
 use crate::change::{compute_cluster_change_events, ClusterChange};
 use crate::member::{
     build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
-    GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
-    READINESS_VALUE_READY,
+    GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, MAX_CACHE_STORAGE_DISK_USAGE_KEY, READINESS_KEY,
+    READINESS_VALUE_NOT_READY, READINESS_VALUE_READY,
 };
 use crate::ClusterNode;
 
@@ -131,29 +131,32 @@ impl Cluster {
             gossip_interval: GOSSIP_INTERVAL,
             marked_for_deletion_grace_period: MARKED_FOR_DELETION_GRACE_PERIOD,
         };
-        let chitchat_handle = spawn_chitchat(
-            chitchat_config,
-            vec![
-                (
-                    ENABLED_SERVICES_KEY.to_string(),
-                    self_node
-                        .enabled_services
-                        .iter()
-                        .map(|service| service.as_str())
-                        .join(","),
-                ),
-                (
-                    GRPC_ADVERTISE_ADDR_KEY.to_string(),
-                    self_node.grpc_advertise_addr.to_string(),
-                ),
-                (
-                    READINESS_KEY.to_string(),
-                    READINESS_VALUE_NOT_READY.to_string(),
-                ),
-            ],
-            transport,
-        )
-        .await?;
+        let mut initial_key_values = vec![
+            (
+                ENABLED_SERVICES_KEY.to_string(),
+                self_node
+                    .enabled_services
+                    .iter()
+                    .map(|service| service.as_str())
+                    .join(","),
+            ),
+            (
+                GRPC_ADVERTISE_ADDR_KEY.to_string(),
+                self_node.grpc_advertise_addr.to_string(),
+            ),
+            (
+                READINESS_KEY.to_string(),
+                READINESS_VALUE_NOT_READY.to_string(),
+            ),
+        ];
+        if let Some(max_cache_storage_disk_usage) = self_node.max_cache_storage_disk_usage {
+            initial_key_values.push((
+                MAX_CACHE_STORAGE_DISK_USAGE_KEY.to_string(),
+                max_cache_storage_disk_usage.to_string(),
+            ))
+        }
+        let chitchat_handle =
+            spawn_chitchat(chitchat_config, initial_key_values, transport).await?;
 
         let chitchat = chitchat_handle.chitchat();
         let live_nodes_stream = chitchat.lock().await.live_nodes_watcher();
@@ -505,6 +508,7 @@ pub async fn create_cluster_for_test_with_id(
         gossip_advertise_addr,
         grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
         Vec::new(),
+        None,
     );
     let failure_detector_config = create_failure_detector_config_for_test();
     let cluster = Cluster::join(
@@ -567,6 +571,7 @@ mod tests {
     use std::net::SocketAddr;
     use std::time::Duration;
 
+    use byte_unit::Byte;
     use chitchat::transport::ChannelTransport;
     use itertools::Itertools;
     use quickwit_common::test_utils::wait_until_predicate;
@@ -1044,6 +1049,85 @@ mod tests {
         expected_members_b.sort();
         assert_eq!(members_b, expected_members_b);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cache_storage_settings() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let transport = ChannelTransport::default();
+
+        let gossip_advertise_addr_1: SocketAddr = ([127, 0, 0, 1], 1).into();
+        let indexer_node = ClusterMember::new(
+            "indexer".to_string(),
+            crate::GenerationId(1),
+            true,
+            HashSet::default(),
+            gossip_advertise_addr_1,
+            grpc_addr_from_listen_addr_for_test(gossip_advertise_addr_1),
+            Vec::new(),
+            None,
+        );
+        let gossip_advertise_addr_2: SocketAddr = ([127, 0, 0, 2], 2).into();
+        let searcher_node = ClusterMember::new(
+            "searcher".to_string(),
+            crate::GenerationId(1),
+            true,
+            HashSet::default(),
+            gossip_advertise_addr_2,
+            grpc_addr_from_listen_addr_for_test(gossip_advertise_addr_2),
+            Vec::new(),
+            Some("128Gi".try_into()?),
+        );
+        let failure_detector_config_1 = create_failure_detector_config_for_test();
+        let indexer_cluster = Cluster::join(
+            "cluster".to_string(),
+            indexer_node,
+            gossip_advertise_addr_1,
+            vec![
+                gossip_advertise_addr_1.to_string(),
+                gossip_advertise_addr_2.to_string(),
+            ],
+            failure_detector_config_1,
+            &transport,
+        )
+        .await?;
+        let failure_detector_config_2 = create_failure_detector_config_for_test();
+        let searcher_cluster = Cluster::join(
+            "cluster".to_string(),
+            searcher_node,
+            gossip_advertise_addr_2,
+            vec![
+                gossip_advertise_addr_1.to_string(),
+                gossip_advertise_addr_2.to_string(),
+            ],
+            failure_detector_config_2,
+            &transport,
+        )
+        .await?;
+
+        indexer_cluster.set_self_node_readiness(true).await;
+        searcher_cluster.set_self_node_readiness(true).await;
+
+        searcher_cluster
+            .wait_for_ready_members(|members| members.len() == 2, Duration::from_secs(4))
+            .await
+            .unwrap();
+        let ready_members = searcher_cluster.ready_members().await;
+        let indexer = ready_members
+            .iter()
+            .find(|member| member.chitchat_id() == indexer_cluster.self_chitchat_id)
+            .unwrap();
+        let searcher = ready_members
+            .iter()
+            .find(|member| member.chitchat_id() == searcher_cluster.self_chitchat_id)
+            .unwrap();
+
+        assert_eq!(indexer.max_cache_storage_disk_usage, None);
+        assert_eq!(
+            searcher.max_cache_storage_disk_usage,
+            Some(Byte::from_unit(128.0, byte_unit::ByteUnit::GiB)?)
+        );
         Ok(())
     }
 }

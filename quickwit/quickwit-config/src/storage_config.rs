@@ -21,6 +21,7 @@ use std::ops::Deref;
 use std::{env, fmt};
 
 use anyhow::ensure;
+use byte_unit::Byte;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, EnumMap};
@@ -37,6 +38,8 @@ pub enum StorageBackend {
     Ram,
     /// Amazon S3 or S3-compatible storage
     S3,
+    /// Cache that wraps other storage systems
+    Cache,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -140,6 +143,15 @@ impl StorageConfigs {
                 _ => None,
             })
     }
+
+    pub fn find_cache(&self) -> Option<&CacheStorageConfig> {
+        self.0
+            .iter()
+            .find_map(|storage_config| match storage_config {
+                StorageConfig::Cache(cache_storage_config) => Some(cache_storage_config),
+                _ => None,
+            })
+    }
 }
 
 impl Deref for StorageConfigs {
@@ -157,13 +169,14 @@ pub enum StorageConfig {
     File(FileStorageConfig),
     Ram(RamStorageConfig),
     S3(S3StorageConfig),
+    Cache(CacheStorageConfig),
 }
 
 impl StorageConfig {
     pub fn redact(&mut self) {
         match self {
             Self::Azure(azure_storage_config) => azure_storage_config.redact(),
-            Self::File(_) | Self::Ram(_) => {}
+            Self::File(_) | Self::Ram(_) | Self::Cache(_) => {}
             Self::S3(s3_storage_config) => s3_storage_config.redact(),
         }
     }
@@ -195,6 +208,13 @@ impl StorageConfig {
             _ => None,
         }
     }
+
+    pub fn as_cache(&self) -> Option<&CacheStorageConfig> {
+        match self {
+            Self::Cache(cache_storage_config) => Some(cache_storage_config),
+            _ => None,
+        }
+    }
 }
 
 impl From<AzureStorageConfig> for StorageConfig {
@@ -221,6 +241,12 @@ impl From<S3StorageConfig> for StorageConfig {
     }
 }
 
+impl From<CacheStorageConfig> for StorageConfig {
+    fn from(cache_storage_config: CacheStorageConfig) -> Self {
+        Self::Cache(cache_storage_config)
+    }
+}
+
 impl StorageConfig {
     pub fn backend(&self) -> StorageBackend {
         match self {
@@ -228,6 +254,7 @@ impl StorageConfig {
             Self::File(_) => StorageBackend::File,
             Self::Ram(_) => StorageBackend::Ram,
             Self::S3(_) => StorageBackend::S3,
+            Self::Cache(_) => StorageBackend::Cache,
         }
     }
 }
@@ -373,6 +400,31 @@ pub struct FileStorageConfig;
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RamStorageConfig;
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheStorageConfig {
+    #[serde(default)]
+    pub cache_uri: Option<String>,
+    #[serde(default)]
+    pub max_cache_storage_disk_usage: Option<Byte>,
+}
+
+impl CacheStorageConfig {
+    pub fn cache_uri(&self) -> Option<String> {
+        env::var("QW_CACHE_CACHE_URI")
+            .ok()
+            .or_else(|| self.cache_uri.clone())
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test() -> Self {
+        CacheStorageConfig {
+            cache_uri: Some("ram:///".to_string()),
+            max_cache_storage_disk_usage: None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

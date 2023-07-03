@@ -37,7 +37,7 @@ use tracing::warn;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, DebouncedStorage, DeleteFailure, OwnedBytes, Storage, StorageError,
-    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
+    StorageErrorKind, StorageFactory, StorageResolver, StorageResolverError, StorageResult,
 };
 
 /// File system compatible storage implementation.
@@ -345,7 +345,11 @@ impl StorageFactory for LocalFileStorageFactory {
         StorageBackend::File
     }
 
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(
+        &self,
+        _storage_resolver: &StorageResolver,
+        uri: &Uri,
+    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = LocalFileStorage::from_uri(uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
@@ -393,18 +397,21 @@ mod tests {
         let index_uri =
             Uri::from_well_formed(format!("file://{}/foo/bar", temp_dir.path().display()));
         let local_file_storage_factory = LocalFileStorageFactory::default();
-        let local_file_storage = local_file_storage_factory.resolve(&index_uri).await?;
+        let test_resolver = StorageResolver::ram_for_test();
+        let local_file_storage = local_file_storage_factory
+            .resolve(&test_resolver, &index_uri)
+            .await?;
         assert_eq!(local_file_storage.uri(), &index_uri);
 
         let err = local_file_storage_factory
-            .resolve(&Uri::from_well_formed("s3://foo/bar"))
+            .resolve(&test_resolver, &Uri::from_well_formed("s3://foo/bar"))
             .await
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let err = local_file_storage_factory
-            .resolve(&Uri::from_well_formed("s3://"))
+            .resolve(&test_resolver, &Uri::from_well_formed("s3://"))
             .await
             .err()
             .unwrap();

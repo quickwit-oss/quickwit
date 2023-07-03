@@ -22,6 +22,7 @@ use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use byte_unit::Byte;
 use chitchat::{ChitchatId, NodeState};
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::indexing::IndexingTask;
@@ -49,6 +50,7 @@ impl ClusterNode {
             enabled_services: member.enabled_services,
             grpc_advertise_addr: member.grpc_advertise_addr,
             indexing_tasks: member.indexing_tasks,
+            max_cache_storage_disk_usage: member.max_cache_storage_disk_usage,
             is_ready: member.is_ready,
             is_self_node,
         };
@@ -112,6 +114,10 @@ impl ClusterNode {
         &self.inner.indexing_tasks
     }
 
+    pub fn max_cache_storage_disk_usage(&self) -> Option<Byte> {
+        self.inner.max_cache_storage_disk_usage
+    }
+
     pub fn is_ready(&self) -> bool {
         self.inner.is_ready
     }
@@ -138,6 +144,7 @@ impl PartialEq for ClusterNode {
             && self.inner.enabled_services == other.inner.enabled_services
             && self.inner.grpc_advertise_addr == other.inner.grpc_advertise_addr
             && self.inner.indexing_tasks == other.inner.indexing_tasks
+            && self.inner.max_cache_storage_disk_usage == other.inner.max_cache_storage_disk_usage
             && self.inner.is_ready == other.inner.is_ready
             && self.inner.is_self_node == other.inner.is_self_node
     }
@@ -149,6 +156,7 @@ struct InnerNode {
     enabled_services: HashSet<QuickwitService>,
     grpc_advertise_addr: SocketAddr,
     indexing_tasks: Vec<IndexingTask>,
+    max_cache_storage_disk_usage: Option<Byte>,
     is_ready: bool,
     is_self_node: bool,
 }

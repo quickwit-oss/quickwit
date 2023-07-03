@@ -68,6 +68,7 @@ pub async fn start_cluster_service(
     let gossip_listen_addr = node_config.gossip_listen_addr;
     let peer_seed_addrs = node_config.peer_seed_addrs().await?;
     let indexing_tasks = Vec::new();
+    let max_cache_storage_disk_usage = node_config.max_cache_storage_disk_usage();
 
     let node_id = node_config.node_id.clone();
     let generation_id = GenerationId::now();
@@ -80,6 +81,7 @@ pub async fn start_cluster_service(
         node_config.gossip_advertise_addr,
         node_config.grpc_advertise_addr,
         indexing_tasks,
+        max_cache_storage_disk_usage,
     );
     let cluster = Cluster::join(
         cluster_id,

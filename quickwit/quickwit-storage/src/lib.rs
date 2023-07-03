@@ -39,9 +39,10 @@ pub(crate) use debouncer::DebouncedStorage;
 
 pub use self::metrics::STORAGE_METRICS;
 pub use self::payload::PutPayload;
-pub use self::storage::Storage;
+pub use self::storage::{SendableAsync, Storage};
 
 mod bundle_storage;
+mod cache_storage;
 mod error;
 mod local_file_storage;
 mod object_storage;
@@ -63,6 +64,7 @@ pub use self::cache::MockCache;
 pub use self::cache::{
     wrap_storage_with_long_term_cache, ByteRangeCache, Cache, MemorySizedCache, QuickwitCache,
 };
+pub use self::cache_storage::CacheStorageFactory;
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
 pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};

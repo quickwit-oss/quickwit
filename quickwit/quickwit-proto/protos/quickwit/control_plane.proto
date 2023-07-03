@@ -38,6 +38,8 @@ service ControlPlaneService {
   rpc GetOpenShards(GetOpenShardsRequest) returns (GetOpenShardsResponse);
 
   rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
+
+  rpc notifySplitChange(NotifySplitsChangeRequest) returns (NotifySplitsChangeResponse);
 }
 
 message NotifyIndexChangeRequest {}
@@ -82,3 +84,10 @@ message CloseShardsSubrequest {
 
 message CloseShardsResponse {
 }
+
+message NotifySplitsChangeRequest {
+   /// Index UID of the index that changes in the splits.
+  string index_uid = 1;
+}
+
+message NotifySplitsChangeResponse {}

@@ -25,6 +25,7 @@ use once_cell::sync::Lazy;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{StorageBackend, StorageConfigs};
 
+use crate::cache_storage::CacheStorageFactory;
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
 #[cfg(feature = "azure")]
@@ -58,6 +59,7 @@ impl StorageResolver {
             Protocol::File => StorageBackend::File,
             Protocol::Ram => StorageBackend::Ram,
             Protocol::S3 => StorageBackend::S3,
+            Protocol::Cache => StorageBackend::Cache,
             _ => {
                 let message = format!(
                     "Quickwit does not support {} as a storage backend.",
@@ -70,7 +72,7 @@ impl StorageResolver {
             let message = format!("no storage factory is registered for {}.", uri.protocol());
             StorageResolverError::UnsupportedBackend(message)
         })?;
-        let storage = storage_factory.resolve(uri).await?;
+        let storage = storage_factory.resolve(self, uri).await?;
         Ok(storage)
     }
 
@@ -93,6 +95,9 @@ impl StorageResolver {
             .register(RamStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::new(
                 storage_configs.find_s3().cloned().unwrap_or_default(),
+            ))
+            .register(CacheStorageFactory::new(
+                storage_configs.find_cache().cloned().unwrap_or_default(),
             ));
         #[cfg(feature = "azure")]
         {
@@ -121,6 +126,50 @@ impl StorageResolver {
             .register(RamStorageFactory::default())
             .build()
             .expect("Storage factory and config backends should match.")
+    }
+
+    /// Returns a [`StorageResolver`] for testing purposes that includes both cache and ram
+    /// storge factories configured
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test() -> Self {
+        use quickwit_config::CacheStorageConfig;
+
+        //     use crate::cache_storage::CacheStorageFactory;
+
+        StorageResolver::builder()
+            .register(RamStorageFactory::default())
+            .register(CacheStorageFactory::new(CacheStorageConfig::for_test()))
+            .build()
+            .expect("Storage factory and config backends should match.")
+    }
+
+    // /// Returns a [`StorageResolver`] for testing purposes that includes both cache and ram
+    // /// storge factories configured
+    // #[cfg(any(test, feature = "testsuite"))]
+    // pub fn for_test() -> Self {
+    //     use quickwit_config::{CacheStorageConfig, RamStorageConfig};
+
+    //     use crate::cache_storage::CacheStorageFactory;
+
+    //     StorageResolver::builder()
+    //         .register(
+    //             RamStorageFactory::default(),
+    //             RamStorageConfig::default().into(),
+    //         )
+    //         .register(CacheStorageFactory, CacheStorageConfig::for_test().into())
+    //         .build()
+    //         .expect("Storage factory and config backends should match.")
+    // }
+
+    /// TODO: This is ugly. I will need to replace it when I refactor storage.
+    pub fn cache_storage_factory<'a>(&'a self) -> Option<&'a CacheStorageFactory> {
+        println!(
+            "Getting cache_storage_factory {:?}",
+            self.per_backend_factories.keys()
+        );
+        self.per_backend_factories
+            .get(&StorageBackend::Cache)?
+            .as_cache_storage_factory()
     }
 }
 
@@ -164,13 +213,15 @@ mod tests {
         ram_storage_factory
             .expect_backend()
             .returning(|| StorageBackend::Ram);
-        ram_storage_factory.expect_resolve().returning(|_uri| {
-            Ok(Arc::new(
-                RamStorage::builder()
-                    .put("hello", b"hello_content_second")
-                    .build(),
-            ))
-        });
+        ram_storage_factory
+            .expect_resolve()
+            .returning(|_resolver, _uri| {
+                Ok(Arc::new(
+                    RamStorage::builder()
+                        .put("hello", b"hello_content_second")
+                        .build(),
+                ))
+            });
         let storage_resolver = StorageResolver::builder()
             .register(file_storage_factory)
             .register(ram_storage_factory)
@@ -197,7 +248,7 @@ mod tests {
             .returning(|| StorageBackend::Ram);
         second_ram_storage_factory
             .expect_resolve()
-            .returning(|uri| {
+            .returning(|_resolver, uri| {
                 assert_eq!(uri.as_str(), "ram:///home");
                 Ok(Arc::new(
                     RamStorage::builder()

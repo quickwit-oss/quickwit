@@ -53,6 +53,7 @@ pub use format::BodyFormat;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
+use quickwit_cache_storage::{start_cache_storage_service, CacheStorageService};
 use quickwit_cluster::{Cluster, ClusterChange, ClusterMember};
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::runtimes::RuntimesConfig;
@@ -62,10 +63,12 @@ use quickwit_common::tower::{
 };
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{NodeConfig, SearcherConfig};
+use quickwit_control_plane::cache_storage_controller::CacheStorageController;
 use quickwit_control_plane::control_plane::ControlPlane;
 use quickwit_control_plane::scheduler::IndexingScheduler;
 use quickwit_control_plane::{
-    start_indexing_scheduler, ControlPlaneEventSubscriber, IndexerNodeInfo, IndexerPool,
+    start_cache_storage_controller, start_indexing_scheduler, ControlPlaneEventSubscriber,
+    IndexerNodeInfo, IndexerPool,
 };
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
@@ -123,6 +126,7 @@ struct QuickwitServices {
     pub janitor_service: Option<Mailbox<JanitorService>>,
     pub ingest_service: IngestServiceClient,
     pub index_service: Arc<IndexService>,
+    pub cache_storage_service: Option<Mailbox<CacheStorageService>>,
     pub services: HashSet<QuickwitService>,
 }
 
@@ -269,6 +273,14 @@ pub async fn serve_quickwit(
         (ingest_service, None)
     };
 
+    let cache_storage_service = start_cache_storage_service(
+        &universe,
+        &config,
+        metastore.clone(),
+        storage_resolver.clone(),
+    )
+    .await?;
+
     // Instantiate the control plane service if enabled.
     // If not and metastore service is enabled, we need to instantiate the control plane client
     // so the metastore can notify the control plane.
@@ -276,13 +288,11 @@ pub async fn serve_quickwit(
         .enabled_services
         .contains(&QuickwitService::ControlPlane)
     {
-        let cluster_change_stream = cluster.ready_nodes_change_stream().await;
         let control_plane_mailbox = start_control_plane(
             &universe,
-            cluster.cluster_id().to_string(),
-            cluster.self_node_id().to_string(),
-            cluster_change_stream,
+            &cluster,
             indexing_service.clone(),
+            Some(cache_storage_service.clone()),
             metastore.clone(),
         )
         .await?;
@@ -343,6 +353,7 @@ pub async fn serve_quickwit(
         janitor_service,
         ingest_service,
         index_service,
+        cache_storage_service: Some(cache_storage_service),
         services,
     });
     // Setup and start gRPC server.
@@ -527,22 +538,29 @@ async fn setup_searcher(
 
 async fn start_control_plane(
     universe: &Universe,
-    cluster_id: String,
-    self_node_id: String,
-    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+    cluster: &Cluster,
     indexing_service: Option<Mailbox<IndexingService>>,
+    cache_storage_service: Option<Mailbox<CacheStorageService>>,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
     let scheduler = setup_indexing_scheduler(
         universe,
-        cluster_id,
-        self_node_id,
-        cluster_change_stream,
+        cluster.cluster_id().to_string(),
+        cluster.self_node_id().to_string(),
+        cluster.ready_nodes_change_stream().await,
         indexing_service,
+        metastore.clone(),
+    )
+    .await?;
+
+    let cache_controller = setup_cache_storage_controller(
+        universe,
+        cluster.ready_nodes_change_stream().await,
+        cache_storage_service,
         metastore,
     )
     .await?;
-    let control_plane = ControlPlane::new(scheduler);
+    let control_plane = ControlPlane::new(scheduler, cache_controller);
     let (control_plane_mailbox, _) = universe.spawn_builder().spawn(control_plane);
     Ok(control_plane_mailbox)
 }
@@ -618,6 +636,22 @@ async fn setup_indexing_scheduler(
     )
     .await?;
     Ok(indexing_scheduler)
+}
+
+async fn setup_cache_storage_controller(
+    universe: &Universe,
+    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+    local_cache_storage_controller: Option<Mailbox<CacheStorageService>>,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<Mailbox<CacheStorageController>> {
+    let cache_storage_service = start_cache_storage_controller(
+        universe,
+        cluster_change_stream,
+        local_cache_storage_controller,
+        metastore,
+    )
+    .await?;
+    Ok(cache_storage_service)
 }
 
 fn require<T: Clone + Send>(

@@ -14,6 +14,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 chitchat = { workspace = true }
 dyn-clone = { workspace = true }
+futures = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
@@ -35,6 +36,7 @@ quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-indexing = { workspace = true }
+quickwit-cache-storage = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 

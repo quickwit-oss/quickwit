@@ -927,6 +927,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         config.gossip_advertise_addr,
         config.grpc_advertise_addr,
         Vec::new(),
+        None,
     );
     let cluster = Cluster::join(
         config.cluster_id.clone(),

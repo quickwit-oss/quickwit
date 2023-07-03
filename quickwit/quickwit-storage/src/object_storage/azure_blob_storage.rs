@@ -51,7 +51,8 @@ use crate::debouncer::DebouncedStorage;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
-    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult, STORAGE_METRICS,
+    StorageErrorKind, StorageFactory, StorageResolver, StorageResolverError, StorageResult,
+    STORAGE_METRICS,
 };
 
 /// Azure object storage resolver.
@@ -72,7 +73,11 @@ impl StorageFactory for AzureBlobStorageFactory {
         StorageBackend::Azure
     }
 
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(
+        &self,
+        _storage_resolver: &StorageResolver,
+        uri: &Uri,
+    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = AzureBlobStorage::from_uri(&self.storage_config, uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }

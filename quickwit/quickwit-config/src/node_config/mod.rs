@@ -285,6 +285,14 @@ impl NodeConfig {
         Ok(peer_seed_addrs)
     }
 
+    pub fn max_cache_storage_disk_usage(&self) -> Option<Byte> {
+        if let Some(config) = self.storage_configs.find_cache() {
+            config.max_cache_storage_disk_usage
+        } else {
+            None
+        }
+    }
+
     pub fn redact(&mut self) {
         self.metastore_uri.redact();
         self.storage_configs.redact();

@@ -40,6 +40,7 @@ pub enum Protocol {
     PostgreSQL,
     Ram,
     S3,
+    Cache,
 }
 
 impl Protocol {
@@ -51,6 +52,7 @@ impl Protocol {
             Protocol::PostgreSQL => "postgresql",
             Protocol::Ram => "ram",
             Protocol::S3 => "s3",
+            Protocol::Cache => "cache",
         }
     }
 
@@ -76,6 +78,10 @@ impl Protocol {
 
     pub fn is_s3(&self) -> bool {
         matches!(&self, Protocol::S3)
+    }
+
+    pub fn is_cache(&self) -> bool {
+        matches!(&self, Protocol::Cache)
     }
 
     pub fn is_file_storage(&self) -> bool {
@@ -108,6 +114,7 @@ impl FromStr for Protocol {
             "pg" | "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
+            "cache" => Ok(Protocol::Cache),
             _ => bail!("Unknown URI protocol `{protocol}`."),
         }
     }
@@ -156,6 +163,16 @@ impl Uri {
     /// Returns the protocol of the URI.
     pub fn protocol(&self) -> Protocol {
         Protocol::from_str(&self.uri[..self.protocol_idx]).expect("Failed to parse URI protocol. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
+    }
+
+    /// Returns the part after URI after protocol
+    pub fn scheme_specific_part(&self) -> Option<&str> {
+        let res = &self.uri[self.protocol_idx + PROTOCOL_SEPARATOR.len()..];
+        if res.is_empty() {
+            None
+        } else {
+            Some(res)
+        }
     }
 
     /// Strips sensitive information such as credentials from URI.
@@ -512,6 +529,7 @@ mod tests {
             Uri::for_test("postgresql://localhost:5432/metastore").protocol(),
             Protocol::PostgreSQL
         );
+        assert_eq!(Uri::for_test("cache:///").protocol(), Protocol::Cache);
     }
 
     #[test]
@@ -753,5 +771,19 @@ mod tests {
             serde_json::to_value(uri).unwrap(),
             serde_json::Value::String("s3://bucket/key".to_string())
         );
+    }
+
+    #[test]
+    fn test_scheme_specific_part() {
+        assert_eq!(Uri::for_test("file:///").scheme_specific_part(), Some("/"));
+        assert_eq!(
+            Uri::for_test("file:///foo").scheme_specific_part(),
+            Some("/foo")
+        );
+        assert_eq!(
+            Uri::for_test("cache://file:///foo").scheme_specific_part(),
+            Some("file:///foo")
+        );
+        assert_eq!(Uri::for_test("cache://").scheme_specific_part(), None);
     }
 }

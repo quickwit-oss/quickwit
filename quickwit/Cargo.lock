@@ -4991,6 +4991,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-cache-storage"
+version = "0.6.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-s3",
+ "aws-smithy-client",
+ "aws-smithy-http",
+ "aws-smithy-types",
+ "azure_core",
+ "azure_storage",
+ "azure_storage_blobs",
+ "base64 0.21.2",
+ "bytes",
+ "fnv",
+ "futures",
+ "hyper",
+ "lru 0.11.0",
+ "md5",
+ "mockall",
+ "once_cell",
+ "proptest",
+ "quickwit-actors",
+ "quickwit-aws",
+ "quickwit-cluster",
+ "quickwit-codegen",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-metastore",
+ "quickwit-proto",
+ "quickwit-storage",
+ "rand 0.8.5",
+ "regex",
+ "serde",
+ "serde_json",
+ "tantivy",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "quickwit-cli"
 version = "0.6.3"
 dependencies = [
@@ -5053,6 +5101,7 @@ version = "0.6.3"
 dependencies = [
  "anyhow",
  "async-trait",
+ "byte-unit",
  "chitchat",
  "futures",
  "itertools 0.11.0",
@@ -5197,6 +5246,7 @@ dependencies = [
  "proptest",
  "prost",
  "quickwit-actors",
+ "quickwit-cache-storage",
  "quickwit-cluster",
  "quickwit-codegen",
  "quickwit-common",
@@ -5759,6 +5809,7 @@ dependencies = [
  "once_cell",
  "opentelemetry",
  "quickwit-actors",
+ "quickwit-cache-storage",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
@@ -5823,9 +5874,12 @@ dependencies = [
  "mockall",
  "once_cell",
  "proptest",
+ "quickwit-actors",
  "quickwit-aws",
+ "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-proto",
  "rand 0.8.5",
  "regex",
  "serde",

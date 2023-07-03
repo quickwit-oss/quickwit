@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+pub mod cache_storage_controller;
 pub mod control_plane;
 pub mod indexing_plan;
 pub mod scheduler;
@@ -24,13 +25,18 @@ pub mod scheduler;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use cache_storage_controller::{CacheStorageController, CacheStorageServicePool};
+use futures::Stream;
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_cache_storage::CacheStorageService;
+use quickwit_cluster::ClusterChange;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::tower::Pool;
 use quickwit_config::SourceParams;
 use quickwit_metastore::{Metastore, MetastoreEvent};
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, NotifyIndexChangeRequest,
+    NotifySplitsChangeRequest,
 };
 use quickwit_proto::indexing::{IndexingServiceClient, IndexingTask};
 use scheduler::IndexingScheduler;
@@ -44,8 +50,9 @@ pub struct IndexerNodeInfo {
 }
 
 pub type IndexerPool = Pool<String, IndexerNodeInfo>;
+// pub type CacheStorageServicePool = Pool<String, CacheStorageServiceClient>;
 
-/// Starts the Control Plane.
+/// Starts the Indexing Schedule as part of Control Panel.
 pub async fn start_indexing_scheduler(
     cluster_id: String,
     self_node_id: String,
@@ -56,6 +63,20 @@ pub async fn start_indexing_scheduler(
     let scheduler = IndexingScheduler::new(cluster_id, self_node_id, metastore, indexer_pool);
     let (scheduler_mailbox, _) = universe.spawn_builder().spawn(scheduler);
     Ok(scheduler_mailbox)
+}
+
+/// Starts the Cache Storage Controller as part of Control Panel.
+pub async fn start_cache_storage_controller(
+    universe: &Universe,
+    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+    local_cache_storage_service: Option<Mailbox<CacheStorageService>>,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<Mailbox<CacheStorageController>> {
+    let service_pool = CacheStorageServicePool::new(local_cache_storage_service);
+    let controller = CacheStorageController::new(metastore, service_pool.clone());
+    let (controller_mailbox, _) = universe.spawn_builder().spawn(controller);
+    service_pool.listen_for_changes(controller_mailbox.clone(), cluster_change_stream);
+    Ok(controller_mailbox)
 }
 
 #[derive(Debug, Clone)]
@@ -74,8 +95,8 @@ pub struct ControlPlaneEventSubscriber(pub ControlPlaneServiceClient);
 #[async_trait]
 impl EventSubscriber<MetastoreEvent> for ControlPlaneEventSubscriber {
     async fn handle_event(&mut self, event: MetastoreEvent) {
-        let event = match event {
-            MetastoreEvent::DeleteIndex { .. } => "delete-index",
+        if let Some(event) = match &event {
+            MetastoreEvent::DeleteIndex { .. } => Some("delete-index"),
             MetastoreEvent::AddSource { source_config, .. } => {
                 if matches!(
                     source_config.source_params,
@@ -83,17 +104,35 @@ impl EventSubscriber<MetastoreEvent> for ControlPlaneEventSubscriber {
                 ) {
                     return;
                 }
-                "add-source"
+                Some("add-source")
             }
-            MetastoreEvent::ToggleSource { .. } => "toggle-source",
-            MetastoreEvent::DeleteSource { .. } => "delete-source",
-        };
-        if let Err(error) = self
-            .0
-            .notify_index_change(NotifyIndexChangeRequest {})
-            .await
-        {
-            error!(error=?error, event=event, "Failed to notify control plane of index change.");
+            MetastoreEvent::ToggleSource { .. } => Some("toggle-source"),
+            MetastoreEvent::DeleteSource { .. } => Some("delete-source"),
+            _ => None,
+        } {
+            if let Err(error) = self
+                .0
+                .notify_index_change(NotifyIndexChangeRequest {})
+                .await
+            {
+                error!(error=?error, event=event, "Failed to notify control plane of index change.");
+            }
+        } else if let Some((split_event_description, index_uid)) = match &event {
+            MetastoreEvent::PublishSplit { index_uid } => {
+                Some(("publish-split", index_uid.to_string()))
+            }
+            MetastoreEvent::DeleteSplit { index_uid } => {
+                Some(("delete-split", index_uid.to_string()))
+            }
+            _ => None,
+        } {
+            if let Err(error) = self
+                .0
+                .notify_split_change(NotifySplitsChangeRequest { index_uid })
+                .await
+            {
+                error!(error=?error, event=split_event_description, "Failed to notify control plane of split change.");
+            }
         }
     }
 }

@@ -68,6 +68,18 @@ pub struct CloseShardsSubrequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CloseShardsResponse {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NotifySplitsChangeRequest {
+    /// / Index UID of the index that changes in the splits.
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NotifySplitsChangeResponse {}
 /// BEGIN quickwit-codegen
 use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
@@ -85,6 +97,10 @@ pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sy
         &mut self,
         request: CloseShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<CloseShardsResponse>;
+    async fn notify_split_change(
+        &mut self,
+        request: NotifySplitsChangeRequest,
+    ) -> crate::control_plane::ControlPlaneResult<NotifySplitsChangeResponse>;
 }
 dyn_clone::clone_trait_object!(ControlPlaneService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -163,6 +179,12 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<CloseShardsResponse> {
         self.inner.close_shards(request).await
     }
+    async fn notify_split_change(
+        &mut self,
+        request: NotifySplitsChangeRequest,
+    ) -> crate::control_plane::ControlPlaneResult<NotifySplitsChangeResponse> {
+        self.inner.notify_split_change(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock {
@@ -190,6 +212,12 @@ pub mod mock {
             request: CloseShardsRequest,
         ) -> crate::control_plane::ControlPlaneResult<CloseShardsResponse> {
             self.inner.lock().await.close_shards(request).await
+        }
+        async fn notify_split_change(
+            &mut self,
+            request: NotifySplitsChangeRequest,
+        ) -> crate::control_plane::ControlPlaneResult<NotifySplitsChangeResponse> {
+            self.inner.lock().await.notify_split_change(request).await
         }
     }
     impl From<MockControlPlaneService> for ControlPlaneServiceClient {
@@ -252,6 +280,22 @@ impl tower::Service<CloseShardsRequest> for Box<dyn ControlPlaneService> {
         Box::pin(fut)
     }
 }
+impl tower::Service<NotifySplitsChangeRequest> for Box<dyn ControlPlaneService> {
+    type Response = NotifySplitsChangeResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: NotifySplitsChangeRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.notify_split_change(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
 #[derive(Debug)]
 struct ControlPlaneServiceTowerBlock {
@@ -270,6 +314,11 @@ struct ControlPlaneServiceTowerBlock {
         CloseShardsResponse,
         crate::control_plane::ControlPlaneError,
     >,
+    notify_split_change_svc: quickwit_common::tower::BoxService<
+        NotifySplitsChangeRequest,
+        NotifySplitsChangeResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
 }
 impl Clone for ControlPlaneServiceTowerBlock {
     fn clone(&self) -> Self {
@@ -277,6 +326,7 @@ impl Clone for ControlPlaneServiceTowerBlock {
             notify_index_change_svc: self.notify_index_change_svc.clone(),
             get_open_shards_svc: self.get_open_shards_svc.clone(),
             close_shards_svc: self.close_shards_svc.clone(),
+            notify_split_change_svc: self.notify_split_change_svc.clone(),
         }
     }
 }
@@ -299,6 +349,12 @@ impl ControlPlaneService for ControlPlaneServiceTowerBlock {
         request: CloseShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<CloseShardsResponse> {
         self.close_shards_svc.ready().await?.call(request).await
+    }
+    async fn notify_split_change(
+        &mut self,
+        request: NotifySplitsChangeRequest,
+    ) -> crate::control_plane::ControlPlaneResult<NotifySplitsChangeResponse> {
+        self.notify_split_change_svc.ready().await?.call(request).await
     }
 }
 #[derive(Debug, Default)]
@@ -330,6 +386,15 @@ pub struct ControlPlaneServiceTowerBlockBuilder {
             crate::control_plane::ControlPlaneError,
         >,
     >,
+    #[allow(clippy::type_complexity)]
+    notify_split_change_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn ControlPlaneService>,
+            NotifySplitsChangeRequest,
+            NotifySplitsChangeResponse,
+            crate::control_plane::ControlPlaneError,
+        >,
+    >,
 }
 impl ControlPlaneServiceTowerBlockBuilder {
     pub fn shared_layer<L>(mut self, layer: L) -> Self
@@ -353,6 +418,14 @@ impl ControlPlaneServiceTowerBlockBuilder {
                 Error = crate::control_plane::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
+                NotifySplitsChangeRequest,
+                Response = NotifySplitsChangeResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            NotifySplitsChangeRequest,
+        >>::Future: Send + 'static,
     {
         self
             .notify_index_change_layer = Some(
@@ -362,7 +435,14 @@ impl ControlPlaneServiceTowerBlockBuilder {
             .get_open_shards_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
-        self.close_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+            .close_shards_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
+        );
+        self
+            .notify_split_change_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer),
+        );
         self
     }
     pub fn notify_index_change_layer<L>(mut self, layer: L) -> Self
@@ -405,6 +485,24 @@ impl ControlPlaneServiceTowerBlockBuilder {
         <L::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
     {
         self.close_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn notify_split_change_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                NotifySplitsChangeRequest,
+                Response = NotifySplitsChangeResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            NotifySplitsChangeRequest,
+        >>::Future: Send + 'static,
+    {
+        self
+            .notify_split_change_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer),
+        );
         self
     }
     pub fn build<T>(self, instance: T) -> ControlPlaneServiceClient
@@ -461,10 +559,17 @@ impl ControlPlaneServiceTowerBlockBuilder {
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
+        let notify_split_change_svc = if let Some(layer) = self.notify_split_change_layer
+        {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
         let tower_block = ControlPlaneServiceTowerBlock {
             notify_index_change_svc,
             get_open_shards_svc,
             close_shards_svc,
+            notify_split_change_svc,
         };
         ControlPlaneServiceClient::new(tower_block)
     }
@@ -567,6 +672,15 @@ where
                 CloseShardsResponse,
                 crate::control_plane::ControlPlaneError,
             >,
+        >
+        + tower::Service<
+            NotifySplitsChangeRequest,
+            Response = NotifySplitsChangeResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                NotifySplitsChangeResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
         >,
 {
     async fn notify_index_change(
@@ -585,6 +699,12 @@ where
         &mut self,
         request: CloseShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<CloseShardsResponse> {
+        self.call(request).await
+    }
+    async fn notify_split_change(
+        &mut self,
+        request: NotifySplitsChangeRequest,
+    ) -> crate::control_plane::ControlPlaneResult<NotifySplitsChangeResponse> {
         self.call(request).await
     }
 }
@@ -640,6 +760,16 @@ where
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
     }
+    async fn notify_split_change(
+        &mut self,
+        request: NotifySplitsChangeRequest,
+    ) -> crate::control_plane::ControlPlaneResult<NotifySplitsChangeResponse> {
+        self.inner
+            .notify_split_change(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
 }
 #[derive(Debug)]
 pub struct ControlPlaneServiceGrpcServerAdapter {
@@ -685,6 +815,17 @@ for ControlPlaneServiceGrpcServerAdapter {
         self.inner
             .clone()
             .close_shards(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn notify_split_change(
+        &self,
+        request: tonic::Request<NotifySplitsChangeRequest>,
+    ) -> Result<tonic::Response<NotifySplitsChangeResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .notify_split_change(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(|error| error.into())
@@ -875,6 +1016,36 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn notify_split_change(
+            &mut self,
+            request: impl tonic::IntoRequest<super::NotifySplitsChangeRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::NotifySplitsChangeResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/notifySplitChange",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "notifySplitChange",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -911,6 +1082,13 @@ pub mod control_plane_service_grpc_server {
             request: tonic::Request<super::CloseShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::CloseShardsResponse>,
+            tonic::Status,
+        >;
+        async fn notify_split_change(
+            &self,
+            request: tonic::Request<super::NotifySplitsChangeRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::NotifySplitsChangeResponse>,
             tonic::Status,
         >;
     }
@@ -1117,6 +1295,52 @@ pub mod control_plane_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = CloseShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/notifySplitChange" => {
+                    #[allow(non_camel_case_types)]
+                    struct notifySplitChangeSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<super::NotifySplitsChangeRequest>
+                    for notifySplitChangeSvc<T> {
+                        type Response = super::NotifySplitsChangeResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::NotifySplitsChangeRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).notify_split_change(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = notifySplitChangeSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

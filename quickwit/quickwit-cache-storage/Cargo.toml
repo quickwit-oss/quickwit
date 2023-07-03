@@ -1,10 +1,10 @@
 [package]
-name = "quickwit-storage"
+name = "quickwit-cache-storage"
 version = "0.6.3"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
-description = "Quickwit's storage abstraction"
+description = "Quickwit's cache storage implementation"
 repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
@@ -48,7 +48,9 @@ quickwit-aws = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
+quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-storage = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
@@ -61,6 +63,10 @@ aws-smithy-client = { workspace = true, features = ["test-util"] }
 
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true, features = ["testsuite"] }
+
+[build-dependencies]
+quickwit-codegen = { workspace = true }
 
 [features]
 azure = [

@@ -32,8 +32,8 @@ use tokio::sync::RwLock;
 use crate::prefix_storage::add_prefix_to_storage;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolverError,
-    StorageResult,
+    BulkDeleteError, OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolver,
+    StorageResolverError, StorageResult,
 };
 
 /// In Ram implementation of quickwit's storage.
@@ -194,7 +194,11 @@ impl StorageFactory for RamStorageFactory {
         StorageBackend::Ram
     }
 
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(
+        &self,
+        _storage_resolver: &StorageResolver,
+        uri: &Uri,
+    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
         match uri.filepath() {
             Some(prefix) if uri.protocol().is_ram() => Ok(add_prefix_to_storage(
                 self.ram_storage.clone(),
@@ -226,16 +230,33 @@ mod tests {
     async fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
         let ram_uri = Uri::from_well_formed("s3:///foo");
-        let err = ram_storage_factory.resolve(&ram_uri).await.err().unwrap();
+        let test_resolver = StorageResolver::ram_for_test();
+        let err = ram_storage_factory
+            .resolve(&test_resolver, &ram_uri)
+            .await
+            .err()
+            .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let data_uri = Uri::from_well_formed("ram:///data");
-        let data_storage = ram_storage_factory.resolve(&data_uri).await.ok().unwrap();
+        let data_storage = ram_storage_factory
+            .resolve(&test_resolver, &data_uri)
+            .await
+            .ok()
+            .unwrap();
         let home_uri = Uri::from_well_formed("ram:///home");
-        let home_storage = ram_storage_factory.resolve(&home_uri).await.ok().unwrap();
+        let home_storage = ram_storage_factory
+            .resolve(&test_resolver, &home_uri)
+            .await
+            .ok()
+            .unwrap();
         assert_ne!(data_storage.uri(), home_storage.uri());
 
-        let data_storage_two = ram_storage_factory.resolve(&data_uri).await.ok().unwrap();
+        let data_storage_two = ram_storage_factory
+            .resolve(&test_resolver, &data_uri)
+            .await
+            .ok()
+            .unwrap();
         assert_eq!(data_storage.uri(), data_storage_two.uri());
     }
 
