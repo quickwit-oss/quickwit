@@ -121,8 +121,8 @@ impl MergePolicy for StableLogMergePolicy {
         if split_num_docs >= self.split_num_docs_target {
             return SplitMaturity::Mature;
         }
-        SplitMaturity::MatureAfterPeriod {
-            period: self.config.maturation_period,
+        SplitMaturity::Immature {
+            maturation_period: self.config.maturation_period,
         }
     }
 
@@ -375,8 +375,8 @@ mod tests {
         // Split under max_merge_docs and created before now() - maturation_period is not mature.
         assert_eq!(
             merge_policy.split_maturity(9_000_000, 0),
-            SplitMaturity::MatureAfterPeriod {
-                period: Duration::from_secs(3600 * 48)
+            SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(3600 * 48)
             }
         );
         assert_eq!(
@@ -387,8 +387,8 @@ mod tests {
         // mature.
         assert_eq!(
             merge_policy.split_maturity(9_000_000, 0),
-            SplitMaturity::MatureAfterPeriod {
-                period: merge_policy.config.maturation_period
+            SplitMaturity::Immature {
+                maturation_period: merge_policy.config.maturation_period
             }
         );
     }

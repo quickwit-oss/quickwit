@@ -252,8 +252,8 @@ mod tests {
         SplitMetadata {
             split_id: split_id.to_string(),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-            maturity: SplitMaturity::MatureAfterPeriod {
-                period: Duration::from_secs(3600),
+            maturity: SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(3600),
             },
             ..Default::default()
         }

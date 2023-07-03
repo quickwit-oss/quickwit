@@ -111,7 +111,7 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
     /// Returns split maturity.
     /// A split is either:
     /// - `Mature` if it does not undergo new merge operations.
-    /// - will become mature after a `TimeToMaturity` period of time.
+    /// - or will become mature after a `TimeToMaturity` period of time.
     fn split_maturity(&self, split_num_docs: usize, split_num_merge_ops: usize) -> SplitMaturity;
 
     /// Checks a bunch of properties specific to the given merge policy.

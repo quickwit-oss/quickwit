@@ -161,8 +161,8 @@ impl SplitMetadata {
     pub fn is_mature(&self) -> bool {
         match self.maturity {
             SplitMaturity::Mature => true,
-            SplitMaturity::MatureAfterPeriod {
-                period: time_to_maturity,
+            SplitMaturity::Immature {
+                maturation_period: time_to_maturity,
             } => self.create_timestamp + time_to_maturity.as_secs() as i64 <= utc_now_timestamp(),
         }
     }
@@ -175,8 +175,8 @@ impl SplitMetadata {
     pub(crate) fn maturity_timestamp(&self) -> i64 {
         match self.maturity {
             SplitMaturity::Mature => 0,
-            SplitMaturity::MatureAfterPeriod {
-                period: time_to_maturity,
+            SplitMaturity::Immature {
+                maturation_period: time_to_maturity,
             } => self.create_timestamp + time_to_maturity.as_secs() as i64,
         }
     }
@@ -214,8 +214,8 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             uncompressed_docs_size_in_bytes: 234234,
             time_range: Some(121000..=130198),
             create_timestamp: 3,
-            maturity: SplitMaturity::MatureAfterPeriod {
-                period: Duration::from_secs(4),
+            maturity: SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(4),
             },
             tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
             footer_offsets: 1000..2000,
@@ -288,24 +288,27 @@ pub enum SplitMaturity {
     /// Period after which the split is mature.
     /// Period is truncated to seconds
     /// on serialization.
-    MatureAfterPeriod {
+    Immature {
         /// Time to maturity.
-        #[serde(with = "serde_duration_secs")]
-        period: Duration,
+        #[serde(with = "serde_duration_millisecs")]
+        #[serde(rename = "maturation_period_millisecs")]
+        maturation_period: Duration,
     },
 }
 
-pub mod serde_duration_secs {
-    // Serializer/Deserializer of `Duration` in seconds.
+// Serializer/Deserializer of `Duration` in milliseconds.
+pub mod serde_duration_millisecs {
     pub fn serialize<S>(duration: &std::time::Duration, serializer: S) -> Result<S::Ok, S::Error>
     where S: serde::Serializer {
-        serializer.serialize_u64(duration.as_secs())
+        serializer.serialize_u64(duration.as_millis() as u64)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<std::time::Duration, D::Error>
     where D: serde::Deserializer<'de> {
-        let time_to_maturity_in_seconds: u64 = serde::Deserialize::deserialize(deserializer)?;
-        Ok(std::time::Duration::from_secs(time_to_maturity_in_seconds))
+        let maturation_periods_millisecs: u64 = serde::Deserialize::deserialize(deserializer)?;
+        Ok(std::time::Duration::from_millis(
+            maturation_periods_millisecs,
+        ))
     }
 }
 
@@ -326,11 +329,14 @@ mod tests {
     #[test]
     fn test_split_maturity_serialization() {
         {
-            let split_maturity = super::SplitMaturity::MatureAfterPeriod {
-                period: std::time::Duration::from_secs(10),
+            let split_maturity = super::SplitMaturity::Immature {
+                maturation_period: std::time::Duration::from_millis(10),
             };
             let serialized = serde_json::to_string(&split_maturity).unwrap();
-            assert_eq!(serialized, r#"{"type":"mature_after_period","period":10}"#);
+            assert_eq!(
+                serialized,
+                r#"{"type":"immature","maturation_period_millisecs":10}"#
+            );
             let deserialized: super::SplitMaturity = serde_json::from_str(&serialized).unwrap();
             assert_eq!(deserialized, split_maturity);
         }
