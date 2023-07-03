@@ -3157,9 +3157,9 @@ dependencies = [
 
 [[package]]
 name = "mrecordlog"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37147ad590e077179550cb783db8610443bc6b885d2aba258c4eb75938000fbd"
+checksum = "2ae279fda279177cadf1f2222ce4462fef46d814ba564e094c0b03e6503e39e0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3168,6 +3168,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
