@@ -23,7 +23,7 @@ tonic = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-actors = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["default"] }
 quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-proto = { workspace = true }

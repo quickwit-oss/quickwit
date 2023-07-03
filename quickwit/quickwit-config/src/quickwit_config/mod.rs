@@ -28,7 +28,7 @@ use std::time::Duration;
 
 use anyhow::bail;
 use byte_unit::Byte;
-use quickwit_common::net::HostAddr;
+use quickwit_common::host::HostAddr;
 use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -259,8 +259,14 @@ impl QuickwitConfig {
         Ok(config)
     }
 
+    #[cfg(feature = "wasm")]
+    pub async fn peer_seed_addrs(&self) -> anyhow::Result<Vec<String>> {
+        unimplemented!()
+    }
+
     /// Returns the list of peer seed addresses. The addresses MUST NOT be resolved. Otherwise, the
     /// DNS-based discovery mechanism implemented in Chitchat will not work correctly.
+    #[cfg(not(feature = "wasm"))]
     pub async fn peer_seed_addrs(&self) -> anyhow::Result<Vec<String>> {
         let mut peer_seed_addrs = Vec::new();
         let default_gossip_port = self.gossip_listen_addr.port();

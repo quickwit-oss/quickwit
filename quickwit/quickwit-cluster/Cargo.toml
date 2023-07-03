@@ -26,7 +26,7 @@ tracing = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
 
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["default"] }
 quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
 

@@ -50,7 +50,7 @@ base64 = "0.21"
 byte-unit = { version = "4", default-features = false, features = ["serde", "std"] }
 bytes = "1"
 chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "bc29598" }
-chrono = { version = "0.4.23", default-features = false, features = ["clock", "std"] }
+chrono = { version = "0.4.23", default-features = false, features = ["clock", "std", "wasmbind"] }
 clap = { version = "4.3.0", features = ["env", "string"] }
 colored = "2.0.0"
 console-subscriber = "0.1.8"
@@ -198,7 +198,7 @@ quickwit-aws = { version = "0.6.1", path = "./quickwit-aws" }
 quickwit-cluster = { version = "0.6.1", path = "./quickwit-cluster" }
 quickwit-codegen = { version = "0.6.1", path = "./quickwit-codegen" }
 quickwit-codegen-example = { version = "0.6.1", path = "./quickwit-codegen/example" }
-quickwit-common = { version = "0.6.1", path = "./quickwit-common" }
+quickwit-common = { version = "0.6.1", path = "./quickwit-common", default-features = false }
 quickwit-config = { version = "0.6.1", path = "./quickwit-config" }
 quickwit-control-plane = { version = "0.6.1", path = "./quickwit-control-plane" }
 quickwit-core = { version = "0.6.1", path = "./quickwit-core" }
@@ -223,12 +223,7 @@ quickwit-serve = { version = "0.6.1", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.6.1", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.6.1", path = "./quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "924fc70", default-features = false, features = [
-  "mmap",
-  "lz4-compression",
-  "zstd-compression",
-  "quickwit",
-] }
+tantivy = { path = "/home/pascal/LinuxData/Development/tantivy/fail_dep", default-features = false}
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.

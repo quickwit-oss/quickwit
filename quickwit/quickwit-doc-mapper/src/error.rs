@@ -20,6 +20,7 @@
 use quickwit_query::InvalidQuery;
 use tantivy::schema::DocParsingError as TantivyDocParsingError;
 use thiserror::Error;
+use vrl::compiler::runtime::Terminate;
 
 /// Failed to parse query.
 #[derive(Error, Debug)]
@@ -57,6 +58,11 @@ pub enum DocParsingError {
     /// The document does not contain a field that is required.
     #[error("The document must contain field {0:?}.")]
     RequiredField(String),
+    /// Error while VRL transformation.
+    #[error("Error while VRL transformation {0:?}.")]
+    TransformError(Terminate),
+    #[error("ParsingError.")]
+    ParsingError,
 }
 
 impl From<TantivyDocParsingError> for DocParsingError {

@@ -1,0 +1,292 @@
+<html>
+  <head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type"/>
+
+    <style>
+
+            html {
+                font-family: Arial;
+              line-height: 1.15; /* 1 */
+              -webkit-text-size-adjust: 100%; /* 2 */
+            }
+            body {
+              margin: 0;
+            }
+            main {
+              display: block;
+            }
+            h1 {
+              font-size: 2em;
+              margin: 0.67em 0;
+            }
+            hr {
+              box-sizing: content-box; /* 1 */
+              height: 0; /* 1 */
+              overflow: visible; /* 2 */
+            }
+            pre {
+              font-family: monospace, monospace; /* 1 */
+              font-size: 1em; /* 2 */
+            }
+            a {
+              background-color: transparent;
+            }
+            abbr[title] {
+              border-bottom: none; /* 1 */
+              text-decoration: underline; /* 2 */
+              text-decoration: underline dotted; /* 2 */
+            }
+            b,
+            strong {
+              font-weight: bolder;
+            }
+            code,
+            kbd,
+            samp {
+              font-family: monospace, monospace; /* 1 */
+              font-size: 1em; /* 2 */
+            }
+            small {
+              font-size: 80%;
+            }
+            sub,
+            sup {
+              font-size: 75%;
+              line-height: 0;
+              position: relative;
+              vertical-align: baseline;
+            }
+            sub {
+              bottom: -0.25em;
+            }
+            sup {
+              top: -0.5em;
+            }
+            img {
+              border-style: none;
+            }
+
+
+            button,
+            input,
+            optgroup,
+            select,
+            textarea {
+              font-family: inherit; /* 1 */
+              font-size: 100%; /* 1 */
+              line-height: 1.15; /* 1 */
+              margin: 0; /* 2 */
+            }
+
+
+            button,
+            input { /* 1 */
+              overflow: visible;
+            }
+
+            button,
+            select { /* 1 */
+              text-transform: none;
+            }
+
+            button,
+            [type="button"],
+            [type="reset"],
+            [type="submit"] {
+              -webkit-appearance: button;
+            }
+
+            button::-moz-focus-inner,
+            [type="button"]::-moz-focus-inner,
+            [type="reset"]::-moz-focus-inner,
+            [type="submit"]::-moz-focus-inner {
+              border-style: none;
+              padding: 0;
+            }
+
+            button:-moz-focusring,
+            [type="button"]:-moz-focusring,
+            [type="reset"]:-moz-focusring,
+            [type="submit"]:-moz-focusring {
+              outline: 1px dotted ButtonText;
+            }
+
+            fieldset {
+              padding: 0.35em 0.75em 0.625em;
+            }
+
+            legend {
+              box-sizing: border-box; /* 1 */
+              color: inherit; /* 2 */
+              display: table; /* 1 */
+              max-width: 100%; /* 1 */
+              padding: 0; /* 3 */
+              white-space: normal; /* 1 */
+            }
+
+            progress {
+              vertical-align: baseline;
+            }
+
+            ::-webkit-file-upload-button {
+              -webkit-appearance: button; /* 1 */
+              font: inherit; /* 2 */
+            }
+
+            details {
+              display: block;
+            }
+
+            summary {
+              display: list-item;
+            }
+
+            template {
+              display: none;
+            }
+
+            .main {
+                max-width: 800px;
+                margin: 1em auto;
+            }
+            .center {
+                text-align: center;
+            }
+            button::after {
+                content: " ↓";
+            }
+            #wrapper {
+                margin: 0 1em;
+            }
+
+            #output, #input {
+
+                width: 100%;
+                clear: both;
+                margin: 1em 0;
+                border: 1px solid #999;
+                padding: 2px;
+                min-height: 10em;
+
+            }
+
+            .logo{
+                width: 30px;
+                top: 7px;
+                position: relative;
+            }
+            .light{
+                color: #566;
+            }
+            .light a{
+                color: #566;
+            }
+
+            blockquote {
+
+                border-left: 7px solid #ccc;
+                padding-left: 10px;
+
+            }
+
+    </style>
+  </head>
+  <body>
+    <!-- Note the usage of `type=module` here as this is an ES6 module -->
+    <script type="module">
+      // Use ES module import syntax to import functionality from the module
+      // that we have compiled.
+      //
+      // Note that the `default` import is an initialization function which
+      // will "boot" the module and make it ready to use. Currently browsers
+      // don't support natively imported WebAssembly as an ES module, but
+      // eventually the manual initialization won't be required!
+      import init, { add, validate } from './pkg/quickwit_test_config_ui.js';
+
+      async function run() {
+        // First up we need to actually load the wasm file, so we use the
+        // default export to inform it where the wasm file is located on the
+        // server, and then we wait on the returned promise to wait for the
+        // wasm to be loaded.
+        //
+        // It may look like this: `await init('./pkg/without_a_bundler_bg.wasm');`,
+        // but there is also a handy default inside `init` function, which uses
+        // `import.meta` to locate the wasm file relatively to js file.
+        //
+        // Note that instead of a string you can also pass in any of the
+        // following things:
+        //
+        // * `WebAssembly.Module`
+        //
+        // * `ArrayBuffer`
+        //
+        // * `Response`
+        //
+        // * `Promise` which returns any of the above, e.g. `fetch("./path/to/wasm")`
+        //
+        // This gives you complete control over how the module is loaded
+        // and compiled.
+        //
+        // Also note that the promise, when resolved, yields the wasm module's
+        // exports which is the same as importing the `*_bg` module in other
+        // modes
+        await init();
+
+        // And afterwards we can use all the functionality defined in wasm.
+        const result = add(1, 2);
+        console.log(`1 + 2 = ${result}`);
+        if (result !== 3)
+          throw new Error("wasm addition doesn't work!");
+      }
+
+      
+	document.querySelector('#validate').addEventListener('click', convertToJson)
+
+
+	function convertToJson(){
+	    let source_config = document.getElementById("source_config").value;
+	    let config = document.getElementById("index_config").value;
+	    let doc = document.getElementById("json_data").value;
+
+	    try{
+		document.getElementById("output").value = validate(config, source_config, doc)
+	    }catch(e){
+		document.getElementById("output").value = e.toString()
+	    }
+
+	}
+
+
+      run();
+    </script>
+
+
+    <body>
+    <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
+
+    <div class="main" role="main">
+        <div id="wrapper">
+            <h1>
+                <span class="verbose" style="font-size:1em;">Quickwit Index-Config Tester</span>
+            </h1>
+            <div id="converter">
+		<div class="center">Source Config</div>
+                <textarea id="source_config" style="height: 20%;width: 100%" ></textarea>
+		<div class="center">Config</div>
+                <textarea id="index_config" style="height: 20%;width: 100%" ></textarea>
+		<div class="center">JSON Test-Data</div>
+                <textarea id="json_data" style="height: 20%;width: 100%" ></textarea>
+                <div class="center">
+                  <button id="validate" >Validate</button>
+                </div>
+                <textarea id="output" style="height: 20%;"></textarea>
+            </div>
+        </div>
+    </div>
+
+  </body>
+
+
+  </body>
+</html>
+

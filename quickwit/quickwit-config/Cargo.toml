@@ -40,3 +40,4 @@ tokio = { workspace = true }
 
 [features]
 testsuite = []
+wasm = ["quickwit-common/wasm"]

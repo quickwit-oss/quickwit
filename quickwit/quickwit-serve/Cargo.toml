@@ -43,7 +43,7 @@ warp = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["default"] }
 quickwit-config = { workspace = true }
 quickwit-control-plane = { workspace = true }
 quickwit-core = { workspace = true }

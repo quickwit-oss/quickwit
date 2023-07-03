@@ -14,6 +14,9 @@ itertools = { workspace = true }
 ouroboros = "0.17.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
-tantivy = { workspace = true }
+tantivy = { workspace = true, features = [] }
 time = { workspace = true }
 time-fmt = "0.3.8"
+
+[features]
+

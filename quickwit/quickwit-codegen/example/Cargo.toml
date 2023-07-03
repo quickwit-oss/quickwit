@@ -24,7 +24,7 @@ tower = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["default"] }
 
 [dev-dependencies]
 mockall = { workspace = true}

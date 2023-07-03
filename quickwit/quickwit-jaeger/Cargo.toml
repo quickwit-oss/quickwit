@@ -19,14 +19,19 @@ prost = { workspace = true }
 prost-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tantivy = { workspace = true }
+tantivy = { workspace = true , features = [
+  "mmap",
+  "lz4-compression",
+  "zstd-compression",
+  "quickwit",
+] }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["default"] }
 quickwit-config = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }

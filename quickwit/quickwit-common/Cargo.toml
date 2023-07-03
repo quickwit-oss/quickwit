@@ -18,31 +18,33 @@ colored = { workspace = true }
 dyn-clone = { workspace = true }
 env_logger = { workspace = true }
 futures = { workspace = true }
-home = { workspace = true }
-hostname = { workspace = true }
+home = { workspace = true, optional = true  }
+hostname = { workspace = true, optional = true  }
 http = { workspace = true }
-hyper = { workspace = true }
+hyper = { workspace = true, optional = true }
 itertools = { workspace = true }
 num_cpus = { workspace = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }
-pnet = { workspace = true }
+pnet = { workspace = true, optional = true  }
 prometheus = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
-tokio-stream = { workspace = true }
-tonic = { workspace = true }
-tower = { workspace = true }
+tokio = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true }
+tonic = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
 tracing = { workspace = true }
 utoipa = { workspace = true }
-warp = { workspace = true }
+warp = { workspace = true, optional = true  }
 
 [features]
+default = ["hyper", "home", "hostname", "pnet", "tokio", "tokio-stream", "tonic", "tower", "warp"]
 testsuite = []
+wasm = []
 
 [dev-dependencies]
 serde_json = { workspace = true }

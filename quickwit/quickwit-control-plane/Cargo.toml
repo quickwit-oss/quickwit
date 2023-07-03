@@ -32,7 +32,7 @@ utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["default"] }
 quickwit-config = { workspace = true }
 quickwit-grpc-clients = { workspace = true }
 quickwit-indexing = { workspace = true }

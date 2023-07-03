@@ -27,7 +27,12 @@ rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
-tantivy = { workspace = true }
+tantivy = { workspace = true , features = [
+  "mmap",
+  "lz4-compression",
+  "zstd-compression",
+  "quickwit",
+] }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
@@ -39,7 +44,7 @@ opentelemetry = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["default"] }
 quickwit-config = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }

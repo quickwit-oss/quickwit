@@ -21,7 +21,7 @@ tracing = { workspace = true }
 
 quickwit-indexing = { workspace = true }
 quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["default"] }
 quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
