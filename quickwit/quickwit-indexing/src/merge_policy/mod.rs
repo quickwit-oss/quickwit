@@ -108,8 +108,10 @@ impl fmt::Debug for MergeOperation {
 pub trait MergePolicy: Send + Sync + fmt::Debug {
     /// Returns the list of merge operations that should be performed.
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation>;
-    /// Returns split maturity after which a split becomes mature.
-    /// A split is mature if it does not undergo new merge operations.
+    /// Returns split maturity.
+    /// A split is either:
+    /// - `Mature` if it does not undergo new merge operations.
+    /// - will become mature after a `TimeToMaturity` period of time.
     fn split_maturity(&self, split_num_docs: usize, split_num_merge_ops: usize) -> SplitMaturity;
 
     /// Checks a bunch of properties specific to the given merge policy.
