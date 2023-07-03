@@ -160,7 +160,9 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
         if split_num_docs >= self.split_num_docs_target {
             return SplitMaturity::Mature;
         }
-        SplitMaturity::TimeToMaturity(self.config.maturation_period)
+        SplitMaturity::MatureAfterPeriod {
+            period: self.config.maturation_period,
+        }
     }
 
     #[cfg(test)]
@@ -213,7 +215,9 @@ mod tests {
         // maturation_period is not mature.
         assert_eq!(
             merge_policy.split_maturity(split.num_docs, split.num_merge_ops),
-            SplitMaturity::TimeToMaturity(Duration::from_secs(3600))
+            SplitMaturity::MatureAfterPeriod {
+                period: Duration::from_secs(3600)
+            }
         );
         // Split with docs > max_merge_docs is mature.
         assert_eq!(

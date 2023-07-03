@@ -1662,7 +1662,9 @@ pub mod test_suite {
             index_uid: index_uid.clone(),
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
-            maturity: SplitMaturity::TimeToMaturity(Duration::from_secs(0)),
+            maturity: SplitMaturity::MatureAfterPeriod {
+                period: Duration::from_secs(0),
+            },
             tags: to_btree_set(&["tag!", "tag:foo", "tag:bar"]),
             delete_opstamp: 3,
             ..Default::default()
@@ -1674,7 +1676,9 @@ pub mod test_suite {
             index_uid: index_uid.clone(),
             time_range: Some(100..=199),
             create_timestamp: current_timestamp,
-            maturity: SplitMaturity::TimeToMaturity(Duration::from_secs(10)),
+            maturity: SplitMaturity::MatureAfterPeriod {
+                period: Duration::from_secs(10),
+            },
             tags: to_btree_set(&["tag!", "tag:bar"]),
             delete_opstamp: 1,
             ..Default::default()
@@ -1686,7 +1690,9 @@ pub mod test_suite {
             index_uid: index_uid.clone(),
             time_range: Some(200..=299),
             create_timestamp: current_timestamp,
-            maturity: SplitMaturity::TimeToMaturity(Duration::from_secs(20)),
+            maturity: SplitMaturity::MatureAfterPeriod {
+                period: Duration::from_secs(20),
+            },
             tags: to_btree_set(&["tag!", "tag:foo", "tag:baz"]),
             delete_opstamp: 5,
             ..Default::default()

@@ -161,9 +161,9 @@ impl SplitMetadata {
     pub fn is_mature(&self) -> bool {
         match self.maturity {
             SplitMaturity::Mature => true,
-            SplitMaturity::TimeToMaturity(duration) => {
-                self.create_timestamp + duration.as_secs() as i64 <= utc_now_timestamp()
-            }
+            SplitMaturity::MatureAfterPeriod {
+                period: time_to_maturity,
+            } => self.create_timestamp + time_to_maturity.as_secs() as i64 <= utc_now_timestamp(),
         }
     }
 
@@ -175,9 +175,9 @@ impl SplitMetadata {
     pub(crate) fn maturity_timestamp(&self) -> i64 {
         match self.maturity {
             SplitMaturity::Mature => 0,
-            SplitMaturity::TimeToMaturity(duration) => {
-                self.create_timestamp + duration.as_secs() as i64
-            }
+            SplitMaturity::MatureAfterPeriod {
+                period: time_to_maturity,
+            } => self.create_timestamp + time_to_maturity.as_secs() as i64,
         }
     }
 
@@ -214,7 +214,9 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             uncompressed_docs_size_in_bytes: 234234,
             time_range: Some(121000..=130198),
             create_timestamp: 3,
-            maturity: SplitMaturity::TimeToMaturity(Duration::from_secs(4)),
+            maturity: SplitMaturity::MatureAfterPeriod {
+                period: Duration::from_secs(4),
+            },
             tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
             footer_offsets: 1000..2000,
             num_merge_ops: 3,
@@ -272,68 +274,38 @@ impl FromStr for SplitState {
     }
 }
 
-/// A split is mature if it does not undergo new merge operations.
-/// A split is either `Mature` or becomes mature after a given period, aka
-/// `TimeToMaturity`.
+/// `SplitMaturity` defines the maturity of a split, is is either `Mature`
+/// or becomes mature after a given period.
+/// A mature split does not undergo new merge operations.
 /// The maturity is determined by the `MergePolicy`.
 #[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
 pub enum SplitMaturity {
     /// Split is mature.
     #[default]
-    #[serde(with = "serde_split_maturity::mature")]
     Mature,
-    /// Time after which the split will be mature.
-    /// Note the accuracy is in seconds.
-    TimeToMaturity(#[serde(with = "serde_split_maturity::duration")] Duration),
+    /// Period after which the split is mature.
+    /// Period is truncated to seconds
+    /// on serialization.
+    MatureAfterPeriod {
+        /// Time to maturity.
+        #[serde(with = "serde_duration_secs")]
+        period: Duration,
+    },
 }
 
-pub mod serde_split_maturity {
-    // Serde untagged will serialize the empty variant as `null`.
-    // We want to serialize it as `mature` instead.
-    pub mod mature {
-        pub fn serialize<S>(serializer: S) -> Result<S::Ok, S::Error>
-        where S: serde::Serializer {
-            serializer.serialize_str("mature")
-        }
-
-        pub fn deserialize<'de, D>(deserializer: D) -> Result<(), D::Error>
-        where D: serde::Deserializer<'de> {
-            struct V;
-            impl<'de> serde::de::Visitor<'de> for V {
-                type Value = ();
-                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                    f.write_str(concat!("\"mature\""))
-                }
-                fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-                    if value == "mature" {
-                        Ok(())
-                    } else {
-                        Err(E::invalid_value(serde::de::Unexpected::Str(value), &self))
-                    }
-                }
-            }
-            deserializer.deserialize_str(V)
-        }
+pub mod serde_duration_secs {
+    // Serializer/Deserializer of `Duration` in seconds.
+    pub fn serialize<S>(duration: &std::time::Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        serializer.serialize_u64(duration.as_secs())
     }
 
-    // Serializer/Deserializer of `Duration` in seconds.
-    pub mod duration {
-        pub fn serialize<S>(
-            duration: &std::time::Duration,
-            serializer: S,
-        ) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-        {
-            serializer.serialize_u64(duration.as_secs())
-        }
-
-        pub fn deserialize<'de, D>(deserializer: D) -> Result<std::time::Duration, D::Error>
-        where D: serde::Deserializer<'de> {
-            let time_to_maturity_in_seconds: u64 = serde::Deserialize::deserialize(deserializer)?;
-            Ok(std::time::Duration::from_secs(time_to_maturity_in_seconds))
-        }
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<std::time::Duration, D::Error>
+    where D: serde::Deserializer<'de> {
+        let time_to_maturity_in_seconds: u64 = serde::Deserialize::deserialize(deserializer)?;
+        Ok(std::time::Duration::from_secs(time_to_maturity_in_seconds))
     }
 }
 
@@ -354,17 +326,18 @@ mod tests {
     #[test]
     fn test_split_maturity_serialization() {
         {
-            let split_maturity =
-                super::SplitMaturity::TimeToMaturity(std::time::Duration::from_secs(10));
+            let split_maturity = super::SplitMaturity::MatureAfterPeriod {
+                period: std::time::Duration::from_secs(10),
+            };
             let serialized = serde_json::to_string(&split_maturity).unwrap();
-            assert_eq!(serialized, r#"10"#);
+            assert_eq!(serialized, r#"{"type":"mature_after_period","period":10}"#);
             let deserialized: super::SplitMaturity = serde_json::from_str(&serialized).unwrap();
             assert_eq!(deserialized, split_maturity);
         }
         {
             let split_maturity = super::SplitMaturity::Mature;
             let serialized = serde_json::to_string(&split_maturity).unwrap();
-            assert_eq!(serialized, r#""mature""#);
+            assert_eq!(serialized, r#"{"type":"mature"}"#);
             let deserialized: super::SplitMaturity = serde_json::from_str(&serialized).unwrap();
             assert_eq!(deserialized, split_maturity);
         }
