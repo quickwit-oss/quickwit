@@ -43,6 +43,7 @@ reqwest = { workspace = true }
 serde_json = { workspace = true }
 tabled = { workspace = true }
 tempfile = { workspace = true }
+thiserror = { workspace = true }
 thousands = { workspace = true }
 tikv-jemalloc-ctl = { workspace = true, optional = true }
 tikv-jemallocator = { workspace = true, optional = true }

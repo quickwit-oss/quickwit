@@ -19,7 +19,6 @@
 
 #![deny(clippy::disallowed_methods)]
 
-mod checklist;
 mod coolid;
 
 pub mod binary_heap;
@@ -49,9 +48,6 @@ use std::fmt::Debug;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
-pub use checklist::{
-    print_checklist, run_checklist, ChecklistError, BLUE_COLOR, GREEN_COLOR, RED_COLOR,
-};
 pub use coolid::new_coolid;
 pub use file_entry::FileEntry;
 pub use kill_switch::KillSwitch;

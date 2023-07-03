@@ -28,7 +28,6 @@ use clap::{arg, Arg, ArgMatches};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use once_cell::sync::Lazy;
-use quickwit_common::run_checklist;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
@@ -47,6 +46,9 @@ use tabled::object::Rows;
 use tabled::{Alignment, Header, Modify, Style, Table, Tabled};
 use tracing::info;
 
+use crate::checklist::run_checklist;
+
+pub mod checklist;
 pub mod cli;
 pub mod index;
 #[cfg(feature = "jemalloc")]
