@@ -152,9 +152,6 @@ impl From<AppendError> for IngestServiceError {
             AppendError::Past => IngestServiceError::InvalidPosition(
                 "Attempted to append a record in the past".to_string(),
             ),
-            AppendError::Future => IngestServiceError::InvalidPosition(
-                "Attempted to append a record in the future".to_string(),
-            ),
         }
     }
 }
@@ -175,14 +172,6 @@ impl From<TruncateError> for IngestServiceError {
         match err {
             TruncateError::IoError(io_error) => io_error.into(),
             TruncateError::MissingQueue(index_id) => IngestServiceError::IndexNotFound { index_id },
-            // this error shouldn't happen (except due to a bug in MRecordLog?)
-            TruncateError::TouchError(_) => IngestServiceError::InvalidPosition(
-                "Attempted to touch at an invalid position".to_string(),
-            ),
-            // this error can happen now, it used to happily trunk everything
-            TruncateError::Future => IngestServiceError::InvalidPosition(
-                "Attempted to truncate past last ingested record".to_string(),
-            ),
         }
     }
 }
