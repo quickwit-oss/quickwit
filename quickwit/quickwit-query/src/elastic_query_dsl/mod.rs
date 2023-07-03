@@ -114,7 +114,9 @@ mod tests {
             }
         }"#;
         let query_dsl = serde_json::from_str(term_query_json).unwrap();
-        let ElasticQueryDsl(ElasticQueryDslInner::Term(term_query)) = query_dsl else { panic!() };
+        let ElasticQueryDsl(ElasticQueryDslInner::Term(term_query)) = query_dsl else {
+            panic!()
+        };
         assert_eq!(
             &term_query,
             &term_query_from_field_value("product_id", "61809")

@@ -271,9 +271,13 @@ impl Scheduler {
 
     /// Schedules a Timeout event callback if necessary.
     fn schedule_next_timeout(&mut self) {
-        let Some(scheduler_client) = self.scheduler_client() else { return };
+        let Some(scheduler_client) = self.scheduler_client() else {
+            return;
+        };
         let simulated_now = self.simulated_now();
-        let Some(next_deadline) = self.next_event_deadline() else { return; };
+        let Some(next_deadline) = self.next_event_deadline() else {
+            return;
+        };
         let timeout: Duration = if next_deadline <= simulated_now {
             // This should almost never happen, because we supposedly triggered
             // all pending events.
@@ -320,14 +324,18 @@ impl Scheduler {
     /// - no message is queued for processing, no initialize or no finalize
     /// is being processed.
     fn advance_time_if_necessary(&mut self) {
-        let Some(scheduler_client) = self.scheduler_client() else { return; };
+        let Some(scheduler_client) = self.scheduler_client() else {
+            return;
+        };
         if !scheduler_client.time_is_accelerated() {
             return;
         }
         if scheduler_client.is_advance_time_forbidden() {
             return;
         }
-        let Some(advance_to_instant) = self.next_event_deadline() else { return; };
+        let Some(advance_to_instant) = self.next_event_deadline() else {
+            return;
+        };
         let now = self.simulated_now();
         if let Some(time_shift) = advance_to_instant.checked_duration_since(now) {
             self.simulated_time_shift += time_shift;

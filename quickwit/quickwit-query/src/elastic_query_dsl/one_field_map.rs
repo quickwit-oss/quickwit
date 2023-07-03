@@ -61,7 +61,9 @@ impl<'de, V: Deserialize<'de>> Visitor<'de> for OneFieldMapVisitor<V> {
             }
         }
         let Some((key, val)) = map.next_entry()? else {
-            return Err(serde::de::Error::custom("Expected a single field. Got none."));
+            return Err(serde::de::Error::custom(
+                "Expected a single field. Got none.",
+            ));
         };
         if let Some(second_key) = map.next_key::<String>()? {
             return Err(serde::de::Error::custom(format!(

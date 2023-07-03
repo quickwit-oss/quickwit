@@ -304,7 +304,9 @@ mod tests {
         }
         .parse_user_query(&[])
         .unwrap();
-        let QueryAst::Bool(bool_query) = query_ast else { panic!() };
+        let QueryAst::Bool(bool_query) = query_ast else {
+            panic!()
+        };
         assert_eq!(bool_query.must.len(), 2);
     }
 
@@ -317,7 +319,9 @@ mod tests {
         }
         .parse_user_query(&[])
         .unwrap();
-        let QueryAst::Bool(bool_query) = query_ast else { panic!() };
+        let QueryAst::Bool(bool_query) = query_ast else {
+            panic!()
+        };
         assert_eq!(bool_query.should.len(), 2);
     }
 }
