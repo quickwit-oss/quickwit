@@ -69,6 +69,7 @@ pub(crate) struct SplitMetadataV0_6 {
 
     /// Split maturity.
     #[serde(default)]
+    #[schema(value_type = Value)]
     pub maturity: SplitMaturity,
 
     #[serde(default)]

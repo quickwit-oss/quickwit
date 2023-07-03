@@ -276,7 +276,7 @@ impl FromStr for SplitState {
 /// it does not undergo new merge operations.
 /// A split is either `Mature` or becomes mature after a given period, aka
 /// `TimeToMaturity`.
-#[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum SplitMaturity {
     /// Split is mature.
