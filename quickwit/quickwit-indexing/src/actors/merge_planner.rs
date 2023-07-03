@@ -305,7 +305,7 @@ mod tests {
         ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
     };
     use quickwit_config::IndexingSettings;
-    use quickwit_metastore::SplitMetadata;
+    use quickwit_metastore::{SplitMaturity, SplitMetadata};
     use quickwit_proto::IndexUid;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
@@ -331,7 +331,7 @@ mod tests {
             partition_id,
             num_merge_ops,
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-            time_to_maturity: Some(Duration::from_secs(3600)),
+            maturity: SplitMaturity::TimeToMaturity(Duration::from_secs(3600)),
             ..Default::default()
         }
     }

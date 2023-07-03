@@ -19,11 +19,10 @@
 
 use std::cmp::Ordering;
 use std::ops::Range;
-use std::time::Duration;
 
 use quickwit_config::merge_policy_config::StableLogMergePolicyConfig;
 use quickwit_config::IndexingSettings;
-use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use tracing::debug;
 
 use crate::merge_policy::{splits_short_debug, MergeOperation, MergePolicy};
@@ -118,15 +117,11 @@ impl MergePolicy for StableLogMergePolicy {
     }
 
     /// A mature split for merge is a split that won't undergo any merge operation in the future.
-    fn split_time_to_maturity(
-        &self,
-        split_num_docs: usize,
-        _split_num_merge_ops: usize,
-    ) -> Option<Duration> {
+    fn split_maturity(&self, split_num_docs: usize, _split_num_merge_ops: usize) -> SplitMaturity {
         if split_num_docs >= self.split_num_docs_target {
-            return None;
+            return SplitMaturity::Mature;
         }
-        Some(self.config.maturation_period)
+        SplitMaturity::TimeToMaturity(self.config.maturation_period)
     }
 
     #[cfg(test)]
@@ -377,17 +372,18 @@ mod tests {
         let merge_policy = StableLogMergePolicy::default();
         // Split under max_merge_docs and created before now() - maturation_period is not mature.
         assert_eq!(
-            merge_policy.split_time_to_maturity(9_000_000, 0),
-            Some(Duration::from_secs(3600 * 48))
+            merge_policy.split_maturity(9_000_000, 0),
+            SplitMaturity::TimeToMaturity(Duration::from_secs(3600 * 48))
         );
-        assert!(merge_policy
-            .split_time_to_maturity(&merge_policy.split_num_docs_target + 1, 0)
-            .is_none());
+        assert_eq!(
+            merge_policy.split_maturity(&merge_policy.split_num_docs_target + 1, 0),
+            SplitMaturity::Mature
+        );
         // Split under max_merge_docs but with create_timestamp >= now + maturity duration is
         // mature.
         assert_eq!(
-            merge_policy.split_time_to_maturity(9_000_000, 0),
-            Some(merge_policy.config.maturation_period)
+            merge_policy.split_maturity(9_000_000, 0),
+            SplitMaturity::TimeToMaturity(merge_policy.config.maturation_period)
         );
     }
 
@@ -566,9 +562,8 @@ mod tests {
         let merge_policy = StableLogMergePolicy::default();
         let mut splits = create_splits(&merge_policy, vec![9_999_999, 10_000_000]);
         for split in splits.iter_mut() {
-            let time_to_maturity =
-                merge_policy.split_time_to_maturity(split.num_docs, split.num_merge_ops);
-            split.time_to_maturity = time_to_maturity;
+            let time_to_maturity = merge_policy.split_maturity(split.num_docs, split.num_merge_ops);
+            split.maturity = time_to_maturity;
         }
         let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 2);

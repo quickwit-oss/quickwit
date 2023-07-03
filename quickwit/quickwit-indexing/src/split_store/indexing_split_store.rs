@@ -238,7 +238,7 @@ mod tests {
 
     use byte_unit::Byte;
     use quickwit_common::io::IoControls;
-    use quickwit_metastore::SplitMetadata;
+    use quickwit_metastore::{SplitMaturity, SplitMetadata};
     use quickwit_storage::{RamStorage, SplitPayloadBuilder};
     use tempfile::tempdir;
     use time::OffsetDateTime;
@@ -252,7 +252,7 @@ mod tests {
         SplitMetadata {
             split_id: split_id.to_string(),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-            time_to_maturity: Some(Duration::from_secs(3600)),
+            maturity: SplitMaturity::TimeToMaturity(Duration::from_secs(3600)),
             ..Default::default()
         }
     }

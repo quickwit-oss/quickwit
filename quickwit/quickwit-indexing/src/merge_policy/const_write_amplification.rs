@@ -18,11 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::time::Duration;
 
 use quickwit_config::merge_policy_config::ConstWriteAmplificationMergePolicyConfig;
 use quickwit_config::IndexingSettings;
-use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::{SplitMaturity, SplitMetadata};
 
 use super::MergeOperation;
 use crate::merge_policy::MergePolicy;
@@ -75,6 +74,8 @@ impl ConstWriteAmplificationMergePolicy {
 
     #[cfg(test)]
     fn for_test() -> ConstWriteAmplificationMergePolicy {
+        use std::time::Duration;
+
         let config = ConstWriteAmplificationMergePolicyConfig {
             max_merge_ops: 3,
             merge_factor: 3,
@@ -152,18 +153,14 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
         merge_operations
     }
 
-    fn split_time_to_maturity(
-        &self,
-        split_num_docs: usize,
-        split_num_merge_ops: usize,
-    ) -> Option<Duration> {
+    fn split_maturity(&self, split_num_docs: usize, split_num_merge_ops: usize) -> SplitMaturity {
         if split_num_merge_ops >= self.config.max_merge_ops {
-            return None;
+            return SplitMaturity::Mature;
         }
         if split_num_docs >= self.split_num_docs_target {
-            return None;
+            return SplitMaturity::Mature;
         }
-        Some(self.config.maturation_period)
+        SplitMaturity::TimeToMaturity(self.config.maturation_period)
     }
 
     #[cfg(test)]
@@ -196,7 +193,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use quickwit_metastore::SplitMetadata;
+    use quickwit_metastore::{SplitMaturity, SplitMetadata};
     use rand::seq::SliceRandom;
     use time::OffsetDateTime;
 
@@ -215,18 +212,21 @@ mod tests {
         // Split under max_merge_docs, num_merge_ops < max_merge_ops and created before now() -
         // maturation_period is not mature.
         assert_eq!(
-            merge_policy.split_time_to_maturity(split.num_docs, split.num_merge_ops),
-            Some(Duration::from_secs(3600))
+            merge_policy.split_maturity(split.num_docs, split.num_merge_ops),
+            SplitMaturity::TimeToMaturity(Duration::from_secs(3600))
         );
         // Split with docs > max_merge_docs is mature.
-        assert!(merge_policy
-            .split_time_to_maturity(merge_policy.split_num_docs_target + 1, split.num_merge_ops)
-            .is_none());
+        assert_eq!(
+            merge_policy
+                .split_maturity(merge_policy.split_num_docs_target + 1, split.num_merge_ops),
+            SplitMaturity::Mature
+        );
 
         // Split with num_merge_ops >= max_merge_ops is mature
-        assert!(merge_policy
-            .split_time_to_maturity(split.num_docs, merge_policy.config.max_merge_ops)
-            .is_none());
+        assert_eq!(
+            merge_policy.split_maturity(split.num_docs, merge_policy.config.max_merge_ops),
+            SplitMaturity::Mature
+        );
     }
 
     #[test]
@@ -243,7 +243,7 @@ mod tests {
             split_id: "01GE1R0KBFQHJ76030RYRAS8QA".to_string(),
             num_docs: 1,
             create_timestamp: 1665000000,
-            time_to_maturity: merge_policy.split_time_to_maturity(1, 0),
+            maturity: merge_policy.split_maturity(1, 0),
             num_merge_ops: 4,
             ..Default::default()
         }];
@@ -262,7 +262,7 @@ mod tests {
                 num_docs: 1_000,
                 num_merge_ops: 1,
                 create_timestamp,
-                time_to_maturity: merge_policy.split_time_to_maturity(1_000, 1),
+                maturity: merge_policy.split_maturity(1_000, 1),
                 ..Default::default()
             })
             .collect();
@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn test_const_write_merge_policy_merge_factor_max() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
-        let time_to_maturity = merge_policy.split_time_to_maturity(1_000, 1);
+        let time_to_maturity = merge_policy.split_maturity(1_000, 1);
         let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits =
             (0..merge_policy.config.max_merge_factor + merge_policy.config.merge_factor - 1)
@@ -286,7 +286,7 @@ mod tests {
                     num_docs: 1_000,
                     num_merge_ops: 1,
                     create_timestamp,
-                    time_to_maturity,
+                    maturity: time_to_maturity,
                     ..Default::default()
                 })
                 .collect();
@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn test_const_write_merge_policy_older_first() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
-        let time_to_maturity = merge_policy.split_time_to_maturity(1_000, 1);
+        let time_to_maturity = merge_policy.split_maturity(1_000, 1);
         let now_timestamp: i64 = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits: Vec<SplitMetadata> = (0..merge_policy.config.max_merge_factor)
             .map(|i| SplitMetadata {
@@ -309,7 +309,7 @@ mod tests {
                 num_docs: 1_000,
                 num_merge_ops: 1,
                 create_timestamp: now_timestamp + i as i64,
-                time_to_maturity,
+                maturity: time_to_maturity,
                 ..Default::default()
             })
             .collect();
@@ -338,13 +338,13 @@ mod tests {
         let mut splits = (0..4)
             .map(|i| {
                 let num_docs = (merge_policy.split_num_docs_target + 2) / 3;
-                let time_to_maturity = merge_policy.split_time_to_maturity(num_docs, 1);
+                let time_to_maturity = merge_policy.split_maturity(num_docs, 1);
                 SplitMetadata {
                     split_id: format!("split-{i}"),
                     num_docs,
                     num_merge_ops: 1,
                     create_timestamp,
-                    time_to_maturity,
+                    maturity: time_to_maturity,
                     ..Default::default()
                 }
             })

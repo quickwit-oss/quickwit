@@ -102,10 +102,8 @@ pub struct SplitMetadata {
     /// Timestamp for tracking when the split was created.
     pub create_timestamp: i64,
 
-    /// Timestamp for tracking when the split becomes mature.
-    /// If a split is already mature, this timestamp is set to 0.
-    // pub maturity_timestamp: i64,
-    pub time_to_maturity: Option<Duration>,
+    /// Split maturity.
+    pub maturity: SplitMaturity,
 
     /// Set of unique tags values of form `{field_name}:{field_value}`.
     /// The set is filled at indexing with values from each field registered
@@ -161,15 +159,22 @@ impl SplitMetadata {
 
     /// Returns true if the split is mature at `utc_now_timetamp()`.
     pub fn is_mature(&self) -> bool {
-        self.maturity_timestamp() <= utc_now_timestamp()
+        match self.maturity {
+            SplitMaturity::Mature => true,
+            SplitMaturity::TimeToMaturity(duration) => {
+                self.create_timestamp + duration.as_secs() as i64 <= utc_now_timestamp()
+            }
+        }
     }
 
-    /// Returns the timestamp at which the split becomes mature.
-    /// If the split has no time to maturity defined, it returns 0.
-    pub fn maturity_timestamp(&self) -> i64 {
-        self.time_to_maturity
-            .map(|time_to_maturity| self.create_timestamp + time_to_maturity.as_secs() as i64)
-            .unwrap_or(0)
+    /// TODO
+    pub(crate) fn maturity_timestamp(&self) -> i64 {
+        match self.maturity {
+            SplitMaturity::Mature => 0,
+            SplitMaturity::TimeToMaturity(duration) => {
+                self.create_timestamp + duration.as_secs() as i64
+            }
+        }
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -205,7 +210,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             uncompressed_docs_size_in_bytes: 234234,
             time_range: Some(121000..=130198),
             create_timestamp: 3,
-            time_to_maturity: Some(Duration::from_secs(4)),
+            maturity: SplitMaturity::TimeToMaturity(Duration::from_secs(4)),
             tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
             footer_offsets: 1000..2000,
             num_merge_ops: 3,
@@ -263,6 +268,68 @@ impl FromStr for SplitState {
     }
 }
 
+/// A split maturity.
+#[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[serde(untagged)]
+pub enum SplitMaturity {
+    /// Split is mature.
+    #[default]
+    #[serde(with = "serde_split_maturity::mature")]
+    Mature,
+    /// Time after which the split will be mature.
+    /// Note the accuracy is in seconds.
+    TimeToMaturity(#[serde(with = "serde_split_maturity::duration")] Duration),
+}
+
+pub mod serde_split_maturity {
+    // Serde untagged will serialize the empty variant as `null`.
+    // We want to serialize it as `mature` instead.
+    pub mod mature {
+        pub fn serialize<S>(serializer: S) -> Result<S::Ok, S::Error>
+        where S: serde::Serializer {
+            serializer.serialize_str("mature")
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<(), D::Error>
+        where D: serde::Deserializer<'de> {
+            struct V;
+            impl<'de> serde::de::Visitor<'de> for V {
+                type Value = ();
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    f.write_str(concat!("\"mature\""))
+                }
+                fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                    if value == "mature" {
+                        Ok(())
+                    } else {
+                        Err(E::invalid_value(serde::de::Unexpected::Str(value), &self))
+                    }
+                }
+            }
+            deserializer.deserialize_str(V)
+        }
+    }
+
+    // Serializer/Deserializer of `Duration` in seconds.
+    pub mod duration {
+        pub fn serialize<S>(
+            duration: &std::time::Duration,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            serializer.serialize_u64(duration.as_secs())
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<std::time::Duration, D::Error>
+        where D: serde::Deserializer<'de> {
+            let time_to_maturity_in_seconds: u64 = serde::Deserialize::deserialize(deserializer)?;
+            Ok(std::time::Duration::from_secs(time_to_maturity_in_seconds))
+        }
+    }
+}
+
 /// Helper function to provide a UTC now timestamp to use
 /// as a default in deserialization.
 ///
@@ -272,5 +339,27 @@ pub fn utc_now_timestamp() -> i64 {
         1640577000
     } else {
         OffsetDateTime::now_utc().unix_timestamp()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_split_maturity_serialization() {
+        {
+            let split_maturity =
+                super::SplitMaturity::TimeToMaturity(std::time::Duration::from_secs(10));
+            let serialized = serde_json::to_string(&split_maturity).unwrap();
+            assert_eq!(serialized, r#"10"#);
+            let deserialized: super::SplitMaturity = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(deserialized, split_maturity);
+        }
+        {
+            let split_maturity = super::SplitMaturity::Mature;
+            let serialized = serde_json::to_string(&split_maturity).unwrap();
+            assert_eq!(serialized, r#""mature""#);
+            let deserialized: super::SplitMaturity = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(deserialized, split_maturity);
+        }
     }
 }

@@ -18,7 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
-use std::time::Duration;
+
+use quickwit_metastore::SplitMaturity;
 
 use crate::merge_policy::MergePolicy;
 
@@ -41,26 +42,24 @@ impl MergePolicy for NopMergePolicy {
         Vec::new()
     }
 
-    fn split_time_to_maturity(
-        &self,
-        _split_num_docs: usize,
-        _split_num_merge_ops: usize,
-    ) -> Option<Duration> {
+    fn split_maturity(&self, _split_num_docs: usize, _split_num_merge_ops: usize) -> SplitMaturity {
         // With the no merge policy, all splits are mature immediately as they will never undergo
         // any merge.
-        None
+        SplitMaturity::Mature
     }
 }
 
 #[cfg(test)]
 mod tests {
 
+    use quickwit_metastore::SplitMaturity;
+
     use crate::merge_policy::{MergePolicy, NopMergePolicy};
 
     #[test]
     pub fn test_no_merge_policy_maturity_timestamp() {
         // All splits are always mature for `NopMergePolicy`.
-        assert!(NopMergePolicy.split_time_to_maturity(10, 0).is_none());
+        assert_eq!(NopMergePolicy.split_maturity(10, 0), SplitMaturity::Mature);
     }
 
     #[test]
