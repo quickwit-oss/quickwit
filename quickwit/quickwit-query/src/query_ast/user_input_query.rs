@@ -312,7 +312,9 @@ mod tests {
         }
         .parse_user_query(&["defaultfield".to_string()])
         .unwrap();
-        let QueryAst::FullText(phrase_query) = ast else { panic!() };
+        let QueryAst::FullText(phrase_query) = ast else {
+            panic!()
+        };
         assert_eq!(&phrase_query.field, "defaultfield");
         assert_eq!(&phrase_query.text, "hello");
         assert_eq!(
@@ -330,7 +332,9 @@ mod tests {
         }
         .parse_user_query(&[])
         .unwrap();
-        let QueryAst::PhrasePrefix(phrase_prefix_query) = ast else { panic!() };
+        let QueryAst::PhrasePrefix(phrase_prefix_query) = ast else {
+            panic!()
+        };
         assert_eq!(&phrase_prefix_query.field, "field");
         assert_eq!(&phrase_prefix_query.phrase, "hello");
         assert_eq!(phrase_prefix_query.max_expansions, 50);
@@ -349,7 +353,9 @@ mod tests {
         }
         .parse_user_query(&["defaultfieldweshouldignore".to_string()])
         .unwrap();
-        let QueryAst::FullText(phrase_query) = ast else { panic!() };
+        let QueryAst::FullText(phrase_query) = ast else {
+            panic!()
+        };
         assert_eq!(&phrase_query.field, "defaultfield");
         assert_eq!(&phrase_query.text, "hello");
         assert_eq!(
@@ -367,7 +373,9 @@ mod tests {
         }
         .parse_user_query(&["defaultfieldweshouldignore".to_string()])
         .unwrap();
-        let QueryAst::Bool(BoolQuery { should, ..}) = ast else { panic!() };
+        let QueryAst::Bool(BoolQuery { should, .. }) = ast else {
+            panic!()
+        };
         assert_eq!(should.len(), 2);
     }
 
@@ -380,7 +388,9 @@ mod tests {
         }
         .parse_user_query(&["fieldtoignore".to_string()])
         .unwrap();
-        let QueryAst::FullText(full_text_query) = ast else { panic!() };
+        let QueryAst::FullText(full_text_query) = ast else {
+            panic!()
+        };
         assert_eq!(&full_text_query.field, "myfield");
         assert_eq!(&full_text_query.text, "hello");
         assert_eq!(
@@ -399,7 +409,9 @@ mod tests {
             }
             .parse_user_query(&[])
             .unwrap();
-            let QueryAst::FullText(full_text_query) = ast else { panic!() };
+            let QueryAst::FullText(full_text_query) = ast else {
+                panic!()
+            };
             full_text_query
         };
         {

@@ -17,6 +17,7 @@ default_index_root_uri = "s3://quickwit-indexes"
 account = "quickwit-dev"
 
 [storage.s3]
+flavor = "gcs"
 endpoint = "http://localhost:4566"
 force_path_style_access = true
 

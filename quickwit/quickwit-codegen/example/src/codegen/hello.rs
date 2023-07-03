@@ -133,9 +133,40 @@ impl Hello for HelloClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-impl From<MockHello> for HelloClient {
-    fn from(mock: MockHello) -> Self {
-        HelloClient::new(mock)
+pub mod mock {
+    use super::*;
+    #[derive(Debug, Clone)]
+    struct MockHelloWrapper {
+        inner: std::sync::Arc<tokio::sync::Mutex<MockHello>>,
+    }
+    #[async_trait::async_trait]
+    impl Hello for MockHelloWrapper {
+        async fn hello(
+            &mut self,
+            request: HelloRequest,
+        ) -> crate::HelloResult<HelloResponse> {
+            self.inner.lock().await.hello(request).await
+        }
+        async fn goodbye(
+            &mut self,
+            request: GoodbyeRequest,
+        ) -> crate::HelloResult<GoodbyeResponse> {
+            self.inner.lock().await.goodbye(request).await
+        }
+        async fn ping(
+            &mut self,
+            request: PingRequest,
+        ) -> crate::HelloResult<HelloStream<PingResponse>> {
+            self.inner.lock().await.ping(request).await
+        }
+    }
+    impl From<MockHello> for HelloClient {
+        fn from(mock: MockHello) -> Self {
+            let mock_wrapper = MockHelloWrapper {
+                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+            };
+            HelloClient::new(mock_wrapper)
+        }
     }
 }
 pub type BoxFuture<T, E> = std::pin::Pin<

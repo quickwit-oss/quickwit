@@ -235,31 +235,36 @@ impl FromStr for InnerRoutingExpr {
 fn convert_ast(ast: Vec<expression_dsl::ExpressionAst>) -> anyhow::Result<InnerRoutingExpr> {
     use expression_dsl::{Argument, ExpressionAst};
 
-    let mut result = ast.into_iter().map(|ast_elem|
-        match ast_elem {
+    let mut result = ast
+        .into_iter()
+        .map(|ast_elem| match ast_elem {
             ExpressionAst::Field(field_name) => Ok(InnerRoutingExpr::Field(field_name)),
-            ExpressionAst::Function { name, mut args } => {
-                match &*name {
-                    "hash_mod" => {
-                        if args.len() !=2 {
-                            anyhow::bail!("Invalid arguments for `hash_mod`: expected 2 arguments, found {}", args.len());
-                        }
+            ExpressionAst::Function { name, mut args } => match &*name {
+                "hash_mod" => {
+                    if args.len() != 2 {
+                        anyhow::bail!(
+                            "Invalid arguments for `hash_mod`: expected 2 arguments, found {}",
+                            args.len()
+                        );
+                    }
 
-                        let Argument::Expression(fields) = args.remove(0) else {
-                            anyhow::bail!("Invalid 1st argument for `hash_mod`: expected expression");
-                        };
+                    let Argument::Expression(fields) = args.remove(0) else {
+                        anyhow::bail!("Invalid 1st argument for `hash_mod`: expected expression");
+                    };
 
-                        let Argument::Number(modulo) = args.remove(0) else {
-                            anyhow::bail!("Invalid 2nd argument for `hash_mod`: expected number");
-                        };
+                    let Argument::Number(modulo) = args.remove(0) else {
+                        anyhow::bail!("Invalid 2nd argument for `hash_mod`: expected number");
+                    };
 
-                        Ok(InnerRoutingExpr::Modulo(Box::new(convert_ast(fields)?), modulo))
-                    },
-                    _ => anyhow::bail!("Unknown function `{}`", name),
+                    Ok(InnerRoutingExpr::Modulo(
+                        Box::new(convert_ast(fields)?),
+                        modulo,
+                    ))
                 }
+                _ => anyhow::bail!("Unknown function `{}`", name),
             },
-        }
-    ).collect::<Result<Vec<_>, _>>()?;
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     if result.is_empty() {
         Ok(InnerRoutingExpr::default())
     } else if result.len() == 1 {

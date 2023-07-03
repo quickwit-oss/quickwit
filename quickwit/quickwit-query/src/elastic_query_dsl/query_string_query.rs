@@ -69,7 +69,9 @@ mod tests {
             default_operator: crate::BooleanOperand::Or,
             boost: None,
         };
-        let QueryAst::UserInput(user_input_query) = query_string_query.convert_to_query_ast().unwrap() else {
+        let QueryAst::UserInput(user_input_query) =
+            query_string_query.convert_to_query_ast().unwrap()
+        else {
             panic!();
         };
         assert_eq!(user_input_query.default_operator, BooleanOperand::Or);
@@ -87,7 +89,9 @@ mod tests {
             default_operator: crate::BooleanOperand::And,
             boost: None,
         };
-        let QueryAst::UserInput(user_input_query) = query_string_query.convert_to_query_ast().unwrap() else {
+        let QueryAst::UserInput(user_input_query) =
+            query_string_query.convert_to_query_ast().unwrap()
+        else {
             panic!();
         };
         assert_eq!(user_input_query.default_operator, BooleanOperand::And);
@@ -101,7 +105,9 @@ mod tests {
             default_operator: crate::BooleanOperand::Or,
             boost: None,
         };
-        let QueryAst::UserInput(user_input_query) = query_string_query.convert_to_query_ast().unwrap() else {
+        let QueryAst::UserInput(user_input_query) =
+            query_string_query.convert_to_query_ast().unwrap()
+        else {
             panic!();
         };
         assert_eq!(user_input_query.default_operator, BooleanOperand::Or);
@@ -116,7 +122,9 @@ mod tests {
             default_operator: crate::BooleanOperand::Or,
             boost: None,
         };
-        let QueryAst::UserInput(user_input_query) = query_string_query.convert_to_query_ast().unwrap() else {
+        let QueryAst::UserInput(user_input_query) =
+            query_string_query.convert_to_query_ast().unwrap()
+        else {
             panic!();
         };
         assert!(user_input_query.default_fields.is_none());

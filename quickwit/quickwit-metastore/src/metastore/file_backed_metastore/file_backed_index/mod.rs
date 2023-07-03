@@ -271,9 +271,9 @@ impl FileBackedIndex {
         for &split_id in split_ids {
             // Check for the existence of split.
             let Some(metadata) = self.splits.get_mut(split_id) else {
-                    split_not_found_ids.push(split_id.to_string());
-                    continue;
-                };
+                split_not_found_ids.push(split_id.to_string());
+                continue;
+            };
             if metadata.split_state == SplitState::Staged {
                 metadata.split_state = SplitState::Published;
                 metadata.update_timestamp = now_timestamp;

@@ -20,11 +20,12 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::{env, fmt, io};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
+use aws_credential_types::provider::SharedCredentialsProvider;
+use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
@@ -69,7 +70,8 @@ pub struct S3CompatibleObjectStorage {
     prefix: PathBuf,
     multipart_policy: MultiPartPolicy,
     retry_params: RetryParams,
-    disable_multi_object_delete_requests: bool,
+    disable_multi_object_delete: bool,
+    disable_multipart_upload: bool,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -82,20 +84,47 @@ impl fmt::Debug for S3CompatibleObjectStorage {
     }
 }
 
+fn get_credentials_provider(
+    s3_storage_config: &S3StorageConfig,
+) -> Option<SharedCredentialsProvider> {
+    match (
+        &s3_storage_config.access_key_id,
+        &s3_storage_config.secret_access_key,
+    ) {
+        (Some(access_key_id), Some(secret_access_key)) => {
+            info!("Using S3 credentials defined in storage config.");
+            let credentials = Credentials::from_keys(access_key_id, secret_access_key, None);
+            let credentials_provider = SharedCredentialsProvider::new(credentials);
+            Some(credentials_provider)
+        }
+        _ => None,
+    }
+}
+
+fn get_region(s3_storage_config: &S3StorageConfig) -> Option<Region> {
+    s3_storage_config.region.clone().map(|region| {
+        info!(region=%region, "Using S3 region defined in storage config.");
+        Region::new(region)
+    })
+}
+
 async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     let aws_config = get_aws_config().await;
-    let mut s3_config = aws_sdk_s3::Config::builder().region(aws_config.region().cloned());
+    let credentials_provider =
+        get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider().cloned());
+    let region = get_region(s3_storage_config).or(aws_config.region().cloned());
+    let mut s3_config = aws_sdk_s3::Config::builder().region(region);
 
-    s3_config.set_retry_config(aws_config.retry_config().cloned());
-    s3_config.set_credentials_provider(aws_config.credentials_provider().cloned());
-    s3_config.set_http_connector(aws_config.http_connector().cloned());
-    s3_config.set_timeout_config(aws_config.timeout_config().cloned());
     s3_config.set_credentials_cache(aws_config.credentials_cache().cloned());
-    s3_config.set_sleep_impl(Some(Arc::new(quickwit_aws::TokioSleep::default())));
+    s3_config.set_credentials_provider(credentials_provider);
     s3_config.set_force_path_style(s3_storage_config.force_path_style_access());
+    s3_config.set_http_connector(aws_config.http_connector().cloned());
+    s3_config.set_retry_config(aws_config.retry_config().cloned());
+    s3_config.set_sleep_impl(aws_config.sleep_impl());
+    s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
     if let Some(endpoint) = s3_storage_config.endpoint() {
-        info!(endpoint=%endpoint, "Using custom S3 endpoint.");
+        info!(endpoint=%endpoint, "Using S3 endpoint defined in storage config or environment variable.");
         s3_config.set_endpoint_url(Some(endpoint));
     }
     S3Client::from_conf(s3_config.build())
@@ -113,6 +142,8 @@ impl S3CompatibleObjectStorage {
             max_attempts: 3,
             ..Default::default()
         };
+        let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
+        let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
         Ok(Self {
             s3_client,
             uri,
@@ -120,8 +151,8 @@ impl S3CompatibleObjectStorage {
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
             retry_params,
-            disable_multi_object_delete_requests: s3_storage_config
-                .disable_multi_object_delete_requests,
+            disable_multi_object_delete,
+            disable_multipart_upload,
         })
     }
 
@@ -150,7 +181,8 @@ impl S3CompatibleObjectStorage {
             prefix,
             multipart_policy: self.multipart_policy,
             retry_params: self.retry_params,
-            disable_multi_object_delete_requests: self.disable_multi_object_delete_requests,
+            disable_multi_object_delete: self.disable_multi_object_delete,
+            disable_multipart_upload: self.disable_multipart_upload,
         }
     }
 
@@ -369,7 +401,7 @@ impl S3CompatibleObjectStorage {
         Ok(completed_part)
     }
 
-    async fn put_multi_part<'a>(
+    async fn put_multipart<'a>(
         &'a self,
         key: &'a str,
         payload: Box<dyn crate::PutPayload>,
@@ -646,10 +678,10 @@ impl Storage for S3CompatibleObjectStorage {
         let key = self.key(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
-        if part_num_bytes >= total_len {
+        if self.disable_multipart_upload || part_num_bytes >= total_len {
             self.put_single_part(&key, payload, total_len).await?;
         } else {
-            self.put_multi_part(&key, payload, part_num_bytes, total_len)
+            self.put_multipart(&key, payload, part_num_bytes, total_len)
                 .await?;
         }
         Ok(())
@@ -692,7 +724,7 @@ impl Storage for S3CompatibleObjectStorage {
     }
 
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
-        if self.disable_multi_object_delete_requests {
+        if self.disable_multi_object_delete {
             self.bulk_delete_single(paths).await
         } else {
             self.bulk_delete_multi(paths).await
@@ -843,7 +875,8 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
-            disable_multi_object_delete_requests: false,
+            disable_multi_object_delete: false,
+            disable_multipart_upload: false,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -896,7 +929,8 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
-            disable_multi_object_delete_requests: true,
+            disable_multi_object_delete: true,
+            disable_multipart_upload: false,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -939,7 +973,8 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
-            disable_multi_object_delete_requests: false,
+            disable_multi_object_delete: false,
+            disable_multipart_upload: false,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1023,7 +1058,8 @@ mod tests {
             prefix,
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::default(),
-            disable_multi_object_delete_requests: false,
+            disable_multi_object_delete: false,
+            disable_multipart_upload: false,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[

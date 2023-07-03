@@ -460,7 +460,9 @@ impl<'a> ExtractTimestampRange<'a> {
         included: bool,
     ) {
         use quickwit_query::InterpretUserInput;
-        let Some(lower_bound) = tantivy::DateTime::interpret_json(lower_bound) else { return };
+        let Some(lower_bound) = tantivy::DateTime::interpret_json(lower_bound) else {
+            return;
+        };
         let mut lower_bound = lower_bound.into_timestamp_secs();
         if !included {
             // TODO saturating isn't exactly right, we should replace the RangeQuery with
@@ -475,7 +477,9 @@ impl<'a> ExtractTimestampRange<'a> {
 
     fn update_end_timestamp(&mut self, upper_bound: &quickwit_query::JsonLiteral, included: bool) {
         use quickwit_query::InterpretUserInput;
-        let Some(upper_bound_timestamp) = tantivy::DateTime::interpret_json(upper_bound) else { return };
+        let Some(upper_bound_timestamp) = tantivy::DateTime::interpret_json(upper_bound) else {
+            return;
+        };
         let mut upper_bound = upper_bound_timestamp.into_timestamp_secs();
         let round_up = (upper_bound_timestamp.into_timestamp_nanos() % 1_000_000_000) != 0;
         if included || round_up {

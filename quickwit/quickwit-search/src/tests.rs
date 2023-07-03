@@ -599,7 +599,9 @@ async fn test_sort_bm25() {
                 .into_iter()
                 .map(|hit| {
                     let partial_hit = hit.partial_hit.unwrap();
-                    let Some(SortValue::F64(score)) = partial_hit.sort_value else { panic!()};
+                    let Some(SortValue::F64(score)) = partial_hit.sort_value else {
+                        panic!()
+                    };
                     (score as f32, partial_hit.doc_id)
                 })
                 .collect()

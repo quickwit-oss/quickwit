@@ -82,9 +82,28 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-impl From<MockControlPlaneService> for ControlPlaneServiceClient {
-    fn from(mock: MockControlPlaneService) -> Self {
-        ControlPlaneServiceClient::new(mock)
+pub mod mock {
+    use super::*;
+    #[derive(Debug, Clone)]
+    struct MockControlPlaneServiceWrapper {
+        inner: std::sync::Arc<tokio::sync::Mutex<MockControlPlaneService>>,
+    }
+    #[async_trait::async_trait]
+    impl ControlPlaneService for MockControlPlaneServiceWrapper {
+        async fn notify_index_change(
+            &mut self,
+            request: NotifyIndexChangeRequest,
+        ) -> crate::Result<NotifyIndexChangeResponse> {
+            self.inner.lock().await.notify_index_change(request).await
+        }
+    }
+    impl From<MockControlPlaneService> for ControlPlaneServiceClient {
+        fn from(mock: MockControlPlaneService) -> Self {
+            let mock_wrapper = MockControlPlaneServiceWrapper {
+                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+            };
+            ControlPlaneServiceClient::new(mock_wrapper)
+        }
     }
 }
 pub type BoxFuture<T, E> = std::pin::Pin<

@@ -548,7 +548,8 @@ impl Indexer {
             batch_parent_span,
             indexing_permit,
             ..
-        }) = self.indexing_workbench_opt.take() else {
+        }) = self.indexing_workbench_opt.take()
+        else {
             return Ok(());
         };
         // Dropping the indexing permit explicitly here for enhanced readability.

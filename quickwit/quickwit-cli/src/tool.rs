@@ -295,7 +295,8 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     println!("❯ Ingesting documents locally...");
 
     let config = load_node_config(&args.config_uri).await?;
-    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let (storage_resolver, metastore_resolver) =
+        get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
 
     let source_params = if let Some(filepath) = args.input_path_opt.as_ref() {
@@ -417,7 +418,8 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     debug!(args=?args, "run-merge-operations");
     println!("❯ Merging splits locally...");
     let config = load_node_config(&args.config_uri).await?;
-    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let (storage_resolver, metastore_resolver) =
+        get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     run_index_checklist(&*metastore, &storage_resolver, &args.index_id, None).await?;
     // The indexing service needs to update its cluster chitchat state so that the control plane is
@@ -501,7 +503,8 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     println!("❯ Garbage collecting index...");
 
     let config = load_node_config(&args.config_uri).await?;
-    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let (storage_resolver, metastore_resolver) =
+        get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     let index_service = IndexService::new(metastore, storage_resolver);
     let removal_info = index_service
@@ -565,7 +568,8 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     println!("❯ Extracting split...");
 
     let config = load_node_config(&args.config_uri).await?;
-    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let (storage_resolver, metastore_resolver) =
+        get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;

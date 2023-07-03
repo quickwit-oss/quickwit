@@ -107,14 +107,14 @@ pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
     static IDENTIFIER_REGEX: OnceCell<Regex> = OnceCell::new();
 
     if IDENTIFIER_REGEX
-        .get_or_init(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_]{2,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
+        .get_or_init(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_\.]{2,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
         .is_match(value)
     {
         return Ok(());
     }
     bail!(
         "{label} identifier `{value}` is invalid. Identifiers must match the following regular \
-         expression: `^[a-zA-Z][a-zA-Z0-9-_]{{2,254}}$`."
+         expression: `^[a-zA-Z][a-zA-Z0-9-_\\.]{{2,254}}$`."
     );
 }
 
@@ -225,8 +225,10 @@ mod tests {
         validate_identifier("Cluster ID", "fo").unwrap_err();
         validate_identifier("Cluster ID", "_fo").unwrap_err();
         validate_identifier("Cluster ID", "_foo").unwrap_err();
+        validate_identifier("Cluster ID", ".foo.bar").unwrap_err();
         validate_identifier("Cluster ID", "foo").unwrap();
         validate_identifier("Cluster ID", "f-_").unwrap();
+        validate_identifier("Index ID", "foo.bar").unwrap();
 
         assert!(validate_identifier("Cluster ID", "foo!")
             .unwrap_err()

@@ -190,9 +190,37 @@ impl IngestService for IngestServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-impl From<MockIngestService> for IngestServiceClient {
-    fn from(mock: MockIngestService) -> Self {
-        IngestServiceClient::new(mock)
+pub mod mock {
+    use super::*;
+    #[derive(Debug, Clone)]
+    struct MockIngestServiceWrapper {
+        inner: std::sync::Arc<tokio::sync::Mutex<MockIngestService>>,
+    }
+    #[async_trait::async_trait]
+    impl IngestService for MockIngestServiceWrapper {
+        async fn ingest(
+            &mut self,
+            request: IngestRequest,
+        ) -> crate::Result<IngestResponse> {
+            self.inner.lock().await.ingest(request).await
+        }
+        async fn fetch(
+            &mut self,
+            request: FetchRequest,
+        ) -> crate::Result<FetchResponse> {
+            self.inner.lock().await.fetch(request).await
+        }
+        async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse> {
+            self.inner.lock().await.tail(request).await
+        }
+    }
+    impl From<MockIngestService> for IngestServiceClient {
+        fn from(mock: MockIngestService) -> Self {
+            let mock_wrapper = MockIngestServiceWrapper {
+                inner: std::sync::Arc::new(tokio::sync::Mutex::new(mock)),
+            };
+            IngestServiceClient::new(mock_wrapper)
+        }
     }
 }
 pub type BoxFuture<T, E> = std::pin::Pin<

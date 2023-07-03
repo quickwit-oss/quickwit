@@ -121,7 +121,9 @@ fn validate_timestamp_field(
     timestamp_field_path: &str,
     mapping_root_node: &MappingNode,
 ) -> anyhow::Result<()> {
-    let Some(timestamp_field_type) = mapping_root_node.find_field_mapping_type(timestamp_field_path) else {
+    let Some(timestamp_field_type) =
+        mapping_root_node.find_field_mapping_type(timestamp_field_path)
+    else {
         bail!("Could not find timestamp field `{timestamp_field_path}` in field mappings.");
     };
     if let FieldMappingType::DateTime(date_time_option, cardinality) = &timestamp_field_type {
@@ -1350,8 +1352,11 @@ mod tests {
 
         {
             let json_field = schema.get_field("json_field").unwrap();
-            let FieldType::JsonObject(json_options) = schema.get_field_entry(json_field).field_type()
-        else { panic!() };
+            let FieldType::JsonObject(json_options) =
+                schema.get_field_entry(json_field).field_type()
+            else {
+                panic!()
+            };
             let text_indexing_options = json_options.get_text_indexing_options().unwrap();
             assert_eq!(
                 text_indexing_options.tokenizer(),
@@ -1366,7 +1371,9 @@ mod tests {
         {
             let text_field = schema.get_field("text_field").unwrap();
             let FieldType::Str(text_options) = schema.get_field_entry(text_field).field_type()
-        else { panic!() };
+            else {
+                panic!()
+            };
             assert_eq!(
                 text_options.get_indexing_options().unwrap().tokenizer(),
                 super::QuickwitTextTokenizer::Default.get_name()

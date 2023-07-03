@@ -249,7 +249,10 @@ mod tests {
         let json_doc = br#"{"title": "hello", "body": "world"}"#;
         doc_mapper.doc_from_json_bytes(json_doc).unwrap();
 
-        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper.doc_from_json_bytes(br#"Not a JSON object"#).unwrap_err() else {
+        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper
+            .doc_from_json_bytes(br#"Not a JSON object"#)
+            .unwrap_err()
+        else {
             panic!("Expected `DocParsingError::NotJsonObject` error");
         };
         assert_eq!(json_doc_sample, "Not a JSON object...");
@@ -261,7 +264,10 @@ mod tests {
         let json_doc = r#"{"title": "hello", "body": "world"}"#;
         doc_mapper.doc_from_json_str(json_doc).unwrap();
 
-        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper.doc_from_json_str(r#"Not a JSON object"#).unwrap_err() else {
+        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper
+            .doc_from_json_str(r#"Not a JSON object"#)
+            .unwrap_err()
+        else {
             panic!("Expected `DocParsingError::NotJsonObject` error");
         };
         assert_eq!(json_doc_sample, "Not a JSON object...");
