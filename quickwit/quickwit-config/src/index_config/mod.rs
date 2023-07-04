@@ -551,6 +551,8 @@ mod tests {
             &Uri::from_well_formed("s3://defaultbucket/"),
         )
         .unwrap();
+        assert_eq!(index_config.doc_mapping.tokenizers.len(), 1);
+        assert_eq!(index_config.doc_mapping.tokenizers[0].name, "service_regex");
         assert_eq!(index_config.doc_mapping.field_mappings.len(), 5);
         assert_eq!(index_config.doc_mapping.field_mappings[0].name, "tenant_id");
         assert_eq!(index_config.doc_mapping.field_mappings[1].name, "timestamp");

@@ -40,8 +40,8 @@ pub(crate) use self::field_mapping_entry::{
 };
 pub(crate) use self::field_mapping_type::FieldMappingType;
 pub use self::tokenizer_entry::{
-    NgramTokenizerOption, RegexTokenizerOption, TokenFilterType, TokenizerConfig, TokenizerEntry,
-    TokenizerType,
+    analyze_text, NgramTokenizerOption, RegexTokenizerOption, TokenFilterType, TokenizerConfig,
+    TokenizerEntry, TokenizerType,
 };
 use crate::QW_RESERVED_FIELD_NAMES;
 

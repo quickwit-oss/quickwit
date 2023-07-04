@@ -21,7 +21,8 @@ use anyhow::Context;
 use quickwit_query::DEFAULT_REMOVE_TOKEN_LENGTH;
 use serde::{Deserialize, Serialize};
 use tantivy::tokenizer::{
-    AsciiFoldingFilter, LowerCaser, NgramTokenizer, RegexTokenizer, RemoveLongFilter, TextAnalyzer, SimpleTokenizer,
+    AsciiFoldingFilter, LowerCaser, NgramTokenizer, RegexTokenizer, RemoveLongFilter,
+    SimpleTokenizer, TextAnalyzer, Token,
 };
 
 /// A `TokenizerEntry` defines a custom tokenizer with its name and configuration.
@@ -34,6 +35,7 @@ pub struct TokenizerEntry {
     pub(crate) config: TokenizerConfig,
 }
 
+/// Tokenizer configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
 pub struct TokenizerConfig {
     #[serde(flatten)]
@@ -43,6 +45,7 @@ pub struct TokenizerConfig {
 }
 
 impl TokenizerConfig {
+    /// Build a `TextAnalyzer` from a `TokenizerConfig`.
     pub fn text_analyzer(&self) -> anyhow::Result<TextAnalyzer> {
         let mut text_analyzer_builder = match &self.tokenizer_type {
             TokenizerType::Simple => TextAnalyzer::builder(SimpleTokenizer::default()).dynamic(),
@@ -73,6 +76,17 @@ impl TokenizerConfig {
         }
         Ok(text_analyzer_builder.build())
     }
+}
+
+/// Helper function to analyze a text with a given `TokenizerConfig`.
+pub fn analyze_text(text: &str, tokenizer: &TokenizerConfig) -> anyhow::Result<Vec<Token>> {
+    let mut text_analyzer = tokenizer.text_analyzer()?;
+    let mut token_stream = text_analyzer.token_stream(text);
+    let mut tokens = Vec::new();
+    token_stream.process(&mut |token| {
+        tokens.push(token.clone());
+    });
+    Ok(tokens)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -129,6 +143,7 @@ pub struct RegexTokenizerOption {
 #[cfg(test)]
 mod tests {
     use super::{NgramTokenizerOption, TokenizerType};
+    use crate::default_doc_mapper::RegexTokenizerOption;
     use crate::TokenizerEntry;
 
     #[test]
@@ -139,13 +154,13 @@ mod tests {
             {
                 "name": "my_tokenizer",
                 "type": "ngram",
+                "min_gram": 1,
+                "max_gram": 3,
                 "filters": [
                     "remove_long",
                     "lower_caser",
                     "ascii_folding"
-                ],
-                "min_gram": 1,
-                "max_gram": 3
+                ]
             }
             "#,
             );
@@ -175,13 +190,13 @@ mod tests {
             {
                 "name": "my_tokenizer",
                 "type": "ngram",
+                "min_gram": 1,
+                "max_gram": 3,
                 "filters": [
                     "remove_long",
                     "lower_caser",
                     "ascii_folding"
                 ],
-                "min_gram": 1,
-                "max_gram": 3,
                 "abc": 123
             }
             "#,
@@ -194,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_tokenizer_entry_regex() {
+    fn test_tokenizer_entry_regex() {
         let result: Result<TokenizerEntry, serde_json::Error> =
             serde_json::from_str::<TokenizerEntry>(
                 r#"
@@ -206,5 +221,18 @@ mod tests {
             "#,
             );
         assert!(result.is_ok());
+        let tokenizer_config_entry = result.unwrap();
+        assert_eq!(tokenizer_config_entry.config.filters.len(), 0);
+        match tokenizer_config_entry.config.tokenizer_type {
+            TokenizerType::Regex(options) => {
+                assert_eq!(
+                    options,
+                    RegexTokenizerOption {
+                        pattern: "(my_pattern)".to_string(),
+                    }
+                )
+            }
+            _ => panic!("Unexpected tokenizer type"),
+        }
     }
 }

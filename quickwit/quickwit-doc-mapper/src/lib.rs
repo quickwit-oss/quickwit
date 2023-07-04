@@ -35,13 +35,13 @@ mod routing_expression;
 pub mod tag_pruning;
 
 pub use default_doc_mapper::{
-    DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType, QuickwitJsonOptions,
-    TokenizerEntry,
+    analyze_text, DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType,
+    QuickwitJsonOptions, TokenizerConfig, TokenizerEntry,
 };
 use default_doc_mapper::{
     FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,
     NgramTokenizerOption, QuickwitTextNormalizer, QuickwitTextTokenizer, RegexTokenizerOption,
-    TokenFilterType, TokenizerConfig, TokenizerType,
+    TokenFilterType, TokenizerType,
 };
 pub use doc_mapper::{DocMapper, JsonObject, NamedField, TermRange, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};

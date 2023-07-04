@@ -67,7 +67,7 @@ pub struct DefaultDocMapperBuilder {
     /// how the unmapped fields should be handled.
     #[serde(default)]
     pub dynamic_mapping: Option<QuickwitJsonOptions>,
-    /// Custom tokenizers.
+    /// User-defined tokenizers.
     #[serde(default)]
     pub tokenizers: Vec<TokenizerEntry>,
 }
