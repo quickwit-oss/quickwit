@@ -201,7 +201,7 @@ impl MergePipeline {
         );
         let query = ListSplitsQuery::for_index(self.params.pipeline_id.index_uid.clone())
             .with_split_state(SplitState::Published)
-            .with_maturity_timestamp_lte(OffsetDateTime::now_utc().unix_timestamp());
+            .is_mature(false, OffsetDateTime::now_utc());
         let published_splits = ctx
             .protect_future(self.params.metastore.list_splits(query))
             .await?
@@ -441,7 +441,6 @@ pub struct MergePipelineParams {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Bound;
     use std::sync::Arc;
 
     use quickwit_actors::{ActorExitStatus, Universe};
@@ -450,7 +449,6 @@ mod tests {
     use quickwit_metastore::MockMetastore;
     use quickwit_proto::IndexUid;
     use quickwit_storage::RamStorage;
-    use time::OffsetDateTime;
 
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
     use crate::merge_policy::default_merge_policy;
@@ -476,18 +474,10 @@ mod tests {
                     list_split_query.split_states,
                     vec![quickwit_metastore::SplitState::Published]
                 );
-                match list_split_query.maturity_timestamp.end {
-                    Bound::Included(maturity_timestamp_end) => {
-                        assert!(
-                            maturity_timestamp_end
-                                < OffsetDateTime::now_utc().unix_timestamp() + 3600
-                        );
-                        assert!(
-                            maturity_timestamp_end
-                                > OffsetDateTime::now_utc().unix_timestamp() - 3600
-                        )
-                    }
-                    _ => panic!("Expected unbounded maturity timestamp."),
+                if let Some(maturity_filter) = list_split_query.maturity {
+                    assert!(!maturity_filter.mature);
+                } else {
+                    panic!("Expected maturity filter.");
                 }
                 Ok(Vec::new())
             });

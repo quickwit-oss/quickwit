@@ -500,11 +500,11 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         return false;
     }
 
-    if !query
-        .maturity_timestamp
-        .contains(&split.split_metadata.maturity_timestamp())
-    {
-        return false;
+    if let Some(maturity_filter) = &query.maturity {
+        let is_mature = split
+            .split_metadata
+            .is_mature(maturity_filter.evaluation_datetime);
+        return is_mature == maturity_filter.mature;
     }
 
     if let Some(range) = split.split_metadata.time_range.as_ref() {

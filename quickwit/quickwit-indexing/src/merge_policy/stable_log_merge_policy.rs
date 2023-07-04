@@ -23,6 +23,7 @@ use std::ops::Range;
 use quickwit_config::merge_policy_config::StableLogMergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
+use time::OffsetDateTime;
 use tracing::debug;
 
 use crate::merge_policy::{splits_short_debug, MergeOperation, MergePolicy};
@@ -187,7 +188,8 @@ impl StableLogMergePolicy {
             return Vec::new();
         }
         // First we isolate splits that are mature.
-        let splits_not_for_merge = remove_matching_items(splits, |split| split.is_mature());
+        let splits_not_for_merge =
+            remove_matching_items(splits, |split| split.is_mature(OffsetDateTime::now_utc()));
 
         let mut merge_operations: Vec<MergeOperation> = Vec::new();
         splits.sort_unstable_by(cmp_splits_by_reverse_time_end);

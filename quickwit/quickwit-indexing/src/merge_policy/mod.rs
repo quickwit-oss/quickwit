@@ -303,7 +303,7 @@ pub mod tests {
             //     merge_policy.operations(&mut splits).is_empty(),
             //     "Merge policy are expected to return all available merge operations."
             // );
-
+            let now_utc = OffsetDateTime::now_utc();
             for merge_op in &mut operations {
                 assert_eq!(merge_op.operation_type, MergeOperationType::Merge,
                     "A merge policy should only emit Merge operations."
@@ -311,7 +311,7 @@ pub mod tests {
                 assert!(merge_op.splits_as_slice().len() >= 2,
             "Merge policies should not suggest merging a single split.");
                 for split in merge_op.splits_as_slice() {
-                    assert!(!split.is_mature(), "Merges should not contain mature splits.");
+                    assert!(!split.is_mature(now_utc), "Merges should not contain mature splits.");
                 }
                 merge_policy.check_is_valid(merge_op, &splits[..]);
             }

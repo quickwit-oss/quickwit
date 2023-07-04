@@ -157,27 +157,16 @@ impl SplitMetadata {
         &self.split_id
     }
 
-    /// Returns true if the split is mature at `utc_now_timetamp()`.
-    pub fn is_mature(&self) -> bool {
+    /// Returns true if the split is mature at the unix `timestamp`.
+    pub fn is_mature(&self, datetime: OffsetDateTime) -> bool {
         match self.maturity {
             SplitMaturity::Mature => true,
             SplitMaturity::Immature {
                 maturation_period: time_to_maturity,
-            } => self.create_timestamp + time_to_maturity.as_secs() as i64 <= utc_now_timestamp(),
-        }
-    }
-
-    /// Returns the unix timestamp at which the split becomes mature.
-    /// If the split is mature (`SplitMaturity::Mature`), we return 0.
-    /// This is handy only for metastore implementations that need to filter
-    /// on split maturity and/or for persisting the maturity timestamp
-    /// in a database.
-    pub(crate) fn maturity_timestamp(&self) -> i64 {
-        match self.maturity {
-            SplitMaturity::Mature => 0,
-            SplitMaturity::Immature {
-                maturation_period: time_to_maturity,
-            } => self.create_timestamp + time_to_maturity.as_secs() as i64,
+            } => {
+                self.create_timestamp + time_to_maturity.as_secs() as i64
+                    <= datetime.unix_timestamp()
+            }
         }
     }
 
@@ -275,19 +264,17 @@ impl FromStr for SplitState {
 }
 
 /// `SplitMaturity` defines the maturity of a split, is is either `Mature`
-/// or becomes mature after a given period.
-/// A mature split does not undergo new merge operations.
+/// or `Immature` with a given maturation period.
 /// The maturity is determined by the `MergePolicy`.
 #[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum SplitMaturity {
-    /// Split is mature.
+    /// The split is mature and no longer a candidates for merges.
     #[default]
     Mature,
-    /// Period after which the split is mature.
-    /// Period is truncated to seconds
-    /// on serialization.
+    /// The split is immature and can undergo merges until `ripening_period` passes,
+    /// measured relatively from the split's creation timestamp.
     Immature {
         /// Time to maturity.
         #[serde(with = "serde_duration_millisecs")]

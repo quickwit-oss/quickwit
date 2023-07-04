@@ -48,7 +48,7 @@ use crate::metastore::postgresql_model::{
 use crate::metastore::FilterRange;
 use crate::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreFactory,
-    MetastoreResolverError, MetastoreResult, Split, SplitMetadata, SplitState,
+    MetastoreResolverError, MetastoreResult, Split, SplitMaturity, SplitMetadata, SplitState,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
@@ -269,6 +269,22 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery) -> String {
         Bound::Unbounded => {}
     };
 
+    if let Some(maturity_filter) = &query.maturity {
+        let evaluation_timestamp = maturity_filter.evaluation_datetime.unix_timestamp();
+        if maturity_filter.mature {
+            let _ = write!(
+                sql,
+                " AND (maturity_timestamp = to_timestamp(0) OR \
+                 to_timestamp({evaluation_timestamp}) >= maturity_timestamp)"
+            );
+        } else {
+            let _ = write!(
+                sql,
+                " AND to_timestamp({evaluation_timestamp}) < maturity_timestamp"
+            );
+        }
+    }
+
     // WARNING: Not SQL injection proof
     write_sql_filter(
         &mut sql,
@@ -280,12 +296,6 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery) -> String {
         &mut sql,
         "create_timestamp",
         &query.create_timestamp,
-        |val| format!("to_timestamp({val})"),
-    );
-    write_sql_filter(
-        &mut sql,
-        "maturity_timestamp",
-        &query.maturity_timestamp,
         |val| format!("to_timestamp({val})"),
     );
     write_sql_filter(&mut sql, "delete_opstamp", &query.delete_opstamp, |val| {
@@ -301,6 +311,19 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery) -> String {
     }
 
     sql
+}
+
+/// Returns the unix timestamp at which the split becomes mature.
+/// If the split is mature (`SplitMaturity::Mature`), we return 0
+/// as we don't want to depend on the current time when we know for sure
+/// that a split is mature.
+fn split_maturity_timestamp(split_metadata: &SplitMetadata) -> i64 {
+    match split_metadata.maturity {
+        SplitMaturity::Mature => 0,
+        SplitMaturity::Immature { maturation_period } => {
+            split_metadata.create_timestamp + maturation_period.as_secs() as i64
+        }
+    }
 }
 
 fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
@@ -493,7 +516,7 @@ impl Metastore for PostgresqlMetastore {
                 .as_ref()
                 .map(|range| *range.start());
             time_range_start_list.push(time_range_start);
-            maturity_timestamps.push(split_metadata.maturity_timestamp());
+            maturity_timestamps.push(split_maturity_timestamp(&split_metadata));
 
             let time_range_end = split_metadata.time_range.map(|range| *range.end());
             time_range_end_list.push(time_range_end);
@@ -1096,6 +1119,7 @@ impl Metastore for PostgresqlMetastore {
                     index_uid = $1
                     AND delete_opstamp < $2
                     AND split_state = $3
+                    AND (maturity_timestamp = to_timestamp(0) OR (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') >= maturity_timestamp)
                 ORDER BY delete_opstamp ASC, publish_timestamp ASC
                 LIMIT $4
                 "#,
@@ -1279,6 +1303,7 @@ metastore_test_suite!(crate::PostgresqlMetastore);
 mod tests {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::IndexUid;
+    use time::OffsetDateTime;
 
     use super::{build_query_filter, tags_filter_expression_helper};
     use crate::{ListSplitsQuery, SplitState};
@@ -1380,11 +1405,22 @@ mod tests {
             " WHERE index_uid = $1 AND create_timestamp <= to_timestamp(55)"
         );
 
-        let query = ListSplitsQuery::for_index(index_uid.clone()).with_maturity_timestamp_lte(55);
+        let maturity_evaluation_datetime = OffsetDateTime::from_unix_timestamp(55).unwrap();
+        let query = ListSplitsQuery::for_index(index_uid.clone())
+            .is_mature(true, maturity_evaluation_datetime);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND maturity_timestamp <= to_timestamp(55)"
+            " WHERE index_uid = $1 AND (maturity_timestamp = to_timestamp(0) OR to_timestamp(55) \
+             >= maturity_timestamp)"
+        );
+
+        let query = ListSplitsQuery::for_index(index_uid.clone())
+            .is_mature(false, maturity_evaluation_datetime);
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(
+            sql,
+            " WHERE index_uid = $1 AND to_timestamp(55) < maturity_timestamp"
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_delete_opstamp_gte(4);

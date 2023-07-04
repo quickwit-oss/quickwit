@@ -335,12 +335,9 @@ impl DeleteTaskPlanner {
             last_delete_opstamp = last_delete_opstamp,
             num_stale_splits_from_metastore = stale_splits.len()
         );
-        // Keep only mature splits and splits that are not already part of ongoing delete
-        // operations.
         let ongoing_delete_operations = self.ongoing_delete_operations_inventory.list();
         let filtered_splits = stale_splits
             .into_iter()
-            .filter(|stale_split| stale_split.split_metadata.is_mature())
             .filter(|stale_split| {
                 !ongoing_delete_operations.iter().any(|operation| {
                     operation

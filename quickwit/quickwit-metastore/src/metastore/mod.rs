@@ -37,6 +37,7 @@ use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
+use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
@@ -209,7 +210,8 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<Vec<Split>> {
         let query = ListSplitsQuery::for_index(index_uid)
             .with_delete_opstamp_lt(delete_opstamp)
-            .with_split_state(SplitState::Published);
+            .with_split_state(SplitState::Published)
+            .is_mature(true, OffsetDateTime::now_utc());
 
         let mut splits = self.list_splits(query).await?;
         splits.sort_by(|split_left, split_right| {
@@ -337,8 +339,14 @@ pub struct ListSplitsQuery {
     /// The create timestamp range to filter by.
     pub create_timestamp: FilterRange<i64>,
 
-    /// The maturity timestamp range to filter by.
-    pub maturity_timestamp: FilterRange<i64>,
+    /// Is the split mature or immature.
+    pub maturity: Option<SplitMaturityFilter>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SplitMaturityFilter {
+    pub mature: bool,
+    pub evaluation_datetime: OffsetDateTime,
 }
 
 #[allow(unused_attributes)]
@@ -355,7 +363,7 @@ impl ListSplitsQuery {
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
-            maturity_timestamp: Default::default(),
+            maturity: None,
         }
     }
 
@@ -501,31 +509,13 @@ impl ListSplitsQuery {
         self
     }
 
-    /// Set the field's lower bound to match values that are
-    /// *less than or equal to* the provided value.
-    pub fn with_maturity_timestamp_lte(mut self, v: i64) -> Self {
-        self.maturity_timestamp.end = Bound::Included(v);
-        self
-    }
-
-    /// Set the field's lower bound to match values that are
-    /// *less than* the provided value.
-    pub fn with_maturity_timestamp_lt(mut self, v: i64) -> Self {
-        self.maturity_timestamp.end = Bound::Excluded(v);
-        self
-    }
-
-    /// Set the field's upper bound to match values that are
-    /// *greater than or equal to* the provided value.
-    pub fn with_maturity_timestamp_gte(mut self, v: i64) -> Self {
-        self.maturity_timestamp.start = Bound::Included(v);
-        self
-    }
-
-    /// Set the field's upper bound to match values that are
-    /// *greater than* the provided value.
-    pub fn with_maturity_timestamp_gt(mut self, v: i64) -> Self {
-        self.maturity_timestamp.start = Bound::Excluded(v);
+    /// Set the maturity filter to match splits that are mature or immature
+    /// at a given datetime.
+    pub fn is_mature(mut self, mature: bool, evaluation_datetime: OffsetDateTime) -> Self {
+        self.maturity = Some(SplitMaturityFilter {
+            mature,
+            evaluation_datetime,
+        });
         self
     }
 }

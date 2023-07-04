@@ -31,6 +31,7 @@ use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tantivy::directory::MmapDirectory;
 use tantivy::{Advice, Directory};
+use time::OffsetDateTime;
 use tracing::{info, info_span, instrument, Instrument};
 
 use super::LocalSplitStore;
@@ -125,7 +126,7 @@ impl IndexingSplitStore {
         let split_num_bytes = put_payload.len();
 
         let key = PathBuf::from(quickwit_common::split_file(split.split_id()));
-        let is_mature = split.is_mature();
+        let is_mature = split.is_mature(OffsetDateTime::now_utc());
         self.inner
             .remote_storage
             .put(&key, put_payload)

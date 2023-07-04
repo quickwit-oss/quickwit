@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use quickwit_config::merge_policy_config::ConstWriteAmplificationMergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
+use time::OffsetDateTime;
 
 use super::MergeOperation;
 use crate::merge_policy::MergePolicy;
@@ -134,7 +135,7 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
         let mut group_by_num_merge_ops: HashMap<usize, Vec<SplitMetadata>> = HashMap::default();
         let mut mature_splits = Vec::new();
         for split in splits.drain(..) {
-            if split.is_mature() {
+            if split.is_mature(OffsetDateTime::now_utc()) {
                 mature_splits.push(split);
             } else {
                 group_by_num_merge_ops
