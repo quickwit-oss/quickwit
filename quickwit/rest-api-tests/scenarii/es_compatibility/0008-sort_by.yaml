@@ -1,10 +1,9 @@
-# does not pass on Elastic because of null values
 json:
   size: 1
   query:
       match_all: {}
   sort:
-    - actor.id":
+    - actor.id:
         order: desc
 expected:
   hits:
@@ -14,7 +13,7 @@ expected:
     hits:
       - _source:
           actor:
-            id: 1762355
+            id: 10791502
 ---
 json:
   size: 1
