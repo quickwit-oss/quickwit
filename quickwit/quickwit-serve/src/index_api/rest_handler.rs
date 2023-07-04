@@ -756,9 +756,9 @@ fn analyze_request_handler() -> impl Filter<Extract = (impl warp::Reply,), Error
 )]
 async fn analyze_request(request: AnalyzeRequest) -> Result<serde_json::Value, IndexServiceError> {
     let tokens = analyze_text(&request.text, &request.tokenizer_config)
-        .map_err(|err| IndexServiceError::Internal(err.to_string()))?;
-    let json_value =
-        serde_json::to_value(tokens).map_err(|err| IndexServiceError::Internal(err.to_string()))?;
+        .map_err(|err| IndexServiceError::Internal(format!("{err:?}")))?;
+    let json_value = serde_json::to_value(tokens)
+        .map_err(|err| IndexServiceError::Internal(format!("Cannot serialize tokens: {err}")))?;
     Ok(json_value)
 }
 
