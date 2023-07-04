@@ -179,7 +179,7 @@ async fn fetch_docs_in_split(
         false,
     )
     .await
-    .with_context(|| "open-index-for-split")?;
+    .context("open-index-for-split")?;
     let index_reader = index
         .reader_builder()
         // the docs are presorted so a cache size of NUM_CONCURRENT_REQUESTS is fine

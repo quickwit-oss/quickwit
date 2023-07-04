@@ -39,9 +39,9 @@ pub(crate) use self::field_mapping_entry::{
     FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
 };
 pub(crate) use self::field_mapping_type::FieldMappingType;
-pub use self::tokenizer_entry::{
-    analyze_text, NgramTokenizerOption, RegexTokenizerOption, TokenFilterType, TokenizerConfig,
-    TokenizerEntry, TokenizerType,
+pub use self::tokenizer_entry::{analyze_text, TokenizerConfig, TokenizerEntry};
+pub(crate) use self::tokenizer_entry::{
+    NgramTokenizerOption, RegexTokenizerOption, TokenFilterType, TokenizerType,
 };
 use crate::QW_RESERVED_FIELD_NAMES;
 
