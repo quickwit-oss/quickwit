@@ -25,13 +25,13 @@ use opentelemetry::sdk::propagation::TraceContextPropagator;
 use opentelemetry::sdk::{trace, Resource};
 use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
+use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{build_cli, CliCommand};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::{
     busy_detector, QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
 };
-use quickwit_common::RED_COLOR;
 use quickwit_serve::BuildInfo;
 use tracing::Level;
 use tracing_subscriber::fmt::time::UtcTime;
