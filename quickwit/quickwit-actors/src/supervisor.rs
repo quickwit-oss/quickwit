@@ -35,7 +35,7 @@ pub struct SupervisorState {
 
 pub struct Supervisor<A: Actor> {
     actor_name: String,
-    actor_factory: Box<dyn Fn() -> A + Sync + Send>,
+    actor_factory: Box<dyn Fn() -> A + Send>,
     inbox: Inbox<A>,
     handle_opt: Option<ActorHandle<A>>,
     state: SupervisorState,
@@ -95,7 +95,7 @@ impl<A: Actor> Actor for Supervisor<A> {
 impl<A: Actor> Supervisor<A> {
     pub(crate) fn new(
         actor_name: String,
-        actor_factory: Box<dyn Fn() -> A + Sync + Send>,
+        actor_factory: Box<dyn Fn() -> A + Send>,
         inbox: Inbox<A>,
         handle: ActorHandle<A>,
     ) -> Self {
