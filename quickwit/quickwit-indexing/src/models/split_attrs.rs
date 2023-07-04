@@ -89,7 +89,7 @@ pub fn create_split_metadata(
     footer_offsets: Range<u64>,
 ) -> SplitMetadata {
     let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-    let time_to_maturity =
+    let maturity =
         merge_policy.split_maturity(split_attrs.num_docs as usize, split_attrs.num_merge_ops);
     SplitMetadata {
         split_id: split_attrs.split_id.clone(),
@@ -104,7 +104,7 @@ pub fn create_split_metadata(
             .map(|range| range.start().into_timestamp_secs()..=range.end().into_timestamp_secs()),
         uncompressed_docs_size_in_bytes: split_attrs.uncompressed_docs_size_in_bytes,
         create_timestamp,
-        maturity: time_to_maturity,
+        maturity,
         tags,
         footer_offsets,
         delete_opstamp: split_attrs.delete_opstamp,

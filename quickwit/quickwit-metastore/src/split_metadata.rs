@@ -102,7 +102,7 @@ pub struct SplitMetadata {
     /// Timestamp for tracking when the split was created.
     pub create_timestamp: i64,
 
-    /// Split maturity.
+    /// Split maturity either `Mature` or `Immature` with a given maturation period.
     pub maturity: SplitMaturity,
 
     /// Set of unique tags values of form `{field_name}:{field_value}`.
@@ -263,7 +263,7 @@ impl FromStr for SplitState {
     }
 }
 
-/// `SplitMaturity` defines the maturity of a split, is is either `Mature`
+/// `SplitMaturity` defines the maturity of a split, it is either `Mature`
 /// or `Immature` with a given maturation period.
 /// The maturity is determined by the `MergePolicy`.
 #[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq)]

@@ -67,7 +67,7 @@ pub(crate) struct SplitMetadataV0_6 {
     #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
 
-    /// Split maturity.
+    /// Split maturity either `Mature` or `Immature` with a given maturation period.
     #[serde(default)]
     #[schema(value_type = Value)]
     pub maturity: SplitMaturity,

@@ -339,7 +339,7 @@ pub struct ListSplitsQuery {
     /// The create timestamp range to filter by.
     pub create_timestamp: FilterRange<i64>,
 
-    /// Is the split mature or immature.
+    /// Is the split mature or immature at a given datetime.
     pub maturity: Option<SplitMaturityFilter>,
 }
 

@@ -315,8 +315,7 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery) -> String {
 
 /// Returns the unix timestamp at which the split becomes mature.
 /// If the split is mature (`SplitMaturity::Mature`), we return 0
-/// as we don't want to depend on the current time when we know for sure
-/// that a split is mature.
+/// as we don't want the maturity to depend on datetime.
 fn split_maturity_timestamp(split_metadata: &SplitMetadata) -> i64 {
     match split_metadata.maturity {
         SplitMaturity::Mature => 0,
